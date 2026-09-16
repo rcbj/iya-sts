@@ -89,7 +89,7 @@ const errorCodes = require('../common/error_codes');
 const realms = require('../common/realms');
 const admin = require('./admin');
 // `gateStateFor()` moved to the read layer on 2026-09-12 with the other
-// thirty-seven pure answers — see admin-core/admin_views.js. This page asks
+// thirty-seven pure answers — see admin-core/admin_views.ts. This page asks
 // it which roles the reader holds, so the token it mints carries those
 // scopes and no others.
 const adminViews = require('../admin-core/admin_views');

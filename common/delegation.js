@@ -1555,7 +1555,7 @@ module.exports = {
   // picture that draws boxes for parties this store has never seen — an OAuth
   // client a token names, a SAML audience — can key them the same way this
   // file does, or the two halves of one diagram would put the same party in
-  // two boxes. (`common/user_graph.js` does not call it today: it keys those
+  // two boxes. (`common/user_graph.ts` does not call it today: it keys those
   // boxes with `admin_stats.identityKeyOf()`, the normalisation nodeIdOf()
   // itself applies.)
   nodeIdOf: nodeIdOf,

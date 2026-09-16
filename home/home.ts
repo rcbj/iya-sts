@@ -180,7 +180,7 @@ const CONSOLE_PATH = '/admin';
 // operator or a client was the one surface with no door on the front page.
 //
 // It lists none of the portal's pages, and that is the same rule this page
-// keeps about endpoints one paragraph up: `portal/portal.js`'s `NAV` is the
+// keeps about endpoints one paragraph up: `portal/portal.ts`'s `NAV` is the
 // page list, `sts_metadata.js` reports it, and a set of highlights here would
 // be a second copy that goes stale the first time a page is added there.
 const PORTAL_PATH = '/portal';

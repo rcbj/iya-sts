@@ -11,8 +11,8 @@
 // dialog over the page, in the same tab, with an X at the top and a Close
 // button at the foot. This file draws that dialog and the link that opens it,
 // and nothing else draws either: the model is
-// `common/certificate_details.js`'s and which certificates may be opened is
-// `admin-core/certificate_views.js`'s, so a certificate described on one page
+// `common/certificate_details.ts`'s and which certificates may be opened is
+// `admin-core/certificate_views.ts`'s, so a certificate described on one page
 // is described on the other by the same function in the same words.
 //
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@
 // THE POST-QUANTUM ICON, DRAWN ONE WAY ON EVERY PAGE (2026-09-13).
 //
 // `/admin/pki` and `/admin/keys` mark each key pair that uses a post-quantum
-// algorithm. WHETHER a key does is `common/pqc_support.js`'s answer; this file
+// algorithm. WHETHER a key does is `common/pqc_support.ts`'s answer; this file
 // is how that answer LOOKS, and nothing else draws it — so the icon on a
 // Root CA row and the icon on an ML-DSA signing key are one element with one
 // meaning, and the certificate details dialog shows the same one.
@@ -34,7 +34,7 @@
 // `aria-label` for a screen reader, which reads the element as one image.
 //
 // A LIBRARY: it registers no route. It requires `admin-ui/admin.js` for the
-// escaper and `common/pqc_support.js` for the sentence.
+// escaper and `common/pqc_support.ts` for the sentence.
 // ===========================================================================
 
 const bunyan = require('bunyan');

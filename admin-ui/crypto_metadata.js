@@ -168,7 +168,7 @@ const webauthnPolicy = require('../authn/webauthn_policy');
 // RFC 6238's own algorithm table, read from the module that performs the
 // algorithm — this page's whole design. A LIBRARY (rule 3) that registers no
 // route, so requiring it here cannot move one, and it is already loaded by
-// `common/credentials.js` long before this line.
+// `common/credentials.ts` long before this line.
 const totp = require('../common/totp');
 const backupCodes = require('../common/backup_codes');
 const dpop = require('../oauth-oidc/dpop');
@@ -1103,7 +1103,7 @@ const FAMILIES = [
     // THE OFFERED LIST WAS TYPED HERE UNTIL 2026-09-10 AND IT IS A SETTING NOW.
     //
     // It read `['ES256 (-7)', 'RS256 (-257)']` — correct while the ceremony's
-    // `pubKeyCredParams` was a literal in a string in `authn/authn.js`, and
+    // `pubKeyCredParams` was a literal in a string in `authn/authn.ts`, and
     // wrong the moment `webauthn.algorithms` could move it. That is precisely
     // the drift this page exists to prevent, so it is read from the module that
     // BUILDS the offer, exactly as the TOTP row below reads `inUse` off the
@@ -1141,7 +1141,7 @@ const FAMILIES = [
   // something old, it is that HMAC-SHA-1 over a counter is a keyed MAC and not
   // a collision-resistant digest, so SHA-1's weaknesses do not reach it.
   //
-  // The algorithm table is READ FROM `common/totp.js`, which is this page's
+  // The algorithm table is READ FROM `common/totp.ts`, which is this page's
   // whole design: the table lives with the code that performs the algorithm,
   // and `inUse` comes off the live setting so the report says what this
   // deployment actually does rather than what the module can do.
@@ -1204,11 +1204,11 @@ const FAMILIES = [
   // signature, with a row anyway because what it keeps at rest is a set of
   // live credentials. It was written when the set was ENCRYPTED under the
   // key-encryption key; since 2026-09-11 each code is stored as a scrypt HASH
-  // (`common/backup_codes.js`'s header records the reversal), and the
+  // (`common/backup_codes.ts`'s header records the reversal), and the
   // `encrypts`/`decrypts`/`hashes` strings below still describe the old
   // design — the `At rest` row, read from `report()`, is the current one.
   //
-  // The table is read from `common/backup_codes.js`, which is this page's
+  // The table is read from `common/backup_codes.ts`, which is this page's
   // design everywhere: the facts live with the code that performs them.
   // ---------------------------------------------------------------------
   { name: 'Recovery codes',
@@ -1316,7 +1316,7 @@ const FAMILIES = [
               'key-change\'s inner JWS with the new key; an External ' +
               'Account Binding\'s HMAC with the key issued under its kid, in constant time and ' +
               'in every mode; and the CSR\'s proof of possession in ' +
-              'common/cert_enrollment.js.',
+              'common/cert_enrollment.ts.',
     encrypts: 'The External Account Binding HMAC key, sealed with ' +
               'AES-256-GCM under the key-encryption key onto the entry it ' +
               'was issued for, wherever that key outlives the process.',
@@ -1366,7 +1366,7 @@ const FAMILIES = [
            'own and are trusted for the certificates inside them.',
     verifies: 'The PKCS#10 proof of possession — the request\'s signature ' +
               'with its own public key, classical and post-quantum, in ' +
-              'common/cert_enrollment.js — and, for certificate ' +
+              'common/cert_enrollment.ts — and, for certificate ' +
               'authentication, the client certificate\'s path to this ' +
               'realm\'s Intermediate and the service Root with revocation ' +
               'consulted. A /serverkeygen template is not verified: its key ' +

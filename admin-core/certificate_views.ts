@@ -5,7 +5,7 @@
 // ===========================================================================
 // WHICH CERTIFICATES A DETAILS VIEW MAY SHOW, AND THE VIEW ITSELF (2026-09-13).
 //
-// `common/certificate_details.js` describes a certificate it is handed. This
+// `common/certificate_details.ts` describes a certificate it is handed. This
 // file decides WHICH certificates it may be handed, and answers the two
 // questions both admin surfaces ask of them: *what certificates does this
 // realm hold*, and *show me this one, with its chain*. `/admin/pki`,

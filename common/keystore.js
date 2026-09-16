@@ -548,7 +548,7 @@ function serialise(keys) {
       : null,
     // **THE REFRESH-TOKEN ENCRYPTION KEYS (2026-09-12)** — the realm's own RSA
     // pair, EC pair and symmetric secret that
-    // `oauth-oidc/refresh_token_crypto.js` encrypts every refresh token to.
+    // `oauth-oidc/refresh_token_crypto.ts` encrypts every refresh token to.
     // Written down and shared exactly as the request-encryption key above is,
     // and for its reason: a refresh token outlives the process that minted it
     // in product mode, and a request worker that encrypted to a key another
@@ -1887,7 +1887,7 @@ function attachPki(realmId, chain) {
 // — every other node is already signing with the winner — so refusing strands
 // the same tokens for ever instead of for a window. The window is the round
 // trip of the first write: a cold start closes it by settling BEFORE anything
-// is served (`common/service_state.js`), and a realm created at runtime keeps
+// is served (`common/service_state.ts`), and a realm created at runtime keeps
 // the one this service already had inside a container, from generation to the
 // commit that says who won. There are no retained keys to fall back on: this
 // service publishes one key per realm per algorithm (`rotate()` says so, and
@@ -2538,5 +2538,5 @@ module.exports = {
 // signing keys one set for the cluster — the first-writer-wins write, the
 // adoption of a row another node wrote, rotation reaching every node — is
 // this file, and a cold start settles through it before anything is served
-// (`common/service_state.js`).
+// (`common/service_state.ts`).
 capabilities.provide('keys.agreement');

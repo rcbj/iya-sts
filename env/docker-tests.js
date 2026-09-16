@@ -105,7 +105,7 @@ var config = {
     // it); the skew is capped at 300, which is what krb5.clockSkew allows.
     //
     // refreshTokenTtlS IS A BEHAVIOUR CHANGE: it was thirty days as a constant
-    // in oauth-oidc/oauth2.js and is twenty-four hours here. Put 2592000 back
+    // in oauth-oidc/oauth2.ts and is twenty-four hours here. Put 2592000 back
     // for exactly the old behaviour.
     //
     // clockSkewS is NOT clientAssertionSkewS above it: that one is how far out

@@ -9,8 +9,8 @@
 // `xacml_role_pep.ts` beside this file decides what may be ISSUED. This one
 // decides who may REACH something: the admin console, the management API, the
 // User Portal, SCIM, the SPIRE Server API, the embedded debugger and the
-// `/xacml` surface itself (`common/access_gate.js` lists them). It fills
-// `common/access_gate.js`'s decider exactly as that one fills
+// `/xacml` surface itself (`common/access_gate.ts` lists them). It fills
+// `common/access_gate.ts`'s decider exactly as that one fills
 // `common/issuance_gate.js`'s, and the two are deliberately the same shape.
 //
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@
 //
 // **THE ARMING STILL HAPPENS AT LOAD, AND IN THE ORIGINAL ORDER.** The
 // TRANSITIONAL code at the bottom builds one instance from the real modules
-// and fills `common/access_gate.js`'s decider with its `decide` — bound ONCE,
+// and fills `common/access_gate.ts`'s decider with its `decide` — bound ONCE,
 // so the gate holds the function this module exports — then logs that the PEP
 // is armed, exactly as the original did. Every old name is still exported,
 // from that instance; it goes when the composition root exists, and
@@ -72,7 +72,7 @@ import config = require('../common/config');
 import gate = require('../common/access_gate');
 // The audit log, for the refusals. A LEAF in the ordinary direction (rule
 // 3c): it registers no route and requires nothing here, so it can be required
-// from a module reached through `common/access_gate.js` without moving a route
+// from a module reached through `common/access_gate.ts` without moving a route
 // or closing a cycle.
 import audit = require('../common/audit');
 // The error-code registry (a leaf): a refusal's code rides on the audit row and
@@ -87,10 +87,10 @@ import pip = require('./xacml_pip');
 import store = require('./xacml_store');
 // The decision counters. A LEAF (rule 3) that requires no route-registering
 // module — which is what makes it safe to require from a file reached through
-// `common/access_gate.js`; its header argues that constraint in full.
+// `common/access_gate.ts`; its header argues that constraint in full.
 import monitor = require('./xacml_monitor');
 
-// The question a gated surface asks, through `common/access_gate.js`.
+// The question a gated surface asks, through `common/access_gate.ts`.
 interface AccessQuestion {
   resource?: any;
   action?: any;

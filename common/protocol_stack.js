@@ -92,9 +92,9 @@ require('../ws-trust/wstrust');
 // nothing about the portal. It registers its own routes under /portal, which
 // nothing else here could shadow.
 //
-// **AND AFTER `oauth-oidc/oauth2.js` IN EFFECT SINCE 2026-09-06**, though not
+// **AND AFTER `oauth-oidc/oauth2.ts` IN EFFECT SINCE 2026-09-06**, though not
 // as an ordering constraint: this portal is an OpenID Connect RELYING PARTY of
-// this service's own authorization server (`common/oidc_rp.js`), so it needs
+// this service's own authorization server (`common/oidc_rp.ts`), so it needs
 // `/oauth2/authorize` and `/oauth2/token` to be REGISTERED rather than
 // required — and they are, at 9, a few lines below, which is before any
 // request arrives. A process that loaded this module without them would have
@@ -146,7 +146,7 @@ require('../saml/saml2_sso');
 require('../saml/saml11_sso');
 // FEDERATION, and it is the one module here that consumes rather than issues.
 // ONE constraint, and it is the strongest of the three sign-in dependencies:
-// it must come AFTER authn/authn.js, because it has no sign-in screen of its
+// it must come AFTER authn/authn.ts, because it has no sign-in screen of its
 // own AND it does not go through beginAuthentication() either — a federated
 // sign-in ends by calling startSession() directly, since the person has already
 // authenticated somewhere else and there is no screen to show them.
@@ -194,7 +194,7 @@ require('../kerberos/spnego');
 // TWO constraints, and both are dependencies rather than preferences. It must
 // come AFTER `spnego.js`, whose page shell and check table it draws with and
 // whose `spnego_exchange.js` performs the negotiation; and it must come AFTER
-// `authn/authn.js`, which is at #8, because it calls that module's
+// `authn/authn.ts`, which is at #8, because it calls that module's
 // `startSession()` and reads its pending records. The second is why the
 // endpoint is HERE and not over there: `authn.js` is required before
 // `oauth2.js`, which reads the session it owns, so a require in the other
@@ -335,12 +335,12 @@ require('../debugger/debugger_admin');
 //
 // The same placement as 18a to 18e, for their reason: it requires
 // `admin-ui/admin` for the shell and, through `oauth2_monitor_console.js`,
-// `admin-core/admin_views.js`, `oauth-oidc/par.js` and
-// `oauth-oidc/oauth2_monitor.js` — libraries every one of which is loaded by
+// `admin-core/admin_views.ts`, `oauth-oidc/par.ts` and
+// `oauth-oidc/oauth2_monitor.ts` — libraries every one of which is loaded by
 // this line — so it moves no route. It cannot be required from `oauth2.js` at
 // 9, which would drag the whole console in front of the authorization server.
 // `mgmt-api/admin_api.js` at 19 reaches the model lazily through
-// `oauth-oidc/oauth2_monitor_api.js`.
+// `oauth-oidc/oauth2_monitor_api.ts`.
 // ---------------------------------------------------------------------------
 require('../oauth-oidc/oauth2_monitor_admin');
 // The management API: everything that console shows and everything it can
@@ -390,7 +390,7 @@ const tlsServer = require('../tls/tls_server');
 // carries. The ordinary shape — `tls/tls_server.js` requiring `admin-ui/admin`
 // at its own top level and filling it — does not work, and the reason is the
 // real load order rather than the one written above: that module is first
-// loaded from INSIDE `admin.js`'s require, through `admin-core/admin_views.js`
+// loaded from INSIDE `admin.js`'s require, through `admin-core/admin_views.ts`
 // → `spiffe/spiffe_auth.ts`. A require of `admin.js` from there is a cycle and
 // hands back its half-built exports, on which `setTruststore` is not yet
 // defined. Here both modules are whole, and so is every process that runs the
@@ -531,7 +531,7 @@ require('../ssf/ssf');
 // store IS ou=policies, so this module has nothing to load and nothing to hold.
 //
 // AND AFTER `admin-ui/admin` (18), whose `setXacmlPages()` slot
-// `xacml/xacml_admin.js` fills — for the reason SSF's does at 23b: a require
+// `xacml/xacml_admin.ts` fills — for the reason SSF's does at 23b: a require
 // from mgmt-api/admin_api.js (19) to this module would drag every /xacml route
 // ahead of the management API's own. `xacml.js` requires `xacml_admin.js`,
 // `xacml_role_pep.js` and `xacml_access_pep.js` itself, so the family is one
@@ -555,7 +555,7 @@ require('../gnap/gnap');
 // CERTIFICATE ENROLLMENT (2026-09-13) — 23e, 23f, 23g. ACME (RFC 8555), EST
 // (RFC 7030) and SCEP (RFC 8894). After the console at 18, whose shell each
 // family's `<family>_admin.js` draws its two pages with, and after `ldap` at
-// 21, whose slot `common/cert_enrollment.js` reads the entries through. Each
+// 21, whose slot `common/cert_enrollment.ts` reads the entries through. Each
 // module requires its own `_admin.js`, so each family is one line here. No
 // constraint between the three.
 require('../acme/acme');

@@ -20,7 +20,7 @@ libraries that decide things on its behalf.
 | `authorization_details.ts` | **RFC 9396, RAR (2026-09-13).** Parses and checks `authorization_details` against the types resource applications DECLARE, the section 6 subset rule, the resource a set of details addresses, and the one-time consent. See 3am. |
 | `par.ts` | **RFC 9126, PAR (2026-09-13).** The store of pushed authorization requests: the `request_uri`, bound to its client and authorization server, read without spending, spent when a response is issued, expired, listed and deleted. `oauth2.ts` answers `POST /oauth2/par`. See 3al. |
 | `oauth2_monitor.ts` | **The counters behind `/admin/oauth2/monitor` (2026-09-13)**, in sections; pushed authorization requests are the first. |
-| `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.js`. |
+| `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.ts`. |
 | `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.js`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
 | `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.js` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
@@ -1171,7 +1171,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    library (rule 3): it requires `assertion_grant.js` (for `keysForParty()` and
    `keyFromChain()`, exported for it), `jwt_access_token.ts` (the issuer) and
    `common/` modules, none of which requires it back; `oauth2.ts`,
-   `admin-core/admin_actions.js` and `admin-core/admin_views.js` require it. Four
+   `admin-core/admin_actions.ts` and `admin-core/admin_views.ts` require it. Four
    decisions were asked of rcbj and each took the recommended answer:
 
    | Asked | Chosen |
@@ -1646,13 +1646,13 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
 
    **ONE EXEMPTION, FROM ONE SETTING, AND IT IS A LIST OF TWO.**
    `MTLS_EXEMPT_CLIENTS` is `sts-admin-console` and `sts-user-portal` —
-   `common/oidc_rp.js`'s `SURFACES` — under `oauth2.refreshTokenRequireMtls`
+   `common/oidc_rp.ts`'s `SURFACES` — under `oauth2.refreshTokenRequireMtls`
    alone. They redeem over a loopback call from this process to itself, where
    there is no client certificate to present and nobody on the other end who is
    not already this process, so that setting would lock an operator out of
    `/admin` and `/portal` in exchange for nothing. **They are NOT exempt from
    the DPoP setting**, and the reason is the shape of the whole rule: rather
-   than exempt them, `common/oidc_rp.js` was given a key and now proves
+   than exempt them, `common/oidc_rp.ts` was given a key and now proves
    possession on every back-channel token call, so the honest answer there was
    to build the half that meets the requirement. **`sts-debugger-ui` IS NOT ON
    THE LIST, on purpose (#34 decision 6)**: the embedded debugger is an ordinary
@@ -1744,13 +1744,13 @@ response describes the original authentication. The refresh grant minted it with
 relying party renewing a session was told somebody had just authenticated, by no
 method. `refreshToken()` now puts the three inside the (encrypted) refresh token
 and the grant hands them back to `issue()`. It was found by this service's own
-console, which checks exactly that when it renews (`common/oidc_rp.js`'s
+console, which checks exactly that when it renews (`common/oidc_rp.ts`'s
 `checkRenewedClaims()`), and `tests/vendored/sts_hosted_surface_renewal.js`
 goes red without it.
 
 **EVERY READER OPENS FIRST, AND THERE ARE SIX**: the refresh grant,
 introspection, revocation, token exchange's `subject_token`, `jtiOf()` and the
-code-replay jti reader — plus `admin-core/admin_actions.js`'s `jtiFrom()`, so a
+code-replay jti reader — plus `admin-core/admin_actions.ts`'s `jtiFrom()`, so a
 pasted refresh token can still be revoked on the console. **A new reader of a
 refresh token must go through `refresh_token_crypto.open()`**; a `split('.')[1]`
 on one reads the JWE's encrypted key and throws somewhere unhelpful.
@@ -2156,7 +2156,7 @@ produced is one good for a day and renewable.
    sign-outs have to fan out identically.** It registers no route, so its place
    in the require order does not matter, and it requires `helpers.js`,
    `config.js`, `app.js`, `applications.js`, `validation.js` and
-   `error_codes.js` (and `authn/authn.js` lazily) — none of which requires it
+   `error_codes.js` (and `authn/authn.ts` lazily) — none of which requires it
    back.
 
    It holds four things: which clients a session signed into
@@ -2231,7 +2231,7 @@ Added 2026-09-01. `audienceScopes()` already turned a scope value that is
 another application's `client_id` into the access token's `aud` — the rule
 `scope-named-audience` describes, one section up. This is that rule one step
 more precise, and it is the OAuth half of the delegated-permission register in
-`common/app_permissions.js`.
+`common/app_permissions.ts`.
 
 A **resource** application exposes an API: a base URI
 (`oauthPermissionBaseUri`) and a list of permission names (`oauthPermission`),
@@ -2319,7 +2319,7 @@ does) and writing an empty value would record that the client asked for nothing.
 
 Rule 4c. `/oauth2/consent` is the one thing between a signed-in person and an
 issued credential since 2026-09-01, and it is a module of its own for the reason
-`authn/authn.js` is: **the authorization endpoint hands a browser to a screen
+`authn/authn.ts` is: **the authorization endpoint hands a browser to a screen
 somebody else owns and takes it back afterwards**, and the thing that owns the
 screen must not have to know what OAuth is.
 
@@ -2333,7 +2333,7 @@ look like one service. BEFORE, because the authorization endpoint calls
 `returnTo` it is handed and a `consent_error` it hands back.
 
 **THE SCREEN HOLDS THE PENDING RECORDS AND THE REGISTER HOLDS NONE.**
-`common/consent.js` is the model — the value's grammar, what "outstanding"
+`common/consent.ts` is the model — the value's grammar, what "outstanding"
 means, the global override, the register both console halves are read from — and
 it holds no store at all, because both halves of what it knows are attributes in
 the directory. This file holds the one thing that IS state: a `realms.map()` of
@@ -2682,7 +2682,7 @@ otherwise. The capability rows `oauth.codes-once`, `oauth.refresh-rotation` and
 | rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint; bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
 | a revoked family | `oauth.refresh-family-revoked` | `bcp.revokeFamily()`, on every replay (local or claimed) | any member presented later, including one no node listed, `STS-OAUTH-0517` |
 | DPoP proof `jti` | `oauth.dpop-jti` | reserved on arrival by `dpop.proofClaims()`; kept by `verifyProof()` on acceptance, released otherwise | `invalid_dpop_proof`, `STS-OAUTH-0519` |
-| hosted-surface renewal | `oidc_rp.renewal` | `common/oidc_rp.js` `renewOnce()` | does not redeem; waits for the winner's tokens on the session |
+| hosted-surface renewal | `oidc_rp.renewal` | `common/oidc_rp.ts` `renewOnce()` | does not redeem; waits for the winner's tokens on the session |
 
 **AND TWO STORES LEAVE A TOMBSTONE (#46 section 3).** `oauth2.authzCodes` and
 `oauth2_bcp.refreshTokens` are declared `tombstone: true`, so a code or a refresh

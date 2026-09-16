@@ -112,9 +112,9 @@
 // A LIBRARY (rule 3). It registers no route, so its position in the require
 // order is not a position. It requires `helpers` (for `log`), `config`,
 // `crypto` and `error_codes` — none of which requires it back — and it is
-// required by `common/credentials.ts`, `portal/portal.js`,
+// required by `common/credentials.ts`, `portal/portal.ts`,
 // `admin-ui/admin.js`, `admin-ui/crypto_metadata.js` and
-// `admin-core/admin_views.js` (`authn/authn.js` reaches it through
+// `admin-core/admin_views.ts` (`authn/authn.ts` reaches it through
 // `credentials.ts`).
 //
 // ---------------------------------------------------------------------------

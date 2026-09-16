@@ -11,7 +11,7 @@
 // VIEW computes the facts once and both doors render them, an ACTION changes
 // state once and both doors report it. This file is the same arrangement for
 // GNAP, kept beside the protocol rather than added to `admin-core/`'s two large
-// files — for the same reason `xacml/xacml_admin.js` draws its own pages: the
+// files — for the same reason `xacml/xacml_admin.ts` draws its own pages: the
 // knowledge of what a grant IS lives in `gnap/`, and a view in another
 // directory reading this family's stores field by field is a second place for
 // that knowledge to go stale.

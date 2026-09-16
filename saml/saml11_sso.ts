@@ -169,7 +169,7 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `Saml11Sso` takes everything it reads of the rest of the service
-// (the signer, the session and sign-in funnel of `authn/authn.js`, the SAML
+// (the signer, the session and sign-in funnel of `authn/authn.ts`, the SAML
 // 1.1 builder, the 2.0 profile's slug, the registry, the settings, the mode,
 // the cluster claim, the four `saml/` libraries and the logger) through its
 // constructor as `Saml11SsoDeps`, and nothing inside the class requires a

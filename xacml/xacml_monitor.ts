@@ -59,7 +59,7 @@
 //                and the section 7.2 rule are demonstrated on.
 //   `issuance`   `xacml_role_pep.ts`. Nine issuance sites ask it before this
 //                service mints anything, through `common/issuance_gate.js`.
-//   `access`     `xacml_access_pep.ts`. Every surface `common/access_gate.js`
+//   `access`     `xacml_access_pep.ts`. Every surface `common/access_gate.ts`
 //                lists asks it through that gate.
 //   `pdp`        `POST /xacml/pdp` — **NOT A PEP AND NOT COUNTED AS ONE.**
 //                Somebody else's PEP asked this service a question and enforced
@@ -108,7 +108,7 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE MAY NOT REQUIRE THE CONSOLE, AND THE PAGE IS NOT HERE.
 //
-// `xacml_access_pep.ts` fills `common/access_gate.js`'s decider, and that
+// `xacml_access_pep.ts` fills `common/access_gate.ts`'s decider, and that
 // module is required from `common/` — early, and far above `admin-ui/admin.js`
 // at 18. If this file required `admin.js` in order to draw its own page, then
 // the access PEP requiring this file would drag EVERY CONSOLE ROUTE into the
@@ -284,7 +284,7 @@ class XacmlMonitor {
         label: 'The demonstration PEP',
         kind: 'embedded',
         where: 'GET /xacml/protected',
-        module: 'xacml/xacml.js',
+        module: 'xacml/xacml.ts',
         guards: 'One endpoint that exists to be asked. It guards nothing ' +
                 'real — it is the PEP you point a client at to watch a bias ' +
                 'and an obligation do their work.',
@@ -307,7 +307,7 @@ class XacmlMonitor {
         label: 'The issuance PEP',
         kind: 'embedded',
         where: 'common/issuance_gate.js, from nine issuance sites',
-        module: 'xacml/xacml_role_pep.js',
+        module: 'xacml/xacml_role_pep.ts',
         guards: 'Everything this service MINTS: an access token, an ID ' +
                 'token, a refresh token, a SAML 2.0 or 1.1 assertion, a ' +
                 'WS-Federation or WS-Trust token, a Kerberos ticket, a ' +
@@ -323,8 +323,8 @@ class XacmlMonitor {
       { id: 'access',
         label: 'The access PEP',
         kind: 'embedded',
-        where: 'common/access_gate.js, from five gated surfaces',
-        module: 'xacml/xacml_access_pep.js',
+        where: 'common/access_gate.ts, from five gated surfaces',
+        module: 'xacml/xacml_access_pep.ts',
         guards: 'The admin console, the user portal, /scim/v2, the SPIRE ' +
                 'Server API, and /admin-api in product mode.',
         enforces: true,
@@ -339,7 +339,7 @@ class XacmlMonitor {
         label: 'The PDP endpoint',
         kind: 'endpoint',
         where: 'POST /xacml/pdp',
-        module: 'xacml/xacml.js',
+        module: 'xacml/xacml.ts',
         guards: 'NOTHING. Somebody else\'s Policy Enforcement Point asked ' +
                 'this service a question and enforced the answer in their ' +
                 'own process. This service saw the decision and never the ' +

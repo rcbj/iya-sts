@@ -8,7 +8,7 @@ half; this is why it is built the way it is.
 
 **It is one of three enrollment families** — ACME, EST (`est/`) and SCEP
 (`scep/`) — and everything about a certificate that is not a wire format is
-`common/cert_enrollment.js`'s: who may be issued what, what the certificate
+`common/cert_enrollment.ts`'s: who may be issued what, what the certificate
 says, where it is kept and how it is revoked. This directory is forbidden from
 deciding any of that, and `common/CLAUDE.md` is where the core is argued. The
 shared contract the three were built against is recorded in the session that
@@ -283,7 +283,7 @@ as failure patterns.
 * **`acme_console.ts` cannot require `acme.ts` at load**: `acme.ts` requires
   `acme_admin.ts`, which requires the console model, so a require at load hands
   back the half-built exports. The console model reads the URLs lazily.
-* **`acme_admin.ts` may not require `admin-core/admin_views.js`**
+* **`acme_admin.ts` may not require `admin-core/admin_views.ts`**
   (`tests/admin_actions_layer.js` names the files that may), so the console
   session's actor is read through `acme_console.consoleActorOf()`.
 * **The console's POST handler is asynchronous** (a revocation awaits the CA),

@@ -1672,7 +1672,7 @@ Every other attribute on an application entry describes the application it is
 on. `oauthPermissionBaseUri` and `oauthPermission` (on the RESOURCE) and
 `oauthDelegatedPermission` (on the CLIENT) do not: a grant is a fact about two
 entries at once, joined by a string composed from a third attribute on the first
-of them. `common/app_permissions.js` is what reads the two halves together and
+of them. `common/app_permissions.ts` is what reads the two halves together and
 `common/CLAUDE.md` argues the model.
 
 **Nothing about this directory changed to take them.** They are rows in
@@ -1729,7 +1729,7 @@ knowing before touching any of it.
   its own since 2026-09-09, which is
   what a test drives and what somebody locked out of the console reaches for.
 * **THE PAGING AND THE SHORTENING ARE THE CONSOLE'S, NOT THIS FILE'S.**
-  `adminViews.pagedRows()` (`admin-core/admin_views.js` since 2026-09-12),
+  `adminViews.pagedRows()` (`admin-core/admin_views.ts` since 2026-09-12),
   `admin.pageNavPair()`, `admin.perPageOptions()`,
   `admin.clipped()` and `admin.tile()` are the same functions `/admin/tokens`
   and `/admin/applications` use, exported for the reason `page()`, `note()` and
@@ -1770,7 +1770,7 @@ operation answering as though no directory were loaded. See the root
 
 ## `oauthConsent`: the seventh slot, and the one attribute here that records an answer
 
-`common/consent.js` owns the MODEL — the value's grammar, what "outstanding"
+`common/consent.ts` owns the MODEL — the value's grammar, what "outstanding"
 means, the global override, the register both console halves read. This module
 owns the STORE, which is `oauthConsent` on an entry under `ou=users`. That
 division is `group_claims.js`'s and `applications.js`'s: neither file knows the
@@ -1891,7 +1891,7 @@ every reader goes through.
 
 The authenticator app's shared secret, beside `userPassword` and
 `stsWebauthnCredential` on the person's own entry. `readTotp()` and
-`writeTotp()` are the two functions `common/credentials.js` reaches through the
+`writeTotp()` are the two functions `common/credentials.ts` reaches through the
 slot this module fills, and `persons()` beside them is what
 `secondFactorHolders()` walks for the roster on `/admin/users` — which was
 `/admin/mfa` for a few hours on 2026-09-10.
@@ -1918,7 +1918,7 @@ mean an authenticator that silently stopped working.
 ## `stsBackupCodes`: THE SECOND ONE, AND ITS REASON IS NOT ARITHMETIC (2026-09-10)
 
 The recovery codes, on the same entry. `readBackupCodes()` and
-`writeBackupCodes()` are the pair `common/credentials.js` reaches through this
+`writeBackupCodes()` are the pair `common/credentials.ts` reaches through this
 module's slot, and they are shaped exactly like the TOTP pair above:
 **single-valued** — `writeBackupCodes()` ASSIGNS, because a person holds one set
 and never two, and a `null` value deletes, which is what an operator's Clear
@@ -1936,7 +1936,7 @@ difference between them is the thing to keep straight:
   again?** This service says yes, on `/portal/mfa`, because a list shown exactly
   once at the end of an enrolment somebody is rushing through is a list most
   people close without reading — and the moment it matters is months later.
-  `common/backup_codes.js` argues it at length.
+  `common/backup_codes.ts` argues it at length.
 
 That difference matters to a reader of an ENTRY rather than to this module,
 which holds no key and only ever writes whichever of the two forms it was
@@ -1987,7 +1987,7 @@ whole purpose IS the attributes.
 
 **What stops the portal reading something it should not is therefore not the
 shape of this hook — it is the FIXED LIST at the other end.**
-`common/inetorgperson.js` has no `sts`-prefixed name on it and cannot grow one
+`common/inetorgperson.ts` has no `sts`-prefixed name on it and cannot grow one
 by accident, which is why handing over everything is safe here and would not be
 anywhere else.
 
@@ -1998,7 +1998,7 @@ because the value arrays are read and never mutated by anything that draws them.
 
 ### And the class definition is merged into `learnName()` like every other schema
 
-`common/inetorgperson.js` is a fourth independently maintained list of LDAP
+`common/inetorgperson.ts` is a fourth independently maintained list of LDAP
 spellings — `STANDARD_NAMES` is the first, `vc_claims.js`'s catalogue and the
 SCIM mapping the others — and it names most of the same types. Merged rather
 than trusted, so a disagreement between the page a PERSON reads and the page an
@@ -2128,7 +2128,7 @@ mode verified. It reads `credentials.verify()`'s own `reason === 'verified'` now
 `passwordVerified`, and words an ANONYMOUS bind as RFC 4511 section 5.1.1's unauthenticated
 bind — unverified in both modes, which is the specification rather than a permission.
 **`REFUSED_PASSWORD` stays refused in BOTH modes, deliberately**: it can only turn a bind
-that would have been verified into a refusal, never the reverse, and `common/credentials.js`
+that would have been verified into a refusal, never the reverse, and `common/credentials.ts`
 refuses the same literal first at every door.
 
 ## THE SOCKETS
@@ -2146,7 +2146,7 @@ seeded at require time in the mode the process starts in); mutation-tested again
 demo gate forced on.
 
 **THE PROXY PROTOCOL (2026-09-14, #46).** With `global.proxyProtocol` at `v2`,
-`listen()` installs `common/proxy_protocol.js` on `plainServer.server` and
+`listen()` installs `common/proxy_protocol.ts` on `plainServer.server` and
 `secureServer.server` — the `net.Server` and `tls.Server` ldapjs built — before
 each binds, so the header comes off before the first LDAP message and, on 636,
 before the handshake. Nothing in this file reads the address differently: ldapjs's
@@ -2163,7 +2163,7 @@ is still answering.
 
 **A NINTH CONTAINER**, seeded in both modes beside `ou=roles`, holding the
 password policy's profiles — `cn=default` only, and only once somebody saves it.
-`common/password_policy.js` owns the schema and fills nothing here but a slot:
+`common/password_policy.ts` owns the schema and fills nothing here but a slot:
 `allPasswordPolicies`, `writePasswordPolicy` (REPLACES, and puts the container
 back if a restored directory predates it) and `deletePasswordPolicy`. Its
 attribute spellings — both the profile's and the two it maintains on a person —

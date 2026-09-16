@@ -538,7 +538,7 @@ Four things about how it is wired are worth knowing before changing any of it:
   `registerCertifiable()` record at require time and that module acts on it in
   `start()`. A require in the other direction would drag every `/tls` route
   into the router wherever `pki.js` is first required from — which is
-  `common/service_state.js`, above everything.
+  `common/service_state.ts`, above everything.
 * **THE ORDERING IS WHAT MAKES IT WORK.** This module is required at 20 and its
   certificate is built at require time; `pki.start()` runs afterwards and
   BEFORE `server.js`'s `listen()` binds anything. So no client ever sees the
@@ -570,7 +570,7 @@ certificate was self-signed:
 
 | Caller | What it is | What it did instead |
 |---|---|---|
-| `common/oidc_rp.js`'s back channel | how `/admin` and `/portal` redeem an authorization code at `/oauth2/token` | **the admin console could not be signed into** — *Signing in did not complete*, with `the loopback request to /oauth2/token failed: unable to get local issuer certificate` under it |
+| `common/oidc_rp.ts`'s back channel | how `/admin` and `/portal` redeem an authorization code at `/oauth2/token` | **the admin console could not be signed into** — *Signing in did not complete*, with `the loopback request to /oauth2/token failed: unable to get local issuer certificate` under it |
 | `ssf/ssf_http.ts`'s push | delivery to this service's own two Shared Signals receivers | every push to a loopback receiver failed |
 | `tests/tools/trust.js` | the anchor every node-driven job in the protocol suite is handed as `NODE_EXTRA_CA_CERTS` | the suite could not open a connection to the service at all |
 
@@ -926,8 +926,8 @@ form and a Remove button per row; `GET /admin-api/tls/trust` and `POST
 validity and `ca` off OpenSSL (it reads the ML-DSA anchors forge cannot), each anchor
 carries `source` and `addedAt`, and `removeAnchor()` takes ONE fingerprint in either the
 colon or the plain-hex spelling. The vocabulary, the audit row (`admin.truststore.change`)
-and the sentences are `admin-core/admin_actions.js`'s `truststoreAction()`; the reply is
-`admin-core/admin_views.js`'s `truststoreJson()`.
+and the sentences are `admin-core/admin_actions.ts`'s `truststoreAction()`; the reply is
+`admin-core/admin_views.ts`'s `truststoreJson()`.
 
 Four things about it are decisions:
 
@@ -947,7 +947,7 @@ Four things about it are decisions:
   the same day — see* A RUNTIME ANCHOR SURVIVES A RESTART *below.*
 * **THE SLOT IS FILLED BY `common/protocol_stack.js`, NOT BY THIS MODULE, AND THAT IS
   FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.js`'s require —
-  `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.ts` → here — so a
+  `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts` → here — so a
   `require('../admin-ui/admin')` at its top level would be a cycle and would find no
   `setTruststore` on that module's half-built exports. The stack fills it on the line after
   it requires this module, where both are whole. **That load order is itself worth
@@ -997,7 +997,7 @@ refusal removed.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 
-`server.js` installs `common/proxy_protocol.js` on the main port when
+`server.js` installs `common/proxy_protocol.ts` on the main port when
 `global.proxyProtocol` is `v2`; this module's `listen()` installed it on
 `permissiveServer` and `strictServer` until both were deleted on 2026-09-16, and
 installs nothing now. It shadows the server's `connection` emit, so the TLS

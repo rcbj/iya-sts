@@ -350,7 +350,7 @@ let listenError = null;
 // REQUEST WORKER existed. A worker loads this module like everything else, so
 // it made a certificate of its own — and `/admin` and `/portal` are OpenID
 // Connect relying parties that dial this service BACK on a loopback address and
-// PIN its certificate (`common/oidc_rp.js`). So a worker pinned the one it had
+// PIN its certificate (`common/oidc_rp.ts`). So a worker pinned the one it had
 // just made, the front process presented the one IT had made, and the back
 // channel failed TLS verification. The symptom is `TypeError: fetch failed`
 // during a console sign-in, which names nothing.
@@ -916,7 +916,7 @@ const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
 // **IT IS A REGISTRATION AND NOT A CALL, and the ordering is the whole of why
 // it works.** This module is required at 20 and its certificate is built at
 // require time; `pki.start()` runs afterwards, from
-// `common/service_state.js`, and BEFORE `listen()` binds anything. So the
+// `common/service_state.ts`, and BEFORE `listen()` binds anything. So the
 // swap below has already happened by the time a socket exists — nothing is
 // re-keyed under a live listener, and no client ever sees the self-signed one.
 //
@@ -1336,7 +1336,7 @@ function secureContextOptions() {
 //
 // While the certificate above was SELF-SIGNED those were one question with one
 // answer, and three callers in this repository answered it by pinning the leaf:
-// the back channel in `common/oidc_rp.js`, the loopback push in
+// the back channel in `common/oidc_rp.ts`, the loopback push in
 // `ssf/ssf_http.ts`, and the suite's anchor in `tests/tools/trust.js`.
 //
 // The hour the leaf acquired an ISSUER all three broke, and they broke in the
@@ -3488,7 +3488,7 @@ function refuseTruststoreChange(req, res, route) {
 // forwarded from there to the action and view layers in `admin-core/`. This
 // module cannot hand them over itself at require time, and the reason is worth
 // knowing before anybody tries: it is first loaded from INSIDE `admin.js`'s own
-// require — `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.ts`
+// require — `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts`
 // → here — so a `require('../admin-ui/admin')` at this module's top level
 // would be a cycle and would hand back that module's half-built exports, on
 // which `setTruststore` does not exist yet. `common/protocol_stack.js` fills

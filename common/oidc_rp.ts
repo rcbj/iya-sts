@@ -37,7 +37,7 @@
 //
 // The callback routes are registered by the surfaces —
 // `/admin/callback` in `admin-ui/admin.js`, `/portal/callback` in
-// `portal/portal.js`, and (since 2026-09-13) the debugger's `/_sts/callback`
+// `portal/portal.ts`, and (since 2026-09-13) the debugger's `/_sts/callback`
 // on its own listener in `debugger/debugger_server.ts` — and that is
 // deliberate rather than tidy. A route
 // registered HERE would land wherever this file was first required, which is a

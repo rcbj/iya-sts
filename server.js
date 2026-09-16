@@ -132,7 +132,7 @@ const APP_VERSION = version.load();
 // **IT DOES NOT OPEN ANYTHING HERE.** Opening a Postgres pool is asynchronous
 // and a `require` cannot wait, so the store is opened and READ from
 // `persistence.start()` at the foot of this file (through
-// `common/service_state.js`) — before the HTTP listener binds and before the
+// `common/service_state.ts`) — before the HTTP listener binds and before the
 // socket owners start. That makes it one more module whose real work happens
 // outside require time, and the only one that must go FIRST among them: what
 // it restores is what the others are about to serve.
@@ -327,7 +327,7 @@ function announce() {
   // the listener has its own entry there.
   const kdcListeners = krb5.listen();
   // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
-  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.js` into
+  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.ts` into
   // the parent project's Kerberos COPY set (`kerberos/CLAUDE.md`). Installing
   // after `listen()` returned is not a race — `listen()` is synchronous up to
   // the bind, and a `connection` event is delivered from the event loop,
@@ -610,7 +610,7 @@ const proxyProtocol = require('./common/proxy_protocol');
 //
 // The steps — the store, the signing keys, what this process minted,
 // coordination and (since 2026-09-11) the certificate authority — moved to
-// `common/service_state.js` on 2026-09-07, because a REQUEST WORKER has to run
+// `common/service_state.ts` on 2026-09-07, because a REQUEST WORKER has to run
 // exactly the same steps in exactly the same order. Each step's argument is
 // in that file, where it has always been.
 // ---------------------------------------------------------------------------
@@ -897,7 +897,7 @@ if (useHttps) {
   tlsServer.observeConnectionsOn(mainServer,
                                  'the main port (' + PORT + ')');
   // The PROXY protocol header comes off BEFORE the TLS handshake — see
-  // common/proxy_protocol.js. A no-op with global.proxyProtocol off.
+  // common/proxy_protocol.ts. A no-op with global.proxyProtocol off.
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);

@@ -872,7 +872,7 @@ app.use(function (req, res, next) {
 // **AFTER THE CALL LOG ON PURPOSE.** A refusal is exactly the request an
 // operator wants to find afterwards, and the middleware above is what puts a
 // request in `/admin/audit`. Registered ahead of it, every refusal this makes
-// would be invisible — which is the same argument `common/websecurity.js` makes
+// would be invisible — which is the same argument `common/websecurity.ts` makes
 // about a rate-limit lockout nobody can see being a support call with no
 // evidence in it.
 //

@@ -401,7 +401,7 @@ function makeRequestEncryptionKey(made) {
 // THE REFRESH-TOKEN ENCRYPTION KEYS (2026-09-12).
 //
 // Every refresh token this service issues is a signed JWT ENCRYPTED to its own
-// realm — `oauth-oidc/refresh_token_crypto.js` does the sealing and argues it.
+// realm — `oauth-oidc/refresh_token_crypto.ts` does the sealing and argues it.
 // These are the keys, and there are three because JWE key management comes in
 // three kinds and the algorithm is a setting
 // (`oauth2.refreshTokenEncryptionAlg`):
@@ -488,7 +488,7 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
 // RFC 9101 section 6.1 lets a client ENCRYPT its request object to the
 // authorization server, and the key it encrypts to is one this server
 // PUBLISHES — so, unlike the refresh-token keys above, these two are in
-// `/oauth2/jwks`, marked `use: "enc"`. `oauth-oidc/request_object.js` decrypts
+// `/oauth2/jwks`, marked `use: "enc"`. `oauth-oidc/request_object.ts` decrypts
 // with them. An RSA pair for RSA-OAEP and RSA-OAEP-256, an EC pair for ECDH-ES
 // and its key-wrapping variants; the symmetric algorithms are keyed by the
 // client's own secret and need no key here.

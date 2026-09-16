@@ -779,7 +779,7 @@ function edgeLook(edge) {
     return { colour: GREY, dash: '4 3', weight: 1.2 };
   }
   // ---------------------------------------------------------------------------
-  // THE TWO RELATIONS THE PERSON'S PICTURE ADDS (common/user_graph.js), and
+  // THE TWO RELATIONS THE PERSON'S PICTURE ADDS (common/user_graph.ts), and
   // NEITHER OF THEM TAKES A MODE COLOUR. That is the point rather than an
   // omission: amber and green are this file's judgement about impersonation
   // versus delegation, and an ordinary authorization code grant makes no such
@@ -803,7 +803,7 @@ function edgeLook(edge) {
     return { colour: INDIGO, dash: '', weight: 1.6 };
   }
   // ---------------------------------------------------------------------------
-  // THE RELATION THE CONFIGURED PICTURE ADDS (common/app_permissions.js), and
+  // THE RELATION THE CONFIGURED PICTURE ADDS (common/app_permissions.ts), and
   // it is the FIRST line in this renderer that is not about something that
   // happened. Every other look above describes an act: a credential was issued,
   // refused, or carried a chain. A `may-reach` line says a client application
@@ -2102,7 +2102,7 @@ function edgeTitle(edge) {
     // like: a credential was issued and nothing was delegated. `0 act(s): 0
     // issued, 0 refused` was printed here until 2026-08-26 and reads as a
     // delegation that was tried and came to nothing, which is the opposite of
-    // what happened — see common/user_graph.js. The count of credentials is the
+    // what happened — see common/user_graph.ts. The count of credentials is the
     // whole of what such a line has to report.
     parts.push(edge.credentials + ' credential(s) from the issued register, ' +
                'and no delegation act: nothing was exchanged to get them.');

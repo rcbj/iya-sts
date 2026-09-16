@@ -1024,7 +1024,7 @@ class Scim {
   // before it writes, and a BulkRequest's POST operations never pass through
   // it: scimmy applies each straight to the resource, which reaches the ingress
   // handler. So two Bulk creates of one name, one to each node, both answered
-  // 201 with ids — the race `ldap/directory_create_claims.js` closes at every
+  // 201 with ids — the race `ldap/directory_create_claims.ts` closes at every
   // other door. scimmy AWAITS an ingress handler, so the claim is made here,
   // for a create (no `resource.id`) the create handler has not already claimed
   // (`req.__scimCreateClaimed`: claiming a name twice in one request would
@@ -1718,7 +1718,7 @@ class Scim {
       // keep only one of them — so the other client held an id naming nothing.
       // The second is a 409 `uniqueness` now, exactly what it would have been a
       // moment later; a store that cannot be asked is a 500. Inert anywhere a
-      // create cannot race. `ldap/directory_create_claims.js` argues it.
+      // create cannot race. `ldap/directory_create_claims.ts` argues it.
       // -----------------------------------------------------------------------
       const given = (body && typeof body === 'object') ? body : {};
       const held = await directory.claimCreate(type === 'User'

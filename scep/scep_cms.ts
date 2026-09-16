@@ -12,7 +12,7 @@
 // EnvelopedData encrypted to the RA — the pkcsPKIEnvelope — holding a PKCS#10
 // request, an IssuerAndSubject or an IssuerAndSerialNumber. This file turns
 // bytes into those facts and facts back into bytes. **It decides nothing**: who
-// may have a certificate is `common/cert_enrollment.js`'s, what an operation
+// may have a certificate is `common/cert_enrollment.ts`'s, what an operation
 // means is `scep.ts`'s, and which RA key opens an envelope is `scep_ra.ts`'s.
 //
 // **IT IS A LIBRARY (rule 3)** — it registers no route and requires only npm

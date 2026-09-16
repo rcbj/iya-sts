@@ -43,7 +43,7 @@
 //
 // A LIBRARY (rule 3). It requires `persistence.js` LAZILY, inside the calls,
 // because the modules that spend single-use values include leaves such as
-// `oauth-oidc/dpop.js` that must not join a require cycle by requiring it.
+// `oauth-oidc/dpop.ts` that must not join a require cycle by requiring it.
 // ===========================================================================
 
 const bunyan = require('bunyan');

@@ -31,7 +31,7 @@
 // an unauthenticated endpoint can exercise.
 //
 // **IN PRODUCT MODE BASIC VERIFIES THE PASSWORD (2026-09-12)**, through
-// `common/credentials.js` — the one place a presented password is checked, and
+// `common/credentials.ts` — the one place a presented password is checked, and
 // the call `scim/scim_auth.ts` already makes. Until this date this file never
 // asked the mode at all, so a product deployment's SSF endpoints accepted any
 // name with any password and granted both scopes: a stream is an agreement to
@@ -59,7 +59,7 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route. It requires `helpers.js`,
-// `config.js` and `oauth-oidc/dpop.js` — the last for
+// `config.js` and `oauth-oidc/dpop.ts` — the last for
 // `presentedAccessToken()`, which is the ONE access-token check the protected
 // endpoints in this service share and must not be written a second time here.
 // `dpop.js` is itself a library requiring only `helpers.js` and leaves, so

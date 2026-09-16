@@ -8,7 +8,7 @@
 //
 // An operator watched their console session expire an hour after signing in,
 // with its ID Token and access token, and was sent back through the sign-in
-// screen — off the page they were on. `common/oidc_rp.js` now keeps the tokens
+// screen — off the page they were on. `common/oidc_rp.ts` now keeps the tokens
 // a sign-in was issued and, when they run out, redeems the refresh token over
 // the loopback back channel and writes the new tokens onto the SAME session.
 // This job drives both surfaces through a real browser-shaped cookie jar and

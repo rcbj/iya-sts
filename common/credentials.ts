@@ -296,7 +296,7 @@ class Credentials {
   // and all decided nothing, because the state they decide about could not be
   // created. A store with no writer looks exactly like a store nobody uses.
   //
-  // `authn/authn.js` writes here now — its own header carries the argument —
+  // `authn/authn.ts` writes here now — its own header carries the argument —
   // and `tests/vendored/sts_webauthn_second_factor.js` drives a real ceremony
   // and reads the key back out of `GET /admin-api/users`, which is the
   // assertion that would have caught it.
@@ -388,7 +388,7 @@ class Credentials {
   // the observer is called, and nowhere else.
   //
   // **AN INVERTED HOOK, AND RULE 3e's TEST IS PASSED ON A LAYERING CLAUSE AS
-  // WELL AS THE USUAL TWO.** The filler is `kerberos/krb5_person_keys.js`. A
+  // WELL AS THE USUAL TWO.** The filler is `kerberos/krb5_person_keys.ts`. A
   // require from here to it would be `common/` reaching into `kerberos/`, which
   // `common/CLAUDE.md` names as the layering inversion this directory's entry
   // test exists to prevent; it would also drag the principal database and the
@@ -618,7 +618,7 @@ class Credentials {
   //
   // **THE SIGN-IN SCREEN IS THE ONE DOOR THAT CAN ASK FOR A NEW ONE**, so it
   // passes `allowPasswordReset: true`, checks `passwordResetRequired()` itself
-  // and draws the change step (`authn/authn.js`). Every other door that takes a
+  // and draws the change step (`authn/authn.ts`). Every other door that takes a
   // password — an LDAP bind, the OAuth password grant, a WS-Trust
   // UsernameToken, SCIM and EST Basic — has nowhere to put that question, so in
   // product mode a VERIFIED password flagged this way is refused there, and the
@@ -4068,7 +4068,7 @@ class Credentials {
   //
   // The caller passes the ORIGIN and the RP ID because only it knows what the
   // browser was talking to — a realm's base URL carries a path and an origin
-  // never does, which is the mistake `authn/authn.js`'s `originOf()` exists to
+  // never does, which is the mistake `authn/authn.ts`'s `originOf()` exists to
   // stop being made twice.
   // ---------------------------------------------------------------------------
   // **IT ANSWERS A PROMISE SINCE 2026-09-14**: the write claims the credential
@@ -4526,7 +4526,7 @@ class Credentials {
   // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR
   // /admin/users PAGE (2026-09-13).
   //
-  // Five acts, and each is here rather than in `admin-core/admin_actions.js`
+  // Five acts, and each is here rather than in `admin-core/admin_actions.ts`
   // because each is a question about the STORE: what a reset link is, which
   // keys count as a way in, what a second factor is. The action decides who
   // asked and what is said about it (the audit row, the Shared Signals events);

@@ -28,7 +28,7 @@
 // change — and a helpdesk role that MAY read somebody else's account is a
 // perfectly ordinary thing for a real deployment to want.
 //
-// **THE USER OBJECT IS ALREADY AN ATTRIBUTE SOURCE.** `xacml/xacml_pip.js` IS
+// **THE USER OBJECT IS ALREADY AN ATTRIBUTE SOURCE.** `xacml/xacml_pip.ts` IS
 // the embedded directory: a designator in the access-subject category is looked
 // up on that person's own entry. So a policy can be written against anything
 // the entry holds — a department, a title, a group — without this file or any
@@ -36,7 +36,7 @@
 //
 // ---------------------------------------------------------------------------
 // AN EMPTY DECIDER MEANS ALLOW, exactly as it does for issuance, and for the
-// same reason: a process that has not loaded `xacml/xacml.js` is a SMALLER
+// same reason: a process that has not loaded `xacml/xacml.ts` is a SMALLER
 // service rather than a broken one. `npm test`, the parent project's in-process
 // Kerberos jobs and the remote PEP container all run without the XACML family,
 // and a console that refused everybody there would be unusable.
@@ -85,15 +85,15 @@ import errorCodes = require('./error_codes');
 // asks about is a rule somebody can write and never see refuse anything.
 //
 //   admin-console       `admin-ui/admin.js`'s gate, on every page and form
-//   user-portal         `portal/portal.js`'s requireSignIn()
+//   user-portal         `portal/portal.ts`'s requireSignIn()
 //   management-api      `mgmt-api/admin_api.js`'s middleware — for a caller
 //                       with an access token (`adminApi.authRequired`, on by
 //                       default), and for a console session in PRODUCT MODE
 //                       with that setting off; see the asymmetry below
 //   scim                `scim/scim_auth.ts`'s authenticate() funnel
 //   spire-server-api    `spiffe/spiffe_grpc.ts`'s prepareCall()
-//   xacml-pep-api       `xacml/xacml.js`'s pepAccess()
-//   xacml-api           `xacml/xacml.js`'s xacmlAccess()
+//   xacml-pep-api       `xacml/xacml.ts`'s pepAccess()
+//   xacml-api           `xacml/xacml.ts`'s xacmlAccess()
 //   protocol-debugger   `debugger/debugger_access.ts`
 //
 // **THE LAST THREE ARE NOT LIKE THE FIVE ABOVE THEM AND THE DIFFERENCE IS THE
@@ -144,12 +144,12 @@ const RESOURCE = {
   // register, policies, heartbeat — and `POST /xacml/pip`, which asks for this
   // resource too. It is the sixth resource and the FIRST that is not
   // permissive by default — see `requiredRoles` in the request, and
-  // `xacml/xacml.js`'s pepAccess() where it is asked.
+  // `xacml/xacml.ts`'s pepAccess() where it is asked.
   XACML_PEP_API: 'xacml-pep-api',
   // THE XACML SURFACE PROPER: GET /xacml, POST /xacml/pdp, GET
   // /xacml/policies, GET /xacml/protected. The seventh resource and the second
   // that is restricted from the start — it requires `XACML_USER`, which
-  // `xacml/xacml.js` puts in the request.
+  // `xacml/xacml.ts` puts in the request.
   //
   // **A SEPARATE RESOURCE FROM `XACML_PEP_API` AND NOT A WIDENING OF IT**, and
   // the two ids are what make the separation writable: an operator adding a

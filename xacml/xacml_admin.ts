@@ -352,7 +352,7 @@ class XacmlAdmin {
   // It is the pattern this file already uses for `./xacml` (see the editor's
   // POST handler), and here it matters more. Requiring `xacml_role_pep.ts`
   // FILLS `common/issuance_gate.js`'s decider and requiring
-  // `xacml_access_pep.ts` ARMS `common/access_gate.js` — so a top-level require
+  // `xacml_access_pep.ts` ARMS `common/access_gate.ts` — so a top-level require
   // in this file would arm both gates from a CONSOLE module, which is precisely
   // the hazard `admin.js`'s `setRolePreviewer()` slot exists to avoid: a
   // process holding the console and not `xacml/xacml.ts` would gate the whole
@@ -390,7 +390,7 @@ class XacmlAdmin {
         // ALL FIVE, and each asks AFTER its own check rather than instead of
         // it. This sentence said "two of five" for a day and said "all five"
         // wrongly before that, so it names the exception rather than a count.
-        asked: '`common/access_gate.js` — from the admin console, the User ' +
+        asked: '`common/access_gate.ts` — from the admin console, the User ' +
                'Portal, SCIM, the SPIRE Server API, and the management API ' +
                'in PRODUCT MODE (that surface is open in development, so ' +
                'there is no subject to decide about).',

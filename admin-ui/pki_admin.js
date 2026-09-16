@@ -1766,7 +1766,7 @@ async function pkiAction(body) {
   // fifteen fields), and it is what lets a machine driving `/admin-api` do
   // apply-profile, then issue, without keeping its own copy of the form.
   //
-  // The MODEL is `common/pki_authoring.js`. Nothing about a certificate is
+  // The MODEL is `common/pki_authoring.ts`. Nothing about a certificate is
   // decided here.
   // =====================================================================
   if (action === 'apply-profile') {
@@ -1984,7 +1984,7 @@ function signatureOptions(json, keyAlg) {
 // The parent project's *PKI / X.509* page has one pane that is the whole act —
 // key pair, certificate fields, subject DN and twenty-two X.509v3 extensions,
 // all of them inputs to one button — and this is that pane, drawn by a server
-// for a console with no script on it. `common/pki_authoring.js` carries the
+// for a console with no script on it. `common/pki_authoring.ts` carries the
 // model and the argument for the shape; everything here is markup.
 //
 // **IT IS ONE FORM AND THAT IS LOAD-BEARING.** Every field is re-posted by
@@ -4467,7 +4467,7 @@ module.exports = {
   },
   // For `tests/pki_authoring.js` ONLY, and it is worth saying why a renderer
   // is exported at all. The pane's field table is declared in
-  // `common/pki_authoring.js` and DRAWN here, and the two going out of step is
+  // `common/pki_authoring.ts` and DRAWN here, and the two going out of step is
   // the failure this arrangement is most likely to produce: a field parsed and
   // never drawn silently falls to its default on every round trip, and a field
   // drawn and never parsed is a control that does nothing. Neither shows up as

@@ -76,7 +76,7 @@ the package root. **The files did not change; the paths did.**
 | `federation/` | **federation relationships** — the register, the attribute mapping, the four endpoints, and the only outbound request this service makes |
 | `kerberos/` | the KDC, the acceptor, SPNEGO in three layers — the negotiation, the page that explains it, and the sign-in that turns a ticket into a session — and the codec |
 | `ldap/` · `scim/` · `tls/` · `spiffe/` · `oid4vc/` | one family each |
-| `acme/`, `est/`, `scep/` | **CERTIFICATE ENROLLMENT** — ACME (RFC 8555), EST (RFC 7030) and SCEP (RFC 8894), each with its console pages under Protocols and Monitoring and its `/admin-api` operations, all issuing through `common/cert_enrollment.js` |
+| `acme/`, `est/`, `scep/` | **CERTIFICATE ENROLLMENT** — ACME (RFC 8555), EST (RFC 7030) and SCEP (RFC 8894), each with its console pages under Protocols and Monitoring and its `/admin-api` operations, all issuing through `common/cert_enrollment.ts` |
 | `gnap/` | **GNAP** — the grant engine, the resource-owner pages, RFC 9421 HTTP message signatures, the five token formats, the RS-facing endpoints and the two console pages |
 | `persistence/` | **the only place this service writes anything down** — three modes (`memory`, `ldif`, `postgres`) behind one driver interface, and the RFC 2849 codec under the middle one |
 | `admin-ui/` · `mgmt-api/` | the console and the management API |
@@ -326,7 +326,7 @@ makes the balancer the only way in. A trusted address that sends no header is
 closed too (`STS-PROXY-0002`). The one exception is **this host**: loopback, or a
 peer on the node's own address, is served plain, because the console's and the
 portal's OpenID Connect back channel and the Shared Signals push dial the main
-port on loopback without a header. `common/proxy_protocol.js` argues each of
+port on loopback without a header. `common/proxy_protocol.ts` argues each of
 these; the refusals are `STS-PROXY-0001`–`0009` in `docs/error-codes.md`.
 
 ### Configuration
@@ -1355,7 +1355,7 @@ on **`/admin/backup-codes`**, under Protocols.
 Everything else here implements somebody's document and can be checked against
 it; there is no RFC for a recovery code. What every identity provider does
 converges anyway — a handful of random strings, each accepted once — so the
-decisions that are left are this service's own, and `common/backup_codes.js`
+decisions that are left are this service's own, and `common/backup_codes.ts`
 argues each of them.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
@@ -1370,7 +1370,7 @@ Five things about this mechanism do not fit in a cell.
 * **A SET IS ISSUED BY AN ACT AND NOT BY A REQUEST.** There is no control
   anywhere — on `/portal`, on `/admin`, on `/admin-api` — that issues one. The
   two call sites are a confirmed authenticator enrolment and a security key
-  enrolled in the `mfa` role, both in `common/credentials.js`. A recovery
+  enrolled in the `mfa` role, both in `common/credentials.ts`. A recovery
   mechanism a person has to remember to ask for produces exactly the population
   it exists to protect, one person at a time: the ones who did not ask are the
   ones who will need it.
@@ -1416,7 +1416,7 @@ ceremony does is decided by the specification and by the browser*. That is true
 of the CRYPTOGRAPHY and false of the CEREMONY. What a browser does with
 `navigator.credentials.create()` is decided almost entirely by the options the
 relying party hands it, and every one of those was a literal inside a string in
-`authn/authn.js` — so a client author trying to find out what their client does
+`authn/authn.ts` — so a client author trying to find out what their client does
 with `attestation: "none"`, or with a discoverable credential, had no way to ask
 this service for one.
 

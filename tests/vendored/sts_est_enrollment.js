@@ -14,7 +14,7 @@
 // and only then is there anything worth asking `/.well-known/est`.
 //
 // The client is `est_client.js`, written from the RFCs with nothing from `est/`
-// or `common/cert_enrollment.js`, so a certs-only message, a multipart response
+// or `common/cert_enrollment.ts`, so a certs-only message, a multipart response
 // and a csrattrs document are read by a SECOND implementation. CSRs are built
 // with the parent project's vendored `x509.js`, the independent PKI code
 // `sts_user_credentials.js` builds its certificates with.

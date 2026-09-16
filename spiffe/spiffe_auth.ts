@@ -137,7 +137,7 @@ import registry = require('./spiffe_registry');
 // of one DN is two people on /admin/users — and `scim_auth.js` requires it for
 // exactly this. That module knows nothing about SPIFFE, so there is no cycle.
 // **THE ROUTE ORDER IS NOT WHAT IT LOOKS LIKE**: this file is first loaded
-// from inside `admin-ui/admin.js`'s require (`admin-core/admin_views.js` →
+// from inside `admin-ui/admin.js`'s require (`admin-core/admin_views.ts` →
 // here), so THIS line is what first loads `tls/tls_server.js` and registers
 // its `/tls` routes during position 18 rather than 20, as `tls/CLAUDE.md`
 // records.

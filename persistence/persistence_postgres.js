@@ -3539,7 +3539,7 @@ function create(options) {
 //   * `directory.concurrent-writes` — `saveDirectory()` merges each entry with
 //     the row as it is now (`directory_merge.js`) and keeps the first of two
 //     adds; `persistence.js` applies what the store decided; the create doors
-//     claim their names across nodes (`ldap/directory_create_claims.js`).
+//     claim their names across nodes (`ldap/directory_create_claims.ts`).
 // ---------------------------------------------------------------------------
 capabilities.provide('store.no-foreign-deletes');
 capabilities.provide('directory.concurrent-writes');

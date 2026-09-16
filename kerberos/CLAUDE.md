@@ -53,7 +53,7 @@ codec (a byte-identical copy of the parent project's `common/krb5/krb5_spnego.js
 kept honest by `tests/krb5_codec_sync.js` there), and `spnego.js` is this repo's own.
 Do not merge the two — one of them is somebody else's file.
 
-**`spnego_authn.ts` must stay after `spnego.js` AND after `authn/authn.js` in the
+**`spnego_authn.ts` must stay after `spnego.js` AND after `authn/authn.ts` in the
 require order.** It draws with `spnego.js`'s page shell and negotiates through
 `spnego_exchange.js`; and it calls `authn.startSession()`, which is why the
 endpoint is HERE and not in `authn/` — a require the other way would drag the
@@ -108,7 +108,7 @@ Five things about it are load-bearing:
   whether the door is open, which is `krb5.spnegoAuthentication` and is read
   from `config.js` by both. Rule 3e's test is whether a require would close a
   cycle or move a route — here nothing has to point anywhere.
-* **The require goes ONE WAY**: this file requires `authn/authn.js` for
+* **The require goes ONE WAY**: this file requires `authn/authn.ts` for
   `startSession()`, `pendingFor()` and `completeAuthentication()`, and that
   module requires nothing in this directory and must not. `authn.js` is #8,
   ahead of `oauth2.js` which reads the session it owns; a require in the other
@@ -311,7 +311,7 @@ Two halves, and they live where their stores do:
   delegation.
 * **`krb5_principals.js` publishes the POLICY**, as `delegationPolicy()`. It
   owns the two attributes, so it is where what they MEAN is decided;
-  `../admin-core/admin_views.js` requires it and the console renders the
+  `../admin-core/admin_views.ts` requires it and the console renders the
   answer. It reports the pairs from both `msDS-AllowedToDelegateTo` (front end)
   and `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) in ONE list with a
   field
@@ -392,14 +392,14 @@ are believed, so the commit that bumps the `sts/` pin across it needs `COPY
 sts/common/client_address.js ./sts/common/`. It requires only `net`, bunyan and
 `config`, which is already in the closure. `spnego_exchange.js`'s new requires
 of `cluster/cluster_claims.js` and `cluster/cluster_capabilities.js` add nothing:
-`krb5_service.js` already requires both. `common/websecurity.js` now requires
+`krb5_service.js` already requires both. `common/websecurity.ts` now requires
 `cluster/cluster_counters.js`, which is owed only if websecurity is in the
 parent's set (it is reached from `authn.js`, not from the three Kerberos
 modules).
 
 **AND NOT OWED FOR THE PROXY PROTOCOL (2026-09-14, #46), ON PURPOSE.** The
 KDC's TCP listener takes a PROXY protocol v2 header when `global.proxyProtocol`
-is `v2`, and `common/proxy_protocol.js` is installed on it from `server.js`
+is `v2`, and `common/proxy_protocol.ts` is installed on it from `server.js`
 (`proxyProtocol.install(kdcListeners.tcp, …)` right after `krb5.listen()`)
 rather than from `krb5_kdc.js`, so the closure gains nothing. That is not a race:
 `listen()` returns before any `connection` event can be delivered. `startTcp()`
@@ -776,7 +776,7 @@ directory's count above is sixteen files now.
 
 **THE PROBLEM WAS STRUCTURAL.** A person's password is a scrypt hash on their entry, and
 RFC 3961 string-to-key needs the plaintext. So the keys are derived at the two moments
-`common/credentials.js` holds one — a password SET, and a password VERIFIED — and stored,
+`common/credentials.ts` holds one — a password SET, and a password VERIFIED — and stored,
 SEALED, on the person's own entry: `stsKrb5Keys` (one value: name, realm, kvno, salt, a
 stamp of the password hash, and every enctype's key) and `stsKrb5KeyInfo` (the public
 half). Six things about it are decisions:
@@ -820,12 +820,12 @@ half). Six things about it are decisions:
   lookup, and `krbtgt/*` is never asked.
 
 **THE SLOTS, AND RULE 3e.** `krb5_principals.js` offers `setKeySource()` and this module
-fills it; `common/credentials.js` offers `setPasswordObserver()` and this module fills it;
+fills it; `common/credentials.ts` offers `setPasswordObserver()` and this module fills it;
 this module offers `setDirectory()` and `ldap/ldap_server.js` fills it. A require from the
 principal database to the register would close a cycle (the register requires it) and move
 every `/ldap` route (the register reads the directory) — and, the reason that is particular to
-this directory, **it would put `common/credentials.js`, `common/keystore.js` and the
-directory into the parent project's COPY set**. A require from `common/credentials.js` would
+this directory, **it would put `common/credentials.ts`, `common/keystore.js` and the
+directory into the parent project's COPY set**. A require from `common/credentials.ts` would
 be `common/` reaching into `kerberos/`, the layering inversion `common/CLAUDE.md` exists to
 prevent.
 

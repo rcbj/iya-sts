@@ -41,7 +41,7 @@
 // WHERE IT RUNS. `persistence.js` calls `gate()` the moment the store is open
 // and BEFORE the keystore, the minted journal, the used-assertion history or a
 // single restored row are touched — so an active-passive standby has nothing
-// armed that could write. `common/service_state.js` calls `agree()` once the
+// armed that could write. `common/service_state.ts` calls `agree()` once the
 // keystore is open, because the fingerprint is keyed by the key-encryption key.
 //
 // A LIBRARY (rule 3): no route. It requires config, mode, the capability table,

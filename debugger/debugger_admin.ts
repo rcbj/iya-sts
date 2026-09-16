@@ -25,7 +25,7 @@
 // requires `tls/tls_server.js`, which registers `/tls` routes and is at 20, so
 // the require would drag those ahead of the management API's (rule 1). The
 // status is read inside the view instead, when every module is loaded — the
-// arrangement `common/oidc_rp.js` makes with the same module.
+// arrangement `common/oidc_rp.ts` makes with the same module.
 //
 // The page and the operation are pinned to the front process
 // (`common/request_pool.js`'s NEVER_DISPATCHED): only it holds the listener

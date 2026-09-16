@@ -217,7 +217,7 @@ they live rather than here:
   same way and will not be caught by anything this file does.
 
 And one that is a whole specification: **OpenID Connect Front-Channel Logout
-1.0**, in `oauth-oidc/frontchannel_logout.js`. See `oauth-oidc/CLAUDE.md`.
+1.0**, in `oauth-oidc/frontchannel_logout.ts`. See `oauth-oidc/CLAUDE.md`.
 
 **SPIFFE is deliberately absent from `FAMILIES` and that is an answer rather
 than a gap.** A SPIFFE identity is a WORKLOAD, attested per call and holding no

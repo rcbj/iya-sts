@@ -5,7 +5,7 @@ browser-side explorer.
 
 | File | What it is |
 |---|---|
-| `admin_api.js` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.js`; every one that READS calls a view in `../admin-core/admin_views.js`, bar the four console-structure functions still on `../admin-ui/admin.js` (table below). **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
+| `admin_api.js` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.ts`; every one that READS calls a view in `../admin-core/admin_views.ts`, bar the four console-structure functions still on `../admin-ui/admin.js` (table below). **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
 | `admin_api_spec.js` | The OpenAPI document, GENERATED from that table. |
 | `admin_api_docs.js` | The explorer's stylesheet, its script (read off disk) and the body `admin-ui/api_explorer.js` draws inside the console. It registers no route; it served `/admin-api/docs` until 2026-09-09. |
 | `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.js` and served verbatim. Its own header says so at length. |
@@ -52,8 +52,8 @@ about that line had to change.
      input, and every GET calls the same JSON view the page's `?format=json`
      answers. Those views became functions (`metricsJson`, `tokensView`,
      `claimsJson`, `samlAttributesJson`, `vcJson`, `vpConfigJson` and the
-     rest — in `admin.js` first, in `admin-core/admin_views.js` since
-     2026-09-12, and the actions in `admin-core/admin_actions.js`) for exactly
+     rest — in `admin.js` first, in `admin-core/admin_views.ts` since
+     2026-09-12, and the actions in `admin-core/admin_actions.ts`) for exactly
      this reason: they used to be built
      inline in the route handlers, which was fine while there was one caller. So
      adding an action to a console switch is most of adding it here, and what
@@ -88,7 +88,7 @@ about that line had to change.
    One consequence for the console side USED to be that `usersView()` and
    `groupsView()` built the HTML as well as the JSON and `/admin-api` threw the
    markup away. Since 2026-09-12 this API calls `adminViews.usersJson()` and
-   `adminViews.groupsJson()`, which build no markup; `admin-core/admin_views.js`
+   `adminViews.groupsJson()`, which build no markup; `admin-core/admin_views.ts`
    (the header of `usersJson()`) records how the page and the resource were
    kept from disagreeing when the two came apart.
 
@@ -97,7 +97,7 @@ about that line had to change.
 ## THE DECISIONS MOVED OUT OF THE CONSOLE ON 2026-09-12, AND THIS FILE SAID THEY WERE THERE
 
 Every operation here that CHANGES something used to call a function on
-`admin-ui/admin.js`. They call `admin-core/admin_actions.js` now, and this file
+`admin-ui/admin.js`. They call `admin-core/admin_actions.ts` now, and this file
 requires both modules for two different reasons.
 
 **What was wrong with the old arrangement was not the enforcement, it was the
@@ -112,7 +112,7 @@ the thirty-one touched `req`, `res` or markup: each took a parsed body and an
 actor and returned `{ ok, errors, … }`. `admin-core/CLAUDE.md` argues the
 split, including why `respondToAction()` and `listField()` stayed behind.
 
-**THE READ HALF FOLLOWED THE SAME DAY**, into `admin-core/admin_views.js`:
+**THE READ HALF FOLLOWED THE SAME DAY**, into `admin-core/admin_views.ts`:
 thirty-eight functions that answer a question and build no markup. Forty-four
 call sites here were repointed at it.
 
@@ -216,7 +216,7 @@ left out of it reads as a control that reaches nothing. `/admin-api/xacml/{actio
 has named three since it was written; this is the second resource to need it.
 
 **IT ALSO CLOSED AN OPERATION THIS SERVICE HAD BEEN DOCUMENTING AND NOT
-SERVING.** `common/credentials.js` names `POST /admin-api/users/set-password`
+SERVING.** `common/credentials.ts` names `POST /admin-api/users/set-password`
 twice — in the sentence a refused sign-in gets, and in the banner the
 product-mode bootstrap prints telling an operator to change the generated
 password — and no such operation existed. Somebody following either instruction
@@ -256,7 +256,7 @@ this file's document and in the console's markup and kept in step by hand.
 **`createApplication`'s `fields` MEMBER IS WHERE THAT LIST IS SPENT.** A create
 takes the per-protocol identifiers and the redirect URIs as an object keyed by
 attribute name — the console's form posts one flat `field.<attribute>` per box
-and `applicationFieldsFrom()` in `admin-core/admin_actions.js` folds both
+and `applicationFieldsFrom()` in `admin-core/admin_actions.ts` folds both
 spellings into the same
 object, which is `listField()`'s arrangement for the checkbox column one field
 up. A derived attribute is REFUSED by name rather than written, and so is a
@@ -391,7 +391,7 @@ paragraph above said "three" with them. On a resource whose whole claim is that
 it refuses anything outside its own list BY NAME, that is the worst place for a
 second copy to go stale: a caller reading the document is refused for following
 it, and a caller reading the refusal finds settings the document never mentioned.
-`admin-core/admin_actions.js` exports `tokenLifetimeKeys()` and
+`admin-core/admin_actions.ts` exports `tokenLifetimeKeys()` and
 `samlAssertionKeys()` — the same
 arrays the refusals are built from — and `narrowDoorProperties()` here turns
 either into `properties`, taking each type from `config.js`'s own row. A row
@@ -1082,7 +1082,7 @@ will then say so.
 
 `GET /admin-api/roles/preview` is the one worth reading the code for. **It is
 the SAME call the nine issuance sites make** — `common/issuance_gate.check()`,
-through `xacml/xacml_role_pep.js`, against the policy `xacml.issuancePolicy`
+through `xacml/xacml_role_pep.ts`, against the policy `xacml.issuancePolicy`
 names — so a preview that agreed with the enforcement only by coincidence is
 impossible. That is the only reason it is worth having, and it is why the
 answer arrives through `admin.js`'s ELEVENTH SLOT rather than through anything
@@ -1118,7 +1118,7 @@ different route, and the way back if a policy edit locks something out.
 ## THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS GATED AT ALL (2026-09-06)
 
 The product-mode middleware asks the two console roles and then, for a caller
-that holds one, asks `common/access_gate.js`. Three things about that.
+that holds one, asks `common/access_gate.ts`. Three things about that.
 
 **IT IS THE LAYER ABOVE AND NOT A REPLACEMENT.** `admin.gateStateFor()` is still
 the one answer to *who may administer this service* — asking it rather than
@@ -1232,7 +1232,7 @@ and asserts a read-only token is refused the write.
 rotate-service,delete-service,clear-person-keys}`, mirroring
 `/admin/kerberos/principals` through `adminViews.kerberosPrincipalsJson()` and
 `adminActions.kerberosPrincipalsAction()`, which require
-`kerberos/krb5_person_keys.js` in the ordinary direction — it registers no route,
+`kerberos/krb5_person_keys.ts` in the ordinary direction — it registers no route,
 so neither a cycle nor a route move is possible and no slot was added (and no
 forwarded collaborator, so `tests/admin_actions_layer.js` did not change).
 
@@ -1329,7 +1329,7 @@ NOT get.
 
 | Operation | What it is |
 |---|---|
-| `GET /admin-api/backup-codes` | the four `backupCodes.*` settings, with the MECHANISM in `status`, read from `common/backup_codes.js` |
+| `GET /admin-api/backup-codes` | the four `backupCodes.*` settings, with the MECHANISM in `status`, read from `common/backup_codes.ts` |
 | `POST /admin-api/users/clear-backup-codes` | deletes a person's set, which re-arms the automatic issue |
 
 **THERE IS NO OPERATION THAT ISSUES A SET AND THERE WILL NOT BE**, for the same
@@ -1424,7 +1424,7 @@ READS `DPoP` TOO* above.
 `POST /admin-api/applications/issue-software-statement` mirrors the *Issue a
 statement* control in the Software statements section of an application's
 console page (rule 7, same change). It calls `applicationsAction()`, which calls
-`oauth-oidc/software_statement.js`'s `issue()`; the reply carries the statement,
+`oauth-oidc/software_statement.ts`'s `issue()`; the reply carries the statement,
 which is not a secret. **The issuer comes from the ROUTE'S context** — both
 doors add `base: baseUrlOf(req)` beside `authorizationServers` — and never from
 the body, because a registration must match the issuer at the address it
@@ -1440,7 +1440,7 @@ One operation, two shapes, `?certificate=` deciding which — the arrangement
 `/permissions/groups` argues. Without it: every certificate this realm holds,
 one row per certificate with every place it appears, paged and filterable by
 `q`. With it: that certificate's every field and its trust chain, from
-`admin-core/certificate_views.js`, the same function the dialog on `/admin/pki`
+`admin-core/certificate_views.ts`, the same function the dialog on `/admin/pki`
 and `/admin/crypto-metadata` is drawn from. **No POST**: the dialog is a view
 and has no control.
 
@@ -1459,7 +1459,7 @@ door of a certificate a throwaway realm holds.
 rows carry `pqc` — `null` for a classical key, otherwise `{ kind, algorithm,
 label, family, standard }` with `kind` one of `pq`, `composite`, `kem` or
 `hybrid` — which is the answer the post-quantum icon on `/admin/keys` and
-`/admin/pki` is drawn from (`common/pqc_support.js`). It is in `KeyList`'s
+`/admin/pki` is drawn from (`common/pqc_support.ts`). It is in `KeyList`'s
 schema. No operation was added: the icon is a view of data both resources
 already carried. `sts_admin_api_operations.js`'s
 `theKeyListMarksPostQuantumKeys()` asserts every signing-key row's kind.
@@ -1508,7 +1508,7 @@ mirrors the **Issue certificate** control on `/admin/xacml/peps` through the
 same `pepAction()` — rule 7 in the ordinary way. Three things about it:
 
 * **`/xacml/:action` SETTLES A PROMISE NOW.** This action answers one and the
-  other XACML actions answer a result, so `admin-core/admin_actions.js`'s
+  other XACML actions answer a result, so `admin-core/admin_actions.ts`'s
   `xacmlAction()` converts either and the handler here `Promise.resolve()`s it,
   turning a rejection into a 500 naming the message. It is the third action
   handler here that awaits, after `/ssf/:action` and `/pki/:action`.
@@ -1527,7 +1527,7 @@ same `pepAction()` — rule 7 in the ordinary way. Three things about it:
 Every Protocols console page lists its realm's endpoints, and rule 7 asks the
 operation mirroring it to answer the same. **No handler changed.** The
 registration loop wraps a GET whose `mirrors` is exactly `GET /admin/<page>`
-for a page in `admin-core/protocol_endpoints.js`'s table, putting the rows on
+for a page in `admin-core/protocol_endpoints.ts`'s table, putting the rows on
 `res.locals`; `sendJson()` adds them as `protocolEndpoints` to a 200 whose body
 is a plain object. A `mirrors` naming two pages is a mirror of neither and gets
 nothing — the one whose `mirrors` reads `GET /admin/pki and GET

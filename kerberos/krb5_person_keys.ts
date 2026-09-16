@@ -10,7 +10,7 @@
 // structural rather than an omission. Development keys every user from ONE
 // shared password (`krb5.userPassword`) and creates accounts on demand; product
 // mode turns both off, and what it has instead is a person's REAL password —
-// stored as a scrypt hash on their directory entry by `common/credentials.js`.
+// stored as a scrypt hash on their directory entry by `common/credentials.ts`.
 // A Kerberos key is RFC 3961's string-to-key over the PLAINTEXT and a salt, and
 // no key can be derived from a hash. So there were no keys, and there was no
 // account a person could use.
@@ -1703,7 +1703,7 @@ class Krb5PersonKeys {
     if (typeof credentials.setPasswordObserver === 'function') {
       credentials.setPasswordObserver(this.observePassword.bind(this));
     } else {
-      log.warn('krb5-keys: common/credentials.js offers no ' +
+      log.warn('krb5-keys: common/credentials.ts offers no ' +
                'setPasswordObserver(), so no person will get Kerberos keys ' +
                'from a password. That is the older credential store and is ' +
                'not an error.');

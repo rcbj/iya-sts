@@ -834,7 +834,7 @@ class Logout {
           // the sentence says so: the instruction committed with this sign-out,
           // and that node closes the socket when it applies the change log —
           // after this answer, which does not wait for it. See
-          // ldap/ldap_cluster_connections.js.
+          // ldap/ldap_cluster_connections.ts.
           if (dropped.length && dropped[0].remote) {
             return { ok: true, pending: true,
               message: 'the directory connection ' + r.handle + ' bound as ' +

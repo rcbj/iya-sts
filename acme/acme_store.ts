@@ -22,7 +22,7 @@
 //   * **an in-place edit is re-set** — the journal sees `set` and `delete`,
 //     so every mutation goes through a `save*()` here;
 //   * **a row is small.** A certificate's PEM is NOT copied here: it is on the
-//     directory entry the certificate names (`common/cert_enrollment.js`
+//     directory entry the certificate names (`common/cert_enrollment.ts`
 //     writes it there), and the index keeps the serial and the entry so the
 //     download reads the one copy.
 //

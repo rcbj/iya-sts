@@ -23,7 +23,7 @@ CAEP/RISC for GNAP web applications. Asked, rcbj decided:
 | CAEP / RISC | **GNAP sessions emit CAEP**, **GNAP web apps are scoped receivers**, **grant revocation emits CAEP** — and explicitly NOT "signals revoke grants" |
 | Where the tests live | **owned here**: `tests/*.js` in process, plus `tests/vendored/` `local: true` jobs with an independent client |
 
-Later in the same session: remembered approvals are stored in `common/consent.js`
+Later in the same session: remembered approvals are stored in `common/consent.ts`
 as **digest tokens** (`gnap:<22 chars of base64url SHA-256 over the canonical
 JSON of one access right>`) — rcbj approved that shape — and **every GNAP
 endpoint validates its body against a JSON Schema and sanitises it**.

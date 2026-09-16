@@ -47,7 +47,7 @@ record crossing a directory boundary for no gain.
 
 **It OWNS THE SESSION.** `ws-federation/wsfed.ts`, `saml/saml2_sso.ts` and
 `admin-ui/admin.js` take it from here through the exported `startSession` /
-`sessionOf` / `endSession`, and `oauth-oidc/oauth2.js` reads the session and
+`sessionOf` / `endSession`, and `oauth-oidc/oauth2.ts` reads the session and
 never writes one. Do not give any other module a session store to "decouple" it:
 two stores would each look correct alone and never see each other, and the
 symptom is a sign-on that silently is not single.
@@ -93,7 +93,7 @@ in* has a session and is not an authenticated identity.
   why they share one mechanism and shared one defect.
 * **STEP-UP** is the one kind that RAISES `acr`: RFC 9470, where a resource
   server's `insufficient_user_authentication` sends the client back for a
-  stronger method (`oauth-oidc/step_up.js`). The levels are ordered `0` < `1`
+  stronger method (`oauth-oidc/step_up.ts`). The levels are ordered `0` < `1`
   < `mfa`. An elapsed `max_age` usually leaves `acr` where it was and moves
   only `auth_time`. `prompt=login` and `ForceAuthn` can LOWER it, which is a
   **step-down**.
@@ -179,7 +179,7 @@ contract:
   `common/request_pool.js` binds worker affinity to the sid part.
 * **`assurance-level-change`**, from `ssf/caep.ts` on a `reauthenticated`
   notice whose `acr` moved, on the private `urn:sts:acr` scale with
-  `change_direction` from `oauth-oidc/step_up.js`'s ordering. It is in
+  `change_direction` from `oauth-oidc/step_up.ts`'s ordering. It is in
   `caep.autoEmitTypes`' default; a deployment that pinned the old list emits
   nothing for it.
 
@@ -438,7 +438,7 @@ Four things about that are load-bearing:
 
 `webauthnCredentials` was a `realms.map({ persist: 'authn.webauthnCredentials' })`
 holding ONE key per person. It survived a restart and it was still the wrong
-store, because **`common/credentials.js` already held the security keys** — on
+store, because **`common/credentials.ts` already held the security keys** — on
 the person's own directory entry, multi-valued, each carrying the ROLE it was
 enrolled in. That is the store `mechanismsFor()` reads, and `mechanismsFor()` is
 what `/portal/keys`, `/admin/users`, `removeKey()`'s last-way-in refusal and
@@ -537,7 +537,7 @@ signing out has nothing to do with whether a receiver is up.
 | Where | Kind |
 |---|---|
 | `startSession()`, last, after the cookie and the audit row | `established` |
-| `oauth-oidc/oauth2.js`'s authorization endpoint, through `notePresented()` | `presented` |
+| `oauth-oidc/oauth2.ts`'s authorization endpoint, through `notePresented()` | `presented` |
 | `dropSession()`, after the delete and before the audit row | `revoked` |
 
 Two more have been added since the table was written: `reauthenticateSession()`
@@ -603,7 +603,7 @@ Four things about a relying-party session:
   `startRelyingPartySession()` keeps the tokens on the session (`rpTokens`) and,
   where there is a refresh token, sets `expires` to the end of the RENEWAL
   WINDOW — the refresh token's lifetime from the sign-in — rather than to the
-  parent's. `common/oidc_rp.js`'s `renewIfDue()` redeems the refresh token when
+  parent's. `common/oidc_rp.ts`'s `renewIfDue()` redeems the refresh token when
   the ID Token and access token run out and `renewRelyingPartySession()` writes
   the new ones onto THE SAME RECORD: same id, same cookie, same `authTime`, no
   `session.start`, no authentication, no CAEP event — one `session.renew` audit
@@ -635,7 +635,7 @@ looks the parent up where it lives, and `dropSession()`'s cascade walks the
 default partition as well as the parent's own — without which a sign-out ends
 the sign-on session and leaves the console session it issued working, which is
 the defect that cascade exists to prevent. `tests/cross_surface_sso.js` pins all
-of it in process and `common/oidc_rp.js`'s surface table argues the split.
+of it in process and `common/oidc_rp.ts`'s surface table argues the split.
 
 ## `clearSessionCookie()` TAKES A NAME AND APPENDS (2026-09-06)
 
@@ -958,8 +958,8 @@ work" would answer differently the first time one of them learned a fifth.
 
 ## THE SECOND SECOND FACTOR, AND THE DAY `mfaRequired` STARTED MEANING SOMETHING (2026-09-10)
 
-RFC 6238 one-time codes. `/authn/totp` is the screen, `common/totp.js` is the
-mechanism and `common/credentials.js` holds the enrolment; this file's part is
+RFC 6238 one-time codes. `/authn/totp` is the screen, `common/totp.ts` is the
+mechanism and `common/credentials.ts` holds the enrolment; this file's part is
 the two things a sign-in has to decide — **whether a second factor is demanded,
 and which one**.
 
@@ -1029,7 +1029,7 @@ arriving through a different door.
 
 ### The code is checked for real, and this screen is the second SPNEGO
 
-`common/totp.js`'s header carries the argument at length and it is the one
+`common/totp.ts`'s header carries the argument at length and it is the one
 `kerberos/CLAUDE.md` already makes: Kerberos cannot be permissive because the
 password there IS the key, and RFC 6238 cannot be permissive because the code
 IS the comparison. A verifier that accepted any six digits would leave no
@@ -1379,7 +1379,7 @@ a service that has lost it, and a hand-made GET must not produce one.
 `POST /authn/totp` treats a failed counter write as a warning: the
 authentication succeeded and the worst case is a replay inside ninety seconds.
 Here a failed spend refuses the sign-in, because a recovery code that cannot be
-marked spent is a permanent credential. `common/credentials.js` carries the
+marked spent is a permanent credential. `common/credentials.ts` carries the
 argument and `verifyBackupCode()` is where it is enforced, so this endpoint has
 no branch of its own for it.
 
@@ -1442,7 +1442,7 @@ Four things are load-bearing:
   session they are using. An ARRIVAL session is exempt: it has an inactivity
   window of its own on the screen's clock.
 
-`common/oidc_rp.js`'s flow lifetime reads `authn.pendingTtlS` as well — the two
+`common/oidc_rp.ts`'s flow lifetime reads `authn.pendingTtlS` as well — the two
 were "deliberately the same" as two literals, which is how two numbers come
 apart. `tests/session_clocks.js` pins all of it, mutation-tested against ten.
 
@@ -1475,7 +1475,7 @@ different origins. `tests/webauthn_addresses.js` pins it.
 **`pwdReset: TRUE` on a person's entry means the password must be changed
 before it can be used.** The attribute comes from
 draft-behera-ldap-password-policy, and the bootstrap administrator is its first
-writer (`admin-ui/CLAUDE.md`, 8a). `common/credentials.js` reads and writes it
+writer (`admin-ui/CLAUDE.md`, 8a). `common/credentials.ts` reads and writes it
 through two functions on the directory's credentials slot:
 `passwordResetRequired()` and `setPasswordResetRequired()`.
 

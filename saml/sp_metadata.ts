@@ -12,7 +12,7 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY. It registers no route (rule 3), and it is required by
-// `admin-core/admin_actions.js` for the refresh action and by `saml2_sso.ts`
+// `admin-core/admin_actions.ts` for the refresh action and by `saml2_sso.ts`
 // for the parse. It requires `common/` libraries (`helpers`, `config`,
 // `applications`, `audit`, `error_codes`, `version`) and
 // `federation/federation_http.ts`, none of which requires it, so it closes no

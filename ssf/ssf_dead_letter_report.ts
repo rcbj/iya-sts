@@ -56,7 +56,7 @@
 // through its constructor. The sweep notes stay a module-level
 // `realms.keyed()` store, declared at load as before. The module still
 // exports its old names from a TRANSITIONAL instance for `ssf/ssf.ts`,
-// `admin-core/admin_views.js` and the tests.
+// `admin-core/admin_views.ts` and the tests.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -400,7 +400,7 @@ class DeadLetterReport {
   // different moments.
   //
   // `letters` is every held letter, newest first, without its token; the
-  // caller filters and pages it (`admin-core/admin_views.js`).
+  // caller filters and pages it (`admin-core/admin_views.ts`).
   // `options.nowMs` is for tests.
   // -------------------------------------------------------------------------
   report(options?: { nowMs?: number } | null): any {

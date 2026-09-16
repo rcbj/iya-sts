@@ -204,7 +204,7 @@ function advance(opts) {
 // — the number the caller decides on, and the same number whichever node
 // asked.
 //
-// **THERE IS NO MEMORY FALLBACK HERE, DELIBERATELY.** `common/websecurity.js`
+// **THERE IS NO MEMORY FALLBACK HERE, DELIBERATELY.** `common/websecurity.ts`
 // already has one — its own buckets, exactly as they were — and it asks
 // `sharesWindows()` before it asks anything else, so a store that cannot share
 // leaves the limiter byte-for-byte what it was. A second in-memory window in

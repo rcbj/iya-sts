@@ -69,8 +69,8 @@
 // WHERE IT SITS IN THE REQUIRE ORDER, WHICH IS A DEPENDENCY AND NOT A
 // PREFERENCE.
 //
-// **After `oauth-oidc/oauth2.js`**, transitively: `ssf_auth.ts` requires
-// `oauth-oidc/dpop.js` for `presentedAccessToken()`, and although that module
+// **After `oauth-oidc/oauth2.ts`**, transitively: `ssf_auth.ts` requires
+// `oauth-oidc/dpop.ts` for `presentedAccessToken()`, and although that module
 // registers no route it is loaded by oauth2.js anyway — requiring it first
 // from here would be harmless, and requiring it first is not what decides the
 // line. **After `admin-ui/admin.js`**, which is what does: the console page

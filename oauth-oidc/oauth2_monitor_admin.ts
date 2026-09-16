@@ -29,7 +29,7 @@
 // requires `admin-ui/admin` for the shell — a require the other way would
 // close a cycle — and `oauth2_monitor_console.ts`, which requires
 // `oauth-oidc/par.ts`, `oauth-oidc/oauth2_monitor.ts`, `oauth-oidc/step_up.ts`
-// and `admin-core/admin_views.js`, libraries already loaded by that line.
+// and `admin-core/admin_views.ts`, libraries already loaded by that line.
 // `oauth2.ts` at 9 cannot require it: that would drag the whole console in
 // front of the authorization server.
 //

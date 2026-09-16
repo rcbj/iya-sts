@@ -284,7 +284,7 @@ const ANONYMOUS_USERNAME = 'anonymous';
 
 // How long an interrupted request waits at the screen before it has to be
 // started again. `authn.pendingTtlS` since 2026-09-12 — this is its default,
-// and `common/oidc_rp.js`'s flow reads the same setting, because the two were
+// and `common/oidc_rp.ts`'s flow reads the same setting, because the two were
 // "deliberately the same" as two literals.
 const AUTHN_TTL_MS = 10 * 60 * 1000;
 
@@ -376,7 +376,7 @@ import totp = require('../common/totp');
 //
 // `realms.map({ persist: 'authn.webauthnCredentials' })`, keyed by username,
 // holding ONE credential each. It survived a restart and it was still wrong,
-// because **`common/credentials.js` already held the security keys** — on the
+// because **`common/credentials.ts` already held the security keys** — on the
 // person's own directory entry, multi-valued, each with the ROLE it was
 // enrolled in (`primary` or `mfa`). That is the store `mechanismsFor()` reads,
 // which is the store `/portal/keys`, `/admin/users`, the sign-in screen's
@@ -399,7 +399,7 @@ import totp = require('../common/totp');
 //     activation link, said "your account is ready" and enrolled nothing.
 //
 // So this module keeps NO credential store of its own. It reads and writes
-// `common/credentials.js`, which is rule 3m applied where it was being broken:
+// `common/credentials.ts`, which is rule 3m applied where it was being broken:
 // one answer to *what can this person sign in with*, and the wrong half is no
 // longer whichever surface a reader happened to open.
 // mfa id -> { authn, username, challenge, passwordless, expires }
@@ -883,7 +883,7 @@ const TOTP_FORM = vz.object({
   mfa_id: vt.opt(vt.base64url),
   // A STRING AND NOT AN INTEGER, deliberately. A code is `007123` and a number
   // is 7123; parsing it as an integer here would lose the leading zeros that
-  // one code in ten has, and `common/totp.js` refuses anything that is not
+  // one code in ten has, and `common/totp.ts` refuses anything that is not
   // exactly the enrolled number of digits — so the shape check belongs where
   // the digit count is known and not in this schema.
   code: vz.string().max(32).optional(),
@@ -898,7 +898,7 @@ const BACKUP_CODE_FORM = vz.object({
   mfa_id: vt.opt(vt.base64url),
   // A STRING WITH A GENEROUS BOUND, and no shape check here. A recovery code
   // is letters, digits, dashes and whatever spaces somebody typed reading it
-  // off paper, and `common/backup_codes.js` is where the alphabet lives —
+  // off paper, and `common/backup_codes.ts` is where the alphabet lives —
   // which is where the refusal belongs, because that is the module that knows
   // what a code is made of. A schema that spelled the alphabet a second time
   // would be the second place to edit when it changes.
@@ -1557,7 +1557,7 @@ class Authn {
   // RELYING PARTIES of this service's own authorization server: an
   // unauthenticated request is sent through `/oauth2/authorize`, comes back to
   // a registered redirect URI with a code, and the ID Token that code buys is
-  // what establishes the session they read. `common/oidc_rp.js` runs that flow
+  // what establishes the session they read. `common/oidc_rp.ts` runs that flow
   // and this is where the session it produces lives.
   //
   // **THERE ARE NOW TWO KINDS OF BROWSER SESSION AND KEEPING THEM APART IS THE
@@ -1618,7 +1618,7 @@ class Authn {
   //
   // The default realm is the only other partition looked in, because the
   // console is the only surface whose session realm differs from its flow realm
-  // — see `common/oidc_rp.js`'s surface table. A THIRD such surface would have
+  // — see `common/oidc_rp.ts`'s surface table. A THIRD such surface would have
   // to widen this, and the honest way to do that is another named partition
   // here rather than a walk over every realm: `realms.list()` is unbounded and
   // this runs on every sign-out.
@@ -1695,7 +1695,7 @@ class Authn {
     // WHERE THIS SESSION LIVES AND WHERE ITS PARENT LIVES ARE TWO ANSWERS
     // (2026-09-11). The admin console's session is in the default realm's
     // partition and its sign-on session is in whichever realm the code flow ran
-    // in — see `common/oidc_rp.js`'s surface table. Looking the parent up in
+    // in — see `common/oidc_rp.ts`'s surface table. Looking the parent up in
     // THIS session's partition would report every console session reached in a
     // realm as an orphan and end it on sight, which is a sign-in that lasts one
     // request. An absent `derivedFromRealm` means the same partition, which is
@@ -1708,7 +1708,7 @@ class Authn {
     // A PARENT THAT RAN OUT IS NOT A PARENT THAT SIGNED OUT (2026-09-12).
     //
     // A relying-party session that holds a REFRESH TOKEN renews its own tokens
-    // (`common/oidc_rp.js`'s `renewIfDue()`), so it is not bound to the sign-on
+    // (`common/oidc_rp.ts`'s `renewIfDue()`), so it is not bound to the sign-on
     // session's absolute lifetime any more than a real relying party is bound
     // to its provider's. A SIGN-OUT still ends it: `dropSession()`'s cascade
     // runs while the parent exists and ends every child. What is left for this
@@ -1768,7 +1768,7 @@ class Authn {
     return session;
   }
 
-  // Create one. Called only from `common/oidc_rp.js`, once, after an ID Token
+  // Create one. Called only from `common/oidc_rp.ts`, once, after an ID Token
   // has been verified — which is why this takes CLAIMS rather than a username
   // and a password: what it is turning into a session is a statement this
   // service made about somebody, and every field below comes off that statement
@@ -1802,7 +1802,7 @@ class Authn {
     // -------------------------------------------------------------------------
     // …UNLESS IT CAN RENEW ITSELF (2026-09-12). A session handed a refresh
     // token is renewed through the refresh token grant when its ID Token and
-    // access token run out — see `common/oidc_rp.js` — so its absolute expiry
+    // access token run out — see `common/oidc_rp.ts` — so its absolute expiry
     // is the end of the window it may renew in (`spec.renewableUntil`, the
     // refresh token's lifetime from the sign-in), or the tokens' own expiry
     // where that is later. The paragraph above is still the rule for a session
@@ -1941,7 +1941,7 @@ class Authn {
   // ---------------------------------------------------------------------------
   // A RELYING PARTY SESSION'S TOKENS, RENEWED IN PLACE (2026-09-12).
   //
-  // Called only from `common/oidc_rp.js`, after the refresh token grant has
+  // Called only from `common/oidc_rp.ts`, after the refresh token grant has
   // answered and the ID Token in that answer has verified. **THE SESSION IS THE
   // SAME SESSION**: same id, same cookie, same CSRF token on every page a
   // person already has open, same `authTime`, `amr` and `acr` — because nobody
@@ -2196,7 +2196,7 @@ class Authn {
     if (code) {
       log.debug("Leaving Authn.methodPhraseFor().");
       // Unreachable today and deliberately written anyway: a one-time code can
-      // never be a first factor here (see common/totp.js), so this branch says
+      // never be a first factor here (see common/totp.ts), so this branch says
       // what would be true if that ever changed rather than reporting it as a
       // password sign-in.
       return 'sign-in screen (a one-time code alone)';
@@ -2441,7 +2441,7 @@ class Authn {
   // A SESSION THAT ALREADY EXISTED WAS PRESENTED AND HONOURED — which is single
   // sign-on, and is CAEP's `session-presented`.
   //
-  // `oauth-oidc/oauth2.js` calls this from the one branch that answers an
+  // `oauth-oidc/oauth2.ts` calls this from the one branch that answers an
   // authorization request out of a session rather than by asking anybody who
   // they are. It is not called from `sessionOf()`, which looks like the obvious
   // place and is not: that function is called several times per request, so an
@@ -2587,7 +2587,7 @@ class Authn {
   //
   // A console or portal session copies `authTime`, `amr` and `acr` out of the
   // ID Token it was made from, and those stay what the relying party was TOLD —
-  // `common/oidc_rp.js`'s renewal compares against that `authTime`, so it is
+  // `common/oidc_rp.ts`'s renewal compares against that `authTime`, so it is
   // never rewritten. But a re-authentication on the sign-on session behind it
   // adds an event there and nothing here, so a page that describes the PERSON'S
   // sign-in from the relying-party copy shows a step-up only after the next
@@ -6198,7 +6198,7 @@ class Authn {
     // honestly.
     //
     // There is no passwordless branch here and there cannot be: a one-time code
-    // is never a first factor (see common/totp.js), so `pwd` is always in the
+    // is never a first factor (see common/totp.ts), so `pwd` is always in the
     // list.
     const amr = ['pwd', 'otp'];
     this.startSession(res, step.username, amr, 'mfa', step.authn.protocol,
@@ -6237,7 +6237,7 @@ class Authn {
   //
   // `/authn/webauthn` enrols on first use. This screen does neither: a set of
   // recovery codes is issued by the act of enrolling a second factor, once, and
-  // `common/credentials.js` is where that happens. A sign-in screen that could
+  // `common/credentials.ts` is where that happens. A sign-in screen that could
   // ISSUE a set would be a door that hands a working second factor to whoever
   // typed a password — which is the same refusal the console is held to for
   // TOTP enrolment.
@@ -6827,7 +6827,7 @@ class Authn {
       // the difference is the architecture of the two modes rather than a new
       // feature at this door: development mode still refuses only `invalid` and
       // accepts everything else, product mode verifies against the hashed
-      // `userPassword` on the person's entry — and `common/credentials.js` is
+      // `userPassword` on the person's entry — and `common/credentials.ts` is
       // the single place either answer is given, so the sign-in screen, an LDAP
       // bind, a UsernameToken and SCIM Basic cannot come to disagree about what
       // a password is worth.
@@ -7760,7 +7760,7 @@ class Authn {
       // **THE ASYNCHRONOUS DOOR SINCE 2026-09-14 (#46)**, because the step is
       // now spent in the store as well as on the entry: two nodes reading "last
       // step 41" off their own copies both accepted step 42.
-      // `common/credentials.js`'s `verifyTotpAsync()` argues it; everything it
+      // `common/credentials.ts`'s `verifyTotpAsync()` argues it; everything it
       // refuses before the store is what the synchronous door refused, in the
       // same order.
       credentials.verifyTotpAsync(step.username, String(body.code || ''))
@@ -7857,7 +7857,7 @@ class Authn {
     //
     // **THE CODE IS SPENT INSIDE `verifyBackupCode()` AND A FAILED SPEND IS A
     // REFUSAL.** That is the one place these three screens differ from each
-    // other and it is argued in `common/credentials.js`: a one-time code whose
+    // other and it is argued in `common/credentials.ts`: a one-time code whose
     // counter fails to write can be replayed inside ninety seconds, and a
     // recovery code that cannot be marked spent works for ever.
     // -------------------------------------------------------------------------
@@ -7909,7 +7909,7 @@ class Authn {
       // characters off a printed list — which is the ordinary case at this
       // screen.
       //
-      // `common/credentials.js`'s `verifyBackupCodeAsync()` puts the candidates
+      // `common/credentials.ts`'s `verifyBackupCodeAsync()` puts the candidates
       // on the worker pool in parallel and refuses in exactly the order the
       // synchronous door does, because both go through one `backupPrepare()`.
       credentials.verifyBackupCodeAsync(step.username, String(body.code || ''))
@@ -8070,7 +8070,7 @@ export = {
   // module keeps calling sessionOf() and keeps seeing its own realm only.
   consoleSession: authn.consoleSession.bind(authn) as Authn['consoleSession'],
   startSession: authn.startSession.bind(authn) as Authn['startSession'],
-  // THE RELYING-PARTY HALF (2026-09-06), for `common/oidc_rp.js` and for the
+  // THE RELYING-PARTY HALF (2026-09-06), for `common/oidc_rp.ts` and for the
   // two surfaces that read what it makes. Three functions and no more: a
   // caller that wanted to create one of these without going through the code
   // flow would be a caller inventing a session out of nothing, which is the
@@ -8107,7 +8107,7 @@ export = {
     Authn['clearSessionCookie'],
   beginAuthentication: authn.beginAuthentication.bind(authn) as
     Authn['beginAuthentication'],
-  // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.js. A
+  // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A
   // person meets that screen and this one seconds apart in one flow, so two
   // hand-maintained copies would drift into looking like two services. It is
   // exported rather than copied for that reason and for no other — nothing here

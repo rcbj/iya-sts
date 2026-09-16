@@ -38,12 +38,12 @@
 // all the rules about what a claim may be called live in admin_stats.js, so a
 // test can exercise them without going near an HTML page, and so this file
 // stays the one place the markup is. It reads the browser sign-on session
-// store, which `../authn/authn.js` owns, so the metrics page can report real
+// store, which `../authn/authn.ts` owns, so the metrics page can report real
 // sign-on sessions beside the ones derived from what was issued.
 //
 // **It must come AFTER oauth2.js in `common/protocol_stack.js`** (rule 5), and
 // that is a dependency rather than a preference: it requires
-// `../oauth-oidc/oauth2.js` for the drift report (see that require below).
+// `../oauth-oidc/oauth2.ts` for the drift report (see that require below).
 // The dependency is one way — oauth2.js knows nothing about this module — so
 // it is not a cycle.
 //
@@ -53,7 +53,7 @@
 //
 // The console gate is UNCONDITIONAL. Every page and every form under /admin
 // needs a session of the console's own — got through the OIDC code flow
-// against this service's authorization server (`common/oidc_rp.js`, since
+// against this service's authorization server (`common/oidc_rp.ts`, since
 // 2026-09-06) — and one of two roles — Admin Read and Admin Write — held as
 // two ordinary groups in the embedded directory of the realm the person
 // signed in through (per realm since 2026-09-14, #32; admin-ui/CLAUDE.md 8d).
@@ -117,7 +117,7 @@ const resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 // THE ACTION LAYER (2026-09-12), AND WHY THESE NAMES ARE STILL IN SCOPE HERE.
 //
 // Thirty-one actions, the tables they dispatch on and the pure helpers they
-// share moved to `admin-core/admin_actions.js` — see that file's header for
+// share moved to `admin-core/admin_actions.ts` — see that file's header for
 // what may be in it and what may not. `mgmt-api/admin_api.js` requires it too,
 // and no longer requires this module for them, which is the whole point: the
 // surface a machine drives is no longer downstream of the surface a person
@@ -139,7 +139,7 @@ const adminActions = require('../admin-core/admin_actions');
 //
 // Thirty-seven functions that answer a question and reach no markup at all —
 // `scimJson()`, `realmsJson()`, `cryptoView()`, the six XACML views and the
-// rest — moved to `admin-core/admin_views.js`. They needed no surgery: they
+// rest — moved to `admin-core/admin_views.ts`. They needed no surgery: they
 // were already pure, so they travelled exactly as the actions did.
 //
 // **WHAT DID NOT GO IS THE POINT OF THE LINE.** Every view that builds HTML
@@ -335,8 +335,8 @@ const backupCodes = require('../common/backup_codes');
 // this service's policy about what a key may be. A LIBRARY (rule 3) on the same
 // terms: it registers no route and requires only `config`, `helpers` and
 // `authn/webauthn.js`, so it can neither move a route nor close a cycle, and
-// `common/credentials.js` above already requires it. **It is NOT
-// `authn/authn.js`**, which is 8 and owns the session: a require from here to
+// `common/credentials.ts` above already requires it. **It is NOT
+// `authn/authn.ts`**, which is 8 and owns the session: a require from here to
 // that module would be the console reaching into the sign-in service, and the
 // rule `/admin/crypto-metadata` is built on says an algorithm table is read
 // from the module that PERFORMS the algorithm.
@@ -346,7 +346,7 @@ const webauthnPolicy = require('../authn/webauthn_policy');
 // route nor close a cycle.
 const websecurity = require('../common/websecurity');
 // The access-control gate. A LEAF (rule 3): registers nothing, requires only
-// config and helpers. Its decider is filled by xacml/xacml_access_pep.js at
+// config and helpers. Its decider is filled by xacml/xacml_access_pep.ts at
 // 23c, so before that line every check here is allowed — which is what a
 // process without the XACML family does.
 const accessGate = require('../common/access_gate');
@@ -444,14 +444,14 @@ const stats = require('../common/admin_stats');
 // and nowhere else; that stopped being true on 2026-09-14 (#32), when a realm
 // got a roster of its own, asked for the realm the person SIGNED IN THROUGH
 // and confined to that realm. The session store did not move; the roster it
-// is asked against did — `gateStateFor()` in `admin-core/admin_views.js`, and
+// is asked against did — `gateStateFor()` in `admin-core/admin_views.ts`, and
 // admin-ui/CLAUDE.md 8d.
 //
 // THE RELYING PARTY (2026-09-06). This console authenticates through the
 // AUTHORIZATION CODE FLOW
 // against this service's own authorization server now, rather than by
 // redirecting to the sign-in screen and reading the session that screen minted.
-// `common/oidc_rp.js` runs the flow and argues the whole of it; what this file
+// `common/oidc_rp.ts` runs the flow and argues the whole of it; what this file
 // keeps is the GATE, which is a question about roles rather than about
 // authentication.
 //
@@ -1098,7 +1098,7 @@ const SECTIONS = [
       // one worth recording: `/admin/xacml/monitor` is about TRAFFIC rather
       // than configuration, so it belongs in Monitoring with every other page
       // that answers "what has this service done", and it is there now. It is
-      // still drawn by `xacml/xacml_admin.js` and still lives under
+      // still drawn by `xacml/xacml_admin.ts` and still lives under
       // `/admin/xacml/` — a console page is a `path` and a `label` in this
       // table whoever builds the body, which is the same arrangement the eight
       // `/admin/ldap/*` pages have with the Directory section. The rule read
@@ -1325,7 +1325,7 @@ const SECTIONS = [
                'only mechanism on this console that no specification ' +
                'defines</strong>: there is no RFC for a recovery code, so ' +
                'every decision behind it is this service\'s own and ' +
-               '<code>common/backup_codes.js</code> argues each one. Since ' +
+               '<code>common/backup_codes.ts</code> argues each one. Since ' +
                '2026-09-11 it is <strong>hashed with scrypt, the same way a ' +
                'password is</strong> &mdash; it was encrypted until then, so ' +
                'that a person could read their remaining codes back, and ' +
@@ -1734,8 +1734,8 @@ const SECTIONS = [
       // SCHEMA whose comment said it was drawn on a page under
       // `/admin/ldap/*`, and for three of them no such page had ever been
       // written: the export was dead in `common/roles.js` since that
-      // afternoon, in `xacml/xacml_store.js` since XACML phase two and in
-      // `xacml/xacml_pep_registry.js` since phase five. They are drawn by
+      // afternoon, in `xacml/xacml_store.ts` since XACML phase two and in
+      // `xacml/xacml_pep_registry.ts` since phase five. They are drawn by
       // `ldap/ldap_server.js` like the other five, for the reason stated
       // there.
       //
@@ -2076,7 +2076,7 @@ const SECTIONS = [
       // points, the what-if — and this one is the only one about TRAFFIC.
       // A reader asking "why was that request refused" is asking a monitoring
       // question, and the durable half of the answer is the Audit log two rows
-      // down. It is drawn by `xacml/xacml_admin.js` and still lives under
+      // down. It is drawn by `xacml/xacml_admin.ts` and still lives under
       // `/admin/xacml/`; a console page is a `path` and a `label` in this
       // table whoever builds the body.
       { path: '/admin/xacml/monitor', label: 'XACML decisions',
@@ -2130,7 +2130,7 @@ const SECTIONS = [
       // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
       // not under Protocols beside `/admin/oauth2` for the XACML monitor's
       // reason: that page is what the server is CONFIGURED to do and this is
-      // what it has DONE. Drawn by `oauth-oidc/oauth2_monitor_admin.js`; a
+      // what it has DONE. Drawn by `oauth-oidc/oauth2_monitor_admin.ts`; a
       // console page is a `path` and a `label` in this table whoever builds
       // the body. It is in SECTIONS, one per mechanism, so the next OAuth
       // mechanism counted is a section of it rather than a row here.
@@ -2693,7 +2693,7 @@ const SETTING_HOMES = [
   //
   // The old comment also said WebAuthn "has no settings at all and so has no
   // row here". It has thirteen since 2026-09-10 — every parameter of the
-  // ceremony, which had been literals in a string in `authn/authn.js`.
+  // ceremony, which had been literals in a string in `authn/authn.ts`.
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
   { group: 'GNAP', pages: ['/admin/gnap'] },
   // ===== certificate enrollment setting homes (2026-09-13) =====
@@ -4990,7 +4990,7 @@ function consoleSignOn(req) {
 //
 // **A PAGE DRAWN FOR SOMEBODY WITH NO SESSION GETS NO TOKEN AND NEEDS NONE**:
 // `checkCsrf()` passes a request with no session, because there is nothing to
-// forge on behalf of an anonymous caller. See common/websecurity.js.
+// forge on behalf of an anonymous caller. See common/websecurity.ts.
 // ---------------------------------------------------------------------------
 function withCsrf(req, html) {
   log.debug("Entering withCsrf().");
@@ -5009,7 +5009,7 @@ function withCsrf(req, html) {
 // THE ENDPOINTS OF THIS REALM, ON EVERY PROTOCOLS PAGE (2026-09-13).
 //
 // Drawn HERE, in the one function every page goes out through, rather than by
-// forty pages each remembering to: `admin-core/protocol_endpoints.js` says
+// forty pages each remembering to: `admin-core/protocol_endpoints.ts` says
 // which routes a page lists and this adds them to what the page answers. The
 // JSON gets `protocolEndpoints` and the HTML gets a section shaped like GNAP's,
 // which was the model — `mgmt-api/admin_api.js` adds the same member to the
@@ -5153,7 +5153,7 @@ function respondToAction(req, res, target, result) {
   //
   // This console's own handlers refuse with `errors: [...]`; the XACML family's
   // three — `policyAction()`, `editorAction()` and `pepAction()` in
-  // `xacml/xacml_admin.js` — refuse with a single `why`, which is the shape
+  // `xacml/xacml_admin.ts` — refuse with a single `why`, which is the shape
   // `xacml_store.js` and `xacml_editor.js` hand up to them. `/admin-api` was
   // already given that translation (`xacmlAction()` above puts `why` into
   // `errors`), and the CONSOLE was not — so every refusal on the three
@@ -5208,7 +5208,7 @@ function respondToAction(req, res, target, result) {
 // **It authenticates NOTHING itself.** `authn.js` owns the session and the
 // sign-in screen; this asks `consoleRpSession()` who is here and, when nobody
 // is, sends the browser into the OIDC code flow (`sendToConsoleSignIn()`,
-// through `common/oidc_rp.js`) with the page they wanted as its return
+// through `common/oidc_rp.ts`) with the page they wanted as its return
 // address. (Until 2026-09-06 it read the sign-on session directly and sent
 // the browser to `beginAuthentication()`'s URL.) A login screen of this
 // console's own would be a second authentication service, and the one
@@ -5313,7 +5313,7 @@ function refuse(req, res, status, code, title, message, detail) {
 // **The record is minted when the link is PRESSED**, which is the property that
 // decides this rather than calling `beginAuthentication()` here: a pending
 // record has a lifetime, and this page is drawn precisely for somebody who has
-// been sitting on a form for longer than one. `portal/portal.js` fixed the same
+// been sitting on a form for longer than one. `portal/portal.ts` fixed the same
 // mistake the same way on the same day and its comment carries the rest.
 function defaultRealmSignInUrl(req) {
   log.debug("Entering defaultRealmSignInUrl().");
@@ -5427,7 +5427,7 @@ function sendToConsoleSignIn(req, res) {
 // the refresh token and writes the new tokens onto THE SAME SESSION — so the
 // gate below finds the operator still signed in and the page they asked for is
 // drawn, where it used to send them through the sign-in screen an hour after
-// they signed in. `common/oidc_rp.js`'s section 4 argues all of it.
+// they signed in. `common/oidc_rp.ts`'s section 4 argues all of it.
 //
 // **ABOVE THE GATE, AND IT HAS TO BE.** Rule 1: middleware applies only to
 // routes added after it, and the gate is what reads the session. Registered
@@ -7167,7 +7167,7 @@ function pageNavPair(path, params, pg) {
 // One cost used to be stated here: the API called usersView() and groupsView(),
 // which build the HTML as well, and threw the markup away. It no longer does —
 // `/admin-api/users` and `/admin-api/groups` call `usersJson()` and
-// `groupsJson()` in `admin-core/admin_views.js`, which choose between the same
+// `groupsJson()` in `admin-core/admin_views.ts`, which choose between the same
 // answers without drawing a page.
 // ---------------------------------------------------------------------------
 function consoleJson() {
@@ -7425,7 +7425,7 @@ app.use('/admin', function (req, res, next) {
 // a reader meeting one has to be able to find the other.
 //
 // **THIS ROUTE IS THE CONSOLE ACTING AS AN ORDINARY CLIENT.** Everything it
-// does is in `common/oidc_rp.js`: spend the state, redeem the code with the
+// does is in `common/oidc_rp.ts`: spend the state, redeem the code with the
 // client secret, verify the ID Token against the published JWKS, and establish
 // this console's own session. What is HERE is only what belongs to this
 // console — where to go afterwards, and what a refusal looks like in this
@@ -8993,7 +8993,7 @@ app.get('/admin/tokens/set', function (req, res) {
 // row they clicked on rather than the top of a list of everything.
 //
 // **IT IS THE SAME PICTURE AS THE DELEGATION MAP, ASKED A DIFFERENT QUESTION.**
-// `common/credential_graph.js` holds the model (rule 3l, the same division
+// `common/credential_graph.ts` holds the model (rule 3l, the same division
 // `delegation.js` and `user_graph.js` are on the other side of) and returns a
 // graph in `delegation.graph()`'s shape, so `delegation_map.js` draws it, the
 // party table is `delegationNodeRow()` and the line table is `userEdgeRow()` —
@@ -10520,7 +10520,7 @@ function policyAccountRow(account) {
 // ---------------------------------------------------------------------------
 // THE CONFIGURED HALF OF /admin/delegation: DELEGATED PERMISSIONS.
 //
-// `common/app_permissions.js` holds the model and this holds the HTML, the same
+// `common/app_permissions.ts` holds the model and this holds the HTML, the same
 // split every other register on this console has. Five actions, and they are
 // the reason this page HAS a form at all — which reverses a decision stated at
 // length in the route header above, so the reversal is argued here rather than
@@ -11674,7 +11674,7 @@ app.get('/admin/delegation', function (req, res) {
 // The acts half has none and never will; see `permissionsSection()`'s header,
 // where the reversal of that route's "NO FORM, AND THAT IS A DECISION" is
 // argued rather than assumed. Every action here writes a directory attribute
-// through `common/app_permissions.js` and therefore through
+// through `common/app_permissions.ts` and therefore through
 // `applications.updateApplication()`, which is where the rules are.
 //
 // IT SAID "CONTROLS" AND IT SAYS "ACTIONS" NOW, and the difference stopped
@@ -13243,7 +13243,7 @@ function delegationEdgeRow(edge, lookOf) {
 // the first twenty with the total beside them, which is what the select showed
 // in one line rather than in a column.
 // ---------------------------------------------------------------------------
-// The number itself lives in admin-core/admin_views.js since 2026-09-13, so
+// The number itself lives in admin-core/admin_views.ts since 2026-09-13, so
 // that /admin-api/rbac's `candidates` pages by the same twenty the pane does.
 const CHOOSER_HITS = adminViews.CHOOSER_HITS;
 
@@ -15040,7 +15040,7 @@ function userEdgeRow(edge, lookOf) {
         // the ordinary division of labour between them.
         //
         // `permissions` is present only on a line built from a CREDENTIAL —
-        // see common/user_graph.js — so a `reaches` line out of the delegation
+        // see common/user_graph.ts — so a `reaches` line out of the delegation
         // register renders exactly as it did. An EMPTY array is drawn rather
         // than skipped, for the renderer's reason: it means the token named
         // this resource and asked for none of its permissions, which is a
@@ -15124,7 +15124,7 @@ function userEdgeRow(edge, lookOf) {
 // an empty picture.
 //
 // **SO IT IS A UNION OF TWO REGISTERS AND THE UNION IS NOT HERE.** It is in
-// `common/user_graph.js`, which holds the model for the reason every other
+// `common/user_graph.ts`, which holds the model for the reason every other
 // store rule in this console holds: what counts as one credential seen twice,
 // what a `client_id` on a token and an `application` on a party have in common,
 // and which spelling of a person is THE spelling are statements about the
@@ -15674,7 +15674,7 @@ function setSpiffeReader(fn) {
   log.debug("Entering setSpiffeReader().");
   spiffeReader = fn;
   // AND THE READ LAYER, which draws the three SPIFFE reports out of the same
-  // reader — see admin-core/admin_views.js.
+  // reader — see admin-core/admin_views.ts.
   adminViews.setSpiffeReader(fn);
   log.debug("A SPIFFE reader was installed; /admin/spiffe will now report " +
             "which gRPC listeners bound.");
@@ -15747,7 +15747,7 @@ function setCryptoReporter(reporter) {
   }
   cryptoReporter = reporter;
   // AND THE READ LAYER, which needs the same thing — see the header of
-  // admin-core/admin_views.js. Still one statement and one writer.
+  // admin-core/admin_views.ts. Still one statement and one writer.
   adminViews.setCryptoReporter(reporter);
   log.debug("Leaving setCryptoReporter(). Installed.");
 }
@@ -15797,7 +15797,7 @@ function setLogoutReader(reader) {
   logoutReader = reader;
   // AND THE ACTION LAYER, which needs the same object and is handed it
   // from here rather than asking for it — see the header of
-  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // admin-core/admin_actions.ts. One statement, two destinations: this is
   // the ONLY place either is written, which is what keeps it one answer.
   adminActions.setLogoutReader(reader);
   // AND THE READ LAYER: sessionsView() reads what is live where
@@ -15839,10 +15839,10 @@ function setLogoutReader(reader) {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// THE TENTH SLOT, `setXacmlPages()`, FILLED BY `xacml/xacml_admin.js`, AND IT
+// THE TENTH SLOT, `setXacmlPages()`, FILLED BY `xacml/xacml_admin.ts`, AND IT
 // IS THE SIXTH TO PASS RULE 3e's TEST BOTH WAYS ROUND.
 //
-// A require from THIS file to `xacml/xacml_admin.js` would CLOSE A CYCLE — it
+// A require from THIS file to `xacml/xacml_admin.ts` would CLOSE A CYCLE — it
 // requires this one for the shell, the settings block, the gate and the action
 // responder. And a require from `mgmt-api/admin_api.js` (19) to it would MOVE
 // ROUTES: every `/xacml` endpoint and all six `/admin/xacml*` pages would be
@@ -15892,13 +15892,13 @@ function setXacmlPages(parts) {
   }
   xacmlPages = parts;
   // AND THE READ LAYER, which needs the same thing — see the header of
-  // admin-core/admin_views.js. Still one statement and one writer.
+  // admin-core/admin_views.ts. Still one statement and one writer.
   adminViews.setXacmlPages(parts);
   // AND THE ACTION LAYER. This is the one collaborator BOTH halves need — the
   // actions dispatch on these pages and the views draw from them — so one
   // statement here has THREE destinations: the variable above, and one in each
   // half. Still exactly one writer, which is the only property that matters;
-  // see the header of admin-core/admin_actions.js.
+  // see the header of admin-core/admin_actions.ts.
   adminActions.setXacmlPages(parts);
   log.debug('The XACML page views were installed; /admin-api mirrors them.');
   log.debug("Leaving setXacmlPages().");
@@ -15921,8 +15921,8 @@ function xacmlActionNames() {
 
 // EIGHT SINCE 2026-09-05. The three added that day — `roles`, `policies` and
 // `peps` — are the containers whose owning modules published a SCHEMA that
-// nothing drew: `common/roles.js`, `xacml/xacml_store.js` and
-// `xacml/xacml_pep_registry.js` each carried the same comment claiming a page
+// nothing drew: `common/roles.js`, `xacml/xacml_store.ts` and
+// `xacml/xacml_pep_registry.ts` each carried the same comment claiming a page
 // under `/admin/ldap/*`, and none of the three had one. The list is checked
 // WHOLE below, so adding a name here without adding the view is a refused
 // install rather than one operation answering as though no directory were
@@ -15951,7 +15951,7 @@ function setDirectoryPages(views) {
   }
   directoryPages = views;
   // AND THE READ LAYER, which needs the same thing — see the header of
-  // admin-core/admin_views.js. Still one statement and one writer.
+  // admin-core/admin_views.ts. Still one statement and one writer.
   adminViews.setDirectoryPages(views);
   log.debug('The eight directory page views were installed; /admin-api ' +
             'mirrors them.');
@@ -15978,7 +15978,7 @@ function setScimReader(fn) {
   log.debug("Entering setScimReader().");
   scimReader = fn;
   // AND THE READ LAYER, which needs the same thing — see the header of
-  // admin-core/admin_views.js. Still one statement and one writer.
+  // admin-core/admin_views.ts. Still one statement and one writer.
   adminViews.setScimReader(fn);
   log.debug("A SCIM reader was installed; /admin/scim will now describe the " +
             "SCIM 2.0 endpoints.");
@@ -16006,7 +16006,7 @@ function setDirectoryWriter(fn) {
   adminViews.setDirectoryWriter(fn);
   // AND THE ACTION LAYER, which needs the same object and is handed it
   // from here rather than asking for it — see the header of
-  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // admin-core/admin_actions.ts. One statement, two destinations: this is
   // the ONLY place either is written, which is what keeps it one answer.
   adminActions.setDirectoryWriter(fn);
   log.debug("A directory writer was installed; /admin/users can now create a " +
@@ -16074,7 +16074,7 @@ function setGroupWriter(fns) {
   adminViews.setGroupWriter(given);
   // AND THE ACTION LAYER, which needs the same object and is handed it
   // from here rather than asking for it — see the header of
-  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // admin-core/admin_actions.ts. One statement, two destinations: this is
   // the ONLY place either is written, which is what keeps it one answer.
   adminActions.setGroupWriter(given);
   log.debug("Leaving setGroupWriter(). /admin/groups can now create a group " +
@@ -16745,7 +16745,7 @@ function mfaSection(row, key, state, back) {
   return {
     html: html,
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
-    // this draws it. See admin-core/admin_views.js.
+    // this draws it. See admin-core/admin_views.ts.
     json: adminViews.mfaJson(key)
   };
 }
@@ -16951,7 +16951,7 @@ function userCredentialsSection(key, state, gate, back) {
 // MFA — ON THE PERSON'S OWN PAGE (2026-09-13).
 //
 // Six controls over six actions on `usersAction()`
-// (`admin-core/admin_actions.js` argues each), posted to `/admin/users` with
+// (`admin-core/admin_actions.ts` argues each), posted to `/admin/users` with
 // `from=user` so the reader lands back here, and mirrored at
 // `POST /admin-api/users/{action}`.
 //
@@ -17849,7 +17849,7 @@ app.post('/admin/users', function (req, res, next) {
   log.debug("Entering the admin users action endpoint.");
   const body = parseBody(req);
   // A CREATE CLAIMS ITS NAME FIRST where several processes write one store —
-  // `ldap/directory_create_claims.js`. Everywhere else `runClaimed()` runs the
+  // `ldap/directory_create_claims.ts`. Everywhere else `runClaimed()` runs the
   // body below synchronously, exactly as before.
   const creating = String(body.action || '') === 'create'
     ? { username: String(body.username || body.user || '') } : null;
@@ -18105,7 +18105,7 @@ function credentialChoiceRow(choice, chosen) {
 function newUserPage(req, prefill) {
   log.debug("Entering newUserPage().");
   // ONE COMPUTATION, TWO RENDERINGS (2026-09-12) — see
-  // admin-core/admin_views.js. The attribute catalogue below is the one this
+  // admin-core/admin_views.ts. The attribute catalogue below is the one this
   // form draws its boxes from AND the one /admin-api publishes.
   //
   // `prefill` goes WITH the request, because it is what was posted and
@@ -19302,7 +19302,7 @@ function groupsView(req) {
 // truth rather than a display of one. That argument was about a second STORE,
 // and it survived the reversal: the page now carries an *Add an application*
 // row, per-entry actions (`APPLICATION_ACTIONS` in
-// admin-core/admin_actions.js, POSTed to the handler below)
+// admin-core/admin_actions.ts, POSTed to the handler below)
 // and `/admin/applications/new`, every one of them a DOOR onto the same
 // entries through `applications.js` and mirrored on
 // `POST /admin-api/applications/{action}` (rule 7).
@@ -20490,7 +20490,7 @@ function applicationCredentialsSection(req, view, carryBack) {
   }).join('');
 
   // THE ASSERTION PROFILES ONLY FOR AN OAUTH 2.0 CLIENT (2026-09-13). See
-  // `oauthDeclared` in admin-core/admin_views.js. The markup above is still
+  // `oauthDeclared` in admin-core/admin_views.ts. The markup above is still
   // built and then dropped rather than guarded, so the two branches cannot
   // drift in what a profile section says.
   const heldElsewhere = state.purposes.filter(function (p) {
@@ -20531,7 +20531,7 @@ function applicationCredentialsSection(req, view, carryBack) {
 // MUTUAL TLS — RFC 8705, ON THE APPLICATION'S OWN PAGE (2026-09-13).
 //
 // Both halves of the RFC read off one model (`applicationMtlsState()` in
-// admin-core/admin_views.js): how the token endpoint will authenticate this
+// admin-core/admin_views.ts): how the token endpoint will authenticate this
 // application by certificate, and whether its tokens are bound to one.
 //
 // **THE ISSUE CONTROL IS THE IMPLICIT MAPPING'S REGISTRATION.** A certificate
@@ -21880,7 +21880,7 @@ const NEW_APPLICATION_NOTES =
 // can be handed one — pasted, uploaded, or fetched from a URL — and turn it
 // into the create form, filled in: the `resource` as the default name, the
 // permission base URI and the audience; `scopes_supported` as the permissions;
-// a client_id minted at random. `oauth-oidc/protected_resource_metadata.js` is
+// a client_id minted at random. `oauth-oidc/protected_resource_metadata.ts` is
 // the reading and argues every rule; what is decided HERE is the page.
 //
 // **TWO ROUND TRIPS AND NO SCRIPT.** A file can only reach a server without a
@@ -22287,7 +22287,7 @@ function newApplicationPage(req, state) {
   // facts used to be computed here and again, in the same shape, in the json
   // half at the bottom of this function; they come off ONE call now, so the
   // vocabulary this form offers cannot drift from the one that document
-  // publishes. admin-core/admin_views.js carries the rest of the argument.
+  // publishes. admin-core/admin_views.ts carries the rest of the argument.
   const json = adminViews.newApplicationJson(req);
   const container = json.container;
   const max = json.max;
@@ -22977,7 +22977,7 @@ app.post('/admin/authorization-servers', function (req, res) {
 
 function saml2ListPage(req) {
   log.debug("Entering saml2ListPage().");
-  // ONE PASS OVER THE REGISTRY, TWO RENDERINGS — admin-core/admin_views.js.
+  // ONE PASS OVER THE REGISTRY, TWO RENDERINGS — admin-core/admin_views.ts.
   const view = adminViews.saml2ListJson(req);
   const base = view.base;
   const all = view.all;
@@ -23575,7 +23575,7 @@ app.post('/admin/groups', function (req, res, next) {
   log.debug("Entering the admin groups action endpoint.");
   const body = parseBody(req);
   // A CREATE CLAIMS ITS NAME FIRST where several processes write one store —
-  // `ldap/directory_create_claims.js`; synchronous everywhere else.
+  // `ldap/directory_create_claims.ts`; synchronous everywhere else.
   const creating = String(body.action || '') === 'create'
     ? { group: String(body.group || body.displayName || body.cn || '') }
     : null;
@@ -23718,7 +23718,7 @@ function rbacClaimedMark(row) {
 
 function rbacListPage(req) {
   log.debug("Entering rbacListPage().");
-  // ONE COMPUTATION, TWO RENDERINGS (2026-09-12) — admin-core/admin_views.js.
+  // ONE COMPUTATION, TWO RENDERINGS (2026-09-12) — admin-core/admin_views.ts.
   // Everything this page draws comes off this call, and so does what
   // GET /admin-api/rbac answers.
   const view = adminViews.rbacListJson(req);
@@ -24445,11 +24445,11 @@ app.post('/admin/consent', function (req, res) {
 //
 // `/admin/roles` can answer "would alice be issued a token for this
 // application" without anybody having to try it, and the only thing that can
-// answer that is `xacml/xacml_role_pep.js` — the embedded PEP, which asks the
+// answer that is `xacml/xacml_role_pep.ts` — the embedded PEP, which asks the
 // PDP against the issuance policy. A require from here to that module would
 // LOAD THE XACML ENGINE AT 18 and, worse, fill `issuance_gate.js`'s decider
 // from the console rather than from the family that owns it, so a process that
-// loaded this file and not `xacml/xacml.js` would gate issuance with half the
+// loaded this file and not `xacml/xacml.ts` would gate issuance with half the
 // family present. A require the other way — the PEP reaching this module — is
 // not a candidate either: it would close a cycle, since `xacml_admin.js`
 // requires this file for the page shell.
@@ -24479,7 +24479,7 @@ function setRolePreviewer(hooks) {
   }
   rolePreviewer = hooks;
   // AND THE READ LAYER, which needs the same thing — see the header of
-  // admin-core/admin_views.js. Still one statement and one writer.
+  // admin-core/admin_views.ts. Still one statement and one writer.
   adminViews.setRolePreviewer(hooks);
   log.info('admin: /admin/roles can preview an issuance decision — the same ' +
            'call the nine issuance sites make, through the same policy.');
@@ -25104,7 +25104,7 @@ app.get('/admin/policies', function (req, res) {
 
     '<h2 id="doors">Where it is enforced</h2>' +
     note('Every door that sets a password ends in one function in ' +
-    '<code>common/credentials.js</code>, which is what makes the list below ' +
+    '<code>common/credentials.ts</code>, which is what makes the list below ' +
     'complete rather than a list somebody remembered. ' + esc(pw.notDoors)) +
     '<table><tr><th>Door</th><th>Reaches</th></tr>' +
     pw.doors.map(function (row) {
@@ -27845,7 +27845,7 @@ app.post('/admin/config', function (req, res) {
 // refresh idle timeout and the sign-out revocation) — all of them `config.js`
 // rows, on a page of their own under Protocols › OAuth2 / OIDC. The first
 // three were module-level `const`s in
-// `../oauth-oidc/oauth2.js` until 2026-08-24 and could not be changed at all
+// `../oauth-oidc/oauth2.ts` until 2026-08-24 and could not be changed at all
 // without a restart.
 //
 // WHY THIS IS A PAGE AND NOT JUST FOUR MORE ROWS ON /admin/config, which is the
@@ -28201,7 +28201,7 @@ app.post('/admin/token-lifetimes', function (req, res) {
 // WINDOW IS WIDENED FOR SOMEBODY ELSE'S CLOCK.
 //
 // Three settings when it was written — sixteen now (`SAML_ASSERTION_SETTINGS`
-// in admin-core/admin_actions.js), since it became the page for the
+// in admin-core/admin_actions.ts), since it became the page for the
 // per-application SAML defaults on 2026-08-27 — all of them `config.js` rows,
 // on a page of their own under Protocols > SAML. It is the THIRD page of this
 // shape — /admin/token-lifetimes
@@ -29520,7 +29520,7 @@ app.get('/admin/signals', function (req, res) {
 //
 // What every dead-letter queue in the realm being read holds, counted, and the
 // letters themselves. `ssf/ssf_dead_letter_report.ts` computes every number
-// and `admin-core/admin_views.js`'s `ssfDeadLettersJson()` searches and pages
+// and `admin-core/admin_views.ts`'s `ssfDeadLettersJson()` searches and pages
 // the list, for this page and `GET /admin-api/ssf/dead-letters` alike; this
 // draws them.
 //
@@ -30162,7 +30162,7 @@ function setSignalsReporter(reporter) {
   signalsReporter = reporter;
   // AND THE ACTION LAYER, which needs the same object and is handed it
   // from here rather than asking for it — see the header of
-  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // admin-core/admin_actions.ts. One statement, two destinations: this is
   // the ONLY place either is written, which is what keeps it one answer.
   adminActions.setSignalsReporter(reporter);
   // AND THE READ LAYER: the /admin-api report of this stream is drawn there
@@ -30182,7 +30182,7 @@ function setSignalsReporter(reporter) {
 //   * a require the other way round, from `tls_server.js` to this file at its
 //     own top level, would CLOSE A CYCLE — and not a theoretical one: that
 //     module is really first loaded from inside THIS file's require, through
-//     `admin-core/admin_views.js` → `spiffe/spiffe_auth.ts`, so it would be
+//     `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts`, so it would be
 //     handed this module's half-built exports and find no `setTruststore` on
 //     them. That is why `common/protocol_stack.js` fills this, on the line
 //     after it requires `tls_server.js`, rather than the filler being the
@@ -30250,8 +30250,8 @@ function setTruststore(value) {
 // refuses a POST without it, whatever the page drew.
 //
 // It holds no state and decides nothing: every row is `tls/tls_server.js`'s
-// own description through `admin-core/admin_views.js`, and every change is
-// `truststoreAction()` in `admin-core/admin_actions.js`, the function
+// own description through `admin-core/admin_views.ts`, and every change is
+// `truststoreAction()` in `admin-core/admin_actions.ts`, the function
 // `POST /admin-api/tls/trust/{action}` calls.
 // ---------------------------------------------------------------------------
 app.get('/admin/tls/trust', function (req, res) {
@@ -30399,10 +30399,10 @@ app.post('/admin/tls/trust', function (req, res) {
 //
 // Two tables: the directory people who hold Kerberos keys derived from their
 // own password, and the service principals an operator created here with a
-// random key. `admin-core/admin_views.js`'s `kerberosPrincipalsJson()` computes
+// random key. `admin-core/admin_views.ts`'s `kerberosPrincipalsJson()` computes
 // both, from the PUBLIC half of each pair of attributes, so nothing is opened
 // to draw this page and no key is on it. Every change is
-// `kerberosPrincipalsAction()` in `admin-core/admin_actions.js`, the function
+// `kerberosPrincipalsAction()` in `admin-core/admin_actions.ts`, the function
 // `POST /admin-api/kerberos/principals/{action}` calls.
 //
 // **A CREATE AND A ROTATE ANSWER WITH A PAGE, NOT A 303 — AND NOT A FILE.** The
@@ -31037,7 +31037,7 @@ function setCaepReporter(reporter) {
   caepReporter = reporter;
   // AND THE ACTION LAYER, which needs the same object and is handed it
   // from here rather than asking for it — see the header of
-  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // admin-core/admin_actions.ts. One statement, two destinations: this is
   // the ONLY place either is written, which is what keeps it one answer.
   adminActions.setCaepReporter(reporter);
   // AND THE READ LAYER: the /admin-api report of this stream is drawn there
@@ -32076,7 +32076,7 @@ function setRiscReporter(reporter) {
   riscReporter = reporter;
   // AND THE ACTION LAYER, which needs the same object and is handed it
   // from here rather than asking for it — see the header of
-  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // admin-core/admin_actions.ts. One statement, two destinations: this is
   // the ONLY place either is written, which is what keeps it one answer.
   adminActions.setRiscReporter(reporter);
   // AND THE READ LAYER: the /admin-api report of this stream is drawn there
@@ -33153,7 +33153,7 @@ app.get('/admin/config', function (req, res) {
 //
 // **REVERSED 2026-09-13, AND STILL NOT IN THIS TABLE**: every Protocols page
 // now lists its realm's endpoints, drawn by `respond()` from
-// `admin-core/protocol_endpoints.js`, which names ROUTES and takes names and
+// `admin-core/protocol_endpoints.ts`, which names ROUTES and takes names and
 // methods from `sts_metadata.js` and the router, so both drifts fail
 // `tests/protocol_endpoints.js`. admin-ui/CLAUDE.md argues it.
 // ---------------------------------------------------------------------------
@@ -33534,8 +33534,8 @@ function clusterStatusBlock() {
 // different fact. Which digests exist as against which one is in use; which
 // COSE algorithms this relying party can verify as against which two it is
 // offering. **Every table below is READ FROM THE MODULE THAT PERFORMS THE
-// ALGORITHM** — `common/totp.js`'s `report()` and
-// `authn/webauthn_policy.js`'s — which is the rule `/admin/crypto-metadata` is
+// ALGORITHM** — `common/totp.ts`'s `report()` and
+// `authn/webauthn_policy.ts`'s — which is the rule `/admin/crypto-metadata` is
 // built on, one layer down. A page that wrote the list out would describe
 // something this service does not do the first time one was added.
 // ===========================================================================
@@ -33716,7 +33716,7 @@ function webauthnMechanismBlock() {
 // ---------------------------------------------------------------------------
 // THE RECOVERY CODE MECHANISM, for `/admin/backup-codes` (2026-09-10).
 //
-// Read from `common/backup_codes.js` — the module that generates and compares
+// Read from `common/backup_codes.ts` — the module that generates and compares
 // a code — rather than written down here, which is the design every `status`
 // block on this page follows: the table lives with the code that performs the
 // thing, so this cannot describe something the service does not do.
@@ -33818,7 +33818,7 @@ const PROTOCOL_SETTINGS_PAGES = [
   // *what it does is decided by the specification and by the browser, and
   // there is nothing an operator could usefully turn* — true of the
   // cryptography and false of the ceremony, every parameter of which was a
-  // literal inside a string in `authn/authn.js`.
+  // literal inside a string in `authn/authn.ts`.
   // -------------------------------------------------------------------------
   { path: '/admin/totp', title: 'TOTP MFA',
     lead: '<strong>An authenticator app as a second factor — RFC 6238 over ' +
@@ -33898,7 +33898,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'RFC for a recovery code. What every identity provider does ' +
            'converges anyway — a handful of random strings, shown once, each ' +
            'accepted once — and the decisions that are left are this ' +
-           'service\'s own. <code>common/backup_codes.js</code> argues each ' +
+           'service\'s own. <code>common/backup_codes.ts</code> argues each ' +
            'of them, and the four settings below are what it leaves open.',
            '<strong>THEY ARE ENCRYPTED AND NOT HASHED, AND THAT IS A PRODUCT ' +
            'DECISION RATHER THAN A CRYPTOGRAPHIC ONE.</strong> This ' +
@@ -36492,7 +36492,7 @@ module.exports = {
   // table and `SECTIONS` disagree about. See above respond().
   protocolEndpointDrift: protocolEndpointDrift,
   page: page,
-  // AND FOR A SECOND MODULE SINCE THE XACML WORK: `xacml/xacml_admin.js`
+  // AND FOR A SECOND MODULE SINCE THE XACML WORK: `xacml/xacml_admin.ts`
   // draws the /admin/xacml pages (four then, six now) the way
   // `ldap/ldap_server.js` draws its (then five, now eight). Those two helpers
   // were private only because nothing outside this file had needed them — a
@@ -36513,7 +36513,7 @@ module.exports = {
   configSettingsJson: configSettingsJson,
   // ---------------------------------------------------------------------
   // THE ACTIONS ARE NOT HERE ANY MORE (2026-09-12). All thirty-one live in
-  // `admin-core/admin_actions.js`, which `mgmt-api/admin_api.js` requires
+  // `admin-core/admin_actions.ts`, which `mgmt-api/admin_api.js` requires
   // directly — so the management API no longer reaches its decisions through
   // the console module.
   //
@@ -36757,7 +36757,7 @@ module.exports = {
     log.debug("Leaving roleMemberKinds().");
     return ROLE_MEMBER_KINDS.slice();
   },
-  // The ELEVENTH slot, filled by `xacml/xacml_role_pep.js` at 23c. See its
+  // The ELEVENTH slot, filled by `xacml/xacml_role_pep.ts` at 23c. See its
   // header: a require in either direction fails rule 3e's test.
   setRolePreviewer: setRolePreviewer,
   usersView: usersView,

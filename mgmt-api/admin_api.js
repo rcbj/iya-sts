@@ -126,7 +126,7 @@ const adminScope = require('../admin-ui/admin_scope');
 // ---------------------------------------------------------------------------
 const adminActions = require('../admin-core/admin_actions');
 // AND THE READ HALF (2026-09-12). Thirty-eight functions that answer a
-// question and build no markup; `admin-core/admin_views.js` argues the line.
+// question and build no markup; `admin-core/admin_views.ts` argues the line.
 // What is still reached for on `admin` below is the console's own structure
 // — which pages exist, where a settings group is edited — and the views that
 // draw HTML, whose json half is still computed in the same pass as the page.
@@ -482,7 +482,7 @@ const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;
 
 const BASE = '/admin-api';
-// THE ACCESS GATE, armed by `xacml/xacml_access_pep.js` at 23c. A LEAF
+// THE ACCESS GATE, armed by `xacml/xacml_access_pep.ts` at 23c. A LEAF
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.
 const accessGate = require('../common/access_gate');
@@ -516,7 +516,7 @@ function sendJson(res, status, body) {
 // ---------------------------------------------------------------------------
 // A CREATE CLAIMS ITS NAME ACROSS NODES FIRST (2026-09-14, #46 section 3), for
 // `POST /admin-api/users/create` and `/admin-api/groups/create` —
-// `ldap/directory_create_claims.js` argues it. The directory module is looked
+// `ldap/directory_create_claims.ts` argues it. The directory module is looked
 // up in the require CACHE and never required from here: it registers routes,
 // it is below this module in the route order, and a process that never loaded
 // it has no directory to race for (the action refuses on its own).
@@ -1019,7 +1019,7 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'the shared secret length, the label an app shows, whether ' +
                  'new enrolments are offered at all, and how long an ' +
                  'unconfirmed one lives — with the RFC 6238 algorithm table ' +
-                 'in `status`, read from `common/totp.js` rather than ' +
+                 'in `status`, read from `common/totp.ts` rather than ' +
                  'written down here.\n\n**CHANGING THE DIGEST, THE DIGITS OR ' +
                  'THE PERIOD AFFECTS NEW ENROLMENTS ONLY.** An existing ' +
                  'secret is verified with the parameters it was enrolled ' +
@@ -1041,7 +1041,7 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'issued at all, how many codes are in one, how long each ' +
                  'is, and how it is broken up for reading — with the ' +
                  'mechanism itself in `status`, read from ' +
-                 '`common/backup_codes.js` rather than written down ' +
+                 '`common/backup_codes.ts` rather than written down ' +
                  'here.\n\n**THIS IS THE ONLY MECHANISM IN THIS SERVICE THAT ' +
                  'NO SPECIFICATION DEFINES.** There is no RFC for a recovery ' +
                  'code, so `status` has no specification column: every field ' +
@@ -1074,7 +1074,7 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'many one person may hold — which are not WebAuthn at all ' +
                  'but what THIS service does with a key.\n\n**NOT ONE OF ' +
                  'THESE EXISTED UNTIL 2026-09-10.** Every ceremony parameter ' +
-                 'was a literal in a string in `authn/authn.js`, and this ' +
+                 'was a literal in a string in `authn/authn.ts`, and this ' +
                  'service said there was nothing an operator could usefully ' +
                  'turn — true of the cryptography and false of the ' +
                  'ceremony.\n\n**ONE IS ENFORCED AND THE REST ARE ' +
@@ -2423,7 +2423,7 @@ const ROUTES = [
                              'again.' },
 
       // THE OPERATION THAT WAS DOCUMENTED BEFORE IT EXISTED (2026-09-06).
-      // `common/credentials.js` names `POST /admin-api/users/set-password`
+      // `common/credentials.ts` names `POST /admin-api/users/set-password`
       // twice — in the sentence a refused sign-in gets, and in the banner the
       // product-mode bootstrap prints telling an operator to change the
       // generated password — and no such operation had ever been written.
@@ -3511,7 +3511,7 @@ const ROUTES = [
   // the pages worth writing is that all three modules already PUBLISHED a
   // schema whose comment claimed a page under `/admin/ldap/*` and none of
   // them had one — `common/roles.js` from that afternoon,
-  // `xacml/xacml_store.js` from XACML phase two, `xacml/xacml_pep_registry.js`
+  // `xacml/xacml_store.ts` from XACML phase two, `xacml/xacml_pep_registry.ts`
   // from phase five.
   // ---------------------------------------------------------------------
   { method: 'GET', path: BASE + '/ldap/roles', tag: 'LDAP',
@@ -11599,7 +11599,7 @@ const ROUTES = [
   // previous versions" buttons joined the four on 2026-09-12 — so this resource
   // has the same six, through `kerberosPrincipalsAction()` and
   // `kerberosPrincipalsJson()` in `admin-core/`, which reach
-  // `kerberos/krb5_person_keys.js` by a plain require.
+  // `kerberos/krb5_person_keys.ts` by a plain require.
   //
   // **NO KEY IS IN ANY REPLY BUT TWO**, and those two are the whole reason a
   // service principal can be created from a machine: `create-service` and
@@ -12618,7 +12618,7 @@ const ROUTES = [
                  'something, without issuing it and without recording ' +
                  'anything.\n\n**It is the SAME call the nine issuance sites ' +
                  'make** — `common/issuance_gate.check()`, through ' +
-                 '`xacml/xacml_role_pep.js`, against the policy ' +
+                 '`xacml/xacml_role_pep.ts`, against the policy ' +
                  '`xacml.issuancePolicy` names — so a preview that agreed ' +
                  'with the enforcement only by coincidence is impossible. ' +
                  'That is the only reason it is worth having.\n\nIt is not ' +

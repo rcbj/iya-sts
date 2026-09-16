@@ -56,7 +56,7 @@
 //    — so it can never close a require cycle and its position in the require
 //    order is not a position. That matters more here than it did in the parent:
 //    `home/home.ts` (6a), `admin-ui/admin.js` (18), `mgmt-api/admin_api.js`
-//    (19), `portal/portal.js`, `sts_metadata.js` (24), `server.js` itself and
+//    (19), `portal/portal.ts`, `sts_metadata.js` (24), `server.js` itself and
 //    every module that sends an outbound request all read it — modules spread
 //    across the whole require order — and a version module that could drag a
 //    route would be a version module that decided where routes go.

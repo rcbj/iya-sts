@@ -446,7 +446,7 @@ async function theRouting(t) {
 async function theRealmWithNoKdc(t) {
   log.debug("Entering theRealmWithNoKdc().");
   t.log.info('=== D. a realm with no KDC refuses, and a rename cleans up ===');
-  const keys = require('../kerberos/krb5_person_keys.js');
+  const keys = require('../kerberos/krb5_person_keys');
   const made = realms.create({ id: 'krr-nokdc', name: 'krr-nokdc',
                                description: 'Created by ' + __filename });
   if (!t.check(made.ok, 'a realm with Kerberos off is created',

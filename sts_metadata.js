@@ -1839,7 +1839,7 @@ const SPECS = [
     coverage: 'full: an EST enrollment body must be sent as ' +
               'application/pkcs10 and anything else is refused 415. The ' +
               'PKCS#10 request inside it is verified, proof of possession ' +
-              'included, by common/cert_enrollment.js.' },
+              'included, by common/cert_enrollment.ts.' },
   // ===== SCEP specs (scep/) =====
   { id: 'rfc8894', name: 'Simple Certificate Enrolment Protocol (RFC 8894)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8894',
@@ -3631,7 +3631,7 @@ const ENDPOINTS = [
           'IMPLEMENTS NO SPECIFICATION (2026-09-10). The four ' +
           '`backupCodes.*` settings — whether a set is issued at all, how ' +
           'many codes, how long each is, and how it is grouped for reading — ' +
-          'with the mechanism read from common/backup_codes.js rather than ' +
+          'with the mechanism read from common/backup_codes.ts rather than ' +
           'written down here, which is the rule /admin/crypto-metadata is ' +
           'built on. **A SET IS ISSUED AUTOMATICALLY AND ONCE**, by the act ' +
           'of enrolling a second factor; there is no control here, on ' +
@@ -3653,7 +3653,7 @@ const ENDPOINTS = [
           'seconds in a step, the steps of clock skew forgiven, the shared ' +
           'secret length, the label a phone shows, whether new enrolments ' +
           'are offered, and how long an unconfirmed one lives. The algorithm ' +
-          'table is READ FROM common/totp.js rather than written down here, ' +
+          'table is READ FROM common/totp.ts rather than written down here, ' +
           'which is the rule /admin/crypto-metadata is built on. **CHANGING ' +
           'THE DIGEST, THE DIGITS OR THE PERIOD AFFECTS NEW ENROLMENTS ' +
           'ONLY** — an existing secret is verified with the parameters the ' +
@@ -3678,7 +3678,7 @@ const ENDPOINTS = [
           'factor, how many one person may hold — which are not WebAuthn at ' +
           'all but what THIS service does with a key. **NOT ONE OF THESE ' +
           'EXISTED UNTIL 2026-09-10**: every ceremony parameter was a ' +
-          'literal in a string in authn/authn.js. **ONE IS ENFORCED AND THE ' +
+          'literal in a string in authn/authn.ts. **ONE IS ENFORCED AND THE ' +
           'REST ARE REQUESTS** — userVerification is checked against the UV ' +
           'flag inside the bytes the authenticator signed, and nothing ' +
           'signed says what the browser was asked about attestation, the ' +
@@ -4206,7 +4206,7 @@ const ENDPOINTS = [
           '`authorization_header`. IT IS A REAL HTTP REQUEST ON PURPOSE: ' +
           'handing the event to the page in process would skip the body, the ' +
           'media type, the authorization header and the signature, which is ' +
-          'everything a receiver does — the argument `common/oidc_rp.js` ' +
+          'everything a receiver does — the argument `common/oidc_rp.ts` ' +
           'makes about redeeming an authorization code in process, made ' +
           'again for a different protocol. UNAUTHENTICATED BY SESSION AND ' +
           'NOT UNGUARDED: what it checks is the bearer token on its own ' +
@@ -4376,7 +4376,7 @@ const ENDPOINTS = [
           'ONE generations table, newest first, with the origin as the last ' +
           'row, plus the acts, the parties and every line in words. THE ' +
           'PICTURE IS THE DELEGATION MAP ASKED A DIFFERENT QUESTION: ' +
-          'common/credential_graph.js returns a graph in ' +
+          'common/credential_graph.ts returns a graph in ' +
           'delegation.graph()\'s shape, so the same code draws it and a ' +
           'party here is the same party, drawn the same way, as on the four ' +
           'pages that had it first. A CREDENTIAL THIS SERVICE NO LONGER ' +
@@ -5553,7 +5553,7 @@ const ENDPOINTS = [
     specs: ['rfc5280'],
     what: 'NON-SPEC. What the certificate details dialog on /admin/pki and ' +
           '/admin/crypto-metadata opens, as JSON, from the same view layer ' +
-          '(admin-core/certificate_views.js) — so a certificate cannot be ' +
+          '(admin-core/certificate_views.ts) — so a certificate cannot be ' +
           'openable on one door and unknown on the other. Without ' +
           '`certificate` it is the LIST: one row per certificate with every ' +
           'place it appears, which is where a caller finds the SHA-256 ' +
@@ -5734,7 +5734,7 @@ const ENDPOINTS = [
     what: 'NON-SPEC. The four `backupCodes.*` settings, with the mechanism ' +
           'beside them — the alphabet, the bits per code, how they are ' +
           'generated, how they are compared and how they are stored — read ' +
-          'from common/backup_codes.js rather than written down. **status ' +
+          'from common/backup_codes.ts rather than written down. **status ' +
           'HAS NO SPECIFICATION COLUMN BECAUSE THERE IS NO SPECIFICATION**: ' +
           'every field in it is a decision this service made. There is no ' +
           'operation that ISSUES a set and none that READS a code; POST ' +
@@ -5747,7 +5747,7 @@ const ENDPOINTS = [
     name: 'TOTP MFA settings',
     specs: ['rfc6238', 'rfc4226'],
     what: 'NON-SPEC. The eight `totp.*` settings, with the RFC 6238 ' +
-          'algorithm table beside them — read from common/totp.js rather ' +
+          'algorithm table beside them — read from common/totp.ts rather ' +
           'than written down, so the report cannot describe a digest this ' +
           'service does not compute. Changing the digest, the digits or the ' +
           'period affects NEW enrolments only; the skew window is live for ' +
@@ -7585,7 +7585,7 @@ const ENDPOINTS = [
           'THE POST CHECKS THE CODE FOR REAL IN BOTH MODES and SPENDS it: a ' +
           'failed spend REFUSES the sign-in, which is the opposite of what ' +
           '/authn/totp does with its counter and is argued in ' +
-          'common/credentials.js — a one-time code that cannot be counted is ' +
+          'common/credentials.ts — a one-time code that cannot be counted is ' +
           'replayable for ninety seconds, and a recovery code that cannot be ' +
           'marked spent works for ever. On success the session records amr ' +
           '["pwd","otp"] and acr "mfa": RFC 8176 registers no value for a ' +
@@ -7593,7 +7593,7 @@ const ENDPOINTS = [
           'relying party can look up. Rate limited by identity AND by ' +
           'address, through the same buckets as the code step. **IT ISSUES ' +
           'NOTHING AND ENROLS NOBODY** — a set is created by the ACT of ' +
-          'enrolling a second factor, once, in common/credentials.js. This ' +
+          'enrolling a second factor, once, in common/credentials.ts. This ' +
           'page has NO SCRIPT: a person reads a string off paper and types ' +
           'it.' },
   { path: '/authn/password-change', group: 'Authentication',
@@ -8228,7 +8228,7 @@ const ENDPOINTS = [
     effect: 'issues a certificate and writes it onto the entry',
     what: 'Section 7.4: a CSR naming exactly the order\'s identifiers, ' +
           'verified for proof of possession, issued through ' +
-          'common/cert_enrollment.js from the realm\'s ACME Issuing CA and ' +
+          'common/cert_enrollment.ts from the realm\'s ACME Issuing CA and ' +
           'written onto the entry. A second finalize answers ' +
           'orderNotReady.' },
   { path: '/enroll/acme/authz/:id', group: 'ACME', name: 'An authorization',
@@ -8785,7 +8785,7 @@ const PROTOCOLS = [
           'first factor. What every identity provider does converges anyway ' +
           '— a handful of random strings, each accepted once — so the ' +
           'decisions that are left are this service\'s own and ' +
-          'common/backup_codes.js argues each: fifty bits out of an alphabet ' +
+          'common/backup_codes.ts argues each: fifty bits out of an alphabet ' +
           'with no confusable pair, because this is the one credential here ' +
           'somebody writes on paper; HASHED with scrypt since 2026-09-11 — ' +
           'the same form userPassword is stored in — which is why a set is ' +

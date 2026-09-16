@@ -208,7 +208,7 @@ import dpop = require('../oauth-oidc/dpop');
 import mtls = require('../oauth-oidc/mtls');
 import stats = require('../common/admin_stats');
 import authn = require('../authn/authn');
-// THE ACCESS GATE, which `xacml/xacml_access_pep.js` arms at 23c. A LEAF
+// THE ACCESS GATE, which `xacml/xacml_access_pep.ts` arms at 23c. A LEAF
 // (rule 3): it registers nothing and, with no decider installed, `check()`
 // answers "allowed" — so a process without the XACML family behaves exactly as
 // this file did before the gate existed, which is `npm test` and the parent
@@ -1058,7 +1058,7 @@ class ScimAuth {
       log.debug("Leaving ScimAuth.attemptBasic(). The credential was " +
                 "refused: " +
                 checked.reason);
-      // The verifier's own code for WHY (common/credentials.js), or this one.
+      // The verifier's own code for WHY (common/credentials.ts), or this one.
       return this.coded(errorCodes.codeOf(checked) || 'STS-SCIM-0037',
         this.unauthenticated(req, checked.reason === 'reserved-refusal'
         ? 'The password "' + ScimAuth.REFUSED_PASSWORD +

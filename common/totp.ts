@@ -88,9 +88,9 @@
 // A LIBRARY (rule 3): it registers no route, so its position in the require
 // order is not a position. It requires `config`, `crypto`, `helpers`,
 // `realms` and `error_codes` — none of which requires it back — and it is
-// required by `common/credentials.ts`, `portal/portal.js`, `authn/authn.js`,
+// required by `common/credentials.ts`, `portal/portal.ts`, `authn/authn.ts`,
 // `admin-ui/admin.js`, `admin-ui/crypto_metadata.js` and
-// `admin-core/admin_views.js`.
+// `admin-core/admin_views.ts`.
 //
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16).

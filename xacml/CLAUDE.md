@@ -143,7 +143,7 @@ Four links, and each is checked by the module that owns it:
 | 1 | Did the certificate build a path to an anchor in this service's truststore? | `oauth-oidc/mtls.js`'s `peerVerified()`, over `POST /tls/trust` — and the MAIN listener joined that truststore the same day, which is what made the question answerable at all |
 | 2 | Which directory entry is that? | `xacml_pep_registry.ts`'s `certificateIdentity()`, across the slot `ldap_server.js` fills — the same lookup `GET /tls/sign-in` gets (it was a certificate arriving on 8443 or 9443 until both listeners were deleted on 2026-09-16), so one certificate is one person however it turns up |
 | 3 | What roles does that entry hold? | `common/roles.js`, with the groups LEFT UNRESOLVED so it reads them from the directory. `REMOTE_PEPS` was the first built-in role held through a GROUP rather than computed from what the party is; `XACML_USER` is the second, and the two are deliberately separate |
-| 4 | Does the policy allow it? | `common/access_gate.js` → `xacml_access_pep.ts`, on resource `xacml-pep-api` or `xacml-api` — the same embedded PEP and the same `access-control` document that decide the console and the management API |
+| 4 | Does the policy allow it? | `common/access_gate.ts` → `xacml_access_pep.ts`, on resource `xacml-pep-api` or `xacml-api` — the same embedded PEP and the same `access-control` document that decide the console and the management API |
 
 **THE CERTIFICATE SAYS WHO AND THE GROUP SAYS WHETHER**, and keeping them apart
 is the whole design. A certificate this service verified, naming
@@ -403,7 +403,7 @@ hand out the documents this service enforces its own access with, and
 them serve a demonstration policy. Admitting a caller to the second set must
 not silently admit it to the first, which is why there are two built-in roles
 and two settings rather than one of each. `common/roles.js` argues it at the
-role and `common/access_gate.js` at the resource — `xacml-api` and
+role and `common/access_gate.ts` at the resource — `xacml-api` and
 `xacml-pep-api` are two ids precisely so an operator narrowing one surface and
 not the other has two names to target.
 
@@ -1067,7 +1067,7 @@ realm's `pep-tls` Issuing CA.
   first reissue. Whether the PEP is SERVING it is the PEP's own `GET /`.
 * **IT IS THE ONE ASYNCHRONOUS XACML ACTION.** `pepAction()` answers a PROMISE
   for it and a plain result for the other three, and both callers
-  (`admin-core/admin_actions.js`'s `xacmlAction()` and the console handler)
+  (`admin-core/admin_actions.ts`'s `xacmlAction()` and the console handler)
   settle it with `Promise.resolve()`. The other actions stay synchronous
   because `tests/xacml_pap.js` and `tests/xacml_alfa.js` call
   `combinedAction()` without awaiting.
@@ -1115,7 +1115,7 @@ manifest) and all three of which would have failed the day the defect was made.
    resource to check that the refusal SENTENCE names the actions, and
    `admin_api.js`'s parity check reads that same sentence to find out what a
    resource can do. A resource answering `why` is invisible to both. The
-   conversion is in `xacmlAction()` (in `admin-core/admin_actions.js`; it was
+   conversion is in `xacmlAction()` (in `admin-core/admin_actions.ts`; it was
    `admin.js`'s until 2026-09-12), which is the one function the management
    API calls and the console does not.
 5. **NINETEEN of the editor's twenty-three actions were undocumented, and not
@@ -1483,7 +1483,7 @@ later is counted BY CONSTRUCTION rather than by whoever adds it remembering.
 
 `xacml_monitor.ts` is a LEAF (rule 3) and **may not require `admin.js`**, which
 is the constraint that decides where the page lives. `xacml_access_pep.ts` fills
-`common/access_gate.js`'s decider and is reached from `common/`, far above
+`common/access_gate.ts`'s decider and is reached from `common/`, far above
 `admin-ui/admin.js` at 18 — so a console require here would drag every console
 route into the router at that position (rule 1). The symptom would not be an
 error: it would be `/admin/sts-metadata` reporting a different route order.

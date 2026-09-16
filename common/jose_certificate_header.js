@@ -161,27 +161,27 @@ const DEFAULT_MODE = 'x5u';
 const USE_CASES = [
   { id: 'access-token', setting: 'oauth2.accessTokenCertificateHeader',
     label: 'OAuth 2.0 access tokens',
-    where: 'oauth-oidc/oauth2.js accessToken() — every grant, the ' +
+    where: 'oauth-oidc/oauth2.ts accessToken() — every grant, the ' +
            'management API\'s tokens included' },
   { id: 'id-token', setting: 'oauth2.idTokenCertificateHeader',
     label: 'OpenID Connect ID Tokens',
-    where: 'oauth-oidc/oauth2.js idToken(), in the default RS256 and in ' +
+    where: 'oauth-oidc/oauth2.ts idToken(), in the default RS256 and in ' +
            'whatever id_token_signed_response_alg a client registered' },
   { id: 'refresh-token', setting: 'oauth2.refreshTokenCertificateHeader',
     label: 'Refresh tokens (the signed JWT inside the JWE)',
-    where: 'oauth-oidc/oauth2.js refreshToken() — the header is on the inner ' +
+    where: 'oauth-oidc/oauth2.ts refreshToken() — the header is on the inner ' +
            'JWS, which only this service ever opens' },
   { id: 'userinfo', setting: 'oauth2.userinfoCertificateHeader',
     label: 'Signed UserInfo responses',
-    where: 'oauth-oidc/oauth2.js, userinfo_signed_response_alg' },
+    where: 'oauth-oidc/oauth2.ts, userinfo_signed_response_alg' },
   { id: 'introspection', setting: 'oauth2.introspectionCertificateHeader',
     label: 'RFC 9701 JWT introspection responses',
-    where: 'oauth-oidc/introspection_jwt.js respond(), in RS256 or whatever ' +
+    where: 'oauth-oidc/introspection_jwt.ts respond(), in RS256 or whatever ' +
            'introspection_signed_response_alg a resource server registered' },
   { id: 'oauth-signed-metadata',
     setting: 'oauth2.signedMetadataCertificateHeader',
     label: 'RFC 8414 signed_metadata',
-    where: 'oauth-oidc/oauth2.js signedMetadata(), both discovery documents' },
+    where: 'oauth-oidc/oauth2.ts signedMetadata(), both discovery documents' },
   { id: 'vci-credential', setting: 'oid4vci.credentialCertificateHeader',
     label: 'OpenID4VCI credentials',
     where: 'oid4vc/vc_issuer.ts, the SD-JWT VC issuer JWT and the JWT VC' },

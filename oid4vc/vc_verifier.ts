@@ -911,7 +911,7 @@ class VcVerifier {
     try {
       // Applies `oauth2.clockSkewS` since 2026-08-27. This was the third of the
       // four verifications of our own tokens that had drifted away from the
-      // rule `oauth-oidc/oauth2.js` states — and here the effect was sharpest,
+      // rule `oauth-oidc/oauth2.ts` states — and here the effect was sharpest,
       // because a credential presented at the very edge of its validity window
       // was reported to a person as a FAILED ISSUER SIGNATURE, which is the one
       // verdict on this page that reads like an attack rather than like a

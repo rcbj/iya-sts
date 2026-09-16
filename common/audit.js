@@ -16,7 +16,7 @@
 //
 // It is a LIBRARY, like admin_stats.js and dpop.js — it registers no route, so
 // its position in the require order does not matter and it cannot be the reason
-// a route is missing. `admin-core/admin_views.js` builds /admin/audit and
+// a route is missing. `admin-core/admin_views.ts` builds /admin/audit and
 // `GET /admin-api/audit` from it; this file holds the events and none of the
 // HTML.
 //
@@ -645,7 +645,7 @@ const ACTIONS = [
   { action: 'xacml.access.refused', category: 'authorization',
     label: 'The access PEP refused a request to a gated surface' },
   // AND TWO MORE OF THE SAME KIND. `xacml.pep.register` has been written by
-  // `xacml/xacml.js` since phase five and had no row here either, so every
+  // `xacml/xacml.ts` since phase five and had no row here either, so every
   // remote PEP registration landed in `protocol` — the exact failure the
   // paragraph above describes, one endpoint along, and it survived the change
   // that fixed the other two because nothing reads these strings.

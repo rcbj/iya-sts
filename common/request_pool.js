@@ -663,7 +663,7 @@ const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 // (2026-09-13).
 //
 // The console and the portal redeem their authorization code over a real HTTP
-// request to this service's own token endpoint (`common/oidc_rp.js`), and the
+// request to this service's own token endpoint (`common/oidc_rp.ts`), and the
 // code lives in the memory of the worker that ran `/oauth2/authorize` until
 // replication carries it anywhere else. With one pool that worker was the one
 // running `/admin/callback` too — the browser's session held both to it — so
@@ -807,7 +807,7 @@ const SESSION_COOKIE = 'sts_session';
 
 // AND THE TWO RELYING-PARTY COOKIES (2026-09-08). Since this service's own
 // console and user portal became OpenID Connect clients, each holds a session
-// of its OWN on a cookie of its own — `common/oidc_rp.js` names them — and a
+// of its OWN on a cookie of its own — `common/oidc_rp.ts` names them — and a
 // request carrying one of those and no sign-on cookie was, to this file, a
 // request with no affinity at all. Two consequences, and the second is the one
 // that broke a suite: it was routed by load rather than to the worker holding
@@ -2136,7 +2136,7 @@ function fork(pool) {
     // the top of this file for what happens without it.
     //
     // AND WHICH POOL IT IS IN. One thing in a worker reads it: the OpenID
-    // Connect back channel in `common/oidc_rp.js`, which names the worker that
+    // Connect back channel in `common/oidc_rp.ts`, which names the worker that
     // should redeem a code and has to know whether that can be itself — see
     // PROTOCOL_WORKER_HEADER.
     env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1',
@@ -2180,7 +2180,7 @@ function fork(pool) {
                   //
                   // **THE HAZARD A BOUND CREATES, WRITTEN DOWN BECAUSE IT IS
                   // THE REASON THE NUMBER IS NOT SMALL**: this service makes
-                  // requests to ITSELF — `common/oidc_rp.js`'s back channel
+                  // requests to ITSELF — `common/oidc_rp.ts`'s back channel
                   // dials the front process, which dispatches again — so a
                   // worker holding N in-flight requests that are each waiting
                   // on a reentrant call needs an N+1th connection to make
@@ -2610,7 +2610,7 @@ function mutationKeyOf(req, url) {
 // TO THE SID.
 //
 // The handle ROTATES — on every re-authentication, and when an arrival session
-// becomes a sign-in (`authn/authn.js`, `mintSessionHandle()`) — and the sid
+// becomes a sign-in (`authn/authn.ts`, `mintSessionHandle()`) — and the sid
 // does not. Binding `s:<whole value>` would add a binding per rotation and
 // leave the old one pointing at a worker for a value no browser will present
 // again. The sid is also what the worker's store is keyed by, so it names the
@@ -3884,7 +3884,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // forwarded host from a peer that may not forward is dropped, so the worker
   // cannot believe what this process would not have. **Behind an L4 balancer
   // with `global.proxyProtocol` on, the peer IS the client**:
-  // `common/proxy_protocol.js` put the header's address on the socket before
+  // `common/proxy_protocol.ts` put the header's address on the socket before
   // this request was parsed, so what is written here is that address and the
   // balancer never appears (`tests/proxy_protocol.js` 3a).
   headers['x-forwarded-for'] = clientAddress.clientAddressOf(req) ||

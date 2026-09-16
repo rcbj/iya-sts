@@ -71,9 +71,9 @@ anything heavier.**
 | Who requires it | Why | Rule 3e's test |
 |---|---|---|
 | `common/admin_stats.js` | the release filter, at `jwtClaims()` and `samlAttributes()` | passes both ways: no route moves, no cycle closes |
-| `authn/authn.js` | the partner buttons on the sign-in screen | same, and see below |
+| `authn/authn.ts` | the partner buttons on the sign-in screen | same, and see below |
 | `admin-ui/admin.js` | `/admin/federation` | same |
-| `admin-core/admin_views.js`, `admin_actions.js` | what `/admin/federation` and `/admin-api` show and do | same; they register nothing either |
+| `admin-core/admin_views.ts`, `admin_actions.js` | what `/admin/federation` and `/admin-api` show and do | same; they register nothing either |
 | `ldap/ldap_server.js` | fills `setDirectory()` at its own require time | the ordinary direction, exactly as `applications.js` |
 | `federation/federation_graph.ts` | the graph `/admin/federation/map` is drawn from | the easiest of them: it registers no route itself, and there is nothing in it this module wants |
 | `federation/federation_sp.ts` | the register the four endpoints serve | the ordinary direction; see 4b |
@@ -132,7 +132,7 @@ a 404 with nothing to point at.
 
 ---
 
-## 4b. `federation_sp.ts` MUST COME AFTER `authn/authn.js`
+## 4b. `federation_sp.ts` MUST COME AFTER `authn/authn.ts`
 
 The same dependency `saml2_sso.ts` and `saml11_sso.ts` have, and **stronger than
 either**. Those two have no sign-in screen of their own and reach one through
@@ -730,7 +730,7 @@ end up half-written.
 **IT IS THE FIRST OF THIS REPOSITORY'S OUTBOUND REQUESTS**, in a module of its
 own that will not take a URL from anywhere but a relationship entry. It is the
 STRONGEST of them and the others each argue their own case rather than citing
-it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.js`,
+it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`,
 and the embedded debugger's api, the RFC 9728 import and a registered RFC 9101
 `request_uri` are indexed in the root `CLAUDE.md`'s *Things this service
 deliberately does not do*.

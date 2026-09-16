@@ -2715,7 +2715,7 @@ class CertEnrollment {
   // key goes. A server-generated private key, an EAB MAC key and a challenge
   // digest are read back by THIS module through the directory slot and by
   // nothing else, so withholding them from every page and every search spoils
-  // no reader's view — `kerberos/krb5_person_keys.js`'s argument for
+  // no reader's view — `kerberos/krb5_person_keys.ts`'s argument for
   // `stsKrb5Keys`, made again. In development mode a private key is stored
   // UNSEALED (there is no key-encryption key that outlives the process), and a
   // dump that printed it would hand the key to anybody holding Admin Read.

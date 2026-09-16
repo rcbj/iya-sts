@@ -25,7 +25,7 @@
 // **NOT A SLOT, AND RULE 3e'S TEST SAYS WHY.** A slot is the price of a require
 // that would close a cycle or move a route; there is no require here at all,
 // only a cache lookup, which is the arrangement
-// `admin-core/protocol_endpoints.js` uses for route-registering modules it
+// `admin-core/protocol_endpoints.ts` uses for route-registering modules it
 // must never load.
 //
 // **NOTHING HERE WAITS AND NOTHING HERE THROWS.** Every function returns a
@@ -38,8 +38,8 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AccountSignals` takes the logger and the way to find a loaded
 // `ssf.ts` through its constructor, and the module still exports the old
-// names from a TRANSITIONAL instance for `admin-core/admin_actions.js` and
-// `portal/portal.js`, which are not converted.
+// names from a TRANSITIONAL instance for `admin-core/admin_actions.ts` and
+// `portal/portal.ts`, which are not converted.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');

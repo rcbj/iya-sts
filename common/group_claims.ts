@@ -545,7 +545,7 @@ class GroupClaims {
   }
 
   // The feature's own state, for the console's section and for all three
-  // claim-set pages' JSON replies (`admin-core/admin_views.js`). Built here
+  // claim-set pages' JSON replies (`admin-core/admin_views.ts`). Built here
   // rather than in admin.js because two surfaces answer it and neither of them
   // should be reading the four settings itself.
   state() {

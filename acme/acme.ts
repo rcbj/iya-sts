@@ -30,7 +30,7 @@
 //     identifier the entry does not own fails `newOrder` with
 //     `rejectedIdentifier` rather than leaving a pending authorization that can
 //     never complete.
-//   * **EVERYTHING ABOUT THE CERTIFICATE IS `common/cert_enrollment.js`'s.**
+//   * **EVERYTHING ABOUT THE CERTIFICATE IS `common/cert_enrollment.ts`'s.**
 //     This module decides the wire format and nothing else: who may be issued
 //     what, what the certificate says, where it is kept and how it is revoked
 //     are the enrollment core's, shared with EST and SCEP.
@@ -1096,7 +1096,7 @@ class Acme {
       // ONCE ACROSS THE CLUSTER (2026-09-14, #46): the key id is claimed before
       // the binding is written, so two accounts at two nodes cannot both bind
       // it.
-      // `common/cert_enrollment.js`'s `bindEabOnce()` argues it.
+      // `common/cert_enrollment.ts`'s `bindEabOnce()` argues it.
       const bound = await core.bindEabOnce(eab.kid, thumbprint);
       if (!bound.ok) {
         log.debug("Leaving the ACME new-account. Bind refused.");

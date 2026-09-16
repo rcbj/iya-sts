@@ -297,7 +297,7 @@ const USE_CASES = [
   // about what SCEP issued, and an operator who has to stop trusting one
   // protocol's certificates wants a CA to distrust and a CRL to read rather
   // than a filter over serials. What a certificate from any of them CONTAINS,
-  // and for whom it may be issued, is `common/cert_enrollment.js`'s and the
+  // and for whom it may be issued, is `common/cert_enrollment.ts`'s and the
   // same for all three; `issueEnrolled()` below is the door they sign through.
   { id: 'acme', scope: 'realm', label: 'ACME enrollment',
     cn: 'ACME Issuing CA',
@@ -4098,8 +4098,8 @@ function forgetCertificate(scopeId, useCaseId, slot) {
 // listener's own, certified over a key that never leaves `tls/tls_server.js`,
 // or an enrolled one (`issueEnrolled()`) over a key this module is handed
 // public — EST's `/serverkeygen` generates its pair in
-// `common/cert_enrollment.js`, not here. This one is for
-// a remote XACML PEP's HTTPS listener (`pep-tls`, and `xacml/xacml_pep_tls.js`
+// `common/cert_enrollment.ts`, not here. This one is for
+// a remote XACML PEP's HTTPS listener (`pep-tls`, and `xacml/xacml_pep_tls.ts`
 // is the caller): the key pair is GENERATED here, certified from the use
 // case's Issuing CA, handed back ONCE, and forgotten — `certify()` records the
 // certificate under a slot and no private key, exactly as it does for a key
@@ -4435,7 +4435,7 @@ async function issueUnder(scopeId, useCaseId, spec) {
 //     the list `pki_revocation.issuedList()` reads, so OCSP knows it.
 //
 // **WHAT GOES INTO THE CERTIFICATE IS DECIDED BY THE CALLER AND NOT HERE.**
-// `common/cert_enrollment.js` builds the subject and the subjectAltName from
+// `common/cert_enrollment.ts` builds the subject and the subjectAltName from
 // the directory entry and refuses a name the entry does not own; this module
 // signs what it is handed, over the key it is handed, and never reads a CSR.
 // That keeps the certificate authority ignorant of who a person is, which is
@@ -4605,7 +4605,7 @@ function describeIssuer(scopeId, useCaseId) {
 // which is the rule the signing key already follows.
 //
 // An object is a key pair, its certificate, and what it took to make them.
-// Nothing here interprets one — `common/pki_authoring.js` does — so this is
+// Nothing here interprets one — `common/pki_authoring.ts` does — so this is
 // four accessors and a cap.
 // ===========================================================================
 
@@ -4629,7 +4629,7 @@ function describeIssuer(scopeId, useCaseId) {
 //
 // `pki.maxStoredObjects` is the number, read per call. `MAX_OBJECTS` stays as
 // the default it replaces and as a GETTER on this module's exports, so
-// `common/pki_authoring.js`'s view — which reads `pki.MAX_OBJECTS` — draws the
+// `common/pki_authoring.ts`'s view — which reads `pki.MAX_OBJECTS` — draws the
 // live cap without being edited.
 const MAX_OBJECTS = 200;
 
@@ -5930,7 +5930,7 @@ async function certifyRegistered(opts) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT `common/service_state.js` CALLS (for `server.js` and for a request
+// WHAT `common/service_state.ts` CALLS (for `server.js` and for a request
 // worker alike), after `keystore.start()` and before anything binds.
 //
 // **IT IS NEVER FATAL.** `persistence.start()` is the one place in this
@@ -6521,7 +6521,7 @@ module.exports = {
   issueTlsServerKeyPair: issueTlsServerKeyPair,
   TLS_SERVER_KEY_ALGS: TLS_SERVER_KEY_ALGS,
   DEFAULT_TLS_SERVER_KEY_ALG: DEFAULT_TLS_SERVER_KEY_ALG,
-  // Startup. `common/service_state.js` calls it, for `server.js` and a
+  // Startup. `common/service_state.ts` calls it, for `server.js` and a
   // request worker, after `keystore.start()` and before anything binds.
   start: start,
   SUBJECT_KINDS: SUBJECT_KINDS,
@@ -6548,7 +6548,7 @@ module.exports = {
   verifySignerChain: verifySignerChain,
   signerChainSummary: signerChainSummary,
   clearChain: clearChain,
-  // The object store and the issuer list, which `common/pki_authoring.js`
+  // The object store and the issuer list, which `common/pki_authoring.ts`
   // reads. They are here rather than there because the ROW is this module's —
   // see THE OBJECT STORE above.
   // The row accessors, for `common/pki_revocation.js`. They are exported

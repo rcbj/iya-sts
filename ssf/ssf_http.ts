@@ -243,7 +243,7 @@ class SsfHttp {
   // seeded stream and a receive endpoint of its own — and the stream's
   // `delivery.endpoint_url` is this service's own loopback address. That was
   // a decision with an alternative, and the alternative was rejected for
-  // `common/oidc_rp.js`'s reason: handing the SET to the inbox by function
+  // `common/oidc_rp.ts`'s reason: handing the SET to the inbox by function
   // call would have been a receiver that never parses a body, never checks a
   // media type, never presents an authorization header and never verifies a
   // signature — the half of a receiver that only looks run. `ssf/CLAUDE.md`
@@ -483,20 +483,20 @@ class SsfHttp {
     // `tls/tls_server.js`) — and the hostname check skipped, because the
     // certificate names this service and the connection names the loopback
     // interface. Pinning the anchor is the stronger half of the two.
-    // `common/oidc_rp.js`'s back channel does exactly this and these are the
+    // `common/oidc_rp.ts`'s back channel does exactly this and these are the
     // same three lines.
     //
     // **THE REQUIRE IS LAZY AND HAS TO BE.** `tls/tls_server.js` registers the
     // /tls routes (rule 1), and this file is required by `ssf.ts` at 23b —
     // but also, through `ssf_receivers.ts`, by `admin-ui/admin.js` at 18 and
-    // `portal/portal.js` just after `authn` (8), either of which would drag
+    // `portal/portal.ts` just after `authn` (8), either of which would drag
     // /tls ahead of the management API's own routes. Here every module is
     // loaded and it is a cache hit.
     // -----------------------------------------------------------------------
     let anchor = null;
     if (ours && secure) {
       try {
-        // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.js's
+        // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.ts's
         // back channel, which pinned the leaf and stopped being able to reach
         // this service at all the hour that leaf acquired an issuer.
         anchor = loadTlsServer().serverCertificate().trustAnchorPem;

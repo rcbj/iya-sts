@@ -24,7 +24,7 @@
 // IT IS A LIBRARY (rule 3). IT REGISTERS NO ROUTE AND IT SENDS NOTHING.
 //
 // It requires `helpers`, `config`, `realms`, `audit`, `ssf_events`,
-// `ssf_subjects` and the route-free `oauth-oidc/step_up.js`, and nothing else,
+// `ssf_subjects` and the route-free `oauth-oidc/step_up.ts`, and nothing else,
 // so it cannot join a cycle — and in particular it does NOT require `ssf.ts`,
 // which requires IT. That is what decides the division of labour and it is
 // worth stating plainly because it looks arbitrary from either side:
@@ -84,7 +84,7 @@ import realms = require('../common/realms');
 import audit = require('../common/audit');
 import events = require('./ssf_events');
 import subjects = require('./ssf_subjects');
-// The ORDER of those levels is `oauth-oidc/step_up.js`'s, required rather than
+// The ORDER of those levels is `oauth-oidc/step_up.ts`'s, required rather than
 // written out again: RFC 9470's "a stronger authentication satisfies a request
 // for a weaker one" and this file's `change_direction` are one ordering, and
 // two copies would disagree the first time a level was added. step_up.js is a

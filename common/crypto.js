@@ -60,7 +60,7 @@
 // It requires npm packages, `./vendored/xmldsig.js`, and `./config` — and
 // `config.js` requires nothing in this repository, so there is no cycle to
 // close and no route order to disturb. It registers no endpoint, exactly like
-// `oauth-oidc/dpop.js` (rule 3), and it is BELOW `helpers.js` rather than
+// `oauth-oidc/dpop.ts` (rule 3), and it is BELOW `helpers.js` rather than
 // beside it: helpers requires this file for its key generation and its token
 // minting, so this file may never require helpers back. Concretely, that means
 // **nothing here reads `STS`, the ambient realm, or a session** — every
@@ -1026,7 +1026,7 @@ const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
 //
 // Every algorithm this service signs with or verifies is a row here, and every
 // module that touches a JWS reads this rather than keeping a table of its own.
-// `oauth-oidc/dpop.js` had the second one — nine rows, node-crypto parameters,
+// `oauth-oidc/dpop.ts` had the second one — nine rows, node-crypto parameters,
 // its own verifier — which is how DPoP came to accept a different set of
 // algorithms from everything else in the service for no reason anybody chose.
 //
@@ -1084,7 +1084,7 @@ const JWS_ALGS = {
 // `kty: 'AKP'` is RFC 9964's key type for all of them, which is also why they
 // are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
 // oct and not for AKP, so a DPoP proof signed with one could not be bound to
-// anything. See oauth-oidc/dpop.js. (RFC 9964 has since defined the
+// anything. See oauth-oidc/dpop.ts. (RFC 9964 has since defined the
 // AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; DPoP still
 // refuses these algorithms by name.)
 pqJose.PQ_ALGS.forEach(function (alg) {
@@ -2898,7 +2898,7 @@ function stripPem(pem) {
 // RFC 7638 JWK THUMBPRINT.
 //
 // THERE WERE THREE OF THESE, which is one more than the audit that started this
-// work had found: `oauth-oidc/dpop.js` (hand-built canonical JSON, full member
+// work had found: `oauth-oidc/dpop.ts` (hand-built canonical JSON, full member
 // table), `spiffe/spiffe_ca.ts` (JSON.stringify over an object literal whose
 // keys happen to be in lexicographic order) and `oid4vc/vc_issuer.ts` (the same
 // trick, RSA only, inline in a key-generation IIFE).
@@ -3080,7 +3080,7 @@ function constantTimeEquals(a, b) {
 // value is an HMAC truncated to N digits, and an HMAC is a keyed signature —
 // so this is the fourth thing this service signs with, and the rule this
 // module was written to enforce is that there is one place it happens. A
-// `createHmac` in `common/totp.js` would be the fifth call site of a
+// `createHmac` in `common/totp.ts` would be the fifth call site of a
 // cryptographic primitive outside the one module that is supposed to hold
 // them all, and the argument against that is the same argument the six XML
 // signers lost in 2026-08-27.
@@ -3089,7 +3089,7 @@ function constantTimeEquals(a, b) {
 // other pair in this file makes: this function is handed a key, a counter and
 // a shape, and it answers with digits. It does not know what a time step is,
 // how wide a skew window an operator allows, whether a code has been spent
-// before, or what base32 is. `common/totp.js` owns all four, because all four
+// before, or what base32 is. `common/totp.ts` owns all four, because all four
 // are decisions about a deployment rather than about an algorithm — which is
 // why that module can be read for the mechanism's behaviour and this one for
 // its arithmetic.
@@ -3952,7 +3952,7 @@ module.exports = {
   constantTimeEquals: constantTimeEquals,
   // --- one-time passwords (RFC 4226 section 5.3) ---
   // The primitive only. The time step, the skew window, the replay guard and
-  // base32 are `common/totp.js`'s, for the reason written above hotpCode().
+  // base32 are `common/totp.ts`'s, for the reason written above hotpCode().
   HOTP_ALGS: HOTP_ALGS,
   hotpSpec: hotpSpec,
   hotpCode: hotpCode,

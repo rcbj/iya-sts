@@ -174,7 +174,7 @@ import applications = require('./applications');
 // **`flow` IS THE STRING `oauth2.js` ALREADY RECORDS, VERBATIM.** Every JWT
 // this service signs goes through `signJwt()` with an issuance context, and
 // that context carries a `grant` — see `issuanceContext()` in
-// `oauth-oidc/oauth2.js` and `recordJwt()` in `admin_stats.js`. Those strings
+// `oauth-oidc/oauth2.ts` and `recordJwt()` in `admin_stats.js`. Those strings
 // are the identifiers here rather than a tidier vocabulary of this file's own,
 // and that is deliberate: a table keyed on a prettier name would need a
 // translation, and a translation that misses a value fails SILENTLY — the token

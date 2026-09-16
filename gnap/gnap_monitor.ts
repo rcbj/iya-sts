@@ -13,7 +13,7 @@
 // that is in the grant store, which holds CURRENT state and forgets a finalized
 // grant after a day; these are COUNTS since the process started.
 //
-// It is `xacml/xacml_monitor.js`'s shape, deliberately, and for its reasons:
+// It is `xacml/xacml_monitor.ts`'s shape, deliberately, and for its reasons:
 //
 //   * **a LEAF** — it requires config, realms, helpers and the replication
 //     reader, and nothing it requires requires it back, so the grant engine can

@@ -187,7 +187,7 @@ function isShapeRefusal(message) {
 
 // The number words the mock's refusal sentences use to count their own lists.
 // It writes "The six are: …" rather than "The 6 are: …" almost everywhere, and
-// `common/claim_attributes.js` writes the digit — so both spellings are read.
+// `common/claim_attributes.ts` writes the digit — so both spellings are read.
 const NUMBER_WORDS = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
   nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
@@ -1704,7 +1704,7 @@ async function theClaimSetDoorsRoundTrip() {
 // /realm/acme/admin/claims was added to every realm's tokens at once, the
 // DEFAULT realm's included, while each realm's console showed it as that
 // realm's own configuration. The OTHER HALF of the same claim set was already
-// per realm (the directory attributes, in common/claim_attributes.js), so one
+// per realm (the directory attributes, in common/claim_attributes.ts), so one
 // claim set disagreed with itself about whether it belonged to a realm.
 //
 // It is asserted HERE rather than by reading the two consoles, because the

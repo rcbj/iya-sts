@@ -72,7 +72,7 @@
 // the three Shared Signals reporters, and the XACML pages. Those are INVERTED
 // HOOKS on `admin-ui/admin.js` (rule 3e), filled at require time by
 // `ldap/ldap_server.js`, `ssf/ssf.ts`, `logout/logout.ts` and
-// `xacml/xacml_admin.js` — and every one of those fillers, along with every
+// `xacml/xacml_admin.ts` — and every one of those fillers, along with every
 // sentence of CLAUDE.md that explains why the hook has to exist, names that
 // module.
 //
@@ -318,7 +318,7 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 // sessions each say session-revoked through `dropSession()`, as every sign-out
 // does. Nothing waits for any of it.
 //
-// **THE STORE DECIDES WHAT HAPPENS TO THE ENTRY** (`common/credentials.js`);
+// **THE STORE DECIDES WHAT HAPPENS TO THE ENTRY** (`common/credentials.ts`);
 // this decides who asked, what is audited and what is said. Answers null for
 // an action that is not one of the six, so `usersAction()` carries on.
 // ---------------------------------------------------------------------------
@@ -501,7 +501,7 @@ const ROLE_MEMBER_KINDS = [
 // POST /admin-api/policies/{action}.
 //
 // Every rule — which profile names may exist, what each field may be, how two
-// fields relate — is in `common/password_policy.js`, so this reads a body and
+// fields relate — is in `common/password_policy.ts`, so this reads a body and
 // decides nothing, which is the division `rolesAction()` has with `roles.js`.
 //
 // **A SAVE REPLACES THE WHOLE PROFILE AND THE BODY CARRIES EVERY FIELD.** The
@@ -641,7 +641,7 @@ const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
 // THE KERBEROS PRINCIPALS, AS `/admin/kerberos/principals` POSTS THEM AND
 // `POST /admin-api/kerberos/principals/{action}` CALLS THEM (2026-09-12).
 //
-// Six actions and each is one function in `kerberos/krb5_person_keys.js`,
+// Six actions and each is one function in `kerberos/krb5_person_keys.ts`,
 // which decides everything: what an SPN may be, whether a key already exists,
 // the random keys, the seal, the keytab, the audit row. What this adds is the
 // vocabulary and the house refusal sentence.
@@ -1478,7 +1478,7 @@ class AdminActions {
     return { xacml: false,
              message: 'The XACML module is not loaded in this process, so ' +
                       'there is no policy repository to report. ' +
-                      'xacml/xacml_admin.js fills this reader when it is ' +
+                      'xacml/xacml_admin.ts fills this reader when it is ' +
                       'required.' };
   }
 

@@ -82,7 +82,7 @@
 // order is not a position. It requires `helpers` and nothing else — not
 // `config`, not `realms` — because it is a SCHEMA and there is nothing about
 // it a deployment or a trust realm could change. It is required by
-// `portal/portal.js` and by `ldap/ldap_server.js`.
+// `portal/portal.ts` and by `ldap/ldap_server.js`.
 //
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16).
@@ -235,7 +235,7 @@ const INET_ORG_PERSON: SchemaRow[] = [
   { ldap: 'employeeNumber', label: 'Employee number', rfc: 'RFC 2798 2.4' },
   { ldap: 'employeeType', label: 'Employee type', rfc: 'RFC 2798 2.5',
     note: 'The one attribute on this page an XACML policy in this service ' +
-          'reads by default — see xacml/xacml_pip.js.' },
+          'reads by default — see xacml/xacml_pip.ts.' },
   { ldap: 'roomNumber', label: 'Room number', rfc: 'RFC 4524 2.22' },
   { ldap: 'manager', label: 'Manager', rfc: 'RFC 4524 2.17',
     note: 'A DN. Nothing here follows it.' },

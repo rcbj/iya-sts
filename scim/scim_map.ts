@@ -134,7 +134,7 @@
 // (`vc_claims.ts`'s CANONICAL_NAMES) through its constructor, and the two
 // mapping tables, the schema URNs and OWN_NAMES are its static members. The
 // module still exports every old name from a TRANSITIONAL instance, because
-// `scim.ts`, `admin-ui/admin.js`, `admin-core/admin_views.js` and
+// `scim.ts`, `admin-ui/admin.js`, `admin-core/admin_views.ts` and
 // `ldap/ldap_server.js` are not converted and require it by those names. The
 // spelling check that ran at require time runs when that instance is built,
 // which is still at require time.

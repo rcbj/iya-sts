@@ -53,7 +53,7 @@
 // invented about a person already carries — `stsTotpCredential`,
 // `stsBackupCodes`, `stsActivationToken` — and what tells them apart from the
 // inetOrgPerson schema beside them, which is somebody else's and is listed in
-// `common/inetorgperson.js`.
+// `common/inetorgperson.ts`.
 //
 //   stsAssertionIssuer            the `iss` this person's assertions carry.
 //                                 Multi-valued. Absent means their own

@@ -50,7 +50,7 @@
 // **THE ENTRY IS NOT SEEDED.** An absent `cn=default` means the BUILT-IN
 // defaults below are in force, and the console says so; the entry is written
 // the first time an operator saves the profile. That is `role-issuance`'s
-// argument in `xacml/xacml_role_pep.js` made again: a seed written into the
+// argument in `xacml/xacml_role_pep.ts` made again: a seed written into the
 // directory at startup is written into ONE realm, a realm created later has
 // none, and a policy that silently did not exist in some realms is the defect
 // that argument was written about. A computed default exists in every realm

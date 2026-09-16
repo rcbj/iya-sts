@@ -103,7 +103,7 @@
 // ---------------------------------------------------------------------------
 // WHERE IT SITS IN THE REQUIRE ORDER (rule 1).
 //
-// **AFTER `authn/authn.js`**, and it is the same dependency `saml2_sso.ts` has
+// **AFTER `authn/authn.ts`**, and it is the same dependency `saml2_sso.ts` has
 // and stronger than WS-Federation's: it has no sign-in screen of its own and it
 // calls `startSession()` directly. It must also be after
 // `common/applications.js` is loadable, which it is everywhere, and it requires
@@ -2933,7 +2933,7 @@ class FederationSp {
       // the whole point of the sentence around it — and lands on the reader's
       // own account page once they have used one. The record is minted when the
       // link is PRESSED rather than when this page is drawn, which is what
-      // keeps it from expiring on a page somebody left open. `portal/portal.js`
+      // keeps it from expiring on a page somebody left open. `portal/portal.ts`
       // carries the full argument; the same mistake was in two other files on
       // 2026-09-06.
       '<p><a href="/admin/federation">Configure relationships in the ' +

@@ -6,7 +6,7 @@
 // THE TWO GNAP CONSOLE PAGES: Protocols -> GNAP and Monitoring -> GNAP grants.
 //
 // Drawn here, in the console's shell through `admin.respond()`, the way
-// `xacml/xacml_admin.js` draws XACML's — a console page is a `path` and a
+// `xacml/xacml_admin.ts` draws XACML's — a console page is a `path` and a
 // `label` in `admin-ui/admin.js`'s `SECTIONS` whoever builds the body. Every
 // fact on either page comes out of ONE call to `gnap_console.ts`, which is the
 // same call `/admin-api/gnap` and `/admin-api/gnap/monitor` answer with, so the

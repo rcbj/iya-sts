@@ -5,7 +5,7 @@ added 2026-09-13 as one of the three certificate-enrollment families beside
 `acme/` and `scep/`. `docs/est.md` is the user-facing half; this is why it is
 built the way it is.
 
-**EVERYTHING THAT IS NOT A WIRE FORMAT IS `common/cert_enrollment.js`'s.** Who
+**EVERYTHING THAT IS NOT A WIRE FORMAT IS `common/cert_enrollment.ts`'s.** Who
 may be issued a certificate for whom, which names it may carry, whether a
 request proves possession, the profiles and the five refused ones, what the
 certificate contains, where it is kept, revocation and host names are decided

@@ -6,10 +6,10 @@
 // THE SCREEN A PERSON SEES BEFORE ANYTHING IS ISSUED FOR A SCOPE THEY HAVE NOT
 // AGREED TO.
 //
-// `common/consent.js` is the REGISTER — what has been agreed, what is
+// `common/consent.ts` is the REGISTER — what has been agreed, what is
 // configured, and which of a request's scopes are outstanding. This file is the
 // SCREEN: it holds the pending records, draws the page, and spends a record on
-// Allow or Deny. The split is exactly `common/app_permissions.js` /
+// Allow or Deny. The split is exactly `common/app_permissions.ts` /
 // `admin-ui/admin.js`'s and `common/delegation.js` / `delegation_map.js`'s —
 // what something MEANS in one file, what it LOOKS like in another.
 //

@@ -65,7 +65,7 @@ Seven actions need something filled by a module further down the require order:
 the logout reader, the directory and group writers, the three Shared Signals
 reporters, and the XACML pages. Those are inverted hooks on `admin-ui/admin.js`
 (rule 3e), filled by `ldap/ldap_server.js`, `ssf/ssf.ts`, `logout/logout.ts`
-and `xacml/xacml_admin.js`.
+and `xacml/xacml_admin.ts`.
 
 **AN EIGHTH ARRIVED ON 2026-09-12: THE CLIENT-CERTIFICATE TRUSTSTORE**, which
 `truststoreAction()` here and `truststoreJson()` in the views layer both reach
@@ -272,7 +272,7 @@ change of this shape — see `tests/CLAUDE.md`.
 and its trust chain in a dialog over the page, and `GET /admin-api/certificates`
 answers the same thing for a machine. **This file is the one place that decides
 which certificates any of the three may open**, which is the half of the feature
-that is not a rendering. The model is `common/certificate_details.js` and the
+that is not a rendering. The model is `common/certificate_details.ts` and the
 dialog is `admin-ui/certificate_dialog.js`; the file headers argue each.
 
 Four decisions, and each is a refusal:

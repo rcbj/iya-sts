@@ -183,7 +183,7 @@ const deferredTransactions =
 // Membership is the only question ever asked, and SHA-256 answers it.
 //
 // Kept a SET-SHAPED FACADE (`add`, `has`, `delete`, `size`, `clear`) because
-// `oauth-oidc/oauth2.js` adds and `vc_issuer.ts` asks and spends, and neither
+// `oauth-oidc/oauth2.ts` adds and `vc_issuer.ts` asks and spends, and neither
 // has any reason to learn that the store underneath changed.
 const deferredAccessTokenStore =
     realms.map({ persist: 'vc_offers.deferredAccessTokens' });

@@ -84,7 +84,7 @@
 // A LIBRARY (rule 3). It registers no route. It requires `assertion_grant.js`
 // and `jwt_access_token.ts` from this directory and libraries from `common/`,
 // none of which requires it back; `oauth2.ts` (9),
-// `admin-core/admin_actions.js` and `admin-core/admin_views.js` require it. It
+// `admin-core/admin_actions.ts` and `admin-core/admin_views.ts` require it. It
 // never touches `res` — what a refusal looks like on the wire is `oauth2.ts`'s.
 // ===========================================================================
 

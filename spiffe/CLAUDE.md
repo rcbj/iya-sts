@@ -353,7 +353,7 @@ that up silently.
    **AND THERE IS STILL A SELF-SIGNED PATH, REACHED BY THREE SUPPORTED
    CONFIGURATIONS**: `pki.autoBuild: false`, a Root that could not be built
    (never fatal, by `pki.start()`'s own rule), and every in-process caller that
-   does not run `common/service_state.js` — `npm test`, the parent project's
+   does not run `common/service_state.ts` — `npm test`, the parent project's
    in-process Kerberos jobs. There this module does what it always did, says so
    on every surface that reports an authority, and nothing about SPIFFE stops
    working. `tests/spiffe_authority.js` holds that path, in a child process
@@ -632,7 +632,7 @@ service that was working. It forks an echo child now and asks.
 
 ### The worker table is filled only in a worker
 
-Requiring `common/request_worker.js` pulls `common/service_state.js` in at
+Requiring `common/request_worker.js` pulls `common/service_state.ts` in at
 module scope. Registering from the front process is therefore a table nothing
 there will ever read, bought with a load of the store, the keys, the minted rows
 and coordination — so `registerWorkerMethod()` returns early unless

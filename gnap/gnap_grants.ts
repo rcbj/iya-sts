@@ -51,7 +51,7 @@
 // ---------------------------------------------------------------------------
 // APPROVALS ARE REMEMBERED IN THE CONSENT REGISTER, AS DIGEST TOKENS.
 //
-// `common/consent.js` is where this service writes down what a person agreed an
+// `common/consent.ts` is where this service writes down what a person agreed an
 // application may have, on the person's own directory entry — durable in every
 // store mode and shown on every consent surface. Its values are RFC 6749 scope
 // tokens and a GNAP right is not one (a reference string may carry spaces; an

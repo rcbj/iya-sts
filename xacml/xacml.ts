@@ -97,7 +97,7 @@
 //   * **THE THREE REQUIRES THAT ARM THIS FAMILY STAY AT THE TOP**, as plain
 //     `require()` calls in their old order and before any route: the console
 //     pages, then the role PEP (which fills `common/issuance_gate.js`'s
-//     decider), then the access PEP (which fills `common/access_gate.js`'s).
+//     decider), then the access PEP (which fills `common/access_gate.ts`'s).
 //   * **THE MODULE STILL EXPORTS `decide`, `enforce`, `description`,
 //     `enabled`, `pipMaxDesignators` AND `nudgeRegisteredPeps`**, bound to a
 //     TRANSITIONAL instance built at the bottom from the real modules, which
@@ -181,7 +181,7 @@ require('./xacml_admin');
 // must come after `xacml_admin.ts` for no technical reason at all, and does,
 // because the pages are what an administrator fixes a refusal with.
 require('./xacml_role_pep');
-// THE ACCESS PEP. Requiring it ARMS `common/access_gate.js` — the admin
+// THE ACCESS PEP. Requiring it ARMS `common/access_gate.ts` — the admin
 // console, the User Portal, SCIM, the SPIRE Server API, the embedded debugger
 // and this file's own two gates all ask it, and the management API does in
 // PRODUCT MODE (it is open in development by design, so there is no subject

@@ -71,7 +71,7 @@ name, and the nudge arriving over a bridge — none of which a host run touches.
 
 ## Why this exists at all, which is not obvious
 
-The mock already has a PEP: `/xacml/protected`, in `xacml/xacml.js`. It builds
+The mock already has a PEP: `/xacml/protected`, in `xacml/xacml.ts`. It builds
 a request, asks the PDP, applies the bias and the obligation rule, and answers
 200 or 403. It is a correct implementation of section 7.2 and it demonstrates
 almost nothing about a distributed deployment, because it **shares a process
@@ -593,7 +593,7 @@ private CA — and WHEN it can exist.
 **IT IS ISSUED BY THE REALM THE PEP REGISTERED TO**, from that realm's
 `pep-tls` Issuing CA (`common/pki.js`, argued in `common/CLAUDE.md`), through
 `POST /admin-api/xacml/issue-pep-certificate` or the control on
-`/admin/xacml/peps` (`xacml/xacml_pep_tls.js`). The PEP's row in `ou=peps` is
+`/admin/xacml/peps` (`xacml/xacml_pep_tls.ts`). The PEP's row in `ou=peps` is
 what decides the realm and what supplies the default names, so an unregistered
 PEP is refused. The private key is in that one reply and nowhere else.
 
@@ -629,7 +629,7 @@ can report a new mtime for identical bytes, and a copy can keep an old one.
   hierarchy for an outbound request, and trusting the service Root there would
   accept ANY leaf this service issued under a matching name — so it would also
   need the chain checked for the `pep-tls` Issuing CA. That is a change to
-  `xacml/xacml_pep_http.js`'s verification, argued there if it is made, not a
+  `xacml/xacml_pep_http.ts`'s verification, argued there if it is made, not a
   consequence of this listener existing.
 * **Nothing reports the served certificate back to the PDP.** The row on
   `/admin/xacml/peps` shows what the realm ISSUED; `GET /` here shows what is

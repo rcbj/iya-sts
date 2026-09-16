@@ -2871,7 +2871,7 @@ function startTcp(port) {
   const server = net.createServer(function (socket) {
     let buffer = Buffer.alloc(0);
     // THE CLIENT'S ADDRESS, read off the socket — which, with
-    // global.proxyProtocol on, `common/proxy_protocol.js` (installed from
+    // global.proxyProtocol on, `common/proxy_protocol.ts` (installed from
     // server.js, so this file gains no require) has already set to the
     // address in the PROXY header rather than the load balancer's.
     const peer = (socket.remoteAddress || '?') + ':' +

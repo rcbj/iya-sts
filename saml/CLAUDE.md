@@ -562,8 +562,8 @@ independent choices.
 `value` is untouched and is what every existing caller passes. One element per
 value with the same name is not a multi-valued attribute — it is a relying party
 reading the first and silently seeing one where there are four. That is also why
-the precedence rules in `../common/claim_attributes.js` and
-`../common/group_claims.js` are written as a FILTER in these two builders rather
+the precedence rules in `../common/claim_attributes.ts` and
+`../common/group_claims.ts` are written as a FILTER in these two builders rather
 than as an assignment order: an assertion is a list of elements, so a duplicate
 name is not an overwrite.
 
@@ -589,7 +589,7 @@ cycle and their position is not a position at all.
 
 **`saml2_sso.ts` is position 10a in `common/protocol_stack.js` (the require
 order `server.js` loads) and has one real constraint**: it
-must come after `../authn/authn.js`, and it is a STRONGER dependency than
+must come after `../authn/authn.ts`, and it is a STRONGER dependency than
 WS-Federation's rather than a weaker one — that module signs users into the
 session `authn.js` owns, and this one has no sign-in screen at all and reaches
 that service's through `beginAuthentication()`. It has no constraint against
@@ -604,7 +604,7 @@ later, so a require from there closes no cycle and moves no route.
 
 **`saml11_sso.ts` is position 10b and has TWO constraints**, the second of which
 is the only require between the two profiles. It must come after
-`../authn/authn.js`, for exactly the reason 10a must — no sign-in screen of its
+`../authn/authn.ts`, for exactly the reason 10a must — no sign-in screen of its
 own, and `beginAuthentication()` is how it reaches one. And **it must come after
 `saml2_sso.ts`**, because it takes `slugOf()` from it: one application must have
 one handle across both profiles, or the console shows one directory entry as two.
@@ -782,7 +782,7 @@ cancellation was ever read. An in-process probe counted twelve redirects and sti
 for both; the section above calling `ForceAuthn` hand-verified was true of the first leg
 only.
 
-**The fix is the RFC 9470 step-up shape** (`oauth-oidc/step_up.js`'s `step_up_honoured`),
+**The fix is the RFC 9470 step-up shape** (`oauth-oidc/step_up.ts`'s `step_up_honoured`),
 with the marker on the SERVER's copy of the request so a browser cannot claim the trip:
 
 * the redirect to the screen stamps `forcedAt` on the held request;

@@ -13,7 +13,7 @@
 // partner, which of them have ever used it, and what happens to somebody who
 // arrives at the identity-provider side.
 //
-// It is a LIBRARY, like `common/user_graph.js` and `common/credential_graph.js`
+// It is a LIBRARY, like `common/user_graph.ts` and `common/credential_graph.ts`
 // beside it: it registers no route, so its position in the require order does
 // not matter and it cannot be the reason a route is missing.
 // `admin-ui/admin.js` renders it at `/admin/federation/map` through
@@ -162,7 +162,7 @@ class FederationGraph {
   // ---------------------------------------------------------------------------
   // ONE RELATIONSHIP, WITH EVERYTHING THE PICTURE AND THE TABLES UNDER IT NEED.
   //
-  // It is deliberately a SUPERSET of `admin-core/admin_views.js`'s
+  // It is deliberately a SUPERSET of `admin-core/admin_views.ts`'s
   // `federationRow()` rather than a second, smaller version of it: that
   // function answers the list page and this one answers the map, and every
   // field they share is computed by the same two

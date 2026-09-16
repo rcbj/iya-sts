@@ -74,11 +74,11 @@
 //
 //   A01 access control    the rule above, plus `tests/portal_access.js`
 //   A02 crypto            scrypt for passwords, the activation token hashed at
-//                         rest — `common/credentials.js`
+//                         rest — `common/credentials.ts`
 //   A03 injection         every value through `esc()`; this service builds no
 //                         SQL from user input anywhere
 //   A04 insecure design   rate limiting on activation and password change —
-//                         `common/websecurity.js`
+//                         `common/websecurity.ts`
 //   A05 misconfiguration  the CSP `app.js` sets on every response, including
 //                         `script-src 'none'` and `frame-ancestors 'none'`
 //   A07 auth failures     CSRF tokens on every POST here, session replaced on
@@ -170,7 +170,7 @@ import authn = require('../authn/authn');
 // THE RELYING PARTY (2026-09-06). This portal authenticates through the
 // AUTHORIZATION CODE FLOW against this service's own authorization server now,
 // as the registered client `sts-user-portal`, rather than by asking `authn.js`
-// for a screen and reading the session that screen minted. `common/oidc_rp.js`
+// for a screen and reading the session that screen minted. `common/oidc_rp.ts`
 // runs the flow and argues it; the section below is what changed here.
 import oidcRp = require('../common/oidc_rp');
 // WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32). A library with no route,
@@ -202,7 +202,7 @@ import stats = require('../common/admin_stats');
 // here: `common/applications.js` registers nothing — `admin-ui/admin.js` and
 // `ldap/ldap_server.js` draw its pages — and `common/issuance_gate.js` requires
 // `helpers` and `config` and nothing else, which is the whole point of it being
-// a leaf. Both are already loaded by `authn/authn.js` at 8, above this module
+// a leaf. Both are already loaded by `authn/authn.ts` at 8, above this module
 // in `common/protocol_stack.js`, so these two requires are cache hits.
 //
 // **THE GATE IS ASKED THE SAME QUESTION THE NINE ISSUANCE SITES ASK.** That is
@@ -225,7 +225,7 @@ import version = require('../common/version');
 // a page belongs to the application it is a page of. It requires only other
 // libraries, none of which requires this file, so it can sit at 8a without
 // moving a route or closing a cycle — which matters more here than in the
-// console, because this module is required BEFORE `oauth-oidc/oauth2.js`.
+// console, because this module is required BEFORE `oauth-oidc/oauth2.ts`.
 //
 // It is emphatically NOT `ssf/ssf.ts` (23b), which registers every /ssf route
 // and the well-known document: a require of that from here would put the whole
@@ -611,7 +611,7 @@ const ENROL_KEY_FORM = vz.object({
 // success page), which marks the response; every other answer — a mismatched
 // password, a refused code, the authenticator step drawn before the link is
 // spent, a dropped connection — gives it back when the response ends, so the
-// link works again exactly as it did on one node. `common/credentials.js`
+// link works again exactly as it did on one node. `common/credentials.ts`
 // argues the rest beside the two functions.
 // ---------------------------------------------------------------------------
 const LINK_SPENT = Symbol('portal.linkSpent');
@@ -729,7 +729,7 @@ const MFA_FORM = vz.object({
                           'discard-codes'])),
   // A STRING AND NOT AN INTEGER. `007123` is a code and 7123 is not: parsing a
   // one-time password as a number loses the leading zeros that one code in ten
-  // has. The digit count is checked in `common/totp.js`, where the person's own
+  // has. The digit count is checked in `common/totp.ts`, where the person's own
   // enrolment says what it should be.
   code: vz.string().max(32).optional(),
   // THE PENDING SET'S HANDLE (2026-09-11). A set of recovery codes is
@@ -976,7 +976,7 @@ class Portal {
   // you pay for a require that would close a cycle or move a route, and warns
   // against adding one by analogy:
   //
-  //   * This module is required at 8a, before `oauth-oidc/oauth2.js` at 9.
+  //   * This module is required at 8a, before `oauth-oidc/oauth2.ts` at 9.
   //     `ldap/ldap_server.js` is at 21. A `require('../ldap/ldap_server')` here
   //     would register every `/ldap` route AND the eight `/admin/ldap/*`
   //     console pages at 8a — ahead of the authorization server, ahead of the
@@ -1210,7 +1210,7 @@ class Portal {
   // WHAT A PASSWORD HERE MUST BE, SAID ON THE FORM THAT ASKS FOR ONE
   // (2026-09-12).
   //
-  // The rules are `common/password_policy.js`'s default profile, read through
+  // The rules are `common/password_policy.ts`'s default profile, read through
   // `credentials.passwordRules()` — the function the refusal is built beside —
   // so the sentence a person reads before typing and the rule applied after
   // they press the button are one rule. In development mode nothing is checked,
@@ -1825,7 +1825,7 @@ class Portal {
   // `stsTotpCredential`, a shared secret, the day somebody enrolled an
   // authenticator, with nothing anywhere having decided that it should.
   //
-  // So `common/inetorgperson.js` is the list and this is a reader of it. A new
+  // So `common/inetorgperson.ts` is the list and this is a reader of it. A new
   // attribute this service invents cannot appear here by accident, and that is
   // a property of the list rather than of anybody remembering.
   //
@@ -2389,7 +2389,7 @@ class Portal {
   // TWO STEPS, AND THE FIRST WRITES NOTHING.
   //
   // Pressing *Set up* mints a secret and holds it IN MEMORY;
-  // `common/credentials.js` writes the attribute only when a code proves the
+  // `common/credentials.ts` writes the attribute only when a code proves the
   // app really has it. **An unconfirmed secret on somebody's entry would be a
   // second factor they cannot produce** — open this page, walk away, come back
   // tomorrow, and be locked out of your own account by a form you abandoned.
@@ -2402,7 +2402,7 @@ class Portal {
   //
   // `script-src 'none'` covers this page (every page of this portal but
   // `/portal/keys`), so a QR library running in the browser was never an option
-  // — `common/totp.js`'s `qrSvgDataUri()` renders it here and it arrives as a
+  // — `common/totp.ts`'s `qrSvgDataUri()` renders it here and it arrives as a
   // `data:` URI, which `img-src 'self' data:` already allows for the two OID4VC
   // offer pages.
   //
@@ -2429,7 +2429,7 @@ class Portal {
   // ENROLLING AGAIN REPLACES, AND THE PAGE SAYS SO BEFORE IT DRAWS THE NEW
   // CODE.
   //
-  // One secret per person — `common/credentials.js` argues why, and it is a
+  // One secret per person — `common/credentials.ts` argues why, and it is a
   // fact about the protocol rather than a policy: a six-digit code names no
   // credential, so two secrets would mean trying both. Somebody who scans a
   // second code and leaves the first app configured has an authenticator that
@@ -3903,7 +3903,7 @@ class Portal {
     // so a page added tomorrow is renewed by construction. When the session's
     // ID Token and access token run out it redeems the refresh token and writes
     // the new tokens onto the same session — the person stays signed in and on
-    // the page they asked for. `common/oidc_rp.js`'s section 4 argues all of
+    // the page they asked for. `common/oidc_rp.ts`'s section 4 argues all of
     // it. It answers no request itself; a renewal that could not happen ends
     // the session, and `requireSignIn()` then sends the browser through the
     // code flow as it always did for a request with no session.
@@ -4331,7 +4331,7 @@ class Portal {
     // `requireSignIn()` itself — so unlike the console's callback this one
     // needs no exemption from anything; it simply does not call that function.
     //
-    // Everything it does is in `common/oidc_rp.js`. What is here is where to go
+    // Everything it does is in `common/oidc_rp.ts`. What is here is where to go
     // afterwards and what a refusal looks like in the portal's own shell, which
     // is a different application from the console's and draws its own.
     // =========================================================================

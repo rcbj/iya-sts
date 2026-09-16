@@ -100,7 +100,7 @@
 // half* — and there is no `state_channel.js`.** It was the name the other half
 // was going to have, written down before it was built, and what was actually
 // built is a different shape with a better argument behind it: a worker is
-// ANOTHER PROCESS AGAINST THE STORE, so it runs `common/service_state.js` —
+// ANOTHER PROCESS AGAINST THE STORE, so it runs `common/service_state.ts` —
 // the same four startup steps `server.js` runs, from the same file — and the
 // stores are reconciled by `persistence/persistence_replication.js`'s change
 // log. `common/CLAUDE.md` (*A WORKER IS ANOTHER PROCESS AGAINST THE STORE*)
@@ -574,7 +574,7 @@ function start(path) {
     req.stsPoolTicket = Number(req.headers[POOL_TICKET_HEADER]) || 0;
     delete req.headers[POOL_TICKET_HEADER];
     // AND WHICH PROTOCOL WORKER THIS BROWSER IS HELD BY, which the front
-    // process sends a hosted-surface worker only: `common/oidc_rp.js`'s back
+    // process sends a hosted-surface worker only: `common/oidc_rp.ts`'s back
     // channel reads it off the request to reach the worker holding the code.
     // Stashed and stripped for the ticket's reasons. See `request_pool.js`'s
     // PROTOCOL_WORKER_HEADER, whose spelling this must match.

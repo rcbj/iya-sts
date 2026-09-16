@@ -8,7 +8,7 @@ say; the rest are listed after the table and argued in their own sections.
 | `admin.js` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
 | `admin_rbac.js` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
 | `delegation_map.js` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
-| `pki_admin.js` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.js`. It draws its own page (like `crypto_metadata.js`) and is required at **18a**, which is why it needs no slot. |
+| `pki_admin.js` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.js`) and is required at **18a**, which is why it needs no slot. |
 | `crypto_metadata.js` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.js`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
 | `federation_diagram.js` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.js`'s palette, hexagon and text metric. |
 
@@ -39,7 +39,7 @@ grew a gate.
    wrong.* That argument was correct while each sign-out had a fan-out written
    INTO it. It stopped being correct when the fan-outs became functions owned by
    the protocol module each belongs to — `wsfed.cleanupTargetsFor()`,
-   `saml2_sso.logoutTargetsFor()`, `oauth-oidc/frontchannel_logout.js` — and
+   `saml2_sso.logoutTargetsFor()`, `oauth-oidc/frontchannel_logout.ts` — and
    `authn.js`'s `dropSession()` became the single place a session stops
    existing.
 
@@ -77,7 +77,7 @@ grew a gate.
    `delegation.js`. A family added over there appears on this page with no edit.
 
 
-It also reads the SESSION store, which `../authn/authn.js` owns.
+It also reads the SESSION store, which `../authn/authn.ts` owns.
 
 ---
 
@@ -170,7 +170,7 @@ It also reads the SESSION store, which `../authn/authn.js` owns.
 
 Thirty-one of them, with the tables they dispatch on and the pure helpers they
 share — about 3,100 lines with their comments — to
-`admin-core/admin_actions.js`. `admin.js` went from 36,197 lines to 33,125.
+`admin-core/admin_actions.ts`. `admin.js` went from 36,197 lines to 33,125.
 
 **They were not moved because they were wrong.** Not one of them had ever
 touched `req`, `res` or markup; each took a parsed body and an actor and
@@ -191,7 +191,7 @@ long before there was anywhere to move to.
 
 **AND THEN THE INTERLEAVED ONES WERE SPLIT, FAMILY BY FAMILY.** Every page that
 computed a dozen facts, drew markup from them and assembled a json at the
-bottom now takes the facts from `admin-core/admin_views.js` in one call and
+bottom now takes the facts from `admin-core/admin_views.ts` in one call and
 renders them — its markup untouched, its json handed back as `view.json`. The
 page a person reads and the resource a machine fetches are one computation.
 `mfaView()` left entirely: the page it belonged to had split into
@@ -201,7 +201,7 @@ page a person reads and the resource a machine fetches are one computation.
 **THE PURE VIEWS WENT FIRST, AND THE LINE THERE WAS A MEASUREMENT.** Of the
 eighty-nine view-shaped functions here, forty-six return a json half and **only
 three separate at a clean boundary** — the rest build row markup part-way
-through the computation. So what moved to `admin-core/admin_views.js` is the
+through the computation. So what moved to `admin-core/admin_views.ts` is the
 thirty-eight that were already pure: they answer a question and reach no markup
 at all. The forty-three that render stayed, because `{ json, inner }` computed
 in one pass is the strongest form of rule 7 there is and splitting it is
@@ -853,7 +853,7 @@ for two reasons, and only the first is about typing.
   had no way to say so at creation.** The entry appeared carrying fictions and
   had to be corrected afterwards, one `ldapmodify` at a time, from outside this
   console.
-* **A person created here had no way IN.** `common/credentials.js` has been able
+* **A person created here had no way IN.** `common/credentials.ts` has been able
   to set a password and issue a single-use activation link since it was written,
   and NEITHER WAS REACHABLE FROM ANY SCREEN — `usersAction()` even had the
   `issue-activation` arm, with nothing in this console pressing it. That was a
@@ -949,7 +949,7 @@ reads that field to tell a control that posts somewhere from a control that
 reaches nothing.
 
 **AND IT CLOSED A DOCUMENTED ENDPOINT THAT HAD NEVER EXISTED.**
-`common/credentials.js` names `POST /admin-api/users/set-password` twice — in
+`common/credentials.ts` names `POST /admin-api/users/set-password` twice — in
 the sentence a refused sign-in gets and in the product-mode bootstrap banner
 that tells an operator to change the generated password — and no such operation
 had ever been written. Somebody following either instruction got a 404 naming
@@ -1838,7 +1838,7 @@ check is for. `refuse()` is the one place both shapes are built, from one string
 The page above is the hierarchy this SERVICE maintains for itself. The pane
 below it is the parent project's *PKI / X.509* workflow — an arbitrary
 certificate, from any authority whose private key is here, with every field and
-every extension exposed. `common/pki_authoring.js` (rule 3aa) is the model and
+every extension exposed. `common/pki_authoring.ts` (rule 3aa) is the model and
 argues it; what belongs here is the four decisions the PAGE makes.
 
 **IT IS ONE FORM, AND THAT IS LOAD-BEARING RATHER THAN TIDY.** A hundred and
@@ -2019,7 +2019,7 @@ file's.
   from this file to `tls/tls_server.js` would move `/tls*` routes on the documented order
   and make the console the reason they are where they are; a require from that module back
   to this one at its top level is a REAL cycle, not a theoretical one — `tls_server.js` is
-  first loaded from inside this file's own require, through `admin-core/admin_views.js` →
+  first loaded from inside this file's own require, through `admin-core/admin_views.ts` →
   `spiffe/spiffe_auth.ts`, so it would find no `setTruststore` on the half-built exports.
   **So it is the one slot here NOT filled by the module that owns what it carries**:
   `common/protocol_stack.js` fills it on the line after it requires `tls_server.js`. It
@@ -2649,7 +2649,7 @@ parameter, and it is the first thing to check any change to it against.
   somebody actually arrives with — cannot be answered by narrowing these acts:
   narrowed to a person who merely signed in and holds twenty tokens, the picture
   is EMPTY. It is a union of the delegation register and the issued one, and
-  **the union is in `../common/user_graph.js`** (rule 3p), not here, for the
+  **the union is in `../common/user_graph.ts`** (rule 3p), not here, for the
   reason every other view function is down there: what counts as one credential
   seen twice is a statement about the stores.
 * **It is the same renderer, the same shapes and the same tables.** `graphFor()`
@@ -2766,7 +2766,7 @@ link to it, and it draws ONE credential: who held it, in whose name, to reach
 what — and, when it came out of a token exchange, the credential handed in to get
 it, and the one behind that, back to the issuance the whole line rests on.
 
-* **THE MODEL IS `../common/credential_graph.js` AND THE DRAWING IS EVERYBODY
+* **THE MODEL IS `../common/credential_graph.ts` AND THE DRAWING IS EVERYBODY
   ELSE'S** (rule 3l, the division `/admin/delegation/map` already lives on). That
   file returns a graph in `delegation.graph()`'s shape, so `delegation_map.js`
   draws it, the party table is `delegationNodeRow()` and the line table is
@@ -2976,12 +2976,12 @@ unchanged by it; this is the eighth because nothing it says was true before.
 
 **AND SINCE 2026-09-06 THE SESSION IS THIS CONSOLE'S OWN, GOT THROUGH THE
 AUTHORIZATION CODE FLOW.** That sentence used to read *a browser sign-on
-session from `../authn/authn.js`*, and the console read the identity
+session from `../authn/authn.ts`*, and the console read the identity
 provider's cookie directly. It is a RELYING PARTY now — `sts-admin-console`,
 an ordinary entry under `ou=applications` — so a gated request with no console
 session is answered with a redirect to `/oauth2/authorize`, and what comes back
 is a code that buys an ID Token that establishes a session of the console's
-own, in a cookie of its own (`sts_admin`). `common/oidc_rp.js` runs the
+own, in a cookie of its own (`sts_admin`). `common/oidc_rp.ts` runs the
 flow and argues it; four things about it are this file's.
 
 * **THE ROLES DID NOT MOVE.** `gateStateFor()` still asks `admin_rbac.js`
@@ -3016,7 +3016,7 @@ flow and argues it; four things about it are this file's.
   is what keeps one console session readable from every realm and the realm
   switcher switching without a prompt. The ROLE check did not move either: the
   roster is still the default realm's `ou=groups`, so a realm nobody could
-  create still makes nobody an administrator. `common/oidc_rp.js`'s surface
+  create still makes nobody an administrator. `common/oidc_rp.ts`'s surface
   table argues the split, `sts-admin-console` is seeded in every realm now
   because the ambient authorization server has to be able to find the client,
   and `tests/cross_surface_sso.js` pins the partitions.
@@ -3094,7 +3094,7 @@ reader of ANY realm's console WAS sent to the DEFAULT realm's sign-in screen:
 `sendToConsoleSignIn()` ran both `beginAuthentication()` and the redirect inside
 `realms.run(DEFAULT_REALM, …)`. **Since 2026-09-11 the code flow runs in the
 AMBIENT realm and only the console session stays the default realm's** — the
-bullet above on authenticating in the ambient realm, and `common/oidc_rp.js`,
+bullet above on authenticating in the ambient realm, and `common/oidc_rp.ts`,
 carry that. `returnTo` is deliberately NOT run that way — it is
 `req.originalUrl`, which `app.js` leaves alone precisely so it still carries the
 realm, so signing in once returns the reader to the realm page they asked for.
@@ -3404,7 +3404,7 @@ realm exactly as before, which rcbj stated as a requirement in its own right.
 
 ### Two authorities, decided in `gateStateFor()` from the SESSION
 
-`admin-core/admin_views.js`'s `gateStateFor()` reads the realm the session was
+`admin-core/admin_views.ts`'s `gateStateFor()` reads the realm the session was
 SIGNED IN THROUGH (`session.derivedFromRealm`, empty meaning the default) and
 asks THAT realm's roster: `authority` is `service` for the default realm and
 `realm` otherwise, and `identityRealm` names it. The name alone decides nothing
@@ -3482,7 +3482,7 @@ suite nearly always has realms — the doors are named constants in each job.
 The API explorer mints only the SERVICE token, so it is a service page. The LDAP
 socket's write authorization recognises a realm administrator in their realm
 (`ldap_server.js`'s `boundDnIsRealmAdministrator()`), and certificate
-enrollment (`common/cert_enrollment.js`'s `adminFor()` and `sessionIsAdmin()`)
+enrollment (`common/cert_enrollment.ts`'s `adminFor()` and `sessionIsAdmin()`)
 asks the ambient realm's roster after the service's; no other protocol door was
 widened, and SCIM changed only the wording of the bootstrap account's delete
 refusal. `tests/realm_administrators.js` holds the in-process half
@@ -3660,7 +3660,7 @@ from the switch rather than typed, for `APPLICATION_ACTIONS`'s reason: this
 repository's own `tests/vendored/admin_api.js` READS the refusal sentence to
 check that every console action has an `/admin-api` operation, so a list short by
 one turns the parity check off for that action. Each action calls
-`common/app_permissions.js`, which calls `applications.updateApplication()`,
+`common/app_permissions.ts`, which calls `applications.updateApplication()`,
 which is where the RULES are — so this form, `POST /admin-api/permissions/…` and
 the generic attribute editor on `/admin/applications` all go through one
 implementation of *a permission must be defined before it can be granted*.
@@ -3897,7 +3897,7 @@ the only reading under which an API and the three front ends holding permissions
 on it come out as ONE group rather than as four. **Membership ignores direction;
 the picture does not** — every line is still drawn with both marks, because
 which way a grant points is a fact about the grant and this page changes nothing
-about it. `common/app_permissions.js`'s `clusters()` carries the argument; this
+about it. `common/app_permissions.ts`'s `clusters()` carries the argument; this
 page cites it rather than restating it, which is the rule this file follows
 about `delegation.js` everywhere else.
 
@@ -4058,10 +4058,10 @@ caller most needs kept distinct, because pressing the wrong one is invisible
 until somebody is asked again a week later. `revoke-consent` requires all three
 of `username`, `client` and `scope` for the same reason.
 
-**THE AUDIT ROWS ARE WRITTEN HERE AND NOT IN `common/consent.js`**, which is the
+**THE AUDIT ROWS ARE WRITTEN HERE AND NOT IN `common/consent.ts`**, which is the
 division `rbacAction()` already has: the actor is the person whose session got
 them through the gate, and the module underneath has no request to read one
-from. `oauth-oidc/consent_screen.js` writes its own rows from the other side,
+from. `oauth-oidc/consent_screen.ts` writes its own rows from the other side,
 where the actor is the person consenting. Both use `consent.grant` /
 `consent.deny` / `consent.revoke` under the **Applications** category rather than
 a category of its own — a tenth category would have separated *webapp1 was
@@ -4220,14 +4220,14 @@ that had failed to load.
 ### The preview is the same call the nine issuance sites make
 
 "Would alice be issued a token for this application" is answered by
-`common/issuance_gate.check()` through `xacml/xacml_role_pep.js` — the exact
+`common/issuance_gate.check()` through `xacml/xacml_role_pep.ts` — the exact
 call `/oauth2/token` makes — so the page cannot drift from the enforcement. It
 arrives through **the ELEVENTH SLOT, `setRolePreviewer()`**, and that slot passed
 rule 3e's test in BOTH directions, which is the bar a proposal is held to:
 
-* A require from THIS file (18) to `xacml/xacml_role_pep.js` would load the
+* A require from THIS file (18) to `xacml/xacml_role_pep.ts` would load the
   XACML engine here and — much worse — **fill `issuance_gate.js`'s DECIDER from
-  the console**, so a process that loaded the console and not `xacml/xacml.js`
+  the console**, so a process that loaded the console and not `xacml/xacml.ts`
   would gate every issuance in the service with half that family present.
 * A require the other way closes a cycle, because `xacml_admin.js` requires this
   module for the page shell.
@@ -4763,7 +4763,7 @@ the third instance of one rule rather than a new judgement.
 
 **WHAT DECIDED IT WRONG THE FIRST TIME WAS THE PATH AND THE MODULE**, and
 neither is evidence. The page lives under `/admin/xacml/` and is drawn by
-`xacml/xacml_admin.js`, so filing it with the other five looked like tidiness.
+`xacml/xacml_admin.ts`, so filing it with the other five looked like tidiness.
 But a console page is a `path` and a `label` in `SECTIONS` **whoever builds the
 body** — that is the arrangement `/admin/sts-metadata` has had since 2026-08-24
 and the eight `/admin/ldap/*` pages have had since 2026-09-01, and those eight
@@ -5063,7 +5063,7 @@ does with `navigator.credentials.create()` is decided almost entirely by the
 `PublicKeyCredentialCreationOptions` the relying party hands it — the RP name,
 the algorithms offered, the user verification requirement, the attestation
 conveyance, the timeout, the CTAP2 attachment and resident-key preferences —
-and every one of those was a literal inside a string in `authn/authn.js`. A
+and every one of those was a literal inside a string in `authn/authn.ts`. A
 client author trying to find out what their client does with `attestation:
 "none"`, or with a discoverable credential, had no way to ask this service for
 one.
@@ -5102,7 +5102,7 @@ digests exist as against which one is in use; which COSE algorithms this relying
 party can VERIFY as against which two it is offering.
 
 **Every table in it is read from the module that performs the algorithm** —
-`common/totp.js`'s `report()` and `authn/webauthn_policy.js`'s — which is the
+`common/totp.ts`'s `report()` and `authn/webauthn_policy.ts`'s — which is the
 rule `/admin/crypto-metadata` is built on, one layer down. A page that wrote the
 list out would describe something this service does not do the first time one
 was added. `tests/vendored/sts_second_factor_pages.js` is what makes that mean
@@ -5306,7 +5306,7 @@ where half the people looking would not look. The question this page answers —
 SPECIFICATION.** Every other mechanism block here reports what a document says
 this service does; nobody ever wrote one for a recovery code. So every field in
 `backupCodesMechanismBlock()` is a decision this service made, read from
-`common/backup_codes.js` — the module that generates and compares a code — the
+`common/backup_codes.ts` — the module that generates and compares a code — the
 way every `status` block on this page is read from the module that performs the
 thing. `bitsPerCode` is the field to read first: it is the number that decides
 whether the mechanism is worth anything, and a length and an alphabet size left
@@ -5324,7 +5324,7 @@ to whoever holds Admin Read, which is the same door this console already refuses
 to open for an authenticator enrolment: *enrolling means being shown a shared
 secret, and an administrative door that handed one out would mint a working
 second factor for any account.* The person reads their own set on
-`/portal/mfa`, and `common/credentials.js` splits the two questions into two
+`/portal/mfa`, and `common/credentials.ts` splits the two questions into two
 functions precisely so that a page which wanted the count cannot render the
 codes by accident.
 
@@ -5337,7 +5337,7 @@ this page was written it also re-armed the automatic issue, because
 function was removed on 2026-09-11: a person now generates their own set from
 `/portal/mfa`, so the Clear is a plain removal again, kept for a set this
 process cannot read or one an operator believes was copied.
-`admin-core/admin_actions.js` argues it beside `clear-backup-codes`.
+`admin-core/admin_actions.ts` argues it beside `clear-backup-codes`.
 
 It cannot lock anybody out: a recovery code is never a way in on its own. What
 it removes is the thing that stops a lost phone being final, which is why the
@@ -5377,7 +5377,7 @@ costs in scrypt comparisons, the generator, the paged profile list and the
 container's schema.
 
 **THE NEW-USER FORM PRESELECTS `generate`**, and `DEFAULT_CREDENTIAL` is declared
-in `admin-core/admin_actions.js` because the action is what applies it and the
+in `admin-core/admin_actions.ts` because the action is what applies it and the
 require between the two layers goes views to actions; `admin_views.js`
 re-exports it and `newUserJson()` publishes it with the rules. The note under
 the password boxes said *there is no strength rule and that is deliberate* and
@@ -5412,7 +5412,7 @@ Three things about it are decisions:
 * **No control.** A code's meaning is source; renumbering one at runtime would
   make every alert rule written against it describe a different condition.
 
-`admin-core/admin_views.js`'s `errorCodesView()` builds it and
+`admin-core/admin_views.ts`'s `errorCodesView()` builds it and
 `GET /admin-api/error-codes` answers from the same function — rule 7 with no
 POST beside the GET, because the page has nothing to change.
 
@@ -5528,8 +5528,8 @@ Every certificate row on both pages carries a **View details** link, and it
 opens a dialog over the page — in the same tab, with an **X** at the top and a
 **Close** button at the foot — holding the certificate's every X.509 field and
 its trust chain. `certificate_dialog.js` is the ONE renderer both pages call;
-`admin-core/certificate_views.js` decides which certificates may be opened and
-`common/certificate_details.js` is the model.
+`admin-core/certificate_views.ts` decides which certificates may be opened and
+`common/certificate_details.ts` is the model.
 
 **IT HAS NO SCRIPT, AND THE ROOT CLAUDE.md'S TEST FOR ONE WAS PASSED RATHER
 THAN ARGUED AROUND.** A dialog is the thing a reader most expects a script
@@ -5577,7 +5577,7 @@ the workbench store, and the application and person key-pair tables; on
 `/admin/keys` it is in each key's Type cell and heading; and the certificate
 details dialog shows it beside the key.
 
-**WHETHER is `common/pqc_support.js` and HOW IT LOOKS is `pqc_badge.js`**, and
+**WHETHER is `common/pqc_support.ts` and HOW IT LOOKS is `pqc_badge.js`**, and
 nothing else decides or draws either — a page that classified for itself would
 classify with whichever of four spellings it happened to hold. Each page draws
 `pqcBadge.legend()` once, and the legend draws its samples WITH the renderer so
@@ -5684,7 +5684,7 @@ Three things are decisions:
   `personfrom` is honoured as the page it falls on. `candidateSearch` (total,
   matched) and `picked` sit beside it. It was the whole list, which on a large
   directory was thousands of rows on every read of the roster. `CHOOSER_HITS`
-  moved to `admin-core/admin_views.js` so the pane and the reply share one
+  moved to `admin-core/admin_views.ts` so the pane and the reply share one
   number. **`roles` lost `members` and `claimed` in the same change**: every
   membership, unpaged, and the same rows `grants` pages (`?role=` narrows it).
 
@@ -5698,7 +5698,7 @@ current trust realm answers on for that protocol, using `/admin/gnap`'s
 *Endpoints* table as the model. Thirty-seven pages have one now; GNAP keeps its
 own, which `gnap/gnap_console.ts` writes.
 
-**THE TABLE IS `admin-core/protocol_endpoints.js` AND NOT THIS FILE**, which is
+**THE TABLE IS `admin-core/protocol_endpoints.ts` AND NOT THIS FILE**, which is
 how the paragraph that refused an endpoint list (under *The eight new pages*)
 was answered rather than ignored. A row names Express ROUTES; the name comes
 from `sts_metadata.js`'s `ENDPOINTS`, the methods from the router, the URL from
@@ -5738,7 +5738,7 @@ a row in that table**, or an entry in its `EXEMPT` with the reason.
 A checkbox reveals three ways to give a protected resource's metadata document
 — paste, upload, URL — and Load answers with the page redrawn: the document in
 three tabs (raw JSON, a table of values, the fields read from it, editable) and
-the create form filled in from `oauth-oidc/protected_resource_metadata.js`'s
+the create form filled in from `oauth-oidc/protected_resource_metadata.ts`'s
 plan. The `resource` is the default name, `oauthPermissionBaseUri` and
 `oauthAudience`; `scopes_supported` becomes `oauthPermission` with the resource
 prefix taken off; `oauthClientId` and the identifier are a random client_id in
@@ -5794,7 +5794,7 @@ option to generate a reset link to send to the person, buttons to disable
 passkeys as a primary mechanism, to disable all MFA and to force enrolment, and
 the CAEP and RISC signals each owes. `userCredentialControlsSection()` draws it
 after the Credentials section; the six actions are `usersAction()`'s and
-`admin-core/admin_actions.js`'s `credentialAdminAction()` argues each. Four
+`admin-core/admin_actions.ts`'s `credentialAdminAction()` argues each. Four
 things are this console's.
 
 * **A STATE TABLE COMES FIRST AND THE CONTROLS ARE CONDITIONAL ON IT.** Whether

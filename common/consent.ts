@@ -529,7 +529,7 @@ class Consent {
   // there, and a person who cancels keeps what they had.
   // ---------------------------------------------------------------------------
   //
-  // The answer is typed `any` FOR NOW (#50): `oauth-oidc/oauth2.js`, not yet
+  // The answer is typed `any` FOR NOW (#50): `oauth-oidc/oauth2.ts`, not yet
   // converted, reads `names` off a union of this answer and its own fallback
   // literal, which a declared shape would make a type error in that file.
   // Declare the shape when that caller is converted.

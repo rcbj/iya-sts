@@ -8,7 +8,7 @@
 //
 // Six operations under `/.well-known/est/`, and the same six under
 // `/.well-known/est/<label>/`, where a LABEL is one of the nine certificate
-// profiles `common/cert_enrollment.js` issues (RFC 7030 section 3.2.2 lets a
+// profiles `common/cert_enrollment.ts` issues (RFC 7030 section 3.2.2 lets a
 // server give its CAs labels; here a label names what kind of certificate is
 // being asked for, and the CA is always this realm's EST Issuing CA). The
 // unlabelled path issues `est.defaultProfile`.
@@ -23,7 +23,7 @@
 // **EVERYTHING THAT IS NOT A WIRE FORMAT IS THE CORE'S.** Who may be issued a
 // certificate for whom, which names it may carry, whether a request proves
 // possession, what the certificate contains and where it is kept are decided in
-// `common/cert_enrollment.js` and nowhere here. This file authenticates in
+// `common/cert_enrollment.ts` and nowhere here. This file authenticates in
 // EST's own way, reads the body, calls the core, and writes the answer — which
 // is what keeps "a person may only obtain a certificate for themselves" one
 // rule in three protocols rather than three rules that agree today.

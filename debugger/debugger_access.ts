@@ -14,7 +14,7 @@
 //
 //   * **WHEN THE SCOPE WOULD BE ISSUED.** The debugger's api is a resource
 //     server with one delegated permission, `urn:sts:debugger-api:debugger`.
-//     `oauth-oidc/oauth2.js` hands every scope it is about to grant through
+//     `oauth-oidc/oauth2.ts` hands every scope it is about to grant through
 //     `narrowScope()`, and the permission is taken off the grant for anybody
 //     who may not hold it. Taken off rather than refused: RFC 6749 section 3.3
 //     lets an authorization server issue less than was asked for, and the
@@ -43,11 +43,11 @@
 // refused (`STS-DBG-0024`), and the debugger stays shut until somebody is
 // actually a member of Admin Read or Admin Write. "Everybody is an
 // administrator because nobody is" is not a reason to open a network relay —
-// the same judgement `common/cert_enrollment.js` makes about issuing
+// the same judgement `common/cert_enrollment.ts` makes about issuing
 // certificates in somebody else's name.
 //
 // **AND THE POLICY IS ASKED AS WELL, NEVER INSTEAD.** The roles are put into a
-// request to `common/access_gate.js` under `RESOURCE.DEBUGGER`, so an operator
+// request to `common/access_gate.ts` under `RESOURCE.DEBUGGER`, so an operator
 // can narrow the debugger further with a XACML rule. What the policy cannot do
 // is WIDEN it: a subject holding neither role is refused before the policy is
 // asked, because `access_gate.js` answers "allowed" when no decider is loaded
@@ -56,7 +56,7 @@
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers nothing, and everything it requires is a
-// library too — `admin_rbac.js` included, which `common/cert_enrollment.js`
+// library too — `admin_rbac.js` included, which `common/cert_enrollment.ts`
 // already requires the same way — so `oauth2.js` at 9 requires it without
 // moving a route or closing a cycle.
 // ===========================================================================

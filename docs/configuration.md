@@ -709,7 +709,7 @@ lost or flat, the security key is at home.
 Everything else implements somebody's specification; nobody ever wrote one for a
 recovery code. What every identity provider does converges anyway — a handful of
 random strings, each accepted once — so the decisions that are left are this
-service's own and `common/backup_codes.js` argues each.
+service's own and `common/backup_codes.ts` argues each.
 
 **A set is issued by an ACT and not by a request.** There is no control
 anywhere — not on `/portal`, not on `/admin`, not on `/admin-api` — that creates

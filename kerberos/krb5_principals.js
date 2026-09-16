@@ -987,7 +987,7 @@ function realmForService(nameComponents) {
 // **WHAT IS RUNTIME STATE ON A CONFIGURED PRINCIPAL IS EXACTLY ONE FIELD**, and
 // that is a finding rather than a guess: every write to a configured principal
 // after buildDatabase() is signOut() and clearSignOut() (called from
-// `logout/logout.ts`, `admin-core/admin_actions.js` and `krb5_kdc.js`'s AS
+// `logout/logout.ts`, `admin-core/admin_actions.ts` and `krb5_kdc.js`'s AS
 // handler), and both write `signedOutAt`. `revoked` looks like runtime state
 // and is not — it is set only by the `locked` fixture's definition and nothing
 // mutates it. directoryUser() moves `kvno`, `salt` and `etypes`, but only on a
@@ -2095,14 +2095,14 @@ function withKeyCache(principal) {
 //
 // **AN INVERTED HOOK, AND RULE 3e's TEST ANSWERS YES THREE WAYS ROUND.** The
 // source reads the directory, which is `ldap/ldap_server.js` at 21, and the
-// credential store, which is `common/credentials.js`; this file is required by
+// credential store, which is `common/credentials.ts`; this file is required by
 // `krb5_kdc.js` at 15. A require from here to either would register every
 // `/ldap` route ahead of the KDC's own (rule 1). And the source requires THIS
 // file, so a require back closes a cycle. The third reason is not about route
 // order at all and is the one worth keeping: **the parent project's in-process
 // Kerberos jobs load this file, `krb5_kdc.js` and `krb5_service.js` and copy
 // their require closure into an image** — a require from here to the source
-// would drag `common/credentials.js`, `common/keystore.js` and the directory
+// would drag `common/credentials.ts`, `common/keystore.js` and the directory
 // into that copy set for a feature those jobs never use. With the slot, the
 // closure is exactly what it was.
 //
@@ -2799,7 +2799,7 @@ function etypeInfo2For(principal) {
 //
 // The rest of that page is a log of acts that have happened. This is the
 // policy behind them, and it is here rather than in common/delegation.js or in
-// the console's view model (admin-core/admin_views.js, which requires this and
+// the console's view model (admin-core/admin_views.ts, which requires this and
 // renders the answer) for the reason every store rule in this repository is
 // where it is:
 // what these two attributes MEAN is a statement about the principal database,

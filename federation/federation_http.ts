@@ -104,7 +104,7 @@
 // constructor, and the module still exports `DIALLABLE`, `fetchJson()` and
 // the four readers from a TRANSITIONAL instance for the unconverted modules
 // that require it (`federation_sp.ts`, `saml/sp_metadata.ts`,
-// `oauth-oidc/protected_resource_metadata.js`).
+// `oauth-oidc/protected_resource_metadata.ts`).
 // ---------------------------------------------------------------------------
 
 import https = require('https');

@@ -1181,7 +1181,7 @@ function scimDetailRow(table, operation) {
 // unhappy, which is the same guarantee audit() gives and for the same reason.
 //
 // **EVERYTHING IS READ BEFORE ANYTHING IS WRITTEN**, which is the rule
-// `xacml/xacml_monitor.js`'s `record()` states at length and had to learn the
+// `xacml/xacml_monitor.ts`'s `record()` states at length and had to learn the
 // hard way: a caller whose object throws on a property access — a getter, a
 // Proxy, a half-built object — otherwise leaves the row with the call counted
 // and no bucket, and the page's own arithmetic stops reconciling permanently
@@ -2180,7 +2180,7 @@ const RESERVED_JWT_CLAIMS = [
 // DEFAULT realm's included, and every other realm's — while each realm's
 // console showed it as though it were that realm's own configuration. The
 // other half of the same claim set was already per realm
-// (`common/claim_attributes.js` holds the DIRECTORY ATTRIBUTES a set carries),
+// (`common/claim_attributes.ts` holds the DIRECTORY ATTRIBUTES a set carries),
 // so one set disagreed with itself about whether it belonged to a realm.
 //
 // The LABEL and the KIND are constants and are duplicated into every

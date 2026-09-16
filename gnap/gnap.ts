@@ -29,7 +29,7 @@
 //
 // **A NAMED AUTHORIZATION SERVER IS THE OAUTH SUBSYSTEM'S, NOT A SECOND ONE.**
 // `/:as/gnap` selects the same profile `/:as/oauth2/*` does
-// (`oauth-oidc/authorization_servers.js`), created on first sight exactly as
+// (`oauth-oidc/authorization_servers.ts`), created on first sight exactly as
 // that module's `ensure()` does for OAuth, and that profile's GNAP members
 // (section 9's discovery fields) are what the grant endpoint enforces. A grant
 // made at one authorization server records it, its tokens' `iss` is that

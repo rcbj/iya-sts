@@ -14,7 +14,7 @@
 // process.
 //
 // **THIS FILE IS THE ONE PLACE THAT LINE IS DRAWN**, for the console and the
-// management API alike. `admin-core/admin_views.js`'s `gateStateFor()` decides
+// management API alike. `admin-core/admin_views.ts`'s `gateStateFor()` decides
 // WHO holds which authority; this decides WHAT a realm authority may not touch.
 // A second copy of either half is how the console and `/admin-api` would
 // come to disagree about what a realm administrator can do, which is rule 7's

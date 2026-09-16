@@ -534,7 +534,7 @@ class SpiffeCa {
   // `common/pki.js` — see WHERE THE X.509 AUTHORITY COMES FROM below. This
   // function is what a realm with no hierarchy gets, which is `pki.autoBuild:
   // false`, a Root that could not be built, and every in-process caller that
-  // never runs `common/service_state.js`.
+  // never runs `common/service_state.ts`.
   //
   // The X.509 authority it builds is a self-signed CA. It is NOT the
   // certificate
@@ -901,7 +901,7 @@ class SpiffeCa {
   // generating a key lazily would put a two-second RSA-4096 keygen inside
   // whichever request happened to arrive first, and on the Workload API that
   // request looks like a hang. But `common/pki.js`'s hierarchy is built by
-  // `pki.start()`, which `common/service_state.js` runs AFTER the whole
+  // `pki.start()`, which `common/service_state.ts` runs AFTER the whole
   // protocol stack has been required and before anything binds. So an authority
   // resolved at require time is resolved when there is provably no hierarchy —
   // this module would have self-signed, written that into the store, and the
@@ -2781,7 +2781,7 @@ let startError = null;
 // IT.** `pki.autoBuild: false` is a documented setting meaning "what this
 // service did before 2026-09-11"; a Root that could not be built is logged and
 // never fatal (`pki.start()`'s own rule); and every in-process test and every
-// caller that loads this module without running `common/service_state.js` —
+// caller that loads this module without running `common/service_state.ts` —
 // `npm test`, the parent project's in-process Kerberos jobs — has no hierarchy
 // at all. In all three this module does what it has always done: it
 // self-signs, it says so on every surface that reports an authority, and
@@ -2909,7 +2909,7 @@ capabilities.provide('spiffe.authority-agreement');
 export = {
   SpiffeCa: SpiffeCa,
   KEY_TYPES: KEY_TYPES,
-  // A GETTER, so that `admin-core/admin_views.js` — which reads this member to
+  // A GETTER, so that `admin-core/admin_views.ts` — which reads this member to
   // print the cap — reports the value `spiffe.retainedAuthorities` holds in the
   // ambient realm rather than the default it replaced.
   get MAX_RETAINED_AUTHORITIES() {

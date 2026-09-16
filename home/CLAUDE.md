@@ -66,7 +66,7 @@ were to know the path already or to be handed an activation link — so the one
 surface in this service built for a PERSON rather than for an operator or a
 client was the one surface with nothing on the front door pointing at it. Its
 row lists none of the portal's pages, for the endpoint rule one section up:
-`portal/portal.js`'s `NAV` is the page list and `sts_metadata.js` reports it,
+`portal/portal.ts`'s `NAV` is the page list and `sts_metadata.js` reports it,
 so a set of highlights here would be a second copy that goes stale the first
 time a page is added there.
 

@@ -20,7 +20,7 @@
 //     and a certs-only part (RFC 7030 section 4.4.2) — `multipartMixed()`.
 //
 // **WHAT IS NOT HERE IS THE POINT.** A PKCS#10 request is read by
-// `common/cert_enrollment.js`'s `parseCsr()`, which verifies the proof of
+// `common/cert_enrollment.ts`'s `parseCsr()`, which verifies the proof of
 // possession; a certificate is built by `common/pki.js`. EST reading a CSR for
 // itself would be a second reader with a second idea of what a request asks
 // for, and the core exists so there is one.

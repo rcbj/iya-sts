@@ -65,7 +65,7 @@
 //     `jwks_uri`, `bearer_methods_supported`, the DPoP members — stays readable
 //     in the one place the application already lives.
 //   * A SCOPE UNDER THE RESOURCE LOSES THE PREFIX. A permission here is a base
-//     URI followed by a name (`common/app_permissions.js`), so
+//     URI followed by a name (`common/app_permissions.ts`), so
 //     `https://api.example.com/read` under the resource
 //     `https://api.example.com` is the permission `read` — whose identifier is
 //     then exactly the string the document advertised. A scope that is not

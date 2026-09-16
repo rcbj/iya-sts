@@ -17,7 +17,7 @@
 // wrote `value: user.email` regardless, which put an <AttributeValue> of
 // `undefined`, or an empty one, into a signed assertion. This module is where
 // the absent facts are looked for in the one place that holds real ones: the
-// person's own directory entry, read through `common/claim_attributes.js`'s
+// person's own directory entry, read through `common/claim_attributes.ts`'s
 // catalogue so that `mail`, `givenName`, `sn` and `cn` are spelt and resolved
 // exactly as a token's are. What the entry does not hold is OMITTED — an
 // attribute a relying party can handle being missing, rather than one it
@@ -78,7 +78,7 @@ interface AttributeRow {
 interface PersonAttributesDeps {
   log: { debug(message: string): void };
   mode: { inventsClaimValues(): boolean };
-  // `common/claim_attributes.js`, required when first asked for. Never at
+  // `common/claim_attributes.ts`, required when first asked for. Never at
   // load: see the header.
   loadClaimAttributes(): ClaimAttributesReader;
 }

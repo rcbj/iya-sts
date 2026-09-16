@@ -17,7 +17,7 @@
 //
 // **WHAT THIS FILE DECIDES IS WHICH SCEP MESSAGE IT IS LOOKING AT AND WHAT A
 // CertRep SAYS BACK. IT DECIDES NOTHING ABOUT WHO GETS A CERTIFICATE.** That is
-// `common/cert_enrollment.js`'s, which every issuance here goes through; the
+// `common/cert_enrollment.ts`'s, which every issuance here goes through; the
 // CMS bytes are `scep_cms.ts`'s; the RA key is `scep_ra.ts`'s.
 //
 // ---------------------------------------------------------------------------
@@ -560,7 +560,7 @@ class Scep {
     // SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46): claimed in the store
     // between the look above and the write, so one challenge in two PKCSReqs
     // with two transactionIDs at two nodes issues once. See
-    // `common/cert_enrollment.js`'s `redeemScepChallengeOnce()`.
+    // `common/cert_enrollment.ts`'s `redeemScepChallengeOnce()`.
     const spent = await core.redeemScepChallengeOnce(password);
     if (!spent.ok) {
       log.debug("Leaving Scep.pkcsReq(). Spent between the two looks.");

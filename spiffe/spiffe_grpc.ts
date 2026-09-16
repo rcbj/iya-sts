@@ -85,7 +85,7 @@ import stats = require('../common/admin_stats');
 // direction and closes no cycle: nothing it requires reaches back here.
 import auth = require('./spiffe_auth');
 import authn = require('../authn/authn');
-// THE ACCESS GATE, armed by `xacml/xacml_access_pep.js` at 23c. A LEAF
+// THE ACCESS GATE, armed by `xacml/xacml_access_pep.ts` at 23c. A LEAF
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.
 import accessGate = require('../common/access_gate');
@@ -928,7 +928,7 @@ class SpiffeGrpc {
   // `LOCAL_METHODS` is a plain Map and every process needs it: it is what a
   // worker runs AND what the front process falls back to. Requiring
   // `common/request_worker.js` is a different matter — that module pulls in
-  // `common/service_state.js` at module scope (the store, the keys, the minted
+  // `common/service_state.ts` at module scope (the store, the keys, the minted
   // rows, coordination) and installs `process.on('message')` handlers. In a
   // process that is not a worker that is a table nothing will ever read, bought
   // with a load of half the service's startup machinery.

@@ -28,7 +28,7 @@
 // all. Every tool this repository would plausibly meet reads 3.1.
 //
 // This module registers no route and requires nothing of this service's but the
-// LOGGER and `admin-core/protocol_endpoints.js`, a table that holds no state —
+// LOGGER and `admin-core/protocol_endpoints.ts`, a table that holds no state —
 // it is a pure function over a table — so its position in the require
 // order does not matter, in the sense rule 3 gives for dpop.js, which reaches
 // for helpers.js on exactly the same terms. What it must not grow is a require
@@ -2001,8 +2001,8 @@ const SCHEMAS = {
   // THE THREE ADDED ON 2026-09-05. Each of these containers' owning modules
   // published a SCHEMA whose comment said it was drawn under `/admin/ldap/*`,
   // and for three of them no page had ever been written — the export was dead
-  // in `common/roles.js`, `xacml/xacml_store.js` and
-  // `xacml/xacml_pep_registry.js`. The pages exist now, so rule 7 owes each of
+  // in `common/roles.js`, `xacml/xacml_store.ts` and
+  // `xacml/xacml_pep_registry.ts`. The pages exist now, so rule 7 owes each of
   // them an operation here.
   DirectoryRoleList: openObject(
     'The MEMBERSHIP half of the role register as the directory holds it. The ' +
@@ -2046,7 +2046,7 @@ const SCHEMAS = {
       filter: openObject('What was asked for; null where nothing was.', {}),
       sourceOfTruth: { type: 'string' },
       schema: openObject('The object classes and the attributes, read out of ' +
-                         'xacml/xacml_store.js.', {}),
+                         'xacml/xacml_store.ts.', {}),
       policies: { type: 'array',
                   items: openObject('One policy entry, whole, including the ' +
                                     'document itself.', {}) }
@@ -2071,7 +2071,7 @@ const SCHEMAS = {
       filter: openObject('What was asked for; null where nothing was.', {}),
       sourceOfTruth: { type: 'string' },
       schema: openObject('The object classes and the attributes, read out of ' +
-                         'xacml/xacml_pep_registry.js.', {}),
+                         'xacml/xacml_pep_registry.ts.', {}),
       peps: { type: 'array',
               items: openObject('One registered PEP, whole.', {}) }
     }, PAGING_PROPERTIES)),
@@ -2953,7 +2953,7 @@ const SCHEMAS = {
   // THE REPOSITORY (2026-09-06).
   //
   // `role-issuance` gates the nine issuance sites and `access-control` gates
-  // surfaces `common/access_gate.js` guards. Both are BUILT IN — the
+  // surfaces `common/access_gate.ts` guards. Both are BUILT IN — the
   // template is called at decision time rather than seeded into `ou=policies`,
   // because that container is per trust realm — so neither appears in
   // `policies` above and neither is offered by the editor's chooser.

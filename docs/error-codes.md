@@ -88,7 +88,7 @@ is an ordinary outcome.
 
 **HTTP front door.** Every HTTP request passes through here before it reaches a protocol: the security headers, the CORS allowlist, the body parsers, the validation guard, the rate limiter, and the call-log funnel that records the answer. The three generic codes below are what that funnel records for a failed response nothing more specific claimed.
 
-Raised from: common/app.js, common/cors.js, common/validation.js, common/websecurity.js.
+Raised from: common/app.js, common/cors.js, common/validation.js, common/websecurity.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -115,7 +115,7 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 
 **PROXY protocol.** The HAProxy PROXY protocol v2 header read at the front of every TCP connection when global.proxyProtocol is v2: who may send one (global.trustedProxies), the header itself, and the startup refusal when nobody is trusted.
 
-Raised from: common/proxy_protocol.js, server.js.
+Raised from: common/proxy_protocol.ts, server.js.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -189,7 +189,7 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 
 **Worker pools.** The child processes post-quantum signing runs in, and the request workers the whole protocol stack can be dispatched to.
 
-Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.js, common/service_state.js.
+Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.js, common/service_state.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -410,7 +410,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 
 **Certificate authority.** The Root, Intermediate and Issuing CAs, certificate authoring, the CRL and OCSP responders, and the revocation check a presented certificate is held to.
 
-Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, common/revocation_status.js, pki/, admin-ui/pki_admin.js.
+Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, common/revocation_status.js, pki/, admin-ui/pki_admin.js.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -592,7 +592,7 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 
 **Certificate enrollment core.** Who may be issued a certificate for which directory entry, what a certificate issued over ACME, EST or SCEP contains, the PKCS#10 proof of possession, the enrolled certificates and credentials kept on a person or application entry, and their revocation.
 
-Raised from: common/cert_enrollment.js, common/enrollment_monitor.js.
+Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -822,7 +822,7 @@ Raised from: scep/.
 
 **Sign-in, second factors and sessions.** The sign-in screen, WebAuthn, TOTP and recovery codes, password verification, the sign-on session, and the OpenID Connect relying party the console and the portal sign in through.
 
-Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.js, common/password_policy.js, common/oidc_rp.js.
+Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.ts, common/password_policy.ts, common/oidc_rp.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -862,7 +862,7 @@ Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.
 | `STS-AUTHN-0034` | WebAuthn registration failed: the authenticator data carries no attested credential data (AT flag clear). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0035` | WebAuthn assertion failed: the signature counter did not advance past the stored value, which is the signature of a cloned authenticator. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0036` | WebAuthn assertion failed: the signature over authenticatorData and the clientDataJSON hash does not verify against the enrolled public key. | HTTP 200 page naming the failed check |
-| `STS-AUTHN-0037` | A WebAuthn ceremony failed a check this service has no specific code for; the check-name table in authn/webauthn_policy.js is behind the verifier. | HTTP 200 page naming the failed check |
+| `STS-AUTHN-0037` | A WebAuthn ceremony failed a check this service has no specific code for; the check-name table in authn/webauthn_policy.ts is behind the verifier. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0038` | A security key's signature counter could not be recorded after a successful assertion; the sign-in stands and the replay defence has nothing new to check next time. | — |
 | `STS-AUTHN-0039` | The one-time code form POST failed input validation. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0040` | Too many one-time code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 200 one-time code page, redrawn with the reason |
@@ -2493,7 +2493,7 @@ Raised from: gnap/.
 
 **XACML and access policy.** The PDP, the policy repository, the embedded PEPs that decide this service's own access and issuance, the PIP over HTTP, and the remote-PEP endpoints.
 
-Raised from: xacml/, common/access_gate.js, common/issuance_gate.js, common/roles.js.
+Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/roles.js.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -2546,7 +2546,7 @@ Raised from: xacml/, common/access_gate.js, common/issuance_gate.js, common/role
 | `STS-XACML-0047` | The access policy named by xacml.accessPolicy is disabled, so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0048` | The access policy named by xacml.accessPolicy does not load, so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0049` | The built-in access-control policy could not be built from its template (a defect), so access to every gated surface is ALLOWED without a policy decision. | — |
-| `STS-XACML-0050` | common/access_gate.js was given a decider that is not a function; every access decision is allowed. | — |
+| `STS-XACML-0050` | common/access_gate.ts was given a decider that is not a function; every access decision is allowed. | — |
 | `STS-XACML-0051` | The access gate's decider threw; access was ALLOWED because a throw is a defect rather than a decision. | — |
 | `STS-XACML-0052` | The issuance gate's decider threw; issuance was ALLOWED because a throw is a defect rather than a decision. | — |
 | `STS-XACML-0053` | The role register threw while resolving a party's roles; only the built-in roles were used. | — |
@@ -2948,7 +2948,7 @@ Raised from: logout/.
 
 **Registries.** The application registry, consent, delegated permissions, the delegation register, the statistics and the claim configuration.
 
-Raised from: common/applications.js, common/consent.js, common/app_permissions.js, common/delegation.js, common/admin_stats.js, common/audit.js, common/claim_attributes.js, common/group_claims.js, common/user_graph.js, common/credential_graph.js, common/inetorgperson.js.
+Raised from: common/applications.js, common/consent.ts, common/app_permissions.ts, common/delegation.js, common/admin_stats.js, common/audit.js, common/claim_attributes.ts, common/group_claims.ts, common/user_graph.ts, common/credential_graph.ts, common/inetorgperson.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -3049,7 +3049,7 @@ Raised from: common/applications.js, common/consent.js, common/app_permissions.j
 
 **Protocol debugger.** The embedded identity protocol debugger: its listener, its sign-in, the access token its api requires, the permission that token carries, and the api process it forwards to.
 
-Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.js.
+Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|

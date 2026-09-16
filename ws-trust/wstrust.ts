@@ -29,7 +29,7 @@
 // credential actually checked":
 //
 //   * a UsernameToken's password is verified against the stored
-//     `userPassword` (`common/credentials.js`), not only against "invalid";
+//     `userPassword` (`common/credentials.ts`), not only against "invalid";
 //   * a request with NO credential is refused, where development issues a token
 //     for the literal subject `anonymous` (and a Renew for whoever its
 //     RenewTarget names);

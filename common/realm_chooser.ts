@@ -48,7 +48,7 @@
 //     Nothing here reaches for a module on its own.
 //   * **THE MODULE STILL EXPORTS `SURFACES`, `decide` AND `form`**, from an
 //     instance built with the real modules, because `admin-ui/admin.js` and
-//     `portal/portal.js` are not converted and require it by those names. That
+//     `portal/portal.ts` are not converted and require it by those names. That
 //     instance is TRANSITIONAL: it goes when the composition root exists and
 //     hands a `RealmChooser` to both surfaces. `RealmChooser` is exported
 //     beside it for that root.

@@ -53,7 +53,7 @@
 //
 // **IT IS A LIBRARY (rule 3).** It registers no route and requires `helpers`,
 // `config`, `crypto` and `error_codes`, none of which requires it back, so
-// `oauth2.ts` and `admin-core/admin_actions.js` may both require it.
+// `oauth2.ts` and `admin-core/admin_actions.ts` may both require it.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------

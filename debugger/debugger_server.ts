@@ -776,7 +776,7 @@ class DebuggerServer {
       tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
                                                   port + ')');
     }
-    // Before TLS, like the main port's — see common/proxy_protocol.js.
+    // Before TLS, like the main port's — see common/proxy_protocol.ts.
     proxyProtocol.install(server, {
       label: 'the protocol debugger (' + port + ')', channel: 'http' });
     const whenReady = new Promise<{ port: number }>(function (resolve,

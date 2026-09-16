@@ -17,9 +17,9 @@ certificate is encrypted back to it. Required at 23g in
 | `scep_api.ts` | The three `/admin-api` rows, `module.exports = { ROUTES }`, requiring the model lazily. |
 
 What a certificate may be issued for, what goes in it and where it is kept are
-**not decided here**: every issuance goes through `common/cert_enrollment.js`,
+**not decided here**: every issuance goes through `common/cert_enrollment.ts`,
 and `common/CLAUDE.md` and that file's header argue it. The counters are
-`common/enrollment_monitor.js`'s.
+`common/enrollment_monitor.ts`'s.
 
 ## The decisions
 

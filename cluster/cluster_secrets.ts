@@ -45,7 +45,7 @@
 // — and its offer is made by an asynchronous `generate` on its row. Its
 // argument is at the row in `DECLARED`.
 //
-// A LIBRARY (rule 3). `start()` is called from `common/service_state.js` after
+// A LIBRARY (rule 3). `start()` is called from `common/service_state.ts` after
 // the keystore opens; `persistence.js` is required lazily.
 // ===========================================================================
 
@@ -126,7 +126,7 @@ interface ClusterSecretsDeps {
 const DECLARED: Record<string, DeclaredSecret> = {
   'csrf': { bytes: 32, env: 'STS_CSRF_SECRET',
     what: 'The key a form\'s CSRF token is MACed with ' +
-          '(common/websecurity.js).' },
+          '(common/websecurity.ts).' },
   'acme-nonce': { bytes: 32, env: 'STS_ACME_NONCE_SECRET',
     what: 'The key ACME\'s Replay-Nonce values are MACed with ' +
           '(acme/acme_jws.ts).' },

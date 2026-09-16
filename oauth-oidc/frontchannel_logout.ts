@@ -16,7 +16,7 @@
 // It is a LIBRARY (rule 3): it registers no route, so its position in the
 // require order does not matter and it cannot be the reason a route is missing.
 // It requires `helpers.js`, `config.js`, `app.js`, `applications.js`,
-// `validation.js` and `error_codes.js` (and `authn/authn.js` lazily, once a
+// `validation.js` and `error_codes.js` (and `authn/authn.ts` lazily, once a
 // session changes) — none of which requires it back — and deliberately NOT
 // `oauth2.ts`, because that module requires THIS one. That is the whole reason
 // this file exists rather than the code living in `oauth2.ts`:
@@ -80,7 +80,7 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `FrontchannelLogout` takes the app (for its CSP builder), the
 // settings, the application registry, the validator, the error-code table
-// and the logger through its constructor, and reaches `authn/authn.js`
+// and the logger through its constructor, and reaches `authn/authn.ts`
 // through a LOADER in the same place it used to require it, because that
 // require was lazy and stays lazy. The module still exports every function it
 // exported, bound to a TRANSITIONAL instance built from the real modules.
@@ -98,7 +98,7 @@ import errorCodes = require('../common/error_codes');
 // A session, a notification row.
 type Json = any;
 
-// The one thing this module asks of `authn/authn.js`.
+// The one thing this module asks of `authn/authn.ts`.
 interface SessionNotice {
   noteSessionChanged(session: Json): unknown;
 }
@@ -111,7 +111,7 @@ interface FrontchannelLogoutDeps {
   applications: typeof applications;
   validation: typeof validation;
   errorCodes: typeof errorCodes;
-  // `authn/authn.js`, required at the moment a session changes, never at
+  // `authn/authn.ts`, required at the moment a session changes, never at
   // load.
   loadAuthn(): SessionNotice;
 }

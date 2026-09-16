@@ -21,7 +21,7 @@
 // order does not matter, and it requires only libraries that never require it
 // back (each require below says why), so it cannot join a cycle. That matters
 // more here than usual, because its readers sit at very different points of
-// the require order — `common/claim_attributes.js` (first of all),
+// the require order — `common/claim_attributes.ts` (first of all),
 // `oauth2.js` and vc_issuer.ts (early), `federation_map.js`, `admin.js` and
 // `admin-core/` (late), and `ldap_server.js` and `scim_map.ts` (later still).
 //
@@ -167,7 +167,7 @@ interface VcClaimsDeps {
 const VC_ATTRIBUTES: CatalogueRow[] = [
   { ldap: 'givenName', claim: ['given_name'], label: 'Given name',
     // RFC 4519 section 2 is alphabetical: 2.6 is `destinationIndicator`.
-    // This said 2.6 until 2026-09-11, when `common/inetorgperson.js` was
+    // This said 2.6 until 2026-09-11, when `common/inetorgperson.ts` was
     // checked against the RFC text and the two catalogues were compared.
     schema: 'RFC 4519 2.12', from: 'given', ldpTerm: 'given_name',
     byDefault: true },
@@ -946,7 +946,7 @@ class VcClaims {
     // there, and cannot handle one that is false. Development is unchanged.
     //
     // One place, and it covers every reader: the credential builders, the
-    // console preview, and `common/claim_attributes.js`, whose token attributes
+    // console preview, and `common/claim_attributes.ts`, whose token attributes
     // and OIDC Core 5.5 claims requests are all built by this function.
     // ---------------------------------------------------------------------
     if (!mode.inventsClaimValues()) {

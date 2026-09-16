@@ -25,7 +25,7 @@
 //
 // **EVERY ACTION IS THE CORE'S.** Issuing with a server-generated key,
 // revoking an enrolled certificate and registering a host name are
-// `common/cert_enrollment.js` functions; what this file adds is the body
+// `common/cert_enrollment.ts` functions; what this file adds is the body
 // shape, the principal (the console's signed-in administrator, or the
 // management API) and the result a page or a machine is handed.
 // ---------------------------------------------------------------------------

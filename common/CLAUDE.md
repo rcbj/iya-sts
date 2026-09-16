@@ -26,7 +26,7 @@ more than one family needs it, not because it felt general.
 | `group_claims.ts` | The groups claim, in all five claim sets at once. |
 | `pki_authoring.ts` | **THE CERTIFICATE & KEY CONFIGURATION PANE, AS A MODEL (2026-09-10)** — the parent project's *PKI / X.509* workflow: fourteen profiles, five cryptographic approaches, a subject DN, twenty-two X.509v3 extensions, PKCS#10 and four keystore formats, over the same vendored encoder. A LEAF (rule 3aa): it draws no HTML and holds no store. |
 | `pqc_support.ts` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
-| `certificate_details.ts` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.js` does. |
+| `certificate_details.ts` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.ts` does. |
 | `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
 | `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
 | `cert_enrollment.ts` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
@@ -65,7 +65,7 @@ the list.
 **AND THE FIRST TWO ARE TYPESCRIPT**: `realm_chooser.ts`, the pilot — a
 `RealmChooser` class built from injected dependencies, with a transitional
 instance exporting the old names for `admin-ui/admin.js` and
-`portal/portal.js` — and `html.ts`. Neither is in the parent project's
+`portal/portal.ts` — and `html.ts`. Neither is in the parent project's
 Kerberos COPY set (`kerberos/CLAUDE.md`), which is the constraint on choosing
 what to convert next: a file on that list cannot become `.ts` without the
 parent building it.
@@ -319,7 +319,7 @@ field. It is DERIVED and in no `EDITABLE` row.
   `discardReturnAddress()` (both off), an explicit `add` of the address with no
   flag (an operator's write is a registration), a `remove`, and an RFC 7591 /
   7592 registration naming the redirect URI. The two actions are
-  `confirm-address` / `discard-address` in `admin-core/admin_actions.js`, drawn
+  `confirm-address` / `discard-address` in `admin-core/admin_actions.ts`, drawn
   on the application's console page and mirrored at
   `POST /admin-api/applications/{action}`; both refuse an unmarked address by
   name (`STS-REG-0050`) rather than doing nothing.
@@ -635,7 +635,7 @@ caller that cannot be made asynchronous is better off blocking than wrong.
 
 **WHAT IS NOT DONE YET, SAID PLAINLY: no protocol surface calls the async door.**
 Eleven call sites still reach the synchronous one — `scim/scim_auth.ts`,
-`authn/authn.js`, `ldap/ldap_server.js`, `ws-trust/wstrust.ts`, `portal/portal.js`
+`authn/authn.ts`, `ldap/ldap_server.js`, `ws-trust/wstrust.ts`, `portal/portal.ts`
 (three) and `admin-ui/admin.js` (four) — and every one of them needs its
 enclosing handler chain made asynchronous first. That is not incidental: it is
 the same prerequisite the whole move-request-processing-to-workers plan needs,
@@ -1696,7 +1696,7 @@ overrides before any realm is ambient — it is the only caller that can know th
 answer without asking. Every OTHER caller is inside a request, so the realm is
 the ambient one, and every one of them passed nothing: `setOverride()` here
 (which passes the realm it computed since), and the three places in
-`admin-ui/admin.js` — `admin-core/admin_actions.js` now — that pre-validate a
+`admin-ui/admin.js` — `admin-core/admin_actions.ts` now — that pre-validate a
 whole section before writing any of it. **So the exemption was unreachable
 through the four doors a person actually uses**, and the symptom was worse than
 the rule being
@@ -2224,7 +2224,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    name rather than by LDAP attribute type, including the top-level name of a
    nested claim (`address` returns the whole Address Claim of Core 5.1.1) and a
    language tag as part of the name (Core 5.2). It wins over the three above it
-   BY DESIGN and the reason is written at the merge in `oauth-oidc/oauth2.js`: a
+   BY DESIGN and the reason is written at the merge in `oauth-oidc/oauth2.ts`: a
    scope asks for a category and a request names a claim, so answering
    `{"email":null}` with the invented persona value while the entry holds a real
    `mail` would defeat the only reason the feature exists. Nothing it can
@@ -2520,7 +2520,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    `samlEntityId` already record for their own families. Nothing presents an
    audience as its own name, so nothing here writes it and it cannot be derived.
    What makes it different from the four declaration-only attributes below is
-   that `oauth-oidc/oauth2.js` LOOKS IT UP: `forAudience()` turns the `audience`
+   that `oauth-oidc/oauth2.ts` LOOKS IT UP: `forAudience()` turns the `audience`
    on an RFC 8693 exchange into the application that registered it, so a
    delegation reaching `https://esb1.example.com` is filed against `esb1` and
    `/admin/delegation/map` draws one chain instead of two halves that share
@@ -2560,7 +2560,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    **`forClientId()` IS THE SECOND LOOKUP THAT IS NOT BY IDENTIFIER, added
    2026-08-26 beside it, and the paragraph above is exactly why it is a separate
-   function.** It matches `oauthClientId`, and `oauth-oidc/oauth2.js`'s
+   function.** It matches `oauthClientId`, and `oauth-oidc/oauth2.ts`'s
    `audienceScopes()` is its one caller: a scope value that names another
    application becomes that access token's audience, and a scope is a BARE NAME
    where an `aud` from RFC 8707 is a URI. Folding the two into one lookup would
@@ -3652,7 +3652,7 @@ holds the answer and the other one holds nothing at all.**
 
 `roles.js` is the register — who HOLDS a role. `issuance_gate.js` is an empty
 shell that every issuance site asks before this service issues anything, and
-whose decider is filled by `xacml/xacml_role_pep.js` at 23c. A process that
+whose decider is filled by `xacml/xacml_role_pep.ts` at 23c. A process that
 never loaded the XACML family has no decider installed and every call answers
 `allowed`, which is what keeps `npm test`, the parent project's in-process
 Kerberos jobs and the remote PEP container a SMALLER service rather than a
@@ -5658,7 +5658,7 @@ the same thing.
 ## `credentials.ts` OFFERS A PASSWORD OBSERVER, AND `applications.js` A WITHHELD FIELD (2026-09-12)
 
 Both exist for the stored Kerberos keys, whose register is
-`kerberos/krb5_person_keys.js` and whose argument is `kerberos/CLAUDE.md`'s. What
+`kerberos/krb5_person_keys.ts` and whose argument is `kerberos/CLAUDE.md`'s. What
 belongs here is the half of each that is this directory's.
 
 **`setPasswordObserver(fn)` IS CALLED AT EXACTLY TWO MOMENTS**: after
@@ -5707,7 +5707,7 @@ neither.
 **IT IS A LIBRARY (rule 3)** — it registers no route, so its position in the
 require order is not a position. It requires `config`, `crypto`, `helpers` and
 `realms`, none of which requires it back, and it is read by
-`common/credentials.ts`, `authn/authn.js`, `portal/portal.js`,
+`common/credentials.ts`, `authn/authn.ts`, `portal/portal.ts`,
 `admin-ui/admin.js` and `admin-ui/crypto_metadata.js`.
 
 ### The split with `crypto.js` is the one every pair in that file makes
@@ -6064,7 +6064,7 @@ what the directory holds.
 
 **A LIBRARY (rule 3)** requiring only `helpers` — not `config`, not `realms`,
 because it is a SCHEMA and there is nothing about it a deployment or a trust
-realm could change. Required by `portal/portal.js` and `ldap/ldap_server.js`.
+realm could change. Required by `portal/portal.ts` and `ldap/ldap_server.js`.
 
 ### THE LIST IS THE WHOLE DESIGN, AND THE ALTERNATIVE IS THE DEFECT
 
@@ -6176,7 +6176,7 @@ Development keeps all of it, which is what the test suite drives.
 `common/access_gate.ts` declared five resources from the day it was written and
 **two of them asked** — the admin console and the User Portal. The management
 API, SCIM and the SPIRE Server API were entries in an enum that nothing
-consulted, and the prose in `xacml/xacml.js`, `xacml/xacml_admin.js`,
+consulted, and the prose in `xacml/xacml.ts`, `xacml/xacml_admin.ts`,
 `mgmt-api/admin_api_spec.js` and two test files said all five did.
 
 **THAT IS WORSE THAN AN UNFINISHED LIST AND IS THE LESSON WORTH KEEPING.** An
@@ -6194,12 +6194,12 @@ one available and an unedited service behaves exactly as it did.
 | Surface | Where it asks | What decided first |
 |---|---|---|
 | `admin-console` | `admin-ui/admin.js`'s gate | the two console roles |
-| `user-portal` | `portal/portal.js`'s `requireSignIn()` | a sign-on session |
+| `user-portal` | `portal/portal.ts`'s `requireSignIn()` | a sign-on session |
 | `scim` | `scim/scim_auth.ts`'s `authenticate()` funnel | six RFC 7644 schemes, then the scope |
 | `spire-server-api` | `spiffe/spiffe_grpc.ts`'s `prepareCall()` | SPIRE's own per-method table |
 | `management-api` | `mgmt-api/admin_api.js`'s middleware — for an access token (`adminApi.authRequired`, on by default, every mode), and for a console session in **product mode** with that setting off | the token's scopes, or the two console roles |
-| `xacml-pep-api` | `xacml/xacml.js`'s `pepAccess()`, including `POST /xacml/pip` | a VERIFIED client certificate resolved to a directory entry |
-| `xacml-api` | `xacml/xacml.js`'s `xacmlAccess()` | the same chain, with `XACML_USER` on the end |
+| `xacml-pep-api` | `xacml/xacml.ts`'s `pepAccess()`, including `POST /xacml/pip` | a VERIFIED client certificate resolved to a directory entry |
+| `xacml-api` | `xacml/xacml.ts`'s `xacmlAccess()` | the same chain, with `XACML_USER` on the end |
 | `protocol-debugger` | `debugger/debugger_access.ts` | the two console roles, carried in the request |
 
 **THE TWO XACML ROWS AND THE DEBUGGER ARE NOT LIKE THE FIVE ABOVE THEM, AND
@@ -6415,7 +6415,7 @@ NOTHING from this repository — not `helpers.js`, not `config.js`, not even the
 logger. So its position in the require order is not a position, and it can never
 close a cycle. That matters more here than it did in the parent project:
 `server.js`, `home/home.ts` (6a), `admin-ui/admin.js` (18),
-`mgmt-api/admin_api.js` (19), `portal/portal.js` and `sts_metadata.js` (24) all
+`mgmt-api/admin_api.js` (19), `portal/portal.ts` and `sts_metadata.js` (24) all
 read it, which is six modules spread across the whole require order — including
 the two whose positions are the most constrained in the file. **A version module
 that could drag a route would be a version module that decided where routes
@@ -6681,7 +6681,7 @@ claims at the edge can put a realm one or two over; the cap bounds a table, and
 a replay is what the key bounds.
 
 **It is drawn at `/admin/used-assertions` and `GET /admin-api/used-assertions`**,
-one function (`admin-core/admin_views.js`'s `usedAssertionsView()`, a PROMISE,
+one function (`admin-core/admin_views.ts`'s `usedAssertionsView()`, a PROMISE,
 because on postgres the history is a query), read-only on purpose: forgetting a
 row would make a still-valid assertion usable again.
 
@@ -6945,7 +6945,7 @@ got past the regex, and no certificate was presented that its entry did not hold
 ## `credentials.ts`: A RESET LINK, A REMOVED PASSWORD, AND A REQUIRED SECOND FACTOR (2026-09-13)
 
 For the *Password and second factors* section of a person's console page.
-`admin-core/admin_actions.js` is the caller; the rules are here, beside
+`admin-core/admin_actions.ts` is the caller; the rules are here, beside
 `setPassword()` and the TOTP and key stores they touch.
 
 * **`removePassword(username)`** moves the current hash into the history
@@ -6995,7 +6995,7 @@ above the function named; what a maintainer needs before touching them:
   entry's `lastCounter` stays the first check and is still written. A refusal is the
   replay it always was (`STS-AUTHN-0106`).
 * **A WebAuthn assertion claims its CHALLENGE and advances its COUNTER**
-  (`spendAssertion()`, called by `authn/authn.js` after verification): the claim
+  (`spendAssertion()`, called by `authn/authn.ts` after verification): the claim
   is the only defence for an always-zero counter (synced passkeys), the counter
   catches a cloned authenticator even when a stale write took the entry's copy
   backwards (`STS-AUTHN-0035`, the same condition `webauthn.js` names). A
@@ -7025,7 +7025,7 @@ above the function named; what a maintainer needs before touching them:
 * **Links are claimed by the PORTAL, not here** (`spendActivation()`,
   `spendPasswordReset()`): only the door knows which POST finishes. It claims
   before setting anything and releases on every response but the finishing one
-  (`portal/portal.js`'s `holdLinkClaim()`); `STS-AUTHN-0183` is the refusal.
+  (`portal/portal.ts`'s `holdLinkClaim()`); `STS-AUTHN-0183` is the refusal.
 * **The bootstrap is one claim per realm around BOTH steps** (`bootstrapOnce()`,
   called by `server.js`): the seed of the administrator as well as the password,
   because a node whose seed committed after another node's password write

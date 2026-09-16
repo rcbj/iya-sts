@@ -87,7 +87,7 @@ function check(what, fn) {
 // authenticator is sent there (enrolling no longer issues a set — section 1
 // asserts that). It is the
 // same thirty lines `sts_portal_totp.js` carries and is deliberately not
-// `require`d from `common/totp.js` — see that file's header for the argument.
+// `require`d from `common/totp.ts` — see that file's header for the argument.
 //
 // **IT IS NOT CHECKED AGAINST THE RFC VECTORS HERE**, and that is the one
 // difference from the job next door. There, the generator IS the subject: the

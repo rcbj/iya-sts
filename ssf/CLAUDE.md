@@ -182,7 +182,7 @@ looking. `ssf_cluster.ts` holds three of them; `ssf.ts` provides the capability.
   frames as done is acknowledgement (section 2.1, "redelivery is no longer
   required"), and that is now never undone. A claim per delivery would make a
   poll asynchronous to stop a repeat the receiver is told to expect.
-* **A SESSION'S END, ONCE.** `authn/authn.js`'s `sessionEndOnce()`; see
+* **A SESSION'S END, ONCE.** `authn/authn.ts`'s `sessionEndOnce()`; see
   `authn/CLAUDE.md`. Every `session-revoked` this family sends starts there.
 * **STREAM HEALTH.** Declared dead and revived are each REPORTED once
   (`transitionOnce()`: a claim on the realm, stream and transition for half
@@ -366,7 +366,7 @@ what arrived on a page of its own — `/admin/signals` and `/portal/signals`.
 `ssf_receivers.ts` is the module and carries the design at length. Six things
 about it reach outside that file and this is the index of them.
 
-**THE ARGUMENT IS `common/oidc_rp.js`'s, MADE A SECOND TIME.** That file turned
+**THE ARGUMENT IS `common/oidc_rp.ts`'s, MADE A SECOND TIME.** That file turned
 these same two surfaces into OpenID Connect relying parties on 2026-09-06, and
 its complaint was that this service's own two applications were the only
 applications in the process that did not use the protocol this service exists
@@ -796,7 +796,7 @@ link away on each stream's card, and the ambient realm only.
 library registering nothing, reached through a `deadLetters` member of
 `setSignalsReporter()` rather than a slot of its own — rule 3e's test for a
 new slot is a new cycle or a moved route, and a second reader of one family
-through one require adds neither. `admin-core/admin_views.js`'s
+through one require adds neither. `admin-core/admin_views.ts`'s
 `ssfDeadLettersJson()` adds only the narrowing and the slice, for both doors.
 
 * **THE QUEUE IS PER REALM, NOT A GLOBAL QUEUE WITH A REALM ON EACH ROW.**
@@ -938,7 +938,7 @@ difference, and returning a read-only decision would be a refusal with nothing
 a client could send to get past it.
 
 **IN PRODUCT MODE THE BASIC PASSWORD IS VERIFIED, SINCE 2026-09-12**, through
-`common/credentials.js` — the call `scim_auth.js` makes. Until then this file
+`common/credentials.ts` — the call `scim_auth.js` makes. Until then this file
 never asked the mode, so a product deployment's streams could be driven with
 any name and any password. A verified person still gets both scopes, which is
 SCIM's identical grant; `ssf.authBasic` turns the scheme off (and out of
@@ -1018,7 +1018,7 @@ the half a reader cannot discover from a protocol trace.
   `dropSession()`, which every browser SSO profile here reaches — so both were
   protocol-independent from the day CAEP landed. A presentation has no funnel:
   it is a thing each protocol endpoint decides it is doing, and only
-  `oauth-oidc/oauth2.js` called `authn.notePresented()`. `saml2_sso.ts`,
+  `oauth-oidc/oauth2.ts` called `authn.notePresented()`. `saml2_sso.ts`,
   `saml11_sso.ts` and `wsfed.ts` each read `sessionOf(req)` to answer a request
   out of an existing session — which *is* single sign-on — and reported
   nothing. So a receiver watching a SAML or WS-Federation session saw it start
@@ -1185,7 +1185,7 @@ For the next person adding one, this family's full list:
   costs are the ones a checklist forgets. `tests/vendored/sts_metadata.js` is
   what caught them, in the direction only it checks: registered and described
   nowhere;
-* `oauth-oidc/oauth2.js` — the two scopes in `scopes_supported`;
+* `oauth-oidc/oauth2.ts` — the two scopes in `scopes_supported`;
 * `server.js` (now `common/protocol_stack.js`) — the require, at 23b.
 
 ---
@@ -1203,9 +1203,9 @@ purpose — the point of the section above is that this one is short.
   `caep.noteTransmitted()` call, `caepAutoEmit()`, the observer installation
   and the ninth admin slot's filler;
 * `ssf/ssf_streams.ts` — the complex-subject coverage rule;
-* `authn/authn.js` — **`setSessionObserver()`, an INVERTED HOOK**, because
+* `authn/authn.ts` — **`setSessionObserver()`, an INVERTED HOOK**, because
   `authn` is 8 in the require order and this directory is 23b. Plus
-  `notePresented()`, spent once from `oauth-oidc/oauth2.js`;
+  `notePresented()`, spent once from `oauth-oidc/oauth2.ts`;
 * `common/config.js` — a `CAEP` group of ten, and `env/defaults.js`
   regenerated;
 * `common/audit.js` — four actions in the EXISTING `signals` category, because
@@ -1241,7 +1241,7 @@ administrator credential acts below) and `assurance-level-change` on
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a session is created | `session-established` | `authn.startSession()` |
-| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.js`'s authorization endpoint, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts` and `gnap/gnap_interact.ts` |
+| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.ts`'s authorization endpoint, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts` and `gnap/gnap_interact.ts` |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
 | the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
 
@@ -1256,7 +1256,7 @@ the same way) emits nothing and still updates the row. The scale is
 (`0`, `1`, `mfa`), because mapping them onto NIST's AALs would assert a
 conformance nobody assessed (rcbj's choice). `caep.assuranceNamespace` stays
 the default for an event emitted BY HAND. `change_direction` comes from
-`oauth-oidc/step_up.js`'s `LEVELS`, required rather than copied so that step-up
+`oauth-oidc/step_up.ts`'s `LEVELS`, required rather than copied so that step-up
 and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
 an authenticated identity is here*, carries the design and the probe.
 
@@ -1488,7 +1488,7 @@ above it.
 **Left alone and said so**: the two internal surfaces' audiences
 (`sts-admin-console`, `sts-user-portal`) and receive paths. They are the seeded
 client ids and the routes the surfaces register; deriving them from
-`common/oidc_rp.js`'s table would put a require from this directory into a
+`common/oidc_rp.ts`'s table would put a require from this directory into a
 module the portal loads just after `authn` (8) for two strings that change
 only with those files.
 
@@ -1512,7 +1512,7 @@ reset links and remove second factors, and each owes a signal. The acts are:
 after `authn`, 8 (the portal), and a require of `ssf.ts` from either would
 register every `/ssf` route ahead of theirs and close a cycle through the
 console. Not a slot: there is no require at all, only a cache lookup —
-`admin-core/protocol_endpoints.js`'s arrangement. A process that never loaded
+`admin-core/protocol_endpoints.ts`'s arrangement. A process that never loaded
 SSF gets a no-op that says so. Nothing in it throws and callers do not await it: a slow receiver must not hold a page,
 and a failed emission must not undo a credential change already written.
 

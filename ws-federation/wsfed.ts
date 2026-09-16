@@ -90,7 +90,7 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `WsFederation` takes everything it reads of the rest of the service
-// (the signer, the session and sign-in funnel of `authn/authn.js`, the two
+// (the signer, the session and sign-in funnel of `authn/authn.ts`, the two
 // assertion builders, the registry, the settings, the mode, the four `saml/`
 // libraries and the logger) through its constructor as `WsFederationDeps`,
 // and nothing inside the class requires a module on its own.

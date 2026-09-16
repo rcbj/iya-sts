@@ -6,7 +6,7 @@
 //
 // ACME and SCEP authenticate with a credential bound to ONE directory entry —
 // an External Account Binding key and a single-use challenge password
-// (`common/cert_enrollment.js`). An administrator can make one for anybody on
+// (`common/cert_enrollment.ts`). An administrator can make one for anybody on
 // `/admin/acme` and `/admin/scep`; this page is where a person makes one for
 // THEMSELVES, which is rcbj's rule read from the person's side: *any user can
 // only issue key pairs that map to their authenticated user identity*.

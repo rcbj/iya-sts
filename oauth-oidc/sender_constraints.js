@@ -68,7 +68,7 @@ const CERTIFICATE_CLIENT_METHODS = ['tls_client_auth',
 // THE ONE EXEMPTION, AND WHAT IT IS NOT.
 //
 // These two are this service's OWN relying parties — the console and portal
-// rows of `common/oidc_rp.js`'s `SURFACES` — and they redeem their codes and
+// rows of `common/oidc_rp.ts`'s `SURFACES` — and they redeem their codes and
 // refresh tokens over a loopback call from this process to itself. There is no
 // client certificate to present on that call and nobody on the other end of it
 // who is not already this process, so `oauth2.refreshTokenRequireMtls` would
@@ -189,7 +189,7 @@ function refusal(errorCode, error, setting, description) {
 // itself, where there is no certificate to present and no counterparty to
 // present it to; the exemption is named on /admin/oauth2 and in the setting's
 // own description so that it is never a surprise. They are NOT exempt from the
-// DPoP setting — `common/oidc_rp.js` carries proofs of its own since
+// DPoP setting — `common/oidc_rp.ts` carries proofs of its own since
 // 2026-09-15, which is the whole reason that half was built.
 // ---------------------------------------------------------------------------
 function refreshIssuanceRefusal(opts) {

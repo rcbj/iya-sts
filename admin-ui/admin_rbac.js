@@ -122,7 +122,7 @@ const realms = require('../common/realms');
 // administer the service. rcbj asked for per-realm administrators with the
 // default realm's roster kept as the SUPER administrator over every realm, and
 // the argument is answered rather than dropped: a realm's roster grants
-// AUTHORITY IN THAT REALM ONLY, which `admin-core/admin_views.js`'s
+// AUTHORITY IN THAT REALM ONLY, which `admin-core/admin_views.ts`'s
 // `gateStateFor()` and `admin-ui/admin_scope.js` enforce, and creating a realm
 // is itself a service action.
 //
@@ -476,7 +476,7 @@ function roster() {
 // A new instance has ONE account that administers it: `admin.bootstrapUsername`
 // (default `admin`) in the DEFAULT realm, a member of both console roles, whose
 // password must be changed at its first sign-in (`pwdReset`, enforced by
-// `authn/authn.js`). Development accepts any password for it, as for anybody;
+// `authn/authn.ts`). Development accepts any password for it, as for anybody;
 // product mode's first password is the generated one `credentials.bootstrap()`
 // prints once.
 //

@@ -177,7 +177,7 @@ base would make the permission depend on the host name the debugger was reached
 by — `localhost` and `127.0.0.1` would be two permissions and one would match
 nothing. `urn:sts:debugger-api:` is the same everywhere. It is written out in
 THREE files — `debugger_access.ts`, `common/applications.js`'s seed and
-`common/oidc_rp.js`'s surface — because the latter two are libraries every module
+`common/oidc_rp.ts`'s surface — because the latter two are libraries every module
 reads and must not require a feature directory; `tests/debugger_access.js`
 compares them.
 

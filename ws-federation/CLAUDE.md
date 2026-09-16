@@ -3,7 +3,7 @@
 WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
 `/wsfed/rp` that verifies a sign-in response check by check. One file.
 
-4. **`wsfed.ts` must stay after `authn/authn.js` in the require order**, and
+4. **`wsfed.ts` must stay after `authn/authn.ts` in the require order**, and
    that is a dependency rather than a preference: it signs users in to the
    browser session `authn.js` owns, through the `startSession` / `sessionOf` /
    `endSession` it exports, so that single sign-on works across the protocols.
@@ -21,7 +21,7 @@ WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
 Section 13.2.1 lets the sign-in request arrive as a cross-site form POST, which
 `SameSite=Lax` keeps the session cookie off, so such a request is sent to the
 sign-in screen even though a session exists. The quirk is kept rather than
-worked around; `../authn/authn.js`'s `startSession()` owns the cookie and says
+worked around; `../authn/authn.ts`'s `startSession()` owns the cookie and says
 why. (This section used to argue that WS-Federation needed a sign-in screen of
 its own for this reason; it has none since 2026-08-26 — see below.)
 

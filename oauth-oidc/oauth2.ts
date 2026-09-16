@@ -34,7 +34,7 @@
 //   GET  /docs /policy /tos  the documents the metadata links to
 //
 // In development mode it authenticates almost NOBODY: the person is signed in
-// by `authn/authn.js`, which checks no password there, and any client secret
+// by `authn/authn.ts`, which checks no password there, and any client secret
 // is accepted — with the exceptions `oauth2_bcp.js` (RFC 9700 mode, section
 // 2.5), `oauth21.js` and `/oauth2/introspect` (RFC 9701) argue. No END USER's
 // password is checked in development; product mode (`common/mode.js`) checks
@@ -250,13 +250,13 @@ import oauthMonitor = require('./oauth2_monitor');
 import delegation = require('../common/delegation');
 // CONSENT: the register, and the screen that fills it.
 //
-// `common/consent.js` is a LIBRARY (rule 3) — it registers no route and
+// `common/consent.ts` is a LIBRARY (rule 3) — it registers no route and
 // requires helpers.js, config.js, applications.js, error_codes.js and
 // admin_stats.js — so requiring it here can neither create a cycle nor move a
 // route. `./consent_screen.js` DOES register two routes, and this require does
 // not move them: `common/protocol_stack.js` requires it BEFORE this module,
 // exactly as it requires
-// `authn/authn.js` before this module, and for the identical reason — the
+// `authn/authn.ts` before this module, and for the identical reason — the
 // authorization endpoint hands a browser to a screen somebody else owns and
 // takes it back afterwards.
 import consent = require('../common/consent');
@@ -277,20 +277,20 @@ import claimAttributes = require('../common/claim_attributes');
 // `config` and `error_codes` and nothing else here, and answers "allowed" in
 // any process that never loaded the XACML family — so this require cannot move
 // a route, cannot close a cycle and cannot change what this module does on its
-// own. What fills its decider is `xacml/xacml_role_pep.js` at 23c, far below
+// own. What fills its decider is `xacml/xacml_role_pep.ts` at 23c, far below
 // this module in `common/protocol_stack.js`, which is exactly why the gate
 // exists rather than this file requiring the PEP. See
 // `common/issuance_gate.js`.
 import gate = require('../common/issuance_gate');
 // WHO MAY BE GRANTED THE EMBEDDED DEBUGGER'S PERMISSION (2026-09-13). A
 // library (rule 3) that registers nothing and requires only libraries —
-// `admin-ui/admin_rbac.js`, `common/access_gate.js`, `common/audit.js`,
+// `admin-ui/admin_rbac.js`, `common/access_gate.ts`, `common/audit.js`,
 // `common/helpers.js`, `common/realms.js` — so it
 // cannot move a route or close a cycle. See `debugger/debugger_access.ts`.
 import debuggerAccess = require('../debugger/debugger_access');
 // THE ONE PLACE A PRESENTED PASSWORD IS CHECKED, for the RFC 6749 section 4.3
 // password grant (2026-09-12). A library (rule 3): it registers no route, and
-// `authn/authn.js` — required at 8, above this module — already requires it,
+// `authn/authn.ts` — required at 8, above this module — already requires it,
 // so this is a cache hit that can neither move a route nor close a cycle.
 // `websecurity.js` beside it is the rate limiter the sign-in screen already
 // uses, required for the same grant and on the same argument.
@@ -6115,7 +6115,7 @@ class OAuth2Server {
       // line is about the request; this is the only check in this endpoint that
       // is about who is answering it.
       //
-      // WHAT IS ASKED is `common/consent.js`'s to decide and not this
+      // WHAT IS ASKED is `common/consent.ts`'s to decide and not this
       // endpoint's: which scopes this username has already agreed to for this
       // client_id, which the application's `oauthGlobalConsent` covers for
       // everybody, and therefore which are outstanding. A copy of that rule
@@ -9174,7 +9174,7 @@ class OAuth2Server {
                                                        'are required.');
       }
       // -----------------------------------------------------------------------
-      // THE PASSWORD IS VERIFIED THROUGH `common/credentials.js` (2026-09-12),
+      // THE PASSWORD IS VERIFIED THROUGH `common/credentials.ts` (2026-09-12),
       // AND UNTIL THEN IT WAS NOT VERIFIED AT ALL, IN EITHER MODE.
       //
       // This branch refused the literal string `invalid` and accepted

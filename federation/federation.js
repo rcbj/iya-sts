@@ -122,7 +122,7 @@
 // It registers no route. It requires `helpers.js`, `config.js`, `realms.js`,
 // `audit.js`, `error_codes.js` and `applications.js` (below) and nothing else
 // in this repository — none of which registers a route or reaches back here —
-// which is what lets `admin_stats.js`, `authn/authn.js`, `admin-ui/admin.js`,
+// which is what lets `admin_stats.js`, `authn/authn.ts`, `admin-ui/admin.js`,
 // `admin-core/`, `ldap_server.js`, `federation_graph.js` and
 // `federation_sp.js` all require it in the ordinary direction with no cycle
 // and no route moved. Do not let it grow a require of anything that registers

@@ -49,7 +49,7 @@
 // right exactly when nobody needed it.
 //
 // **IT READS NO CALLER'S PEM.** This module describes what it is handed and
-// decides nothing about where that came from; `admin-core/certificate_views.js`
+// decides nothing about where that came from; `admin-core/certificate_views.ts`
 // is what guarantees every certificate reaching it is one this service holds.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, node's
@@ -64,7 +64,7 @@
 // DN attributes by OID from the vendored module it is handed. The module still
 // exports `MAX_PATH`, `fingerprintOf`, `splitPem`, `extensionLabel`,
 // `describe`, `pathFor` and `detailsFor` from ONE TRANSITIONAL instance built
-// with the real modules below, for `admin-core/certificate_views.js` and the
+// with the real modules below, for `admin-core/certificate_views.ts` and the
 // tests; it goes when the composition root exists.
 // ===========================================================================
 

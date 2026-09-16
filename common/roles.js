@@ -22,7 +22,7 @@
 //   * It is ENFORCED. An application entry names the roles it REQUIRES, and
 //     nothing is issued for that application to somebody who holds none of
 //     them — a decision made by the XACML PDP through the embedded PEP in
-//     `xacml/xacml_role_pep.js`, never by an `if` in an issuance site.
+//     `xacml/xacml_role_pep.ts`, never by an `if` in an issuance site.
 //
 // THOSE ARE TWO DIFFERENT RELATIONS AND THIS FILE KEEPS THEM APART, because
 // collapsing them is the mistake that makes the whole feature unreadable:

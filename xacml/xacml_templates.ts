@@ -428,10 +428,10 @@ const TEMPLATES: TemplateRow[] = [
     // That one answers "may this be ISSUED"; this one answers "may this
     // SUBJECT do this to this RESOURCE" — the admin console, the management
     // API, the User Portal, SCIM, the SPIRE Server API and the other surfaces
-    // `common/access_gate.js` lists.
+    // `common/access_gate.ts` lists.
     //
     // **THE SUBJECT IS ALWAYS THE SECURITY CONTEXT'S PERSON**, taken from the
-    // session by `common/access_gate.js` and never from the request. That is
+    // session by `common/access_gate.ts` and never from the request. That is
     // not this policy's business — a PDP decides about the subject it is
     // handed — but it is the reason the decision means anything: a policy
     // engine deciding faithfully about a subject the caller nominated is

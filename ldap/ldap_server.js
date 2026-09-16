@@ -315,12 +315,12 @@ const roles = require('../common/roles');
 const adminRbac = require('../admin-ui/admin_rbac');
 // WHAT A PERSON AGREED AN APPLICATION MAY ASK FOR ON THEIR BEHALF. Required
 // outright for `groupClaims`'s reason and with the same traffic in the other
-// direction: `common/consent.js` registers no route (rule 3) and requires
+// direction: `common/consent.ts` registers no route (rule 3) and requires
 // helpers.js, config.js, applications.js and admin_stats.js — none of which
 // requires this file — so naming it here changes nothing about the require
 // order. The four functions this module contributes go the other way through
 // its setDirectory() slot further down, because THAT module is read from
-// `oauth-oidc/consent_screen.js` and from the console, both of which the
+// `oauth-oidc/consent_screen.ts` and from the console, both of which the
 // require order loads long before this directory's routes should exist.
 const consent = require('../common/consent');
 // The credential store's other half. A LEAF (rule 3) that registers no route
@@ -641,7 +641,7 @@ function federationsDn() {
 }
 
 // ou=policies IS the XACML policy repository — not a copy of one kept
-// elsewhere. `xacml/xacml_store.js` argues why the store is the directory
+// elsewhere. `xacml/xacml_store.ts` argues why the store is the directory
 // rather than a table of its own, and owns the schema for what an entry here
 // carries.
 function policiesDn() {
@@ -670,7 +670,7 @@ function rolesDn() {
 // decides every container split here: a policy is a RULE and a PEP is a
 // PARTY, and the question "which policies do I have" and the question "who is
 // enforcing them" are different questions that a single container could only
-// answer by making every reader filter. `xacml/xacml_pep_registry.js` owns the
+// answer by making every reader filter. `xacml/xacml_pep_registry.ts` owns the
 // schema.
 function pepsDn() {
   log.debug("Entering pepsDn().");
@@ -714,7 +714,7 @@ function trustAnchorDn(fingerprint) {
 // password policy is a profile of numbers `credentials.setPassword()` checks —
 // two kinds of entry sharing one word, which is the reason not to share one
 // container. The name is `ou=policies` in OpenLDAP's own ppolicy examples and
-// could not be here. `common/password_policy.js` owns the schema.
+// could not be here. `common/password_policy.ts` owns the schema.
 function passwordPoliciesDn() {
   log.debug("Entering passwordPoliciesDn().");
   log.debug("Leaving passwordPoliciesDn().");
@@ -768,7 +768,7 @@ function autocreateUsers() {
 // convention rather than an authentication policy.
 //
 // **REFUSED IN BOTH MODES, DELIBERATELY, AND NOT A HARD-CODED BACKDOOR TO
-// REMOVE.** `common/credentials.js` refuses the same literal
+// REMOVE.** `common/credentials.ts` refuses the same literal
 // (`RESERVED_REFUSAL`) before it looks at any store, at every door that takes a
 // password. In development it is what makes result code 49 reachable at all,
 // since nothing else is checked. In product mode it changes nothing an attacker
@@ -1796,7 +1796,7 @@ const OWN_NAMES = [
   // for the same reason as everything above it: OAuth 2.0 postdates the LDAP
   // schema documents and registered no attribute type for consent, and the
   // nearest standard thing is nothing at all. The grammar is
-  // `common/consent.js`'s and is argued there, including why the client_id is
+  // `common/consent.ts`'s and is argued there, including why the client_id is
   // LAST (it is the one field with no rule about what it may contain, so it
   // takes the remainder of the value).
   //
@@ -1810,7 +1810,7 @@ const OWN_NAMES = [
   // ---------------------------------------------------------------------
   // THE CREDENTIALS ON A PERSON'S OWN ENTRY THAT ARE NOT `userPassword`.
   //
-  // `common/credentials.js` writes all four. The first three have been
+  // `common/credentials.ts` writes all four. The first three have been
   // written since 2026-09-06 and were NOT in this table until 2026-09-10,
   // which is the ordinary way this table goes wrong: nothing fails, the name
   // simply renders lower-cased on `/admin/ldap/directory` — the one page
@@ -1831,7 +1831,7 @@ const OWN_NAMES = [
   // in this directory that can be read back and used — sealed under the
   // key-encryption key in product mode for exactly that reason, and in the
   // clear in development where the key would not survive a restart.
-  // `common/credentials.js` argues all of it.
+  // `common/credentials.ts` argues all of it.
   'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
   'stsTotpCredential',
 
@@ -1861,8 +1861,8 @@ const OWN_NAMES = [
   //
   // **IT IS ENCRYPTED RATHER THAN HASHED FOR A REASON THAT IS NOT ABOUT
   // CRYPTOGRAPHY**: a person may look at their remaining codes again on
-  // `/portal/mfa`, and a hash cannot be shown. `common/backup_codes.js`
-  // argues it, `common/credentials.js` does the sealing, and this module —
+  // `/portal/mfa`, and a hash cannot be shown. `common/backup_codes.ts`
+  // argues it, `common/credentials.ts` does the sealing, and this module —
   // which holds no key — only ever sees whatever of the two it was handed.
   'stsBackupCodes',
 
@@ -1896,7 +1896,7 @@ const OWN_NAMES = [
   'stsSamlAssertionKeySource',
 
   // AND A SEVENTH SINCE 2026-09-12: A PERSON'S KERBEROS LONG-TERM KEYS, derived
-  // from their own password by `kerberos/krb5_person_keys.js` so that a
+  // from their own password by `kerberos/krb5_person_keys.ts` so that a
   // product-mode KDC can authenticate them. `stsKrb5Keys` is ONE sealed value
   // carrying every enctype's key beside the name and a stamp of the password
   // hash they were derived beside; `stsKrb5KeyInfo` is the public half — kvno,
@@ -1908,7 +1908,7 @@ const OWN_NAMES = [
 
   // AND AN EIGHTH SINCE 2026-09-13: what ACME, EST and SCEP issued to a person,
   // the two protocol credentials, and the host names an administrator
-  // registered — `common/cert_enrollment.js` is the register. The private key,
+  // registered — `common/cert_enrollment.ts` is the register. The private key,
   // the EAB key and the challenge are WITHHELD from every dump and search in
   // every mode (`cert_enrollment.withheldValues()`); the certificates and the
   // host names are public.
@@ -1960,7 +1960,7 @@ OWN_NAMES.forEach(function (spelling) {
 });
 
 // AND THE inetOrgPerson CLASS DEFINITION (2026-09-11), for the reason every
-// other merge below is done: `common/inetorgperson.js` is a fourth
+// other merge below is done: `common/inetorgperson.ts` is a fourth
 // independently maintained list of spellings — it is what `/portal` draws its
 // account page from — and it names most of the same types the standard list
 // above does. Merged rather than trusted, so that a disagreement between the
@@ -2782,7 +2782,7 @@ function seed() {
       'xacmlEnabled takes a policy out of the decision without deleting it. ' +
       'The entry holds the XACML XML AS AUTHORED and everything else on it ' +
       'is derived from that document at write time, so where the two ' +
-      'disagree the document wins. xacml/xacml_store.js holds the schema.'
+      'disagree the document wins. xacml/xacml_store.ts holds the schema.'
   }, { origin: 'seed' });
   putEntry(rolesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -2802,7 +2802,7 @@ function seed() {
   // THE CONTAINER AND NOT THE PROFILE. The tree is structural and is seeded
   // in both modes; `cn=default` is written the first time an operator saves
   // it, and until then the built-in defaults are in force — see
-  // `common/password_policy.js` for why a seeded profile would be the wrong
+  // `common/password_policy.ts` for why a seeded profile would be the wrong
   // answer in every realm created after this one.
   putEntry(passwordPoliciesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -2813,7 +2813,7 @@ function seed() {
       'An ldapmodify here changes what the NEXT password set in this realm ' +
       'must look like, and nothing already stored. The profile is ' +
       'cn=default; while it is absent the built-in defaults are in force. ' +
-      'ENFORCED IN PRODUCT MODE. common/password_policy.js holds the schema; ' +
+      'ENFORCED IN PRODUCT MODE. common/password_policy.ts holds the schema; ' +
       'GET /admin/policies publishes it.'
   }, { origin: 'seed' });
   putEntry(pepsDn(), {
@@ -2825,7 +2825,7 @@ function seed() {
       'GET /xacml/pep/policies and enforce, because a policy is a rule and a ' +
       'rule nobody can read is a rule nobody can check. What a row buys is a ' +
       'place on /admin/xacml/peps and an address for the change nudge. ' +
-      'xacml/xacml_pep_registry.js holds the schema.'
+      'xacml/xacml_pep_registry.ts holds the schema.'
   }, { origin: 'seed' });
   // STRUCTURAL, so not behind `mode.seedsDemoData()` below — and in the DEFAULT
   // realm only, because the truststore is the process's. See trustAnchorsDn().
@@ -6861,7 +6861,7 @@ if (typeof passwordPolicy.setDirectory === 'function') {
     deletePasswordPolicy: deletePasswordPolicy
   });
 } else {
-  log.warn('ldap: common/password_policy.js offers no setDirectory(), so ' +
+  log.warn('ldap: common/password_policy.ts offers no setDirectory(), so ' +
            'ou=passwordPolicies is unreachable and the built-in default ' +
            'password policy cannot be edited.');
 }
@@ -7032,7 +7032,7 @@ function reloadTrustAnchorsQuietly() {
 // CONSENT: THE FOUR FUNCTIONS THAT PUT AN ANSWER ON A PERSON'S ENTRY, AND READ
 // IT BACK.
 //
-// `common/consent.js` owns the MODEL — the value's grammar, what "outstanding"
+// `common/consent.ts` owns the MODEL — the value's grammar, what "outstanding"
 // means, the global override, the register both halves are read from. This
 // module owns the STORE, which is `oauthConsent` on an entry under ou=users,
 // and that division is the one `group_claims.js` and `applications.js` already
@@ -7168,7 +7168,7 @@ function listConsentValues() {
 // it existed — it just never had a value to compare against, which is why
 // `crypto_metadata.js` said in as many words that no `userPassword` is stored.
 //
-// THE VALUE IS A SCRYPT HASH and never a password. `common/credentials.js`
+// THE VALUE IS A SCRYPT HASH and never a password. `common/credentials.ts`
 // hashes before it gets here, so this module never sees a plaintext credential
 // at all — which is what keeps the decision about HOW in one place, beside
 // every other cryptographic decision this service makes.
@@ -7201,7 +7201,7 @@ function readStoredPassword(key) {
 // THE PASSWORD HISTORY (2026-09-12): `pwdHistory` on the same entry, one value
 // per remembered previous password in draft-behera-ldap-password-policy's
 // `time#syntaxOID#length#data` form. The values are BUILT by
-// `common/password_policy.js` and CHOSEN by `common/credentials.js`; this
+// `common/password_policy.ts` and CHOSEN by `common/credentials.ts`; this
 // module stores strings, which is the same division `userPassword` beside it
 // already has — so this file never learns what a history value means, and
 // never holds the decision about how many to keep.
@@ -7900,7 +7900,7 @@ function replaceWebauthnValues(key, values) {
 // WebAuthn assertion names the credential that produced it; a TOTP code is six
 // digits and names nothing, so a second secret would mean trying both and would
 // leave RFC 6238 section 5.2's replay guard with no answer to *which counter
-// was spent*. `common/credentials.js` argues it; this function is the half that
+// was spent*. `common/credentials.ts` argues it; this function is the half that
 // makes it true of the store — `writeTotp()` ASSIGNS, so enrolling again
 // replaces.
 //
@@ -7963,7 +7963,7 @@ function writeTotp(key, value) {
 // KEYS.** The value is one JSON object carrying the whole set — a sealed (or
 // plain) list of codes, and the counts beside it in the clear so that a page
 // can say *7 of 10 unused* without opening anything. `writeBackupCodes()`
-// ASSIGNS, so a person holds one set and never two: `common/credentials.js`
+// ASSIGNS, so a person holds one set and never two: `common/credentials.ts`
 // issues a set exactly once and an operator's Clear is the only way to
 // another, and two values would make *which set am I holding* a question with
 // no answer.
@@ -7973,7 +7973,7 @@ function writeTotp(key, value) {
 // A TOTP secret cannot be hashed because verifying a code means COMPUTING it —
 // that is arithmetic. A recovery code COULD be hashed, and is not, because a
 // person may look at their remaining codes again and a hash cannot be shown.
-// `common/backup_codes.js` argues the trade at length. In product mode it
+// `common/backup_codes.ts` argues the trade at length. In product mode it
 // arrives here already sealed, which is that module's doing and not this
 // function's — right, because what is sealed is a question about the KEY and
 // this module has none.
@@ -8067,7 +8067,7 @@ function writeActivation(key, hash, expires) {
 }
 
 // The EIGHTH slot. Guarded like the seven above: an older
-// `common/credentials.js` without it costs a warning rather than a service that
+// `common/credentials.ts` without it costs a warning rather than a service that
 // will not start — and the warning says what is lost, which in product mode is
 // every sign-in.
 if (typeof credentials.setDirectory === 'function') {
@@ -8075,7 +8075,7 @@ if (typeof credentials.setDirectory === 'function') {
     readPassword: readStoredPassword,
     writePassword: writeStoredPassword,
     // The password history (2026-09-12). Checked where it is used, like the
-    // pairs below: an older `common/credentials.js` still gets a working
+    // pairs below: an older `common/credentials.ts` still gets a working
     // password write, and simply keeps no history.
     readPasswordHistory: readPasswordHistory,
     anyCredential: anybodyHoldsACredential,
@@ -8086,12 +8086,12 @@ if (typeof credentials.setDirectory === 'function') {
     writeActivation: writeActivation,
     // The authenticator app (2026-09-10). Checked WHERE THEY ARE USED rather
     // than in `setDirectory()`'s required list, exactly as the security-key
-    // and activation functions are: an older `common/credentials.js` that
+    // and activation functions are: an older `common/credentials.ts` that
     // knows nothing about them still gets a working password sign-in.
     readTotp: readTotp,
     writeTotp: writeTotp,
     // The recovery codes (2026-09-10). Checked WHERE THEY ARE USED for the
-    // reason the pair above is: an older `common/credentials.js` that knows
+    // reason the pair above is: an older `common/credentials.ts` that knows
     // nothing about them still gets a working password sign-in, and
     // `ensureBackupCodes()` reports `no-store` rather than throwing.
     readBackupCodes: readBackupCodes,
@@ -8205,10 +8205,10 @@ if (typeof credentials.setDirectory === 'function') {
 // `/portal`'s Overview answers *what does this identity provider hold about
 // me*, and it had been answering out of the SESSION — four facts a sign-in
 // happened to carry. It draws the person's real entry now, against the fixed
-// list in `common/inetorgperson.js`.
+// list in `common/inetorgperson.ts`.
 //
 // **IT IS A SLOT FOR THE ORDINARY REASON AND THE DIRECTION IS THE INTERESTING
-// HALF.** `portal/portal.js` sits at 8b and this module at 21, so a require
+// HALF.** `portal/portal.ts` sits at 8b and this module at 21, so a require
 // from there to here would register all eight `/admin/ldap/*` pages ahead of
 // the authorization server and the console (rule 1); a require from here to
 // there would move every `/portal` route behind the management API. Rule 3e's
@@ -8223,7 +8223,7 @@ if (typeof credentials.setDirectory === 'function') {
 // not the shape of this hook but the FIXED LIST at the other end, which has no
 // `sts`-prefixed credential on it and cannot grow one by accident.
 //
-// Guarded like the rest: an older `portal/portal.js` without the slot costs a
+// Guarded like the rest: an older `portal/portal.ts` without the slot costs a
 // warning rather than a service that will not start, and the warning says what
 // is lost.
 // ---------------------------------------------------------------------------
@@ -8363,7 +8363,7 @@ if (typeof personAssertions.setDirectory === 'function') {
            'error; /admin/pki says so on the control.');
 }
 } else {
-  log.warn('ldap: common/credentials.js offers no setDirectory(), so no ' +
+  log.warn('ldap: common/credentials.ts offers no setDirectory(), so no ' +
            'password can be verified or set. Development mode is unaffected ' +
            'because it verifies nothing; PRODUCT MODE WOULD REFUSE EVERY ' +
            'SIGN-IN, which credentials.js reports rather than passing.');
@@ -8372,7 +8372,7 @@ if (typeof personAssertions.setDirectory === 'function') {
 // ---------------------------------------------------------------------------
 // CERTIFICATE ENROLLMENT'S SLOT (2026-09-13).
 //
-// `common/cert_enrollment.js` keeps what ACME, EST and SCEP issued — and the
+// `common/cert_enrollment.ts` keeps what ACME, EST and SCEP issued — and the
 // two protocol credentials, and an administrator's registered host names — ON
 // THE ENTRY THE CERTIFICATE NAMES, a person's or an application's. Rule 3e's
 // test answers yes both ways round, for `personAssertions.setDirectory()`'s
@@ -8474,7 +8474,7 @@ if (typeof certEnrollment.setDirectory === 'function') {
 }
 
 // The SEVENTH slot, and the second one that hands over a WRITER as well as
-// readers. Guarded like the six above: an older `common/consent.js` without the
+// readers. Guarded like the six above: an older `common/consent.ts` without the
 // slot costs a warning rather than a service that will not start — and the
 // warning says what is lost, which is that the screen would draw for ever
 // because nothing it recorded could be read back.
@@ -8486,7 +8486,7 @@ if (typeof consent.setDirectory === 'function') {
     listConsents: listConsentValues
   });
 } else {
-  log.warn('ldap: common/consent.js offers no setDirectory(), so nothing a ' +
+  log.warn('ldap: common/consent.ts offers no setDirectory(), so nothing a ' +
            'person agrees to at /oauth2/consent can be written down or read ' +
            'back. With oauth2.consentRequired on, the screen is drawn on ' +
            'every authorization request. The directory itself is unaffected.');
@@ -8497,7 +8497,7 @@ if (typeof consent.setDirectory === 'function') {
 // in this file pinned to the DEFAULT realm for a reason that was not about
 // administrators, and since 2026-09-15 it is not pinned at all — see below.
 //
-// `kerberos/krb5_person_keys.js` owns what a stored Kerberos key IS — the
+// `kerberos/krb5_person_keys.ts` owns what a stored Kerberos key IS — the
 // sealed record, the stamp, the kvno, the keytab — and this module owns where
 // it lives: `stsKrb5Keys` / `stsKrb5KeyInfo` on a person's entry under
 // `ou=users`, and `krb5ServiceKeys` / `krb5ServiceKeyInfo` on an application
@@ -8635,7 +8635,7 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
     }
   });
 } else {
-  log.warn('ldap: kerberos/krb5_person_keys.js offers no setDirectory(), so ' +
+  log.warn('ldap: kerberos/krb5_person_keys.ts offers no setDirectory(), so ' +
            'no person can hold Kerberos keys and no service principal key ' +
            'can be stored. That is the older register and is not an error.');
 }
@@ -10205,7 +10205,7 @@ function throughTheRequestPool(operation, local) {
 function registerWorkerOperations() {
   log.debug('Entering registerWorkerOperations().');
   // ONLY IN A PROCESS THAT IS ACTUALLY A WORKER (2026-09-12). Requiring
-  // `request_worker.js` pulls `common/service_state.js` in at module scope —
+  // `request_worker.js` pulls `common/service_state.ts` in at module scope —
   // the store, the keys, the minted rows and coordination — and installs
   // `process.on('message')` handlers, which in a process that will never
   // answer an operation is a table nothing reads bought with half the
@@ -10247,7 +10247,7 @@ server.bind('', function (req, res, next) {
   log.debug('Entering the LDAP bind handler.');
   const dn = req.dn ? req.dn.toString() : '';
   // NAMED `credentials_value` AND NOT `credentials` since 2026-09-06: the
-  // module now requires `common/credentials.js` under that name, and a local
+  // module now requires `common/credentials.ts` under that name, and a local
   // shadowing it here would make the verifier unreachable from the one handler
   // that most needs it — silently, because the shadow is a string and calling
   // `.verify()` on it is a TypeError at the first bind rather than at load.
@@ -10454,7 +10454,7 @@ server.bind('', function (req, res, next) {
         action: 'directory.bind',
         actor: consoleKeyFor(dn, getEntry(dn)), actorForm: dn,
         target: dn, outcome: 'failure',
-        // The verifier's own code for WHY (common/credentials.js), or this one.
+        // The verifier's own code for WHY (common/credentials.ts), or this one.
         errorCode: errorCodes.codeOf(checked) || 'STS-LDAP-0002',
         summary: 'a simple bind as ' + dn + ' was refused',
         detail: { reason: checked.reason, note: checked.detail }
@@ -12024,7 +12024,7 @@ function ldapDirectoryView(req) {
     const attributes = {};
     Object.keys(stored.attributes).forEach(function (name) {
       // A KERBEROS KEY IS WITHHELD, ciphertext included (2026-09-12) — see
-      // `kerberos/krb5_person_keys.js`. This page's job is to show an entry
+      // `kerberos/krb5_person_keys.ts`. This page's job is to show an entry
       // faithfully and the sentence says exactly what was kept back.
       attributes[canonicalName(name)] =
         certEnrollment.withheldValues(name,
@@ -12839,7 +12839,7 @@ function deleteRole(name) {
 //
 // The same three functions a fourth time, named by the PROFILE (`cn=default`).
 // Two things differ from ou=roles and both are small: there is no cap of its
-// own, because `common/password_policy.js` refuses every profile name but one
+// own, because `common/password_policy.ts` refuses every profile name but one
 // before a write reaches here; and the CONTAINER is put back if it is missing,
 // because a directory restored from a store written before this container
 // existed has none, and a profile whose parent is absent is an entry an

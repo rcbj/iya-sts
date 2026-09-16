@@ -8,7 +8,7 @@
 // `ssf_http.ts` and the error-code registry through its constructor. The inbox
 // store and the SURFACES table stay module-level declarations (a store becomes
 // per realm where it is DECLARED), and the module still exports its old names
-// from a TRANSITIONAL instance for `admin-ui/admin.js`, `portal/portal.js` and
+// from a TRANSITIONAL instance for `admin-ui/admin.js`, `portal/portal.ts` and
 // `ssf/ssf.ts`, which require it by those names.
 // ---------------------------------------------------------------------------
 
@@ -26,7 +26,7 @@
 //
 // **THIS IS THE SECOND TIME A SURFACE OF THIS SERVICE BECAME A CLIENT OF A
 // PROTOCOL THIS SERVICE SPEAKS, AND THE ARGUMENT IS THE FIRST ONE'S.**
-// `common/oidc_rp.js` made both of them OpenID Connect relying parties on
+// `common/oidc_rp.ts` made both of them OpenID Connect relying parties on
 // 2026-09-06, and its complaint was that this service's own two applications
 // were the only applications in the process that did not use the protocol this
 // service exists to demonstrate — a real relying party has no access to the
@@ -102,7 +102,7 @@
 // `common/crypto.js`, `cluster/cluster_secrets.ts`, the error-code registry,
 // `ssf_subjects`, `ssf_events`, `ssf_streams` and `ssf_http` — every one of
 // them a library that registers nothing and none of which requires this file —
-// so it can be required from `admin-ui/admin.js` (18) and `portal/portal.js`
+// so it can be required from `admin-ui/admin.js` (18) and `portal/portal.ts`
 // (just after `authn`, 8) without moving a route or closing a cycle, which is
 // the test rule 3e sets.
 // ===========================================================================

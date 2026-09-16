@@ -442,7 +442,7 @@ async function theReportFollowsTheSettings() {
 
   const totp = await get("/totp");
   check("the TOTP page's digest table marks the one in use the same way, " +
-        "from common/totp.js", function () {
+        "from common/totp.ts", function () {
     const status = totp.body.status;
     assert.ok(status && Array.isArray(status.algorithms),
       "there is no digest table on the report.");
