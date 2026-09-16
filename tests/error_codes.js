@@ -79,10 +79,13 @@ const ROOT = path.join(__dirname, '..');
 // XPEP subsystem). Its Dockerfile copies common/error_codes.js to the image
 // root, which tests/xacml_pep.js pins.
 //   xacml/conformance              the vendored OASIS suite's manifest
-//   env                            generated appconfig files
+//   env                            the appconfig files and the generated
+//                                  defaults.js
 //   debugger/embedded              the debugger project's BUILD OUTPUT, its
 //                                  node_modules included; gitignored, and its
 //                                  codes are that project's business
+//   protos                         SPIFFE's vendored protocol definitions
+//   .git, coverage                 not source
 // ---------------------------------------------------------------------------
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
                    'openbao', 'env', '.git', 'coverage', 'protos'];

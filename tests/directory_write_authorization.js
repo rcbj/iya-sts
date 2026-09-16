@@ -8,8 +8,10 @@
 //
 // `ldap/ldap_server.js`'s `directoryWriteRefusal()` argues the rule: an
 // anonymous connection writes nothing, a connection bound as somebody holding
-// Admin Write in the DEFAULT realm writes anything, and anybody else may modify
-// only the attributes `ldap.selfWritableAttributes` names on their OWN entry.
+// Admin Write in the DEFAULT realm writes anything, one bound as a realm's own
+// administrator (#32, 2026-09-14) writes that realm's directory, and anybody
+// else may modify only the attributes `ldap.selfWritableAttributes` names on
+// their OWN entry.
 //
 // **EVERY OPERATION HERE GOES THROUGH `performOperation()`**, which is the
 // function a request worker runs a dispatched directory operation with. It

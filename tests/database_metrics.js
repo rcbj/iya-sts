@@ -18,11 +18,11 @@
 //     field-table argument, one layer out, and it is the reason both lists
 //     are exported.
 //   * **EVERY STATEMENT IS A READ, AND A LITERAL.** The role this service
-//     dials with can INSERT, UPDATE and DELETE on six tables, so the one
-//     thing this page could get catastrophically wrong is sending it
-//     something else. Asserted against the SQL rather than trusted: no probe
-//     may contain a write verb, and none may be built by concatenation from
-//     anything but constants.
+//     dials with can INSERT, UPDATE and DELETE on every table in its schema
+//     (`postgres/schema.sql`), so the one thing this page could get
+//     catastrophically wrong is sending it something else. Asserted against
+//     the SQL rather than trusted: no probe may contain a write verb, and none
+//     may be built by concatenation from anything but constants.
 //   * **THE THREE "NO DATABASE" ANSWERS ARE DIFFERENT SENTENCES.** The
 //     commonest state of this page by a wide margin is that there is nothing
 //     to report, and *not configured*, *configured and not open* and *open

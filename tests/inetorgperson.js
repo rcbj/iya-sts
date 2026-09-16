@@ -48,7 +48,8 @@ delete process.env.CONFIG_FILE;
 const schema = require('../common/inetorgperson');
 // THE OTHER CATALOGUE OF LDAP SPELLINGS IN THIS REPOSITORY. Required for the
 // cross-check at the end, and it is a LEAF (`crypto`, `realms`, `helpers`,
-// `admin_stats`) so requiring it here costs nothing and registers nothing.
+// `admin_stats`, `mode`, `error_codes`) so requiring it here costs nothing and
+// registers nothing.
 const vcClaims = require('../oid4vc/vc_claims');
 
 // This file's own logger, for the Entering/Leaving lines and the handled

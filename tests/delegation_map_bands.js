@@ -625,11 +625,14 @@ function run(t) {
   // and TWICE has the parallel pair without the cycle.
   //
   // WHY IN PROCESS, when `tests/vendored/sts_delegated_permissions_example.js`
-  // builds this very mesh over HTTP: that job asserted the GRAPH and never
+  // built this very mesh over HTTP: that job asserted the GRAPH and never
   // asked whether the picture drew, which is exactly the hole this fell
-  // through, and it is being closed there too. What cannot be done over there
-  // is asking the question CHEAPLY — this is the renderer's own contract, it
-  // is a pure function, and a fixture here costs milliseconds and no container.
+  // through. It has built a RING since the same day, which has neither
+  // ingredient, and the over-HTTP half of the closing is
+  // `tests/vendored/sts_admin_console.js`'s "could not be drawn" check. What
+  // cannot be done over there is asking the question CHEAPLY — this is the
+  // renderer's own contract, it is a pure function, and a fixture here costs
+  // milliseconds and no container.
   const MESH_IDS = ['abcapp1', 'abcapp2', 'abcapp3', 'abcapp4', 'abcapp5'];
   const MESH = { nodes: [], edges: [] };
   MESH_IDS.forEach(function (id) {
