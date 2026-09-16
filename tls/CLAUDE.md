@@ -19,9 +19,9 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   the embedded debugger's listener. So one anchor covers all three and a caller
   trusts this service once per start rather than three times. The LDAPS half is
   what makes `ldap_server.js` require this module, and therefore what fixes
-  their order in `server.js` (rule 6); the other two need no require order,
-  because `server.js` and `debugger_server.js` already have this module in hand
-  by the time they listen. The private key crosses a module boundary and no
+  their order in `common/protocol_stack.js` (rule 6); the other two need no
+  require order, because `server.js` and `debugger_server.js` already have this
+  module in hand by the time they listen. The private key crosses a module boundary and no
   network one: it is generated per start, held in memory, and
   `GET /tls/server-certificate` publishes the certificate alone.
 * **The client truststore.** The anchors every listener in this process verifies
@@ -35,10 +35,13 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   trusts and what it does with a client certificate), `GET /tls/sign-in`,
   `GET /tls/server-certificate`, `GET /tls/forwarded`, and the two test
   controls `POST /tls/trust` and `POST /tls/trust/clear`.
-* **`listen()` and `close()` are KEPT AS NO-OPS.** `server.js` and three tests
-  call them, and a socket owner that stops owning a socket should not change the
-  shape of its module on the same day. `listen()` resolves immediately and
-  reports no ports; `ports()` answers `{ main }`, because every caller ever
+* **`listen()` and `close()` are KEPT.** `server.js` and three tests call them,
+  and a socket owner that stops owning a socket should not change the shape of
+  its module on the same day. `close()` is a no-op. `listen()` binds nothing and
+  reports no ports, but is still a startup step: it restores the stored trust
+  anchors (`reloadStoredAnchors()`) and re-applies the secure context to every
+  registered listener, which is what it did last before binding. `ports()`
+  answers `{ main }`, because every caller ever
   wanted one thing from it — where do I send a client certificate.
 
 **There is no metadata blind spot here any more, and that is worth saying
@@ -192,9 +195,9 @@ and `GET /tls/server-certificate`.
 chooses among certificates this service ISSUES, and there is nothing to choose from
 when it was handed one.
 
-**`certificateProvenance()` is exported for the six modules that describe this
-certificate to a reader**, and it is not decoration — it changes what the reader has
-to DO. A self-signed certificate has to be fetched and trusted again after every
+**`certificateProvenance()` is exported for the modules that describe this
+certificate to a reader** (six asserted the answer before it existed), and it
+is not decoration — it changes what the reader has to DO. A self-signed certificate has to be fetched and trusted again after every
 restart; a supplied one does not, and telling somebody to re-trust a certificate that
 never changed sends them looking for a problem that is not there. `server.js`,
 `ldap_server.js` (twice) and the LDAP metadata page ask it rather than asserting the
@@ -353,8 +356,8 @@ restart-only, on by default. Four things are this directory's:
   is created before the certificate authority starts, so the Root was not there
   to add; `onCertified` calls `applyAnchors()`, which re-applies it to every
   registered listener. A supplied certificate is never certified, so nothing is
-  re-applied for it. `listen()` used to do this for the two sockets this module
-  owned and does nothing at all now.
+  re-applied for it. `listen()` re-applies it too, as it did for the two
+  sockets this module owned — to whatever has registered by then.
 * **THE TRUSTSTORE PAGE DOES NOT LIST IT.** It is not an anchor anybody added and
   cannot be removed there; `GET /tls` carries it at
   `truststore.issuedClientCertificates`, and `tests/truststore_admin.js` counts
@@ -420,8 +423,9 @@ What is this directory's:
   does not arise here.
 
 `tests/revocation_status.js` asserts the absent session over a real handshake in
-a child process — **it was written against the two deleted listeners and its
-listener half is the tests' to bring across.** Its OpenSSL child (sections 8 to
+a child process — sections 6 and 7, written against the two deleted listeners
+and moved to `GET /tls/sign-in` with them; the strict listener's 403 has no
+successor and is no longer asserted. Its OpenSSL child (sections 8 to
 11) holds OCSP, delta and indirect CRLs against a real `openssl ocsp` responder
 and `openssl ca` lists; it calls `verdictFor()` directly, because what those
 sections vary is the documents rather than the socket, and that half is
@@ -939,7 +943,8 @@ Four things about it are decisions:
   its identity for the rest of a run. Removing a `file` anchor IS allowed, and both the
   page and the reply say it comes back at the next start.
 * **NOTHING IS PERSISTED**, which is the rule this array already follows (the note above
-  `anchors`). The durable door is still `tls.trustAnchorsFile`.
+  `anchors`). The durable door is still `tls.trustAnchorsFile`. *Superseded later
+  the same day — see* A RUNTIME ANCHOR SURVIVES A RESTART *below.*
 * **THE SLOT IS FILLED BY `common/protocol_stack.js`, NOT BY THIS MODULE, AND THAT IS
   FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.js`'s require —
   `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.js` → here — so a
@@ -985,9 +990,10 @@ defaults unchanged; the CN is still the first of `tls.hostnames`.
 
 `tests/ldap_tls_product_mode.js` asserts the 403, the anchors file (and its fatal
 refusal) and the fatal cipher list. **Its real-handshake assertion that
-`tls.minVersion=TLSv1.3` refuses a TLS 1.2 client was made against 8443** — the
-socket, not the setting — so it is one of the places the deletion reaches the
-suite. Mutation-tested against the product refusal removed.
+`tls.minVersion=TLSv1.3` refuses a TLS 1.2 client was made against 8443 until
+2026-09-16**, and is made against LDAPS 636 now — a socket another module
+builds from the same `protocolOptions()`. Mutation-tested against the product
+refusal removed.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 

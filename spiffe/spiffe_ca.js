@@ -29,15 +29,16 @@
 //
 // What that buys here specifically: **EC P-256 is the default**, which is what
 // SPIRE issues and what the X509-SVID specification recommends. `node-forge` —
-// which `helpers.js` and `tls_server.js` use for the STS signing key and the
-// TLS server certificate — cannot sign with an EC key at all, so a CA built on
-// it would have been RSA-only. RSA is permitted by the specification and would
-// have interoperated; it would simply not have been what a client author sees
-// in front of a real SPIRE deployment.
+// which `common/crypto.js` uses for the self-signed RSA certificates of the STS
+// signing key and the TLS server — cannot sign with an EC key at all, so a CA
+// built on it would have been RSA-only. RSA is permitted by the specification
+// and would have interoperated; it would simply not have been what a client
+// author sees in front of a real SPIRE deployment.
 //
-// **Do not edit the four vendored files.** A change here that is not also made
-// there is a fork nobody else can consume, and the sync is checked by hand
-// (this repository has no tests yet — see CLAUDE.md).
+// **Do not edit the four vendored files** (they are in `common/vendored/`). A
+// change here that is not also made there is a fork nobody else can consume,
+// and nothing checks these four for drift automatically — see
+// `common/vendored/CLAUDE.md`.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS GENERATED PER START, AND WHAT IS NOT ANY MORE (2026-09-11)
@@ -348,7 +349,8 @@ function keyTypeById(id) {
 }
 
 // ---------------------------------------------------------------------------
-// THE STATE. All of it in memory, all of it gone when the process ends.
+// THE STATE. It was all in memory and gone when the process ended; it is
+// persisted since 2026-09-08 — see the block after this one.
 //
 // `x509Authorities` and `jwtAuthorities` are LISTS rather than single values,
 // and the reason is what a bundle is FOR. Rotation appends a new authority and
@@ -371,9 +373,12 @@ function keyTypeById(id) {
 // that signs nothing while the one doing the signing stood still.
 //
 // **IT WAS `sharedMap` UNTIL 2026-09-11 AND THE ARGUMENT FOR THAT IS WORTH
-// KEEPING, BECAUSE IT IS STILL HALF TRUE.** It read: *SPIFFE is ONE trust
+// KEEPING, BECAUSE IT WAS STILL HALF TRUE THAT DAY.** *(The other half went
+// on 2026-09-12: the trust domain and the sockets are a realm's too — see
+// `spiffe/CLAUDE.md` and the TRUST DOMAIN block above. This paragraph and the
+// next are the 2026-09-11 state.)* It read: *SPIFFE is ONE trust
 // domain for the whole service — its sockets have no path to put a realm
-// segment in — so this is not per realm.* The trust DOMAIN is still one:
+// segment in — so this is not per realm.* The trust DOMAIN was still one:
 // `spiffe.trustDomain` is read once, service-wide, and every SVID this
 // service mints anywhere names it. What became per realm is the AUTHORITY
 // that signs, because `common/pki.js`'s SPIFFE Issuing CA is a realm's now
@@ -402,9 +407,9 @@ const authorities = realms.map({ persist: 'spiffe.authorities' });
 
 // The realm whose authority a call is about. Every reader here takes an
 // explicit id or falls back to the AMBIENT realm — the shape every per-realm
-// store in this service has, and the reason the four gRPC sockets land in the
-// default realm without a line of code saying so: nothing enters a realm for
-// them, so `realms.current()` is the default.
+// store in this service has. A gRPC call is in the realm whose socket it
+// arrived on, because `spiffe_server.js`'s `handlersInRealm()` enters that
+// realm around every handler (the default realm's four sockets included).
 function realmIdOf(realmId) {
   log.debug("Entering realmIdOf().");
   if (realmId !== undefined && realmId !== null) {
@@ -491,7 +496,8 @@ function setJwtList(realmId, list) {
 // The foreign trust domains this one federates with, keyed by trust domain
 // name. Each holds the bundle document exactly as it was given — see
 // `setFederatedBundle()` for why it is given rather than fetched.
-// **A SHARED, PERSISTED STORE AND NOT A PLAIN Map (2026-09-07).** A federated
+// **A PERSISTED STORE AND NOT A PLAIN Map (2026-09-07)** — shared then, per
+// realm since 2026-09-12 (below). A federated
 // bundle is registered through `/admin-api/spiffe` or the console and read back
 // off `GET /spiffe`, and a plain Map made it visible only in the process that
 // took the call: with a request worker pool, registering a trust domain on one
@@ -1643,8 +1649,8 @@ function chainDerOf(issued) {
 }
 
 // ---------------------------------------------------------------------------
-// THE SIX FACTS ABOUT AN ISSUED CERTIFICATE, IN THE SPELLING THE TLS LISTENERS
-// ALREADY PRODUCE.
+// THE SIX FACTS ABOUT AN ISSUED CERTIFICATE, IN THE SPELLING THE TLS
+// CLIENT-CERTIFICATE SIGHTING ALREADY PRODUCES (`tls/tls_server.js`).
 //
 // The directory grows an entry for the holder of every X509-SVID this authority
 // mints (see `spiffePlan()` and `applySpiffeCertificate()` in
@@ -2177,9 +2183,10 @@ function federatedX509BundleDer(trustDomain, realmId) {
 // and does not follow it, which is the same refusal `wsfed.js` gives `wreqptr`
 // and `client_auth.js` gives `jwks_uri`, for the same reason: fetching a URL
 // that somebody registered, in order to obtain a credential-verification key,
-// is a server-side request forgery with a specification citation attached. On a
-// service that authenticates nobody and accepts any registration, that is a
-// blind HTTP client anybody can point anywhere.
+// is a server-side request forgery with a specification citation attached. On
+// the service this was written for, which authenticated nobody and accepted
+// any registration, it would have been a blind HTTP client anybody could point
+// anywhere — and a registration is still a thing an admin caller may create.
 //
 // Holding that position in two files and not in a third would be no position at
 // all. The bundle is pasted in — through `/admin/spiffe`, through

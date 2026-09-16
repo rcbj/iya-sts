@@ -351,9 +351,9 @@ function verifyAccessToken(token, req, opts) {
   }
   // RFC 8705 SECTION 3.1 (2026-09-13): a certificate-bound token only on a
   // connection made with its certificate, as at `/admin-api`. This listener
-  // asks for none unless it is configured to, and a bound token presented on
-  // it is refused rather than accepted as a bearer token — which is what the
-  // binding exists to prevent.
+  // asks for a certificate and requires none (since #34, 2026-09-15), and a
+  // bound token presented without its certificate is refused rather than
+  // accepted as a bearer token — which is what the binding exists to prevent.
   const certificateProblem = mtls.checkBinding(claims, req, true);
   if (certificateProblem) {
     log.debug("Leaving verifyAccessToken(). The certificate binding failed.");

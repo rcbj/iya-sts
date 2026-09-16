@@ -185,9 +185,10 @@ compares them.
 
 **Administrator means a MEMBER of what the console means**: `admin_rbac.rolesOf()`
 in the DEFAULT realm, either role — **and the empty-roster rule is NOT honoured**
-(rcbj, 2026-09-13, reversing the first version, which matched the console). While
-neither group has a member `admin.openWhenEmpty` gives everybody who signs in both
-roles, so that the first grant can be made on the console; the debugger needs no
+(rcbj, 2026-09-13, reversing the first version, which matched the console).
+`admin.openWhenEmpty` gives everybody who signs in both roles until the bootstrap
+administrator first signs in (or, with none seeded, while neither group has a
+member), so that the first grant can be made on the console; the debugger needs no
 such bootstrap, so a role held only because nobody holds one is refused with
 `STS-DBG-0024` and the debugger stays shut until somebody really is in a group.
 That check runs BEFORE the role test, which everybody would otherwise pass. The

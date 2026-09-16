@@ -71,12 +71,11 @@
 // reading it as intersection means an entry asking for two selectors is
 // satisfied by a workload that has one of them, which hands out identities.
 //
-// **Nothing in this service actually attests a workload**, so on the Workload
-// API that rule is not what decides an answer — see `spiffe_workload.js`. It is
-// implemented and used by the SPIRE Server API's `GetAuthorizedEntries` and by
-// the console's "which entries would this workload match" view, because a
-// client author debugging their selectors needs a server that computes the same
-// thing SPIRE would.
+// **Nothing in this service actually attests a workload**, but the rule still
+// decides the Workload API's answer (`spiffe.attestWorkloads`, on by default),
+// matched against the selectors node CAN observe — see `spiffe_workload.js`,
+// which is where it decides an answer — because a client author debugging their
+// selectors needs a server that computes the same thing SPIRE would.
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -881,8 +880,10 @@ function noteSvidIssued(id) {
 // editable, for the reason stated in the header.
 //
 // **ATTESTATION IS NOT CHECKED.** Whatever the agent says its attestor was and
-// whatever selectors it claims are written down as claimed. That is this
-// service's posture everywhere — it authenticates nobody — and it is stated on
+// whatever selectors it claims are written down as claimed (a join token is
+// the exception — `spiffe_api.js` checks it). That was this service's posture
+// everywhere when this was written, and for node attestation it still is; it
+// is stated on
 // `/spiffe`, on `/admin/spiffe` and in the attribute descriptions above rather
 // than left to be inferred from a mock that never says no.
 //
@@ -1137,7 +1138,8 @@ function auditEntry(action, id, record, actor, summary) {
 //                           client libraries have and few callers ever run.
 //
 // Seeded ONCE, and only where the container is empty: a restart re-seeds
-// because nothing here is persisted, but an operator who deleted all three
+// wherever the directory is not persisted (`persistence.mode=memory`), but an
+// operator who deleted all three
 // meant it, and re-creating them on the next request would make the delete
 // button appear not to work.
 //

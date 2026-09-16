@@ -22,8 +22,8 @@
 // Security MUST NOT be required". A workload has no secret and no root of trust
 // until this call gives it one, so there is nothing it could present. A mock
 // that demanded a credential here would refuse every conforming client, which
-// is why the mutual TLS the SPIRE Server API requires —
-// deliberately does not reach this surface.
+// is why the mutual TLS the SPIRE Server API requires deliberately does not
+// reach this surface.
 //
 // What a real endpoint does instead is ASCERTAIN the caller out of band: the
 // agent asks the kernel about the peer of its Unix socket — pid, and from that
@@ -44,12 +44,13 @@
 // Four consequences, all deliberate and all stated on `GET /spiffe` rather than
 // left to be discovered:
 //
-//   * **Selector matching now decides the answer**, through the same
-//     `spiffe_registry.selectorsMatch()` that `GetAuthorizedEntries` and the
-//     console's "what would match" view use. It used to be implemented and
-//     unused here, because there was nothing to match against. There is now.
-//     `spiffe.attestWorkloads` off restores the old answer — every entry to
-//     every caller.
+//   * **Selector matching now decides the answer**, through
+//     `spiffe_registry.selectorsMatch()` — SPIRE's subset rule. Neither
+//     `GetAuthorizedEntries` nor the console's view (which calls
+//     `entitledEntries()` with no caller) narrows by it. It used to be
+//     implemented and unused here, because there was nothing to match against.
+//     There is now. `spiffe.attestWorkloads` off restores the old answer —
+//     every entry to every caller.
 //
 //   * **Any caller that can reach the socket can still obtain an identity.**
 //     Nothing proves who it is; matching narrows WHICH entries answer, and
@@ -73,8 +74,9 @@
 // ---------------------------------------------------------------------------
 // THE STREAMS ARE STREAMS, AND THAT IS THE SECOND THING TO GET RIGHT
 //
-// Four of the seven methods are server streams, and a real client opens
-// `FetchX509SVID` once and keeps it open for the life of the process. It
+// Five of the seven methods are server streams (two of them the unimplemented
+// WIT methods), and a real client opens `FetchX509SVID` once and keeps it
+// open for the life of the process. It
 // expects a new `X509SVIDResponse` whenever anything changes — an SVID
 // approaching expiry, an authority rotating, a federated bundle arriving.
 //
@@ -795,7 +797,7 @@ module.exports = {
   // console is looking at the registry rather than standing on a socket, and
   // "what is in here" is a different question from "what would I get".
   entitledEntries: entitledEntries,
-  // For tests/spiffe_hardcoded_values.js, which asserts the rotation period
+  // For tests/ssf_spiffe_scim_hardening.js, which asserts the rotation period
   // follows the shortest lifetime served rather than the service default.
   rotationPeriod: rotationPeriod,
   buildX509Response: buildX509Response

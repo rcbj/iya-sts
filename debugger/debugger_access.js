@@ -26,20 +26,20 @@
 //     token runs out.
 //
 // **WHAT "ADMINISTRATOR" MEANS IS THE CONSOLE'S AND IS NOT RESTATED HERE.**
-// `admin-ui/admin_rbac.js` decides who holds Admin Read or Admin Write, out of
-// the DEFAULT realm's `ou=groups` — so a realm nobody could create cannot make
-// somebody a debugger user, which is the same argument the console makes about
-// its own roster. Holding EITHER role is enough: the debugger changes nothing
-// in this service, so the read/write distinction the console draws has no
-// meaning at its door.
+// `admin-ui/admin_rbac.js` decides who holds Admin Read or Admin Write, and it
+// is asked in the DEFAULT realm, out of that realm's `ou=groups` — so a trust
+// realm's own administrators (2026-09-14, #32), who are confined to their
+// realm, are not debugger users. Holding EITHER role is enough: the debugger
+// changes nothing in this service, so the read/write distinction the console
+// draws has no meaning at its door.
 //
 // **THE EMPTY-ROSTER RULE IS NOT HONOURED HERE, AND THAT IS THE ONE PLACE THE
-// DEBUGGER AND THE CONSOLE DISAGREE (rcbj, 2026-09-13).** While neither role
-// group has a member, `admin.openWhenEmpty` hands everybody who signs in both
-// roles — a bootstrap, because there is no password anywhere in this service
-// to make the first administrator with, and the console is where that first
-// grant is made. The debugger needs no bootstrap: nothing about granting the
-// first role goes through it. So a role held only BECAUSE nobody holds one is
+// DEBUGGER AND THE CONSOLE DISAGREE (rcbj, 2026-09-13).** `admin.openWhenEmpty`
+// hands everybody who signs in both roles until the bootstrap administrator
+// first signs in — or, where none was seeded, while neither role group has a
+// member — because the console is where the first grant is made. The
+// debugger needs no bootstrap: nothing about granting the first role goes
+// through it. So a role held only BECAUSE nobody holds one is
 // refused (`STS-DBG-0024`), and the debugger stays shut until somebody is
 // actually a member of Admin Read or Admin Write. "Everybody is an
 // administrator because nobody is" is not a reason to open a network relay —
