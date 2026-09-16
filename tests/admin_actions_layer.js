@@ -13,7 +13,7 @@
 // the price was that the surface a machine drives sat downstream of the
 // surface a person reads.
 //
-// The thirty-one actions moved to `admin-core/admin_actions.js`. **It was a
+// The thirty-one actions moved to `admin-core/admin_actions.ts`. **It was a
 // MOVE and not a rewrite**, which was affordable for one reason: not one of
 // those functions had ever touched `req`, `res` or markup. They took a parsed
 // body and an actor and returned a result object. The work was in finding
@@ -66,7 +66,7 @@ const ROOT = path.join(__dirname, '..');
 // `admin_actions.js` changes state, `admin_views.js` answers a question. Both
 // are held to the same three refusals below, because the reason for each is
 // about being required by two surfaces rather than about writing or reading.
-const LAYERS = ['admin-core/admin_actions.js', 'admin-core/admin_views.js'];
+const LAYERS = ['admin-core/admin_actions.ts', 'admin-core/admin_views.ts'];
 const CONSOLE_MODULE = 'admin-ui/admin.js';
 const API_MODULE = 'mgmt-api/admin_api.js';
 
@@ -84,11 +84,11 @@ const API_MODULE = 'mgmt-api/admin_api.js';
 // the console, which changes nothing this file checks — the forward and the
 // single writer are the console's and the layer's either way.
 const FORWARDED = {
-  'admin-core/admin_actions.js': ['logoutReader', 'directoryWriter',
+  'admin-core/admin_actions.ts': ['logoutReader', 'directoryWriter',
     'groupWriter',
     'signalsReporter', 'caepReporter', 'riscReporter', 'xacmlPages',
     'truststore'],
-  'admin-core/admin_views.js': ['cryptoReporter', 'xacmlPages',
+  'admin-core/admin_views.ts': ['cryptoReporter', 'xacmlPages',
     'directoryPages',
     'scimReader', 'rolePreviewer', 'configSettingsJson', 'truststore']
 };
@@ -214,13 +214,13 @@ function checkTheHalvesDependOneWay(t) {
   log.debug("Entering checkTheHalvesDependOneWay().");
   t.log.info('=== the two halves depend one way ===');
   t.check(/require\('\.\/admin_actions'\)/.test(read(
-      'admin-core/admin_views.js')),
-          'admin_views.js requires admin_actions.js for the shared tables',
+      'admin-core/admin_views.ts')),
+          'admin_views.ts requires admin_actions.ts for the shared tables',
           'one table with two readers is what stops a page offering a ' +
           'control its action does not have');
   t.check(!/require\([^)]*admin_views/.test(read(
-      'admin-core/admin_actions.js')),
-          'and admin_actions.js does not require admin_views.js',
+      'admin-core/admin_actions.ts')),
+          'and admin_actions.ts does not require admin_views.ts',
           'an action that consulted a view would depend on how its result is ' +
           'going to be displayed, which is the coupling this whole directory ' +
           'exists to remove');
@@ -353,7 +353,9 @@ function checkOneForward(t, layer, name) {
             'the console pushes, and a forward that went missing would leave ' +
             'the actions believing a whole subsystem was absent');
 
-    t.check(new RegExp('function ' + setter + '\\(').test(layerCode),
+    // A method of the layer's class since #50, a function before it.
+    t.check(new RegExp('(?:function |^\\s+)' + setter + '\\(', 'm')
+              .test(layerCode),
             'and the layer takes it through ' + setter + '()',
             'a collaborator the layer cannot be given is one the actions ' +
             'that need it can never use');
@@ -513,7 +515,14 @@ function checkEveryNameResolves(t) {
     src.split('\n').forEach(function (l) {
       let m = /^(?:async )?function ([A-Za-z0-9_$]+)\(/.exec(l);
       if (m) { moduleScope.add(m[1]); return; }
-      m = /^(?:const|let|var) ([A-Za-z0-9_$]+)/.exec(l);
+      // Since #50 the layer is a TypeScript module: its requires are
+      // `import x = require(...)` and it declares a class and its types.
+      m = /^(?:const|let|var|import|class|interface|type) ([A-Za-z0-9_$]+)/
+        .exec(l);
+      if (m) { moduleScope.add(m[1]); return; }
+      // A method's own name is on its header, and it is reached as `this.`.
+      m = /^  (?:private |public |static )*(?:async )?([A-Za-z0-9_$]+)\(/
+        .exec(l);
       if (m) { moduleScope.add(m[1]); }
     });
     const own = /const \{([\s\S]*?)\} = require\('([^']+)'\)/g;
@@ -523,16 +532,29 @@ function checkEveryNameResolves(t) {
         if (n.trim()) { moduleScope.add(n.trim()); }
       });
     }
-    // Each top-level function body, with the names it binds for itself.
+    // Each top-level function body, with the names it binds for itself —
+    // and, since #50, each method of the layer's class, whose parameters
+    // are not written after `function`, so they are read off its header.
     const srcLines = src.split('\n');
     const scopes = [];
+    const METHOD = /^  (?:private |public |static )*(?:async )?[A-Za-z0-9_$]+\(/;
     for (let i = 0; i < srcLines.length; i += 1) {
-      if (!/^(?:async )?function [A-Za-z0-9_$]+\(/.test(
-          srcLines[i])) { continue; }
+      const isFunction = /^(?:async )?function [A-Za-z0-9_$]+\(/.test(
+        srcLines[i]);
+      const isMethod = METHOD.test(srcLines[i]);
+      if (!isFunction && !isMethod) { continue; }
+      const closing = isFunction ? '}' : '  }';
       let j = i;
-      while (j < srcLines.length && srcLines[j] !== '}') { j += 1; }
+      while (j < srcLines.length && srcLines[j] !== closing) { j += 1; }
       const body = codeOf(srcLines.slice(i, j + 1).join('\n'));
       const bound = new Set();
+      if (isMethod) {
+        const header = /^\s*[^(]*\(([^)]*)\)/.exec(body);
+        (header ? header[1].split(',') : []).forEach(function (a) {
+          const name = a.trim().replace(/[?]?\s*(?::.*|=.*)?$/, '');
+          if (name) { bound.add(name); }
+        });
+      }
       (body.match(/(?:const|let|var)\s+([A-Za-z0-9_$]+)/g) || [])
         .forEach(function (d) { bound.add(d.split(/\s+/)[1]); });
       (body.match(/(?:const|let|var)\s*\{([^}]*)\}/g) || []).forEach(
@@ -587,7 +609,10 @@ function checkNobodyReachesThroughTheConsole(t) {
   t.log.info('=== nothing reaches a moved function through admin.* ===');
   const moved = new Set();
   LAYERS.forEach(function (layer) {
-    Object.keys(require(path.join(ROOT, layer))).forEach(function (n) {
+    // By the extensionless path: the layer is TypeScript since #50, and
+    // what node loads is the `.js` compiled beside it.
+    const layerExports = require(path.join(ROOT, layer.replace(/\.ts$/, '')));
+    Object.keys(layerExports).forEach(function (n) {
       if (!/^set/.test(n)) { moved.add(n); }
     });
   });

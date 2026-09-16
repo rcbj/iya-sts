@@ -9,7 +9,7 @@
 // `/admin/pki` and `/admin/crypto-metadata` open a certificate's every X.509
 // field and its trust chain in a dialog over the page. Three modules make it —
 // `common/certificate_details.js` (the model),
-// `admin-core/certificate_views.js` (which certificates may be opened) and
+// `admin-core/certificate_views.ts` (which certificates may be opened) and
 // `admin-ui/certificate_dialog.js` (the one renderer) — and
 // `tests/vendored/sts_admin_api_operations.js` drives the same answer over
 // HTTP. What is here is what a request cannot choose:

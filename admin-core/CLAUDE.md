@@ -6,20 +6,20 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 
 | File | | |
 |---|---|---|
-| `admin_actions.js` | **what CHANGES state** | 31 actions, the tables they dispatch on, the helpers they share |
-| `admin_views.js` | **what ANSWERS a question** | 38 functions that compute a JSON answer and build no markup |
-| `certificate_views.js` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
-| `protocol_endpoints.js` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
+| `admin_actions.ts` | **what CHANGES state** | 31 actions, the tables they dispatch on, the helpers they share |
+| `admin_views.ts` | **what ANSWERS a question** | 38 functions that compute a JSON answer and build no markup |
+| `certificate_views.ts` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
+| `protocol_endpoints.ts` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
 collaborators they need are still the console's. This file is the part that
 does not belong inside either one.
 
-**The require between them goes ONE WAY.** `admin_views.js` requires
-`admin_actions.js` for the tables they share — a page draws the buttons its
+**The require between them goes ONE WAY.** `admin_views.ts` requires
+`admin_actions.ts` for the tables they share — a page draws the buttons its
 action dispatches on, and one table with two readers is what stops a page
-offering a control its action does not have. Nothing in `admin_actions.js`
+offering a control its action does not have. Nothing in `admin_actions.ts`
 reaches back, and nothing may: an action consulting a view would depend on how
 its own result is going to be displayed.
 
@@ -40,7 +40,7 @@ this was a cheap change.** Not one of the thirty-one had ever touched `req`,
 that owns the change, wrote its audit row and returned `{ ok, errors, … }`.
 They were a shared logic layer already; what was wrong was where they lived.
 
-So this was a MOVE and not a rewrite. Every function in `admin_actions.js` is
+So this was a MOVE and not a rewrite. Every function in `admin_actions.ts` is
 the one that was in `admin-ui/admin.js`, carrying the comment that argued it.
 
 ## What actually moved, and what deliberately did not
@@ -91,7 +91,7 @@ second writer. `tests/admin_actions_layer.js` asserts there is exactly one.
 
 ## Where it may be required
 
-**At 18 or later, and nowhere earlier.** `admin_actions.js` requires `oauth2`,
+**At 18 or later, and nowhere earlier.** `admin_actions.ts` requires `oauth2`,
 `saml2`, `saml11` and `federation`, every one of which registers routes when it
 is required (rule 1) — so anything that loads this file loads them. That is
 free from the console (18) and the management API (19), where all four are
@@ -102,7 +102,7 @@ themselves, and the symptom would be a handler winning somewhere else entirely.
 **That is why this is not in `common/`.** That directory reads as *anything may
 require this, at any point in the order*. This one may not.
 `tests/admin_actions_layer.js` walks the tree and fails if any module outside
-its named `allowed` list requires `admin_actions.js` or `admin_views.js` — the
+its named `allowed` list requires `admin_actions.ts` or `admin_views.ts` — the
 console, the management API and a handful of view/action layers that all load
 at 18 or later.
 
@@ -202,7 +202,7 @@ at the bottom. So: the computation and the json move here; the page takes the
 model back in one call and its markup is untouched.
 
 ```js
-// admin-core/admin_views.js
+// admin-core/admin_views.ts
 function xListJson(req) { …compute…; return { …the facts…, json: {…} }; }
 
 // admin-ui/admin.js
@@ -266,7 +266,7 @@ that meant one thing in the page's scope and another in the layer's:
 every one. That is the whole argument for running the owned jobs against a
 change of this shape — see `tests/CLAUDE.md`.
 
-## `certificate_views.js`: THE CERTIFICATE DETAILS DIALOG'S CATALOGUE (2026-09-13)
+## `certificate_views.ts`: THE CERTIFICATE DETAILS DIALOG'S CATALOGUE (2026-09-13)
 
 `/admin/pki` and `/admin/crypto-metadata` open a certificate's every X.509 field
 and its trust chain in a dialog over the page, and `GET /admin-api/certificates`
@@ -296,7 +296,7 @@ Four decisions, and each is a refusal:
 * **`tls/tls_server.js` AND `spiffe/spiffe_ca.ts` ARE REQUIRED INSIDE THE
   FUNCTIONS**, for rule 1: `admin-ui/pki_admin.js` requires this file at 18a and
   the TLS module registers routes at 20. A request runs after every module has
-  loaded, so inside a function the require is a cache hit. `admin_views.js` is
+  loaded, so inside a function the require is a cache hit. `admin_views.ts` is
   required lazily too, for the same reason read the other way.
 
 It is here rather than in `common/` because both surfaces read it and it reads
@@ -305,7 +305,7 @@ what this directory's position rule is about. `tests/admin_actions_layer.js`
 still passes with it here, and `tests/certificate_details.js` pins the
 catalogue and its boundary.
 
-## `protocol_endpoints.js`: WHAT EACH PROTOCOLS PAGE LISTS (2026-09-13)
+## `protocol_endpoints.ts`: WHAT EACH PROTOCOLS PAGE LISTS (2026-09-13)
 
 A fourth file, and a library: one table from console page to the routes and
 sockets that page lists, and `forPage(req, page)` turning a row into concrete
@@ -320,7 +320,7 @@ cannot disagree.
 `sts_metadata.js` (names, the router walk), `ldap/ldap_server.js` (the realm's
 base DN), `kerberos/krb5_kdc.js` (the realm name) and `spiffe/spiffe_server.ts`
 (the bindings) are read out of `require.cache` by `loaded()` only if something
-already loaded them. `certificate_views.js` requires inside a function, which
+already loaded them. `certificate_views.ts` requires inside a function, which
 is a cache hit once the stack is up; this goes one step further because the
 first of those four must be LAST and requires the console. An in-process caller
 without the stack gets rows named by their paths and no methods — and no

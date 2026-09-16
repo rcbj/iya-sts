@@ -5,7 +5,7 @@
 // ===========================================================================
 // EVERY PROTOCOLS PAGE LISTS THE ENDPOINTS OF THE REALM IT IS READ IN.
 //
-// `admin-core/protocol_endpoints.js` is a table from console page to route, and
+// `admin-core/protocol_endpoints.ts` is a table from console page to route, and
 // `admin.respond()` and the management API's `sendJson()` add what it computes
 // to a page and to the operation mirroring it. Three things about that can go
 // wrong with nothing on any page looking broken, and each is a check here:
