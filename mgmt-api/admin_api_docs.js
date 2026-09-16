@@ -3,31 +3,37 @@
 // File: admin_api_docs.js
 //
 // ---------------------------------------------------------------------------
-// The API explorer: one page that reads /admin-api/openapi.json and renders a
-// form per operation that calls it. Swagger UI's job, done by this repository.
+// The API explorer: one page that reads the management API's OpenAPI document
+// and renders a form per operation that calls it. Swagger UI's job, done by
+// this repository. Since 2026-09-09 the page is `/admin/api-explorer`, served
+// by `admin-ui/api_explorer.js` through `consoleBody()` below.
 //
 // WHY NOT SWAGGER UI. It was weighed rather than skipped. swagger-ui-dist is
 // 11.7 MB unpacked with an install-time telemetry dependency of its own, in a
 // service whose package.json is deliberately short and whose image is built in
 // CI and in containers that may have no network beyond the registry. Against
-// that, what Swagger UI would have bought here is a familiar look for an API of
-// thirty-odd operations with no authentication, no oauth flows, no polymorphic
-// bodies and no code generation. The page below is ~250 lines, has no
-// dependency, and does the same three things: read the document, fill a form,
-// show the response. It also shows the equivalent curl line, which is what an
-// operator of a mock actually copies.
+// that, what Swagger UI would have bought here — for the API as it was then,
+// thirty-odd operations with no authentication — was a familiar look, with no
+// oauth flows, no polymorphic bodies and no code generation. The script is
+// ~450 lines, has no dependency, and does the same three things: read the
+// document, fill a form, show the response. It also shows the equivalent curl
+// line, which is what an operator of a mock actually copies.
 //
 // THE ONE THING THIS PAGE COSTS. app.js sets `script-src 'none'` for the whole
-// service, and this page has a script — so it is the single place that relaxes
-// that header, and it relaxes exactly one clause on exactly two routes. The
-// script is a SEPARATE RESOURCE rather than an inline block precisely so that
-// `'self'` suffices: `'unsafe-inline'` would be the clause that mattered, and
-// this page never needs it. Everything else in the policy stays as it is,
-// `default-src 'none'` included, and `connect-src 'self'` is what lets the
-// page call the API it documents and nothing else.
+// service, and this page has a script — so it relaxes that header, as each of
+// the root CLAUDE.md's seven scripted pages does, on exactly two routes (the
+// page and its script). The script is a SEPARATE RESOURCE rather than an
+// inline block precisely so that `'self'` suffices: `'unsafe-inline'` would be
+// the clause that mattered, and this page never needs it. Everything else in
+// the policy stays as it is, `default-src 'none'` included, and `connect-src
+// 'self'` is what lets the page call the API it documents and nothing else.
+// `admin-ui/api_explorer.js` sets that policy through
+// `app.contentSecurityPolicy()`; CONTENT_SECURITY_POLICY below is still
+// exported and no longer read by any route.
 //
-// This module registers no route — admin_api.js does — so it is a library in
-// the sense rule 3 gives, and its position in the require order is free.
+// This module registers no route — `admin-ui/api_explorer.js` does — so it is
+// a library in the sense rule 3 gives, and its position in the require order
+// is free.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -39,9 +45,9 @@ const { log, xmlEscape } = require('../common/helpers');
 // may fetch the document and call the operations. Written out in full rather
 // than patched from the other one, because a policy assembled by string surgery
 // is a policy nobody can read.
-// NOT built through app.js's contentSecurityPolicy(): this file is read off
-// disk by admin_api.js and requires nothing from this repository, which is what
-// keeps it a leaf. The framing clause is here explicitly for that reason, and
+// NOT built through app.js's contentSecurityPolicy(): this module requires
+// nothing from this repository but `common/helpers`, which is what keeps it a
+// leaf. The framing clause is here explicitly for that reason, and
 // it is the one line in this list that must never be removed — see the note
 // above contentSecurityPolicy() in app.js for why frame-ancestors has no
 // fallback and cannot be inherited from default-src.
@@ -175,7 +181,7 @@ function page(baseUrl, base, version, realmPrefix) {
     '</head><body>' +
     // The banner is BEFORE the app rather than after it, and the position is
     // the point: it is the first thing on the page whether or not the document
-    // loads, and a warning at the bottom of thirty-two operations is a warning
+    // loads, and a warning at the bottom of hundreds of operations is a warning
     // nobody has read yet when they press Try it.
     BANNER +
     '<div id="app" data-spec="' + specUrl + '" data-version="' +

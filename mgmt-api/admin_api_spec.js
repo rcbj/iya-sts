@@ -17,16 +17,18 @@
 //
 // The counterpart rule is in admin_api.js: an /admin control gets an /admin-api
 // operation in the same commit. That one cannot be enforced by construction —
-// nothing can see a form appear on a page — so it is asserted by the parent
-// project's tests/admin_api.js instead, which walks the console's own NAV and
-// action lists and fails on a page or an action with no operation.
+// nothing can see a form appear on a page — so it is asserted by this
+// repository's own tests/vendored/admin_api.js (a `local: true` job) instead,
+// which walks the console's own NAV and action lists and fails on a page or an
+// action with no operation.
 //
 // OpenAPI 3.1.0 rather than 3.0.3: this document uses JSON Schema `examples`,
 // `const` and nullable-by-union, all of which 3.0 spells differently or not at
 // all. Every tool this repository would plausibly meet reads 3.1.
 //
 // This module registers no route and requires nothing of this service's but the
-// LOGGER — it is a pure function over a table — so its position in the require
+// LOGGER and `admin-core/protocol_endpoints.js`, a table that holds no state —
+// it is a pure function over a table — so its position in the require
 // order does not matter, in the sense rule 3 gives for dpop.js, which reaches
 // for helpers.js on exactly the same terms. What it must not grow is a require
 // of anything that holds state: a document built from what the service happens
@@ -278,7 +280,7 @@ const CONFIG_SETTING = openObject(
     // else — the same way `enumValues` is present on an enum and nowhere else.
     // They are DOCUMENTED rather than left implicit because a client rendering
     // an input for a setting has no other way to learn what will be refused,
-    // and the four token lifetimes are the settings somebody actually types a
+    // and the token lifetimes are the settings somebody actually types a
     // number into.
     min: { type: 'integer',
            description: 'The lowest value POST /config/set will take, on an ' +
@@ -401,8 +403,9 @@ const SETTINGS_BLOCK = openObject(
 // for the assertions, because nothing else has one.
 //
 // Copied instead, this would be the pair of schemas that disagree about
-// `attributeCatalogue` within a month — and the parent project's
-// tests/admin_api.js checks each documented property against a LIVE reply, so
+// `attributeCatalogue` within a month — and this repository's
+// tests/vendored/admin_api.js checks each documented property against a LIVE
+// reply, so
 // the disagreement would surface as a test failure naming a property rather
 // than as anything pointing here.
 // ---------------------------------------------------------------------------
@@ -1163,8 +1166,12 @@ const SCHEMAS = {
       notListed: { type: 'integer' },
       maxRows: { type: 'integer', description: 'The `logout.maxRows` cap.' },
       canWrite: { type: 'boolean',
-                  description: 'Whether the caller holds Admin Write. Always ' +
-                               'true through this API, which is not gated.' },
+                  description: 'Whether the CONSOLE session on the request ' +
+                               'holds Admin Write. A call carrying only ' +
+                               'this API\'s access token has no console ' +
+                               'session, so this reads false there; what ' +
+                               'that token may do is decided by its scope ' +
+                               'at this API\'s gate.' },
       families: { type: 'array',
                   items: { $ref: '#/components/schemas/LogoutFamily' } },
       rows: { type: 'array', items: { $ref: '#/components/schemas/LogoutRow' },
@@ -2482,11 +2489,12 @@ const SCHEMAS = {
     }),
 
   // The shape every page that OWNS SETTINGS answers with, and one schema
-  // rather than eight: the eight protocol settings pages differ in prose and
-  // in which group they draw, and a schema per page would have been eight
-  // copies of this. It is also what the `settings` member of the SAML, SCIM,
-  // SPIFFE, federation and directory pages carries, so a caller learns one
-  // shape and reads it everywhere.
+  // rather than one per page: the protocol settings pages (eight when this
+  // was written, thirteen now) differ in prose and in which group they draw,
+  // and a schema per page would have been that many copies of this. It is
+  // also what the `settings` member of the SAML, SCIM, SPIFFE, federation and
+  // directory pages carries, so a caller learns one shape and reads it
+  // everywhere.
   PageSettings: openObject(
     'One console page, and the settings it draws. The settings are the same ' +
     'described rows GET /config returns — value, text, source, editable, ' +
@@ -5015,7 +5023,11 @@ const PROTECTED_PARAGRAPH =
   'against the DEFAULT realm\'s key and audienced without a realm prefix ' +
   'wherever it is presented, for the reason the console\'s two roles are ' +
   'groups in the default realm — a per-realm one would let anybody who can ' +
-  'create a realm mint themselves an administrator. `adminApi.authRequired` ' +
+  'create a realm mint themselves an administrator. A trust realm\'s own ' +
+  'administrators have a narrower token of their own: issued to that ' +
+  'realm\'s `sts-management-api` client, accepted only under ' +
+  '`/realm/<id>/admin-api`, and refused every service-wide operation. ' +
+  '`adminApi.authRequired` ' +
   'turns this off and restores the open API exactly; what follows is what ' +
   'that means. **AND IT IS STILL WORTH STATING PLAINLY**: a holder of this ' +
   'token can revoke every token this service has issued and change what the ' +
@@ -5053,8 +5065,8 @@ const OPEN_PARAGRAPH =
 
 // The paragraphs that are true whichever way the switch is set.
 const DESCRIPTION_REST = [
-  '**Four groups of operations change what the protocol endpoints do**, ' +
-  'rather than only reporting on them. Revoking a token is the same ' +
+  '**Many operations change what the protocol endpoints do**, rather ' +
+  'than only reporting on them; four examples. Revoking a token is the same ' +
   'revocation RFC 7009\'s /oauth2/revoke performs, so introspection, ' +
   'UserInfo and the refresh grant all honour it immediately. A custom ' +
   'claim reaches every access token, ID Token and SAML assertion issued ' +
@@ -5067,10 +5079,12 @@ const DESCRIPTION_REST = [
   '**Every operation here mirrors a control on the /admin console and ' +
   'calls the same function behind it.** They are not two implementations ' +
   'of one idea: admin_api.js holds no opinion about what a revocation ' +
-  'means that admin.js does not. The `mirrors` line on each operation ' +
+  'means that the console does not. The `mirrors` line on each operation ' +
   'says which control it is.',
 
-  'All state is in memory and dies with the process.'
+  'In the default memory persistence mode all state is in memory and dies ' +
+  'with the process; `GET /admin-api/persistence` says what this process ' +
+  'writes down.'
 ];
 
 // ===========================================================================
@@ -5237,7 +5251,7 @@ function operationOf(entry, action) {
 
 // The document. `routes` is admin_api.js's table; an entry carrying `actions`
 // becomes one operation per action, at the concrete URL each of them has —
-// which is a real address even though express serves the six of them from one
+// which is a real address even though express serves all of them from one
 // `:action` pattern.
 function buildSpec(routes, options) {
   log.debug("Entering buildSpec().");
@@ -5257,7 +5271,8 @@ function buildSpec(routes, options) {
   // caller that forgets to pass it makes a document that OVER-states the
   // requirement, which costs a client one unnecessary token; the other
   // default would reproduce the exact bug this option was added for, where a
-  // client is told no credential is needed by an API that refuses it 238 ways.
+  // client is told no credential is needed by an API that refuses it on every
+  // operation.
   // ---------------------------------------------------------------------
   const authRequired = opts.authRequired === undefined
     ? true : opts.authRequired === true;
@@ -5366,7 +5381,7 @@ const TAG_DESCRIPTIONS = {
         'and has no store of its own.',
   'Audit log': 'What happened here, in order — history rather than state, ' +
                'and read-only. It carries no credential of any kind and has ' +
-               'no clear operation: an erase control on an unprotected ' +
+               'no clear operation: an erase control on an administrative ' +
                'surface would make an audit log unable to answer the one ' +
                'question it exists for.',
   'Custom claims': 'What to add to every access token and ID Token issued ' +

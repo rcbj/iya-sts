@@ -33,9 +33,10 @@
 //   * **The OpenAPI document is built from that table** (admin_api_spec.js), so
 //     an operation cannot exist and be undocumented, and cannot be documented
 //     and not exist. What no code can check is the direction that matters — a
-//     new console control with no row here — and that is what the parent
-//     project's tests/vendored/admin_api.js asserts, by walking the console's
-//     own NAV and the action names each of its four handlers accepts.
+//     new console control with no row here — and that is what this
+//     repository's own tests/vendored/admin_api.js (a `local: true` job)
+//     asserts, by walking the console's own NAV and the action names each of
+//     its action handlers accepts.
 //
 // ---------------------------------------------------------------------------
 // **PROTECTED SINCE 2026-09-09, AND THIS HEADER SAID THE OPPOSITE UNTIL THEN.**
@@ -74,12 +75,12 @@
 // functions and the JSON views. Nothing here collides with any path, and it
 // registers no wildcard, so its position is otherwise free (rule 1).
 //
-// The four POST routes take the action as a PATH PARAMETER — /admin-api/
-// tokens/revoke, one express pattern `:action` behind six real URLs. That keeps
-// the router honest (one row in GET /admin/sts-metadata per resource, showing
-// the parameter) while the OpenAPI document lists each URL as the separate
-// operation it is, which is what makes the explorer's per-action forms
-// possible. An unknown action is not a 404: it reaches the console's own
+// Every action resource takes the action as a PATH PARAMETER — /admin-api/
+// tokens/revoke, one express pattern `:action` behind every real URL. That
+// keeps the router honest (one row in GET /admin/sts-metadata per resource,
+// showing the parameter) while the OpenAPI document lists each URL as the
+// separate operation it is, which is what makes the explorer's per-action
+// forms possible. An unknown action is not a 404: it reaches the console's own
 // handler and comes back as its "Unknown action" refusal, naming the ones that
 // exist.
 // ---------------------------------------------------------------------------
@@ -444,9 +445,11 @@ function checkRequestBody(req) {
   return { ok: false, errors: errorsFromAjv(validate.errors) };
 }
 const docs = require('./admin_api_docs');
-// The trust realm this call arrived in — for the explorer, which is the one
-// page in this service that builds its URLs in a script and therefore cannot
-// have its markup rewritten. See docs.page().
+// The trust realm this call arrived in — for the gate at the foot of this
+// file, which verifies a service token under the DEFAULT realm's key and a
+// realm's own token under that realm's, and for the realm list's key sets.
+// (It was first required for the explorer, which moved to the console on
+// 2026-09-09; `docs` above is no longer read in this file.)
 const realms = require('../common/realms');
 // RFC 9068 (2026-09-13): what an access token's type and issuer must be, read
 // the way the other resource servers here read them. A library that registers
@@ -934,20 +937,22 @@ function claimSetActions(family) {
 // one documented operation at its own concrete URL.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// THE EIGHT PROTOCOL SETTINGS PAGES, mirrored. Rule 7 wants an operation per
+// THE PROTOCOL SETTINGS PAGES, mirrored. Rule 7 wants an operation per
 // console page, and on 2026-08-27 eight pages arrived at once — one per
-// protocol family whose appconfig rows had no page of their own.
+// protocol family whose appconfig rows had no page of their own. TOTP,
+// WebAuthn, recovery codes, persistence and the cluster have joined them
+// since, so the table holds thirteen.
 //
 // THERE IS NO POST BESIDE ANY OF THEM, and that is the rule read exactly
 // rather than a gap. Every form on those pages posts `set-many` to
 // /admin/config, which `POST /admin-api/config/set-many` already mirrors, so
-// a POST here would be eight more doors onto one function — the thing this
-// parity exists to prevent. It is the same answer /admin-api/scim and
+// a POST here would be one more door per page onto one function — the thing
+// this parity exists to prevent. It is the same answer /admin-api/scim and
 // /admin-api/applications/new give, for the same reason.
 //
-// They are BUILT FROM A TABLE for the reason the console's own eight pages
-// are: the operations differ only in prose, and eight hand-written rows
-// would be seven copies plus the one somebody edited. The generated OpenAPI
+// They are BUILT FROM A TABLE for the reason the console's own pages are: the
+// operations differ only in prose, and eight hand-written rows would have
+// been seven copies plus the one somebody edited. The generated OpenAPI
 // document cannot tell the difference — `admin_api_spec.js` reads this array
 // and nothing else.
 // ---------------------------------------------------------------------------
@@ -1895,13 +1900,17 @@ const ROUTES = [
         description: 'THIS OPERATION RETURNS PRIVATE KEY MATERIAL. It is the ' +
                  'API half of the one page in this console where reading is ' +
                  'taking.\n\nIt is defensible because of what these keys ' +
-                 'are: generated at start, held only in memory, dead when ' +
-                 'the process exits, and protecting nothing — this service ' +
-                 'checks no password and validates no token it did not mint. ' +
-                 '**This API is not gated at all**, so anybody who can reach ' +
-                 'this port can call it; that is the same honest consequence ' +
-                 'every other operation here has, stated again because this ' +
-                 'one returns a key.\n\n`format` is one of `pem`, `der`, ' +
+                 'are in development mode: generated at start, held only in ' +
+                 'memory, dead when the process exits, and protecting ' +
+                 'nothing — this service checks no password and validates ' +
+                 'no token it did not mint. In product mode the signing ' +
+                 'keys are kept in the persistence store, and this ' +
+                 'operation hands over one that outlives the call. It ' +
+                 'needs an access token carrying `admin:write` (unless ' +
+                 '`adminApi.authRequired` is off, when anybody who can ' +
+                 'reach this port can call it), like every other write ' +
+                 'here — stated again because this one returns a ' +
+                 'key.\n\n`format` is one of `pem`, `der`, ' +
                  '`jwk` or `pkcs12`. A password is REQUIRED for `pkcs12` and ' +
                  'optional for the rest, where it encrypts the private half. ' +
                  'The reply carries the file base64-encoded rather than raw, ' +
@@ -1944,11 +1953,11 @@ const ROUTES = [
   // `/admin-api/docs/explorer.js` — AND MOVED TO THE CONSOLE ON 2026-09-09.
   //
   // It is `/admin/api-explorer`, built by `admin-ui/api_explorer.js` at 19a.
-  // The move happened because of the change three sections up: this API began
-  // requiring an OAuth 2.0 access token, and a browser navigating to a URL
-  // carries none — so the one page in this service written to be opened in a
-  // browser had become the one page a browser could not open. The console
-  // linked to it and the link answered 401.
+  // The move happened because of the gate at the foot of this file: this API
+  // began requiring an OAuth 2.0 access token, and a browser navigating to a
+  // URL carries none — so the one page in this service written to be opened
+  // in a browser had become the one page a browser could not open. The
+  // console linked to it and the link answered 401.
   //
   // **THE OPERATION BELOW IS WHAT RULE 7 ASKS FOR NOW.** A console page gets an
   // operation here that names it, and this is that page's — it reports what the
@@ -2012,7 +2021,7 @@ const ROUTES = [
     } },
     handler: function (req, res) {
       log.debug("Entering the API explorer operation.");
-      // LAZILY REQUIRED, and it is the one lazy require in this file. That
+      // LAZILY REQUIRED, like the GNAP operations' `gnap_console.js`. That
       // module is loaded at 19a — after this one — because it needs the route
       // table below to build its document; a require at the top of this file
       // would be a cycle, and one in the other direction would move routes.
@@ -3335,12 +3344,10 @@ const ROUTES = [
   // THE GATE IS THE POINT OF THEM AND NOT AN INCIDENTAL DIFFERENCE. Those
   // pages print `oauthClientSecret` and `fedClientSecret` in the clear, which
   // is why moving them behind the console's gate was the right half of the
-  // change; this API is deliberately NOT gated, which is what keeps a test
-  // able to read the directory without signing a browser in. Both halves of
-  // that sentence are argued at the top of this file — the short version is
-  // that a port which mints a token for any username asked of it is not made
-  // safe by a password on one of its web pages, and the gate exists so a
-  // client can be driven through 302 / 401 / 403.
+  // change; this API takes an access token rather than a browser session,
+  // which is what keeps a test able to read the directory without signing a
+  // browser in. (It said "deliberately NOT gated" until 2026-09-09, when this
+  // API began requiring a token — see the top of this file.)
   //
   // EVERY ONE OF THEM CALLS THE FUNCTION THAT DRAWS THE PAGE, through
   // `adminViews.directoryPageJson()` and the slot `ldap/ldap_server.js` fills —
@@ -3748,11 +3755,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API admin roles action endpoint.");
       const body = parseBody(req);
-      // `via: 'api'` and the caller's own name, for the audit row. The console
-      // passes its signed-in user here; this API has no session to read, so the
-      // actor is empty unless the caller carried one — which is honest rather
-      // than convenient, and is exactly what the audit row should say about an
-      // unauthenticated management API call.
+      // `via: 'api'` and an empty actor, for the audit row. The console
+      // passes its signed-in user here; this API authenticates a CLIENT
+      // rather than a person and has no session to read, so an empty actor is
+      // the honest answer rather than an inconvenient one.
       const result = adminActions.rbacAction(withAction(req, body),
                                       { via: 'api', actor: '' });
       if (!result.ok) {
@@ -4368,7 +4374,7 @@ const ROUTES = [
   // and a `set` posted there sets it on `acme` alone. That is not a special
   // case anybody wrote here — it falls out of the same path-prefix middleware
   // that makes /oauth2/token realm-scoped, and it means every one of the
-  // ninety-odd operations below already works per realm. These five are only
+  // operations below already works per realm. These five are only
   // the ones that manage the REGISTRY.
   //
   // Second, THE REGISTRY ITSELF IS NOT REALM-SCOPED, and it could not sensibly
@@ -4377,11 +4383,12 @@ const ROUTES = [
   // `current`, which names the realm the CALL arrived in — and `remove` refuses
   // to remove that one, for the reason the console gives.
   //
-  // A realm's SIGNING KEY is held in memory like everything else this service
-  // MINTS, and dies with the process — so a token minted in a realm today
-  // verifies against nothing tomorrow, restart or no restart. THE REALM ROW
-  // ITSELF is written down since 2026-08-27 when `persistence.realms` has a
-  // store under it, along with that realm's own directory; see
+  // In development mode a realm's SIGNING KEY is regenerated on every start,
+  // so a token minted in a realm today verifies against nothing after a
+  // restart; product mode keeps the keys in the persistence store
+  // (`common/CLAUDE.md`, `keystore.js`). THE REALM ROW ITSELF is written down
+  // since 2026-08-27 when `persistence.realms` has a store under it, along
+  // with that realm's own directory; see
   // `GET /admin-api/persistence`. In the default memory mode it is not, and a
   // stack that wants its realms back creates them from these operations —
   // which is why `create` is worth having rather than a config file entry: the
@@ -4748,15 +4755,16 @@ const ROUTES = [
         responseDescription: 'The keys that were cleared, in `cleared`.' } ] },
 
   // ---------------------------------------------------------------------
-  // The token lifetimes, which are four of the settings above under a name
-  // that promises four rather than forty-nine.
+  // The token lifetimes, which are six of the settings above — the three
+  // lifetimes, the refresh idle timeout, revoke-on-sign-out and the clock
+  // skew — under a name that promises those and nothing else.
   //
   // Rule 7 is satisfied twice over here and it is worth saying which way
   // round. `/admin/token-lifetimes` grew a form, so it gets its operations —
   // that is the rule as written. What it does NOT get is a second store: the
   // handler calls `adminActions.tokenLifetimesAction`, which writes through
   // `config.setOverride()`, which is the same function `POST /config/set`
-  // calls against the same override map. So these two operations and the four
+  // calls against the same override map. So these two operations and the
   // Configuration ones are two doors onto one thing, deliberately, in the way
   // `/admin/rbac` and `ldapmodify` are four doors onto one membership.
   //
@@ -4765,20 +4773,22 @@ const ROUTES = [
   // ignores what it does not know, which is right for a form posting a whole
   // section and wrong for a test that means to set a lifetime — a misspelt
   // key there succeeds and changes nothing. This one refuses anything that is
-  // not one of the four, by name.
+  // not one of the six, by name.
   ...PROTOCOL_SETTINGS_OPERATIONS,
 
   { method: 'GET', path: BASE + '/token-lifetimes', tag: 'Token lifetimes',
     operationId: 'getTokenLifetimes',
     summary: 'How long tokens issued here are good for',
     description: 'The three lifetimes — access token, ID Token, refresh ' +
-                 'token — and the clock skew applied wherever this service ' +
-                 'reads one of its own tokens back.\n\nAll four are ' +
+                 'token — the clock skew applied wherever this service ' +
+                 'reads one of its own tokens back, and the two RFC 9700 ' +
+                 'mode refresh-token rules: the idle timeout and ' +
+                 'revocation on sign-out.\n\nAll six are ' +
                  'ordinary configuration settings and appear in ' +
                  '`GET /config` too; `settings` here is the same row shape, ' +
                  'carrying each one\'s bounds, its source and its default. ' +
-                 '`lifetimes` beside it is just the four numbers, for a ' +
-                 'caller that wants the value rather than the ' +
+                 '`lifetimes` beside it is just the three lifetimes and the ' +
+                 'skew, for a caller that wants the value rather than the ' +
                  'provenance.\n\nIt also reports WHAT IS ALREADY OUT ' +
                  'THERE, per kind, counted against the same clock the ' +
                  'endpoints use — the skew is applied to that count, so a ' +
@@ -4788,7 +4798,7 @@ const ROUTES = [
                  'token and nothing already issued. To take an issued token ' +
                  'out of circulation, revoke it under Tokens.',
     mirrors: 'GET /admin/token-lifetimes',
-    responseDescription: 'The four settings, and what has been issued under ' +
+    responseDescription: 'The six settings, and what has been issued under ' +
                          'them.',
     responseSchema: { $ref: '#/components/schemas/TokenLifetimes' },
     handler: function (req, res) {
@@ -4830,26 +4840,28 @@ const ROUTES = [
     },
     actions: [
       { action: 'set', operationId: 'setTokenLifetimes',
-        summary: 'Set one or more of the four',
+        summary: 'Set one or more of the six',
         description: 'A RUNTIME OVERRIDE, like every other change made ' +
                      'through this API: gone on restart in the default ' +
                      'memory mode, and written down and re-applied at the ' +
                      'next start when `persistence.appconfig` has a store ' +
                      'under it. Nothing writes to the appconfig file in ' +
-                     'either case.\n\nName any of the four; the console ' +
-                     'form posts all four at once and a caller may post ' +
+                     'either case.\n\nName any of the six; the console ' +
+                     'form posts them all at once and a caller may post ' +
                      'one. ALL-OR-NOTHING: every value is checked before any ' +
                      'is written, so a body with one bad field changes ' +
                      'nothing and names it.\n\nUNLIKE ' +
                      '`POST /config/set-many`, a property that is not one of ' +
-                     'the four is REFUSED rather than ignored. That door is ' +
+                     'the six is REFUSED rather than ignored. That door is ' +
                      'for a form posting a whole section, where an unknown ' +
                      'field is ordinary; this one is for a caller that means ' +
                      'to set a lifetime, where a misspelt key that succeeded ' +
                      'and changed nothing is the worst possible ' +
                      'answer.\n\nEvery lifetime must be a whole number of ' +
                      'THIRTY-SECOND units, between 30 and 2592000 (thirty ' +
-                     'days). The skew is 0 to 300 in the same units. Those ' +
+                     'days). The skew is 0 to 300 in the same units. The ' +
+                     'idle timeout is whole seconds, 0 turning it off, and ' +
+                     'revocation on sign-out is a boolean. Those ' +
                      'bounds are on each setting\'s row in the GET, so a ' +
                      'client can render them rather than repeat ' +
                      'them.\n\nThe change applies to the NEXT token ' +
@@ -4879,19 +4891,20 @@ const ROUTES = [
                              'actually changed, in `changed`.' },
 
       { action: 'defaults', operationId: 'resetTokenLifetimes',
-        summary: 'Put the four back',
-        description: 'Clears the runtime override on THESE FOUR ONLY, so ' +
+        summary: 'Put the six back',
+        description: 'Clears the runtime override on THESE SIX ONLY, so ' +
                      'each falls back to its environment variable, the ' +
                      'appconfig file, or `env/defaults.js` — one hour, ' +
-                     'one hour, twenty-four hours and thirty ' +
-                     'seconds.\n\nIt is deliberately not ' +
+                     'one hour and twenty-four hours for the lifetimes, ' +
+                     'twenty-four hours idle, revocation on sign-out on, ' +
+                     'and thirty seconds of skew.\n\nIt is deliberately not ' +
                      '`POST /config/reset-all`, which would also drop an ' +
                      'override somebody set on an unrelated page. A test ' +
                      'that changed only the lifetimes should call this to ' +
                      'put the service back; one that changed more should ' +
                      'call that one.\n\nA setting that was not overridden ' +
                      'is skipped rather than refused, because this means ' +
-                     '"put these four back" rather than "undo this one ' +
+                     '"put these six back" rather than "undo this one ' +
                      'change" — the per-key refusal is on ' +
                      '`POST /config/reset`, where it is the right answer.',
         requestBodyRequired: false,
@@ -4901,8 +4914,10 @@ const ROUTES = [
                              '`cleared`.' } ] },
 
   // ---------------------------------------------------------------------
-  // The SAML assertion window, which is three of the settings above under a
-  // name that promises three rather than a hundred and sixty-one.
+  // The SAML assertion settings, which are sixteen of the settings above —
+  // the lifetimes, the skew, and the signing, NameID, artifact and SAML 2.0
+  // encryption choices (`SAML_ASSERTION_SETTINGS` in admin-core) — under a
+  // name that promises those and nothing else.
   //
   // Rule 7 is satisfied the same way /token-lifetimes satisfies it, and the
   // parallel is exact: /admin/saml-assertions grew a form, so it gets its
@@ -4923,7 +4938,10 @@ const ROUTES = [
     description: 'The two assertion lifetimes — SAML 2.0 and SAML 1.1 — and ' +
                  'the clock skew added to BOTH ENDS of each, which is what ' +
                  'this service writes into `Conditions/NotBefore` and ' +
-                 '`NotOnOrAfter`.\n\nAll three are ordinary configuration ' +
+                 '`NotOnOrAfter`, beside the signing, NameID, artifact and ' +
+                 'SAML 2.0 encryption choices and the WS-Federation ' +
+                 'assertion lifetime — sixteen settings in all.\n\nAll of ' +
+                 'them are ordinary configuration ' +
                  'settings and appear in `GET /config` too; `settings` here ' +
                  'is the same row shape, carrying each one\'s bounds, its ' +
                  'source and its default. `assertions` beside it is the ' +
@@ -4935,12 +4953,13 @@ const ROUTES = [
                  'SAML 2.0 and SAML 1.1 are separate implementations here, ' +
                  'consumed differently, so each has its own lifetime; the ' +
                  'skew is a fact about the clocks in the estate this service ' +
-                 'issues into, which a deployment decides once. All three ' +
-                 'reach WS-Trust and WS-Federation as well — their ' +
-                 'assertions come out of the same two builders — and a ' +
-                 'WS-Federation sign-in carries a SAML 1.1 assertion, so ' +
-                 '`saml11.assertionLifetimeMin` governs ' +
-                 'it.\n\n`saml.clockSkewS` IS NOT `oauth2.clockSkewS`. This ' +
+                 'issues into, which a deployment decides once. The ' +
+                 'settings reach WS-Trust and WS-Federation as well — their ' +
+                 'assertions come out of the same two builders — but a ' +
+                 'WS-Federation sign-in, which carries a SAML 1.1 ' +
+                 'assertion, has a lifetime of its own, ' +
+                 '`wsfed.assertionLifetimeMin`.\n\n' +
+                 '`saml.clockSkewS` IS NOT `oauth2.clockSkewS`. This ' +
                  'one is written INTO a document this service issues. That ' +
                  'one is the tolerance applied wherever this service READS ' +
                  'one back, including an inbound federation partner\'s ' +
@@ -4951,7 +4970,7 @@ const ROUTES = [
                  'IS SIGNED, so changing one reaches the next assertion and ' +
                  'nothing already issued.',
     mirrors: 'GET /admin/saml-assertions',
-    responseDescription: 'The three settings, and what has been issued ' +
+    responseDescription: 'The settings, and what has been issued ' +
                          'under them.',
     responseSchema: { $ref: '#/components/schemas/SamlAssertions' },
     handler: function (req, res) {
@@ -4999,15 +5018,16 @@ const ROUTES = [
                      'memory mode, and written down and re-applied at the ' +
                      'next start when `persistence.appconfig` has a store ' +
                      'under it. Nothing writes to the appconfig file in ' +
-                     'either case.\n\nName any of the three; the console ' +
-                     'form posts all three at once and a caller may post ' +
+                     'either case.\n\nName any of them; the console ' +
+                     'forms post several at once and a caller may post ' +
                      'one. ALL-OR-NOTHING: every value is checked before ' +
                      'any is written, so a body with one bad field changes ' +
                      'nothing and names it.\n\nUNLIKE ' +
                      '`POST /config/set-many`, a property that is not one ' +
-                     'of the three is REFUSED rather than ignored, for the ' +
+                     'of the sixteen is REFUSED rather than ignored, for the ' +
                      'reason `POST /token-lifetimes/set` gives.\n\nTHE TWO ' +
-                     'LIFETIMES ARE MINUTES AND THE SKEW IS SECONDS. That ' +
+                     'LIFETIMES ARE MINUTES AND THE SKEW IS SECONDS (the ' +
+                     'artifact lifetimes are seconds too). That ' +
                      'is not a formatting accident: a lifetime is set to a ' +
                      'number of minutes to watch an assertion go stale, and ' +
                      'a skew is a handful of seconds covering the ' +
@@ -5040,16 +5060,16 @@ const ROUTES = [
                              'actually changed, in `changed`.' },
 
       { action: 'defaults', operationId: 'resetSamlAssertions',
-        summary: 'Put the three back',
-        description: 'Clears the runtime override on THESE THREE ONLY, so ' +
+        summary: 'Put the SAML assertion settings back',
+        description: 'Clears the runtime override on THESE SIXTEEN ONLY, so ' +
                      'each falls back to its environment variable, the ' +
-                     'appconfig file, or `env/defaults.js` — sixty ' +
-                     'minutes, sixty minutes and no skew at ' +
+                     'appconfig file, or `env/defaults.js` — for the ' +
+                     'lifetimes sixty minutes each, and no skew at ' +
                      'all.\n\nIt is deliberately not ' +
                      '`POST /config/reset-all`, which would also drop an ' +
                      'override somebody set on an unrelated page.\n\nA ' +
                      'setting that was not overridden is skipped rather ' +
-                     'than refused, because this means "put these three ' +
+                     'than refused, because this means "put these ' +
                      'back" rather than "undo this one change" — the ' +
                      'per-key refusal is on `POST /config/reset`.',
         requestBodyRequired: false,
@@ -5623,17 +5643,19 @@ const ROUTES = [
   // ---------------------------------------------------------------------
   // ---------------------------------------------------------------------
   // FEDERATION. Rule 7, and it pays here more than anywhere except /rbac:
-  // this API is NOT gated, so these operations are how a TEST configures a
-  // federation partner with no browser and no cookie jar — which is the only
-  // way the feature can be exercised automatically at all.
+  // this API takes a token a test can mint rather than a browser session, so
+  // these operations are how a TEST configures a federation partner with no
+  // browser and no cookie jar — which is the only way the feature can be
+  // exercised automatically at all.
   //
   // The consequence is the same one mgmt-api/CLAUDE.md states for /rbac and it
-  // is worth restating here because what is at stake is different: anybody who
-  // can reach this port can configure a federation partner, which means
-  // configuring a signing certificate this service will then believe. That is
-  // not a new hole — the same caller can already grant themselves both admin
-  // roles and mint a token for any username — but it is the sharpest form of
-  // it, and the honest sentence is better than the omission.
+  // is worth restating here because what is at stake is different: anybody
+  // holding an `admin:write` token (or reaching this port with
+  // `adminApi.authRequired` off) can configure a federation partner, which
+  // means configuring a signing certificate this service will then believe.
+  // That is not a new hole — the same caller can already grant themselves both
+  // admin roles and mint a token for any username — but it is the sharpest
+  // form of it, and the honest sentence is better than the omission.
   // ---------------------------------------------------------------------
   { method: 'GET', path: BASE + '/federation', tag: 'Federation',
     operationId: 'getFederationRelationships',
@@ -7213,9 +7235,9 @@ const ROUTES = [
   // The audit log. READ ONLY, and that is a decision rather than an operation
   // nobody got round to. Every other resource here has a POST beside it because
   // the console control it mirrors is a form; this one mirrors a page with no
-  // form on it, because a clear button on an unprotected console would make an
-  // audit log unable to answer the one question it exists for. There is nothing
-  // to change, so there is nothing to document as changeable.
+  // form on it, because a clear button on an administrative console would make
+  // an audit log unable to answer the one question it exists for. There is
+  // nothing to change, so there is nothing to document as changeable.
   // --- Shared Signals -----------------------------------------------------
   //
   // A GET and a POST, and unlike SCIM's the POST is not optional: /admin/ssf
@@ -7228,10 +7250,11 @@ const ROUTES = [
   // exactly rather than a gap. A stream carries a delivery endpoint THIS
   // SERVICE WILL DIAL, and the one place that URL may come from is a receiver
   // that authenticated at `POST /ssf/stream` and asked. A management API that
-  // could mint one would be a second, ungated door onto the outbound request
-  // `ssf/ssf_http.js` spends its header bounding — so the console has no
-  // create form either, and the parity holds because there is no control to
-  // mirror.
+  // could mint one would be a second door onto the outbound request
+  // `ssf/ssf_http.js` spends its header bounding, and the one with the weaker
+  // credential (it read "ungated door" until 2026-09-09) — so the console has
+  // no create form either, and the parity holds because there is no control
+  // to mirror.
   // ---------------------------------------------------------------------
   // XACML. THREE READS AND ONE WRITE, and the write is the whole PAP: the
   // console's two POST endpoints (`/admin/xacml/policies` and
@@ -7897,10 +7920,10 @@ const ROUTES = [
       // same commit, and `tests/vendored/sts_admin_api_operations.js` is the
       // check — it compares the actions this document DECLARES against the
       // ones the handler's refusal sentence NAMES, in both directions,
-      // because that sentence is what `admin_api.js`'s parity check reads to
-      // find out what a resource can do. Nineteen actions the sentence named
-      // and the document did not meant nineteen console controls that could
-      // have lost their operation with nothing failing.
+      // because that sentence is what `tests/vendored/admin_api.js`'s parity
+      // check reads to find out what a resource can do. Nineteen actions the
+      // sentence named and the document did not meant nineteen console
+      // controls that could have lost their operation with nothing failing.
       //
       // It went unnoticed until phase five because that job is this
       // repository's own and had not been run against this branch.
@@ -9285,11 +9308,12 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API Shared Signals action endpoint.");
       const body = parseBody(req);
-      // THE ONE HANDLER IN THIS FILE THAT AWAITS. Transmitting a Security
-      // Event Token signs a JWS — which may be ML-DSA or SLH-DSA on the
-      // worker pool — and then POSTs it to somebody else's endpoint. Neither
-      // can be done synchronously, and answering before either had happened
-      // would be this API reporting "sent" about nothing.
+      // THE FIRST HANDLER IN THIS FILE THAT AWAITED; PKI, XACML, CAEP, RISC
+      // and the database and secret-store reports have since. Transmitting a
+      // Security Event Token signs a JWS — which may be ML-DSA or SLH-DSA on
+      // the worker pool — and then POSTs it to somebody else's endpoint.
+      // Neither can be done synchronously, and answering before either had
+      // happened would be this API reporting "sent" about nothing.
       adminActions.ssfAction(withAction(req, body)).then(function (result) {
         if (!result.ok) {
           errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0052');
@@ -10045,7 +10069,8 @@ const ROUTES = [
   // ---------------------------------------------------------------------------
   // PKI — the certificate authority this service maintains per trust realm.
   //
-  // Rule 7: `/admin/pki` has four controls, so this API has the same four
+  // Rule 7: every control on `/admin/pki` — four when this was written, and
+  // the workbench, hierarchy and revocation panes' since — has an action here,
   // through the SAME functions — `pkiAction()` in `admin-ui/pki_admin.js` —
   // and decides nothing that console does not.
   //
@@ -13233,9 +13258,9 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SPIFFE action endpoint.");
       const body = parseBody(req);
-      // The one action handler in this API that is ASYNCHRONOUS: rotating an
-      // authority generates a key pair, and key generation is async. Every
-      // other handler here is synchronous, so the await is local rather than a
+      // ASYNCHRONOUS, like a handful of other handlers here: rotating an
+      // authority generates a key pair, and key generation is async. Most
+      // handlers here are synchronous, so the await is local rather than a
       // change to the shape of all of them.
       adminActions.spiffeAction(withAction(req, body)).then(function (result) {
         if (!result.ok) {
@@ -13717,7 +13742,7 @@ function operationSummaries() {
 
 // --- registration -----------------------------------------------------------
 //
-// One express route per row, which for the four action resources is one pattern
+// One express route per row, which for an action resource is one pattern
 // behind every action in it. Registering at require time is what every module
 // here does; see rule 1.
 // ---------------------------------------------------------------------------
@@ -13736,16 +13761,17 @@ function operationSummaries() {
 // is the console's gate with a documented way around it.
 //
 // **ONE MIDDLEWARE RATHER THAN A CHECK PER HANDLER**, and the reason is this
-// file's shape: there are 232 operations behind 30-odd routes, and a check per
-// handler is 232 chances to add the 233rd without one. Registered BEFORE the
-// routes below, because express applies middleware only to routes added after
-// it — rule 1's other half.
+// file's shape: there are more than three hundred operations behind about a
+// hundred routes, and a check per handler is one chance per operation to add
+// the next without one. Registered BEFORE the routes below, because express
+// applies middleware only to routes added after it — rule 1's other half.
 //
-// **THE EXPLORER AND ITS DOCUMENT ARE GATED TOO.** They describe every
+// **THE EXPLORER AND ITS DOCUMENT WERE GATED TOO.** They describe every
 // operation this service offers, which is a map of the administrative surface;
 // a product deployment that served that to anybody would be handing out the
-// floor plan. They are HTML and JavaScript rather than JSON, so the refusal is
-// shaped for a browser.
+// floor plan. The explorer moved to the console on 2026-09-09 and is behind
+// its session now; the HTML-shaped refusal below is kept for a browser that
+// navigates here anyway.
 // ---------------------------------------------------------------------------
 // AND SINCE 2026-09-09 THE FIRST QUESTION IS AN ACCESS TOKEN, IN EVERY MODE.
 //
@@ -14299,9 +14325,11 @@ app.use(BASE, function (req, res, next) {
     // above and never from anything on the request.
     //
     // **IT RUNS ONLY WHERE THIS SURFACE IS GATED AT ALL**, which is the same
-    // `mode.gatesManagementApi()` branch three lines up. In development this
-    // API is open by design — there is no credential, so no session, so no
-    // subject — and asking a policy whose built-in document refuses an
+    // `mode.gatesManagementApi()` branch above — reached only with
+    // `adminApi.authRequired` off, since the token branch answers first. In
+    // development that branch leaves this API open by design — there is no
+    // credential, so no session, so no subject — and asking a policy whose
+    // built-in document refuses an
     // unauthenticated subject would close the door the tests drive and the
     // door somebody locked out of the console gets back in through. A policy
     // layer must not be the thing that removes the recovery path.
@@ -14375,8 +14403,8 @@ compileRequestSchemas();
 // REGISTRATION IS THE CHOKE POINT, and it has to be: there is no generic
 // dispatcher here. Every handler in the table above reads its own body with
 // `parseBody(req)` and refuses in its own words, so a check written inside them
-// would be a hundred and fifty-one checks and the hundred and fifty-second
-// would be forgotten. Here it is one wrapper, driven by the same table the
+// would be one check per operation and the next operation's would be
+// forgotten. Here it is one wrapper, driven by the same table the
 // OpenAPI document is built from, so an operation cannot acquire a schema
 // without acquiring its enforcement.
 //
