@@ -33,6 +33,7 @@ exclude:
 
 header_pages:
   - getting-started.md
+  - architecture.md
   - configuration.md
   - endpoints.md
   - jwt-assertions.md
