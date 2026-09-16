@@ -218,8 +218,8 @@ async function run(t) {
   // keys this process does have would stop being certified at creation.
   //
   // So this reads the source. That is what `tests/version.js` does about the
-  // seven surfaces that draw a version, and for the same reason: two call
-  // sites agree perfectly right up until one of them is edited.
+  // surfaces that draw a version, and for the same reason: two call sites
+  // agree perfectly right up until one of them is edited.
   // -------------------------------------------------------------------------
   const options = fs.readFileSync(
     path.join(__dirname, '..', 'common', 'service_state.js'), 'utf8');

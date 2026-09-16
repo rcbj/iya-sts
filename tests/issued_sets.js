@@ -17,10 +17,12 @@
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
 // Most of this feature belongs over HTTP and is not here: that the table draws
-// one row per reply, that the set page opens, that `revoke-set` refuses a SAML
-// assertion, are all driven against the running service by
-// `tests/vendored/admin_api.js`. What is here is the one claim that CANNOT be
-// driven over HTTP, and it is the claim the whole design rests on:
+// one row per reply, that the set page opens, that `revoke-set` only DISOWNS a
+// SAML assertion (`record-only`, since 2026-09-05), are all driven against the
+// running service by `tests/vendored/admin_api.js` and
+// `tests/vendored/sts_admin_api_operations.js`. What is here is the one claim
+// that CANNOT be driven over HTTP, and it is the claim the whole design rests
+// on:
 //
 //   **TWO REPLIES THAT AGREE ON EVERY RECORDED FIELD ARE STILL TWO REPLIES.**
 //
