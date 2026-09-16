@@ -20,7 +20,7 @@
 // derive — who is on the connection — reaches the check.
 //
 // **THE ASSERTION THAT MATTERS MOST IS THE ESCALATION.**
-// `admin-ui/admin_rbac.js` reads a person's own `memberOf` when it decides
+// `admin-ui/admin_rbac.ts` reads a person's own `memberOf` when it decides
 // whether they hold a console role, so before this change `memberOf:
 // cn=admin-write,…` written on your own entry made you an administrator of the
 // service. Section 3 writes exactly that and then asks the role check, rather

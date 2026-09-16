@@ -3943,7 +3943,7 @@ async function theKerberosPrincipalsRoundTrip() {
 // It still revokes what it grants, and reads the roster back to its starting
 // count. The window in which anybody who signs in holds both roles is closed
 // by the bootstrap administrator's first console sign-in wherever one was
-// seeded (every realm since #32; admin-ui/admin_rbac.js), and only where none
+// seeded (every realm since #32; admin-ui/admin_rbac.ts), and only where none
 // was does the older rule apply — open while neither role group has a member,
 // so that a first grant closes it for everybody not in the roster.
 // ---------------------------------------------------------------------------

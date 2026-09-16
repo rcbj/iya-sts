@@ -6,7 +6,7 @@
 // THE PICTURE IS TWO BANDS, AND THE ISSUER'S LABELS DO NOT SIT ON TOP OF EACH
 // OTHER.
 //
-// `admin-ui/delegation_map.js` laid every box out with dagre until 2026-08-26,
+// `admin-ui/delegation_map.ts` laid every box out with dagre until 2026-08-26,
 // the hexagon among them, so the issuer got a RANK of its own in the flow: a
 // person on the left, this service in the second column, and the applications
 // strung out to the right of it. Two things were wrong with that and only one

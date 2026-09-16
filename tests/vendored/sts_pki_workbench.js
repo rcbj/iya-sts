@@ -84,7 +84,7 @@
 //      every other job in the run. **That reason has since expired**: the
 //      open window is closed by the bootstrap administrator's first sign-in
 //      rather than by a grant, and grants nothing to a person who holds a
-//      role already (2026-09-13, `admin-ui/admin_rbac.js`), and the roster
+//      role already (2026-09-13, `admin-ui/admin_rbac.ts`), and the roster
 //      asked is the one of the realm the session was signed in through
 //      (2026-09-14, #32, `admin-ui/CLAUDE.md` 8d) — so an Admin Read grant
 //      in this job's own realm would now produce that session without
@@ -854,7 +854,7 @@ async function theHierarchyAndTheStoreAreSeparate() {
 // `tests/pki_hierarchy.js` beside the model: that file hands `describeTree()`
 // its own scope list, so it can only assert what that function does with a
 // list and never what the CONSOLE puts in one. The narrowing lives in
-// `admin-ui/pki_admin.js` deliberately — `common/pki.js` is handed scope ids
+// `admin-ui/pki_admin.ts` deliberately — `common/pki.js` is handed scope ids
 // and has no opinion about which exist — so the only door that can be asked
 // is this one, in a realm, twice.
 //
@@ -1042,7 +1042,7 @@ async function eachRealmSeesItsOwnAuthorities() {
   // What the refusal above must not take away: a realm still rebuilds its
   // OWN branch. (The process branch passes the same visibility check from any
   // realm — it belongs to none, so no realm's page is more its home — though
-  // since 2026-09-14 `admin_scope.js` refuses a `*` scope to a realm's own
+  // since 2026-09-14 `admin_scope.ts` refuses a `*` scope to a realm's own
   // administrator. This call carries the run's service credential.)
   const ownScope = await postJson(api("/pki/build-scope"), { scope: REALM });
   check("a realm may still rebuild ITS OWN branch, which is the control the " +

@@ -7,7 +7,7 @@
 // MARK (2026-09-13).
 //
 // `common/pqc_support.ts` decides whether a key pair uses a post-quantum
-// algorithm and `admin-ui/pqc_badge.js` draws the icon that says so. What is
+// algorithm and `admin-ui/pqc_badge.ts` draws the icon that says so. What is
 // held here is what a page cannot be asked:
 //
 //   A. EVERY ALGORITHM, IN EVERY SPELLING. The pages name keys four ways — a

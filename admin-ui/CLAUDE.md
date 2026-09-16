@@ -6,17 +6,17 @@ say; the rest are listed after the table and argued in their own sections.
 | File | What it is |
 |---|---|
 | `admin.js` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
-| `admin_rbac.js` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
-| `delegation_map.js` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
-| `pki_admin.js` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.js`) and is required at **18a**, which is why it needs no slot. |
-| `crypto_metadata.js` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.js`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
-| `federation_diagram.js` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.js`'s palette, hexagon and text metric. |
+| `admin_rbac.ts` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
+| `delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
+| `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
+| `crypto_metadata.ts` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.js`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
+| `federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.ts`'s palette, hexagon and text metric. |
 
-The others: `admin_scope.js` (what a realm administrator may not reach, 8d),
-`api_explorer.js` (`/admin/api-explorer`), `certificate_dialog.js` and
-`pqc_badge.js` (the certificate details dialog and the post-quantum icon),
-`database_admin.js` (`/admin/database`), `encryption_admin.js`
-(`/admin/encryption`) and `secrets_admin.js` (`/admin/secrets`).
+The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
+`api_explorer.ts` (`/admin/api-explorer`), `certificate_dialog.ts` and
+`pqc_badge.ts` (the certificate details dialog and the post-quantum icon),
+`database_admin.ts` (`/admin/database`), `encryption_admin.ts`
+(`/admin/encryption`) and `secrets_admin.ts` (`/admin/secrets`).
 
 **It IS protected now, and it holds nothing on disk.** It is also the one surface
 that can CHANGE what the protocol endpoints do, which is why it is the one that
@@ -67,7 +67,7 @@ grew a gate.
    the directory WRITER's slot gives: a module that filled a combined slot with
    only the readers would leave `/admin/logout` listing what is live and unable
    to end any of it, which is the worse of the two halves. It warns rather than
-   throwing, like `admin_rbac.js`'s install: a console that will not start is
+   throwing, like `admin_rbac.ts`'s install: a console that will not start is
    worse than one page that says why it cannot answer.
 
    **`FAMILIES` is the PROSE and this file must not carry a second copy.** What
@@ -225,7 +225,7 @@ look identical. **They are deliberately not RE-EXPORTED**: aliasing keeps this
 file's own call sites working, and re-exporting would publish a second way to
 reach the same function.
 
-**`api_explorer.js` REQUIRES THE READ LAYER DIRECTLY**, and that is the one
+**`api_explorer.ts` REQUIRES THE READ LAYER DIRECTLY**, and that is the one
 console page that does. It asks `gateStateFor()` which roles the reader holds,
 so the token it mints carries those scopes and no others — and that function
 moved. It called `admin.gateStateFor()` for a while after it stopped existing:
@@ -1105,7 +1105,7 @@ Three things about the fix are decisions rather than mechanics:
 * **A page with no `blurb` is DRAWN, marked.** Skipping it would be the
   original bug with a mechanism behind it. The marker is the only report
   anything in this service makes about an undescribed console page, and it
-  warns rather than throwing, like `admin_rbac.js`'s install: a console that
+  warns rather than throwing, like `admin_rbac.ts`'s install: a console that
   will not start is worse than one line saying what is missing. **It has been
   mutation-tested** — a blurb was removed, the marker appeared on that row and
   on no other, and the blurb was put back — because a check that has never
@@ -1167,7 +1167,7 @@ misremembering.
 ## ONE PAGE OF THIS CONSOLE IS NOT IN THIS DIRECTORY
 
 (Two, since 2026-08-30 — `/admin/crypto-metadata` is drawn by
-`./crypto_metadata.js`, which is in this directory but is not `admin.js`. It
+`./crypto_metadata.ts`, which is in this directory but is not `admin.js`. It
 borrows the shell on exactly the terms below and the section above argues the
 rest.)
 
@@ -1347,7 +1347,7 @@ markup. The rule is in the comment above `plainTextOf()`.
 
 ## `/admin/crypto-metadata` IS THE SECOND PAGE OF THIS CONSOLE THIS FILE DOES NOT DRAW
 
-Added 2026-08-30, in `crypto_metadata.js`, under **Server configuration** beside
+Added 2026-08-30, in `crypto_metadata.ts`, under **Server configuration** beside
 *Service metadata* — and the two sit together because each is a REPORT about the
 whole service rather than a control over one part of it.
 
@@ -1377,7 +1377,7 @@ back through the codec's own `etypeName()` (those modules are VENDORED and
 cannot be edited to export a list), the SPIFFE key types are `spiffeCa.KEY_TYPES`,
 and so on for eleven modules.
 
-**`crypto_metadata.js` is required at 20a, after `tls/tls_server`, and that is
+**`crypto_metadata.ts` is required at 20a, after `tls/tls_server`, and that is
 the constraint that decides the line.** It reads an algorithm table out of
 eleven modules — `common/crypto`, `pq_jose`, the vendored `xmldsig`,
 `krb5_crypto`, `webauthn`, `oauth2`/`dpop`/`client_auth`/`mtls`, `spiffe_ca`,
@@ -1483,7 +1483,7 @@ in the BINDING, not in the signature, and the page says which.
 ### WHAT IT COSTS TO ADD A PROTOCOL FAMILY, NOW
 
 A card in `sts_metadata.js`'s `PROTOCOLS`, an entry in its `ENDPOINTS`, **and a
-row in `crypto_metadata.js`'s `FAMILIES`**. The third is enforced:
+row in `crypto_metadata.ts`'s `FAMILIES`**. The third is enforced:
 `tests/vendored/admin_api.js` — this repository's own — fails on the drift
 report being non-empty in either direction, on a coverage note that does not
 start `full`/`partial`/`mock`, and on any of five algorithm lists differing from
@@ -1502,7 +1502,7 @@ rather than three** — it is the record of one family, where this is the rule.
 
 ## `/admin/keys` IS THE ONE PAGE HERE WHERE READING IS TAKING (2026-08-30)
 
-Added in `crypto_metadata.js` — the same module, because it already requires
+Added in `crypto_metadata.ts` — the same module, because it already requires
 `tls_server`, `spiffe_ca`, `helpers` and `admin`, already sits at 20a, and
 already computes the key inventory for the page next door. A module of its own
 would have cost an eighth slot and a new require-order constraint for nothing.
@@ -1611,7 +1611,7 @@ the browser suite is what found it. Check for the name before adding one.
 
 ## `/admin/pki` IS THE THIRD PAGE THIS FILE DOES NOT DRAW, AND THE FIRST THAT NEEDED NO SLOT (2026-09-10)
 
-`admin-ui/pki_admin.js`, under **Protocols → PKI**, ungrouped, next to TLS. It
+`admin-ui/pki_admin.ts`, under **Protocols → PKI**, ungrouped, next to TLS. It
 builds a certificate authority for the trust realm it is reached in and issues
 signing key pairs from the bottom of it to applications — which is what makes
 [RFC 7521 and RFC 7523](../oauth-oidc/CLAUDE.md) usable here without an operator
@@ -1656,7 +1656,7 @@ refusal names the realm switcher, because switching is how to do what was
 asked. **A page that hides a branch while its actions still edit it is worse
 than the leak it replaced**: the operator cannot see what they changed.
 
-**THE NARROWING IS IN `pki_admin.js` AND NOT IN `common/pki.js`.** That module
+**THE NARROWING IS IN `pki_admin.ts` AND NOT IN `common/pki.js`.** That module
 is handed scope ids and has no opinion about which exist — the same reason
 `rebuildEveryScope()` lives on this side — so *which branches does a reader in
 this realm get* is asked exactly once, where the page is.
@@ -1710,7 +1710,7 @@ So it is required in `common/protocol_stack.js` at **18a**, immediately after
 this file and BEFORE the management API — which makes that module's own require
 a cache hit that registers nothing.
 
-**`crypto_metadata.js` COULD NOT DO THIS AND THAT IS THE CONTRAST TO KEEP.** It
+**`crypto_metadata.ts` COULD NOT DO THIS AND THAT IS THE CONTRAST TO KEEP.** It
 sits at 20a because it reads an algorithm table out of `tls/tls_server.js` at 20,
 so requiring it from `admin_api.js` would drag every `/tls*` route in front of
 the management API's own — which is why that one has the seventh slot and this
@@ -1759,7 +1759,7 @@ cosmetic difference**: a `kid` for the JWT profile and a THUMBPRINT for the SAML
 one, because those are the handles the two formats actually carry — a JWS header
 names a `kid` and an XML Signature carries the certificate itself, so what
 matches a presented `<ds:KeyInfo>` against what is registered is a thumbprint.
-`admin-ui/pki_admin.js`'s `PURPOSE_WRITES` is the one table that says which
+`admin-ui/pki_admin.ts`'s `PURPOSE_WRITES` is the one table that says which
 attributes each profile writes; `oauth-oidc/CLAUDE.md` 3z argues why the two
 sets may never be merged.
 
@@ -1769,7 +1769,7 @@ sets may never be merged.
 on `issuedPage` and `personsPage` with one shared `per` (twenty-five by default,
 not the console's fifty, because this page carries eight sections), with one
 *Rows per table* control under the Applications heading. `keyPairPaging()` in
-`pki_admin.js` is the one slice both the page and the JSON use.
+`pki_admin.ts` is the one slice both the page and the JSON use.
 
 * **THE NAMES ARE THE JSON MEMBERS'** — `issued` and `persons` with `Page` on
   the end, answered by `issuedPaging` and `personsPaging` — which is
@@ -1799,7 +1799,7 @@ a reader can be hurt by: it read **revocation here is PUBLISHED and never
 CONSULTED**, so a certificate revoked on this page still authenticated to this
 service — until 2026-09-12, when presented certificates began to be checked
 (rule 3ad). The warning's sentence is `pki.report()`'s and now says what is
-consulted; the bold heading in `pki_admin.js` above it still reads *never
+consulted; the bold heading in `pki_admin.ts` above it still reads *never
 ENFORCED* and is stale.
 
 **AND THE PAGE NOW CARRIES TWO CONTROLS WITH THE WORD *REVOKE* ON THEM.** The
@@ -2057,7 +2057,7 @@ under rule 3e in the root `CLAUDE.md`; cite a slot by its setter's name.
 **`setLogoutReader()` is the sixth and `setCryptoReporter()` is the seventh**,
 and both passed that test in BOTH directions rather than one — which is the bar
 a proposal should be held to. The crypto one: a require from
-`../mgmt-api/admin_api.js` (19) to `./crypto_metadata.js` (20a) would move that
+`../mgmt-api/admin_api.js` (19) to `./crypto_metadata.ts` (20a) would move that
 page's route and `../tls/tls_server.js`'s three ahead of the management API's
 own and of ldap, scim and spiffe; and a require from THIS file to it would close
 a cycle, because it requires this one for the shell. `cryptoView(req)` is what
@@ -2080,7 +2080,7 @@ would move every `/ldap` route ahead of the management API's own.
 installed `createGroup` alone would leave the Add member control answering "no
 directory is loaded" on a service whose directory plainly is. And it holds
 NEITHER a delete NOR a remove, deliberately — taking a member out of a group is
-`admin_rbac.js`'s `revoke()` for the two console roles and an `ldapmodify` or a
+`admin_rbac.ts`'s `revoke()` for the two console roles and an `ldapmodify` or a
 SCIM `PATCH` for every other group, and deleting a group is a SCIM `DELETE` or
 an `ldapdelete`. Those doors exist and work; what did not exist anywhere but
 SCIM and the raw socket was CREATION.
@@ -2290,7 +2290,7 @@ the tab above it does not already hold.
 Eight things about it are decisions rather than defaults.
 
 * **THE MODEL IS IN `../common/delegation.js` AND THE DRAWING IS IN
-  `delegation_map.js`, AND NEITHER KNOWS WHAT THE OTHER KNOWS.** `graph()` says
+  `delegation_map.ts`, AND NEITHER KNOWS WHAT THE OTHER KNOWS.** `graph()` says
   what the nodes and edges ARE — it walks the acts rather than `chainList()`'s
   answer, because a chain has the credentials taken out of it on purpose and a
   picture asked to say what was issued needs them. `render()` says where a box
@@ -2307,7 +2307,7 @@ Eight things about it are decisions rather than defaults.
   reading `Acme Web` said nowhere on the diagram what a request would have to
   carry to reach it. That string was in the tooltip, which is not a place a
   picture pasted into a ticket keeps. So `delegationNodeLook()` now returns a
-  third line, `look.identifier`, and `delegation_map.js` draws it under the
+  third line, `look.identifier`, and `delegation_map.ts` draws it under the
   kind: `client_id: acme-web`, `AppliesTo: https://esb.example.com`,
   `SPN: HTTP/frontend.example.com@EXAMPLE.COM`. Four things about it were
   decided rather than fallen into:
@@ -2500,7 +2500,7 @@ Eight things about it are decisions rather than defaults.
   share one plane, AND no two of them overlap, because `spread` alone is
   satisfied by the bug.
 
-* **THE DEPENDENCY WAS WEIGHED, in `delegation_map.js`'s own header, the way
+* **THE DEPENDENCY WAS WEIGHED, in `delegation_map.ts`'s own header, the way
   `scimmy` and `swagger-ui-dist` were.** `@dagrejs/dagre` is 1.4 MB unpacked with
   one dependency and no install script, and what it brings is the half that is
   actually hard: ranking, and ORDERING each rank so the lines cross as few times
@@ -2661,7 +2661,7 @@ parameter, and it is the first thing to check any change to it against.
   UNITS: a box that received four tokens and took part in no delegation would be
   a row of zeroes under the map's columns, with the interesting number nowhere
   on it.
-* **TWO NEW KINDS OF LINE, in `delegation_map.js`** — `signed-in` (dotted, into
+* **TWO NEW KINDS OF LINE, in `delegation_map.ts`** — `signed-in` (dotted, into
   the hexagon, ONE PER PERSON with the protocol families listed on it — it was
   one line per family until 2026-08-26; see the bullet on the fold below) and
   `issued-for` (solid indigo, labelled with the exact grant). Neither takes a
@@ -2768,7 +2768,7 @@ it, and the one behind that, back to the issuance the whole line rests on.
 
 * **THE MODEL IS `../common/credential_graph.ts` AND THE DRAWING IS EVERYBODY
   ELSE'S** (rule 3l, the division `/admin/delegation/map` already lives on). That
-  file returns a graph in `delegation.graph()`'s shape, so `delegation_map.js`
+  file returns a graph in `delegation.graph()`'s shape, so `delegation_map.ts`
   draws it, the party table is `delegationNodeRow()` and the line table is
   `userEdgeRow()` — the one written for `/admin/delegation/user`, which already
   knows the two relations an ISSUANCE uses. **This route draws nothing of its
@@ -2919,14 +2919,14 @@ interesting one:
 
 **What IS shared is the arithmetic and the palette**, and that is the half that
 matters for the console looking assembled rather than designed:
-`delegation_map.js` now exports `textWidth`, `wrapLabel` and `MAX_LABEL_CHARS`
+`delegation_map.ts` now exports `textWidth`, `wrapLabel` and `MAX_LABEL_CHARS`
 beside `COLOURS`, `hexPath` and `personGlyph`. Two estimates of how wide
 `HTTP/frontend.example.com` is would be two pictures whose boxes are different
 sizes for one string, and `wrapLabel` in particular would be got wrong a second
 time — it is not a word-wrap, it breaks after the characters an IDENTIFIER is
 built out of, because there are no spaces in a service principal name.
 
-**The name is `federation_diagram.js` and not `federation_map.ts` on purpose**:
+**The name is `federation_diagram.ts` and not `federation_map.ts` on purpose**:
 `../federation/federation_map.ts` already exists and maps a partner's ATTRIBUTE
 NAMES onto directory attributes. Two files with one name doing unrelated things
 is a bug waiting for somebody to open the wrong one.
@@ -2942,7 +2942,7 @@ is a bug waiting for somebody to open the wrong one.
   outline means foreign: two independent properties rather than four shapes to
   memorise.
 * **THE LABELS ARE GIVEN TO DAGRE RATHER THAN PLACED AFTERWARDS**, which is why
-  this file has none of the lane-and-row assignment `delegation_map.js` needs.
+  this file has none of the lane-and-row assignment `delegation_map.ts` needs.
   That file took the coordinate pass away from dagre, so dagre no longer knows
   where anything is and cannot reserve room; this one keeps dagre's
   coordinates, so it says how big each label is and dagre routes around it.
@@ -2984,7 +2984,7 @@ is a code that buys an ID Token that establishes a session of the console's
 own, in a cookie of its own (`sts_admin`). `common/oidc_rp.ts` runs the
 flow and argues it; four things about it are this file's.
 
-* **THE ROLES DID NOT MOVE.** `gateStateFor()` still asks `admin_rbac.js`
+* **THE ROLES DID NOT MOVE.** `gateStateFor()` still asks `admin_rbac.ts`
   about the two directory groups, and the whole of 8a is untouched. What
   changed is where the NAME comes from: an ID Token this service issued and
   verified, rather than a session object read out of another module's store.
@@ -3307,7 +3307,7 @@ well on a console that has lost its nav everywhere.
 ## 8a. THE ROLES ARE DIRECTORY GROUPS, AND THAT IS THE DECISION MOST LIKELY TO BE UNDONE
 
 `cn=admin-read` and `cn=admin-write` under `ou=groups`, both renameable. NOT a
-store of `admin_rbac.js`'s own, and the reason is the one-store rule this service
+store of `admin_rbac.ts`'s own, and the reason is the one-store rule this service
 follows everywhere it has been tempted otherwise: a second membership store would
 be a second answer to "is alice an admin" that an `ldapmodify`, a SCIM PATCH and
 `/admin/groups` could not see, drifting silently because nothing compares two
@@ -3316,7 +3316,7 @@ membership** — `/admin/rbac`, `POST /admin-api/rbac/…`, an `ldapmodify` on 3
 636, and a SCIM PATCH — which is the point rather than a leak: a role no test can
 grant is a role no test can exercise.
 
-`ldap_server.js` fills `admin_rbac.js`'s `setDirectory()` slot at its own require
+`ldap_server.js` fills `admin_rbac.ts`'s `setDirectory()` slot at its own require
 time, for the route-order reason the five slots below have (rule 3e). **That slot
 takes ONE OBJECT where the five here take separate functions**, and the concern
 stated there — a filler installing half of it would silently disable the other
@@ -3417,7 +3417,7 @@ A realm authority reading ANOTHER realm is `outsideRealm`: every role is zeroed
 and the gate answers 403 `outside_realm` (`STS-ADMIN-0786`) with a link to their
 own realm's console, before the role check, so the page says the true reason.
 
-### `admin_scope.js` IS THE ONE PLACE THE LINE IS DRAWN
+### `admin_scope.ts` IS THE ONE PLACE THE LINE IS DRAWN
 
 For the console AND `/admin-api`, so rule 7 cannot come apart here. Three
 tables, each refused only to a realm authority (`refusalFor()`):
@@ -3602,7 +3602,7 @@ would cost an afternoon:
   administrator; if there is ever to be one, it is a per-realm container in the
   directory rather than a second store here* — and that is what was built: each
   realm's own `cn=admin-read` and `cn=admin-write`, no second store, confined to
-  the realm by `admin_scope.js`. `/admin/rbac` under a realm prefix is that
+  the realm by `admin_scope.ts`. `/admin/rbac` under a realm prefix is that
   realm's roster. 8d argues it.
 * **THE CONSOLE'S SESSION IS STILL THE DEFAULT REALM'S, AND WHICH ROSTER IT IS
   ASKED IS THE REALM IT WAS SIGNED IN THROUGH (8d).** The paragraph below
@@ -3831,7 +3831,7 @@ cross-linked in both directions instead, and each says in its first paragraph
 what the other one is.
 
 **IT COSTS ONE NEW RELATION AND NOTHING ELSE.** The graph arrives in
-`delegation.graph()`'s shape, so `delegation_map.js` draws it with the same
+`delegation.graph()`'s shape, so `delegation_map.ts` draws it with the same
 `delegationLooks()` resolver, the same shapes and the same palette. What it draws
 differently comes off `may-reach` in `edgeLook()`, `edgeLabelLines()` and
 `edgeTitle()` — the third relation a caller has added after `user_graph.js`'s
@@ -4926,9 +4926,9 @@ the catalogue it publishes is what a script builds a create from.
 
 ## The API explorer is a page of this console now (2026-09-09)
 
-`/admin/api-explorer`, built by **`admin-ui/api_explorer.js`** at 19a. It is the
+`/admin/api-explorer`, built by **`admin-ui/api_explorer.ts`** at 19a. It is the
 third page in this console that this file does not draw — `sts_metadata.js` and
-`crypto_metadata.js` are the others — and it is the first with a **script** on
+`crypto_metadata.ts` are the others — and it is the first with a **script** on
 it.
 
 **IT MOVED RATHER THAN BEING WRITTEN.** It was `GET /admin-api/docs`, hanging
@@ -5007,7 +5007,7 @@ realm out of two. `app.js` rewrites every root-relative `href`, `action` and
   carries the prefix explicitly.
 
 That is the same split the page had at `/admin-api/docs` and it is restated in
-`api_explorer.js` beside the code, because neither half is guessable from the
+`api_explorer.ts` beside the code, because neither half is guessable from the
 other.
 
 ### What did not move
@@ -5450,11 +5450,11 @@ the other two, and every next link reloaded page 1
   port, so the people drawn here are exactly the ones this realm's KDC asks about.
   **A realm whose Kerberos is OFF says so** rather than showing two empty tables
   that read as a service holding nothing, and the page left
-  `admin_scope.js`'s SERVICE_PAGES the same day: a realm administrator manages
+  `admin_scope.ts`'s SERVICE_PAGES the same day: a realm administrator manages
   their own realm's principals and keytabs. What stayed service-only is per
   SETTING — the two sockets and the development-mode trust.
 
-`encryption_admin.js`'s `DATA_CLASSES` gained a `kerberos-keys` row, because the
+`encryption_admin.ts`'s `DATA_CLASSES` gained a `kerberos-keys` row, because the
 two key attributes are sealed under that label and the encryption report refuses
 a label with no row.
 
@@ -5478,7 +5478,7 @@ console's.
 * **THREE KEY-PAIR CONTROLS PER PROFILE AND ONE NEW ACTION.** Issue and Take off
   post to `/admin/pki`'s existing `issue` and `revoke`; Upload posts the new
   `upload-certificate` beside them. All three carry `from=/admin/applications`,
-  and `pki_admin.js`'s `pkiReturnTo()` sends the reader back through the new
+  and `pki_admin.ts`'s `pkiReturnTo()` sends the reader back through the new
   export `admin.applicationReturnTo()` — which rebuilds the destination from
   the identifier and the `back` list state rather than echoing a URL, for
   `permissionsReturnTo()`'s reason. **Moving a form is not moving an action**,
@@ -5507,8 +5507,8 @@ console's.
   deliberately carries NO secret and NO private key — both are already in that
   reply's `fields`, and a second copy is one more place to pick them up. The
   attribute names per profile come from `applications.KEY_PAIR_ATTRIBUTES`,
-  which `pki_admin.js`'s `PURPOSE_WRITES` reads too, because the view layer
-  cannot require `pki_admin.js` (it would close a cycle through this file).
+  which `pki_admin.ts`'s `PURPOSE_WRITES` reads too, because the view layer
+  cannot require `pki_admin.ts` (it would close a cycle through this file).
 * **IT SITS ABOVE THE RAW ENTRY TABLE**, which still prints every attribute,
   private keys and secrets included, as it always has.
 * **`POST /admin/pki` NOW MAPS A SUCCESS'S `why` TO `message`.** Every PKI
@@ -5527,7 +5527,7 @@ while `adminApi.clientSecret` pins it).
 Every certificate row on both pages carries a **View details** link, and it
 opens a dialog over the page — in the same tab, with an **X** at the top and a
 **Close** button at the foot — holding the certificate's every X.509 field and
-its trust chain. `certificate_dialog.js` is the ONE renderer both pages call;
+its trust chain. `certificate_dialog.ts` is the ONE renderer both pages call;
 `admin-core/certificate_views.ts` decides which certificates may be opened and
 `common/certificate_details.ts` is the model.
 
@@ -5577,7 +5577,7 @@ the workbench store, and the application and person key-pair tables; on
 `/admin/keys` it is in each key's Type cell and heading; and the certificate
 details dialog shows it beside the key.
 
-**WHETHER is `common/pqc_support.ts` and HOW IT LOOKS is `pqc_badge.js`**, and
+**WHETHER is `common/pqc_support.ts` and HOW IT LOOKS is `pqc_badge.ts`**, and
 nothing else decides or draws either — a page that classified for itself would
 classify with whichever of four spellings it happened to hold. Each page draws
 `pqcBadge.legend()` once, and the legend draws its samples WITH the renderer so
