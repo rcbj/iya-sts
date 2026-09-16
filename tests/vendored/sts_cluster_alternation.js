@@ -53,7 +53,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason wait_for.js (beside this file) gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -127,7 +127,9 @@ async function viaFetch() {
 
 // `https.request` and NOT `https.get`: node's `get` calls the module's own
 // `request` function directly, so a client patched on `module.exports` — which
-// is what both preloads do — is only exercised through `request`.
+// is what tools/attach-admin-token.js does (tools/fresh-connections.js swaps
+// the global agents instead, which both reach) — is only exercised through
+// `request`.
 function viaRequest() {
   log.debug("Entering viaRequest().");
   const target = new URL(api + "/cluster");
