@@ -83,9 +83,12 @@ const ROOT = path.join(__dirname, '..');
 //   debugger/embedded              the debugger project's BUILD OUTPUT, its
 //                                  node_modules included; gitignored, and its
 //                                  codes are that project's business
+//   .claude                        Claude Code's state, including agent
+//                                  WORKTREES — whole second checkouts
 // ---------------------------------------------------------------------------
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
-                   'openbao', 'env', '.git', 'coverage', 'protos'];
+                   'openbao', 'env', '.git', 'coverage', 'protos',
+                   '.claude'];
 
 const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
                     'debugger/embedded'];

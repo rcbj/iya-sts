@@ -66,7 +66,7 @@ const ROOT = path.join(__dirname, '..');
 // edit or that is not the service.
 // ---------------------------------------------------------------------------
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
-                   'vendored', 'coverage'];
+                   'vendored', 'coverage', '.claude'];
 const SKIP_FILES = ['common/crypto.js'];
 
 const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;

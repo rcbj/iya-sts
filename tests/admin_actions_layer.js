@@ -426,8 +426,8 @@ function checkNothingRequiresItEarly(t) {
       .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs', 'tests'].indexOf(
-            entry.name) >= 0) { return; }
+        if (['node_modules', '.git', 'node-ldapjs', 'tests',
+             '.claude'].indexOf(entry.name) >= 0) { return; }
         walk(rel);
         return;
       }
@@ -592,7 +592,7 @@ function checkNobodyReachesThroughTheConsole(t) {
       .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs'].indexOf(
+        if (['node_modules', '.git', 'node-ldapjs', '.claude'].indexOf(
             entry.name) >= 0) { return; }
         walk(rel);
         return;
