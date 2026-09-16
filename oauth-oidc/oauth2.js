@@ -8591,11 +8591,17 @@ async function tokenGrant(req, res) {
     //
     // After the new token set exists, not before: a failure between the two
     // would otherwise leave a client with no working refresh token and nothing
-    // to show for it. Both calls are no-ops while the mode is off, which is
+    // to show for it. Neither runs while rotation is not required, which is
     // what keeps a refresh token reusable for the whole of its life by default
     // — `oauth2.refreshTokenTtlS`, twenty-four hours unless it has been
     // changed.
-    if (bcp.enabled()) {
+    //
+    // ASKED OF `rotationRequired()`, NOT `enabled()` (fixed 2026-09-16): with
+    // `oauth2.refreshTokenRotation` on and neither mode, this was skipped, so
+    // a redeemed token still introspected as active and its replay was never
+    // detected as one (STS-OAUTH-0138) — rotation without the half rule 3ao
+    // says it is for.
+    if (bcp.rotationRequired()) {
       bcp.noteRefreshRotated(claims.jti);
       stats.revoke(claims.jti, 'RFC 9700 section 2.2.2: rotated on use');
     }
