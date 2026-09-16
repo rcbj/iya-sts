@@ -33,7 +33,7 @@
 //     RFC 7662 introspection call it inactive.
 //
 // It also checks the one thing the explorer costs: /admin/api-explorer is the
-// only page in this service with a script on it, so it is the only one served
+// only CONSOLE page with a script on it, so it is the only one there served
 // under a relaxed Content-Security-Policy. That relaxation must stay scoped —
 // the console next door must still be `script-src 'none'` — and it must stay
 // minimal, which means `'self'` and never `'unsafe-inline'`.
@@ -60,9 +60,10 @@ var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 var api = base + "/admin-api";
 
-// The name this file signs into the console AS. It is a name and not a
-// credential: the mock checks no password anywhere. It is distinctive so that
-// a row in /admin/audit or a directory entry seeded by the sign-in says which
+// The name this file signs into the console AS. `console_signin.js` creates
+// the account through /admin-api with a password it derives from the name,
+// and signs in with that password, because product mode checks one. It is
+// distinctive so that a row in /admin/audit or the directory entry says which
 // test made it.
 const CONSOLE_USER = "admin-api-test";
 
@@ -70,7 +71,7 @@ const CONSOLE_USER = "admin-api-test";
 // on the console's nav because a reader wants it there — it has been a page of
 // the console proper since 2026-08-24, and was at /sts-metadata before that —
 // but it is the whole service's index rather than one of the console's own
-// pages, and it is already asserted by tests/sts_metadata.js.
+// pages, and it is already asserted by tests/vendored/sts_metadata.js.
 const NOT_MIRRORED = ["/admin/sts-metadata"];
 
 // Properties a schema documents that a healthy reply may legitimately omit,
@@ -96,41 +97,34 @@ const CONDITIONAL = {
 };
 
 // ---------------------------------------------------------------------------
-// A browser sign-on session for the CONSOLE, which this file needs in exactly
-// two places and could not have needed before 2026-08-24.
+// A browser sign-on session for the CONSOLE, which this file needs in three
+// places and could not have needed before 2026-08-24.
 //
 // The API takes an OAuth 2.0 access token since 2026-09-09 — it was unprotected
 // before that, and mgmt-api/CLAUDE.md keeps the three reasons it was, because
 // they are the argument for `adminApi.authRequired`, the off switch. This test
-// being able to drive it is the first of the three. The CONSOLE next door takes
-// a DIFFERENT credential: its gate is unconditional, so every /admin page needs
-// a session from /authn/login and a console role, and a caller that asks for
-// `?format=json` is refused 401 `login_required` rather than redirected,
-// because a redirect to an HTML sign-in screen is not an answer a program can
-// read. That refusal is what failed theReadsAgreeWithTheConsole() below.
+// being able to drive it is the first of the three; the token this job
+// presents is attached by `tools/attach-admin-token.js`, which the runner
+// preloads. The CONSOLE next door takes a DIFFERENT credential: its gate is
+// unconditional (`mode.gatesConsole()`), so every /admin page needs a console
+// session and a console role, and a caller that asks for `?format=json` is
+// refused 401 `login_required` rather than redirected, because a redirect to
+// an HTML sign-in screen is not an answer a program can read. That refusal is
+// what failed theReadsAgreeWithTheConsole() below.
 //
 // The comparison is the point of that check — one list read through two doors —
 // so the answer is to walk through the door rather than to stop reading the
-// console. The dance is the one a browser does, in three steps:
+// console, the way a browser does.
 //
-//   1. GET a console page WITHOUT ?format=json and without following the
-//      redirect. A GET with no session is sent to the sign-in screen, and the
-//      `authn` id in that Location is what the screen is signing in FOR.
-//   2. POST that id with a username and a password to /authn/login. This
-//      service checks no password anywhere, so any pair is accepted; the reply
-//      sets the session cookie.
-//   3. Send the cookie on the console reads.
+// The role comes from the console's open window (admin-ui/admin_rbac.js):
+// while the bootstrap administrator has not yet signed in to the console — or,
+// where none was seeded, while neither role group has a member — and
+// `admin.openWhenEmpty` is on (the default), whoever signs in holds both. Once
+// the roster is enforced this user may hold nothing — so the caller checks the
+// read it makes rather than assuming, and says which of the two states it met.
 //
-// The role comes from `admin.openWhenEmpty`, which is on by default: while
-// neither role group has a member, whoever signs in holds both. If some earlier
-// job has granted a role to somebody else the roster is enforced and this user
-// holds nothing — so the caller checks the read it makes rather than assuming,
-// and says which of the two states it met.
-//
-// A gate that has been turned OFF is a legitimate state too (the setting is
-// switchable on purpose), and it is reported rather than silently treated as a
-// pass: no redirect means no session is needed, and the reads below then work
-// exactly as they did before any of this existed.
+// If no redirect comes back the helper answers `null` and the reads below go
+// out with no session; it is reported rather than silently treated as a pass.
 // ---------------------------------------------------------------------------
 // **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06**, because the
 // console became a relying party of this service's own authorization server on
@@ -353,7 +347,7 @@ async function theIndexAgreesWithTheDocument(doc) {
 // EVERY SURFACE REPORTS THE SAME BUILD.
 //
 // The version is M.N.O — a release from the repo-root VERSION file plus a build
-// number fixed when the image was built (see CLAUDE.md, *Versioning*). Six
+// number fixed when the image was built (see CLAUDE.md, *Versioning*). Several
 // surfaces draw it, and `tests/version.js` asserts in process that each of them
 // reads the same MODULE. What only a running service can be asked is whether
 // they then report the same STRING, which is the check here.
@@ -464,9 +458,9 @@ async function everyConsoleActionIsMirrored(index) {
   log.debug("Entering everyConsoleActionIsMirrored().");
   log.info("=== Parity: the console's actions ===");
   // The probe bodies matter. /claims validates its `set` BEFORE it looks at
-  // the action, so a probe with an empty body comes back naming the four claim
+  // the action, so a probe with an empty body comes back naming the five claim
   // SETS — a sentence of exactly the same shape, which this check would then
-  // have read as four actions that do not exist. Each probe therefore carries
+  // have read as five actions that do not exist. Each probe therefore carries
   // whatever that resource needs in order to reach its action switch.
   const resources = [
     { path: "/tokens", probe: {} },
@@ -498,8 +492,8 @@ async function everyConsoleActionIsMirrored(index) {
       "and the refusal must be about the ACTION rather than about something " +
       "the probe body was missing — otherwise the list parsed below is a " +
       "list of something else. Got: " + message);
-    // The sentence is 'Unknown action "x". The four are: add, remove, clear,
-    // replace.' — so the names are what follows the colon. Parsed rather than
+    // The sentence is 'Unknown action "x". The seven are: add, remove, clear,
+    // replace, …' — so the names are what follows the colon. Parsed rather than
     // listed here on purpose; a list here would be a third copy of the same
     // facts and the first one to go stale.
     const tail = message.split(":").pop() || "";
@@ -601,7 +595,7 @@ async function theSchemasMatchTheReplies(doc) {
     cases.push({ name: "ClaimEntry", schema: schemas.ClaimEntry,
                  body: populated[0].claims[0] });
   } else {
-    // Not a skip that hides: the four sets are empty on a fresh service, which
+    // Not a skip that hides: the five sets are empty on a fresh service, which
     // is the normal state, and the claim-set check below adds one and reads it
     // back. Said out loud so a reader is not left wondering which schemas were
     // covered.
@@ -1018,7 +1012,7 @@ async function theExplorerIsServedUnderAScopedPolicy(session) {
   // in a browser became the one page a browser could not open.
   //
   // **THE SESSION IS NOW LOAD-BEARING FOR THE FIRST FETCH AS WELL.** Without
-  // one this is a 303 to the sign-in screen, `fetch` follows it, and the
+  // one this is a 303 towards the sign-in screen, `fetch` follows it, and the
   // policy read back is that screen's — which is the same failure the
   // console check at the bottom of this function already carries a paragraph
   // about, now applying twice.
@@ -1095,9 +1089,9 @@ async function theExplorerIsServedUnderAScopedPolicy(session) {
   // The relaxation must be scoped. The console next door is the page that
   // would be most costly to have quietly loosened, since it renders values a
   // caller supplied.
-  // WITH the session, and that is not a detail: without one this GET is a 302
-  // to the sign-in screen, fetch follows it, and the policy read back is that
-  // screen's rather than the console's. It happens to be the same policy
+  // WITH the session, and that is not a detail: without one this GET is a 303
+  // towards the sign-in screen, fetch follows it, and the policy read back is
+  // that screen's rather than the console's. It happens to be the same policy
   // today, so the check would have gone on passing while measuring a
   // different page — which is the shape of a check that is silenced rather
   // than broken.
@@ -1574,8 +1568,8 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
 async function test() {
   log.debug("Entering test().");
   log.info("Running the management API checks against " + api);
-  // Before anything reads the console: the API needs no credential and the
-  // console now does.
+  // Before anything reads the console: the API's access token is attached by
+  // the runner's preload, and the console needs a session of its own.
   const session = await signInToTheConsole();
   const doc = await theDocumentIsServedAndWellFormed();
   const index = await theIndexAgreesWithTheDocument(doc);
@@ -1607,7 +1601,9 @@ program
   .description("Verify the mock STS management API at /admin-api: its " +
       "OpenAPI document, its parity with the /admin console, and that its " +
       "revocation is the same one /oauth2/revoke performs.")
-  // Accepted and ignored: run-report.js passes --url to every job.
+  // Accepted and ignored: the parent project's runner passes --url to every
+  // job. This repository's run-report.js passes none; the option stays so a
+  // command line written for either still parses.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

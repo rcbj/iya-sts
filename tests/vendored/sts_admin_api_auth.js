@@ -27,11 +27,15 @@
 //     the run's own token carries both scopes. What is lost is the whole point
 //     of having two.
 //   * THE DEFAULT-REALM KEY. `STS` is a proxy over the AMBIENT realm's keys,
-//     so verifying with it under `/realm/<id>/admin-api` would mean a realm's
-//     own signing key could mint that realm's admin tokens — anybody who can
-//     create a realm becoming its administrator. The job asserts the token
-//     minted at the default realm works inside a realm, which is the
-//     observable half of that decision.
+//     so verifying the SERVICE credential with it under
+//     `/realm/<id>/admin-api` would mean a realm's own signing key could mint
+//     a service administrator's token — anybody who can create a realm
+//     reaching everything. The job asserts the token minted at the default
+//     realm works inside a realm, which is the observable half of that
+//     decision. Since 2026-09-14 (#32) a realm's own key does sign a token of
+//     its own — believed under that realm's prefix only and refused every
+//     service-wide operation (mgmt-api/admin_api.js's gate) — and that half is
+//     `sts_realm_administrators.js`'s.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS DELIBERATELY NOT HERE, so that nobody reads this file as complete:
@@ -72,7 +76,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason wait_for.js (beside this file) gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -331,7 +335,7 @@ async function insideARealm() {
   log.info("=== The same token inside a trust realm ===");
   // The DEFAULT realm always exists, and `/realm/<id>` for it is not a path
   // this service serves — so the realm asked about here is one the run has
-  // already created if there is one, and the default's own prefix otherwise.
+  // already created, and without one the section says so and asserts nothing.
   // What is being asserted does not need a realm of this job's own: it needs a
   // PREFIXED path, and `GET /realms` names one that exists.
   const realms = await fetchJson(base + "/realms");
@@ -389,9 +393,10 @@ async function theRunsOwnToken() {
   // file did the second: `tokenFor()` is called for the first time three
   // sections down, so a missing secret arrived as a thrown Error in the middle
   // of the audience section and read like a failure of the thing under test.
-  // This job is the only one in the suite that mints tokens of its own, so it
-  // is the only one that needs the credential they are minted with — and the
-  // fastest way to be told is at the top.
+  // This job is the only one in the suite that mints default-realm tokens of
+  // its own with the run's pinned client secret (sts_realm_administrators.js
+  // mints a realm's, with a secret it reads itself), so it is the only one
+  // that needs that secret — and the fastest way to be told is at the top.
   check("and the secret those tokens are minted with", function () {
     assert.ok(process.env.STS_ADMIN_API_CLIENT_SECRET,
       "STS_ADMIN_API_CLIENT_SECRET is empty. This job asks the token " +
@@ -538,7 +543,7 @@ async function test() {
   // A FLOOR ON THE COUNT, for the reason sts_roles.js gives: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure mode a suite cannot report about
-  // itself. Fifteen rather than the full count because the realm section is
+  // itself. Sixteen rather than the full count because the realm section is
   // conditional on another job having created one.
   assert.ok(checks >= 16,
     "only " + checks + " checks ran. This file makes at least sixteen " +
