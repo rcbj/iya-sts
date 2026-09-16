@@ -74,11 +74,14 @@
 // vocabulary, the subject library and `step_up.js`'s level order through its
 // constructor. The register itself stays a module-level `realms.map()`,
 // declared at load as before, so it is still per realm and still persisted.
-// The module still exports its old names from a TRANSITIONAL instance for
-// `ssf/ssf.ts`, the console and the tests.
+// The module still exports its old names as FACADES forwarding to the instance
+// the composition root builds (#50, R2), for `ssf/ssf.ts`, the console and the
+// tests. A process that loads this module without the root builds a default
+// instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // The partition. A LEAF requiring `config` and the error-code registry and
 // nothing else here.
@@ -1041,37 +1044,59 @@ class CaepRegister {
               ' session(s).');
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): CaepRegisterDeps {
+    helpers.log.debug("Entering CaepRegister.defaultDeps().");
+    helpers.log.debug("Leaving CaepRegister.defaultDeps().");
+    return {
+      helpers: helpers,
+      config: config,
+      audit: audit,
+      events: events,
+      subjects: subjects,
+      stepUp: stepUp
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const caep = new CaepRegister({
-  helpers: helpers,
-  config: config,
-  audit: audit,
-  events: events,
-  subjects: subjects,
-  stepUp: stepUp
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<CaepRegister>(
+  'ssf/caep',
+  () => new CaepRegister(CaepRegister.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   CaepRegister: CaepRegister,
+  installInstance: (instance: CaepRegister): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   AUTO_ACTS: CaepRegister.AUTO_ACTS,
-  enabled: caep.enabled.bind(caep) as CaepRegister['enabled'],
-  supportedEventUris: caep.supportedEventUris.bind(caep) as
-    CaepRegister['supportedEventUris'],
-  autoEmitActs: caep.autoEmitActs.bind(caep) as CaepRegister['autoEmitActs'],
-  subjectFor: caep.subjectFor.bind(caep) as CaepRegister['subjectFor'],
-  sessionIdOf: caep.sessionIdOf.bind(caep) as CaepRegister['sessionIdOf'],
-  rowFor: caep.rowFor.bind(caep) as CaepRegister['rowFor'],
-  get: caep.get.bind(caep) as CaepRegister['get'],
-  list: caep.list.bind(caep) as CaepRegister['list'],
-  commonClaims: caep.commonClaims.bind(caep) as CaepRegister['commonClaims'],
-  buildPayload: caep.buildPayload.bind(caep) as CaepRegister['buildPayload'],
-  applyToState: caep.applyToState.bind(caep) as CaepRegister['applyToState'],
-  noteTransmitted: caep.noteTransmitted.bind(caep) as
-    CaepRegister['noteTransmitted'],
-  observe: caep.observe.bind(caep) as CaepRegister['observe'],
-  reset: caep.reset.bind(caep) as CaepRegister['reset'],
-  clear: caep.clear.bind(caep) as CaepRegister['clear'],
-  report: caep.report.bind(caep) as CaepRegister['report']
+  enabled: slot.forward('enabled'),
+  supportedEventUris: slot.forward('supportedEventUris'),
+  autoEmitActs: slot.forward('autoEmitActs'),
+  subjectFor: slot.forward('subjectFor'),
+  sessionIdOf: slot.forward('sessionIdOf'),
+  rowFor: slot.forward('rowFor'),
+  get: slot.forward('get'),
+  list: slot.forward('list'),
+  commonClaims: slot.forward('commonClaims'),
+  buildPayload: slot.forward('buildPayload'),
+  applyToState: slot.forward('applyToState'),
+  noteTransmitted: slot.forward('noteTransmitted'),
+  observe: slot.forward('observe'),
+  reset: slot.forward('reset'),
+  clear: slot.forward('clear'),
+  report: slot.forward('report')
 };

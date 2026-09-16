@@ -8,8 +8,10 @@
 // `ssf_http.ts` and the error-code registry through its constructor. The inbox
 // store and the SURFACES table stay module-level declarations (a store becomes
 // per realm where it is DECLARED), and the module still exports its old names
-// from a TRANSITIONAL instance for `admin-ui/admin.ts`, `portal/portal.ts` and
-// `ssf/ssf.ts`, which require it by those names.
+// as FACADES forwarding to the instance the composition root builds (#50, R2),
+// for `admin-ui/admin.ts`, `portal/portal.ts` and `ssf/ssf.ts`, which require
+// it by those names. A process that loads this module without the root builds
+// a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 //
@@ -109,6 +111,7 @@
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // For `deriveSharedCredential()` alone — see `receiverToken()`. A LIBRARY
 // (rule 3): it registers no route, so requiring it here moves nothing and it
 // cannot join a cycle.
@@ -1333,48 +1336,66 @@ class SsfReceivers {
     log.debug("Leaving SsfReceivers.clearFor(). " + keys.length + ' dropped.');
     return keys.length;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): SsfReceiversDeps {
+    helpers.log.debug("Entering SsfReceivers.defaultDeps().");
+    helpers.log.debug("Leaving SsfReceivers.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      log: helpers.log,
+      randomId: helpers.randomId,
+      iso: helpers.iso,
+      stsCrypto: stsCrypto,
+      clusterSecrets: clusterSecrets,
+      config: config,
+      mode: mode,
+      realms: realms,
+      audit: audit,
+      subjects: subjects,
+      events: events,
+      streams: streams,
+      transport: transport,
+      errorCodes: errorCodes
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const ssfReceivers = new SsfReceivers({
-  nodeCrypto: nodeCrypto,
-  log: helpers.log,
-  randomId: helpers.randomId,
-  iso: helpers.iso,
-  stsCrypto: stsCrypto,
-  clusterSecrets: clusterSecrets,
-  config: config,
-  mode: mode,
-  realms: realms,
-  audit: audit,
-  subjects: subjects,
-  events: events,
-  streams: streams,
-  transport: transport,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SsfReceivers>(
+  'ssf/ssf_receivers',
+  () => new SsfReceivers(SsfReceivers.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SsfReceivers: SsfReceivers,
+  installInstance: (instance: SsfReceivers): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SURFACES: SURFACES,
   ADMIN: 'admin-console',
   PORTAL: 'user-portal',
-  surfaceOf: ssfReceivers.surfaceOf.bind(ssfReceivers) as
-    SsfReceivers['surfaceOf'],
-  enabled: ssfReceivers.enabled.bind(ssfReceivers) as SsfReceivers['enabled'],
-  seedStreams: ssfReceivers.seedStreams.bind(ssfReceivers) as
-    SsfReceivers['seedStreams'],
-  streamFor: ssfReceivers.streamFor.bind(ssfReceivers) as
-    SsfReceivers['streamFor'],
-  endpointFor: ssfReceivers.endpointFor.bind(ssfReceivers) as
-    SsfReceivers['endpointFor'],
-  accept: ssfReceivers.accept.bind(ssfReceivers) as SsfReceivers['accept'],
-  listFor: ssfReceivers.listFor.bind(ssfReceivers) as SsfReceivers['listFor'],
-  isAbout: ssfReceivers.isAbout.bind(ssfReceivers) as SsfReceivers['isAbout'],
-  status: ssfReceivers.status.bind(ssfReceivers) as SsfReceivers['status'],
-  describeEntry: ssfReceivers.describeEntry.bind(ssfReceivers) as
-    SsfReceivers['describeEntry'],
-  view: ssfReceivers.view.bind(ssfReceivers) as SsfReceivers['view'],
-  clearFor: ssfReceivers.clearFor.bind(ssfReceivers) as
-    SsfReceivers['clearFor']
+  surfaceOf: slot.forward('surfaceOf'),
+  enabled: slot.forward('enabled'),
+  seedStreams: slot.forward('seedStreams'),
+  streamFor: slot.forward('streamFor'),
+  endpointFor: slot.forward('endpointFor'),
+  accept: slot.forward('accept'),
+  listFor: slot.forward('listFor'),
+  isAbout: slot.forward('isAbout'),
+  status: slot.forward('status'),
+  describeEntry: slot.forward('describeEntry'),
+  view: slot.forward('view'),
+  clearFor: slot.forward('clearFor')
 };

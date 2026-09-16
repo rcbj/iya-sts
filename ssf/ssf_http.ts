@@ -85,12 +85,14 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SsfHttp` takes the logger, `config`, `realms`, the four address
-// readers of `helpers.js`, the User-Agent and a LOADER for
-// `tls/tls_server.js` (a loader, for the lazy require `pushSet()` argues)
-// through its constructor. Node's own `http`/`https`/`url` are libraries and
-// are used directly. The push cap's two counters stay module state, as they
-// were. The module still exports its old names from a TRANSITIONAL instance
-// for `ssf.ts`, `ssf_receivers.ts`, `ssf_dead_letter_report.ts` and the tests.
+// readers of `helpers.js`, the User-Agent and a LOADER for `tls/tls_server.js`
+// (a loader, for the lazy require `pushSet()` argues) through its constructor.
+// Node's own `http`/`https`/`url` are libraries and are used directly. The
+// push cap's two counters stay module state, as they were. The module still
+// exports its old names as FACADES forwarding to the instance the composition
+// root builds (#50, R2), for `ssf.ts`, `ssf_receivers.ts`,
+// `ssf_dead_letter_report.ts` and the tests. A process that loads this module
+// without the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import https = require('https');
@@ -98,6 +100,7 @@ import http = require('http');
 import nodeUrl = require('url');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // For the realm prefix on `ownBaseUrl()`. A leaf with respect to this
 // directory: it requires nothing here.
 import realms = require('../common/realms');
@@ -888,48 +891,63 @@ class SsfHttp {
               ' retr(ies) allowed.');
     return attempt(0);
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): SsfHttpDeps {
+    helpers.log.debug("Entering SsfHttp.defaultDeps().");
+    helpers.log.debug("Leaving SsfHttp.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      realms: realms,
+      PORT: helpers.PORT,
+      loopbackHost: helpers.loopbackHost,
+      hostForUrl: helpers.hostForUrl,
+      pinnedBaseUrl: helpers.pinnedBaseUrl,
+      baseUrlOf: helpers.baseUrlOf,
+      userAgent: USER_AGENT,
+      loadTlsServer: function () {
+        return require('../tls/tls_server');
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const transport = new SsfHttp({
-  log: helpers.log,
-  config: config,
-  realms: realms,
-  PORT: helpers.PORT,
-  loopbackHost: helpers.loopbackHost,
-  hostForUrl: helpers.hostForUrl,
-  pinnedBaseUrl: helpers.pinnedBaseUrl,
-  baseUrlOf: helpers.baseUrlOf,
-  userAgent: USER_AGENT,
-  loadTlsServer: function () {
-    return require('../tls/tls_server');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SsfHttp>(
+  'ssf/ssf_http',
+  () => new SsfHttp(SsfHttp.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SsfHttp: SsfHttp,
-  pushSetWithRetries: transport.pushSetWithRetries.bind(transport) as
-    SsfHttp['pushSetWithRetries'],
-  pushSetGated: transport.pushSetGated.bind(transport) as
-    SsfHttp['pushSetGated'],
-  pushGateState: transport.pushGateState.bind(transport) as
-    SsfHttp['pushGateState'],
-  loopbackOrigin: transport.loopbackOrigin.bind(transport) as
-    SsfHttp['loopbackOrigin'],
-  ownBaseUrl: transport.ownBaseUrl.bind(transport) as SsfHttp['ownBaseUrl'],
-  transmitterIssuer: transport.transmitterIssuer.bind(transport) as
-    SsfHttp['transmitterIssuer'],
-  maxBodyBytes: transport.maxBodyBytes.bind(transport) as
-    SsfHttp['maxBodyBytes'],
-  isOwnLoopback: transport.isOwnLoopback.bind(transport) as
-    SsfHttp['isOwnLoopback'],
+  installInstance: (instance: SsfHttp): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  pushSetWithRetries: slot.forward('pushSetWithRetries'),
+  pushSetGated: slot.forward('pushSetGated'),
+  pushGateState: slot.forward('pushGateState'),
+  loopbackOrigin: slot.forward('loopbackOrigin'),
+  ownBaseUrl: slot.forward('ownBaseUrl'),
+  transmitterIssuer: slot.forward('transmitterIssuer'),
+  maxBodyBytes: slot.forward('maxBodyBytes'),
+  isOwnLoopback: slot.forward('isOwnLoopback'),
   MAX_BODY_BYTES: SsfHttp.MAX_BODY_BYTES,
   SET_MEDIA_TYPE: SsfHttp.SET_MEDIA_TYPE,
-  pushAllowed: transport.pushAllowed.bind(transport) as SsfHttp['pushAllowed'],
-  allowInsecure: transport.allowInsecure.bind(transport) as
-    SsfHttp['allowInsecure'],
-  allowedHosts: transport.allowedHosts.bind(transport) as
-    SsfHttp['allowedHosts'],
-  urlProblem: transport.urlProblem.bind(transport) as SsfHttp['urlProblem'],
-  pushSet: transport.pushSet.bind(transport) as SsfHttp['pushSet']
+  pushAllowed: slot.forward('pushAllowed'),
+  allowInsecure: slot.forward('allowInsecure'),
+  allowedHosts: slot.forward('allowedHosts'),
+  urlProblem: slot.forward('urlProblem'),
+  pushSet: slot.forward('pushSet')
 };

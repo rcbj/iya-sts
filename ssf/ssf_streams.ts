@@ -7,8 +7,10 @@
 // LOADERS — for `applications.js` and `persistence.js`, which the functions
 // below require lazily and still do — through its constructor. The stores stay
 // module-level declarations (a store becomes per realm where it is DECLARED),
-// and the module still exports its old names from a TRANSITIONAL instance for
-// the unconverted modules that require it.
+// and the module still exports its old names as FACADES forwarding to the
+// instance the composition root builds (#50, R2), for the unconverted modules
+// that require it. A process that loads this module without the root builds a
+// default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 //
@@ -71,6 +73,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
@@ -1853,96 +1856,92 @@ class SsfStreams {
     log.debug("Leaving SsfStreams.streamConfiguration().");
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): SsfStreamsDeps {
+    helpers.log.debug("Entering SsfStreams.defaultDeps().");
+    helpers.log.debug("Leaving SsfStreams.defaultDeps().");
+    return {
+      log: helpers.log,
+      randomId: helpers.randomId,
+      iso: helpers.iso,
+      config: config,
+      errorCodes: errorCodes,
+      realms: realms,
+      subjects: subjects,
+      events: events,
+      loadApplications: function (): ApplicationsReader {
+        return require('../common/applications');
+      },
+      loadPersistence: function (): PersistenceReader {
+        return require('../persistence/persistence');
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const ssfStreams = new SsfStreams({
-  log: helpers.log,
-  randomId: helpers.randomId,
-  iso: helpers.iso,
-  config: config,
-  errorCodes: errorCodes,
-  realms: realms,
-  subjects: subjects,
-  events: events,
-  loadApplications: function (): ApplicationsReader {
-    return require('../common/applications');
-  },
-  loadPersistence: function (): PersistenceReader {
-    return require('../persistence/persistence');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SsfStreams>(
+  'ssf/ssf_streams',
+  () => new SsfStreams(SsfStreams.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SsfStreams: SsfStreams,
-  setSubjectScope: ssfStreams.setSubjectScope.bind(ssfStreams) as
-    SsfStreams['setSubjectScope'],
+  installInstance: (instance: SsfStreams): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  setSubjectScope: slot.forward('setSubjectScope'),
   DELIVERY_PUSH: DELIVERY_PUSH,
   DELIVERY_POLL: DELIVERY_POLL,
   DELIVERY_METHODS: DELIVERY_METHODS,
-  offeredDeliveryMethods: ssfStreams.offeredDeliveryMethods.bind(ssfStreams) as
-    SsfStreams['offeredDeliveryMethods'],
-  deliveryName: ssfStreams.deliveryName.bind(ssfStreams) as
-    SsfStreams['deliveryName'],
-  createStream: ssfStreams.createStream.bind(ssfStreams) as
-    SsfStreams['createStream'],
-  getStream: ssfStreams.getStream.bind(ssfStreams) as SsfStreams['getStream'],
-  listStreams: ssfStreams.listStreams.bind(ssfStreams) as
-    SsfStreams['listStreams'],
-  updateStream: ssfStreams.updateStream.bind(ssfStreams) as
-    SsfStreams['updateStream'],
-  removeStream: ssfStreams.removeStream.bind(ssfStreams) as
-    SsfStreams['removeStream'],
-  setStatus: ssfStreams.setStatus.bind(ssfStreams) as SsfStreams['setStatus'],
-  addSubject: ssfStreams.addSubject.bind(ssfStreams) as
-    SsfStreams['addSubject'],
-  removeSubject: ssfStreams.removeSubject.bind(ssfStreams) as
-    SsfStreams['removeSubject'],
-  streamCoversSubject: ssfStreams.streamCoversSubject.bind(ssfStreams) as
-    SsfStreams['streamCoversSubject'],
-  allowedEventsFor: ssfStreams.allowedEventsFor.bind(ssfStreams) as
-    SsfStreams['allowedEventsFor'],
-  deliversEvent: ssfStreams.deliversEvent.bind(ssfStreams) as
-    SsfStreams['deliversEvent'],
-  effectiveDelivered: ssfStreams.effectiveDelivered.bind(ssfStreams) as
-    SsfStreams['effectiveDelivered'],
-  enqueue: ssfStreams.enqueue.bind(ssfStreams) as SsfStreams['enqueue'],
-  queueOf: ssfStreams.queueOf.bind(ssfStreams) as SsfStreams['queueOf'],
-  dequeue: ssfStreams.dequeue.bind(ssfStreams) as SsfStreams['dequeue'],
-  deadLettersOf: ssfStreams.deadLettersOf.bind(ssfStreams) as
-    SsfStreams['deadLettersOf'],
-  allDeadLetters: ssfStreams.allDeadLetters.bind(ssfStreams) as
-    SsfStreams['allDeadLetters'],
-  deadTimeoutMs: ssfStreams.deadTimeoutMs.bind(ssfStreams) as
-    SsfStreams['deadTimeoutMs'],
-  addDeadLetter: ssfStreams.addDeadLetter.bind(ssfStreams) as
-    SsfStreams['addDeadLetter'],
-  removeDeadLetter: ssfStreams.removeDeadLetter.bind(ssfStreams) as
-    SsfStreams['removeDeadLetter'],
-  clearDeadLettersFor: ssfStreams.clearDeadLettersFor.bind(ssfStreams) as
-    SsfStreams['clearDeadLettersFor'],
-  sweepDeadLetters: ssfStreams.sweepDeadLetters.bind(ssfStreams) as
-    SsfStreams['sweepDeadLetters'],
-  isDead: ssfStreams.isDead.bind(ssfStreams) as SsfStreams['isDead'],
-  notePushFailure: ssfStreams.notePushFailure.bind(ssfStreams) as
-    SsfStreams['notePushFailure'],
-  notePushSuccess: ssfStreams.notePushSuccess.bind(ssfStreams) as
-    SsfStreams['notePushSuccess'],
-  revive: ssfStreams.revive.bind(ssfStreams) as SsfStreams['revive'],
-  halfOpen: ssfStreams.halfOpen.bind(ssfStreams) as SsfStreams['halfOpen'],
-  touch: ssfStreams.touch.bind(ssfStreams) as SsfStreams['touch'],
-  liveRecord: ssfStreams.liveRecord.bind(ssfStreams) as
-    SsfStreams['liveRecord'],
-  countEvent: ssfStreams.countEvent.bind(ssfStreams) as
-    SsfStreams['countEvent'],
-  poll: ssfStreams.poll.bind(ssfStreams) as SsfStreams['poll'],
-  note: ssfStreams.note.bind(ssfStreams) as SsfStreams['note'],
-  recordReceived: ssfStreams.recordReceived.bind(ssfStreams) as
-    SsfStreams['recordReceived'],
-  listReceived: ssfStreams.listReceived.bind(ssfStreams) as
-    SsfStreams['listReceived'],
-  clearReceived: ssfStreams.clearReceived.bind(ssfStreams) as
-    SsfStreams['clearReceived'],
-  streamConfiguration: ssfStreams.streamConfiguration.bind(ssfStreams) as
-    SsfStreams['streamConfiguration']
+  offeredDeliveryMethods: slot.forward('offeredDeliveryMethods'),
+  deliveryName: slot.forward('deliveryName'),
+  createStream: slot.forward('createStream'),
+  getStream: slot.forward('getStream'),
+  listStreams: slot.forward('listStreams'),
+  updateStream: slot.forward('updateStream'),
+  removeStream: slot.forward('removeStream'),
+  setStatus: slot.forward('setStatus'),
+  addSubject: slot.forward('addSubject'),
+  removeSubject: slot.forward('removeSubject'),
+  streamCoversSubject: slot.forward('streamCoversSubject'),
+  allowedEventsFor: slot.forward('allowedEventsFor'),
+  deliversEvent: slot.forward('deliversEvent'),
+  effectiveDelivered: slot.forward('effectiveDelivered'),
+  enqueue: slot.forward('enqueue'),
+  queueOf: slot.forward('queueOf'),
+  dequeue: slot.forward('dequeue'),
+  deadLettersOf: slot.forward('deadLettersOf'),
+  allDeadLetters: slot.forward('allDeadLetters'),
+  deadTimeoutMs: slot.forward('deadTimeoutMs'),
+  addDeadLetter: slot.forward('addDeadLetter'),
+  removeDeadLetter: slot.forward('removeDeadLetter'),
+  clearDeadLettersFor: slot.forward('clearDeadLettersFor'),
+  sweepDeadLetters: slot.forward('sweepDeadLetters'),
+  isDead: slot.forward('isDead'),
+  notePushFailure: slot.forward('notePushFailure'),
+  notePushSuccess: slot.forward('notePushSuccess'),
+  revive: slot.forward('revive'),
+  halfOpen: slot.forward('halfOpen'),
+  touch: slot.forward('touch'),
+  liveRecord: slot.forward('liveRecord'),
+  countEvent: slot.forward('countEvent'),
+  poll: slot.forward('poll'),
+  note: slot.forward('note'),
+  recordReceived: slot.forward('recordReceived'),
+  listReceived: slot.forward('listReceived'),
+  clearReceived: slot.forward('clearReceived'),
+  streamConfiguration: slot.forward('streamConfiguration')
 };

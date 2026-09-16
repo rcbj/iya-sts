@@ -52,14 +52,17 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `DeadLetterReport` takes the logger, `config`, the error-code table,
-// `realms`, the SET describer, the stream store and the push transport
-// through its constructor. The sweep notes stay a module-level
-// `realms.keyed()` store, declared at load as before. The module still
-// exports its old names from a TRANSITIONAL instance for `ssf/ssf.ts`,
-// `admin-core/admin_views.ts` and the tests.
+// `realms`, the SET describer, the stream store and the push transport through
+// its constructor. The sweep notes stay a module-level `realms.keyed()` store,
+// declared at load as before. The module still exports its old names as
+// FACADES forwarding to the instance the composition root builds (#50, R2),
+// for `ssf/ssf.ts`, `admin-core/admin_views.ts` and the tests. A process that
+// loads this module without the root builds a default instance when the module
+// loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
@@ -607,30 +610,49 @@ class DeadLetterReport {
               ' letter(s), ' + streamRows.length + ' stream row(s).');
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): DeadLetterReportDeps {
+    helpers.log.debug("Entering DeadLetterReport.defaultDeps().");
+    helpers.log.debug("Leaving DeadLetterReport.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      errorCodes: errorCodes,
+      realms: realms,
+      events: events,
+      streams: streams,
+      transport: transport
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const deadLetterReport = new DeadLetterReport({
-  log: helpers.log,
-  config: config,
-  errorCodes: errorCodes,
-  realms: realms,
-  events: events,
-  streams: streams,
-  transport: transport
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DeadLetterReport>(
+  'ssf/ssf_dead_letter_report',
+  () => new DeadLetterReport(DeadLetterReport.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   DeadLetterReport: DeadLetterReport,
+  installInstance: (instance: DeadLetterReport): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   CAUSES: DeadLetterReport.CAUSES,
-  causeOf: deadLetterReport.causeOf.bind(deadLetterReport) as
-    DeadLetterReport['causeOf'],
-  bucketSecondsFor: deadLetterReport.bucketSecondsFor.bind(deadLetterReport) as
-    DeadLetterReport['bucketSecondsFor'],
-  deliveryStateOf: deadLetterReport.deliveryStateOf.bind(deadLetterReport) as
-    DeadLetterReport['deliveryStateOf'],
-  noteSweep: deadLetterReport.noteSweep.bind(deadLetterReport) as
-    DeadLetterReport['noteSweep'],
-  report: deadLetterReport.report.bind(deadLetterReport) as
-    DeadLetterReport['report']
+  causeOf: slot.forward('causeOf'),
+  bucketSecondsFor: slot.forward('bucketSecondsFor'),
+  deliveryStateOf: slot.forward('deliveryStateOf'),
+  noteSweep: slot.forward('noteSweep'),
+  report: slot.forward('report')
 };
