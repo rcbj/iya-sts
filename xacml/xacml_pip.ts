@@ -61,12 +61,14 @@
 // (`setDirectory()`) is a method of it and is still exported under its old
 // name, as are `resolverFor`, `locateSubject`, `rawAttribute`,
 // `directoryAttributeFor`, `subjectOf`, `available` and `ATTRIBUTE_PREFIX` —
-// bound to a TRANSITIONAL instance built at the bottom, for
-// `ldap/ldap_server.js` and the other callers that are not converted. It goes
-// when the composition root exists; `XacmlPip` is exported beside it.
+// as FACADES forwarding to the instance the composition root builds and
+// installs (#50's R2), for `ldap/ldap_server.js` and the other callers that
+// are not converted. A process without the root builds a default when this
+// module loads. `XacmlPip` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The error-code registry (a leaf), for the one data failure below whose only
 // record is a log line. Not a module the remote PEP container copies.
 import errorCodes = require('../common/error_codes');
@@ -120,6 +122,18 @@ class XacmlPip {
   constructor(private readonly deps: XacmlPipDeps) {
     deps.log.debug("Entering XacmlPip.constructor().");
     deps.log.debug("Leaving XacmlPip.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlPipDeps {
+    helpers.log.debug("Entering XacmlPip.defaultDeps().");
+    helpers.log.debug("Leaving XacmlPip.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      model: model,
+      datatypes: datatypes
+    };
   }
 
   setDirectory(fns: PipDirectory | null | undefined): void {
@@ -365,24 +379,34 @@ class XacmlPip {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const pip = new XacmlPip({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  model: model,
-  datatypes: datatypes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlPip>(
+  'xacml/xacml_pip',
+  () => new XacmlPip(XacmlPip.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   XacmlPip: XacmlPip,
-  setDirectory: pip.setDirectory.bind(pip) as XacmlPip['setDirectory'],
-  resolverFor: pip.resolverFor.bind(pip) as XacmlPip['resolverFor'],
-  locateSubject: pip.locateSubject.bind(pip) as XacmlPip['locateSubject'],
-  rawAttribute: pip.attributeOf.bind(pip) as XacmlPip['attributeOf'],
-  directoryAttributeFor: pip.directoryAttributeFor.bind(pip) as
-    XacmlPip['directoryAttributeFor'],
-  subjectOf: pip.subjectOf.bind(pip) as XacmlPip['subjectOf'],
-  available: pip.available.bind(pip) as XacmlPip['available'],
+  installInstance: (instance: XacmlPip): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  setDirectory: slot.forward('setDirectory'),
+  resolverFor: slot.forward('resolverFor'),
+  locateSubject: slot.forward('locateSubject'),
+  rawAttribute: slot.forward('attributeOf'),
+  directoryAttributeFor: slot.forward('directoryAttributeFor'),
+  subjectOf: slot.forward('subjectOf'),
+  available: slot.forward('available'),
   ATTRIBUTE_PREFIX: XacmlPip.ATTRIBUTE_PREFIX
 };

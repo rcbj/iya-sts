@@ -91,14 +91,17 @@
 // realm registry, the policy repository and the hash function through its
 // constructor. The directory functions still arrive through the
 // `setDirectory()` slot `ldap/ldap_server.js` fills at require time, and are
-// held by the instance. The module still exports `SCHEMA` and every old
-// function from a TRANSITIONAL instance for `xacml/xacml.ts`, the console,
-// the management API, `ldap_server.js` and the tests, which are not all
-// converted; `PepRegistry` is exported beside them for the composition root.
+// held by the instance. Since #50's R2 the composition root builds that
+// instance and installs it here. The module still exports `SCHEMA`, and
+// every old function as a FACADE forwarding to the instance, for
+// `xacml/xacml.ts`, the console, the management API, `ldap_server.js` and the
+// tests, which are not all converted; a process without the root builds a
+// default when this module loads. `PepRegistry` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // The error-code registry (a leaf). A refusal's code is marked on the RESULT
 // as a non-enumerable property, which `xacml.ts` reads back onto its
@@ -295,6 +298,22 @@ class PepRegistry {
   constructor(private readonly deps: PepRegistryDeps) {
     deps.log.debug("Entering PepRegistry.constructor().");
     deps.log.debug("Leaving PepRegistry.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): PepRegistryDeps {
+    helpers.log.debug("Entering PepRegistry.defaultDeps().");
+    helpers.log.debug("Leaving PepRegistry.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      errorCodes: errorCodes,
+      realms: realms,
+      store: store as unknown as PolicyRepository,
+      sha256Base64: function (text) {
+        return crypto.createHash('sha256').update(text).digest('base64');
+      }
+    };
   }
 
   setDirectory(fns?: PepDirectory | null): void {
@@ -876,42 +895,44 @@ class PepRegistry {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const registry = new PepRegistry({
-  log: helpers.log,
-  config: config,
-  errorCodes: errorCodes,
-  realms: realms,
-  store: store as unknown as PolicyRepository,
-  sha256Base64: function (text) {
-    return crypto.createHash('sha256').update(text).digest('base64');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PepRegistry>(
+  'xacml/xacml_pep_registry',
+  () => new PepRegistry(PepRegistry.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PepRegistry: PepRegistry,
+  installInstance: (instance: PepRegistry): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SCHEMA: PepRegistry.SCHEMA,
-  setDirectory: registry.setDirectory.bind(registry) as
-    PepRegistry['setDirectory'],
-  directoryInstalled: registry.directoryInstalled.bind(registry) as
-    PepRegistry['directoryInstalled'],
-  certificateIdentity: registry.certificateIdentity.bind(registry) as
-    PepRegistry['certificateIdentity'],
-  syncToken: registry.syncToken.bind(registry) as PepRegistry['syncToken'],
-  staleAfterS: registry.staleAfterS.bind(registry) as
-    PepRegistry['staleAfterS'],
-  nameFrom: registry.nameFrom.bind(registry) as PepRegistry['nameFrom'],
-  all: registry.all.bind(registry) as PepRegistry['all'],
+  setDirectory: slot.forward('setDirectory'),
+  directoryInstalled: slot.forward('directoryInstalled'),
+  certificateIdentity: slot.forward('certificateIdentity'),
+  syncToken: slot.forward('syncToken'),
+  staleAfterS: slot.forward('staleAfterS'),
+  nameFrom: slot.forward('nameFrom'),
+  all: slot.forward('all'),
   // Which OTHER realms hold a registration. See its header: an empty list in
   // one realm is two different facts and this is what tells them apart.
-  elsewhere: registry.elsewhere.bind(registry) as PepRegistry['elsewhere'],
-  read: registry.read.bind(registry) as PepRegistry['read'],
-  register: registry.register.bind(registry) as PepRegistry['register'],
-  heartbeat: registry.heartbeat.bind(registry) as PepRegistry['heartbeat'],
-  recordNotify: registry.recordNotify.bind(registry) as
-    PepRegistry['recordNotify'],
-  setEnabled: registry.setEnabled.bind(registry) as PepRegistry['setEnabled'],
-  remove: registry.remove.bind(registry) as PepRegistry['remove'],
-  notifiable: registry.notifiable.bind(registry) as PepRegistry['notifiable']
+  elsewhere: slot.forward('elsewhere'),
+  read: slot.forward('read'),
+  register: slot.forward('register'),
+  heartbeat: slot.forward('heartbeat'),
+  recordNotify: slot.forward('recordNotify'),
+  setEnabled: slot.forward('setEnabled'),
+  remove: slot.forward('remove'),
+  notifiable: slot.forward('notifiable')
 };

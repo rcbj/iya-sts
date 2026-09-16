@@ -59,11 +59,13 @@
 // XML reader and the hash it keys the parse cache by through its constructor.
 // Both slots — `setDirectory()`, filled by `ldap/ldap_server.js`, and
 // `setChangeObserver()`, filled by `xacml.ts` — are methods of it and are
-// still exported under their old names, as is every other old name, bound to
-// a TRANSITIONAL instance built at the bottom for the callers that are not
-// converted. The two installed references and the parse cache stay
-// module-level, declared as they were. The instance goes when the
-// composition root exists; `XacmlStore` is exported beside it.
+// still exported under their old names, as is every other old name. Since
+// #50's R2 the composition root (`common/protocol_stack.ts`) builds the
+// instance and installs it here; the exports are FACADES forwarding to it,
+// for the JavaScript callers that are not converted, and a process without
+// the root builds a default when this module loads. The two installed
+// references and the parse cache stay module-level, declared as they were.
+// `XacmlStore` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -80,6 +82,7 @@ import errorCodes = require('../common/error_codes');
 // order exactly as it was.
 require('./xacml_model');
 import xml = require('./xacml_xml');
+import InstanceSlot = require('../common/instance_slot');
 
 // The directory functions this module calls, installed by
 // `ldap/ldap_server.js`.
@@ -312,6 +315,21 @@ class XacmlStore {
   constructor(private readonly deps: XacmlStoreDeps) {
     deps.log.debug("Entering XacmlStore.constructor().");
     deps.log.debug("Leaving XacmlStore.constructor().");
+  }
+
+  // What the composition root passes, from the real modules; the digest is
+  // the SHA-256 this module has always keyed its parse cache by.
+  static defaultDeps(): XacmlStoreDeps {
+    helpers.log.debug("Entering XacmlStore.defaultDeps().");
+    helpers.log.debug("Leaving XacmlStore.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      xml: xml,
+      sha256Hex: function (text: string): string {
+        return crypto.createHash('sha256').update(text).digest('hex');
+      }
+    };
   }
 
   setChangeObserver(fn: unknown): void {
@@ -720,36 +738,41 @@ class XacmlStore {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one; the digest is the SHA-256 this module
-// has always keyed its parse cache by.
-const store = new XacmlStore({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  xml: xml,
-  sha256Hex: function (text: string): string {
-    return crypto.createHash('sha256').update(text).digest('hex');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlStore>(
+  'xacml/xacml_store',
+  () => new XacmlStore(XacmlStore.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   XacmlStore: XacmlStore,
   SCHEMA: XacmlStore.SCHEMA,
   SEED_NAME: XacmlStore.SEED_NAME,
   SEED_DOCUMENT: XacmlStore.SEED_DOCUMENT,
-  seed: store.seed.bind(store) as XacmlStore['seed'],
-  setDirectory: store.setDirectory.bind(store) as XacmlStore['setDirectory'],
-  directoryInstalled: store.directoryInstalled.bind(store) as
-    XacmlStore['directoryInstalled'],
-  setChangeObserver: store.setChangeObserver.bind(store) as
-    XacmlStore['setChangeObserver'],
-  all: store.all.bind(store) as XacmlStore['all'],
-  read: store.read.bind(store) as XacmlStore['read'],
-  root: store.root.bind(store) as XacmlStore['root'],
-  repository: store.repository.bind(store) as XacmlStore['repository'],
-  write: store.write.bind(store) as XacmlStore['write'],
-  remove: store.remove.bind(store) as XacmlStore['remove'],
-  describe: store.describe.bind(store) as XacmlStore['describe'],
-  parseDocument: store.parseDocument.bind(store) as
-    XacmlStore['parseDocument']
+  installInstance: (instance: XacmlStore): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  seed: slot.forward('seed'),
+  setDirectory: slot.forward('setDirectory'),
+  directoryInstalled: slot.forward('directoryInstalled'),
+  setChangeObserver: slot.forward('setChangeObserver'),
+  all: slot.forward('all'),
+  read: slot.forward('read'),
+  root: slot.forward('root'),
+  repository: slot.forward('repository'),
+  write: slot.forward('write'),
+  remove: slot.forward('remove'),
+  describe: slot.forward('describe'),
+  parseDocument: slot.forward('parseDocument')
 };

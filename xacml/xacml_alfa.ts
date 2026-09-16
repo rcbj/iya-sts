@@ -102,13 +102,16 @@
 // constructor and is an instance member. The parser's helpers stay closures
 // inside `parse()`, because they share its position in the token list.
 //
-// The module still exports every old name, bound to a TRANSITIONAL instance
-// built at the bottom from the real modules — which is also what builds the
-// function index at load, as the original did — for `xacml_admin.ts` and
-// `tests/xacml_alfa.js`; it goes when the composition root exists.
+// The module still exports every old name, for `xacml_admin.ts` and
+// `tests/xacml_alfa.js`: each function a FACADE forwarding to the instance the
+// composition root builds and installs (#50's R2), and the function index a
+// getter reading that instance's. A process without the root builds a
+// default when this module loads — which is also what builds the function
+// index at load, as the original did.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
 import functions = require('./xacml_functions');
@@ -224,6 +227,18 @@ class AlfaLanguage {
       }
     });
     deps.log.debug("Leaving AlfaLanguage.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): AlfaLanguageDeps {
+    helpers.log.debug("Entering AlfaLanguage.defaultDeps().");
+    helpers.log.debug("Leaving AlfaLanguage.defaultDeps().");
+    return {
+      log: helpers.log,
+      model: model,
+      datatypes: datatypes,
+      functions: functions
+    };
   }
 
 
@@ -1581,29 +1596,41 @@ class AlfaLanguage {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const alfa = new AlfaLanguage({
-  log: helpers.log,
-  model: model,
-  datatypes: datatypes,
-  functions: functions
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AlfaLanguage>(
+  'xacml/xacml_alfa',
+  () => new AlfaLanguage(AlfaLanguage.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AlfaLanguage: AlfaLanguage,
-  write: alfa.write.bind(alfa) as AlfaLanguage['write'],
-  parse: alfa.parse.bind(alfa) as AlfaLanguage['parse'],
-  tokenize: alfa.tokenize.bind(alfa) as AlfaLanguage['tokenize'],
-  algorithmNameOf: alfa.algorithmNameOf.bind(alfa) as
-    AlfaLanguage['algorithmNameOf'],
-  algorithmUriOf: alfa.algorithmUriOf.bind(alfa) as
-    AlfaLanguage['algorithmUriOf'],
-  shortFunctionName: alfa.shortFunctionName.bind(alfa) as
-    AlfaLanguage['shortFunctionName'],
-  shortNameForAttribute: alfa.shortNameForAttribute.bind(alfa) as
-    AlfaLanguage['shortNameForAttribute'],
+  installInstance: (instance: AlfaLanguage): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  write: slot.forward('write'),
+  parse: slot.forward('parse'),
+  tokenize: slot.forward('tokenize'),
+  algorithmNameOf: slot.forward('algorithmNameOf'),
+  algorithmUriOf: slot.forward('algorithmUriOf'),
+  shortFunctionName: slot.forward('shortFunctionName'),
+  shortNameForAttribute: slot.forward('shortNameForAttribute'),
   CATEGORY_NAMES: AlfaLanguage.CATEGORY_NAMES,
   ALGORITHM_NAMES: AlfaLanguage.ALGORITHM_NAMES,
-  FUNCTION_BY_SHORT_NAME: alfa.functionByShortName
+  // Built by the instance's constructor, so read from it when asked.
+  get FUNCTION_BY_SHORT_NAME(): Record<string, string> {
+    helpers.log.debug("Entering FUNCTION_BY_SHORT_NAME().");
+    helpers.log.debug("Leaving FUNCTION_BY_SHORT_NAME().");
+    return slot.get().functionByShortName;
+  }
 };

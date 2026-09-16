@@ -68,15 +68,17 @@
 // shape: `PepTls` takes the logger, the audit log, the error codes, the
 // certificate authority, the PEP register and node's address and
 // certificate parsers through its constructor. The module still exports
-// `USE_CASE`, `issue`, `certificateOf`, `derivedNames` and `listFrom` from a
-// TRANSITIONAL instance for `xacml/xacml_admin.ts` and the tests, which may
-// not be converted; `PepTls` is exported beside them for the composition
-// root.
+// `USE_CASE`, and `issue`, `certificateOf`, `derivedNames` and `listFrom` as
+// FACADES forwarding to the instance the composition root builds and installs
+// (#50's R2), for `xacml/xacml_admin.ts` and the tests, which may not be
+// converted; a process without the root builds a default when this module
+// loads. `PepTls` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import net = require('net');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import audit = require('../common/audit');
 // The error-code registry (a leaf). A refusal carries its code as the
 // non-enumerable mark `xacml_admin.ts` reads back onto its response.
@@ -132,6 +134,23 @@ class PepTls {
   constructor(private readonly deps: PepTlsDeps) {
     deps.log.debug("Entering PepTls.constructor().");
     deps.log.debug("Leaving PepTls.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): PepTlsDeps {
+    helpers.log.debug("Entering PepTls.defaultDeps().");
+    helpers.log.debug("Leaving PepTls.defaultDeps().");
+    return {
+      log: helpers.log,
+      audit: audit,
+      errorCodes: errorCodes,
+      pki: pki,
+      peps: peps,
+      isIP: net.isIP,
+      subjectAltNameOf: function (pem) {
+        return new nodeCrypto.X509Certificate(pem).subjectAltName;
+      }
+    };
   }
 
   // A list from either spelling a caller may send it in: a JSON array from
@@ -373,25 +392,31 @@ class PepTls {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const pepTls = new PepTls({
-  log: helpers.log,
-  audit: audit,
-  errorCodes: errorCodes,
-  pki: pki,
-  peps: peps,
-  isIP: net.isIP,
-  subjectAltNameOf: function (pem) {
-    return new nodeCrypto.X509Certificate(pem).subjectAltName;
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PepTls>(
+  'xacml/xacml_pep_tls',
+  () => new PepTls(PepTls.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PepTls: PepTls,
+  installInstance: (instance: PepTls): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   USE_CASE: PepTls.USE_CASE,
-  issue: pepTls.issue.bind(pepTls) as PepTls['issue'],
-  certificateOf: pepTls.certificateOf.bind(pepTls) as PepTls['certificateOf'],
-  derivedNames: pepTls.derivedNames.bind(pepTls) as PepTls['derivedNames'],
-  listFrom: pepTls.listFrom.bind(pepTls) as PepTls['listFrom']
+  issue: slot.forward('issue'),
+  certificateOf: slot.forward('certificateOf'),
+  derivedNames: slot.forward('derivedNames'),
+  listFrom: slot.forward('listFrom')
 };
