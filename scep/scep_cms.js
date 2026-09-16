@@ -16,8 +16,9 @@
 // means is `scep.js`'s, and which RA key opens an envelope is `scep_ra.js`'s.
 //
 // **IT IS A LIBRARY (rule 3)** — it registers no route and requires only npm
-// packages and node's crypto, so its place in the require order is not a place
-// and it can join no cycle. `tests/scep_cms.js` drives it directly.
+// packages, node's crypto and `helpers.js` (for its logger), so its place in
+// the require order is not a place and it can join no cycle.
+// `tests/scep_enrollment.js` drives it directly.
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS HERE AND NOT IN `common/crypto.js`, WHICH SAYS IT IS THE ONE PLACE

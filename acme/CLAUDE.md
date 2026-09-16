@@ -85,9 +85,10 @@ a client is holding, and two copies of one signed request cannot both pass.
 A nonce has to be accepted by whichever process answers the NEXT request — the
 front process or any request worker — and a replicated store arrives half a
 second to a second late. So a nonce is `version | expiry | 16 random bytes |
-MAC(realm, expiry, random)` under a per-run secret in `STS_ACME_NONCE_SECRET`,
-generated into the environment before any worker forks
-(`ssf/ssf_receivers.js`'s channel). Any process can check it with no lookup.
+MAC(realm, expiry, random)` under the `acme-nonce` secret
+`cluster/cluster_secrets.js` declares, put into `STS_ACME_NONCE_SECRET` before
+any worker forks (`ssf/ssf_receivers.js`'s channel). Any process can check it
+with no lookup.
 
 **Single use is the store half** (`acme.usedNonces`) and it CONVERGES rather
 than synchronises — the DPoP `jti` set's trade. What a replay inside that window
@@ -96,11 +97,13 @@ certificate revokes once, an EAB key binds once. A nonce from before a restart
 fails its MAC and is answered `badNonce` with a fresh one, which a client
 retries (section 6.5).
 
-**What it does NOT cover** is several INDEPENDENTLY started processes behind one
-load balancer: each would generate its own secret and refuse the others'
-nonces. Clients retry `badNonce`, so it converges, but sticky routing is the
-answer there. The forked request pool is the deployment this service ships, and
-it inherits the secret.
+**Several INDEPENDENTLY started processes behind one load balancer** — the
+cluster (#46) — agree on the secret since 2026-09-14: on a postgres store it is
+generated once, kept sealed in the store, and read by every node before it
+serves (`cluster/CLAUDE.md`). On a store that cannot share it (memory, ldif) it
+is per run, and each such process would refuse the others' nonces; the forked
+request pool inherits its front process's value, and an operator can set the
+variable on every node.
 
 ### `sts-entry-binding-01`, and why an authorization is created valid
 
