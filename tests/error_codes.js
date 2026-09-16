@@ -86,9 +86,14 @@ const ROOT = path.join(__dirname, '..');
 //                                  codes are that project's business
 //   protos                         SPIFFE's vendored protocol definitions
 //   .git, coverage                 not source
+//   .claude                        Claude Code's state, and its AGENT
+//                                  WORKTREES — a second checkout of this
+//                                  repository whose files are not this one's
+//                                  (2026-09-16; .dockerignore says the same)
 // ---------------------------------------------------------------------------
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
-                   'openbao', 'env', '.git', 'coverage', 'protos'];
+                   'openbao', 'env', '.git', 'coverage', 'protos',
+                   '.claude'];
 
 const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
                     'debugger/embedded'];

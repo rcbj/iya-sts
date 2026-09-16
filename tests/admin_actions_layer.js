@@ -426,8 +426,10 @@ function checkNothingRequiresItEarly(t) {
       .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs', 'tests'].indexOf(
-            entry.name) >= 0) { return; }
+        // `.claude` holds agent worktrees: a second checkout of this
+        // repository, whose files are not this one's (2026-09-16).
+        if (['node_modules', '.git', '.claude', 'node-ldapjs',
+             'tests'].indexOf(entry.name) >= 0) { return; }
         walk(rel);
         return;
       }
@@ -592,7 +594,8 @@ function checkNobodyReachesThroughTheConsole(t) {
       .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs'].indexOf(
+        // `.claude`: see the first walk above.
+        if (['node_modules', '.git', '.claude', 'node-ldapjs'].indexOf(
             entry.name) >= 0) { return; }
         walk(rel);
         return;
