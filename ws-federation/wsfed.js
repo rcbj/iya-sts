@@ -35,10 +35,11 @@
 // the auto-submit needs, why `form-action` must stay out of that policy, and
 // the SameSite consequence of a sign-in request that arrives by POST.
 //
-// **It authenticates nobody, like the rest of this service.** The username
-// typed at the sign-in screen is the subject of the assertion, and the only
-// password refused is the literal "invalid", so a negative test has something
-// to fail on.
+// **It checks no credential itself.** The sign-in screen is `authn.js`'s (see
+// decision 3): in development mode the username typed there is the subject of
+// the assertion and the only password refused is the literal "invalid", so a
+// negative test has something to fail on; in product mode the password is
+// verified.
 //
 // ---------------------------------------------------------------------------
 // Four decisions here are not obvious from the specification, and each is the
@@ -64,9 +65,10 @@
 //    — which matters because an RP that only ever saw one of them usually turns
 //    out to have hard-coded it.
 //
-// 3. **The session is the one oauth2.js owns**, through its
-//    startSession/sessionOf (this module is required after it in server.js, so
-//    the dependency is one-way and no cycle exists) — and since 2026-08-26 the
+// 3. **The session is the one authn.js owns** (it was oauth2.js's until the
+//    sign-in service was split out), through its startSession/sessionOf —
+//    this module is required after it in common/protocol_stack.js, so the
+//    dependency is one-way and no cycle exists — and since 2026-08-26 the
 //    SCREEN that establishes it is `authn.js`'s too, rather than one of this
 //    module's own. That change is argued at length in `signIn()`; the short
 //    form is that owning a screen also meant owning the funnel, and three
@@ -97,25 +99,27 @@ const { log, logArtifact, STS, xmlEscape, genId, iso, baseUrlOf, randomId,
 // presented one against. They shared a value until config.js split them and
 // still default to the same string.
 const config = require('../common/config');
-// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, so a
-// require from 10 moves no route and closes no cycle. See
+// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
+// `error_codes`, so a require from 10 moves no route and closes no cycle. See
 // `common/issuance_gate.js`; an unfilled decider answers "allowed".
 const gate = require('../common/issuance_gate');
 const { buildSamlAssertion } = require('../saml/saml2');
 const { buildSaml11Assertion } = require('../saml/saml11');
-// The session, from the service that owns it. This module has a sign-in screen
-// of its own (section 13.2.1's POST cannot be answered with a redirect chain
-// through another endpoint without losing the wresult), but the SESSION it
-// lands in has to be the same one — single sign-on between the two protocols
-// is the interesting behaviour, and two stores would each look right alone.
+// The session, and the sign-in screen, from the service that owns both. This
+// module drew a screen of its own until 2026-08-26 (see signIn()), but the
+// SESSION it lands in always had to be the same one — single sign-on between
+// the protocols is the interesting behaviour, and two stores would each look
+// right alone.
 const { sessionOf, startSession, endSession, beginAuthentication,
         notePresented, noteSessionChanged } = require('../authn/authn');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
-// nothing about the route order this module's position in server.js fixes.
+// nothing about the route order this module's position in
+// common/protocol_stack.js fixes.
 const applications = require('../common/applications');
-// For the two stores below only. `realms.js` requires config.js and nothing
-// else here, so it registers no route and cannot join a cycle — see rule 3m.
+// For the store below only. `realms.js` requires only config.js and
+// error_codes.js here, so it registers no route and cannot join a cycle — see
+// rule 3m.
 const realms = require('../common/realms');
 // THE MODE, and four libraries in `saml/` (2026-09-12) — the one reading of how
 // a session authenticated, the configured signature algorithms, the rule for
@@ -255,12 +259,12 @@ function rpContextTtlMs() {
 // round trip. Its own state and nobody else's — which is the whole point of
 // wctx.
 //
-// Per realm for a quieter reason than the store above, and it is worth stating
-// rather than inheriting: `/wsfed/rp` is reachable under every realm prefix, so
-// there is one mock relying party PER REALM, and a wctx minted by the one in
-// `acme` being recognised by the one in the default realm would make the check
-// this map exists for — did my own value come back? — answer yes across a
-// boundary the rest of the profile does not cross.
+// Per realm for a quieter reason than the deleted store above had, and it is
+// worth stating rather than inheriting: `/wsfed/rp` is reachable under every
+// realm prefix, so there is one mock relying party PER REALM, and a wctx
+// minted by the one in `acme` being recognised by the one in the default realm
+// would make the check this map exists for — did my own value come back? —
+// answer yes across a boundary the rest of the profile does not cross.
 const rpContexts = realms.map({ persist: 'wsfed.rpContexts' });
 
 // --- reading the request ---------------------------------------------------
@@ -544,13 +548,13 @@ function buildRstr(tokenType, assertionXml, realm, lifetimeMin, trustVersion) {
 
 // The auto-submitting form of 13.2.2, and the two policy notes that go with it.
 //
-// **This page runs a script, and it is the second response in this service that
-// relaxes `script-src`** — to `'self'`, naming `/wsfed/autopost.js`, exactly as
-// the WebAuthn page does. An inline script would not run at all under the
-// default policy, silently, leaving a page that looks like it is working and
-// never posts. The submit button is not a fallback nobody sees: with scripting
-// off it is the whole mechanism, so it is labelled for a person rather than
-// hidden.
+// **This page runs a script, and it is one of the few responses in this service
+// that relax `script-src`** (the root CLAUDE.md lists all seven) — to
+// `'self'`, naming `/wsfed/autopost.js`, exactly as the WebAuthn page does. An
+// inline script would not run at all under the default policy, silently,
+// leaving a page that looks like it is working and never posts. The submit
+// button is not a fallback nobody sees: with scripting off it is the whole
+// mechanism, so it is labelled for a person rather than hidden.
 //
 // **`form-action` is deliberately absent from the policy, here as everywhere.**
 // app.js records why for the OAuth redirect; this profile is the other half of
@@ -938,7 +942,8 @@ function signIn(req, res, params) {
   // not until 2026-08-26.
   //
   // WHAT IT USED TO DO AND WHY THAT WAS A HOLE. It drew a sign-in screen of
-  // its own, on the argument recorded above `signInPage()`: the parameters a
+  // its own, on the argument that was recorded above its `signInPage()`
+  // (deleted with the screen): the parameters a
   // person needs to see for a wsignin1.0 are wtrealm, wreply, wctx, wauth and
   // whr, and a screen printing `client_id: (none)` would be describing a
   // request that does not exist. That argument was right about the SCREEN and
@@ -1158,7 +1163,7 @@ function issueSignInResponse(req, res, params, session, realm, wreply,
 // --- sign-out (13.2.4) -----------------------------------------------------
 // The session ends here, and every relying party it signed into is sent a
 // cleanup request. Those are `<img>` loads, which is how front-channel logout
-// is done front-channel logout, and they are the reason this one response
+// is done, and they are the reason this one response
 // relaxes `img-src`: app.js sets `img-src 'self' data:`, and a cleanup ping to
 // a relying party is by definition a third-party origin. It is the feature, not
 // a leak — the URLs are ones the relying parties themselves supplied as wreply.
@@ -1258,7 +1263,8 @@ function signOut(req, res, params, cleanupOnly) {
       'the cleanup requests above load with this page, and a 302 would ' +
       'abandon them before they were sent.</p>';
   }
-  // The one response in this service that widens img-src, and only that clause.
+  // One of the two responses in this service that widen img-src (the other is
+  // /logout's, for the same pings), and only that clause.
   res.set('Content-Security-Policy',
           app.contentSecurityPolicy({ 'img-src': '*' }));
   res.status(200).type('text/html').set('Cache-Control', 'no-store')
@@ -1350,11 +1356,6 @@ function passiveRequestor(req, res) {
     'answered with 501 and an explanation</li></ul>');
 }
 
-// What GET /wsfed says when it is followed bare, which is what a reader
-// clicking it from /admin/sts-metadata does. GET /sts answers the same way for
-// the same reason: an endpoint that 400s at a person who wanted to know what it
-// was is a bad first impression of a service whose entire purpose is to be
-// looked at.
 // ---------------------------------------------------------------------------
 // THE TWO NAMES THIS PROFILE GOES BY, AND WHETHER THEY AGREE (2026-09-12).
 //
@@ -1392,6 +1393,11 @@ function issuerDisagreement() {
          'tested.';
 }
 
+// What GET /wsfed says when it is followed bare, which is what a reader
+// clicking it from /admin/sts-metadata does. GET /sts answers the same way for
+// the same reason: an endpoint that 400s at a person who wanted to know what it
+// was is a bad first impression of a service whose entire purpose is to be
+// looked at.
 function descriptionPage(base) {
   log.debug("Entering descriptionPage().");
   const disagreement = issuerDisagreement();
@@ -1473,10 +1479,11 @@ app.get(PASSIVE_PATH, passiveRequestor);
 
 // 13.2.1 allows the sign-in request as a form POST as well as a GET, and there
 // is one thing to know about it: the session cookie is SameSite=Lax, so a POST
-// from another origin does not carry it and this endpoint shows the screen even
-// though a session exists. The alternative is SameSite=None, which requires
-// Secure, which this service cannot be over http://localhost. See oauth2.js's
-// startSession.
+// from another origin does not carry it and this endpoint sends the browser to
+// the sign-in screen even though a session exists. The alternative is
+// SameSite=None, which requires Secure, which this service cannot promise
+// (`global.https` can be off). See authn.js's startSession(), which owns the
+// cookie.
 app.post(PASSIVE_PATH, passiveRequestor);
 
 // --- federation metadata (section 3.1) -------------------------------------
@@ -1488,10 +1495,12 @@ app.post(PASSIVE_PATH, passiveRequestor);
 // assertion puts it after the Issuer and a SAML 1.1 assertion puts it last.
 // Three documents in this service, three positions, all schema-mandated.
 //
-// What is deliberately NOT in it: an IDPSSODescriptor. This service has no SAML
-// 2.0 Web SSO profile — no SingleSignOnService endpoint — and a role descriptor
-// advertising one would be a relying party's first configuration attempt and
-// its first 404.
+// What is deliberately NOT in it: an IDPSSODescriptor. This document describes
+// the WS-Federation security token service. When it was written this service
+// had no SAML 2.0 Web SSO profile, and a role descriptor advertising one would
+// have been a relying party's first 404; the profile now exists
+// (`saml/saml2_sso.js`) and publishes its own metadata, with its own
+// SingleSignOnService endpoints, at its own path.
 function federationMetadata(base) {
   log.debug("Entering federationMetadata().");
   const id = genId();
@@ -1616,10 +1625,10 @@ app.get('/FederationMetadata/2007-06/FederationMetadata.xml',
         function (req, res) {
   log.debug("Entering the WS-Federation metadata endpoint.");
   const base = baseUrlOf(req);
-  // no-store like every other document here that carries the signing key: the
-  // key is regenerated on every start, so a cached copy describes a key that is
-  // gone and the failure looks like a broken signature rather than a stale
-  // document.
+  // no-store like every other document here that carries the signing key: in
+  // development mode the key is regenerated on every start, so a cached copy
+  // describes a key that is gone and the failure looks like a broken signature
+  // rather than a stale document.
   res.status(200).type('application/xml').set('Cache-Control', 'no-store')
      .send(federationMetadata(base));
   log.debug("Leaving the WS-Federation metadata endpoint.");
@@ -1646,33 +1655,29 @@ app.get('/FederationMetadata/2007-06/FederationMetadata.xml',
 // Whether the assertion's signature is this service's, resolved against the
 // document it arrived in.
 //
-// The `idAttribute` argument is the whole reason this is a function and not
-// three lines at the call site, and it has to be passed EXACTLY when it is
-// needed and never otherwise. Both halves of that cost a debugging session:
+// This took an `idAttribute` argument until 2026-08-27, and that argument was
+// the whole reason this is a function and not three lines at the call site: it
+// had to be passed EXACTLY when it was needed and never otherwise. Both halves
+// of that cost a debugging session:
 //
 //   * xml-crypto resolves a reference URI of "#x" by looking for an attribute
 //     named Id, ID or id, and a SAML 1.1 assertion's is **AssertionID**.
-//     Without being told, the reference resolves to nothing and a perfectly
-//     good signature reports as broken — the shape of failure that makes people
-//     distrust a signature library and hand-roll a worse check.
+//     Without being told, the reference resolved to nothing and a perfectly
+//     good signature reported as broken — the shape of failure that makes
+//     people distrust a signature library and hand-roll a worse check.
 //   * but passing `idAttribute: 'ID'` for SAML 2.0, where it is already a
-//     default, **unshifts a DUPLICATE onto that list**. xml-crypto then counts
-//     the one matching element once per name and refuses the document with
-//     "multiple elements with the same value for the ID / Id / Id attributes,
-//     in order to prevent signature wrapping attack" — a security error, about
-//     a genuine attack, naming a document that has nothing wrong with it.
-//     Symmetry between the two call sites is what produced it: SAML 1.1 needs
-//     the argument, so SAML 2.0 looked like it needed the equivalent one, and
-//     it must have none.
+//     default, **unshifted a DUPLICATE onto that list**. xml-crypto then
+//     counted the one matching element once per name and refused the document
+//     with "multiple elements with the same value for the ID / Id / Id
+//     attributes, in order to prevent signature wrapping attack" — a security
+//     error, about a genuine attack, naming a document that had nothing wrong
+//     with it. Symmetry between the two call sites is what produced it: SAML
+//     1.1 needed the argument, so SAML 2.0 looked like it needed the
+//     equivalent one, and it had to have none.
 function verifyAssertionSignature(xml, element) {
   log.debug("Entering verifyAssertionSignature(). element=" + element);
   // **THE `idAttribute` ARGUMENT IS GONE, AND THE PARAGRAPHS ABOVE ARE THE
-  // RECORD OF WHY IT HAD TO EXIST RATHER THAN INSTRUCTIONS FOR USING IT.** It
-  // had to be passed EXACTLY when it was needed and never otherwise — SAML 1.1
-  // needs `AssertionID` or a good signature reports as broken, SAML 2.0 must
-  // have none or xml-crypto unshifts a duplicate and refuses a perfectly good
-  // document with a security error. Both halves cost a debugging session, and
-  // symmetry between the two call sites is what produced the second one.
+  // RECORD OF WHY IT HAD TO EXIST RATHER THAN INSTRUCTIONS FOR USING IT.**
   //
   // The shared verifier resolves every SAML id spelling natively, so the
   // argument that could be wrong in two directions no longer exists. What it
@@ -1848,8 +1853,9 @@ app.get(RP_PATH, function (req, res) {
           'sign-in</a></p>');
   }
 
-  // A fresh wctx per attempt, held for half an hour so the round-trip check can
-  // be made on the way back. This is the only state this relying party keeps.
+  // A fresh wctx per attempt, held for `wsfed.mockRpContextTtlMin` (thirty
+  // minutes by default) so the round-trip check can be made on the way back.
+  // This is the only state this relying party keeps.
   const wctx = 'rp-' + randomId(12);
   rpContexts.set(wctx,
                  { realm: realm, expires: Date.now() + rpContextTtlMs() });
@@ -1986,7 +1992,7 @@ module.exports = {
   // The cleanup requests one session is owed. Read by ../logout/logout.js so
   // that a global sign-out sends exactly what wsignout1.0 sends — see the block
   // above cleanupTargetsFor(). That module requires this one in the ordinary
-  // direction: server.js loads this at 10 and that one last but one, so the
-  // require moves no route and closes no cycle.
+  // direction: common/protocol_stack.js loads this at 10 and that one last but
+  // one, so the require moves no route and closes no cycle.
   cleanupTargetsFor: cleanupTargetsFor
 };

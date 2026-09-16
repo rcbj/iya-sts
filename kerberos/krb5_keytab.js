@@ -15,9 +15,10 @@
 // -k` — can accept tickets this KDC issues for that principal.
 //
 // **THIS REPOSITORY HAD NO KEYTAB CODE AT ALL**, reader or writer, before this
-// file: the acceptor in `krb5_service.js` keys itself from a PASSWORD and a
+// file: the acceptor in `krb5_service.js` keyed itself from a PASSWORD and a
 // salt (`krb5.servicePassword`, `krb5.serviceSalt`), which is what a mock needs
-// and not what a deployment hands a service. So there was nothing to reuse and
+// and not what a deployment hands a service. It still does, unless a key has
+// been stored for its SPN. So there was nothing to reuse and
 // nothing to round-trip against, and the in-process test carries an
 // INDEPENDENT reader of its own for exactly that reason — a writer checked only
 // by the reader beside it is an implementation agreeing with itself.
