@@ -6,9 +6,9 @@
 //
 // **THIS IS RULE 3: A LIBRARY.** It registers no route, so its position in the
 // require order is not a position. It requires `common/config`,
-// `common/helpers` and `./webauthn` — the last of which requires npm leaves and
-// `common/crypto` — so it cannot join a cycle and nothing that requires it
-// moves a route.
+// `common/helpers`, `common/error_codes` and `./webauthn` — the last of which
+// requires npm leaves and `common/crypto` — so it cannot join a cycle and
+// nothing that requires it moves a route.
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS NOT IN `authn/webauthn.js` NEXT DOOR, WHICH IS THE OBVIOUS PLACE.
