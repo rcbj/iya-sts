@@ -5,8 +5,8 @@
 // ===========================================================================
 // OpenID for Verifiable Presentations (OID4VP 1.0) — mock Verifier
 //
-// The other half of the SD-JWT VC story: the issuance flow above puts a
-// credential in a wallet, and this is the Verifier that asks for part of it.
+// The other half of the SD-JWT VC story: the issuance flow (vc_issuer.js) puts
+// a credential in a wallet, and this is the Verifier that asks for part of it.
 //
 //   GET  /oid4vp/verifier          the Verifier's web page (where a
 //                                  presentation starts, same device)
@@ -60,8 +60,8 @@
 
 const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// config.js and error_codes.js and nothing else here, so it cannot join a
+// cycle and it registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -87,8 +87,8 @@ const revocationStatus = require('../common/revocation_status');
 // The identity registry, for ONE call: a presentation that verified names a
 // holder, and this is the funnel every other family here already goes through
 // at the moment a credential is accepted. A library like dpop.js — it registers
-// no route and requires only helpers.js — so requiring it cannot move a route
-// or make a cycle. See the call site in the response endpoint for what it does
+// no route and nothing it requires reaches this module — so requiring it
+// cannot move a route or make a cycle. See the call site in the response endpoint for what it does
 // and does NOT claim about the holder.
 const stats = require('../common/admin_stats');
 const { VCI_JWT_TYPES, VCI_VCT } = require('./vc_configs');
@@ -408,9 +408,9 @@ function buildVpRequest(req, opts) {
     dcql_query: vpDcqlQuery(opts.format),
     client_metadata: {
       client_name: 'Mock Verifier (bar door)',
-      // Both formats are advertised whichever one this request asks for: this
-      // is what the Verifier CAN accept, not what it wants this time — the DCQL
-      // query is what says that.
+      // All three formats are advertised whichever one this request asks for:
+      // this is what the Verifier CAN accept, not what it wants this time — the
+      // DCQL query is what says that.
       vp_formats_supported: {
         // From the shared table, not written out: the KB-JWT is checked by
         // stsCrypto.verifyCompactJws() against JWS_ASYMMETRIC_ALGS, and a
@@ -809,29 +809,7 @@ function sdHashOf(presentedWithoutKb, sdAlg) {
                     .digest());
 }
 
-// A W3C Verifiable Presentation secured as a JWT, carrying a jwt_vc_json
-// credential (OID4VP with format jwt_vc_json).
-//
-// The checks are the same QUESTIONS the SD-JWT path asks, answered against a
-// different artefact — which is the point of running both formats through this
-// workflow:
-//
-//   who signed the credential          the issuer's key, as before
-//   is it still valid                  nbf/exp, as before
-//   is the holder the one it was bound to
-//                                      here the VP JWT's signature against the
-//                                      credential's cnf.jwk, where an SD-JWT
-//                                      uses a Key Binding JWT
-//   is this presentation fresh and for us
-//                                      nonce and aud, as before — but they are
-//                                      claims of the VP JWT, not of a KB-JWT
-//   what was disclosed                 everything in credentialSubject, because
-//                                      this format cannot withhold anything
-//
-// There is deliberately no sd_hash equivalent: an SD-JWT's KB-JWT commits to
-// the exact bytes presented because a presentation can be a SUBSET. A VP JWT
-// signs over the whole credential it embeds, so the commitment is the
-// signature. A bbs-2023 derived proof (OID4VP format ldp_vc).
+// A bbs-2023 derived proof (OID4VP format ldp_vc).
 //
 // The same questions as the other two formats, asked of a very different
 // artefact. There is no issuer signature to check on what arrives — a derived
@@ -913,6 +891,29 @@ async function verifyLdpVc(presentation, record) {
   return result;
 }
 
+// A W3C Verifiable Presentation secured as a JWT, carrying a jwt_vc_json
+// credential (OID4VP with format jwt_vc_json).
+//
+// The checks are the same QUESTIONS the SD-JWT path asks, answered against a
+// different artefact — which is the point of running both formats through this
+// workflow:
+//
+//   who signed the credential          the issuer's key, as before
+//   is it still valid                  nbf/exp, as before
+//   is the holder the one it was bound to
+//                                      here the VP JWT's signature against the
+//                                      credential's cnf.jwk, where an SD-JWT
+//                                      uses a Key Binding JWT
+//   is this presentation fresh and for us
+//                                      nonce and aud, as before — but they are
+//                                      claims of the VP JWT, not of a KB-JWT
+//   what was disclosed                 everything in credentialSubject, because
+//                                      this format cannot withhold anything
+//
+// There is deliberately no sd_hash equivalent: an SD-JWT's KB-JWT commits to
+// the exact bytes presented because a presentation can be a SUBSET. A VP JWT
+// signs over the whole credential it embeds, so the commitment is the
+// signature.
 function verifyVpJwt(presentation, record) {
   log.debug("Entering verifyVpJwt().");
   logArtifact('OID4VP Verifiable Presentation (jwt_vc_json)', 'as received',
@@ -1502,9 +1503,10 @@ app.post('/oid4vp/response', async function (req, res) {
   // header makes and this call must not quietly undo. No session starts, no
   // token is issued, and nothing else in this service reads what was presented.
   // What is recorded is narrower and true: an identity presented a credential
-  // here and it verified. tls_server.js draws the same line for a verified
-  // client certificate — recorded, never a login — and the two are the same
-  // distinction.
+  // here and it verified. (tls_server.js drew the same line for a verified
+  // client certificate until 2026-09-05, when a verified certificate became a
+  // sign-on — `GET /tls/sign-in` since 2026-09-16. This endpoint did not
+  // follow it.)
   //
   // The identity is the credential's SUBJECT, which is usually a DID (an ldp_vc
   // names its subject `did:jwk:…`) and is whatever the credential says

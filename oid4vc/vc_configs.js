@@ -68,11 +68,8 @@ const VCI_LDP_SCOPE = 'identity_credential_ldp';
 
 const VC_CONTEXT = 'https://www.w3.org/2018/credentials/v1';
 
-// Every credential this issuer offers, by credential_configuration_id. One
-// place, because "is this a configuration I offer" is asked from four of them
-// (the credential endpoint, authorization_details, the offer builder and the
-// metadata) and a list that disagrees with itself between those is an issuer
-// that advertises what it will then refuse.
+// Every credential this issuer offers, by credential_configuration_id — the
+// one list the header argues for.
 const VCI_CONFIGS = {};
 VCI_CONFIGS[VCI_CONFIG_ID] = { format: 'dc+sd-jwt', scope: VCI_SCOPE };
 VCI_CONFIGS[VCI_JWT_CONFIG_ID] = { format: 'jwt_vc_json',
@@ -87,8 +84,8 @@ VCI_CONFIGS[VCI_LDP_CONFIG_ID] = { format: 'ldp_vc', scope: VCI_LDP_SCOPE };
 
 // ---------------------------------------------------------------------------
 // Two more configurations, identical to their siblings above except that the
-// issuer names ITSELF by a did:web instead of by its https identifier. See the
-// DID section further down for what that DID is and what serves its document.
+// issuer names ITSELF by a did:web instead of by its https identifier. See
+// vc_did.js for what that DID is and what serves its document.
 //
 // Two configurations rather than one server-wide switch, and the reason is
 // coverage: with a switch, a run exercises the DID route or the URL route but

@@ -118,11 +118,14 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3) AND ITS DIRECTORY HALF IS INVERTED (rule 6).
 //
-// It registers no route. It requires `helpers.js`, `config.js` and `audit.js`
-// and nothing else in this repository, which is what lets `admin_stats.js`,
-// `authn/authn.js`, `admin-ui/admin.js` and `federation_sp.js` all require it
-// in the ordinary direction with no cycle and no route moved. Do not let it
-// grow a require of anything that registers a route.
+// It registers no route. It requires `helpers.js`, `config.js`, `realms.js`,
+// `audit.js`, `error_codes.js` and `applications.js` (below) and nothing else
+// in this repository — none of which registers a route or reaches back here —
+// which is what lets `admin_stats.js`, `authn/authn.js`, `admin-ui/admin.js`,
+// `admin-core/`, `ldap_server.js`, `federation_graph.js` and
+// `federation_sp.js` all require it in the ordinary direction with no cycle
+// and no route moved. Do not let it grow a require of anything that registers
+// a route.
 //
 // The DIRECTORY half is inverted for `applications.js`'s reason:
 // `ldap_server.js` is near the end of the require order because requiring it
@@ -171,9 +174,10 @@ const errorCodes = require('./../common/error_codes');
 //
 // Rule 3o is about who may require THIS file. This is the one require going the
 // other way, and it is a plain one in the ordinary direction rather than a
-// slot: `applications.js` registers no route, and it requires only `config.js`,
-// `helpers.js` and `audit.js` — none of which reaches back here — so nothing
-// about requiring it can close a cycle or move a route. Rule 3e's test is not
+// slot: `applications.js` registers no route, and none of what it requires
+// (`config.js`, `helpers.js`, `realms.js`, `audit.js`, `roles.js`,
+// `keystore.js` and leaves) reaches back here — so nothing about requiring it
+// can close a cycle or move a route. Rule 3e's test is not
 // reached, and a slot would have cost a reader an indirection for nothing. It
 // is the same argument `admin_stats.js` makes above its own require of that
 // file.
@@ -199,11 +203,11 @@ const applications = require('./../common/applications');
 //
 // Three things need them and only one of them may require that module.
 // `federation_sp.js` registers routes, so `admin-ui/admin.js` must not require
-// it — `server.js` loads that module BEFORE the console, and a require in the
-// other direction would be the reason a route moved the day somebody reorders
-// the two (the line already drawn around `spiffe_server.js`). But the console
-// page's whole job is to tell an operator WHICH URL to configure at the
-// partner, so it has to know.
+// it — `common/protocol_stack.js` loads that module BEFORE the console, and a
+// require in the other direction would be the reason a route moved the day
+// somebody reorders the two (the line already drawn around
+// `spiffe_server.js`). But the console page's whole job is to tell an operator
+// WHICH URL to configure at the partner, so it has to know.
 //
 // So the strings live in the library both sides may reach, and neither writes
 // them out. A console printing `/federation/acs/x` while the router serves
@@ -1429,7 +1433,8 @@ function identityProviderFor(applicationId) {
 // runs on the way to a sign-in screen, so it must not be able to cost the
 // screen; and a relationship configured to broker to a partner that is
 // disabled must say so on that screen rather than quietly asking for a
-// password, which is the same argument federationFor() makes at length.
+// password, which is the same argument authn.js's federationFor() makes at
+// length.
 // ---------------------------------------------------------------------------
 function authenticationFor(record) {
   log.debug('Entering authenticationFor(). id=' +
@@ -2443,8 +2448,8 @@ module.exports = {
   isUsable: isUsable,
   signInOptions: signInOptions,
   // How one relationship is described on a page somebody chooses from. Read by
-  // authn.js's broker branch, which builds the same shape by hand for a
-  // relationship it already holds.
+  // authn.js's broker branch as well as by signInOptions(), so the broker's
+  // one button and the chooser's describe a relationship the same way.
   optionOf: optionOf,
   // THE BROKER HALF. `identityProviderFor()` finds the relationship a partner
   // asking this service to authenticate somebody is registered under,
