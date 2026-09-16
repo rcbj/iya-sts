@@ -5,15 +5,15 @@ DID Core with DIF domain linkage.
 
 | File | What it is |
 |---|---|
-| `vc_configs.js` | The credential configurations. Exists to break a require cycle. |
-| `vc_offers.js` | The Credential Offer pages and the pre-authorized codes. Same reason. |
-| `vc_claims.js` | Which LDAP attribute types an issued credential carries, plus the invented persona. |
-| `vc_verifier_config.js` | What the mock Verifier ASKS FOR, and in which of the three formats. |
-| `vc_issuer.js` | The three credential endpoints. |
-| `vc_verifier.js` | The bar door at `/oid4vp/verifier`. |
-| `vc_did.js` | `did:web`, `did:jwk`, and the domain linkage document. |
+| `vc_configs.ts` | The credential configurations. Exists to break a require cycle. |
+| `vc_offers.ts` | The Credential Offer pages and the pre-authorized codes. Same reason. |
+| `vc_claims.ts` | Which LDAP attribute types an issued credential carries, plus the invented persona. |
+| `vc_verifier_config.ts` | What the mock Verifier ASKS FOR, and in which of the three formats. |
+| `vc_issuer.ts` | The three credential endpoints. |
+| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`. |
+| `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
 
-**`vc_configs.js` and `vc_offers.js` exist to break require cycles, not to group
+**`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
 code** — see rule 2 in the root `CLAUDE.md`. The credential configurations are
 read by both the issuer and the authorization server; the Credential Offer's
 pre-authorized codes are minted by the offer pages and redeemed at the token
@@ -21,29 +21,29 @@ endpoint. In `common/protocol_stack.js` (positions 11–14), `vc_offers` is
 required before `vc_issuer`; both read `vc_configs`, which is why that module
 exists.
 
-**`vc_claims.js` is read from many points of the require order and from
-eight directories** — `vc_issuer.js` and `vc_verifier_config.js` here,
+**`vc_claims.ts` is read from many points of the require order and from
+eight directories** — `vc_issuer.ts` and `vc_verifier_config.ts` here,
 `../common/claim_attributes.js`, `../oauth-oidc/oauth2.js`,
 `../federation/federation_map.js`, `../admin-ui/admin.js`,
 `../admin-core/admin_actions.js` and `admin_views.js`,
-`../ldap/ldap_server.js` and `../scim/scim_map.js` — so it must stay a
+`../ldap/ldap_server.js` and `../scim/scim_map.ts` — so it must stay a
 library. It is in this directory rather than in `common/` because the
 catalogue is defined by what a CREDENTIAL carries; the readers elsewhere are
 consumers of that definition, not co-owners of it.
 
-3a. **`vc_claims.js` is a library like `dpop.js` too, and it is read from several
+3a. **`vc_claims.ts` is a library like `dpop.js` too, and it is read from several
    different points of the require order.** It holds which claims an issued
    Verifiable Credential carries — a catalogue of LDAP ATTRIBUTE TYPES, not of claim
    names, because a claim's value is the value on that person's directory entry —
    plus the invented, DETERMINISTIC persona that fills what an entry lacks.
-   `vc_issuer.js` (early), `admin.js` (late) and `ldap_server.js` (later) all read it,
+   `vc_issuer.ts` (early), `admin.js` (late) and `ldap_server.js` (later) all read it,
    so it must stay a library: it registers no route and requires only `helpers.js`,
    three leaves (`realms.js`, `mode.js`, `error_codes.js`)
    and `admin_stats.js` (for `identityKeyOf()`, so that `alice`,
    `alice@REALM` and her `urn:uuid:<entryUUID>` — or the retired
    `urn:sts:user:alice` — are one invented person and one entry). The DIRECTORY half is inverted the usual way — `setDirectory()` is filled
    by `ldap_server.js` at ITS require time, because that module cannot be required
-   from a module `vc_issuer.js` reads without dragging every `/ldap` route to the
+   from a module `vc_issuer.ts` reads without dragging every `/ldap` route to the
    front of the router. Two things there are load-bearing and easy to undo: the
    ISSUER METADATA is built from the same selection the credential is (an issuer
    advertising five claims and minting fourteen teaches every wallet author that the
@@ -53,18 +53,18 @@ consumers of that definition, not co-owners of it.
    time. `buildLdpVc()` filters against the context it actually loaded rather than
    trusting the hand-kept list.
 
-3a-ii. **`vc_verifier_config.js` is the same kind of library, and it holds the
-   OTHER end of that catalogue.** `vc_claims.js` says what an issued credential
+3a-ii. **`vc_verifier_config.ts` is the same kind of library, and it holds the
+   OTHER end of that catalogue.** `vc_claims.ts` says what an issued credential
    CARRIES; this says what the mock Verifier — the bar door at `/oid4vp/verifier` —
    ASKS FOR, and which of the three credential formats it asks in. Both ends read
-   it (`vc_verifier.js` early, `admin.js` and `admin-core/` late), so it
+   it (`vc_verifier.ts` early, `admin.js` and `admin-core/` late), so it
    registers no route and requires only `helpers.js`, `realms.js`, `config.js`,
-   `vc_claims.js` and `vc_configs.js`, none of which registers anything
+   `vc_claims.ts` and `vc_configs.ts`, none of which registers anything
    either. Four things in it are load-bearing:
-   its catalogue is `vc_claims.js`'s rows GROUPED BY CLAIM rather than listed as
+   its catalogue is `vc_claims.ts`'s rows GROUPED BY CLAIM rather than listed as
    attribute types, because `buildSdJwtVc()` makes one Disclosure per top-level
    claim and `address` is therefore one unit of disclosure however many attributes
-   feed it; the DCQL query is built HERE and `vpDcqlQuery()` in `vc_verifier.js` is
+   feed it; the DCQL query is built HERE and `vpDcqlQuery()` in `vc_verifier.ts` is
    now only the caller that logs it, so the console's preview and the real request
    cannot drift; the ldp_vc paths use the VENDORED CONTEXT'S TERM and not the OIDC
    claim name (`birthDate`, and four flat terms where the others have `address`),
@@ -125,7 +125,7 @@ lifetimes, the issuer display name, the wallet pages, the encryption `enc`
 lists, the Domain Linkage and `/did/generate` lifetimes, the Verifier's request
 lifetime, expected `vct` and claim cap. The credential CATALOGUE — configuration
 display names and colours, the `VCI_*` identifiers — stays code on purpose: it
-is what `vc_configs.js` exists to hold, and a setting per string would be a
+is what `vc_configs.ts` exists to hold, and a setting per string would be a
 second catalogue. What is more than a number, and what
 `tests/oauth_oid4vc_hardcoded.js` pins:
 
@@ -166,7 +166,7 @@ second catalogue. What is more than a number, and what
 * **THE REQUEST-ENCRYPTION KEY IS A MEMBER OF THE REALM'S KEY SET — IN EVERY
   PROCESS AND IN PRODUCT MODE ACROSS A RESTART.** This bullet said the key was
   per realm "where it can be": the default realm kept a process key generated
-  when `vc_issuer.js` loaded, the request pool handed ONE key down the fork in
+  when `vc_issuer.ts` loaded, the request pool handed ONE key down the fork in
   `STS_VCI_REQUEST_ENC_KEY_PEM`, so in a pooled process every realm shared it and
   a realm's issuer decrypted requests encrypted to another realm's published
   key, and no kind survived a restart. It is `vciRequestEncKey` on
@@ -175,7 +175,7 @@ second catalogue. What is more than a number, and what
   lacked — per realm, written down SEALED in `sts_keys` in product mode,
   decrypted only while used (`keys.plaintextRetention`), agreed across the front
   process and every request worker by the key channel's first-generator-wins.
-  `vc_issuer.js` makes no key: `requestEncryptionKeys()` asks
+  `vc_issuer.ts` makes no key: `requestEncryptionKeys()` asks
   `helpers.requestEncryptionKeyFor()` for the AMBIENT realm's, so
   `credential_request_encryption.jwks` at `/realm/<id>/.well-known/openid-credential-issuer`
   publishes that realm's key and only that realm's key decrypts. **What a
@@ -207,7 +207,7 @@ second catalogue. What is more than a number, and what
 Three values were a check and a delete (or a write) on a replicated
 `realms.map({ persist })`, so once per NODE against one store. Each keeps its
 in-memory check first and is then spent through `cluster/cluster_claims.js`;
-`vc_issuer.js` provides the capability, which the row names.
+`vc_issuer.ts` provides the capability, which the row names.
 
 * **The pre-authorized code** — `vc_offers.spendPreAuthorizedCode()`, called by
   the token endpoint in `oauth2.js` right after its delete (scope
