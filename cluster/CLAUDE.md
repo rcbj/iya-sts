@@ -17,7 +17,7 @@ the barrier that makes one node see what another committed.
 | `cluster_capabilities.js` | The table of what active-active mode depends on, one row per failure #46 describes, each `provide()`d by the module that fixed it. |
 | `cluster_claims.js` | `claim()` / `release()`: an atomic "once" in the store for every single-use value. Memory on a store that cannot be shared. |
 | `cluster_counters.js` | `advance()`: a value that may only go UP, agreed by every node — a WebAuthn signature counter, the last RFC 6238 step spent. One conditional upsert in the store. Memory on a store that cannot be shared. And `countInWindow()`: a rate-limit bucket's count inside a fixed window, one budget for every node. |
-| `cluster_secrets.js` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
+| `cluster_secrets.ts` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
 | `cluster_barrier.js` | The middleware that makes a request wait for other nodes' commits, and holds a writing response until its own commit lands. Active-active only. |
 
 The SQL is `persistence/persistence_postgres.js`'s — the driver owns every
@@ -426,7 +426,7 @@ finds its row expired and it exits with `STS-CLUSTER-0005`.
 `common/pki_merge.js`), `scep.ra-agreement` (`scep/scep_ra.js`) and
 `spiffe.authority-agreement` (`spiffe/spiffe_ca.js`), and — added after the
 suite's `cluster` mode found it — `vc.keys-agreement`
-(`cluster/cluster_secrets.js`, the BBS key pair; *Claims and shared secrets*). `common/CLAUDE.md` argues
+(`cluster/cluster_secrets.ts`, the BBS key pair; *Claims and shared secrets*). `common/CLAUDE.md` argues
 the store arbitration, the merge and the build claim (*Between nodes the store
 is the arbiter*, *One build of a scope in the cluster*). Measured against a real
 postgres, two product nodes started together against an empty store:
