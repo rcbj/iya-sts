@@ -1431,7 +1431,7 @@ The mirror and the response header both stop at the front process of ONE
 container. With several nodes in `cluster.mode=active-active`, a bind held on
 node A was not listed by `/admin/sessions` answered by B, and a global sign-out
 answered by B ended what B could see, said so, and left A's socket bound.
-`ldap_cluster_connections.js` is the fix, and it is two things for the same
+`ldap_cluster_connections.ts` is the fix, and it is two things for the same
 reason the in-container fix was two:
 
 * **CLOSING is an INSTRUCTION BY IDENTITY.** `dropConnectionsFor(key)` first
@@ -1814,8 +1814,8 @@ own invented names.
 `/admin/ldap/roles`, `/admin/ldap/policies` and `/admin/ldap/peps`. They are
 built here for the same reason the other five are, and the specific fact that
 made them cheap is that **this module already requires all three of the modules
-that own those containers** — `common/roles.js`, `xacml/xacml_store.js` and
-`xacml/xacml_pep_registry.js` — because it fills each one's
+that own those containers** — `common/roles.js`, `xacml/xacml_store.ts` and
+`xacml/xacml_pep_registry.ts` — because it fills each one's
 `setDirectory()` slot. The schemas were already in scope. No new require, no
 cycle, no route moved.
 
@@ -2052,7 +2052,7 @@ signature against a key nobody meant.
 ## `stsKrb5Keys`: THE FOURTH, AND THE FIRST THIS DIRECTORY WITHHOLDS FROM ITS OWN DUMP (2026-09-12)
 
 A person's Kerberos long-term keys, derived from their password by
-`kerberos/krb5_person_keys.js` so a product-mode KDC can authenticate them —
+`kerberos/krb5_person_keys.ts` so a product-mode KDC can authenticate them —
 `stsKrb5Keys` (one sealed value: name, realm, kvno, salt, a stamp of the password hash,
 every enctype's key) and `stsKrb5KeyInfo` (the public half). A service principal's
 random keys are the same pair under `ou=applications`, `krb5ServiceKeys` and
@@ -2389,7 +2389,7 @@ nodes writing one row*) — the right repair, and a client already holding an id
 that names nothing.
 
 So the doors that can wait claim what they are about to create BEFORE they
-check, through `directory_create_claims.js` over `cluster/cluster_claims.js`:
+check, through `directory_create_claims.ts` over `cluster/cluster_claims.js`:
 the normalised DN, and for a person the lower-cased username, both computed by
 `createClaimSpec()` here. The second of two concurrent creates waits for the
 first and then meets the directory's own refusal, exactly as if the first had
@@ -2447,5 +2447,5 @@ the handler), a SCIM create of a User or a Group, and `POST
   (v5) `entryUUID`, so both nodes create the same entry and the merge makes them
   one — at the cost of a name deleted and signed in again getting the same
   subject there; a single process keeps random values.
-  `directory_create_claims.js`'s header has it, and
+  `directory_create_claims.ts`'s header has it, and
   `tests/cluster_autocreate_subject.js` holds both halves.

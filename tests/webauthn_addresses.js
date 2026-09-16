@@ -139,7 +139,7 @@ function run(t) {
   const root = path.join(__dirname, '..');
   const authnSource = fs.readFileSync(path.join(root, 'authn', 'authn.js'),
                                       'utf8');
-  const portalSource = fs.readFileSync(path.join(root, 'portal', 'portal.js'),
+  const portalSource = fs.readFileSync(path.join(root, 'portal', 'portal.ts'),
                                        'utf8');
   t.check(/const expectedOrigin = expectedOriginFor\(base, credential\);/
             .test(authnSource) &&

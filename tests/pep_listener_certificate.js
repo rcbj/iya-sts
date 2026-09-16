@@ -23,7 +23,7 @@
 //   C. THE REFUSALS: no slot, no name, a name that is not one, a key algorithm
 //      a TLS stack does not serve.
 //   D. A REISSUE SUPERSEDES, and the register keeps no private key.
-//   E. THE NAMES A REGISTRATION IMPLIES (`xacml/xacml_pep_tls.js`).
+//   E. THE NAMES A REGISTRATION IMPLIES (`xacml/xacml_pep_tls.ts`).
 //   F. THE CONTAINER'S RELOAD RULES, in a CHILD PROCESS because `xacml-pep/`
 //      primes `require.cache` with its shim: a missing pair waits, a pair whose
 //      halves disagree is refused, a good pair starts a listener, a new pair

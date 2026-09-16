@@ -8,7 +8,7 @@
 // `admin-ui/CLAUDE.md` refuses a script nine times over — so every "pick the
 // next valid element" dropdown on this page is computed on the SERVER by the
 // same code that will validate the result, and choosing one is a form POST that
-// re-renders the page. That is the whole design of `xacml/xacml_editor.js`, and
+// re-renders the page. That is the whole design of `xacml/xacml_editor.ts`, and
 // it is what makes the editor testable at all: a grammar that only existed
 // inside a browser could not be asserted in node.
 //

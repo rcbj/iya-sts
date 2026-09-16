@@ -114,7 +114,7 @@ this".
 
 ### It is a DRY RUN, and the gate has to be told
 
-`preview: true` on the request, honoured in `xacml/xacml_role_pep.js`. Nothing
+`preview: true` on the request, honoured in `xacml/xacml_role_pep.ts`. Nothing
 is being issued — somebody is looking at a page — so the refusals must not be
 written to the audit log as `xacml.issuance.refused` and must not be counted on
 `/admin/xacml/monitor` as decisions this service made. Drawing this page for a
@@ -1131,9 +1131,9 @@ credential — so its card only lists the labelled addresses.
   `…PerAddress`) under its own bucket name, `portal-enrollment`; a protocol
   turned off in the realm is refused at the door as well as hidden on the page
   (`STS-PORTAL-0050`).
-* **IT IS A FILE BESIDE `portal.js` REGISTERED THROUGH `register(context)`**:
+* **IT IS A FILE BESIDE `portal.ts` REGISTERED THROUGH `register(context)`**:
   the shell, the sign-in, the CSRF field and the escaping are private to
-  `portal.js`, which hands them over at the foot of its own routes. That keeps
+  `portal.ts`, which hands them over at the foot of its own routes. That keeps
   the route order the column's and the new file to what is new.
 
 **THE TLS CLIENT CERTIFICATES THIS PORTAL ISSUES DIRECTLY are

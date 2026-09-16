@@ -160,7 +160,7 @@ const CAPABILITIES = [
           'written back by a node holding an older copy.' },
   // ---- section 4: sign-out -------------------------------------------------
   { id: 'ldap.connections-cluster', section: '4',
-    by: 'ldap/ldap_cluster_connections.js',
+    by: 'ldap/ldap_cluster_connections.ts',
     what: 'A sign-out closes an identity\'s LDAP connections on every node, ' +
           'and the session inventory lists them all.' },
   // ---- section 5: valid requests refused -----------------------------------

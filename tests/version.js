@@ -277,7 +277,7 @@ function run(t) {
   //    agree perfectly right up until the moment they stop.
   // -----------------------------------------------------------------------
   t.log.info('=== one source for every surface ===');
-  const drawers = ['home/home.ts', 'admin-ui/admin.js', 'portal/portal.js',
+  const drawers = ['home/home.ts', 'admin-ui/admin.js', 'portal/portal.ts',
                    'mgmt-api/admin_api.js', 'sts_metadata.js'];
   drawers.forEach(function (rel) {
     const src = codeOf(rel);
@@ -303,7 +303,7 @@ function run(t) {
           'and with no component it is the bare product token',
           version.userAgent());
   ['federation/federation_http.ts', 'ssf/ssf_http.ts',
-   'xacml/xacml_pep_http.js'].forEach(function (rel) {
+   'xacml/xacml_pep_http.ts'].forEach(function (rel) {
     const src = codeOf(rel);
     t.check(/version'\)\.userAgent\(/.test(src) ||
             /userAgent\(/.test(src),

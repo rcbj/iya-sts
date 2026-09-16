@@ -768,8 +768,8 @@ only after the fixture asked about an account sitting on its own slot.
 
 ## STORED LONG-TERM KEYS: A PERSON'S FROM THEIR PASSWORD, A SERVICE'S AT RANDOM (2026-09-12)
 
-Two NEW files and neither is vendored: **`krb5_person_keys.js`** (the register — derive,
-store, read for the KDC, service principals, the lists) and **`krb5_keytab.js`** (an MIT
+Two NEW files and neither is vendored: **`krb5_person_keys.ts`** (the register — derive,
+store, read for the KDC, service principals, the lists) and **`krb5_keytab.ts`** (an MIT
 keytab 0x502 writer and reader; this repository had no keytab code before, reader or
 writer, so there was nothing to reuse and the test carries an independent reader). The
 directory's count above is sixteen files now.
