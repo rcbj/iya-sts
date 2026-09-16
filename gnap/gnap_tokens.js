@@ -12,9 +12,10 @@
 // them carries the same TOKEN MODEL (RFC 9767 section 2.1 — issuer, audience,
 // key binding, flags, access rights, time window, identifier, resource owner,
 // client instance, label), so every one of them is minted from the same object
-// and verified back into it. That is the contract `GNAP_DESIGN.md` states and
-// the format modules keep; this file is the dispatcher and the home of the two
-// JWT formats, which REUSE the service's JOSE module rather than a second one:
+// and verified back into it. That is the contract `gnap_access.js`'s
+// `validateModel()` checks and the format modules keep; this file is the
+// dispatcher and the home of the two JWT formats, which REUSE the service's
+// JOSE module rather than a second one:
 //
 //   * `jwt-signed` is signed through `helpers.signJwt()` — the one signer that
 //     records every token in `admin_stats.js`'s registry — so a GNAP JWT shows

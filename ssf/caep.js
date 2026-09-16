@@ -23,11 +23,11 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). IT REGISTERS NO ROUTE AND IT SENDS NOTHING.
 //
-// It requires `helpers`, `config`, `audit`, `ssf_events` and `ssf_subjects`
-// and nothing else, so it cannot join a cycle — and in particular it does NOT
-// require `ssf.js`, which requires IT. That is what decides the division of
-// labour and it is worth stating plainly because it looks arbitrary from
-// either side:
+// It requires `helpers`, `config`, `realms`, `audit`, `ssf_events`,
+// `ssf_subjects` and the route-free `oauth-oidc/step_up.js`, and nothing else,
+// so it cannot join a cycle — and in particular it does NOT require `ssf.js`,
+// which requires IT. That is what decides the division of labour and it is
+// worth stating plainly because it looks arbitrary from either side:
 //
 //   THIS FILE DECIDES WHAT AN EVENT WOULD BE. `observe()` takes a notice
 //   about a session, updates the register, and ANSWERS with the event that
@@ -68,19 +68,23 @@
 
 const { log, nowSec, iso } = require('../common/helpers');
 const config = require('../common/config');
-// The partition. A LEAF requiring `config` and nothing else here.
+// The partition. A LEAF requiring `config` and the error-code registry and
+// nothing else here.
 const realms = require('../common/realms');
 const audit = require('../common/audit');
 const events = require('./ssf_events');
 const subjects = require('./ssf_subjects');
 
-// The three acts this service can actually OBSERVE, and their event types.
-// Written as short names because that is what `caep.autoEmitTypes` holds — a
-// setting whose values were 60-character URIs would be a setting nobody could
-// type. The other five CAEP events are things nothing here does: no device
-// reports compliance to this service and no risk engine talks to it, so they
-// are emitted by hand and a row naming one of them is dropped with a warning
-// rather than producing an event nothing can cause.
+// The acts this service can actually OBSERVE, and their event types — three
+// at first, five now (the fourth and fifth are marked below). Written as short
+// names because that is what `caep.autoEmitTypes` holds — a setting whose
+// values were 60-character URIs would be a setting nobody could type. The
+// other three CAEP events are things nothing here observes on a sign-on
+// session: no device reports compliance to this service and no risk engine
+// talks to it (`token-claims-change` is sent only by GNAP, through
+// `gnap/gnap_signals.js`), so they are emitted by hand and a row naming one of
+// them is dropped with a warning rather than producing an event nothing can
+// cause.
 const AUTO_ACTS = {
   established: 'session-established',
   presented: 'session-presented',
@@ -196,7 +200,7 @@ function supportedEventUris() {
   return out;
 }
 
-// Which of the three acts emit on their own. An entry naming an event this
+// Which of the five acts emit on their own. An entry naming an event this
 // service cannot cause is DROPPED WITH A WARNING rather than honoured: there
 // is no code path that would ever fire it, so honouring it would leave a
 // setting that reads as configured and does nothing.
