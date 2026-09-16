@@ -6,7 +6,7 @@
 // A PERSON'S KERBEROS KEYS, DERIVED FROM THEIR OWN PASSWORD, AND A SERVICE
 // PRINCIPAL'S RANDOM ONES (2026-09-12).
 //
-// `kerberos/krb5_person_keys.js` is what lets a PRODUCT-mode KDC authenticate
+// `kerberos/krb5_person_keys.ts` is what lets a PRODUCT-mode KDC authenticate
 // the directory's people: their keys are derived when a plaintext password is
 // in hand (set, or verified at a sign-in), stored sealed on their own entry,
 // and read by the KDC through `krb5_principals.js`'s key source. It also mints
