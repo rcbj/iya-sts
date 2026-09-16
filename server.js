@@ -3,29 +3,14 @@
 // File: server.js
 //
 //
-// WS-Trust 1.4 STS mock.
+// The entry point of this identity service.
 //
-// A deliberately small, dependency-light Security Token Service that speaks
-// enough WS-Trust to exercise the OAuth2/OIDC Debugger's WS-Trust workflow end
-// to end in the test suite. It accepts a SOAP RequestSecurityToken (RST) and
-// dispatches on wst:RequestType:
-//
-//   Issue    -> RSTR Collection with a freshly minted, STS-signed SAML 2.0
-//               assertion (or a JWT / plain UsernameToken echo, per TokenType),
-//               a Lifetime, and an attached reference.
-//   Renew    -> RSTR with a fresh token for the supplied RenewTarget.
-//   Validate -> RSTR with wst:Status/wst:Code valid|invalid.
-//   Cancel   -> RSTR with wst:RequestedTokenCancelled.
-//
-// Authentication: a WS-Security UsernameToken is accepted when username and
-// password are both present (and the password is not the literal "invalid",
-// which lets a negative test force an auth failure). A request carrying an
-// OnBehalfOf/ActAs token (delegation) is also accepted. This is a TEST STS —
-// it does not verify request signatures or enforce real policy.
-//
-// The project's real intent is to run against Apache CXF's WS-Trust STS; this
-// mock is the CI fallback (see the plan / README) and the app can target
-// either.
+// It began as a small WS-Trust 1.4 STS mock for the OAuth2/OIDC Debugger's
+// test suite, and the comment that opened this file described that STS. It is
+// now a mock — and, in `product` mode, a deployable — identity service in
+// every protocol family the root CLAUDE.md's *Overview* lists; README.md is
+// the substantive description, `docs/` the user-facing one, and the WS-Trust
+// behaviour this header used to describe is `ws-trust/CLAUDE.md`'s.
 //
 // Config via env:
 //   CONFIG_FILE  the configuration module to load, chosen the same way as for the
@@ -33,7 +18,7 @@
 //                EVERY setting this service has — env/docker-tests.js is what
 //                the containerized test stack uses.
 //
-// The sixty-five settings themselves are not listed here any more, because a
+// The settings themselves are not listed here any more, because a
 // list in a comment is a list that goes stale: `config.js` is the table, and it
 // carries each setting's name, its environment variable, its default, what it
 // does, and whether changing it while the service runs does anything.
@@ -52,47 +37,33 @@
 // Logging: everything this mock does is written to the log at DEBUG level —
 // every endpoint call (path, request headers and body, response headers and
 // body, status code and elapsed time), and every SAML assertion, JWT and SD-JWT
-// VC both BEFORE and AFTER it was signed or encrypted. Drop the level to info
-// (see env/test.js) for a quiet run.
+// VC both BEFORE and AFTER it was signed or encrypted. Every appconfig file in
+// env/ runs at info; STS_LOG_LEVEL=debug is the run that asks for all of it.
 //
 // ---------------------------------------------------------------------------
 // This file is now the SHELL only: it loads the modules and listens. It used to
 // be all 4,489 lines of the service, which is why the split happened — eight
 // protocol families in one file meant no way to see what was in it short of
-// reading it.
+// reading it. What each directory holds is the root CLAUDE.md's *Where things
+// are*; the module list that stood here named root-level files that moved into
+// directories on 2026-08-23.
 //
-//   helpers.js       the log, the keys, and the helpers more than one protocol needs
-//   app.js           the express app and every middleware, which must be installed
-//                    before any route module loads
-//   saml2.js         SAML 2.0 assertions: build, sign, encrypt
-//   saml11.js        SAML 1.1 assertions, which is what WS-Federation RPs expect
-//   wstrust.js       WS-Trust 1.4 RST/RSTR and the /sts endpoints
-//   oauth2.js        RFC 8414 metadata, JWKS, and the mock authorization server
-//   wsfed.js         WS-Federation 1.2 passive requestor: /wsfed, its metadata,
-//                    and a mock relying party to verify what it sends
-//   vc_configs.js    the credential configurations this issuer offers
-//   vc_offers.js     Credential Offers, pre-authorized codes, deferred state
-//   vc_did.js        the did:web document and the DIF domain linkage credential
-//   vc_issuer.js     OID4VCI: metadata, proofs, the three credential formats
-//   vc_verifier.js   OID4VP: the request, and verifying what comes back
-//   sts_metadata.js  GET /admin/sts-metadata — every endpoint and spec, listed
-//
-// **Requiring a module registers its endpoints.** Each one does `app.get(...)`
-// at its top level against the shared app from app.js, rather than exporting a
-// register() function — which kept every handler exactly where it was written
-// instead of re-indented inside a wrapper. So the order below is the route
-// order. Nothing here has overlapping paths, so it does not currently matter,
-// but a module registering a wildcard would care a great deal. sts_metadata.js
-// is last on purpose: it reads the router to list what everything else
-// registered, and while it re-reads it per request, being last means it is
-// never the reason a route is missing.
+// **Requiring a module registers its endpoints** (rule 1). Each one does
+// `app.get(...)` at its top level against the shared app from
+// `common/app.js`, rather than exporting a register() function — which kept
+// every handler exactly where it was written instead of re-indented inside a
+// wrapper. So the require order is the route order, and it lives in
+// `common/protocol_stack.js` (below); the root CLAUDE.md's table says what
+// each position depends on. sts_metadata.js is last on purpose: it reads the
+// router to list what everything else registered, and while it re-reads it
+// per request, being last means it is never the reason a route is missing.
 // ---------------------------------------------------------------------------
 
 // FIRST, and before any module that reads the appconfig file. Every module now
 // lives in a subdirectory, so a relative CONFIG_FILE — `./env/local.js`, which
 // is what the documented invocation and the Dockerfile's ENV both say — no
 // longer resolves against the package root from where those modules sit. This
-// makes it absolute once, in place, so all fourteen direct readers agree. See
+// makes it absolute once, in place, so every direct reader agrees. See
 // common/config_file.js.
 require('./common/config_file').resolveConfigFile();
 
@@ -154,11 +125,11 @@ const APP_VERSION = version.load();
 //
 // **IT DOES NOT OPEN ANYTHING HERE.** Opening a Postgres pool is asynchronous
 // and a `require` cannot wait, so the store is opened and READ from
-// `persistence.start()` at the foot of this file — before the HTTP listener
-// binds and before the four socket families start. That makes it the fifth
-// module whose real work happens outside require time, and the only one of the
-// five that must go FIRST among them: what it restores is what the other four
-// are about to serve.
+// `persistence.start()` at the foot of this file (through
+// `common/service_state.js`) — before the HTTP listener binds and before the
+// socket owners start. That makes it one more module whose real work happens
+// outside require time, and the only one that must go FIRST among them: what
+// it restores is what the others are about to serve.
 //
 // In the default memory mode all of that is a no-op and this service behaves
 // exactly as it did before 2026-08-27, which is the whole compatibility story
@@ -176,9 +147,10 @@ const persistence = require('./persistence/persistence');
 // sockets. Two copies of the order would be two answers to "which handler
 // wins" — see that file's header.
 //
-// The five modules that own listeners come back from it, because `listen()`
-// below needs the handles. Requiring them registered their HTTP views and
-// started nothing.
+// The modules whose `listen()` is called below come back from it, because
+// this file needs the handles. Requiring them registered their HTTP views and
+// started nothing. (`tlsServer` is among them and owns no socket since
+// 2026-09-16; its `listen()` is still a startup step — see announce().)
 // ---------------------------------------------------------------------------
 const stack = require('./common/protocol_stack');
 const krb5 = stack.krb5;
@@ -191,13 +163,14 @@ const debuggerServer = stack.debuggerServer;
 // ---------------------------------------------------------------------------
 // THE MAIN LISTENER, and the one decision made about it before it binds.
 //
-// `global.https` — whose default is `oauth2.rfc9700`, so RFC 9700 mode brings
-// it with it — makes this an HTTPS listener instead of a plain one. It is not a
-// fourth certificate: `tls_server.js` generates ONE self-signed pair per start
-// and the directory's LDAPS 636 already serves it, so a caller trusts this
-// service once rather than twice. That module has been
-// required above by the time this runs, which is what makes the key available
-// here without moving anything in the require order.
+// `global.https` — whose default is `oauth2.rfc9700` or `oauth2.oauth21`, so
+// either mode brings it with it, and which every appconfig file in `env/` sets
+// — makes this an HTTPS listener instead of a plain one. It is not a second
+// certificate: `tls_server.js` generates ONE key pair per start, certified
+// under this service's Root, and the directory's LDAPS 636 and the debugger's
+// listener serve it too, so a caller trusts this service once. That module
+// has been required above by the time this runs, which is what makes the key
+// available here without moving anything in the require order.
 //
 // Two things follow and neither is hidden.
 //
@@ -395,14 +368,12 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0030') + 'ldap: the directory could ' +
                                                 'not start: ' + err.message);
   });
-  // The two HTTPS listeners, started here for the same reason the other two
-  // sockets are. GET /tls describes them and hands out the server certificate;
-  // GET /admin/sts-metadata cannot see a socket, so they are described by hand
+  // The SPIFFE gRPC listeners — the Workload API and the SPIRE Server API, a
+  // Unix socket and a TCP port each, per realm that has SPIFFE turned on —
+  // started here for the reason the other sockets are. GET /spiffe describes
+  // all three surfaces and reports whether each socket bound;
+  // GET /admin/sts-metadata cannot see one, so they are described by hand
   // there beside the KDC's and the directory's.
-  // The two gRPC listeners, started here for the reason the other four sockets
-  // are. GET /spiffe describes all three surfaces and reports whether each
-  // socket bound; GET /admin/sts-metadata cannot see one, so they are described
-  // by hand there beside the KDC's, the directory's and the TLS endpoint's.
   const spiffeListeners = spiffeServer.listen();
   spiffeListeners.whenReady.then(function (ready) {
     const up = ready.workload.concat(ready.api)
@@ -461,9 +432,10 @@ function announce() {
   // THE TWO TLS LISTENERS WERE DELETED ON 2026-09-16 (8443 and 9443). What
   // they did that was worth keeping now happens on THIS port: a client
   // certificate is asked for and never required, whatever arrives is recorded,
-  // and GET /tls/sign-in turns a verified one into a session. `listen()` is
-  // kept as a no-op so that this call site and the tests did not have to
-  // change on the same day the sockets went.
+  // and GET /tls/sign-in turns a verified one into a session. `listen()` was
+  // kept so that this call site and the tests did not have to change on the
+  // same day the sockets went; it binds nothing, and still restores the stored
+  // trust anchors and re-applies the context to the registered listeners.
   tlsServer.listen();
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +
@@ -510,7 +482,7 @@ function shutdown(signal) {
            'down, then exiting. Sessions, tokens, codes, artifacts and ' +
            'tickets are not persisted and are going with this process, which ' +
            'is what they have always done.');
-  // THE WORKER POOL GOES FIRST, and it is a drain rather than a kill: a child
+  // THE COMPUTATION POOL IS DRAINED rather than killed: a child
   // part way through an SLH-DSA signature is answering a request this process
   // still has open, and thirteen seconds of computation thrown away is a
   // request that gets nothing back. It gives them five seconds and kills what
@@ -620,7 +592,7 @@ const credentials = require('./common/credentials');
 const adminRbac = require('./admin-ui/admin_rbac');
 // The keystore, for the product-mode key material. A LEAF (rule 3).
 const keystore = require('./common/keystore');
-// The four startup steps, shared with a request worker. See that file.
+// The startup steps, shared with a request worker. See that file.
 const serviceState = require('./common/service_state');
 // The PROXY protocol v2 reader, a LIBRARY (rule 3): installed on the main
 // listener in bind() and on the KDC's TCP listener in announce(), and asked
@@ -630,10 +602,11 @@ const proxyProtocol = require('./common/proxy_protocol');
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S STATE, IN THE ONE ORDER THERE IS.
 //
-// The four steps — the store, the signing keys, what this process minted, and
-// coordination — moved to `common/service_state.js` on 2026-09-07, because a
-// REQUEST WORKER has to run exactly the same four in exactly the same order.
-// Each step's argument is in that file, where it has always been.
+// The steps — the store, the signing keys, what this process minted,
+// coordination and (since 2026-09-11) the certificate authority — moved to
+// `common/service_state.js` on 2026-09-07, because a REQUEST WORKER has to run
+// exactly the same steps in exactly the same order. Each step's argument is
+// in that file, where it has always been.
 // ---------------------------------------------------------------------------
 serviceState.start().then(function (both) {
   const started = both.started;
@@ -867,8 +840,9 @@ if (useHttps) {
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
     // THE CLIENT TRUSTSTORE, THE ONE /tls/trust FILLS (2026-09-06; it
-    // covered 8443 and 9443 too until they were deleted on 2026-09-16). Passed at creation AND kept current by the registration
-    // below, because anchors arrive at runtime — the CA a caller presents a
+    // covered 8443 and 9443 too until they were deleted on 2026-09-16).
+    // Passed at creation AND kept current by the registration below, because
+    // anchors arrive at runtime — the CA a caller presents a
     // client certificate from does not exist anywhere until somebody POSTs it.
     //
     // WHAT IT CHANGES AND WHAT IT DOES NOT. Before this, `socket.authorized`
@@ -883,8 +857,8 @@ if (useHttps) {
     ca: tlsServer.clientTruststoreOptions().ca,
     // RFC 8705 — certificate-bound access tokens. The token endpoint is on this
     // listener, so a certificate has to be ASKED FOR here or there is never one
-    // to bind to. Asked for, never required — which since 2026-09-16 is the
-    // only posture this service has, both deleted TLS listeners included.
+    // to bind to. Asked for, never required — and since the 9443 listener was
+    // deleted on 2026-09-16, no HTTPS listener in this service requires one.
     //
     // `rejectUnauthorized: false` looks like a hole and is not. A certificate
     // that built no chain to a trusted anchor is still thumbprinted and still

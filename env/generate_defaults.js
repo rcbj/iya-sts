@@ -90,11 +90,11 @@ const header = `// File: env/defaults.js
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
 // krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
-// oauth2.rfc9700, from oid4vci.walletUrl, from krb5.realm, and from the public
-// base URL or the listener's scheme, host and port). A literal here would
-// freeze the derivation at whatever it evaluated to the day this file was
-// written, so they resolve through their neighbour instead and are exempt from
-// the startup refusal for that reason.
+// oauth2.rfc9700 and oauth2.oauth21, from oid4vci.walletUrl, from krb5.realm,
+// and from the public base URL or the listener's scheme, host and port). A
+// literal here would freeze the derivation at whatever it evaluated to the day
+// this file was written, so they resolve through their neighbour instead and
+// are exempt from the startup refusal for that reason.
 //
 // See common/CLAUDE.md, and README.md's *Configuration*, which lists every
 // setting, its environment variable and its default in one table.

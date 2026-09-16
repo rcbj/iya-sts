@@ -88,9 +88,9 @@ const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
 const spiffeId = require('./spiffe_id');
-// PER PROCESS AND NOT PER REALM — see the store below. Required only for
-// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
-// move a route or join a cycle.
+// PER REALM SINCE 2026-09-12 (it was per process) — see the store below.
+// Required only for `realms.map()`, and it is a LEAF that registers no route,
+// so this cannot move a route or join a cycle.
 const realms = require('../common/realms');
 const ca = require('./spiffe_ca');
 const registry = require('./spiffe_registry');
@@ -597,9 +597,10 @@ const entryHandlers = {
 
   // What an AGENT calls to learn what it may issue. In a real server this is
   // authorized against the caller's own agent SVID and returns only the entries
-  // beneath it. Here it returns every entry, because nothing identifies the
-  // caller — the same answer the Workload API gives, for the same reason, and
-  // it is the honest one rather than a guess at who is asking.
+  // beneath it. Here it returns every entry. It was written when nothing
+  // identified the caller; `spiffe_auth.js` now authenticates it and its
+  // POLICY row allows only an agent to call this, but the answer is still not
+  // narrowed to the entries beneath that agent.
   GetAuthorizedEntries: rpc.unary('server', 'Entry.GetAuthorizedEntries',
                                   async function (call) {
     const request = call.request || {};
@@ -673,7 +674,7 @@ function maskedChanges(submitted, mask) {
 // THE AGENT SERVICE.
 // ===========================================================================
 
-// The join tokens this service has minted. In memory, like everything else, and
+// The join tokens this service has minted. Persisted (below), and
 // SINGLE-USE — a token redeemed once is gone, which is the one property a join
 // token has that makes it different from a password. Not enforcing that would
 // make `CreateJoinToken` a way of issuing a permanent credential, which is
@@ -1221,8 +1222,9 @@ function selectorsFromAttestation(attestationType, payload) {
   // `payload:<text>` — and a join token is exactly that, so the token that had
   // just attested the agent was written into the SPIFFE registry, in the
   // directory, readable wherever an agent's selectors are drawn. It is spent by
-  // then, which narrows the harm and does not make storing a credential right;
-  // and in development, where tokens are not checked, it is not spent at all.
+  // then, which narrows the harm and does not make storing a credential right.
+  // (Tokens are checked and spent in every mode: `auth.authRequired()` is
+  // `mode.gatesSpireServerApi()`, which answers true in development too.)
   // What goes on the entry is a digest prefix, which still lets somebody
   // holding the token recognise the agent it attested and lets nobody
   // reconstruct it.
@@ -1693,7 +1695,9 @@ const svidHandlers = {
   // What an AGENT calls: one CSR per registration entry it is handing an SVID
   // to. The identity comes from the ENTRY, and only the public key is read out
   // of the CSR — which is the check that stops an agent naming itself anything
-  // it likes even though nothing here authenticates it.
+  // it likes. (This said "even though nothing here authenticates it" until
+  // `spiffe_auth.js` began authenticating the caller; the check stands on its
+  // own either way.)
   BatchNewX509SVID: rpc.unary('server', 'SVID.BatchNewX509SVID',
                               async function (call) {
     await ca.ready();
@@ -1780,10 +1784,12 @@ const svidHandlers = {
       'This service issues no WIT-SVIDs; see GET /spiffe for why.');
   }),
 
-  // An intermediate CA for a downstream SPIRE server. Issued, and the entry's
-  // `downstream` flag is NOT checked — nothing here authenticates the caller,
-  // so there is no entry to check it on. Said plainly rather than left as a
-  // silent difference from a real server.
+  // An intermediate CA for a downstream SPIRE server. The caller's
+  // `downstream` flag IS checked now — `spiffe_auth.js`'s POLICY row allows
+  // this method to a `downstream` entity only, read off the entry behind the
+  // caller's SVID — and none of it is decided in this handler (see the
+  // header). It read "NOT checked — nothing here authenticates the caller"
+  // until that file existed.
   NewDownstreamX509CA: rpc.unary('server', 'SVID.NewDownstreamX509CA',
                                  async function (call) {
     await ca.ready();
@@ -2015,9 +2021,9 @@ const trustDomainHandlers = {
   // endpoint URL recorded in the relationship. This service will not: fetching
   // a URL that somebody registered, in order to obtain a key it will then use
   // to verify credentials, is a server-side request forgery with a
-  // specification citation attached — and on a service that authenticates
-  // nobody and accepts any registration, it is a blind HTTP client anybody can
-  // point anywhere.
+  // specification citation attached — and on a service that, when this was
+  // written, authenticated nobody and accepted any registration, it would have
+  // been a blind HTTP client anybody could point anywhere.
   //
   // The same refusal `wsfed.js` gives `wreqptr` and `client_auth.js` gives
   // `jwks_uri`. Holding the position in two files and not in a third would be

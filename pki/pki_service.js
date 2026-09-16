@@ -612,8 +612,10 @@ function status() {
 }
 
 module.exports = {
-  // For `sts_metadata.js` and the tests: the shapes, so nothing has to
-  // hand-build one of these URLs.
+  // `listen()` is what `server.js` calls. The other three are exported so a
+  // caller can read the listener's state, the CRL cache policy and the path
+  // filter without binding a socket; the URL shapes themselves are
+  // `common/pki_revocation.js`'s `distributionPoints()`.
   cacheSeconds: cacheSeconds,
   listen: listen,
   status: status,

@@ -4,10 +4,11 @@
 // Selected with CONFIG_FILE, the same way the api and client services choose
 // theirs — e.g. CONFIG_FILE=./env/local.js node server.js.
 //
-// EVERY SETTING THIS SERVICE HAS IS BELOW, grouped by the protocol it belongs
-// to, and every value here is the one the service used before this file listed
-// them — so a run with this file behaves exactly as one with the old file that
-// carried only `logLevel`.
+// A SELECTION of this service's settings is below, grouped by the protocol it
+// belongs to. It was every setting when this file was written; the table has
+// grown many times over since, and a setting not listed here takes its value
+// from `env/defaults.js` (below). Where a value here differs from the default
+// — `global.https`, `security`, `acme` — the block says why.
 //
 // `config.js` is the table these keys come from and is where each one's
 // REASONING lives: what it does, why the default is the default, and for the
@@ -42,13 +43,15 @@ var config = {
 
     // TLS ON THE MAIN PORT, SET HERE RATHER THAN LEFT TO DERIVE (2026-08-30).
     // `global.https` is `derived: true` in common/config.js and its default is
-    // whatever `oauth2.rfc9700` is — which is `false` below — so every service
-    // started with an appconfig file of this repository's own served PLAIN HTTP
-    // on this port while 8443, 9443 and LDAPS 636 were all TLS. That is one
-    // trust decision too many for a mock whose whole certificate story is "one
-    // self-signed pair per start, shared by every listener": a caller that had
-    // already trusted the key for three sockets still met an unencrypted
-    // fourth.
+    // whatever `oauth2.rfc9700` (or `oauth2.oauth21`) is — both `false` below —
+    // so every service started with an appconfig file of this repository's own
+    // served PLAIN HTTP on this port while 8443, 9443 and LDAPS 636 were all
+    // TLS. That is one trust decision too many for a mock whose whole
+    // certificate story is "one key pair per start, shared by every listener":
+    // a caller that had already trusted the key for three sockets still met an
+    // unencrypted fourth. (8443 and 9443 were deleted on 2026-09-16; the
+    // argument stands for LDAPS 636 and the debugger's listener — see
+    // env/CLAUDE.md.)
     //
     // WHAT IT COSTS is what config.js's own row says it costs: there is then NO
     // plain listener left in this process, and `GET /tls/server-certificate`
@@ -140,14 +143,16 @@ var config = {
   },
 
   // --- The admin console -------------------------------------------------
-  // The console at /admin now asks for a sign-on session and one of two roles,
+  // The console at /admin asks for a sign-on session and one of two roles,
   // and the roles are two ORDINARY GROUPS in the embedded directory — so an
   // ldapmodify, a SCIM PATCH, /admin/rbac and the management API are four doors
-  // onto one membership. Write implies read. While NEITHER group has a member,
-  // openWhenEmpty decides whether anybody who signs in holds both roles (on) or
-  // nobody gets in at all (off); it is on because the roster dies with the
-  // process and nothing here has a password to bootstrap with. /admin-api is
-  // NOT gated either way, which is the way back in.
+  // onto one membership. Write implies read. openWhenEmpty decides whether
+  // every signed-in person may use the console until the bootstrap
+  // administrator (admin.bootstrapUsername) first signs in (on), or only role
+  // members may from the start (off); config.js's row carries the older rule
+  // for a process with no bootstrap administrator. /admin-api takes an access
+  // token carrying admin:read / admin:write (adminApi.authRequired), and it is
+  // the way back in if the console locks everybody out.
   admin: {
     readGroup: "admin-read",
     writeGroup: "admin-write",
@@ -171,11 +176,11 @@ var config = {
     // are seeded as FULL RFC 7591 registrations (the console a confidential
     // OIDC relying party on the code grant, this API a confidential client on
     // client_credentials, each with a secret minted at startup), so they are
-    // clients that can be exercised rather than rows on a page. Nothing serves
-    // /admin/callback and the API's two scopes grant nothing — the console's
-    // gate is a sign-on session and two directory groups, and /admin-api is
-    // not gated at all. Restart to apply; seeded only where the identifier is
-    // free, so a deleted one stays deleted until the next start.
+    // clients that can be exercised rather than rows on a page — the console
+    // signs in through its own code flow at /admin/callback, and /admin-api
+    // takes an access token audienced to it (mgmt-api/CLAUDE.md). Restart to
+    // apply; seeded only where the identifier is free, so a deleted one stays
+    // deleted until the next start.
     seedInternal: true
   },
 
@@ -293,13 +298,14 @@ var config = {
     bulkMaxOperations: 100,
     bulkMaxPayloadSize: 1048576,
 
-    // The SCIM endpoints are the one surface here that refuses a caller who
-    // presents nothing — they create and delete accounts. All six schemes RFC
-    // 7644 section 2 names are offered and every one of them is permissive:
+    // The SCIM endpoints refuse a caller who presents nothing — they create
+    // and delete accounts. All six schemes RFC 7644 section 2 names are
+    // offered, and in development mode every one of them is permissive:
     // anybody can get a token with either scope, any password but "invalid"
     // works over Basic, any username works over Digest with the shared
-    // password below, and anybody may register a HOBA key. Turn authRequired
-    // off to get the unauthenticated behaviour these endpoints used to have.
+    // password below, and anybody may register a HOBA key. There is no longer
+    // a way to turn the requirement off (`scim.authRequired` was removed on
+    // 2026-09-06); product mode CHECKS what is presented — scim/CLAUDE.md.
     authDiscovery: false,
     authRealm: "SCIM",
     scopeRead: "scim:read",
@@ -343,8 +349,9 @@ var config = {
   // both answers.
   logout: {
     // Whether ?username= may name somebody other than the caller. It grants
-    // nothing that was not already true — no password is checked at any
-    // sign-in screen here — and what it buys is a headless test.
+    // nothing that was not already true in development mode — no password is
+    // checked at any sign-in screen there — and what it buys is a headless
+    // test.
     anyUser: true,
     // Whether a logout stamps a sign-out instant on the Kerberos principal,
     // after which a TGS-REQ carrying an older ticket is refused
@@ -462,10 +469,10 @@ var config = {
     // Refuse a Workload API call with no workload.spiffe.io: true header, as
     // every conforming implementation does.
     requireSecurityHeader: true,
-    // Mutual TLS and SPIRE's own per-method authorization on the SPIRE Server
-    // API's TCP port. Restart-only: it decides how the socket is bound. Trust a
-    // caller on the SPIRE Server API's Unix socket as the `local` entity, the
-    // way a real spire-server trusts its private socket.
+    // Trust a caller on the SPIRE Server API's Unix socket as the `local`
+    // entity, the way a real spire-server trusts its private socket. (The TCP
+    // port's mutual TLS and per-method authorization are no longer a setting:
+    // `spiffe.authRequired` was removed on 2026-09-06.)
     trustLocalSocket: true,
     // SPIFFE IDs that are administrators of the SPIRE Server API,
     // comma-separated. SPIRE's admin_ids; no registration entry needed.
@@ -507,15 +514,17 @@ var config = {
 
   // -------------------------------------------------------------------------
   // PERSISTENCE, since 2026-08-27, and the one thing to know before changing
-  // it: THREE THINGS CAN SURVIVE A RESTART and nothing this service MINTS ever
-  // does. The embedded LDAP directory (which is also the applications
-  // registry, the federation register and the SPIFFE registry — they are
-  // directory entries and nothing else), the trust realm registry, and the
-  // runtime setting changes made in the console. Sessions, access tokens, ID
-  // Tokens, refresh tokens, authorization codes, SAML artifacts, Kerberos
-  // tickets, the statistics and the audit log go with the process in every
-  // mode, because the signing key is regenerated on every start and a token
-  // that outlived it would verify against nothing.
+  // it: THREE THINGS CAN SURVIVE A RESTART in development mode, and nothing
+  // this service MINTS does. The embedded LDAP directory (which is also the
+  // applications registry, the federation register and the SPIFFE registry —
+  // they are directory entries and nothing else), the trust realm registry,
+  // and the runtime setting changes made in the console. Sessions, access
+  // tokens, ID Tokens, refresh tokens, authorization codes, SAML artifacts,
+  // Kerberos tickets, the statistics and the audit log go with the process,
+  // because the signing key is regenerated on every start and a token that
+  // outlived it would verify against nothing. PRODUCT MODE ON A POSTGRES STORE
+  // keeps its signing keys and therefore persists those too (2026-09-06) —
+  // persistence/CLAUDE.md.
   //
   // OFF HERE, which is the default and is what this service did for its whole
   // life until that date. docker-compose.yml turns it on with environment
@@ -545,7 +554,7 @@ var config = {
 
     // Where ldif mode writes. Relative paths resolve against the PACKAGE ROOT
     // rather than the working directory, for the reason CONFIG_FILE does (see
-    // common/config_file.js): thirteen modules read it from thirteen different
+    // common/config_file.js): the modules that read it sit in different
     // directories. In a container this is what a volume mounts over.
     dataDir: './data',
 
@@ -553,14 +562,15 @@ var config = {
     // THE BASE POSTGRESQL CONFIGURATION. Ready to use, and INERT until `mode`
     // above is 'postgres' — nothing dials this on an ordinary run.
     //
-    // It matches the Postgres service in this repository's docker-compose.yml
-    // exactly — user `sts`, password `sts`, database `sts` — so that the file
-    // and the compose stack cannot drift into disagreeing about what a base
-    // configuration looks like. Bring one up to match:
+    // It matches the owner of the Postgres service in this repository's
+    // docker-compose.yml — user `sts`, password `sts`, database `sts`. That
+    // stack itself dials as the least-privilege `sts_app` role over TLS
+    // (postgres/CLAUDE.md); this host-run value uses the owner, which may
+    // create the tables. Bring one up to match:
     //
     //   docker run -d --name sts-db -p 5432:5432 \
     //     -e POSTGRES_USER=sts -e POSTGRES_PASSWORD=sts -e POSTGRES_DB=sts \
-    //     postgres:16-alpine
+    //     postgres:18
     //
     // THE HOST IS `localhost` BECAUSE THIS IS THE HOST-RUN VALUE. Inside the
     // compose stack the database is reached as `postgres`, the service name on
@@ -568,8 +578,8 @@ var config = {
     // environment variable beats this file, so both work without either being
     // wrong.
     //
-    // The three tables are created on first connection. Nothing is migrated:
-    // if the schema ever changes, drop them.
+    // The tables are created on first connection by a role allowed to create
+    // them. Nothing is migrated: if the schema ever changes, drop them.
     //
     // The password is here in plain text on purpose. It guards a throwaway
     // database of MOCK identities, and nothing in this repository is a real

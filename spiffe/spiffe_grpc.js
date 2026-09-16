@@ -18,9 +18,9 @@
 // SHORT
 //
 // The argument this repository makes against `swagger-ui-dist` (see
-// `admin_api_docs.js`) is a real argument and it was made again here, in the
-// other direction. The Workload API is gRPC over HTTP/2 with protobuf framing;
-// this service already hand-rolls ASN.1, NDR and a Kerberos PAC, so a
+// `mgmt-api/admin_api_docs.js`) is a real argument and it was made again here,
+// in the other direction. The Workload API is gRPC over HTTP/2 with protobuf
+// framing; this service already hand-rolls ASN.1, NDR and a Kerberos PAC, so a
 // hand-rolled protobuf codec and a gRPC server over node's built-in `http2`
 // was a genuine option — around 900 lines, no dependency.
 //
@@ -684,7 +684,8 @@ function recordCall(surface, method, ok, detail, caller, errorCode) {
 //
 //   * **`prepareCall()`.** It reads the TRANSPORT (unix socket or TCP), the
 //     peer address, the peer certificate and — for the Workload API — the
-//     socket's peer credentials as selectors. Every one of those is a property
+//     selectors derived from those (node cannot read a Unix socket's peer
+//     credentials; see `spiffe_auth.js`). Every one of those is a property
 //     of a connection this process accepted, so a worker could not compute
 //     them and must not guess. What crosses is its ANSWER: a plain `caller`
 //     whose DNs `dnRfc4514()` has already rendered to strings.
@@ -1299,10 +1300,10 @@ function buildServer(services) {
 }
 
 // Bind one address, and REPORT a failure rather than throwing it. That is the
-// rule every listener in this service follows — see `ldap_server.js` and
-// `tls_server.js` — and the reason is the same: a port can already be taken,
-// and the fourteen other protocol families here are still useful when one
-// listener is not.
+// rule every listener in this service follows — see `ldap_server.js` (and
+// `tls_server.js`, while it owned listeners) — and the reason is the same: a
+// port can already be taken, and the fourteen other protocol families here are
+// still useful when one listener is not.
 function bindOne(server, address, credentials) {
   log.debug("Entering bindOne().");
   log.debug("Leaving bindOne().");
