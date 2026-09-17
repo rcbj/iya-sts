@@ -21,6 +21,16 @@
 //                                  the tests can read what the Verifier decided
 //   GET  /oid4vp/done              the Verifier's "thank you" page
 //
+// **AND SINCE 2026-09-17 (#38) A PRESENTATION CAN SIGN SOMEBODY IN** — not
+// from these endpoints, which answer a wallet, but from `/authn/wallet`
+// (`vc_signin.ts`), which builds its request through `buildVpRequest()` with
+// `signIn` and reads the second verdict `signInOutcome()` writes onto the
+// transaction. The bar door's own presentations still sign nobody in: they
+// were not asked for by a browser waiting to be signed in, and a sign-in that
+// happened because a bar door was shown a credential would be a session
+// nobody requested. The rules of who may be signed in are
+// `signInOutcome()`'s header.
+//
 // What it checks is the whole point, so it checks properly (RFC 9901 section
 // 7.3 plus OID4VP's rules for the Key Binding JWT):
 //
@@ -105,11 +115,16 @@ import revocationStatus = require('../common/revocation_status');
 // endpoint for what it does and does NOT claim about the holder.
 import stats = require('../common/admin_stats');
 import vcConfigs = require('./vc_configs');
+// THE REGISTER OF CREDENTIALS THIS REALM ISSUED FOR A DIRECTORY ENTRY
+// (2026-09-17, #38), read by `signInOutcome()` to decide whom a presentation
+// made for a sign-in signs in. A LIBRARY (rule 3) requiring only `common/`
+// leaves: this require closes no cycle and moves no route.
+import vcIssued = require('./vc_issued');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 import validation = require('../common/validation');
 
-const { VCI_JWT_TYPES } = vcConfigs;
+const { VCI_JWT_TYPES, VCI_VCT } = vcConfigs;
 
 // `jsonwebtoken` was required here and is no longer called; the import is
 // kept with the others it was listed beside.
@@ -140,6 +155,9 @@ interface VcVerifierDeps {
   signJwt: typeof helpers.signJwt;
   stsKeysFor: typeof helpers.stsKeysFor;
   kidNamesKey: typeof helpers.kidNamesKey;
+  nameForSubject: typeof helpers.nameForSubject;
+  subjectForName: typeof helpers.subjectForName;
+  vcIssued: typeof vcIssued;
   config: { value(key: string): any };
   mode: typeof mode;
   errorCodes: typeof errorCodes;
@@ -286,6 +304,9 @@ class VcVerifier {
       signJwt: helpers.signJwt,
       stsKeysFor: helpers.stsKeysFor,
       kidNamesKey: helpers.kidNamesKey,
+      nameForSubject: helpers.nameForSubject,
+      subjectForName: helpers.subjectForName,
+      vcIssued: vcIssued,
       config: config,
       mode: mode,
       errorCodes: errorCodes,
@@ -461,7 +482,7 @@ class VcVerifier {
   // else is an open redirect carrying a presentation request, and is refused by
   // name.
   // ---------------------------------------------------------------------------
-  private vpWalletFor(req: any) {
+  vpWalletFor(req: any) {
     const { log, config, mode } = this.deps;
     log.debug("Entering VcVerifier.vpWalletFor().");
     const configured = String(this.vpWalletUrl() || '').replace(/\/+$/, '');
@@ -544,19 +565,39 @@ class VcVerifier {
   //   by reference  a pre-registered client_id and a SIGNED Request Object at
   //                 request_uri, verifiable against this service's published
   //                 JWKS.
-  buildVpRequest(req: any, opts: { byReference?: boolean; format?: string }) {
+  //
+  // **AND A THIRD, FOR A SIGN-IN (2026-09-17, #38).** `opts.signIn` is what
+  // `vc_signin.ts` passes, and it changes four things about the request and
+  // nothing about how the answer is verified: it is always by reference (the
+  // wallet can check a signed request names this service), it always asks for
+  // THIS issuer's SD-JWT VC by its own `vct` whatever `oid4vp.expectedVct`
+  // says (only a credential this realm issued can sign anybody in, so asking
+  // for anybody else's would be asking for a refusal), it asks for the
+  // subject and nothing else (a sign-in needs to know who, and a DCQL query
+  // with no `claims` would ask for the whole credential), and it lives as long
+  // as `oid4vp.signInTtlS` says rather than as long as the bar door's
+  // requests. What the sign-in module needs to find the pending
+  // authentication again rides on the transaction as `signIn`, never in
+  // anything the wallet is shown.
+  buildVpRequest(req: any, opts: { byReference?: boolean; format?: string;
+                                   signIn?: any }) {
     const { log, logArtifact, baseUrlOf, nowSec, randomId, signJwt, vpConfig,
             stsCrypto, vpTransactions, vpRequests } = this.deps;
     log.debug("Entering VcVerifier.buildVpRequest(). byReference=" +
               !!opts.byReference +
-              ", format=" + (opts.format || 'dc+sd-jwt'));
+              ", format=" + (opts.format || 'dc+sd-jwt') +
+              ", signIn=" + !!opts.signIn);
+    const signIn = opts.signIn || null;
+    const byReference = !!opts.byReference || !!signIn;
     const base = baseUrlOf(req);
     const responseUri = base + '/oid4vp/response';
     const id = randomId(16);
     const nonce = randomId(18);
     const state = randomId(18);
-    const clientId = opts.byReference ? this.vpClientId() :
+    const clientId = byReference ? this.vpClientId() :
                      ('redirect_uri:' + responseUri);
+    const ttlMs = signIn && signIn.ttlMs > 0 ? Number(signIn.ttlMs) :
+                  this.vpTtlMs();
     const request = {
       client_id: clientId,
       response_type: 'vp_token',
@@ -564,9 +605,11 @@ class VcVerifier {
       response_uri: responseUri,
       nonce: nonce,
       state: state,
-      dcql_query: this.vpDcqlQuery(opts.format),
+      dcql_query: signIn ? this.signInDcqlQuery() :
+                  this.vpDcqlQuery(opts.format),
       client_metadata: {
-        client_name: 'Mock Verifier (bar door)',
+        client_name: signIn ? 'Sign-in with a wallet' :
+                     'Mock Verifier (bar door)',
         // All three formats are advertised whichever one this request asks for:
         // this is what the Verifier CAN accept, not what it wants this time —
         // the DCQL query is what says that.
@@ -586,23 +629,38 @@ class VcVerifier {
     const record: Record<string, any> = {
       id: id, nonce: nonce, state: state, clientId: clientId,
       responseMode: 'direct_post', request: request,
-      byReference: !!opts.byReference,
+      byReference: byReference,
       // The claims asked for, FROZEN onto the transaction rather than read
       // again when the presentation arrives. That is not tidiness: the list is
       // editable from /admin/vc-verifier-config while a presentation is in
       // flight, and a verifier that judged what came back against a list
       // changed after the request was sent would refuse a wallet for answering
       // the question it was actually asked.
-      requested: vpConfig.requestedClaims(),
+      requested: signIn ? ['sub'] : vpConfig.requestedClaims(),
       // Which format this Verifier asked for. The response is verified against
       // THIS, not against whatever shape happens to turn up, so a wallet that
       // answers a jwt_vc_json query with an SD-JWT is refused rather than
       // quietly accepted by the other code path.
-      format: vpConfig.formatOf(opts.format),
-      expires: Date.now() + this.vpTtlMs(), verdict: null
+      format: signIn ? 'dc+sd-jwt' : vpConfig.formatOf(opts.format),
+      // The `vct` a presented SD-JWT VC must carry, frozen for the same
+      // reason as the claims. Only a sign-in pins it; the bar door reads
+      // `oid4vp.expectedVct` when the answer arrives, as it always did.
+      expectedVct: signIn ? VCI_VCT : '',
+      expires: Date.now() + ttlMs, verdict: null
     };
+    if (signIn) {
+      record.signIn = {
+        authnId: String(signIn.authnId || ''),
+        bindingHash: String(signIn.bindingHash || ''),
+        completePath: String(signIn.completePath || ''),
+        crossDevice: !!signIn.crossDevice,
+        responseCode: '',
+        outcome: null,
+        completed: false
+      };
+    }
     logArtifact('OID4VP Authorization Request', 'as built', request);
-    if (opts.byReference) {
+    if (byReference) {
       // RFC 9101: the Request Object is a signed JWT. iss/aud are the client
       // and the wallet; the wallet checks the signature against the client's
       // key, which for a pre-registered client it has out of band — here, this
@@ -611,7 +669,7 @@ class VcVerifier {
         iss: clientId,
         aud: 'https://self-issued.me/v2',
         iat: nowSec(),
-        exp: nowSec() + Math.floor(this.vpTtlMs() / 1000)
+        exp: nowSec() + Math.floor(ttlMs / 1000)
       }, request);
       // `oid4vp.requestObjectCertificateHeader` decides the `x5c` / `x5u`.
       record.requestObject = signJwt(
@@ -628,9 +686,27 @@ class VcVerifier {
     return record;
   }
 
+  // The DCQL query a sign-in asks with: this issuer's SD-JWT VC, and its
+  // subject. See buildVpRequest() for why each part is what it is.
+  signInDcqlQuery() {
+    const { log, logArtifact } = this.deps;
+    log.debug("Entering VcVerifier.signInDcqlQuery().");
+    const query = {
+      credentials: [{
+        id: VP_DCQL_ID,
+        format: 'dc+sd-jwt',
+        meta: { vct_values: [VCI_VCT] },
+        claims: [{ path: ['sub'] }]
+      }]
+    };
+    logArtifact('OID4VP DCQL query', 'as built for a sign-in', query);
+    log.debug("Leaving VcVerifier.signInDcqlQuery().");
+    return query;
+  }
+
   // The query the wallet is handed: by value it carries the whole request, by
   // reference only client_id and request_uri (OID4VP section 5.2).
-  private vpRequestQuery(req: any, record: any) {
+  vpRequestQuery(req: any, record: any) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcVerifier.vpRequestQuery().");
     const base = baseUrlOf(req);
@@ -1152,11 +1228,15 @@ class VcVerifier {
       'nbf ' + (payload.nbf || '—') + ', exp ' + (payload.exp || '—') + ', ' +
       'now ' +
       now + '.');
+    // A sign-in pins the type on its transaction (see buildVpRequest());
+    // everything else reads the setting, as it always did.
+    const expectedVct = record.expectedVct || vpConfig.expectedVct();
     this.vpCheck(checks, 'Credential type (vct)',
-      payload.vct === vpConfig.expectedVct(),
+      payload.vct === expectedVct,
       'vct is "' + payload.vct + '"; this Verifier asked for "' +
-      vpConfig.expectedVct() +
-      '" (oid4vp.expectedVct).');
+      expectedVct + '"' + (record.expectedVct ?
+        ' (this issuer\'s own type, which a sign-in always asks for).' :
+        ' (oid4vp.expectedVct).'));
 
     // --- the Disclosures presented -------------------------------------------
     // Every one must hash to a digest the issuer signed. This is the check that
@@ -1295,6 +1375,9 @@ class VcVerifier {
     // The signature must verify against the key the CREDENTIAL names, not one
     // the presenter chose: that is what key binding means.
     const cnfJwk = (payload.cnf && payload.cnf.jwk) || null;
+    // Kept on the result for a sign-in, which compares it with the key the
+    // credential was issued to (`signInOutcome()`).
+    result.holderJwk = cnfJwk;
     if (!cnfJwk) {
       this.vpCheck(checks, 'KB-JWT signature', false,
         'the credential carries no cnf.jwk, so there is no key this ' +
@@ -1365,6 +1448,224 @@ class VcVerifier {
               result.disclosed.length + " disclosed claim(s), " + extra.length +
         " more than asked for.");
     return result;
+  }
+
+  // Where a wallet sends the End-User once this Verifier has answered: the
+  // bar door's thank-you page, or — for a sign-in — back to the page the
+  // browser that started it is waiting on, carrying the `response_code` when
+  // there is one. The path is the one the sign-in module put on the
+  // transaction; this module does not know it.
+  private afterResponseUri(req: any, record: any, responseCode: string) {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering VcVerifier.afterResponseUri().");
+    const base = baseUrlOf(req);
+    if (!record.signIn || !record.signIn.completePath) {
+      log.debug("Leaving VcVerifier.afterResponseUri(). The bar door.");
+      return base + '/oid4vp/done?state=' + encodeURIComponent(record.state);
+    }
+    log.debug("Leaving VcVerifier.afterResponseUri(). A sign-in.");
+    return base + record.signIn.completePath +
+      '?authn=' + encodeURIComponent(record.signIn.authnId) +
+      '&state=' + encodeURIComponent(record.state) +
+      (responseCode ? '&response_code=' + encodeURIComponent(responseCode) :
+                      '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHOM A VERIFIED PRESENTATION SIGNS IN, IF ANYBODY (2026-09-17, #38).
+  //
+  // Asked of every presentation made against a SIGN-IN transaction, after the
+  // verification above and whatever it concluded. The answer is a verdict of
+  // its own, `{ ok, username, subject, amr, acr, reason, errorCode }`, and it
+  // is kept APART from the presentation's verdict on purpose: "this
+  // presentation verified" and "this presentation signs somebody in" are two
+  // claims, and a foreign issuer's credential is the ordinary case where the
+  // first is true and the second is not. The page the browser is waiting on
+  // prints both.
+  //
+  // The conditions, in the order they are asked, each with the code the page
+  // is marked with when it is the one that fails:
+  //
+  //   1. the presentation VERIFIED — every check above, which already covers
+  //      the Key Binding JWT against the credential's `cnf` key, this
+  //      request's nonce and this Verifier's audience, freshness, `sd_hash`,
+  //      the validity window and this issuer's `vct` (STS-VC-0061);
+  //   2. THIS REALM'S KEY signed it, not a certificate in
+  //      `oid4vp.trustedIssuerCertificates`: a partner's credential may
+  //      verify at the bar door, and a partner does not get to say who is
+  //      signed in here (STS-VC-0058);
+  //   3. THIS REALM'S REGISTER holds it — issued here, on an access token this
+  //      realm verified, for a person (`vc_issued.ts`). A credential another
+  //      realm issued fails 1 or 2 before it gets here, and would not be in
+  //      this realm's partition if it did not (STS-VC-0059);
+  //   4. what the register says AGREES with the credential: the same subject
+  //      and the same holder key. Neither can differ for a credential this
+  //      issuer signed, and both are compared anyway, because the register is
+  //      keyed by a digest and a sign-in is the one place a mismatch would be
+  //      somebody else's session (STS-VC-0066);
+  //   5. the subject STILL NAMES AN ENTRY, and that entry's subject is still
+  //      this one — so a deleted person, or a name re-created under a new
+  //      `entryUUID`, is nobody (STS-VC-0060).
+  //
+  // What it does not ask is whether the person is ALLOWED a session. That is
+  // the issuance policy's question, and `startSession()` asks it for every
+  // door (STS-VC-0064 on the page when it refuses). The directory has no
+  // "disabled" flag for it to consult beyond that: `scimActive: false`
+  // deactivates nobody here, a row of the root `CLAUDE.md` of its own.
+  //
+  // **`amr` IS `["pop"]` AND `acr` IS `"1"`.** RFC 8176's `pop` is "proof of
+  // possession of a key" where it is unspecified whether the key is hardware-
+  // or software-secured — which is exactly what is known here: the Key
+  // Binding JWT proves the key, and a JWK says nothing about where the key
+  // lives. `hwk` or `swk` would be this service claiming knowledge it does not
+  // have, and the issuer accepts no key attestation that could supply it.
+  // `user` is not appropriate either: nothing about a presentation proves the
+  // holder was present or tested, only that their wallet signed. It is ONE
+  // factor, rated as every other one factor here is rated (`"1"`); two are
+  // never claimed, which is also why the mechanism is withheld from a request
+  // that demanded two (`authn.ts`, `walletOptionHtml()`).
+  // ---------------------------------------------------------------------------
+  signInOutcome(verified: any, presentation: unknown) {
+    const { log, vcIssued, nameForSubject, subjectForName,
+            stsCrypto } = this.deps;
+    log.debug("Entering VcVerifier.signInOutcome().");
+    const refuse = (errorCode: string, reason: string) => {
+      log.debug("Leaving VcVerifier.signInOutcome(). " + errorCode);
+      return { ok: false, errorCode: errorCode, reason: reason,
+               username: '', subject: '' };
+    };
+    if (!verified || !verified.ok) {
+      return refuse('STS-VC-0061', 'The presentation did not verify, so it ' +
+                    'signs nobody in. The checks above say which rule it ' +
+                    'broke.');
+    }
+    if (verified.issuerCertificatePem) {
+      return refuse('STS-VC-0058', 'The credential verified against a ' +
+                    'certificate in oid4vp.trustedIssuerCertificates, not ' +
+                    'against this realm\'s own key. A credential another ' +
+                    'issuer signed may be presented to this Verifier, and ' +
+                    'it does not sign anybody in here: only a credential ' +
+                    'this realm issued can say who a person here is.');
+    }
+    const row = vcIssued.lookup(presentation);
+    if (!row) {
+      return refuse('STS-VC-0059', 'This realm has no record of issuing ' +
+                    'this credential to a person it authenticated. Only a ' +
+                    'credential this realm\'s issuer minted on an access ' +
+                    'token this realm issued and verified — for a person, ' +
+                    'and for credential issuance — may sign somebody in. ' +
+                    'A credential from another realm, one issued on a ' +
+                    'token this service did not issue, or one issued ' +
+                    'before a restart in development mode is not one.');
+    }
+    let presentedJkt = '';
+    try {
+      presentedJkt = verified.holderJwk ?
+        stsCrypto.jwkThumbprint(verified.holderJwk, {}) : '';
+    } catch (e) {
+      log.debug("Caught in VcVerifier.signInOutcome(): " +
+                ((e && e.message) || e));
+      presentedJkt = '';
+    }
+    if (String(verified.sub || '') !== row.subject ||
+        !presentedJkt || presentedJkt !== row.jkt) {
+      return refuse('STS-VC-0066', 'The credential does not match what this ' +
+                    'realm recorded when it issued it (its subject or the ' +
+                    'key it is bound to), so it signs nobody in.');
+    }
+    const username = nameForSubject(row.subject);
+    if (!username || subjectForName(username) !== row.subject) {
+      return refuse('STS-VC-0060', 'The directory entry this credential was ' +
+                    'issued for no longer exists — it was deleted, or its ' +
+                    'name now belongs to a different entry — so the ' +
+                    'credential signs nobody in.');
+    }
+    log.debug("Leaving VcVerifier.signInOutcome(). " + username + ".");
+    return { ok: true, errorCode: '', reason: '', username: username,
+             subject: row.subject, amr: ['pop'], acr: '1',
+             holderKey: (verified.holderJwk.kty || '') +
+                        (verified.holderJwk.crv ?
+                          ' ' + verified.holderJwk.crv : '') };
+  }
+
+  // The transaction a state names, or null. An expired one is removed on the
+  // way past. For `vc_signin.ts`, which must not read the store directly: a
+  // second reader of a persisted store is a second place to forget the
+  // expiry.
+  transactionFor(state: unknown) {
+    const { log, vpTransactions, vpRequests } = this.deps;
+    log.debug("Entering VcVerifier.transactionFor().");
+    const key = String(state || '');
+    const record = key ? vpTransactions.get(key) : null;
+    if (!record) {
+      log.debug("Leaving VcVerifier.transactionFor(). None.");
+      return null;
+    }
+    if (record.expires < Date.now()) {
+      vpRequests.delete(record.id);
+      vpTransactions.delete(key);
+      log.debug("Leaving VcVerifier.transactionFor(). Expired.");
+      return null;
+    }
+    log.debug("Leaving VcVerifier.transactionFor(). Found.");
+    return record;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGN-INS A WALLET HAS ANSWERED AND NO BROWSER HAS COLLECTED YET
+  // (#38), for `logout/logout.ts`. Between the wallet's `direct_post` and the
+  // browser's next poll a transaction NAMES A PERSON and will become their
+  // session — so a sign-out in that window that left it alone would be
+  // followed, seconds later, by a session nobody could have ended. Each is
+  // `{ state, username, subject, expires, decidedAt }`; `withdrawSignIn()`
+  // ends one, and the wait page then says a sign-out ended it
+  // (STS-VC-0070).
+  // ---------------------------------------------------------------------------
+  signInsAwaitingCollection() {
+    const { log, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.signInsAwaitingCollection().");
+    const now = Date.now();
+    const out: any[] = [];
+    vpTransactions.forEach((record) => {
+      const signIn = record && record.signIn;
+      if (!signIn || signIn.completed || !signIn.outcome ||
+          !signIn.outcome.ok || record.expires < now) {
+        return;
+      }
+      out.push({ state: record.state, username: signIn.outcome.username,
+                 subject: signIn.outcome.subject, expires: record.expires,
+                 decidedAt: (record.verdict && record.verdict.at) || '' });
+    });
+    log.debug("Leaving VcVerifier.signInsAwaitingCollection(). " +
+              out.length + ".");
+    return out;
+  }
+
+  withdrawSignIn(state: unknown, why: string) {
+    const { log, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.withdrawSignIn().");
+    const record = this.transactionFor(state);
+    if (!record || !record.signIn || record.signIn.completed ||
+        !record.signIn.outcome || !record.signIn.outcome.ok) {
+      log.debug("Leaving VcVerifier.withdrawSignIn(). Nothing to withdraw.");
+      return false;
+    }
+    record.signIn.outcome = {
+      ok: false, errorCode: 'STS-VC-0070', username: '', subject: '',
+      reason: 'This sign-in was ended before this browser collected it: ' +
+              String(why || 'a sign-out') + '. Nobody was signed in.' };
+    vpTransactions.set(String(record.state), record);
+    log.debug("Leaving VcVerifier.withdrawSignIn(). Withdrawn.");
+    return true;
+  }
+
+  // Writes a transaction back THROUGH THE STORE, for the reason the response
+  // endpoint gives: the journal sees `set()`, not a field on an object.
+  saveTransaction(record: any) {
+    const { log, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.saveTransaction().");
+    vpTransactions.set(String(record.state), record);
+    log.debug("Leaving VcVerifier.saveTransaction().");
   }
 
   // The six endpoints, in the order they were registered at load before
@@ -1593,7 +1894,15 @@ class VcVerifier {
       log.debug("Entering the OID4VP response endpoint.");
       const body = parseBody(req);
       const state = String(body.state || '');
-      const record = vpTransactions.get(state);
+      let record = vpTransactions.get(state);
+      // A SIGN-IN'S TRANSACTION EXPIRES WHEN IT SAYS (#38). The bar door's
+      // are swept only when the next one is built, so a late answer to one
+      // is still verified as it always was; a sign-in's lifetime is a
+      // setting a deployment chose to bound a relay, and an answer after it
+      // is one the setting said not to take.
+      if (record && record.signIn && record.expires < Date.now()) {
+        record = null;
+      }
       if (!record) {
         log.debug("Leaving the OID4VP response endpoint. Unknown state.");
         errorCodes.mark(res, 'STS-VC-0036');
@@ -1601,12 +1910,32 @@ class VcVerifier {
           'Unknown or expired state: this Verifier has no such Authorization ' +
           'Request outstanding.');
       }
+      // A SIGN-IN'S TRANSACTION IS ANSWERED ONCE (2026-09-17, #38). The bar
+      // door lets a second `direct_post` overwrite the verdict, which costs
+      // nothing there; here the verdict decides WHO a waiting browser is about
+      // to be signed in as, and a second presentation replacing the first
+      // after the page has shown it would be exactly the swap a sign-in must
+      // not allow.
+      if (record.signIn && record.verdict) {
+        log.debug("Leaving the OID4VP response endpoint. A sign-in's " +
+                  "transaction was answered twice.");
+        errorCodes.mark(res, 'STS-VC-0057');
+        return oauthError(res, 400, 'invalid_request',
+          'This Authorization Request is a sign-in and has already been ' +
+          'answered. Start the sign-in again for a new one.');
+      }
       if (body.error) {
         // The wallet refused, which is a legitimate answer (section 8.4).
         record.verdict = { ok: false, refused: true, error: String(body.error),
                            errorDescription: String(body.error_description ||
                                                     ''),
                            checks: [], at: new Date().toISOString() };
+        if (record.signIn) {
+          record.signIn.outcome = {
+            ok: false, errorCode: 'STS-VC-0037', username: '', subject: '',
+            reason: 'The wallet declined to present a credential (' +
+                    String(body.error) + '), so nobody was signed in.' };
+        }
         // THROUGH THE STORE, so the verdict is not a fact only this process
         // holds: `vpTransactions` is `realms.map({persist})` and its journal
         // sees `set()` rather than a field stamped on the object it handed out.
@@ -1616,8 +1945,7 @@ class VcVerifier {
         vpTransactions.set(state, record);
         errorCodes.mark(res, 'STS-VC-0037');
         res.status(200).type('application/json').send(JSON.stringify({
-          redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' +
-                        encodeURIComponent(state)
+          redirect_uri: this.afterResponseUri(req, record, '')
         }));
         log.debug("Leaving the OID4VP response endpoint. The wallet refused: " +
                   body.error);
@@ -1652,6 +1980,9 @@ class VcVerifier {
                              VP_DCQL_ID + '"), each value an array of ' +
                                           'presentations.' }]
         };
+        if (record.signIn) {
+          record.signIn.outcome = this.signInOutcome(null, '');
+        }
         vpTransactions.set(state, record);  // through the store, as above
         errorCodes.mark(res, 'STS-VC-0038');
         res.status(400).type('application/json').send(JSON.stringify({
@@ -1684,6 +2015,24 @@ class VcVerifier {
         sub: verified.sub,
         presentation: presentations[0]
       };
+      // A SIGN-IN'S SECOND VERDICT (#38): whom, if anybody, this signs in.
+      // The browser that started the sign-in reads it; a same-device wallet
+      // is handed a one-time `response_code` to take that browser back with
+      // (OID4VP section 8.2), and only its SHA-256 is kept.
+      let responseCode = '';
+      if (record.signIn) {
+        const outcome = this.signInOutcome(verified, presentations[0]);
+        record.signIn.outcome = outcome;
+        if (outcome.ok) {
+          responseCode = this.deps.randomId(24);
+          record.signIn.responseCodeHash = crypto.createHash('sha256')
+            .update(responseCode, 'utf8').digest('base64url');
+        } else if (verified.ok) {
+          log.info(errorCodes.tag(outcome.errorCode) + 'oid4vp: a ' +
+                   'presentation verified and signs nobody in: ' +
+                   outcome.reason);
+        }
+      }
       vpTransactions.set(state, record);  // through the store, as above
       logArtifact('OID4VP verification result',
                   verified.ok ? 'accepted' : 'REFUSED', record.verdict);
@@ -1719,21 +2068,35 @@ class VcVerifier {
       // /admin/users a list of identities that got somewhere rather than of
       // ones that were tried.
       //
-      // AND IT IS STILL NOT A SIGN-ON, which is the claim this endpoint's own
-      // header makes and this call must not quietly undo. No session starts, no
-      // token is issued, and nothing else in this service reads what was
-      // presented. What is recorded is narrower and true: an identity presented
-      // a credential here and it verified. (tls_server.js drew the same line
-      // for a verified client certificate until 2026-09-05, when a verified
-      // certificate became a sign-on — `GET /tls/sign-in` since 2026-09-16.
-      // This endpoint did not follow it.)
+      // AND THIS CALL IS NOT THE SIGN-ON. What is recorded here is narrower
+      // and true: an identity presented a credential and it verified. No
+      // session starts HERE — this request is the wallet's, and a cookie set
+      // on it would land in the wallet rather than in the browser somebody is
+      // signing in with. Since 2026-09-17 (#38) a presentation made for a
+      // sign-in CAN start a session, in the browser that asked for it, at
+      // `/authn/wallet/wait` (`vc_signin.ts`); `tls_server.js` drew the same
+      // line for a verified client certificate, which became a sign-on at
+      // `GET /tls/sign-in`.
       //
       // The identity is the credential's SUBJECT, which is usually a DID (an
       // ldp_vc names its subject `did:jwk:…`) and is whatever the credential
       // says otherwise. A presentation with no readable subject records nothing
       // rather than a blank: recordAuthentication() drops an empty identity, so
       // the guard here is only to save the call.
-      if (verified.sub) {
+      //
+      // **A PRESENTATION THAT SIGNS SOMEBODY IN IS NOT RECORDED HERE**
+      // (2026-09-17, #38). It is recorded when the browser that started the
+      // sign-in comes back for its session, by `startSession()`, which
+      // records every sign-in itself with the session id on it — recording
+      // it here as well would count one sign-in twice, the defect federation
+      // and SPNEGO each fixed the same way. A sign-in nobody comes back for
+      // is on this transaction's verdict and nowhere else. Everything that
+      // does NOT sign anybody in — the bar door's presentations, and a
+      // sign-in's presentation of a credential that cannot — is recorded
+      // exactly as it always was.
+      const signsIn = !!(record.signIn && record.signIn.outcome &&
+                         record.signIn.outcome.ok);
+      if (verified.sub && !signsIn) {
         stats.recordAuthentication({
           presented: verified.sub,
           protocol: 'OpenID4VP',
@@ -1746,15 +2109,16 @@ class VcVerifier {
           // service configures at oid4vp.clientId.
           applicationKind: 'oid4vp-verifier',
           note: 'A presentation that verified against every check this ' +
-              'Verifier ' +
-                'makes. It is not a sign-on: no session was created, no ' +
-                'token was issued, and nothing else in this service reads ' +
-                'what was presented.'
+                'Verifier makes. It started no session: ' +
+                (record.signIn
+                  ? 'it was made to sign in, and ' +
+                    record.signIn.outcome.reason
+                  : 'it was made to the Verifier at /oid4vp/verifier, which ' +
+                    'signs nobody in — a wallet signs in at /authn/wallet.')
         });
       }
       res.status(200).type('application/json').send(JSON.stringify({
-        redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' +
-                      encodeURIComponent(state)
+        redirect_uri: this.afterResponseUri(req, record, responseCode)
       }));
       log.debug("Leaving the OID4VP response endpoint. Accepted.");
     });
@@ -1862,5 +2226,18 @@ export = {
   // For tests/revocation_status.js, which asks it about a revoked certificate.
   issuerCertificateRevocation: slot.forward('issuerCertificateRevocation'),
   buildVpRequest: slot.forward('buildVpRequest'),
-  vpDcqlQuery: slot.forward('vpDcqlQuery')
+  vpDcqlQuery: slot.forward('vpDcqlQuery'),
+  // THE SIGN-IN'S HALF (2026-09-17, #38), for `vc_signin.ts` and its test:
+  // the request a sign-in asks with, how a wallet is handed it, whom a
+  // presentation signs in, and the transaction read and written back
+  // through the one store.
+  signInDcqlQuery: slot.forward('signInDcqlQuery'),
+  vpRequestQuery: slot.forward('vpRequestQuery'),
+  vpWalletFor: slot.forward('vpWalletFor'),
+  signInOutcome: slot.forward('signInOutcome'),
+  transactionFor: slot.forward('transactionFor'),
+  saveTransaction: slot.forward('saveTransaction'),
+  // For `logout/logout.ts`'s `wallet-signin` family.
+  signInsAwaitingCollection: slot.forward('signInsAwaitingCollection'),
+  withdrawSignIn: slot.forward('withdrawSignIn')
 };

@@ -196,6 +196,11 @@ import senderConstraints = require('./sender_constraints');
 // `/logout` and the console have to render the SAME fan-out, and reaching into
 // this module for it would be a require in the wrong direction.
 import frontchannel = require('./frontchannel_logout');
+// OpenID Connect Back-Channel Logout 1.0 (2026-09-17, #36): the discovery
+// members, the `sid` it needs, and the sign-out page's list of deliveries. A
+// library of the same kind as the one above, and it does not require this
+// module either.
+import backchannel = require('./backchannel_logout');
 // The application registry, which lives in the embedded LDAP directory. A
 // library like the two above — it registers no route and requires only
 // `common/` libraries, none of which requires this module — so requiring it
@@ -394,6 +399,7 @@ interface OAuth2ServerDeps {
   oauth21: typeof oauth21;
   senderConstraints: typeof senderConstraints;
   frontchannel: typeof frontchannel;
+  backchannel: typeof backchannel;
   applications: typeof applications;
   validation: typeof validation;
   errorCodes: typeof errorCodes;
@@ -1402,6 +1408,7 @@ class OAuth2Server {
       oauth21: oauth21,
       senderConstraints: senderConstraints,
       frontchannel: frontchannel,
+      backchannel: backchannel,
       applications: applications,
       validation: validation,
       errorCodes: errorCodes,
@@ -2142,7 +2149,7 @@ class OAuth2Server {
   // ---------------------------------------------------------------------------
   private oidcMetadata(req: Req, issuer?: string): Json {
     const { stsCrypto, log, baseUrlOf, authorizationServers, config,
-            frontchannel } = this.deps;
+            frontchannel, backchannel } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.oidcMetadata(). issuer=" +
               (issuer || '(the request ' +
@@ -2256,11 +2263,10 @@ class OAuth2Server {
       // because the alternative is a client with no way to end a session that
       // this server really does end.
       end_session_endpoint: at + '/oauth2/logout',
-      // FRONT-CHANNEL LOGOUT IS SUPPORTED NOW AND BACK-CHANNEL IS NOT, which is
-      // the honest pair rather than the tidy one. Both members are stated
-      // because "the OP did not mention it" and "the OP said no" read
-      // identically to a client and only one of them is a fact this server is
-      // prepared to stand behind.
+      // BOTH LOGOUT SPECIFICATIONS, EACH FOLLOWING ITS OWN SETTING. The
+      // members are stated whichever way they read, because "the OP did not
+      // mention it" and "the OP said no" read identically to a client and only
+      // one of them is a fact this server is prepared to stand behind.
       //
       // Front-Channel Logout 1.0: a relying party registers a
       // `frontchannel_logout_uri` and every sign-out here loads it in a hidden
@@ -2275,14 +2281,18 @@ class OAuth2Server {
       // client: the per-client member of the same name is what decides whether
       // a given RP is sent one.
       //
-      // Back-channel logout stays FALSE and is a different specification: it is
-      // a signed Logout Token POSTed server-to-server, which needs the provider
-      // to reach the RP's network rather than the browser's, and nothing here
-      // implements it. Advertising it because front-channel arrived would be
-      // the overstatement this document exists not to make.
+      // BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36; this member read `false`
+      // until then): a signed Logout Token POSTed server-to-server to every
+      // relying party on an ending session that registered a
+      // `backchannel_logout_uri` — see `backchannel_logout.ts`.
+      // `oauth2.backchannelLogout` turns both members and the fan-out off
+      // together. `backchannel_logout_session_supported` is section 2.1's
+      // "the OP can pass a sid", which it can whenever the feature is on:
+      // every Logout Token here carries one.
       frontchannel_logout_supported: frontchannel.enabled(),
       frontchannel_logout_session_required: frontchannel.enabled(),
-      backchannel_logout_supported: false
+      backchannel_logout_supported: backchannel.enabled(),
+      backchannel_logout_session_supported: backchannel.enabled()
     });
     // The path-appended form's issuer (see below). Assigned after the merge so
     // it replaces the base URL asMetadata() derived, and assigned rather than
@@ -3051,7 +3061,7 @@ class OAuth2Server {
   // console's count.
   async idToken(base: Json, opts: Json): Promise<Json> {
     const { log, nowSec, randomId, signJwt, signJwtAsAsync, userFor, stats,
-            config, frontchannel, applications } = this.deps;
+            config, frontchannel, backchannel, applications } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.idToken().");
     const iat = nowSec();
@@ -3121,7 +3131,12 @@ class OAuth2Server {
     // should carry a session identifier; that argument was about inventing one
     // to make a console page easier, and the setting is what keeps it honoured
     // for anybody who wants it back.
-    if (opts.session_id && frontchannel.enabled()) {
+    //
+    // BACK-CHANNEL LOGOUT NEEDS IT TOO (2026-09-17, #36): a relying party
+    // matches a Logout Token's `sid` against the one in the ID Token it holds,
+    // so the claim is on while EITHER feature is — and only both settings off
+    // restore the tokens issued before either existed.
+    if (opts.session_id && (frontchannel.enabled() || backchannel.enabled())) {
       payload.sid = opts.session_id;
     }
     if (opts.access_token) payload.at_hash = self.halfHash(opts.access_token);
@@ -5085,7 +5100,12 @@ class OAuth2Server {
     // about `wsfedRealms` and saml2_sso.ts makes about `saml2ServiceProviders`:
     // the list should die exactly when the session does, and nothing then has
     // to sweep it.
-    frontchannel.noteClient(authInfo, String(query.client_id));
+    //
+    // With the issuer and the subject the ID Token is issued under (2026-09-17,
+    // #36), which is what a Logout Token for this client has to name — see
+    // `noteClient()`.
+    frontchannel.noteClient(authInfo, String(query.client_id),
+                            { iss: self.issuerOf(base), sub: user.sub });
 
     if (types.indexOf('code') >= 0) {
       const code = randomId(24);
@@ -6594,14 +6614,15 @@ class OAuth2Server {
 
   // Ends the session, so the next authorization request prompts again.
   private logoutEndpoint(req: Req, res: Res): Json {
-    const { log, STS, xmlEscape, mode, bcp, frontchannel, applications,
-            validation, errorCodes, endSession } = this.deps;
+    const { log, STS, xmlEscape, mode, bcp, frontchannel, backchannel,
+            applications, validation, errorCodes, endSession } = this.deps;
     const self = this;
     log.debug("Entering the logout endpoint.");
     // The same session WS-Federation's wsignout1.0 ends, through the same
     // function — one browser session shared by both protocols means signing out
     // of either signs out of both, which is what a person testing them together
     // expects.
+    const backchannelMark = backchannel.mark();
     const session = endSession(req, res);
     // ---------------------------------------------------------------------
     // FRONT-CHANNEL LOGOUT, AND WHY IT CAN TURN A REDIRECT INTO A PAGE.
@@ -6619,7 +6640,16 @@ class OAuth2Server {
     // that has not asked for this — and the redirect below happens exactly as
     // it always did. That is deliberate: the behaviour of an existing caller
     // must not turn on a feature it never opted into.
+    //
+    // BACK-CHANNEL LOGOUT CHANGES NONE OF THAT (2026-09-17, #36). Its Logout
+    // Tokens were queued by `endSession()` above — `dropSession()` is where a
+    // session's end sends them, whichever door ended it — and go out after
+    // this answer whether it is a redirect or a page. They need no browser, so
+    // they are no reason to hold one here; where the page IS drawn, it lists
+    // them.
     // ---------------------------------------------------------------------
+    const backchannelRows = session
+      ? backchannel.deliveriesFor([session.id], backchannelMark) : [];
     const notifications = frontchannel.enabled()
       ? frontchannel.notificationsFor(session,
                                       self.issuerOf(self.asBaseOf(req)))
@@ -6661,6 +6691,7 @@ class OAuth2Server {
             'anyway.') +
         '</div>' +
         frontchannel.render(notifications) +
+        backchannel.render(backchannelRows) +
         (checked
           ? '<h2>Return to the relying party</h2><p><a href="' +
             xmlEscape(checked) + '">' +
@@ -11525,7 +11556,8 @@ class OAuth2Server {
     // THE ADDRESSES, IN EVERY MODE (2026-09-13). Until this date the elements
     // of redirect_uris were never looked at, and neither were
     // post_logout_redirect_uris or frontchannel_logout_uri — so `javascript:`
-    // registered in all three, and the last is framed on the sign-out page. The
+    // registered in all three, and the last is framed on the sign-out page
+    // (`backchannel_logout_uri` joined them on 2026-09-17, #36). The
     // rule is the application register's, asked here so the answer is RFC 7591
     // section 3.2.2's error rather than a registration that silently did not
     // store. RFC 9701 section 6's three members are checked beside the

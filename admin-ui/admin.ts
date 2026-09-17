@@ -2272,8 +2272,9 @@ const SECTIONS = [
                'as them, and the Kerberos sign-out instant — and to end any ' +
                'of it. It is <a href="/logout">/logout</a> done to somebody ' +
                'else: the same nine stores through the same functions, ' +
-               'except that the notifications cannot be delivered from ' +
-               'here.' },
+               'except that the front-channel notifications cannot be ' +
+               'delivered from here. The back-channel Logout Tokens are, and ' +
+               'the page lists where each got to.' },
       // AFTER the traffic pages and BEFORE the audit log, and the order is
       // the same widening-detail argument the rest of this section follows:
       // Metrics says how much, the pages between say what came out, this says
@@ -7445,6 +7446,58 @@ class AdminConsole {
       '<td>' + button + '</td></tr>';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE RECENT BACK-CHANNEL LOGOUT DELIVERIES (2026-09-17, #36).
+  //
+  // A sign-out answers before its Logout Tokens are sent, so every result
+  // says `pending`; this is where each one is seen to have been accepted or
+  // not. On both halves of the page — the lookup and one person — because a
+  // delivery is not only one person's: an operator asking "is the relying
+  // party getting these?" has nobody in particular in mind. The rows are this
+  // process's (`oauth-oidc/backchannel_logout.ts`, header point 5); the
+  // `logout.backchannel` rows on /admin/audit are what every node shares.
+  // ---------------------------------------------------------------------------
+  backchannelDeliveriesSection(rows) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.backchannelDeliveriesSection().");
+    const list = Array.isArray(rows) ? rows : [];
+    const heading = '<h2>Recent back-channel Logout Tokens</h2>';
+    if (!list.length) {
+      log.debug("Leaving AdminConsole.backchannelDeliveriesSection(). None.");
+      return heading + this.note('None sent by this process yet. A sign-out ' +
+        'sends one to every relying party on the ending session that ' +
+        'registered a <code>backchannel_logout_uri</code>, while ' +
+        '<code>oauth2.backchannelLogout</code> is on. Each final outcome is ' +
+        'also a <code>logout.backchannel</code> row on ' +
+        '<a href="/admin/audit">the audit log</a>.');
+    }
+    log.debug("Leaving AdminConsole.backchannelDeliveriesSection(). " +
+              list.length + " row(s).");
+    return heading +
+      this.note('Newest first, the last ' + list.length + ' this process ' +
+      'made. <code>pending</code> is still being tried; a failure carries ' +
+      'its error code, and the same outcome is a ' +
+      '<code>logout.backchannel</code> row on <a href="/admin/audit">the ' +
+      'audit log</a>, which every node shares where this list does not.') +
+      '<table><thead><tr><th>Queued</th><th>Client</th><th>Session</th>' +
+      '<th>State</th><th>Why</th></tr></thead><tbody>' +
+      list.map(function (row) {
+        return '<tr><td class="sub">' + self.esc(row.queuedAt) + '</td>' +
+          '<td><code>' + self.esc(row.clientId) + '</code><br><span ' +
+          'class="sub">' + self.esc(row.uri) + '</span></td>' +
+          '<td class="sub">' + self.esc(row.sessionId) + '</td>' +
+          '<td>' + self.esc(row.state) +
+          (row.attempts ? '<br><span class="sub">' + row.attempts +
+                          ' attempt(s)' +
+                          (row.status ? ', HTTP ' + row.status : '') +
+                          '</span>' : '') + '</td>' +
+          '<td class="sub">' + (row.errorCode
+            ? '<code>' + self.esc(row.errorCode) + '</code> ' : '') +
+          self.esc(row.why || row.via || '') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
   // One route, two answers, and the choice is here rather than in the route so
   // that /admin-api/logout makes the same one — the rule every view in this
   // file follows.
@@ -7500,7 +7553,10 @@ class AdminConsole {
         '<code>/logout</code>, which needs no console role and is where the ' +
         'front-channel notifications actually load: those are iframes in the ' +
         'signed-out person\'s own browser, and this console is not that ' +
-        'browser.') +
+        'browser. The back-channel Logout Tokens are different — this ' +
+        'service sends them, whichever door the sign-out came through — and ' +
+        'the list below is where each one ended up.') +
+        this.backchannelDeliveriesSection(view.backchannelDeliveries) +
         // ON THE LOOKUP PAGE AND NOT ON THE PER-PERSON ONE. These four decide
         // what a logout REACHES, which is a question about the feature; the
         // drill-down is about one person, and a form there would invite
@@ -7509,7 +7565,9 @@ class AdminConsole {
         this.configFormsFor('/admin/logout');
       log.debug("Leaving AdminConsole.logoutView(). The lookup form.");
       return { json: { user: '', known: false, families: families,
-                       settings: this.configSettingsJson('/admin/logout') },
+                       settings: this.configSettingsJson('/admin/logout'),
+                       backchannelDeliveries: view.backchannelDeliveries ||
+                                              [] },
                inner: inner, title: 'Sign-out' };
     }
 
@@ -7603,7 +7661,8 @@ class AdminConsole {
           'placeholder="jti"></label> <button type="submit">Restore</button> ' +
           '<span class="sub">RFC 7009 has no such operation: a resource ' +
           'server may already have cached the refusal.</span></p></form>'
-        : '');
+        : '') +
+      this.backchannelDeliveriesSection(view.backchannelDeliveries);
 
     log.debug("Leaving AdminConsole.logoutView(). " + inventory.total +
               " live item(s).");
@@ -12150,7 +12209,8 @@ class AdminConsole {
       // it is what `/oauth2/revoke` does — so it stayed, renamed to say what it
       // does. What was ADDED is the act the old label promised, and it is the
       // SAME one `/admin/logout` performs: `logoutReader.terminate()` with an
-      // empty selection, which walks all ten families in `endOrder` so the
+      // empty selection, which walks every family (eleven since #38) in
+      // `endOrder` so the
       // front-channel notifications are built before the session they hang off
       // is destroyed. A second implementation here would be a second answer to
       // "what is a live session", which is the thing rule 3m exists to prevent.
@@ -12164,7 +12224,9 @@ class AdminConsole {
       '">the sign-out page</a> performs, through the same function: it ends ' +
       'every browser sign-on session, notifies every OpenID Connect relying ' +
       'party, WS-Federation realm and SAML 2.0 service provider they signed ' +
-      'into, invalidates their authorization codes and OID4VCI ' +
+      'into (an OpenID Connect relying party with a ' +
+      '<code>backchannel_logout_uri</code> is POSTed a Logout Token by this ' +
+      'service), invalidates their authorization codes and OID4VCI ' +
       'pre-authorized codes, closes their bound LDAP connections, stamps the ' +
       'Kerberos sign-out instant on their principal, and revokes their ' +
       'tokens. In that order — the notifications are built off the session, ' +
@@ -12175,7 +12237,8 @@ class AdminConsole {
       'loaded in the signed-out person\'s OWN browser, and this console is ' +
       'not that browser — so what happens here is that the relying party is ' +
       'forgotten and the notification is reported rather than sent; ' +
-      '<code>/logout</code> is where those actually load. And ' +
+      '<code>/logout</code> is where those actually load (the back-channel ' +
+      'Logout Token is not one of these: it is sent). And ' +
       '<strong>nothing recalls a SAML assertion, a Kerberos service ticket ' +
       'or an SVID</strong>: each is valid because somebody else can verify ' +
       'it without asking this service, so the only thing that ends one is ' +
@@ -25569,9 +25632,10 @@ class AdminConsole {
         'actually stops existing. <a href="/admin/logout">/admin/logout</a> ' +
         'calls them; so does <a href="/logout">/logout</a>, which is the ' +
         'same act without a console role. What this console still cannot do ' +
-        'is DELIVER the notifications — a front-channel logout is an iframe ' +
-        'in the signed-out person\'s own browser, and this is not that ' +
-        'browser.') +
+        'is DELIVER the front-channel notifications — each is an iframe in ' +
+        'the signed-out person\'s own browser, and this is not that ' +
+        'browser. The back-channel Logout Tokens need no browser, and this ' +
+        'service sends them whichever door ended the session.') +
         self.bullet('<strong>It does not keep the tokens ' +
         'themselves</strong>, only their claims. A page listing a thousand ' +
         'live bearer credentials in a form a browser will render is a page ' +
@@ -32091,9 +32155,12 @@ class AdminConsole {
         'does not exist on the wire.') +
 
         self.warn('<strong>This asks; it does not admit anybody.</strong> A ' +
-        'presentation that verifies here starts no session, issues no token ' +
+        'presentation made to this door starts no session, issues no token ' +
         'and grants no access — the door says yes and that is the whole of ' +
-        'it. Nothing else in this service reads what was presented. The two ' +
+        'it. Signing in with a wallet is a different door, <code>' +
+        '/authn/wallet</code>, which asks for a credential this realm ' +
+        'issued with a request of its own and is not configured here ' +
+        '(<a href="/admin/oid4vp">OpenID4VP</a> has its switch). The two ' +
         'settings are also deliberately separate: this page decides what is ' +
         'ASKED FOR and <a href="/admin/vc">/admin/vc</a> decides what is ' +
         'ISSUED, so that asking for a claim the issuer does not mint stays ' +
@@ -32132,7 +32199,9 @@ class AdminConsole {
         'flight, which keeps the claims it was built with. Not the ' +
         '<code>vct</code> or the type array a credential is identified by. ' +
         'And not what a verified presentation is worth: nothing here turns ' +
-        'one into a credential of any kind.');
+        'one into a credential of any kind, and nothing here decides whether ' +
+        'one signs anybody in — that is <code>/authn/wallet</code>\'s ' +
+        'question, asked only of a credential this realm issued.');
 
       self.respond(req, res, vpConfigJson(), 'Verifier request',
                    '/admin/vc-verifier-config', inner);
@@ -38977,15 +39046,22 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the settings around its request.</strong> The DCQL query — which ' +
           'credential, which claims — is ' +
           '<a href="/admin/vc-verifier-config">Verifier request</a> next ' +
-          'door; these four are the client identifier it presents as, where ' +
-          'it sends a holder to present, how fresh a Key Binding JWT has to ' +
-          'be, and the claims it asks for when nothing else has been chosen.',
-    also: ['<strong>A verified presentation does not sign anybody ' +
-           'in.</strong> This verifier checks the presentation, reports what ' +
-           'it found and stops there: no session is started, no token is ' +
-           'issued, and nothing about the holder is written to the ' +
-           'directory. OpenID4VP is a presentation protocol here and not a ' +
-           'second front door.'],
+          'door; these settings are the client identifier it presents as, ' +
+          'where it sends a holder to present, how fresh a Key Binding JWT ' +
+          'has to be, the claims it asks for when nothing else has been ' +
+          'chosen — and the four that govern signing in with a wallet.',
+    also: ['<strong>A presentation can sign somebody in, at <code>' +
+           '/authn/wallet</code>, and only one kind can.</strong> ' +
+           '<code>oid4vp.signIn</code> offers "Sign in with a wallet" on the ' +
+           'sign-in screen: a holder-bound SD-JWT VC <em>this realm</em> ' +
+           'issued, on an access token it verified, signs in the directory ' +
+           'entry it was issued for, with <code>amr ["pop"]</code>. A ' +
+           'credential from a trusted foreign issuer, another realm or a ' +
+           'foreign access token still verifies, is recorded on ' +
+           '<a href="/admin/users">/admin/users</a> as a presentation, and ' +
+           'signs nobody in. The bar door at <code>/oid4vp/verifier</code> ' +
+           'signs nobody in whatever it is shown: nobody there asked to be ' +
+           'signed in.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 
@@ -39256,11 +39332,13 @@ const PROTOCOL_SETTINGS_PAGES = [
            'authorization server so that both read one session: sign in at ' +
            '<code>/oauth2/authorize</code> and <code>/wsfed</code> knows it, ' +
            'and the other way round.',
-           '<strong><code>wauth</code> is recorded and not honoured, and ' +
+           '<strong><code>wauth</code> is honoured, and ' +
            '<code>wreqptr</code> is never dereferenced.</strong> A relying ' +
-           'party that demands a stronger factor gets whatever the session ' +
-           'already had, and this service dials no URL that did not come off ' +
-           'a federation relationship.'],
+           'party that demands a security key or two factors the session ' +
+           'does not have sends the person to sign in again with the second ' +
+           'factor required (a step-up, since 2026-09-17), and is refused ' +
+           'only if that one attempt still does not produce it. And this ' +
+           'service fetches nothing from a URL a request names.'],
     links: [['/wsfed', 'the profile, for a person'],
             ['/wsfed/rp', 'the mock relying party'],
             ['/FederationMetadata/2007-06/FederationMetadata.xml', 'its ' +

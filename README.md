@@ -115,11 +115,11 @@ is written down in
 | **WS-Trust 1.0–1.4** | Issue / Renew / Validate / Cancel, WS-Security, WS-Addressing, optional XML-DSIG and XML-Enc. **In product mode** (2026-09-12) every operation requires a credential — a UsernameToken verified against the directory, or a SAML assertion this STS signed that is inside its Conditions — an `OnBehalfOf`/`ActAs` requires the requester's own credential and an assertion this STS signed inside it, and `?encrypt=1` that cannot encrypt is a Fault rather than plaintext. In both modes a requested `wst:Lifetime` is clamped to `wstrust.maxTokenLifetimeMin`, the JWT carries a `jti` and a `kid`, the assertion's AuthnContext names the credential (`PreviousSession` for an assertion, `unspecified` for none or a delegation) rather than a password, and a delegation starts no session for the subject |
 | **SAML 2.0 and SAML 1.1** | signed assertions of both vintages, the metadata a relying party needs, and **a browser-facing identity provider for each** — SAML 2.0's Web Browser SSO profile over all three bindings with Single Logout, and SAML 1.1's Browser/POST and Browser/Artifact profiles with a SOAP responder that is also an attribute authority. They are separate implementations: SAML 1.1 has no request message and no Single Logout. 1.1 is also what a WS-Federation relying party expects by default |
 | **SAML 2.0 Web Browser SSO** | a full identity provider at `/saml2`: the Single Sign-On service over **HTTP Redirect** and **HTTP POST**, and the Response over **HTTP POST, HTTP Redirect or HTTP Artifact** — the third with a **SOAP Artifact Resolution Service** behind it, where the assertion never passes through the browser at all and an artifact resolves **exactly once**. Plus **Single Logout** in both directions, and **signed metadata PER SERVICE PROVIDER**: `/saml2/metadata/{sp}` names an identity provider of its own with its own endpoints, the way Okta and Ping do, and **it is minted for any entityID asked for** — nothing has to be provisioned before a service provider can be pointed here, and the first valid AuthnRequest creates its application entry. It accepts every entityID; **a service provider's request signature is VERIFIED** against its registered certificate (since 2026-09-17, and an unsigned request is refused in product by default), and **its metadata is CONSUMED** by an explicit refresh or upload — endpoints, keys, NameIDFormats; `NameIDPolicy`, `ForceAuthn`, `IsPassive` (answered with `NoPassive`, not a screen) and `RequestedAuthnContext` are all honoured, and a `ProtocolBinding` it does not implement is refused **by name**. It has no sign-in screen of its own — see below for the SameSite hop that makes that possible — and a mock service provider at `/saml2/sp` verifies a response check by check |
-| **WS-Federation 1.2** | the Web (Passive) Requestor Profile of section 13 — `wsignin1.0` with `wtrealm`, `wreply`, `wctx`, `wct`, `wfresh`, `wauth`, `whr` and `wreq`, the response as a **form POST**, `wsignout1.0` with front-channel cleanup, signed federation metadata at AD FS's path, and a mock relying party that verifies the response check by check |
+| **WS-Federation 1.2** | the Web (Passive) Requestor Profile of section 13 — `wsignin1.0` with `wtrealm`, `wreply`, `wctx`, `wct`, `wfresh`, `wauth` (a demand the session cannot meet is a step-up through the sign-in), `whr` and `wreq`, the response as a **form POST**, `wsignout1.0` with front-channel cleanup, signed federation metadata at AD FS's path, and a mock relying party that verifies the response check by check |
 | **Federation, in five of those protocols** | this service as **either end** of a relationship with a foreign identity service — SAML 2.0, SAML 1.1, WS-Federation 1.2, OpenID Connect and OAuth 2.0. As a **service provider** it sends the request, consumes what comes back at `/federation/acs/{id}`, **verifies it against a certificate configured on that relationship**, maps the attributes onto an entry under `ou=users` and starts a session — the SAME session every other protocol here reads, which is what lets a federated identity satisfy an OAuth 2.0 authorization request, a WS-Federation `wsignin1.0` or a SAML `AuthnRequest` without any of those knowing federation exists. `/authn/login` grows a button per usable partner for exactly that reason. As an **identity provider** it marks a partner as a federation partner rather than a test client and decides **which attributes are released to it**. **It is the one feature here that has to be configured before it will do anything, and the one that refuses by default** — see *Federation* below, where that inversion is argued rather than assumed: "accept any SAML Response" is not a permissive mock, it is an authentication bypass for every protocol in the process. It is also the only thing here that makes an **outbound** request, and `jwks_uri` on an application entry and WS-Federation's `wreqptr` are still never followed — the difference is a URL an administrator configured against a URL a caller supplied |
 | **OAuth 2.0** | a full authorization server: RFC 8414 metadata plus every endpoint it advertises — authorize (which redirects to the authentication service when nobody is signed in), token, userinfo, introspect, revoke, register (RFC 7591 with software statements — verified against this realm's key or a declared publisher's, and issued from the console — and the RFC 7592 read/update/delete operations), jwks. Introspection answers as RFC 7662 JSON or, when asked, as an **RFC 9701 JWT** signed and optionally encrypted for the resource server that asked. Authorization requests may be **JWT-secured (RFC 9101)** — a signed, optionally encrypted request object by value or from a `request_uri` the client registered — or **pushed first (RFC 9126)** to `/oauth2/par`, authenticated as at the token endpoint, for a one-time `request_uri`. PKCE (RFC 7636), **Rich Authorization Requests (RFC 9396)** — `authorization_details` of every type a resource application declares, with JSON Schemas, consent drawn per detail and the token addressed to that resource — the `iss` authorization response parameter (RFC 9207), and every one of the seven grant types its metadata advertises — including **Token Exchange (RFC 8693)**. It is permissive by design, and it can be told not to be: `oauth2.rfc9700` puts the authorization flow into **RFC 9700** mode — exact-string redirect URI matching with RFC 8252's loopback port exception, no open redirector at either redirecting endpoint, PKCE required of public clients with S256 only, the PKCE downgrade and value reuse refused, and no response type that issues an access token from the authorization endpoint, refresh token rotation with replay detection that revokes the whole chain, no password grant, no CORS at the authorization endpoint, and the one client credential this service checks — and it turns port 8081 itself into an **HTTPS** listener, on the certificate LDAPS 636 and the embedded debugger's listener already share, so the issuer and every endpoint in every metadata document follow. Off by default; `GET /oauth2/rfc9700` says what it does and does not enforce |
 | **Consent, at `/oauth2/consent`** | **The one policy in this service that is ON by default.** The first time a given username signs in to a given `client_id` for a given scope, a screen lists the scopes that are new and nothing is issued until they answer; Allow writes one `oauthConsent` value per scope onto that person's own entry under `ou=users`, so the second sign-in is silent and an `ldapsearch` can read what somebody agreed to, and Deny returns `access_denied` to the client and records nothing at all. A delegated permission is recorded by its **whole identifier** and never by the bare permission name, because two resources may each expose a `read`. `oauthGlobalConsent` on an APPLICATION's entry consents a scope for everybody who signs in to it and **writes nothing about anybody** — an override rather than a record, so removing it asks everybody again, including the people who would have said yes. `prompt=consent` asks again and takes nothing away; `prompt=none` with something outstanding is `consent_required`. It carries no script, so the service-wide `script-src 'none'` is untouched. Off with `oauth2.consentRequired`, and OFF means nothing asked and nothing recorded rather than everybody consented |
-| **OpenID Connect 1.0** | `id_token` with `nonce`, `at_hash` and `c_hash` across all three flows, the section 5.3 UserInfo endpoint, **Discovery 1.0** at all three URLs a client may look at, RP-Initiated Logout, and **Front-Channel Logout 1.0** — the provider's side of it: the two discovery members, the two per-client registration members, the `sid` claim on an ID Token issued on a browser session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out. Back-channel logout is a different specification and is not implemented; the metadata says so |
+| **OpenID Connect 1.0** | `id_token` with `nonce`, `at_hash` and `c_hash` across all three flows, the section 5.3 UserInfo endpoint, **Discovery 1.0** at all three URLs a client may look at, RP-Initiated Logout, and **Front-Channel Logout 1.0** — the provider's side of it: the two discovery members, the two per-client registration members, the `sid` claim on an ID Token issued on a browser session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out; and **Back-Channel Logout 1.0** — a signed `logout+jwt` POSTed, with bounded retry, to every registered `backchannel_logout_uri` on a session any sign-out ends |
 | **A protocol-independent sign-out** | `GET /logout` lists **everything this service is still holding for one identity across every family** — sessions, relying parties, realms, service providers, revocable tokens, outstanding authorization and pre-authorized codes, directory connections bound as them, and the Kerberos ticket position — with a checkbox against each, and a POST that ticks nothing ends all of it. Two of those mechanisms are new: a **Kerberos sign-out instant**, after which a `TGS-REQ` carrying an older ticket is refused KDC_ERR_TGT_REVOKED (20), and closing the **LDAP connections** bound as that person, which is the only sign-out RFC 4511 has. **What cannot be ended is listed anyway, with the reason** — an assertion, a service ticket or an SVID already issued is beyond recall because nothing consults this service when one is presented, and hiding those would make a global logout look complete when it is not |
 | **WebAuthn Level 3** | the relying party's half, on the login screen, in **both roles**: a second factor after the password, or the **primary credential** with no password at all. Registration and assertion are verified either way, and `amr` / `acr` in the tokens that follow say which happened — `["pwd","hwk"]`/`mfa` for two factors, `["hwk"]`/`1` for a passwordless sign-in, which is one factor however phishing-resistant it is |
 | **TOTP (RFC 6238 over RFC 4226)** | the **other second factor** on that same login screen, and the only credential this service verifies besides a Kerberos ticket. A person enrols an authenticator app from `/portal/mfa` or while spending an activation link: a **QR code this server rendered** (an SVG data: URI — every page of the portal is `script-src 'none'`) and the same secret in base32 beside it, because the phone is often the browser showing the page. **Two steps, and the first writes nothing**: an unconfirmed secret on somebody's entry would be a second factor they cannot produce. Once enrolled, **a password alone stops signing them in** — the sign-in screen asks for a code without being told to — and the session says `amr ["pwd","otp"]` / `acr mfa`, `otp` being RFC 8176's value for exactly this. **Codes are checked FOR REAL in both modes**: all three digests, a settable step and digit count, a symmetric skew window, and section 5.2's accept-once rule enforced against the step last accepted, so the code that set the app up cannot also sign anybody in. It can never be a first factor — this service holds the same shared secret the app does — and there is no self-service reset, because one anybody can use is no second factor: an operator's Clear on that person's row under `/admin/users` is the way back for a lost phone |
@@ -132,7 +132,7 @@ is written down in
 | **mTLS-bound tokens (RFC 8705)** | the *other* sender constraint RFC 9700 names: with `global.https` on, the main listener asks for a client certificate and a Token Request made with one is answered with `cnf["x5t#S256"]` — the SHA-256 of its DER — on the access **and** refresh tokens, which the protected endpoints — UserInfo, the credential endpoints, SCIM, SSF, `/admin-api` and the embedded debugger — then check against the certificate the connection was made with, and introspection reports as `cnf` (§3.2). A client that registers `tls_client_certificate_bound_access_tokens: true` is refused a token without a certificate, in every mode (§3.4). A refresh by a client that authenticated by certificate may present a NEW certificate (§7.1, §6.3). Advertised only where it can actually be done |
 | **Resource Indicators (RFC 8707)** | `resource` at the authorization endpoint and on **every** grant at the token endpoint becomes the access token's `aud`, so a token can be restricted to one resource server or a small set of them — repeat the parameter for a set — and the resource server here refuses one issued for a different audience |
 | **OpenID4VCI 1.0** | a Credential Issuer: SD-JWT VC (RFC 9901), `jwt_vc_json`, `ldp_vc` with bbs-2023; Credential Offers, the pre-authorized code grant with `tx_code`, `authorization_details` (including its `claims` member, so a wallet can ask for a subset of the claims), batch issuance, response encryption, deferred issuance, the Notification Endpoint |
-| **OpenID4VP 1.0** | a Verifier with DCQL that **actually verifies** what it is sent, check by check |
+| **OpenID4VP 1.0** | a Verifier with DCQL that **actually verifies** what it is sent, check by check — and, since 2026-09-17, a **way to sign in**: "Sign in with a wallet" on the sign-in screen asks for an SD-JWT VC this realm issued, and a presentation whose Key Binding JWT verifies against the credential's key starts a session for the directory entry it was issued for (see *Signing in with a wallet*) |
 | **W3C DID Core 1.0** | its own `did:web` document, and the DIF Well Known DID Configuration that links it to its origin |
 | **TLS / mutual TLS (RFC 8446)** | **the main port asks every connection for a client certificate and requires none**, so presenting one is the client's decision and mutual TLS happens where every other protocol answers. `GET /tls/sign-in` signs the holder of a verified one in — revocation first, then the identity gate, then an application's certificate refused because it is an RFC 8705 client credential — and RFC 8705 binds a token to whatever was presented. The client truststore starts **empty** and is filled at runtime through `POST /tls/trust`, because the CA it has to verify is usually generated in a *browser* minutes before the connection and exists nowhere a file could hold it. `GET /tls` describes all of it. **This was two HTTPS listeners of its own until 2026-09-16** — 8443 asking for a certificate, 9443 requiring one — whose content was what the server saw of the connection; both were deleted, that report has no successor here, and nothing refuses a certificate at the handshake any more |
 | **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain PER TRUST REALM (2026-09-12 — a realm is created with `<realm>.<the service's>` and with SPIFFE off; turning it on binds a Workload API and a SPIRE Server API of its own, on an address of its own, because gRPC's path is the method name and the endpoint is the only thing a client can name a tenant with), in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.trustLocalSocket`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
@@ -892,7 +892,12 @@ unedited service behaves exactly as it did.
 | `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a DELIBERATELY WRONG nonce in every ID Token that should carry one. |
 | `oauth2.refreshIdleSeconds` | `STS_OAUTH2_REFRESH_IDLE_SECONDS` | `86400` | yes | In RFC 9700 mode, how long a refresh CHAIN may go unused before it stops working — section 2.2.2 says a refresh token SHOULD expire after a period of client inactivity, and says the period is deployment-dependent, which is why this is a setting rather than a constant. |
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In RFC 9700 mode, end a browser sign-on session and every refresh token issued ON that session is revoked — the section MAY that names logout and a password change as the examples. |
-| `oauth2.frontchannelLogout` | `STS_OAUTH2_FRONTCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Front-Channel Logout 1.0: the two discovery members, the `sid` claim on an ID Token issued on a browser sign-on session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out — with `iss` and `sid` where the client registered `frontchannel_logout_session_required`. Off, none of the three happens and the tokens are byte-for-byte what this service issued before the feature existed. |
+| `oauth2.frontchannelLogout` | `STS_OAUTH2_FRONTCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Front-Channel Logout 1.0: the two discovery members, the `sid` claim on an ID Token issued on a browser sign-on session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out — with `iss` and `sid` where the client registered `frontchannel_logout_session_required`. Off, none of the three happens; `sid` stays while `oauth2.backchannelLogout` is on, so only both off restores the tokens issued before either feature existed. |
+| `oauth2.backchannelLogout` | `STS_OAUTH2_BACKCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Back-Channel Logout 1.0: `backchannel_logout_supported` and `backchannel_logout_session_supported` in discovery, the `sid` claim, and — whenever a session is signed out, by any door — a signed Logout Token POSTed to every relying party on it that registered a `backchannel_logout_uri`. Asynchronous with bounded retry, through the outbound policy (`federation.outbound`, https unless `federation.outboundAllowInsecure`, no internal address in product mode). An EXPIRED session sends nothing. |
+| `oauth2.backchannelLogoutTokenTtlS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_TOKEN_TTL_S` | `120` | yes | How far in the future a Logout Token's `exp` is — the specification's "at most two minutes". A token is signed once and resent unchanged, so it must outlast the retries. |
+| `oauth2.backchannelLogoutAttempts` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_ATTEMPTS` | `3` | yes | How many times one Logout Token is POSTed. Only a timeout, a connection failure, a 5xx, 408 or 429 is retried; a 400 is final (section 2.8), and so is an outbound-policy refusal. |
+| `oauth2.backchannelLogoutTimeoutMs` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_TIMEOUT_MS` | `5000` | yes | How long one POST may take. Nobody waits on it — the sign-out has already answered. |
+| `oauth2.backchannelLogoutBackoffMs` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_BACKOFF_MS` | `1000` | yes | The wait before the second attempt, doubling before each one after. |
 | `oauth2.eddsaCurve` | `STS_OAUTH2_EDDSA_CURVE` | `Ed25519` | yes | Which Edwards curve an `EdDSA` signature is made on (`Ed25519` or `Ed448`). RFC 8037 registers ONE algorithm value for both curves and puts the curve in the key itself, so a client registering `id_token_signed_response_alg="EdDSA"` has no way to say which it wants — this is that way. BOTH keys are published in the JWKS whatever this is set to, with different kids, so a verifier follows the kid and needs to know nothing about this setting. |
 | `oauth2.clientAssertionSkewS` | `STS_OAUTH2_CLIENT_ASSERTION_SKEW_S` | `60` | yes | How far out an assertion's exp, nbf and iat may be and still be accepted (RFC 7523 section 3). It applies to BOTH halves of that profile — the `client_assertion` of section 2.2 and the `assertion` of the section 2.1 grant — because it answers "how far out may somebody else's clock be" and this service has no reason to hold two opinions about that. Sixty seconds is the usual allowance for two machines that are not synchronised. |
 | `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Whether the token endpoint performs `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523 section 2.1). The metadata advertises the grant only while it is on, because a `grant_types_supported` member is a promise. It does NOT affect section 2.2 — client authentication by assertion — which is a different feature sharing a document format. |
@@ -1196,6 +1201,10 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, whose keys the mock Verifier accepts an SD-JWT VC or jwt_vc_json credential signature from IN ADDITION to this realm's own issuer. Empty — the default — trusts this issuer alone, which is what it always did. A certificate is used as a KEY: no chain is built and no revocation is checked. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` the Verifier requires of a presented SD-JWT VC. The default is the type this issuer mints; set it to accept a credential another issuer mints under its own type. |
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims /admin/vc-verifier-config lets the Verifier's request name. |
+| `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer "Sign in with a wallet" on /authn/login and answer /authn/wallet: a verified presentation of an SD-JWT VC this realm issued — Key Binding JWT included — starts a session for the directory entry the credential was issued for. Any other credential still verifies and signs nobody in. See *Signing in with a wallet*. |
+| `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet, and for the browser that started it to collect the session. |
+| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the wallet sign-in page reloads itself (a `<meta>` refresh, not a script). |
+| `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `true` | yes | Draw a QR code on the wallet sign-in page for a wallet on another device. Only the browser that started the sign-in can be signed in by it. |
 
 #### Kerberos
 
@@ -3964,6 +3973,57 @@ own screen for now: section 13.2.1 lets its sign-in request arrive as a cross-si
 form POST, `SameSite=Lax` keeps the cookie off that, and a redirect chain would
 lose the request.
 
+### Signing in with a wallet — `/authn/wallet`
+
+Since 2026-09-17 (#38) a verified OpenID4VP presentation **is** a way to sign
+in. The sign-in screen offers **Sign in with a wallet** to every request that
+reaches it — an authorization request, a `wsignin1.0`, a SAML `AuthnRequest`,
+the console — and the flow that was waiting carries on afterwards, exactly as it
+does after a password or a Kerberos ticket:
+
+```
+GET  /authn/wallet?authn=8mQ2…              Set-Cookie: sts_wallet_binding=…
+  303 -> /authn/wallet/wait?authn=8mQ2…&state=Zt1…
+GET  /authn/wallet/wait?…                    "Open your wallet" + QR code,
+                                             <meta http-equiv="refresh">
+     wallet: GET /oid4vp/request/{id}        the SIGNED request (by reference)
+     wallet: POST /oid4vp/response           verified, and WHOM it signs in decided
+GET  /authn/wallet/wait?…[&response_code=…]  Set-Cookie: sts_session=…
+  303 -> /oauth2/authorize?…                 the ORIGINAL request
+```
+
+**Who may be signed in is narrow on purpose.** Only an **SD-JWT VC this realm
+issued**, presented with a **Key Binding JWT** that verifies against the
+credential's `cnf` key for this request's nonce and audience, signs anybody in —
+and it signs in **the directory entry the credential was issued for**. That is
+recorded when the credential is issued, not read off the credential afterwards:
+the credential endpoint accepts access tokens it did not issue, so a credential's
+`sub` alone could name anybody, and only a credential issued on an access token
+**this realm verified**, whose subject (`urn:uuid:<entryUUID>`) names an entry
+and which was granted for credential issuance, is kept as one that may sign in.
+A credential from a partner in `oid4vp.trustedIssuerCertificates`, one from
+another realm, one issued on a foreign token, or one whose entry has since been
+deleted **still verifies** and is recorded as before — and the page says why it
+signed nobody in, with an error code (`STS-VC-0058` to `STS-VC-0061`,
+`STS-VC-0066`).
+
+**The session goes to the browser that started the sign-in and to no other.** The
+wallet answers this service directly (`direct_post`), so a `sts_wallet_binding`
+cookie set when the sign-in starts is what the wait page checks before it mints
+anything; a same-device wallet is also handed a one-time `response_code` it must
+bring back. A transaction is answered once and finished once (across a cluster
+too), and lives `oid4vp.signInTtlS` seconds. What no Verifier can prevent is
+somebody showing their own QR code to a victim; `oid4vp.signInCrossDevice` turns
+the code off for a deployment that would rather not offer it.
+
+**The session claims `amr ["pop"]` and `acr "1"`** — RFC 8176's proof of
+possession of a key whose storage nobody here knows, and one factor. The button
+is withheld from a request that demanded two. **The wait page runs no script**:
+a `<meta>` refresh every `oid4vp.signInPollS` seconds is the poll, and the QR
+code is an SVG this server draws. `oid4vp.signIn` turns the whole mechanism off;
+the Verifier at `/oid4vp/verifier` is unaffected either way and still signs
+nobody in, because nobody asked it to.
+
 ### Signing out of everything — `/logout`
 
 Every family here that can sign somebody **in** has a sign-out of its own, and
@@ -3990,12 +4050,13 @@ What it finds, and what it does about it:
 | Family | What is listed | What ending it does |
 |---|---|---|
 | Browser sign-on session | every session held for that person | drops it through the one function `/oauth2/logout`, `wsignout1.0` and `/saml2/slo` all end a session with — so the RFC 9700 refresh revocation and the audit row happen once |
-| OIDC relying parties | every client issued an authorization response on that session | loads its `frontchannel_logout_uri` in a hidden iframe, with `iss` and `sid` where it asked for them |
+| OIDC relying parties | every client issued an authorization response on that session | loads its `frontchannel_logout_uri` in a hidden iframe, with `iss` and `sid` where it asked for them, and POSTs a signed Logout Token to its `backchannel_logout_uri` |
 | WS-Federation realms | every realm signed into | sends `wa=wsignoutcleanup1.0` as a one-pixel image, with the URL printed beside it |
 | SAML 2.0 service providers | every service provider signed into | builds the signed `LogoutRequest` and offers it as a link |
 | Tokens | every access, refresh and ID token still revocable | adds the `jti` to the one revocation set `/oauth2/revoke` and the console write to |
 | Authorization codes | codes issued and not yet redeemed | discards them, so no more tokens come from that sign-on |
 | Pre-authorized codes | Credential Offer codes minted for that person | the same |
+| Wallet sign-ins | a wallet sign-in (`/authn/wallet`) whose presentation was accepted for that person and whose browser has not yet collected the session | withdraws it, so the browser is told a sign-out ended it and nobody is signed in |
 | Directory connections | every LDAP connection bound as them, on 389 and 636 | closes the socket — RFC 4511 section 4.2 makes the bind the state of a **connection**, so that is the only sign-out LDAP has |
 | Kerberos tickets | the principal, and its sign-out instant | stamps the instant; a `TGS-REQ` presenting a ticket authenticated before it is refused **KDC_ERR_TGT_REVOKED (20)** |
 | Issued and beyond recall | assertions, service tickets, credentials, SVIDs | **nothing** — and they are listed anyway |
@@ -4089,8 +4150,9 @@ Four things about it:
   what every client receives. That reasoning is kept and is exactly why this is
   switchable: a claim is added because a *specification* needs it, and section 3
   of Front-Channel Logout is that specification. `oauth2.frontchannelLogout` off
-  restores the tokens and the metadata this service issued before the feature
-  existed, byte for byte.
+  restores the metadata this service issued before the feature existed; the
+  `sid` claim goes too only when `oauth2.backchannelLogout` is off as well,
+  because Back-Channel Logout needs it.
 * **`iss` and `sid` go only to a client that registered
   `frontchannel_logout_session_required`.** Section 2 says they are otherwise
   omitted, and an RP that did not ask may well be validating the query string it
@@ -4107,8 +4169,53 @@ Four things about it:
   **Where there is nothing to notify, nothing changes** — which is every
   deployment that has not registered a logout URI.
 
-**Back-channel logout is a different specification and is not implemented.** The
-metadata says so rather than claiming it because front-channel arrived.
+### OpenID Connect Back-Channel Logout 1.0
+
+The half that needs no browser (2026-09-17). A relying party registers a
+`backchannel_logout_uri`, and when a session it was signed into ends — by
+**any** sign-out: `/oauth2/logout`, `/logout`, `wsignout1.0`, SAML Single
+Logout, the console, `/admin-api` — this service POSTs it a signed Logout
+Token, server to server:
+
+```
+POST /oauth2/register
+  { "backchannel_logout_uri": "https://rp.example/bc-logout",
+    "backchannel_logout_session_required": true }
+
+GET /.well-known/openid-configuration
+  "backchannel_logout_supported": true
+  "backchannel_logout_session_supported": true
+
+any sign-out ->  POST https://rp.example/bc-logout
+                 Content-Type: application/x-www-form-urlencoded
+                 logout_token=eyJ0eXAiOiJsb2dvdXQrand0Ii…
+```
+
+* **The token** is typed `logout+jwt` and carries `iss` (the issuer the
+  client's ID Token came from), `aud`, `iat`, `exp` two minutes on, `jti`, the
+  `http://schemas.openid.net/event/backchannel-logout` event, `sub` and `sid`
+  — and no `nonce`. It is signed exactly like that client's ID Token.
+* **It is sent after the sign-out has answered, with bounded retry.** 200 and
+  204 are success; **400 is final** (section 2.8); a timeout, a connection
+  failure, 5xx, 408 and 429 are retried `oauth2.backchannelLogoutAttempts`
+  times with a doubling backoff. So a sign-out's result lists each delivery as
+  `pending`, and `/admin/logout` (and `GET /admin-api/logout`) lists where each
+  one got to. Every final outcome is one `logout.backchannel` audit row, a
+  failure with its `STS-OAUTH-05xx` code.
+* **It goes out through the outbound policy**: nothing at all with
+  `federation.outbound` off, https unless `federation.outboundAllowInsecure`,
+  no redirect followed, and **in product mode no loopback, private or
+  link-local address** — the name is resolved once and the connection pinned
+  to the address that was checked.
+* **A session that expires sends nothing.** The specification's trigger is a
+  person logging out, and a relying party's session commonly outlives the
+  provider's idle timeout on purpose.
+* **Several processes send it once**: the process that reports the session's
+  end sends, under the same claim that reports it once. The retries live in
+  that process's memory, so a process that dies mid-retry loses the delivery.
+
+`oauth2.backchannelLogout` turns the members, the fan-out and this feature's
+half of `sid` off together.
 
 ### WebAuthn: a second factor, or the only one
 
@@ -4170,11 +4277,12 @@ unconditionally.
 **`acr: "1"` for the passwordless sign-in is the conservative reading and it is
 deliberate.** This ceremony asks for user verification as `preferred` rather than
 `required`, so the key proves possession and nothing about the person holding it;
-calling that `mfa` because it is phishing-resistant would be exactly the fake this
-service refuses in WS-Federation's `wauth`, one screen away. WS-Federation reads the
-same session and now distinguishes the two demands: `wauth` asking for a **hardware
-token** is answered by a key in either role, `wauth` asking for **multi-factor** is
-answered only by a session that really had two factors. That test used to be "does the
+calling that `mfa` because it is phishing-resistant would be exactly the fake
+WS-Federation's `wauth` will not write, one screen away. WS-Federation reads the
+same session and distinguishes the two demands: `wauth` asking for a **hardware
+token** is met by a key in either role, `wauth` asking for **multi-factor** only by
+a session that really had two factors — and a session that meets neither is sent
+through this screen again with the second factor required. That test used to be "does the
 session carry `hwk`", which was right while every session carrying a key had been
 through a password step first and became wrong the moment one had not.
 
@@ -4898,12 +5006,14 @@ appconfig file here now makes it, so `Secure` is no longer the obstacle — the
 `Lax` is a decision, and `authn.js` says so where the cookie is set. The screen
 says so too, rather than leaving it to look like a broken session.
 
-`wauth` is the one thing this profile **refuses** that it could easily have faked. A
-relying party asking for multi-factor against a password-only session is answered with
-an error and two ways forward, not with an assertion claiming a second factor that did
-not happen — `wauth` is how a relying party *demands* a method, and an identity
-provider that ignored it would let the demand appear to have been met. In the same
-spirit `wreqptr` is refused outright: it names a URL for the identity provider to
+`wauth` is how a relying party *demands* a method, and since 2026-09-17 it is a
+**step-up**: a relying party asking for multi-factor (or a hardware token) against a
+session that does not have it sends the person back through the sign-in screen with the
+second factor required — the same mechanism as `acr_values=mfa` — and the assertion
+then reports the method that actually happened. Only if that one attempt still does not
+produce the factor is the request refused, with two ways forward; it is never answered
+with an assertion claiming a factor that did not happen. An unknown method is refused
+outright. `wreqptr` is refused outright too: it names a URL for the identity provider to
 fetch the request from, and dereferencing an arbitrary URL handed over in a query
 parameter is a server-side request forgery with a specification citation attached.
 Send `wreq` by value instead. `wfresh` is read as **minutes** — the one place this
@@ -5693,7 +5803,7 @@ Values may contain `${username}`-style placeholders, because a claim that can on
 
 **What a request asks for is frozen onto it, not read again when the answer arrives.** The list is editable while a presentation is in flight, and a Verifier that judged what came back against a list changed after it asked would refuse a wallet for correctly answering the question it was really asked. So `buildVpRequest()` stores the claims on the transaction and every check reads them from there — which is also what makes the verdict at `/oid4vp/result/:state` a true record of that exchange rather than of the console's current state.
 
-**And this page admits nobody.** A presentation that verifies here starts no session, issues no token and grants no access; the door says yes and that is the whole of it. It is the same disclaimer the groups page and the TLS report carry, for the same reason — a console page a click away from the tokens page would otherwise let somebody conclude that a verified credential had become an identity somewhere in this service.
+**And this page admits nobody.** A presentation made at the bar door starts no session, issues no token and grants no access; the door says yes and that is the whole of it. Signing in with a wallet is a different door — `/authn/wallet`, which asks for a credential this realm issued with a request of its own and is not configured here (see *Signing in with a wallet*) — and what this page sets does not change what that door asks for.
 **The metadata is built from the same list the credential is**, which is the reason not to keep the claim set anywhere else. An issuer whose `credential_configurations_supported` advertises five claims while its credentials carry fourteen is teaching every wallet developer who reads it that the metadata is not worth reading, and OID4VCI's whole discovery story rests on it being worth reading. So `vciMetadata()` derives its `claims` arrays from `vc_claims.js` and `subjectClaimsFrom()` derives the credential from the same place, and drift between them is not a state this service can reach. **`ldp_vc` carries a subset, and that is the format's doing rather than a choice**: it is signed over canonicalized JSON-LD, `bbs2023.js` canonicalizes with `safe: true`, and a term the vendored context does not define does not go missing quietly — it *throws*, inside a cryptosuite, at the moment a wallet asks for a credential. So each catalogue row names the JSON-LD term to use in that format or says it has none, `buildLdpVc()` filters what it is given through the context this process actually loaded (a hand-kept list agreeing with a vendored file is a drift waiting to happen, and this is the one where it would surface as a crypto bug), and both the page and `/admin/sts-metadata` name the selected attributes that format leaves out. The context is vendored precisely because editing it would invalidate every credential already issued against it, so "add a term" is not the fix it looks like.
 
 **A claim's value has three sources and the order between them is the whole policy.** The **access token** first, where it carries a claim of that name — that is a statement this service has already made about the person, from the sign-in or from `/admin/claims`, and a credential contradicting the token that authorised it would be indefensible. Then **the directory entry**, which is where the generated values live once an entry exists and is also where an `ldapmodify` lands: change `mail` on `uid=alice,ou=users` and the next credential says so. Then **a generated persona**, for a person with no entry, an entry without that attribute, or a directory that is not running. Nothing is ever left out because a source was missing, since a claim that silently did not arrive is indistinguishable at the wallet from a selection that never took effect.
@@ -6479,9 +6589,10 @@ long as the workload runs; `x509svidsIssued`, `x509firstIssued` and
 of it, including why `spiffeCredentialStatus` is **not** a revocation.
 
 **None of the three DID cases is a sign-on**, and each says so on its own record. A presentation
-that verifies still starts no session and issues no token — the Verifier's own section
-says why, and this is the same distinction a verified client certificate draws: it is
-*recorded*, which is a narrower claim and must not be merged with the other. A credential
+made to the Verifier at `/oid4vp/verifier` still starts no session and issues no token, and
+it is *recorded*, which is a narrower claim and must not be merged with the other. (A
+presentation made to `/authn/wallet` is a sign-on, of the directory entry the credential was
+issued for rather than of its DID — see *Signing in with a wallet*.) A credential
 request records that an access token was presented, not that anybody authenticated; this
 service does not verify tokens it did not issue. And `/did/generate` records an identity
 this service *created*, with nothing presented at all. The one DID deliberately left out
@@ -8166,12 +8277,12 @@ independent decoder over the same real ceremonies and requires the same verdict 
 both. That last one is the reason `webauthn.js` must stay loadable on its own, with no
 `./helpers` in reach.
 
-**WS-Federation has no test in either repository**, which is worth saying plainly
-because the mock relying party makes it *look* covered: `/wsfed/rp` verifies a sign-in
-response check by check and shows every verdict, but a person has to click it and read
-the page. What a real test would add is the negatives, which is where this profile's
-value is — a `wctx` that came back altered, `wauth` demanding a factor the session
-never had, `wfresh` read as seconds, an assertion whose signature reference does not
+**WS-Federation's tests are thin**, which is worth saying plainly because the mock
+relying party makes it *look* covered: `/wsfed/rp` verifies a sign-in response check by
+check and shows every verdict, but a person has to click it and read the page.
+`tests/wsfed_wauth_step_up.js` holds the `wauth` step-up and its refusals; what a real
+test would add beyond that is the other negatives — a `wctx` that came back altered,
+`wfresh` read as seconds, an assertion whose signature reference does not
 resolve because the SAML 1.1 id attribute was not named. A passive requestor that
 issues a good token and posts it to a working relying party looks finished and proves
 almost nothing, which is the same argument `sts_dpop.js` makes over there.

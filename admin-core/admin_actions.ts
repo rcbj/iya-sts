@@ -1340,10 +1340,12 @@ class AdminActions {
       log.debug("Leaving AdminActions.logoutAction(). A global logout ended " +
                 result.terminated.length + ".");
       return { ok: true, result: result, message: result.message +
-               ' The relying parties that had to be NOTIFIED cannot be ' +
-               'reached from here: a front-channel notification is an iframe ' +
-               'in the signed-out person\'s browser, and this console is not ' +
-               'that browser. /logout is where those load.' };
+               ' The FRONT-CHANNEL notifications cannot be sent from here: ' +
+               'each is an iframe in the signed-out person\'s browser, and ' +
+               'this console is not that browser — /logout is where those ' +
+               'load. The BACK-CHANNEL Logout Tokens need no browser and are ' +
+               'sent by this service; the list below this form shows where ' +
+               'each got to.' };
     }
 
     if (action === 'end') {

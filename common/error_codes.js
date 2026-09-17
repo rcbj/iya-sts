@@ -5498,6 +5498,82 @@ const CODES = [
       'over a connection carrying no matching certificate, while ' +
       'oauth2.accessTokenRequireMtls is on.',
     spec: 'invalid_token (HTTP 401)' },
+  // OpenID Connect Back-Channel Logout 1.0 (2026-09-17, #36). Each is the
+  // FINAL outcome of one delivery — a retried failure is recorded once, when
+  // the attempts run out — on a `logout.backchannel` audit row. None is sent
+  // to anybody: the sign-out that caused the delivery answered before it.
+  { code: 'STS-OAUTH-0532',
+    summary: 'A back-channel Logout Token was not sent because ' +
+      'federation.outbound is off, so this service makes no outbound ' +
+      'request.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0533',
+    summary: 'A back-channel Logout Token was not sent because the ' +
+      'client\'s backchannel_logout_uri cannot be dialled: not http(s), ' +
+      'plain http with federation.outboundAllowInsecure off, or not a URL.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0534',
+    summary: 'Product mode: a back-channel Logout Token was not sent because ' +
+      'the backchannel_logout_uri resolves to a loopback, private, ' +
+      'link-local or reserved address.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0535',
+    summary: 'Product mode: a back-channel Logout Token was not sent because ' +
+      'the backchannel_logout_uri\'s host could not be resolved.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0536',
+    summary: 'A relying party answered a back-channel Logout Token with 400, ' +
+      'which Back-Channel Logout 1.0 section 2.8 makes a final refusal; it ' +
+      'is not retried.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0537',
+    summary: 'A relying party answered a back-channel Logout Token with a ' +
+      'status other than 200, 204 or 400 — after every attempt where the ' +
+      'status is one worth retrying (5xx, 408, 429).',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0538',
+    summary: 'A relying party did not answer a back-channel Logout Token ' +
+      'within oauth2.backchannelLogoutTimeoutMs, on every attempt.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0539',
+    summary: 'A back-channel Logout Token could not be delivered because the ' +
+      'connection failed (DNS, refused, TLS), on every attempt.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0540',
+    summary: 'A relying party answered a back-channel Logout Token with a ' +
+      'redirect, which is not followed.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0541',
+    summary: 'A back-channel Logout Token could not be signed — the client ' +
+      'registered an id_token_signed_response_alg this service cannot use ' +
+      'for it, or an HMAC algorithm with no client secret.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0542',
+    summary: 'A back-channel Logout Token was not sent because the session ' +
+      'did not record the issuer that client\'s ID Token was issued by (a ' +
+      'session older than the feature), and no fallback was available.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0543',
+    summary: 'A back-channel Logout Token request could not be built from ' +
+      'its options.',
+    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
+      'sign-out\'s delivery list' },
+  { code: 'STS-OAUTH-0544',
+    summary: 'A stored backchannel_logout_uri is not an http or https URL ' +
+      'without a fragment, so the client was not sent a Logout Token.',
+    spec: 'none — the delivery is listed with the reason, and the value is ' +
+      'logged' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -5936,12 +6012,14 @@ const CODES = [
     summary: 'wfresh is not a non-negative number of minutes.',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0009',
-    summary: 'wauth demanded a hardware token and the existing browser ' +
-      'session used no security key.',
+    summary: 'wauth demanded a hardware token, the person was sent to sign ' +
+      'in again with a second factor required (a step-up), and the session ' +
+      'that came back still used no security key.',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0010',
-    summary: 'wauth demanded multi-factor authentication and the existing ' +
-      'browser session had only one factor.',
+    summary: 'wauth demanded multi-factor authentication, the person was ' +
+      'sent to sign in again with a second factor required (a step-up), and ' +
+      'the session that came back still had only one factor.',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0011',
     summary: 'The issuance policy (the role gate) refused a token for the ' +
@@ -8077,6 +8155,86 @@ const CODES = [
       'Code attempt — so the request was refused rather than accepted ' +
       'unproven.',
     spec: 'invalid_grant or invalid_proof (HTTP 400)' },
+  // --- signing in with a wallet, /authn/wallet (2026-09-17, #38) -----------
+  { code: 'STS-VC-0052',
+    summary: 'A wallet sign-in was refused because oid4vp.signIn is off.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0053',
+    summary: 'A wallet sign-in named no pending authentication — never ' +
+      'started, expired, or already used — so there was nothing to sign in ' +
+      'to.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0054',
+    summary: 'A wallet sign-in was refused for a request that demanded two ' +
+      'factors: a presentation proves possession of one key.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0055',
+    summary: 'A wallet sign-in was asked about by a browser that did not ' +
+      'start it (no binding cookie, or the wrong one), so it was not ' +
+      'finished there.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0056',
+    summary: 'A wallet sign-in\'s transaction is unknown, has expired, or ' +
+      'belongs to a different pending authentication.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0057',
+    summary: 'A second OpenID4VP response arrived for a sign-in\'s ' +
+      'transaction, which is answered once.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-VC-0058',
+    summary: 'A presentation verified and signed nobody in: the credential ' +
+      'was signed by a certificate in oid4vp.trustedIssuerCertificates, not ' +
+      'by this realm\'s issuer.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0059',
+    summary: 'A presentation verified and signed nobody in: this realm has ' +
+      'no record of issuing the credential for a person on an access token ' +
+      'it verified (another realm\'s, a foreign token\'s, or unknown).',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0060',
+    summary: 'A presentation verified and signed nobody in: the directory ' +
+      'entry the credential was issued for no longer exists.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0061',
+    summary: 'A presentation made to sign in did not verify (or was not a ' +
+      'presentation at all), so nobody was signed in.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0062',
+    summary: 'A wallet sign-in was already finished — here or on another ' +
+      'node — and was not finished again.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0063',
+    summary: 'The cluster claim store could not be asked whether a wallet ' +
+      'sign-in was already finished, so it was refused rather than finished ' +
+      'unproven.',
+    spec: 'HTTP 503 page' },
+  { code: 'STS-VC-0064',
+    summary: 'A presentation verified and mapped to a person, and the ' +
+      'issuance policy refused them a session.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0065',
+    summary: 'A wallet sign-in was returned to with a response_code that is ' +
+      'not the one given to the wallet.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0066',
+    summary: 'A presentation verified and signed nobody in: its subject or ' +
+      'holder key disagrees with what this realm recorded when it issued ' +
+      'the credential.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0067',
+    summary: 'An unexpected failure inside the wallet sign-in door.',
+    spec: 'HTTP 500 page' },
+  { code: 'STS-VC-0068',
+    summary: 'An issued credential could not be recorded as one that may ' +
+      'sign its subject in; the credential was issued anyway.',
+    spec: '' },
+  { code: 'STS-VC-0069',
+    summary: 'A wallet sign-in request carried a malformed query parameter.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0070',
+    summary: 'A wallet sign-in was withdrawn by a sign-out after the wallet ' +
+      'had presented and before the browser collected the session.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
   // ===== SSF ===============================================================
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
@@ -11671,14 +11829,15 @@ const CODES = [
   // Reserved block STS-REG-0070..0079 (2026-09-13).
   { code: 'STS-REG-0070',
     summary: 'A client registration (RFC 7591 or 7592) named a redirect_uri, ' +
-      'post_logout_redirect_uri or frontchannel_logout_uri that is not a ' +
-      'usable address — not http(s) with a host, not a private-use scheme ' +
-      'named for a domain, or (for the front-channel URI) not http(s).',
+      'post_logout_redirect_uri, frontchannel_logout_uri or ' +
+      'backchannel_logout_uri that is not a usable address — not http(s) ' +
+      'with a host, not a private-use scheme named for a domain, or (for ' +
+      'the two logout URIs) not http(s).',
     spec: 'invalid_redirect_uri or invalid_client_metadata (HTTP 400)' },
   { code: 'STS-REG-0071',
     summary: 'A console or /admin-api write put an unusable address on ' +
-      'oauthRedirectUri, oauthPostLogoutRedirectUri or ' +
-      'oauthFrontchannelLogoutUri.',
+      'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
+      'oauthFrontchannelLogoutUri or oauthBackchannelLogoutUri.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0072',
     summary: 'An RFC 7591 registration or RFC 7592 update named an RFC 9701 ' +

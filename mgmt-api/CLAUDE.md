@@ -1019,8 +1019,9 @@ URL, and rule 7's parity check reads the console's own list.
 Both read `logout/logout.ts`, and they answer two different questions:
 
 * `GET /admin-api/logout?user=` is *what is alice still signed into* — keyed on
-  one identity, reaching all ten families, including the seven whose rows are
-  things this service HANDED OUT and cannot recall.
+  one identity, reaching all eleven families (ten until #38 added
+  `wallet-signin`), including the ones whose rows are things this service
+  HANDED OUT and cannot recall.
 * `GET /admin-api/sessions` is *who is signed in at all* — across everybody, in
   the three families that have a session. **A `user` parameter on the first
   could not have answered it, because the answer has no user in it.**

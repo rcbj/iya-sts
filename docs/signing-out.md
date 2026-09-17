@@ -70,12 +70,13 @@ history.
 | Family | Ending it |
 |---|---|
 | Browser sign-on session | dropped, through the one function every sign-out here uses — so the RFC 9700 refresh-token revocation and the audit row happen once |
-| OpenID Connect relying parties | its `frontchannel_logout_uri` loads in a hidden iframe, with `iss` and `sid` where it asked for them |
+| OpenID Connect relying parties | its `frontchannel_logout_uri` loads in a hidden iframe, with `iss` and `sid` where it asked for them, and its `backchannel_logout_uri` is POSTed a signed Logout Token |
 | WS-Federation realms | `wa=wsignoutcleanup1.0` as a one-pixel image, with the URL printed beside it |
 | SAML 2.0 service providers | the signed `LogoutRequest`, offered as a link |
 | Tokens | the `jti` joins the same revocation set `/oauth2/revoke` writes to, so `/oauth2/introspect` reports it inactive immediately |
 | Authorization codes | discarded, so no more tokens come from that sign-on |
 | Credential Offer pre-authorized codes | the same |
+| Wallet sign-ins not yet collected | withdrawn: a wallet has presented a credential for this person and the browser that started the sign-in has not come back for the session yet, so that browser is told a sign-out ended it and nobody is signed in |
 | Directory connections | the LDAP socket is closed — the bind is the state of a *connection* (RFC 4511 §4.2), so that is the only sign-out LDAP has |
 | Kerberos | a sign-out instant on the principal; a `TGS-REQ` presenting a ticket authenticated before it is refused `KDC_ERR_TGT_REVOKED` (20) |
 
@@ -146,8 +147,46 @@ only way to see which happened.
 `frontchannel_logout_session_required`; the specification says they are otherwise
 omitted.
 
-**Back-channel logout is a different specification and is not implemented.** The
-metadata says so.
+## Back-channel logout
+
+A relying party can also be told **without your browser**. Register a
+`backchannel_logout_uri` (and, if you like,
+`backchannel_logout_session_required`) the same way:
+
+```bash
+curl -s -X POST http://localhost:8081/oauth2/register \
+  -H 'Content-Type: application/json' \
+  -d '{"redirect_uris":["http://localhost:3000/cb"],
+       "backchannel_logout_uri": "https://rp.example/bc-logout",
+       "backchannel_logout_session_required": true}'
+```
+
+Discovery then says `backchannel_logout_supported: true` and
+`backchannel_logout_session_supported: true`. Whenever a session that client
+was signed into ends — **any** sign-out: this page, `/oauth2/logout`,
+WS-Federation's `wsignout1.0`, SAML Single Logout, the console or the
+management API — this service POSTs
+`application/x-www-form-urlencoded` with a `logout_token` to that address. The
+token is a JWT typed `logout+jwt`, signed like that client's ID Token, and
+carries `iss`, `aud`, `iat`, `exp`, `jti`, `sub`, `sid` and the
+`http://schemas.openid.net/event/backchannel-logout` event — never a `nonce`.
+
+What to expect:
+
+* **It happens after the sign-out answers.** The result page lists each
+  delivery as `pending`; `/admin/logout` shows whether it was `sent` or
+  `failed`, and every final outcome is a `logout.backchannel` row on the audit
+  log.
+* **Answer 200 (or 204).** A 400 is taken as your final refusal and is not
+  retried. A timeout, a refused connection, a 5xx, 408 or 429 is retried a few
+  times with a growing pause — see `oauth2.backchannelLogoutAttempts`,
+  `...TimeoutMs`, `...BackoffMs` and `...TokenTtlS` in
+  [configuration](configuration.md).
+* **The address has to be reachable under the outbound rules**: https, unless
+  `federation.outboundAllowInsecure` is on (the ordinary case on localhost),
+  nothing at all with `federation.outbound` off, and — in product mode — never
+  a loopback, private or link-local address.
+* **A session that simply expires sends nothing.** Only a sign-out does.
 
 ## The Sign out button on the console and the portal
 
@@ -230,4 +269,5 @@ refusal in this service is switchable — see [configuration](configuration.md):
 | `logout.kerberosSignOut` | the KDC behaves exactly as it did before this existed |
 | `logout.ldapDisconnect` | directory connections are left alone, and listed as untouched rather than hidden |
 | `logout.anyUser` | `?username=` is refused; `/logout` acts only on the caller's own session. **Product mode behaves as if this were off, whatever it says** |
-| `oauth2.frontchannelLogout` | no `sid`, no advertisement, no iframes — the tokens are byte-for-byte what this service issued before |
+| `oauth2.frontchannelLogout` | no front-channel advertisement and no iframes; the `sid` claim stays while back-channel logout is on |
+| `oauth2.backchannelLogout` | no back-channel advertisement and no Logout Tokens; with both off, the ID Tokens carry no `sid`, byte-for-byte what this service issued before either |

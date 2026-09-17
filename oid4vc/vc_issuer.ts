@@ -94,6 +94,11 @@ import vcDid = require('./vc_did');
 // is not a state this file can reach. /admin/vc is what changes it.
 import vcClaims = require('./vc_claims');
 import vcOffers = require('./vc_offers');
+// THE REGISTER OF CREDENTIALS ISSUED FOR A DIRECTORY ENTRY (2026-09-17, #38):
+// what `/authn/wallet` reads to decide whom a presentation signs in. A
+// LIBRARY (rule 3) requiring only `common/` leaves, so this require closes no
+// cycle and moves no route. See `rememberIssued()` below.
+import vcIssued = require('./vc_issued');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" a c_nonce is spent
 // through — see spendProofNonces(). A LIBRARY that registers no route and
 // requires persistence lazily, so it moves no route and closes no cycle.
@@ -146,6 +151,7 @@ interface VcIssuerDeps {
   issuerDidFor: typeof vcDid.issuerDidFor;
   stsDid: typeof vcDid.stsDid;
   vcClaims: typeof vcClaims;
+  vcIssued: typeof vcIssued;
   deferredIntervalS: typeof vcOffers.deferredIntervalS;
   deferredReadyMs: typeof vcOffers.deferredReadyMs;
   deferredAccessTokens: typeof vcOffers.deferredAccessTokens;
@@ -369,6 +375,7 @@ class VcIssuer {
       issuerDidFor: vcDid.issuerDidFor,
       stsDid: vcDid.stsDid,
       vcClaims: vcClaims,
+      vcIssued: vcIssued,
       deferredIntervalS: vcOffers.deferredIntervalS,
       deferredReadyMs: vcOffers.deferredReadyMs,
       deferredAccessTokens: vcOffers.deferredAccessTokens,
@@ -1267,6 +1274,74 @@ class VcIssuer {
     return built;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH CREDENTIALS MAY LATER SIGN SOMEBODY IN (2026-09-17, #38).
+  //
+  // `vc_issued.ts` is the register and its header is the argument; this is
+  // the issuer's half, in two calls. `signInSubjectOf()` is asked while the
+  // access token is still in hand — the deferred endpoint is reached with a
+  // transaction id and a possibly different token, so what the ORIGINAL
+  // request established is carried on the deferred record rather than asked
+  // again of whatever turns up later. `rememberIssued()` writes one row per
+  // credential actually handed over, at the two places a credential leaves.
+  //
+  // **THE CREDENTIAL IS UNCHANGED.** Its `sub` was already the access token's,
+  // which for a person this realm authenticated is `urn:uuid:<entryUUID>`;
+  // nothing is added to it, because what the register knows — that this
+  // realm VERIFIED the token that named the subject — is not something a
+  // claim in the credential could prove to anybody but this realm, which has
+  // the register anyway.
+  // ---------------------------------------------------------------------------
+  private signInSubjectOf(presented: any): string {
+    const { log, vcIssued, VCI_CONFIGS } = this.deps;
+    log.debug("Entering VcIssuer.signInSubjectOf().");
+    const scopes = Object.keys(VCI_CONFIGS).map(function (id) {
+      return VCI_CONFIGS[id].scope;
+    });
+    const subject = vcIssued.subjectFromToken(presented && presented.claims,
+      !!(presented && presented.verified), scopes);
+    log.debug("Leaving VcIssuer.signInSubjectOf(). " +
+              (subject ? "A person this realm verified." : "Nobody."));
+    return subject;
+  }
+
+  private rememberIssued(issued: any[], holderJwks: any[], configId: string,
+                         subject: string): void {
+    const { log, vcIssued, vciFormatOf, errorCodes } = this.deps;
+    log.debug("Entering VcIssuer.rememberIssued(). " + issued.length +
+              " credential(s).");
+    if (!subject) {
+      log.debug("Leaving VcIssuer.rememberIssued(). No verified subject, so " +
+                "none of them may sign anybody in.");
+      return;
+    }
+    const format = vciFormatOf(configId);
+    issued.forEach(function (built, i) {
+      try {
+        const payload = (built && built.payload) || {};
+        vcIssued.record({
+          credential: built && built.credential,
+          format: format,
+          configId: configId,
+          subject: subject,
+          holderJwk: holderJwks[i],
+          expiresAt: payload.exp ? Number(payload.exp) * 1000 : 0
+        });
+      } catch (e) {
+        log.debug("Caught in VcIssuer.rememberIssued(): " +
+                  ((e && e.message) || e));
+        // The credential has been issued either way; what is lost is its
+        // ability to sign the holder in, which is said here and nowhere a
+        // wallet would read it.
+        log.error(errorCodes.tag('STS-VC-0068') +
+                  'vc_issuer: an issued credential could not be recorded as ' +
+                  'one that may sign its subject in: ' +
+                  ((e && e.message) || e));
+      }
+    });
+    log.debug("Leaving VcIssuer.rememberIssued().");
+  }
+
   // The claims the credential asserts.
   //
   // WHICH claims those are is configuration now (vc_claims.ts, set on
@@ -2126,6 +2201,9 @@ class VcIssuer {
           holderName: this.holderNameFrom(accessToken),
           holderJwk: holderJwk,
           holderJwks: holderJwks,
+          // WHOM these credentials may sign in (#38), decided NOW against
+          // the token that made the request — see signInSubjectOf().
+          signInSubject: this.signInSubjectOf(presented),
           // The format was chosen in the request that was deferred, not in the
           // one that collects it — the wallet asked for a credential, and
           // postponing the answer must not change which credential it gets.
@@ -2162,6 +2240,8 @@ class VcIssuer {
                                        issuerDidFor(requestedConfigId, req),
                                        this.holderNameFrom(accessToken));
       }));
+      this.rememberIssued(issued, holderJwks, requestedConfigId,
+                          this.signInSubjectOf(presented));
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };
@@ -2242,6 +2322,8 @@ class VcIssuer {
                                        issuerDidFor(deferredConfigId, req),
                                        record.holderName);
       }));
+      this.rememberIssued(issued, holderKeys, deferredConfigId,
+                          String(record.signInSubject || ''));
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };

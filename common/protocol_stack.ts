@@ -336,6 +336,9 @@ class ProtocolStack {
     this.build('oauth-oidc/frontchannel_logout',
                require('../oauth-oidc/frontchannel_logout'),
                'FrontchannelLogout');
+    this.build('oauth-oidc/backchannel_logout',
+               require('../oauth-oidc/backchannel_logout'),
+               'BackchannelLogout');
     this.build('oauth-oidc/refresh_token_crypto',
                require('../oauth-oidc/refresh_token_crypto'),
                'RefreshTokenCrypto');
@@ -449,6 +452,9 @@ class ProtocolStack {
     require('../oid4vc/vc_did');
     this.build('oid4vc/vc_did', require('../oid4vc/vc_did'), 'VcDid');
     this.register(app, require('../oid4vc/vc_did'), 'oid4vc/vc_did');
+    // The register of credentials issued for a directory entry (#38): a
+    // library both the issuer and the verifier read, built before either.
+    this.build('oid4vc/vc_issued', require('../oid4vc/vc_issued'), 'VcIssued');
     require('../oid4vc/vc_issuer');
     this.build('oid4vc/vc_issuer', require('../oid4vc/vc_issuer'), 'VcIssuer');
     this.register(app, require('../oid4vc/vc_issuer'), 'oid4vc/vc_issuer');
@@ -459,6 +465,18 @@ class ProtocolStack {
     this.build('oid4vc/vc_verifier', require('../oid4vc/vc_verifier'),
                'VcVerifier');
     this.register(app, require('../oid4vc/vc_verifier'), 'oid4vc/vc_verifier');
+    // -------------------------------------------------------------------------
+    // 14a. AND A PRESENTATION AS A SIGN-IN (2026-09-17, #38): /authn/wallet,
+    // which turns a verified presentation of a credential this realm issued
+    // into the session every protocol family reads. After `vc_verifier`,
+    // whose transactions it is, and after `authn/authn` (#8), whose
+    // `startSession()` it calls — `kerberos/spnego_authn`'s arrangement, and
+    // for its reason: `authn` declares the two paths and requires nothing
+    // here, so no route moves and no cycle closes.
+    // -------------------------------------------------------------------------
+    require('../oid4vc/vc_signin');
+    this.build('oid4vc/vc_signin', require('../oid4vc/vc_signin'), 'VcSignin');
+    this.register(app, require('../oid4vc/vc_signin'), 'oid4vc/vc_signin');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
     // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port

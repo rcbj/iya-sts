@@ -18,6 +18,16 @@ session it owns; every Kerberos module is #15 and below so that the KDC's routes
 are not dragged to the front of the router. A require from here to there would do
 exactly that AND close a cycle, since that module needs `startSession()`.
 
+**AND A FOURTH AND FIFTH (2026-09-17, #38): `/authn/wallet` and
+`/authn/wallet/wait`** — sign in with a wallet — are `oid4vc/vc_signin.ts`'s,
+for the same kind of reason: what they drive is the OpenID4VP Verifier, which is
+required at 11–14, and this module requires nothing of that family. This module
+declares both paths (`WALLET_PATH`, `WALLET_WAIT_PATH`), draws the button
+(`walletOptionHtml()`, withheld under `forceMfa`, gone when `oid4vp.signIn` is
+off), and that door uses `pendingFor()` and `completeAuthentication()` exactly
+as the Kerberos door does. See *The wallet door* below; the design is argued in
+`oid4vc/CLAUDE.md`, *Signing in with a wallet*.
+
 **It needed no inverted hook either**, which is worth saying because rule 3e's
 inventory of slots is long and another is the obvious move. The only two things
 this module needs to know are the PATH — declared here, as `SPNEGO_PATH`, in a
@@ -26,7 +36,9 @@ space this module already owns — and whether the door is open, which is
 3e's test is whether a require would close a cycle or move a route; here nothing
 has to point anywhere.
 
-**Three exports exist for it and for nothing else**: `SPNEGO_PATH`,
+**Three exports exist for it and — since #38, with `WALLET_PATH` and
+`WALLET_WAIT_PATH` beside them — for the wallet door, and for nothing else**:
+`SPNEGO_PATH`,
 `pendingFor()` (read-only, and it sweeps an expired record on the way past
 exactly as it does for the screen) and `completeAuthentication()`. The last is
 one function rather than an exported `pending` and an exported
@@ -104,8 +116,11 @@ rule is about the level actually changing.
 ### The rules that hold it together
 
 * **Evidence arrives, identity does not.** A federated assertion, a SPNEGO
-  ticket, a client certificate or a WS-Trust token is recorded ON an event as
-  what proved it. None of them is the identity.
+  ticket, a client certificate, a WS-Trust token or a wallet's presentation is
+  recorded ON an event as what proved it. None of them is the identity — a
+  presentation least of all: `/authn/wallet` signs in the entry this realm
+  RECORDED the credential as issued for, never the subject the credential
+  names (`oid4vc/CLAUDE.md`).
 * **Artifacts leave as PROJECTIONS.** An ID Token, a SAML `AuthnStatement` and a
   WS-Federation token are rendered from the session and carry its `sid` (or
   `SessionIndex`). None of them is kept as the session's truth.
@@ -296,6 +311,37 @@ draw a row for a session that is not the caller's. Neither expires anything:
 expired, because an observer that quietly ended sessions while reporting on them
 would be changing the thing it describes — the same rule `audit.js`'s actor
 resolver follows.
+
+## THE WALLET DOOR (2026-09-17, #38)
+
+The sixth way to establish a session, after the password screen, the two
+WebAuthn roles, a federated assertion, a Kerberos ticket and a client
+certificate: a verified OpenID4VP presentation of a holder-bound SD-JWT VC this
+realm issued. What this module owns of it is small and is the part that has to
+agree with the rest of the screen:
+
+* **The button is offered to every application**, as the Kerberos one is,
+  because whether somebody holds a credential this realm issued is a fact about
+  their wallet and not about the relying party. **One setting** where Kerberos
+  has two: a wallet sign-in has no use outside a browser waiting to be signed
+  in, so a switch that hid the button and left the door open would describe a
+  state nobody can use.
+* **It is withheld under `forceMfa`, and says so** (`id="wallet-withheld"`). A
+  presentation proves possession of ONE key, so the session claims
+  `amr ["pop"]` and `acr "1"`; offering it to a request that demanded two
+  factors would be the fake-`acr_values` problem every other one-factor
+  mechanism here refuses. The door refuses the same record (`STS-VC-0054`),
+  because a button is markup.
+* **`methodPhraseFor()` has a `pop` branch**, asked first, for the reason the
+  `otp` branch exists: the fall-through says *password*.
+* **A different person's session is replaced, the same person's is
+  re-authenticated** — `startSession()` decides, and the wallet door passes
+  `request` so it can.
+
+The binding to the browser that started it, the one-time `response_code`, the
+lifetime, the single use and the relay that cannot be prevented are argued in
+`oid4vc/CLAUDE.md` and `vc_signin.ts`'s header; `tests/oid4vp_sign_in.js` is the
+contract.
 
 ## `consoleSession()` — the one reader that crosses a realm boundary, and the ADMIN CONSOLE is its only caller
 
@@ -1627,6 +1673,24 @@ delete, not before the function returns. `tests/cluster_signout_signals.js`
 section 3 holds it: two ends of one session with a shared stub store report
 once (with the losing row coded), the same without one report twice (the
 control), and an unreachable store still reports.
+
+**THE BACK-CHANNEL LOGOUT TOKENS RIDE THE SAME CLAIM (2026-09-17, #36).**
+`dropSession()` asks `oauth-oidc/backchannel_logout.ts` to PLAN a delivery for
+every OIDC relying party on the session that registered a
+`backchannel_logout_uri` — synchronously, before the claim, so the door's
+answer can list them as `pending` — and the `emit` that `sessionEndOnce()`
+lets out DISPATCHES them; `onLost` hands them off (`elsewhere`), because the
+winner sends. It is the reason a Logout Token reaches a relying party from
+every door, `wsignout1.0` and SAML Single Logout included: this function is the
+one they share. The require is LAZY, like `frontchannel_logout.ts`'s require of
+this module, and is caught — a delivery that cannot be planned never stops a
+sign-out. **`expireSession()` plans nothing**: an expiry sends no Logout Token,
+by decision (`oauth-oidc/CLAUDE.md`, 3aq). **What an `authn.session-end` claim
+that REJECTS does to the planned rows** — the `.catch` above logs
+`STS-AUTHN-0192` and runs neither callback — is that they stay `pending` in
+this process's register; nothing is sent for them. It is the same case in
+which `session.end` is not written either, and it is recorded here rather than
+papered over.
 
 ## SEVERAL NODES: THE THREE SECOND-FACTOR DOORS SPEND IN THE STORE (2026-09-14, #46)
 

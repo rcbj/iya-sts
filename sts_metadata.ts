@@ -1771,11 +1771,33 @@ const SPECS: Spec[] = [
               'succeeded, so every URL is printed as a link beside its ' +
               'iframe rather than reported as sent. ' +
               'oauth2.frontchannelLogout turns all of it off, including the ' +
-              'claim and the advertisement, which is the only honest way to ' +
-              'switch it — a document advertising a capability whose claim ' +
-              'is off would be a document that lies. BACK-CHANNEL logout is ' +
-              'a different specification and is NOT implemented; the ' +
-              'metadata says so.' },
+              'advertisement, which is the only honest way to switch it — a ' +
+              'document advertising a capability that is off would be a ' +
+              'document that lies; the sid claim stays while back-channel ' +
+              'logout, which needs it too, is on.' },
+  { id: 'oidc-bclogout', name: 'OpenID Connect Back-Channel Logout 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-backchannel-1_0.html',
+    coverage: 'full for the provider (2026-09-17): the two discovery ' +
+              'members, the two per-client registration members (http or ' +
+              'https, no fragment, at registration, the console, /admin-api ' +
+              'and again when read), the sid claim, and a Logout Token — ' +
+              'typ logout+jwt, iss, aud, iat, exp two minutes on, jti, the ' +
+              'events member, sub and sid, no nonce, signed like the ' +
+              'client\'s ID Token and never with none — POSTed form-encoded ' +
+              'to every relying party on a session ended by ANY sign-out: ' +
+              '/oauth2/logout, /logout, wsignout1.0, SAML Single Logout, the ' +
+              'console and /admin-api. Asynchronous with bounded retry (a ' +
+              'timeout, a connection failure, 5xx, 408 and 429 retried; 200 ' +
+              'and 204 success; 400 final, section 2.8), through the ' +
+              'outbound policy (https unless ' +
+              'federation.outboundAllowInsecure, no internal address in ' +
+              'product mode), one audit row per ' +
+              'outcome and each delivery listed pending/sent/failed on the ' +
+              'sign-out result and on /admin/logout. A session that EXPIRES ' +
+              'sends nothing, by decision; encrypted Logout Tokens are not ' +
+              'offered. oauth2.backchannelLogout turns the members, the ' +
+              'claim contribution and the fan-out off together.' },
   { id: 'oidc-discovery', name: 'OpenID Connect Discovery 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html',
@@ -1794,9 +1816,8 @@ const SPECS: Spec[] = [
     coverage: 'mock: end_session_endpoint really does end the session, but ' +
               'id_token_hint is neither required nor checked and ' +
               'post_logout_redirect_uri is not validated against any ' +
-              'registration. Front-channel and back-channel logout are not ' +
-              'implemented and the discovery document says so rather than ' +
-              'staying silent.' },
+              'registration. Front-channel and back-channel logout are ' +
+              'implemented beside it and are rows of their own.' },
   { id: 'oid4vci', name: 'OpenID for Verifiable Credential Issuance 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html',
@@ -1811,8 +1832,14 @@ const SPECS: Spec[] = [
     url: 'https://openid.net/specs/openid-4-verifiable-presentations-1_0.html',
     coverage: 'partial: Authorization Requests by value and as a signed ' +
               'Request Object by reference, response_mode=direct_post, a ' +
-              'DCQL query, and full verification of what comes back. No ' +
-              'presentation_definition (DIF PE) — DCQL only.' },
+              'DCQL query, and full verification of what comes back. Since ' +
+              '2026-09-17 a presentation can SIGN SOMEBODY IN at ' +
+              '/authn/wallet — same-device with the section 8.2 ' +
+              'response_code, cross-device by QR code — but only a ' +
+              'holder-bound SD-JWT VC this realm issued, and only as the ' +
+              'directory entry it was issued for; anything else verifies and ' +
+              'signs nobody in. No presentation_definition (DIF PE) — DCQL ' +
+              'only; no Digital Credentials API; no wallet attestation.' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +
@@ -5328,7 +5355,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // ---------------------------------------------------------------------------
   { path: '/admin/oauth2', group: 'Admin', name: 'OAuth 2.0 / OIDC settings',
     specs: ['rfc6749', 'oidc', 'rfc9700', 'oauth21', 'oidc-fclogout',
-            'rfc7523', 'rfc7522'],
+            'oidc-bclogout', 'rfc7523', 'rfc7522'],
     effect: 'changes what the authorization server will accept and what it ' +
             'puts into what it issues',
     what: 'NON-SPEC. The oauth2.* settings, on the page for the ' +
@@ -5361,8 +5388,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The oid4vp.* settings: the verifier\'s client_id, ' +
           'the wallet it sends a holder to (which falls back to the OID4VCI ' +
           'one, since it is the same wallet in every arrangement this ' +
-          'service is used in), the Key Binding JWT\'s maximum age, and the ' +
-          'claims asked for by default. The DCQL query itself is ' +
+          'service is used in), the Key Binding JWT\'s maximum age, the ' +
+          'claims asked for by default, and the four that govern signing in ' +
+          'with a wallet at /authn/wallet (oid4vp.signIn, its lifetime, its ' +
+          'refresh and its QR code). The DCQL query itself is ' +
           '/admin/vc-verifier-config. Add ?format=json.' },
   { path: '/admin/kerberos', group: 'Admin', name: 'Kerberos settings',
     specs: ['rfc4120', 'rfc3961', 'rfc4178', 'rfc4559', 'ms-kkdcp', 'ms-sfu'],
@@ -5444,9 +5473,9 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The one wsfed.* setting, and where the rest of what a ' +
           'relying party receives is configured — the assertion is a SAML ' +
           '1.1 one, so saml.issuer and /admin/saml-attributes decide its ' +
-          'issuer and its contents. The page also states the two things this ' +
-          'profile deliberately does not do: wauth is recorded and not ' +
-          'honoured, and wreqptr is never dereferenced. Add ?format=json.' },
+          'issuer and its contents. The page also states how wauth is ' +
+          'answered — a demand the session cannot meet is a step-up — and ' +
+          'that wreqptr is never dereferenced. Add ?format=json.' },
   { path: '/admin/tls', group: 'Admin', name: 'TLS / mutual TLS settings',
     specs: ['rfc8446', 'rfc5280', 'rfc8705'],
     effect: 'changes the certificate both sockets share, on the next start',
@@ -5532,8 +5561,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'PATH DIFFERS BY FORMAT and the page shows which: top level for ' +
           'dc+sd-jwt, under credentialSubject for jwt_vc_json, and under the ' +
           'vendored JSON-LD context\'s own term for ldp_vc, which cannot ' +
-          'carry every claim at all. This page ASKS and admits nobody: a ' +
-          'presentation that verifies starts no session and issues no token. ' +
+          'carry every claim at all. This page configures the BAR DOOR, ' +
+          'whose presentations admit nobody; the wallet sign-in at ' +
+          '/authn/wallet asks for a request of its own. ' +
           'Add ?format=json; POST {"action":"select","claims":[...]} for the ' +
           'same thing without a browser.' },
 
@@ -5941,7 +5971,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'and paged with ?page= and ?per=. It is a SEPARATE resource from ' +
           '/admin-api/logout rather than a shape of it: that one answers ' +
           '"what is alice still signed into", keyed on one identity across ' +
-          'ten families, and this one answers "who is signed in at all", ' +
+          'eleven families, and this one answers "who is signed in at all", ' +
           'which has no user in it. Both read logout/logout.ts, the one ' +
           'model of what a live session is. Every row carries the key and id ' +
           'the revoke takes, the sessionId that GET ' +
@@ -6815,9 +6845,9 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/wsfed', group: 'Management API', name: 'WS-Federation ' +
       'settings',
     specs: ['ws-federation', 'openapi'],
-    what: 'GET /admin/wsfed over JSON: the one wsfed.* setting, and the two ' +
-          'things this profile deliberately does not do — wauth is recorded ' +
-          'and not honoured, wreqptr is never dereferenced. Read-only.' },
+    what: 'GET /admin/wsfed over JSON: the one wsfed.* setting, how wauth ' +
+          'is answered (a step-up where the session cannot meet it) and that ' +
+          'wreqptr is never dereferenced. Read-only.' },
   { path: '/admin-api/tls', group: 'Management API', name: 'TLS / mutual TLS ' +
       'settings',
     specs: ['rfc8446', 'rfc5280', 'openapi'],
@@ -7118,7 +7148,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'request to every relying party it signed into; wsignoutcleanup1.0 ' +
           'ends it without fanning out. Reads wtrealm (required, and the ' +
           'audience), wreply (optional — defaults to /wsfed/rp), wctx ' +
-          '(echoed byte for byte), wct, wfresh (MINUTES), wauth, whr and a ' +
+          '(echoed byte for byte), wct, wfresh (MINUTES), wauth (a hardware ' +
+          'or multi-factor demand the session does not meet is a step-up ' +
+          'through the sign-in, refused only if that fails), whr and a ' +
           'wreq RST by value. The token is a SAML 1.1 assertion by default ' +
           'because that is what AD FS issues; ?tokenType=saml2 and ' +
           '?trust=1.3 are NON-SPEC switches for the other token type and the ' +
@@ -7464,7 +7496,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'identifier carries a path.' },
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
-    specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'rfc8414',
+    specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
+            'rfc8414',
                                                    'rfc9207', 'rfc9449'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
@@ -7554,8 +7587,8 @@ const ENDPOINTS: EndpointEntry[] = [
   // and deliberately not under any protocol, which is the whole point of it.
   // ---------------------------------------------------------------------
   { path: '/logout', group: 'Authentication', name: 'Sign out of everything',
-    specs: ['oidc-fclogout', 'rfc7009', 'ws-federation', 'saml2', 'rfc4120',
-            'rfc4511'],
+    specs: ['oidc-fclogout', 'oidc-bclogout', 'rfc7009', 'ws-federation',
+            'saml2', 'rfc4120', 'rfc4511'],
     what: 'THE PROTOCOL-INDEPENDENT SIGN-OUT, and the only endpoint here ' +
           'that is about all sixteen families at once. GET lists everything ' +
           'this service is still holding for one identity — every browser ' +
@@ -7662,6 +7695,39 @@ const ENDPOINTS: EndpointEntry[] = [
           'because a bare 401 Negotiate is a dead end in every browser not ' +
           'configured for this host. krb5.spnegoAuthentication turns it off, ' +
           'and it then answers 403 saying so rather than 404.' },
+  { path: '/authn/wallet', group: 'Authentication',
+    name: 'Sign in with a wallet',
+    specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'oidc'],
+    effect: 'builds an OpenID4VP request bound to the pending sign-in, sets ' +
+            'the browser-binding cookie and redirects to the wait page',
+    what: 'A VERIFIED PRESENTATION AS A SIGN-IN (2026-09-17). Offered on ' +
+          '/authn/login to every flow in progress, like the Kerberos ' +
+          'button: it takes ?authn= and NEVER a returnTo. The request is ' +
+          'always by reference (signed) and asks for this issuer\'s SD-JWT ' +
+          'VC and its subject only. Only a credential THIS REALM issued, on ' +
+          'an access token it verified, for a person — recorded at issuance, ' +
+          'because the credential endpoint accepts tokens it did not issue — ' +
+          'and presented with a Key Binding JWT against its cnf key signs ' +
+          'anybody in, and it signs in the directory entry it was issued ' +
+          'for. Withheld from a request demanding two factors: the session ' +
+          'claims amr ["pop"] and acr "1". oid4vp.signIn turns it off, and ' +
+          'it then answers 403 saying so.' },
+  { path: '/authn/wallet/wait', group: 'Authentication',
+    name: 'Wallet sign-in: wait, and finish',
+    specs: ['oid4vp', 'oidc'],
+    effect: 'once the wallet has answered, establishes the browser session ' +
+            'and returns to whatever was interrupted',
+    what: 'The page the browser waits on: the same-device wallet link and a ' +
+          'server-drawn QR code (oid4vp.signInCrossDevice), reloaded by a ' +
+          '<meta> refresh every oid4vp.signInPollS seconds — NO SCRIPT. Once ' +
+          'the wallet has answered it either signs the browser in or says ' +
+          'why nobody was: the presentation did not verify, the credential ' +
+          'was a trusted foreign issuer\'s, this realm has no record of ' +
+          'issuing it to a person on a token it verified, or the entry is ' +
+          'gone. It finishes ONLY in the browser that started the sign-in ' +
+          '(a hashed binding cookie), ONLY with the right response_code ' +
+          'where one is carried (OpenID4VP section 8.2), and ONCE — across ' +
+          'a cluster too; the transaction lives oid4vp.signInTtlS.' },
   { path: '/authn/webauthn', group: 'Authentication', name: 'WebAuthn ' +
       'security-key step',
     specs: ['oidc', 'webauthn'],
@@ -8288,7 +8354,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Where the wallet POSTs the vp_token, and where it is really ' +
           'verified: issuer signature, every Disclosure digest against _sd, ' +
           'the Key Binding JWT including sd_hash, the validity window, and ' +
-          'whether the claims asked for arrived.' },
+          'whether the claims asked for arrived. For a transaction started ' +
+          'at /authn/wallet it also decides WHOM the presentation signs in, ' +
+          'answers once, and sends a same-device wallet back with a ' +
+          'response_code; the session itself is set on the browser\'s next ' +
+          'request, never on this one, which is the wallet\'s.' },
   { path: '/oid4vp/result/:state', group: 'VC Presentation (OID4VP)',
     name: 'Verification verdict (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
@@ -8928,7 +8998,8 @@ const PROTOCOLS: Protocol[] = [
           'Offers, pre-authorized codes, deferred and batch issuance, ' +
           'notifications) and a verifier that checks a presentation properly ' +
           '— every disclosure digest, the key binding, and whether what was ' +
-          'asked for arrived.' }
+          'asked for arrived — and, at /authn/wallet, signs in the holder of ' +
+          'a credential this realm issued (the Authentication group).' }
 ];
 // Groups of endpoints that are NOT a protocol family, and so are not expected
 // to be claimed by a row above. Four, and each is the service talking about

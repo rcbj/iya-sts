@@ -19,7 +19,7 @@ service can be told to be strict, it can.
 
 | It does not | Notes |
 |---|---|
-| Check any end user's password | The username typed at `/authn/login` becomes the identity in every token and every assertion. **THREE credentials ARE checked and none of them is a password** — a Kerberos ticket, an RFC 6238 one-time code, and a single-use RECOVERY CODE, which is checked for the same reason the other two are: there is nothing left of a one-time credential once the comparison goes, and a client author would have no artifact to test against. The first two have sections of their own below |
+| Check any end user's password | The username typed at `/authn/login` becomes the identity in every token and every assertion. **THREE credentials ARE checked and none of them is a password** — a Kerberos ticket, an RFC 6238 one-time code, and a single-use RECOVERY CODE, which is checked for the same reason the other two are: there is nothing left of a one-time credential once the comparison goes, and a client author would have no artifact to test against. The first two have sections of their own below. **A wallet's presentation at `/authn/wallet` is checked as well** (since 2026-09-17): the issuer's signature and the Key Binding JWT, before a session is started for the entry the credential was issued for |
 | ISSUE WITHOUT ASKING — **this row runs the other way, and it is the only one here that does.** Since 2026-09-01 the authorization endpoint asks: the first time a given username signs in to a given `client_id` for a given scope, `/oauth2/consent` is drawn and nothing is issued until they answer. `oauth2.consentRequired` is ON by default, which no other policy here is, because consent is not a refusal — it is the screen every real authorization server draws on a first sign-in, and a client that has never met one has never run the code that survives it. **It still checks nothing**: the person was let in under any name they typed, one row above. See below |
 | Refuse any LDAP bind — **in development mode** | Any DN, any password, anonymous included — on 389 and on LDAPS 636 alike. **Product mode refuses four kinds before a password is read**: an anonymous bind (result code 48, `inappropriateAuthentication`), a bind on the plain listener on 389 (13, `confidentialityRequired` — use LDAPS), a DN with an empty password (53, `unwillingToPerform`), and any bind from a DN or an address that has had too many FAILED binds within `security.rateLimitWindowS` (53) — a correct password during a lockout is refused like a wrong one, and a successful bind never counts. Then it verifies the password |
 | Require a bind to READ the directory, or withhold a credential from a search — **in development mode** | Any connection may search and compare every entry and read every attribute but a Kerberos key. **Product mode requires a bind before a search or compare** (50, `insufficientAccessRights`; the root DSE is the exception), **never returns a credential attribute** — `userPassword`, `pwdHistory`, client secrets, registration access tokens, private keys, TOTP secrets, recovery codes, activation tokens, Kerberos keys — to anybody, administrators included, **hides them from search filters** so a filter cannot be used to guess one, and **refuses a compare against one**. It also refuses a write of `createTimestamp`, `modifyTimestamp` or `entryDN` by anybody (19, `constraintViolation`). What a bound connection may read beyond that is not yet narrowed per identity |
@@ -33,7 +33,7 @@ service can be told to be strict, it can.
 | Check the password on the OAuth 2.0 password grant — **in development mode** | Any password but `invalid` is accepted, exactly as at the sign-in screen. **Product mode verifies it** against the stored `userPassword`, rate-limits it with the sign-in screen, and refuses a person who holds a second factor, because the grant has nowhere to carry one |
 | Hold a new password to a policy — **in development mode** | Any password is SET, at every door. **Product mode enforces the realm's password policy** (Directory → Policies, `/admin/policies`): a minimum length, a symbol count, an uppercase letter, a number, and none of the current password or the last five — on the console, `/admin-api`, `/portal/password`, `/portal/activate` and an LDAP modify of `userPassword` alike. The history is recorded in both modes, and a generated password meets the policy in both. Passwords already stored are not re-checked |
 | ~~Turn a verified client certificate into a login~~ — **reversed 2026-09-05, and this row said *No session, no token, no privilege* until 2026-09-16** | `GET /tls/sign-in` starts a sign-on session for the holder of a certificate that verified — its common name, or its RFC 4514 subject where it has none — after consulting revocation. An application's certificate signs nobody in: it is an RFC 8705 client credential. The certificate is *recorded* as well, which is a different claim — see below |
-| Turn a verified presentation into a sign-on | The OID4VP Verifier checks properly and then says yes on a web page and stops |
+| ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17** | "Sign in with a wallet" on the sign-in screen (`/authn/wallet`, `oid4vp.signIn`) starts a session for the directory entry a **holder-bound SD-JWT VC this service issued** was issued for — on an access token this service verified — after the Key Binding JWT verifies against the credential's key. Any other presentation — a trusted partner's credential, another realm's, one issued on a foreign access token, one whose entry is gone — still verifies and signs nobody in, and the page says why. The Verifier at `/oid4vp/verifier` still says yes on a web page and stops |
 | Verify anything in an issued credential's values | They come off the directory entry, and — **in development mode** — what the entry lacks is *invented* from the username. **In product mode nothing is invented**: an attribute the entry does not hold is absent from the credential, from a claims request and from the ID Token and UserInfo profile claims, and `email_verified` is never asserted |
 | Deactivate anybody on SCIM `active: false` | Stored as `scimActive` and read by nothing |
 | Restrict WHICH people a federation partner may assert | Any username in a verified assertion is accepted, and an entry is created for them. What IS checked is the partner's signature — see below, where that inversion is argued |
@@ -53,9 +53,11 @@ entry — because an identity turned up here and something about it was accepted
 The recording is not what signs anybody in: it happens once per handshake,
 wherever the certificate arrived and whatever it was presented for, while a
 session is started only by asking for one at `GET /tls/sign-in`. A presentation
-and an SVID start none at all. A mock that quietly promoted a record into a
-session would teach a client something false about every real server it
-will ever meet.
+starts one only at `/authn/wallet`, in the browser that asked, for a credential
+this service issued — a presentation made at the Verifier's own pages is
+recorded and starts none — and an SVID starts none at all. A mock that quietly
+promoted a record into a session would teach a client something false about
+every real server it will ever meet.
 
 ## Consent is ASKED, and it is the one thing here that is on by default
 
@@ -251,9 +253,12 @@ either, so several refusals are kept deliberately reachable:
 - **`oauth2.breakIdTokenNonce`** puts a deliberately wrong `nonce` in every ID
   Token. Off by default, and *not* part of RFC 9700 mode: a compliance flag that
   also broke tokens is a flag nobody would turn on.
-- **WS-Federation's `wauth`** is refused rather than faked. A relying party
-  demanding multi-factor against a password-only session gets an error and two
-  ways forward, not an assertion claiming a second factor that did not happen.
+- **WS-Federation's `wauth`** is never faked. A relying party demanding
+  multi-factor (or a hardware token) against a session that does not have it
+  sends you back through the sign-in with the second factor required, and the
+  assertion reports what you actually did. If that one attempt still does not
+  produce the factor, the request is refused with two ways forward — never
+  answered with a second factor that did not happen.
 - **A SAML 2.0 `ProtocolBinding` this service does not implement is refused by
   name.** A service provider that asked for PAOS and received a form post would
   conclude that PAOS worked.

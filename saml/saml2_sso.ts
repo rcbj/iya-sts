@@ -274,10 +274,10 @@ const AC_MULTIFACTOR = authnContext.AC_MULTIFACTOR;
 
 // A RequestedAuthnContext naming one of these is read as "a second factor is
 // required", and the sign-in screen is asked for one rather than the request
-// being refused. That is the opposite of what WS-Federation's `wauth` does with
-// the same demand, and the difference is real rather than an inconsistency: the
-// screen this profile uses CAN run a WebAuthn ceremony, so the demand can be
-// MET here, where over there it could only have been faked.
+// being refused. WS-Federation's `wauth` does the same with the same demand
+// since 2026-09-17 (#36) — it used to refuse, on the argument that its own
+// screen could not run the ceremony, which stopped being true when that
+// profile moved onto this screen.
 const AC_MFA_DEMANDS = [
   AC_MULTIFACTOR,
   'urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract',
@@ -2721,9 +2721,8 @@ class Saml2Sso {
         // this module knows that happened: what comes back is a session.
         application: spEntityId,
         // A RequestedAuthnContext demanding more than one factor takes the
-        // opt-out away rather than being refused — the opposite of what
-        // WS-Federation's wauth does with the same demand, because THIS screen
-        // can run the ceremony. See the note on AC_MFA_DEMANDS.
+        // opt-out away rather than being refused — what WS-Federation's wauth
+        // does with the same demand too. See the note on AC_MFA_DEMANDS.
         forceMfa: wantsMfa,
         protocol: 'SAML 2.0',
         details: [
@@ -4090,9 +4089,8 @@ class Saml2Sso {
                      'a service provider is least likely to have handled.'],
        ['RequestedAuthnContext', 'A class asking for more than one factor ' +
                                  'takes the opt-out away at the sign-in ' +
-                                 'screen — the OPPOSITE of what ' +
-                                 'WS-Federation\'s wauth does, because this ' +
-                                 'screen can actually run the ceremony.'],
+                                 'screen, as WS-Federation\'s wauth does ' +
+                                 'with the same demand.'],
        ['Subject/NameID', 'Read as a hint to pre-fill the sign-in screen, ' +
                           'exactly as OIDC\'s login_hint is, and never as a ' +
                           'claim about who is at the browser.'],

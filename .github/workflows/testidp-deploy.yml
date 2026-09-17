@@ -1,0 +1,223 @@
+name: testidp deploy
+
+# ---------------------------------------------------------------------------
+# BUILD THE `testidp` ENVIRONMENT (test-idp.iyasec.io) IN AWS (2026-09-17)
+#
+# The same thing `IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidp apply`
+# does from a laptop, run from GitHub: the service and schema-init images are
+# built from the dispatched commit and pushed under its short hash, then
+# `deploy/aws/environment` is applied with `envs/testidp.tfvars` inside the
+# Terraform image (deploy/aws/Dockerfile), exactly as `aws-cluster.yml` does.
+# `testidp-destroy.yml` takes it down again.
+#
+# WHO THE LOAD BALANCER ADMITS: THE ADDRESS YOU GIVE IT, AND NOTHING ELSE.
+# A workflow cannot see the address of the person who dispatched it — the
+# event names the account (`github.triggering_actor`) and carries no IP, and
+# the runner's own address is GitHub's, not yours. So `allowed_ip` is a
+# required input, and the runner's address is deliberately NOT added (unlike
+# `aws-cluster.yml`, whose suite needs it): a deployment admits the person who
+# asked for it. The simplest way to fill it with your current address:
+#
+#   gh workflow run testidp-deploy.yml --ref develop \
+#     -f allowed_ip="$(curl -fsS https://checkip.amazonaws.com)"
+#
+# From the web form, https://checkip.amazonaws.com prints the address to paste.
+# A comma-separated list of single IPv4 addresses is accepted (each becomes a
+# /32); a CIDR wider than one address is refused, because the environment
+# admits only named people (deploy/aws/CLAUDE.md, *testidp*).
+#
+# Re-running with a new address REPLACES the admitted list — Terraform's
+# `allowed_cidrs` is the whole list, so the previous address stops working.
+# That is the intended behaviour for a person whose address has changed.
+#
+# The same credentials and the same serialisation as `aws-cluster.yml`: the
+# `git_user6` key exchanged for the deployer role inside the container, and
+# the concurrency group `aws-cluster-testidp`, which both workflows share, so
+# a deploy, a destroy and an `aws-cluster.yml` run against `testidp` never
+# overlap.
+#
+# The bootstrap administrator's password is logged ONCE, by the node that wins
+# the bootstrap claim — CloudWatch `/mock-sts/containers`, streams
+# `testidp-node-*`.
+#
+# NOTE: a workflow_dispatch workflow can only be dispatched once the file is on
+# the default branch.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      allowed_ip:
+        description: "Your public IPv4 address (comma-separated for several); only these reach the load balancer"
+        type: string
+        required: true
+      build_images:
+        description: "Build and push the images for this commit (off: they were already pushed under its short hash)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-cluster-testidp
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-west-2
+  TF_ENV: testidp
+  TF_IMAGE: mock-sts-terraform
+
+jobs:
+  # ---- Check the address before anything is built or billed ----
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      cidrs: ${{ steps.cidrs.outputs.cidrs }}
+      tag: ${{ steps.cidrs.outputs.tag }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Turn the addresses into /32 CIDRs
+        id: cidrs
+        env:
+          ALLOWED_IP: ${{ github.event.inputs.allowed_ip }}
+        run: |
+          set -euo pipefail
+          # Read from the environment, never interpolated into the script: the
+          # input is free text typed into a public repository's form.
+          octet='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+          json=''
+          IFS=',' read -r -a items <<< "${ALLOWED_IP}"
+          for raw in "${items[@]}"; do
+            ip="$(printf '%s' "${raw}" | tr -d '[:space:]')"
+            ip="${ip%/32}"
+            [ -n "${ip}" ] || continue
+            if ! printf '%s' "${ip}" | grep -Eq "^${octet}(\.${octet}){3}$"; then
+              echo "::error::'${ip}' is not a single IPv4 address. Give your own public address (https://checkip.amazonaws.com), optionally with /32; wider ranges are refused."
+              exit 1
+            fi
+            case "${ip}" in
+              0.*|10.*|127.*|169.254.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+                echo "::error::'${ip}' is a private or reserved address; the load balancer is reached from the internet, so give your PUBLIC address."
+                exit 1
+                ;;
+            esac
+            json="${json:+${json},}\"${ip}/32\""
+          done
+          [ -n "${json}" ] || { echo "::error::allowed_ip is empty."; exit 1; }
+          echo "cidrs=[${json}]" >> "$GITHUB_OUTPUT"
+          echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "The load balancer will admit: [${json}]"
+
+  # ---- The two images the environment runs, tagged with the commit ----
+  images:
+    needs: check
+    if: ${{ github.event.inputs.build_images == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build terraform image
+        run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
+
+      - name: Log in to ECR
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          password="$(docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION -e TF_ENV -e TF_ACTION=ecr-password "${TF_IMAGE}")"
+          echo "::add-mask::${password}"
+          account="$(docker run --rm --entrypoint aws -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY -e AWS_REGION "${TF_IMAGE}" \
+            sts get-caller-identity --query Account --output text)"
+          echo "REGISTRY=${account}.dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_ENV"
+          printf '%s' "${password}" | docker login -u AWS --password-stdin "${account}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+      # `testidp` sets `suite_runner = false`, so the runner and remote PEP
+      # images `aws-cluster.yml` also builds are never pulled here.
+      - name: Build and push the images
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          set -euo pipefail
+          repo="${REGISTRY}/mock-sts"
+          docker build -t "${repo}:${TAG}" \
+            --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
+            --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+            --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+            --build-arg BUILD_NUMBER="${{ github.run_number }}" .
+          docker build -t "${repo}:schema-${TAG}" -f deploy/aws/schema-init/Dockerfile .
+          for image in "${TAG}" "schema-${TAG}"; do
+            docker push "${repo}:${image}"
+          done
+
+  # ---- Apply the environment ----
+  apply:
+    needs: [check, images]
+    # `images` is skipped when build_images is off; this job still runs.
+    if: >-
+      ${{ always() && needs.check.result == 'success' &&
+          (needs.images.result == 'success' || needs.images.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Build terraform image
+        run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
+
+      - name: Terraform apply (testidp)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_image_tag: ${{ needs.check.outputs.tag }}
+          TF_VAR_allowed_cidrs: ${{ needs.check.outputs.cidrs }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION \
+            -e TF_ENV \
+            -e TF_ACTION=apply \
+            -e TF_VAR_image_tag \
+            -e TF_VAR_allowed_cidrs \
+            "${TF_IMAGE}"
+
+      - name: Summarise
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ADMITTED: ${{ needs.check.outputs.cidrs }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          outputs="$(docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION -e TF_ENV -e TF_ACTION=output "${TF_IMAGE}" 2>/dev/null \
+            | grep -E '^(service_url|public_hostname|nlb_dns_name) ' || true)"
+          {
+            echo "### testidp — \`${TAG}\`"
+            echo ""
+            echo "Admitted by the load balancer: \`${ADMITTED}\`"
+            echo ""
+            if [ -n "${outputs}" ]; then
+              echo '```'
+              echo "${outputs}"
+              echo '```'
+            else
+              echo "No Terraform outputs could be read."
+            fi
+            echo ""
+            echo "The bootstrap administrator's password is logged once: CloudWatch \`/mock-sts/containers\`, streams \`testidp-node-*\`."
+            echo "Take it down with the **testidp destroy** workflow."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -446,8 +446,9 @@ app.use(function (req, res, next) {
 //                       would buy nothing here since no untrusted value reaches
 //                       a style.
 //   img-src data:       the QR pages (the Credential Offer, the verifier's
-//                       request, the authenticator-app setup) embed the code as
-//                       a data: URI produced by the qrcode library server-side.
+//                       request, the authenticator-app setup, the wallet
+//                       sign-in's wait page) embed the code as a data: URI
+//                       produced by the qrcode library server-side.
 //
 // NOT present, and it must not be added back: **form-action**. It looks
 // obviously right here — the only form posts to /authn/login, which is

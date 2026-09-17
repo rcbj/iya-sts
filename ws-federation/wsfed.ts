@@ -157,6 +157,13 @@ import personAttributes = require('../saml/person_attributes');
 // The error codes (common/error_codes.js). A LEAF that requires nothing; a code
 // is marked on the response object and never drawn on the error page.
 import errorCodes = require('../common/error_codes');
+// RFC 9470's step-up, for its ONE-ATTEMPT MARKER (2026-09-17, #36): a `wauth`
+// the session cannot meet sends the person to sign in again through
+// `beginAuthentication({ forceMfa })`, exactly as `acr_values=mfa` does, and
+// the return address carries `step_up.HONOURED` so a demand still unmet on
+// the way back is refused rather than sent round again. A library that
+// registers no route.
+import stepUp = require('../oauth-oidc/step_up');
 
 // --- the vocabulary --------------------------------------------------------
 const WSFED_NS = 'http://docs.oasis-open.org/wsfed/federation/200706';
@@ -225,7 +232,8 @@ const AC_UNSPECIFIED_SAML2 =
 // What `wauth` may ask for (13.2.1). A request for anything else is refused
 // rather than quietly answered with a password assertion: `wauth` is how a
 // relying party DEMANDS an authentication type, and an IdP that ignores it lets
-// the demand appear to have been met.
+// the demand appear to have been met. A demand in the two lists below that the
+// session does not meet is a STEP-UP since 2026-09-17 (#36) — see signIn().
 const WAUTH_PASSWORD = [
   AM_PASSWORD_SAML11,
   'urn:oasis:names:tc:SAML:1.0:am:unspecified',
@@ -319,6 +327,7 @@ interface WsFederationDeps {
   returnAddress: typeof returnAddress;
   personAttributes: typeof personAttributes;
   errorCodes: typeof errorCodes;
+  stepUpMarker: string;
 }
 
 class WsFederation {
@@ -361,7 +370,8 @@ class WsFederation {
       documentSettings: documentSettings,
       returnAddress: returnAddress,
       personAttributes: personAttributes,
-      errorCodes: errorCodes
+      errorCodes: errorCodes,
+      stepUpMarker: stepUp.HONOURED
     };
   }
 
@@ -808,7 +818,8 @@ class WsFederation {
   // --- sign-in (13.2.1 -> 13.2.2) -------------------------------------------
   private signIn(req, res, params) {
     const { applications, baseUrlOf, beginAuthentication, errorCodes, log, mode,
-            notePresented, returnAddress, sessionOf, xmlEscape } = this.deps;
+            notePresented, returnAddress, sessionOf, xmlEscape,
+            stepUpMarker } = this.deps;
     log.debug("Entering WsFederation.signIn(). wtrealm=" +
               (params.wtrealm || '(none)'));
     const base = baseUrlOf(req);
@@ -929,11 +940,11 @@ class WsFederation {
       return this.wsfedError(res, 400, 'That authentication method is not ' +
                                        'available',
         'wauth asked for "' + wauth + '". This identity provider can perform ' +
-        'a ' +
-        'password sign-in, and it can report a multi-factor one when the ' +
-        'browser session was established with a security key.',
+        'a password sign-in, a sign-in with a security key, and a ' +
+        'multi-factor one — and asks the person for the factor a demand ' +
+        'needs when the browser session does not have it.',
         '<h2>What it accepts</h2><ul>' +
-        WAUTH_PASSWORD.concat(WAUTH_MULTIFACTOR).map((v) => {
+        WAUTH_PASSWORD.concat(WAUTH_MULTIFACTOR, WAUTH_HARDWARE).map((v) => {
           return '<li><code>' + xmlEscape(v) + '</code></li>';
         }).join('') + '</ul><p>It is refused rather than answered with a ' +
         'password assertion on purpose: <code>wauth</code> is how a relying ' +
@@ -989,76 +1000,92 @@ class WsFederation {
         '"authenticate now" — it is not a number of seconds and it is not a ' +
         'boolean.');
     }
-    if (session && fresh.ok) {
-      // A demand for a HARDWARE TOKEN, which is answered by a key in EITHER
-      // role: the second factor after a password, or the passwordless sign-in.
-      // It is a separate question from the multi-factor one below and is
-      // checked first because a two-factor session satisfies both, while a
-      // passwordless session satisfies this one only.
-      if (WAUTH_HARDWARE.indexOf(wauth) >= 0 &&
-          !this.authnMethodsFor(session).hardwareKey) {
+    // ---------------------------------------------------------------------
+    // `wauth` DEMANDING A FACTOR THE SESSION DOES NOT HAVE IS A STEP-UP, IN
+    // EVERY MODE (2026-09-17, #36).
+    //
+    // It was a refusal until this date, and the argument for that was the
+    // SESSION: `wauth` is read on a request that already has one, and
+    // re-authenticating somebody who is signed in was said to be `wfresh`'s
+    // job. That argument did not survive RFC 9470 arriving one directory over:
+    // `acr_values=mfa` on a one-factor session sends the person back through
+    // the sign-in with the second factor REQUIRED, and a re-authentication
+    // ADDS an event to the same session rather than replacing it
+    // (`authn/CLAUDE.md`, *What an authenticated identity is*). So this does
+    // what that does, through the same two pieces: `beginAuthentication()`
+    // with `forceMfa`, and `step_up.HONOURED` on the return address.
+    //
+    //   * a HARDWARE TOKEN is met by a key in EITHER role — the second factor
+    //     after a password, or the passwordless sign-in — and is checked
+    //     first, because a two-factor session with a key satisfies both
+    //     demands while a passwordless one satisfies only this;
+    //   * MULTI-FACTOR is met only by two factors, so a passwordless key does
+    //     not answer it, however phishing-resistant it is.
+    //
+    // Either unmet: the person is sent to sign in again with the second
+    // factor required (the screen cannot run a key alone under `forceMfa`, so
+    // a hardware demand is met there by choosing the key as the second
+    // factor). Still unmet on the way back — the marker is on the request —
+    // and the request is REFUSED, with the two codes this profile always had:
+    // ONE sign-in attempt, then a refusal, which is `step_up.ts`'s rule and
+    // for its reason (a demand the screen cannot meet would otherwise loop).
+    // The marker can be forged onto a first request, and what that buys is a
+    // refusal instead of a sign-in — nothing anybody else would want.
+    // ---------------------------------------------------------------------
+    const demand = WAUTH_HARDWARE.indexOf(wauth) >= 0 ? 'hardware'
+      : WAUTH_MULTIFACTOR.indexOf(wauth) >= 0 ? 'mfa' : '';
+    const stepUpHonoured = String(params[stepUpMarker] || '') === '1';
+    const methods = session ? this.authnMethodsFor(session) : null;
+    const unmet = !!(session && demand &&
+                     (demand === 'hardware' ? !methods.hardwareKey
+                                            : !methods.multiFactor));
+    if (session && fresh.ok && unmet && stepUpHonoured) {
+      if (demand === 'hardware') {
         log.debug("Leaving WsFederation.signIn(). wauth asked for a hardware " +
-                  "token and the session has none.");
+                  "token and the session still has none after the step-up.");
         errorCodes.mark(res, 'STS-WSFED-0009');
         log.debug("Leaving WsFederation.signIn().");
-        return this.wsfedError(res, 400, 'This session used no security key',
-          'wauth asked for "' + wauth + '", and the browser session here was ' +
-          'established with a password alone. This service will not claim a ' +
-          'key that was never presented.',
-          '<h2>Two ways forward</h2><ul><li>Get a session that used one: ' +
-          'sign in at <code>/oauth2/authorize</code> with either ' +
-          'security-key box ticked — as a second factor, or passwordless. ' +
-          'The session is shared, so coming back here then produces an ' +
-          'assertion whose AuthenticationMethod is <code>' +
-          xmlEscape(AM_HARDWARE_SAML11) + '</code> (passwordless) or <code>' +
-          xmlEscape(AM_MULTIFACTOR) + '</code> (with a password).</li>' +
-          '<li>Or ask for what this session has: ' +
+        return this.wsfedError(res, 400, 'No security key was used',
+          'wauth asked for "' + wauth + '". You were asked to sign in again ' +
+          'with a second factor, and the session that came back still used ' +
+          'no security key — a one-time code answers a demand for a second ' +
+          'factor, not for a key. This service will not claim a key that ' +
+          'was never presented.',
+          '<h2>Two ways forward</h2><ul><li>Start the sign-in again and ' +
+          'choose the SECURITY KEY as the second factor — or sign in ' +
+          'passwordless with it at <code>/oauth2/authorize</code> first; the ' +
+          'session is shared. The assertion then says <code>' +
+          xmlEscape(AM_MULTIFACTOR) + '</code> (with a password) or <code>' +
+          xmlEscape(AM_HARDWARE_SAML11) + '</code> (passwordless). A person ' +
+          'with no key enrolled can add one at <code>/portal/keys</code>.' +
+          '</li><li>Or ask for what this session has: ' +
           '<a href="' + PASSIVE_PATH + '?' +
-          xmlEscape(this.requeryString(params, ['wauth'])) + '">the ' +
-          'same request without wauth</a>.</li></ul>');
+          xmlEscape(this.requeryString(params, ['wauth', stepUpMarker])) +
+          '">the same request without wauth</a>.</li></ul>');
       }
-      if (WAUTH_MULTIFACTOR.indexOf(wauth) >= 0 &&
-          !this.authnMethodsFor(session).multiFactor) {
-        // The one place this profile has to refuse something it could have
-        // faked: answering a multi-factor demand from a password session would
-        // mean writing a claim that did not happen, and a relying party reading
-        // it would have learned something false about how the person signed in.
-        //
-        // THE REASON THIS IS A REFUSAL RATHER THAN A STEP-UP is the SESSION,
-        // not the screen — and that distinction is new. It used to be the
-        // screen: this module drew its own, and that screen could not run a
-        // WebAuthn ceremony. It goes through `authn.js` now, which can. What is
-        // left is a deliberate limit of this profile: `wauth` is read on a
-        // request that ALREADY has a session, and re-authenticating somebody
-        // who is signed in is what `wfresh` is for. A relying party that wants
-        // two factors asks for them with `wfresh=0` and a multi-factor `wauth`
-        // together, or the deployment configures `fedAuthnMechanism:
-        // password-mfa` on the relationship and every sign-in for that partner
-        // has two.
-        log.debug("Leaving WsFederation.signIn(). wauth asked for " +
-                  "multi-factor and the session has one factor.");
-        errorCodes.mark(res, 'STS-WSFED-0010');
-        log.debug("Leaving WsFederation.signIn().");
-        return this.wsfedError(res, 400, 'This session has one factor',
-          'wauth asked for "' + wauth + '", and the browser session here was ' +
-          'established with ONE factor — a password alone, or a security key ' +
-          'alone. This service will not claim a second factor that did not ' +
-          'happen, and a phishing-resistant single factor is still a single ' +
-          'one.',
-          '<h2>Two ways forward</h2><ul><li>Get a multi-factor session ' +
-          'first: sign in at <code>/oauth2/authorize</code> with the ' +
-          'SECOND-FACTOR security-key box ticked (or with <code>' +
-          'acr_values=mfa</code>, which ticks it and disables both ' +
-          'opt-outs). The passwordless box is not the one to tick here: it ' +
-          'replaces the password rather than adding to it. The session is ' +
-          'shared, so coming back here then produces an assertion whose ' +
-          'AuthenticationMethod is <code>' +
-          xmlEscape(AM_MULTIFACTOR) + '</code>.</li>' +
-          '<li>Or ask for what this session has: ' +
-          '<a href="' + PASSIVE_PATH + '?' +
-          xmlEscape(this.requeryString(params, ['wauth'])) + '">the ' +
-          'same request without wauth</a>.</li></ul>');
-      }
+      log.debug("Leaving WsFederation.signIn(). wauth asked for " +
+                "multi-factor and the session still has one factor after " +
+                "the step-up.");
+      errorCodes.mark(res, 'STS-WSFED-0010');
+      log.debug("Leaving WsFederation.signIn().");
+      return this.wsfedError(res, 400, 'Still one factor',
+        'wauth asked for "' + wauth + '". You were asked to sign in again ' +
+        'with a second factor, and the session that came back still has ONE ' +
+        'factor. This service will not claim a second factor that did not ' +
+        'happen, and a phishing-resistant single factor is still a single ' +
+        'one.',
+        '<h2>Two ways forward</h2><ul><li>Start the sign-in again and ' +
+        'complete the second-factor step — a security key or a one-time ' +
+        'code. A person with neither enrolled can add one at <code>' +
+        '/portal/keys</code> or <code>/portal/mfa</code>. The assertion ' +
+        'then says <code>' + xmlEscape(AM_MULTIFACTOR) + '</code>.</li>' +
+        '<li>Or ask for what this session has: ' +
+        '<a href="' + PASSIVE_PATH + '?' +
+        xmlEscape(this.requeryString(params, ['wauth', stepUpMarker])) +
+        '">the same request without wauth</a>.</li></ul>');
+    }
+    const stepUpNow = session && fresh.ok && unmet;
+    if (session && fresh.ok && !stepUpNow) {
       // SINGLE SIGN-ON JUST HAPPENED, IF THE SESSION WAS NOT MADE FOR THIS
       // REQUEST. CAEP is a vocabulary about SESSIONS and not about the protocol
       // that minted one, so a `session-presented` is as due here as it is at
@@ -1072,13 +1099,12 @@ class WsFederation {
       // later OIDC authorization request report exactly one presentation
       // between them.
       //
-      // Last in this branch, below the two wauth refusals, because those end in
-      // a 400 and nothing was honoured: this profile answers a demand it cannot
-      // meet by refusing rather than by stepping up, so a presentation reported
-      // above them would name a session this request went on to turn away. A
+      // Only a session that ANSWERS the request reaches here: one that does
+      // not meet `wauth` is sent to sign in again (a re-authentication, which
+      // reports itself) or refused after that, above, so a presentation
+      // reported for it would name a session this request did not honour. A
       // `wfresh` too old never reaches here at all — `fresh.ok` is false and
-      // the request goes to the screen, which is a re-authentication and
-      // produces a `session-established` of its own.
+      // the request goes to the screen, which is a re-authentication too.
       log.debug("The session stands, so the sign-in response goes out now.");
       notePresented(session, 'WS-Federation', req);
       log.debug("Leaving WsFederation.signIn().");
@@ -1123,12 +1149,26 @@ class WsFederation {
     // with a session in place. `wfresh` is dropped for the reason
     // `requeryString()` gives: it has been honoured by this pass and carrying
     // it back would demand a fresh authentication on every pass, forever.
+    //
+    // A `wauth` DEMANDING A FACTOR (2026-09-17, #36) makes the second factor
+    // REQUIRED on the screen — whether there was a session that lacked it (the
+    // step-up above) or no session at all — and puts the step-up marker on
+    // the return address, so the pass that comes back refuses a demand still
+    // unmet rather than sending the person round again.
     // ---------------------------------------------------------------------
-    const returnTo = PASSIVE_PATH + '?' + this.requeryString(params,
-        ['wfresh']);
+    const back = this.requeryString(params, ['wfresh', stepUpMarker]);
+    const returnTo = PASSIVE_PATH + '?' + back +
+      (demand ? (back ? '&' : '') + encodeURIComponent(stepUpMarker) + '=1'
+              : '');
+    if (stepUpNow) {
+      log.info('wsfed: wauth "' + wauth + '" for "' + realm + '" is not met ' +
+               'by the session, so the person is sent to sign in again with ' +
+               'a second factor required.');
+    }
     const where = beginAuthentication({
       returnTo: returnTo,
       protocol: 'WS-Federation',
+      forceMfa: !!demand,
       // WHICH RELYING PARTY, so that an entry naming a federation relationship
       // sends the person to that partner instead of to the sign-in screen. It
       // is the raw wtrealm: the registry is keyed by the identifier a protocol
@@ -1154,7 +1194,14 @@ class WsFederation {
           note: 'echoed back byte for byte and never interpreted.' }
       ].concat(wauth
         ? [{ label: 'wauth', value: wauth,
-             note: 'the authentication method this relying party asked for.' }]
+             note: stepUpNow
+               ? 'the authentication method this relying party asked for, ' +
+                 'which your session does not have — so a second factor is ' +
+                 'required this time' +
+                 (demand === 'hardware' ? ', and it has to be a security ' +
+                                          'key.' : '.')
+               : 'the authentication method this relying party asked ' +
+                 'for.' }]
         : []).concat(params.whr
         ? [{ label: 'whr', value: String(params.whr),
              note: 'a home realm was named. It is recorded rather than ' +
@@ -1627,12 +1674,15 @@ class WsFederation {
                   'forces the screen; N re-shows it when the session ' +
                   'authenticated longer than N minutes ago.'],
        ['wauth', 'The authentication method demanded. A password method is ' +
-                 'honoured; a HARDWARE TOKEN one is honoured when the ' +
-                 'session used a security key in either role; a MULTI-FACTOR ' +
-                 'one is honoured only when the session really had two ' +
-                 'factors, so a passwordless key does not answer it. ' +
-                 'Anything else is refused rather than answered with a claim ' +
-                 'that did not happen.'],
+                 'honoured; a HARDWARE TOKEN one is met by a security key in ' +
+                 'either role; a MULTI-FACTOR one only by two real factors, ' +
+                 'so a passwordless key does not answer it. A session that ' +
+                 'does not meet either is a STEP-UP: the person is sent to ' +
+                 'sign in again with a second factor required, and the ' +
+                 'assertion reports the method that actually happened. ' +
+                 'Still unmet after that one attempt, the request is ' +
+                 'refused. Any other value is refused rather than answered ' +
+                 'with a claim that did not happen.'],
        ['whr', 'The home realm. Recorded and shown on the screen; this ' +
                'service is the only identity provider here, so nothing is ' +
                'forwarded.'],
@@ -2128,12 +2178,13 @@ class WsFederation {
         '— forces the sign-in screen even when a session already exists.</li>' +
         '<li><a href="' + xmlEscape(request({ wauth: AM_MULTIFACTOR })) +
         '">wauth=multipleauthn</a> ' +
-        '— refused unless the browser session really had two factors. A ' +
-        'passwordless security key does not answer it.</li><li><a ' +
+        '— a session with one factor (a passwordless key included) is sent ' +
+        'to sign in again with a second factor required, and the assertion ' +
+        'says multipleauthn only once there really were two.</li><li><a ' +
         'href="' + xmlEscape(request({ wauth: AM_HARDWARE_SAML11 })) +
         '">wauth=HardwareToken</a> ' +
-        '— refused unless a security key was used, in either ' +
-        'role.</li></ul><h2>Then</h2><ul><li><a ' +
+        '— a session that used no security key is sent to sign in again, ' +
+        'and refused if it still used none.</li></ul><h2>Then</h2><ul><li><a ' +
         'href="' + PASSIVE_PATH + '?wa=wsignout1.0&amp;wreply=' +
         encodeURIComponent(base + RP_PATH) +
         '">Sign out</a> — ends the session and sends a cleanup request to ' +
