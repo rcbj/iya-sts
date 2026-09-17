@@ -279,7 +279,7 @@ interface ScimDeps {
   scimAuth: Record<'schemesForConfig' | 'authenticateSpent' |
                    'schemesBeyondTheCanonicalList' | 'primarySchemeId' |
                    'describe' | 'registerHobaKey' | 'authRequired' |
-                   'scopeWrite' | 'scopeRead', Fn> &
+                   'scopeWrite' | 'scopeRead' | 'permissive', Fn> &
             { REFUSED_PASSWORD: string };
   scimMap: Record<'toScimUser' | 'prune' | 'fromScimUser' | 'toScimGroup' |
                   'fromScimGroup' | 'describeMapping', Fn> &
@@ -1957,18 +1957,31 @@ class Scim {
       // The four sentences that matter most, in the order somebody is likely to
       // be surprised by them.
       doesNotDo: [
-        'IT AUTHENTICATES, AND IT CHECKS ALMOST NOTHING. A credential is ' +
-        'required' + (scimAuth.authRequired() ? '' : ' — except that it is ' +
-        'currently turned off here, so it is not') + ', and every scheme ' +
-        'behind that requirement is permissive: any caller can get an access ' +
-        'token with either scope from this service\'s own token endpoint ' +
-        'with any grant, any username with any password but "invalid" passes ' +
-        'Basic, any username passes Digest with the one shared password, and ' +
-        'anybody can register a HOBA key for any name. It is a turnstile, ' +
-        'not a lock. What it buys is that a client\'s 401, 403, ' +
-        'challenge-response and scope handling can be exercised at all — ' +
-        'none of which an open endpoint can produce. Do not put this port on ' +
-        'a public address on the strength of it.',
+        // Mode-dependent since #70: this said "checks almost nothing" in
+        // product mode too, where every scheme is verified.
+        scimAuth.permissive()
+          ? 'IT AUTHENTICATES, AND IT CHECKS ALMOST NOTHING. A credential is ' +
+            'required' + (scimAuth.authRequired() ? '' : ' — except that it ' +
+            'is currently turned off here, so it is not') + ', and every ' +
+            'scheme behind that requirement is permissive: any caller can ' +
+            'get an access token with either scope from this service\'s own ' +
+            'token endpoint with any grant, any username with any password ' +
+            'but "invalid" passes Basic, any username passes Digest with the ' +
+            'one shared password, and anybody can register a HOBA key for ' +
+            'any name. It is a turnstile, not a lock. What it buys is that ' +
+            'a client\'s 401, 403, challenge-response and scope handling can ' +
+            'be exercised at all — none of which an open endpoint can ' +
+            'produce. ' +
+            'Do not put this port on a public address on the strength of it.'
+          : 'IT AUTHENTICATES, AND IN PRODUCT MODE IT CHECKS. A credential ' +
+            'is required' +
+            (scimAuth.authRequired() ? '' : ' — except that it is ' +
+            'currently turned off here, so it is not') + ', and each ' +
+            'scheme behind that requirement is verified: an access token ' +
+            'must come from this service\'s own token endpoint with the ' +
+            'scope, a Basic password is checked against the hashed ' +
+            'userPassword on the person\'s entry, a HOBA key must have been ' +
+            'registered by its signed-in owner, and Digest is not offered.',
 
         'A SCOPE GRANTS AND NOTHING ELSE READS ONE. scim:read and scim:write ' +
         'are the first scope requirement anywhere in this service, and they ' +
@@ -2671,7 +2684,10 @@ class Scim {
              'into the embedded directory. A credential is ' +
              (scimAuth.authRequired() ? 'REQUIRED' :
                'optional — authentication is off') +
-             ' and every scheme offered is permissive; active:false still ' +
+             (scimAuth.permissive()
+               ? ' and every scheme offered is permissive'
+               : ' and each scheme offered is verified') +
+             '; active:false still ' +
              'deactivates nobody. GET /scim says what else it will not do.');
     log.debug("Leaving Scim.announce().");
   }

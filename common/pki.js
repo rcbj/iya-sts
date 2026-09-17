@@ -238,10 +238,10 @@ const USE_CASES = [
           'the others, under a name that says which of the five it is.' },
   { id: 'tls', scope: 'process', label: 'TLS listeners',
     cn: 'TLS Issuing CA',
-    what: 'The certificate served on LDAPS 636 and on the main port when ' +
-          'global.https is on — two sockets since 2026-09-16, when the 8443 ' +
-          'and 9443 listeners this use case is still named for were ' +
-          'deleted. ' +
+    what: 'The certificate served on LDAPS 636, on the main port when ' +
+          'global.https is on, and on the embedded debugger\'s listener — ' +
+          'the 8443 and 9443 listeners this use case is still named for ' +
+          'were deleted on 2026-09-16. ' +
           'PROCESS-scoped because those sockets are: one certificate answers ' +
           'every realm, so a realm\'s Intermediate signing it would make one ' +
           'realm vouch for every other realm\'s front door.' },

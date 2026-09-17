@@ -408,7 +408,9 @@ class ScimAuth {
       }).join(', ') +
       (instance.authRequired() ? '. A credential is REQUIRED' :
         '. A credential is OPTIONAL (authentication is off)') +
-      '; every one of them is permissive, ' +
+      (instance.permissive()
+        ? '; every one of them is permissive, '
+        : '; each one is verified (product mode), ') +
       'and the access control policy is on GET /scim.');
     helpers.log.debug("Leaving ScimAuth.wire().");
   }
@@ -553,6 +555,18 @@ class ScimAuth {
   // realm string so changing `scim.authRealm` would invalidate every one. That
   // is a weaker store than the one product mode exists to have.
   // ---------------------------------------------------------------------------
+  // WHETHER A PRESENTED CREDENTIAL IS CHECKED, for the start-up lines here
+  // and in `scim.ts`. Both said "every scheme is permissive" in every mode
+  // until #70, which was untrue in product mode: a Basic password is checked
+  // against the entry's hash, a HOBA key must have been registered by its
+  // signed-in owner, and Digest is not offered at all.
+  permissive(): boolean {
+    const { log, mode } = this.deps;
+    log.debug("Entering ScimAuth.permissive().");
+    log.debug("Leaving ScimAuth.permissive().");
+    return !mode.verifiesCredentials();
+  }
+
   private digestAllowedByMode() {
     const { log, mode } = this.deps;
     log.debug("Entering ScimAuth.digestAllowedByMode().");
@@ -2987,6 +3001,7 @@ export = {
   HOBA_ALG_RSA_SHA256: ScimAuth.HOBA_ALG_RSA_SHA256,
   REFUSED_PASSWORD: ScimAuth.REFUSED_PASSWORD,
   authRequired: slot.forward('authRequired'),
+  permissive: slot.forward('permissive'),
   authDiscovery: slot.forward('authDiscovery'),
   realm: slot.forward('realm'),
   scopeRead: slot.forward('scopeRead'),

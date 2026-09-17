@@ -551,6 +551,16 @@ function certificateProvenance() {
            '(tls.certificateFile), so it does NOT change when this service ' +
            'restarts — trust its issuer once';
   }
+  // #70: this said "self-signed" whatever the certificate was. Since
+  // 2026-09-11 the listener certificate is issued under this service's Root
+  // whenever there is a hierarchy, which is what a non-empty chain records;
+  // only a process with none still presents a self-signed one.
+  if (SERVER_CERTIFICATE && (SERVER_CERTIFICATE.chainPem || []).length) {
+    log.debug('Leaving certificateProvenance(). Issued under the Root.');
+    return 'issued by this service\'s TLS Issuing CA under its own Root ' +
+           'and reissued on every start, so trust the Root ' +
+           '(/pki/revocation lists it) rather than the certificate itself';
+  }
   log.debug('Leaving certificateProvenance(). Self-signed.');
   return 'self-signed and regenerated on every start';
 }
