@@ -90,13 +90,16 @@
 // `InetOrgPerson` takes its logger through `InetOrgPersonDeps`; the schema
 // tables stay module-level constants, because they are data and not state.
 // The module still exports `CLASSES`, `CANONICAL_NAMES`, `classes`,
-// `attributes`, `attribute`, `rowFor` and `describe`, from an instance built
-// with the real logger. That instance is TRANSITIONAL: it goes when the
-// composition root exists and hands an `InetOrgPerson` to the portal and the
-// directory. `InetOrgPerson` is exported beside it for that root.
+// `attributes`, `attribute`, `rowFor` and `describe`. Since #50's R2 the
+// composition root builds the instance (`InetOrgPerson.defaultDeps()`) and
+// installs it; the module's old export names are FACADES that forward to it,
+// for the JavaScript callers, and a process without the root builds a default
+// when this module finishes loading. `InetOrgPerson` is exported beside them
+// for that root.
 // ===========================================================================
 
 import helpers = require('./helpers');
+import InstanceSlot = require('./instance_slot');
 
 // One row of the schema.
 interface SchemaRow {
@@ -341,6 +344,14 @@ class InetOrgPerson {
     deps.log.debug("Leaving InetOrgPerson.constructor().");
   }
 
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): InetOrgPersonDeps {
+    helpers.log.debug("Entering InetOrgPerson.defaultDeps().");
+    helpers.log.debug("Leaving InetOrgPerson.defaultDeps().");
+    return { log: helpers.log };
+  }
+
   // The classes, for a caller that is going to draw them. A shallow copy of
   // the list and of each class's row array, so that a caller sorting or
   // splicing cannot reorder the schema for everybody else.
@@ -467,17 +478,33 @@ class InetOrgPerson {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built with the real logger, as
-// the composition root will build one.
-const schema = new InetOrgPerson({ log: helpers.log });
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<InetOrgPerson>(
+  'common/inetorgperson',
+  () => new InetOrgPerson(InetOrgPerson.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   InetOrgPerson: InetOrgPerson,
+  installInstance: (instance: InetOrgPerson): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   CLASSES: CLASSES,
   CANONICAL_NAMES: CANONICAL_NAMES,
-  classes: schema.classes.bind(schema) as InetOrgPerson['classes'],
-  attributes: schema.attributes.bind(schema) as InetOrgPerson['attributes'],
-  attribute: schema.attribute.bind(schema) as InetOrgPerson['attribute'],
-  rowFor: schema.rowFor.bind(schema) as InetOrgPerson['rowFor'],
-  describe: schema.describe.bind(schema) as InetOrgPerson['describe']
+  classes: slot.forward('classes'),
+  attributes: slot.forward('attributes'),
+  attribute: slot.forward('attribute'),
+  rowFor: slot.forward('rowFor'),
+  describe: slot.forward('describe')
 };

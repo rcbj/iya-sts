@@ -63,9 +63,11 @@
 // through its constructor, as `CertificateDetailsDeps`, and builds its table of
 // DN attributes by OID from the vendored module it is handed. The module still
 // exports `MAX_PATH`, `fingerprintOf`, `splitPem`, `extensionLabel`,
-// `describe`, `pathFor` and `detailsFor` from ONE TRANSITIONAL instance built
-// with the real modules below, for `admin-core/certificate_views.ts` and the
-// tests; it goes when the composition root exists.
+// `describe`, `pathFor` and `detailsFor`, for `admin-core/certificate_views.ts`
+// and the tests. Since #50's R2 the composition root builds the instance
+// (`CertificateDetails.defaultDeps()`) and installs it; the module's old export
+// names are FACADES that forward to it, for the JavaScript callers, and a
+// process without the root builds a default when this module finishes loading.
 // ===========================================================================
 
 import bunyan = require('bunyan');
@@ -84,6 +86,7 @@ import x509 = require('./vendored/x509');
 // Its post-quantum registry, for the one thing the inspector's summary gets
 // wrong — see `publicKeyLabel()`.
 import pqcX509 = require('./vendored/pqc_x509');
+import InstanceSlot = require('./instance_slot');
 
 interface Logger {
   debug(message: string): void;
@@ -168,6 +171,21 @@ class CertificateDetails {
     deps.log.debug("Entering CertificateDetails.constructor().");
     this.dnByOid = CertificateDetails.buildDnByOid(deps);
     deps.log.debug("Leaving CertificateDetails.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): CertificateDetailsDeps {
+    log.debug("Entering CertificateDetails.defaultDeps().");
+    log.debug("Leaving CertificateDetails.defaultDeps().");
+    return {
+      log: log,
+      nodeCrypto: nodeCrypto,
+      pkijs: pkijs,
+      asn1js: asn1js,
+      x509: x509,
+      pqcX509: pqcX509
+    };
   }
 
   private static buildDnByOid(deps: CertificateDetailsDeps):
@@ -680,28 +698,34 @@ class CertificateDetails {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one; building it makes the table of DN
-// attributes by OID at load, as the module always did.
-const details = new CertificateDetails({
-  log: log,
-  nodeCrypto: nodeCrypto,
-  pkijs: pkijs,
-  asn1js: asn1js,
-  x509: x509,
-  pqcX509: pqcX509
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<CertificateDetails>(
+  'common/certificate_details',
+  () => new CertificateDetails(CertificateDetails.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   CertificateDetails: CertificateDetails,
+  installInstance: (instance: CertificateDetails): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   MAX_PATH: CertificateDetails.MAX_PATH,
-  fingerprintOf: details.fingerprintOf.bind(details) as
-    CertificateDetails['fingerprintOf'],
-  splitPem: details.splitPem.bind(details) as CertificateDetails['splitPem'],
-  extensionLabel: details.extensionLabel.bind(details) as
-    CertificateDetails['extensionLabel'],
-  describe: details.describe.bind(details) as CertificateDetails['describe'],
-  pathFor: details.pathFor.bind(details) as CertificateDetails['pathFor'],
-  detailsFor: details.detailsFor.bind(details) as
-    CertificateDetails['detailsFor']
+  fingerprintOf: slot.forward('fingerprintOf'),
+  splitPem: slot.forward('splitPem'),
+  extensionLabel: slot.forward('extensionLabel'),
+  describe: slot.forward('describe'),
+  pathFor: slot.forward('pathFor'),
+  detailsFor: slot.forward('detailsFor')
 };

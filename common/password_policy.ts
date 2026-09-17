@@ -105,8 +105,12 @@
 // FIELDS table, the schema and the constants stay module-scope declarations
 // and are exported as static members. A profile is
 // `types/password-policy.d.ts`'s `PasswordProfile`. The module still exports
-// every old name from a TRANSITIONAL instance — `setDirectory` among them,
-// the slot `ldap/ldap_server.js` fills at its require time.
+// every old name — `setDirectory` among them, the slot `ldap/ldap_server.js`
+// fills at its require time. Since #50's R2 the composition root builds the
+// instance (`PasswordPolicy.defaultDeps()`) and installs it; the module's old
+// export names are FACADES that forward to it, for the JavaScript callers, and
+// a process without the root builds a default when this module finishes
+// loading.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -117,6 +121,7 @@ import generator = require('generate-password');
 // under the Symbol `mark()` uses, so a caller reads it with `codeOf()` and
 // nothing that serialises the answer can send it anywhere.
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 const { log } = helpers;
 
@@ -311,6 +316,19 @@ class PasswordPolicy {
   constructor(private readonly deps: PasswordPolicyDeps) {
     deps.log.debug("Entering PasswordPolicy.constructor().");
     deps.log.debug("Leaving PasswordPolicy.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): PasswordPolicyDeps {
+    log.debug("Entering PasswordPolicy.defaultDeps().");
+    log.debug("Leaving PasswordPolicy.defaultDeps().");
+    return {
+      log: log,
+      mode: mode,
+      generator: generator,
+      errorCodes: errorCodes
+    };
   }
 
   setDirectory(hooks: DirectoryHooks | null | undefined): void {
@@ -829,43 +847,46 @@ class PasswordPolicy {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const policy = new PasswordPolicy({
-  log: log,
-  mode: mode,
-  generator: generator,
-  errorCodes: errorCodes
-});
+const slot = new InstanceSlot<PasswordPolicy>(
+  'common/password_policy',
+  () => new PasswordPolicy(PasswordPolicy.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PasswordPolicy: PasswordPolicy,
+  installInstance: (instance: PasswordPolicy): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   DEFAULT_PROFILE: PasswordPolicy.DEFAULT_PROFILE,
   DEFAULTS: PasswordPolicy.DEFAULTS,
   FIELDS: PasswordPolicy.FIELDS,
   FIELD_BY_KEY: PasswordPolicy.FIELD_BY_KEY,
   SCHEMA: PasswordPolicy.SCHEMA,
   OCTET_STRING_OID: PasswordPolicy.OCTET_STRING_OID,
-  setDirectory: policy.setDirectory.bind(policy) as
-    PasswordPolicy['setDirectory'],
-  directoryInstalled: policy.directoryInstalled.bind(policy) as
-    PasswordPolicy['directoryInstalled'],
-  read: policy.read.bind(policy) as PasswordPolicy['read'],
-  list: policy.list.bind(policy) as PasswordPolicy['list'],
-  profileFor: policy.profileFor.bind(policy) as PasswordPolicy['profileFor'],
-  validate: policy.validate.bind(policy) as PasswordPolicy['validate'],
-  save: policy.save.bind(policy) as PasswordPolicy['save'],
-  reset: policy.reset.bind(policy) as PasswordPolicy['reset'],
-  problemsWith: policy.problemsWith.bind(policy) as
-    PasswordPolicy['problemsWith'],
-  describe: policy.describe.bind(policy) as PasswordPolicy['describe'],
-  generate: policy.generate.bind(policy) as PasswordPolicy['generate'],
-  historyValue: policy.historyValue.bind(policy) as
-    PasswordPolicy['historyValue'],
-  hashOfHistoryValue: policy.hashOfHistoryValue.bind(policy) as
-    PasswordPolicy['hashOfHistoryValue'],
-  generalizedTime: policy.generalizedTime.bind(policy) as
-    PasswordPolicy['generalizedTime'],
-  enforced: policy.enforced.bind(policy) as PasswordPolicy['enforced']
+  setDirectory: slot.forward('setDirectory'),
+  directoryInstalled: slot.forward('directoryInstalled'),
+  read: slot.forward('read'),
+  list: slot.forward('list'),
+  profileFor: slot.forward('profileFor'),
+  validate: slot.forward('validate'),
+  save: slot.forward('save'),
+  reset: slot.forward('reset'),
+  problemsWith: slot.forward('problemsWith'),
+  describe: slot.forward('describe'),
+  generate: slot.forward('generate'),
+  historyValue: slot.forward('historyValue'),
+  hashOfHistoryValue: slot.forward('hashOfHistoryValue'),
+  generalizedTime: slot.forward('generalizedTime'),
+  enforced: slot.forward('enforced')
 };

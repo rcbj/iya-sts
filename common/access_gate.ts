@@ -60,11 +60,13 @@
 
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16). `AccessGate` takes the logger,
 // `config` and the error-code table through its constructor
-// (`AccessGateDeps`); the decider slot is a field of the instance. The module
-// still exports `RESOURCE`, `ACTION`, `setDecider`, `deciderInstalled` and
-// `check` from ONE instance built with the real modules, which is TRANSITIONAL:
-// it goes when the composition root builds an `AccessGate` and hands it to the
-// surfaces. `AccessGate` is exported beside them for that root.
+// (`AccessGateDeps`); the decider slot is a field of the instance. Since #50's
+// R2 the composition root builds the instance (`AccessGate.defaultDeps()`) and
+// installs it; the module's old export names are FACADES that forward to it,
+// for the JavaScript callers, and a process without the root builds a default
+// when this module finishes loading. The exports are `RESOURCE`, `ACTION`,
+// `setDecider`, `deciderInstalled` and `check`. `AccessGate` is exported beside
+// them for that root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -73,6 +75,7 @@ import config = require('./config');
 // stays one; the two failures below are tagged in the log rather than audited,
 // because `audit.js` is a heavier require than a leaf gate should carry.
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 // ---------------------------------------------------------------------------
 // THE RESOURCES. A closed list, because a resource id that only ever appears at
@@ -242,6 +245,18 @@ class AccessGate {
     deps.log.debug("Leaving AccessGate.constructor().");
   }
 
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): AccessGateDeps {
+    helpers.log.debug("Entering AccessGate.defaultDeps().");
+    helpers.log.debug("Leaving AccessGate.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      errorCodes: errorCodes
+    };
+  }
+
   setDecider(fn: AccessDecider | null): boolean {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AccessGate.setDecider().");
@@ -352,21 +367,31 @@ class AccessGate {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const accessGate = new AccessGate({
-  log: helpers.log,
-  config: config,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AccessGate>(
+  'common/access_gate',
+  () => new AccessGate(AccessGate.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AccessGate: AccessGate,
+  installInstance: (instance: AccessGate): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   RESOURCE: RESOURCE,
   ACTION: ACTION,
-  setDecider: accessGate.setDecider.bind(accessGate) as
-    AccessGate['setDecider'],
-  deciderInstalled: accessGate.deciderInstalled.bind(accessGate) as
-    AccessGate['deciderInstalled'],
-  check: accessGate.check.bind(accessGate) as AccessGate['check']
+  setDecider: slot.forward('setDecider'),
+  deciderInstalled: slot.forward('deciderInstalled'),
+  check: slot.forward('check')
 };

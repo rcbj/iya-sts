@@ -154,9 +154,11 @@
 // the audit window stay module-scope declarations, made at load as before.
 // The module still exports `SIGNATURE`, `MAX_BLOCK_LENGTH`, `parse`, `build`,
 // `crc32c`, `enabled`, `startupProblem`, `install`, `describe`, `report`,
-// `setThisHostCheck` and `reset` from a TRANSITIONAL instance for the
-// unconverted socket owners and `server.js`; it goes when the composition
-// root exists.
+// `setThisHostCheck` and `reset`, for the unconverted socket owners and
+// `server.js`. Since #50's R2 the composition root builds the instance
+// (`ProxyProtocol.defaultDeps()`) and installs it; the module's old export
+// names are FACADES that forward to it, for the JavaScript callers, and a
+// process without the root builds a default when this module finishes loading.
 // ---------------------------------------------------------------------------
 
 import net = require('net');
@@ -165,6 +167,7 @@ import bunyan = require('bunyan');
 import config = require('./config');
 import clientAddress = require('./client_address');
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 const log = bunyan.createLogger({ name: 'sts-proxy-protocol' });
 config.registerLogger(log);
@@ -322,6 +325,22 @@ class ProxyProtocol {
   constructor(private readonly deps: ProxyProtocolDeps) {
     deps.log.debug("Entering ProxyProtocol.constructor().");
     deps.log.debug("Leaving ProxyProtocol.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ProxyProtocolDeps {
+    log.debug("Entering ProxyProtocol.defaultDeps().");
+    log.debug("Leaving ProxyProtocol.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      clientAddress: clientAddress,
+      errorCodes: errorCodes,
+      loadAudit: function () {
+        return require('./audit');
+      }
+    };
   }
 
   // No Entering/Leaving pair: it is called once per byte-run of a header and
@@ -1069,35 +1088,38 @@ class ProxyProtocol {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const proxyProtocol = new ProxyProtocol({
-  log: log,
-  config: config,
-  clientAddress: clientAddress,
-  errorCodes: errorCodes,
-  loadAudit: function () {
-    return require('./audit');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ProxyProtocol>(
+  'common/proxy_protocol',
+  () => new ProxyProtocol(ProxyProtocol.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ProxyProtocol: ProxyProtocol,
+  installInstance: (instance: ProxyProtocol): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SIGNATURE: ProxyProtocol.SIGNATURE,
   MAX_BLOCK_LENGTH: ProxyProtocol.MAX_BLOCK_LENGTH,
-  parse: proxyProtocol.parse.bind(proxyProtocol) as ProxyProtocol['parse'],
-  build: proxyProtocol.build.bind(proxyProtocol) as ProxyProtocol['build'],
+  parse: slot.forward('parse'),
+  build: slot.forward('build'),
   crc32c: ProxyProtocol.crc32c,
-  enabled: proxyProtocol.enabled.bind(proxyProtocol) as
-    ProxyProtocol['enabled'],
-  startupProblem: proxyProtocol.startupProblem.bind(proxyProtocol) as
-    ProxyProtocol['startupProblem'],
-  install: proxyProtocol.install.bind(proxyProtocol) as
-    ProxyProtocol['install'],
-  describe: proxyProtocol.describe.bind(proxyProtocol) as
-    ProxyProtocol['describe'],
-  report: proxyProtocol.report.bind(proxyProtocol) as ProxyProtocol['report'],
-  setThisHostCheck: proxyProtocol.setThisHostCheck.bind(proxyProtocol) as
-    ProxyProtocol['setThisHostCheck'],
-  reset: proxyProtocol.reset.bind(proxyProtocol) as ProxyProtocol['reset']
+  enabled: slot.forward('enabled'),
+  startupProblem: slot.forward('startupProblem'),
+  install: slot.forward('install'),
+  describe: slot.forward('describe'),
+  report: slot.forward('report'),
+  setThisHostCheck: slot.forward('setThisHostCheck'),
+  reset: slot.forward('reset')
 };

@@ -70,13 +70,15 @@
 // table, the cluster's shared secrets and counters and `client_address`
 // through its constructor. The rate-limit store stays a module-scope
 // `realms.sharedMap()` declared exactly as before, and both
-// `capabilities.provide()` calls still run at require time, in their old
-// places relative to the store. The module still exports every name it did —
+// `capabilities.provide()` calls still run at require time, in their old places
+// relative to the store. The module still exports every name it did —
 // `CSRF_FIELD`, `tokenFor`, `field`, `checkCsrf`, the three synchronous and
 // four shared limiter functions, `sharesLimits`, `addressOf`, `report` and
-// `reset` — from a TRANSITIONAL instance for the unconverted modules that
-// require it (`common/app.js` among them); it goes when the composition root
-// exists.
+// `reset` — for the unconverted modules that require it (`common/app.js` among
+// them). Since #50's R2 the composition root builds the instance
+// (`WebSecurity.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when this module finishes loading.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -121,6 +123,7 @@ capabilities.provide('secrets.protocol-keys');
 import clusterCounters = require('../cluster/cluster_counters');
 // Who a request came from. A LEAF. See `addressOf()`.
 import clientAddress = require('./client_address');
+import InstanceSlot = require('./instance_slot');
 const CSRF_FIELD = 'csrf_token';
 
 // What a `WebSecurity` needs from the rest of the service, each named for the
@@ -220,6 +223,23 @@ class WebSecurity {
   constructor(private readonly deps: WebSecurityDeps) {
     deps.log.debug("Entering WebSecurity.constructor().");
     deps.log.debug("Leaving WebSecurity.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): WebSecurityDeps {
+    helpers.log.debug("Entering WebSecurity.defaultDeps().");
+    helpers.log.debug("Leaving WebSecurity.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      crypto: stsCrypto,
+      errorCodes: errorCodes,
+      clusterSecrets: clusterSecrets,
+      clusterCounters: clusterCounters,
+      clientAddress: clientAddress,
+      buckets: buckets
+    };
   }
 
   // The token for a session. A pure function of the id, so it is the same on
@@ -853,42 +873,41 @@ class WebSecurity {
 // LDAP bind — calls them.
 capabilities.provide('security.rate-limits');
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const webSecurity = new WebSecurity({
-  log: helpers.log,
-  config: config,
-  crypto: stsCrypto,
-  errorCodes: errorCodes,
-  clusterSecrets: clusterSecrets,
-  clusterCounters: clusterCounters,
-  clientAddress: clientAddress,
-  buckets: buckets
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<WebSecurity>(
+  'common/websecurity',
+  () => new WebSecurity(WebSecurity.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   WebSecurity: WebSecurity,
+  installInstance: (instance: WebSecurity): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   CSRF_FIELD: WebSecurity.CSRF_FIELD,
-  tokenFor: webSecurity.tokenFor.bind(webSecurity) as WebSecurity['tokenFor'],
-  field: webSecurity.field.bind(webSecurity) as WebSecurity['field'],
-  checkCsrf: webSecurity.checkCsrf.bind(webSecurity) as
-    WebSecurity['checkCsrf'],
-  attempt: webSecurity.attempt.bind(webSecurity) as WebSecurity['attempt'],
-  blocked: webSecurity.blocked.bind(webSecurity) as WebSecurity['blocked'],
-  succeeded: webSecurity.succeeded.bind(webSecurity) as
-    WebSecurity['succeeded'],
-  attemptShared: webSecurity.attemptShared.bind(webSecurity) as
-    WebSecurity['attemptShared'],
-  blockedShared: webSecurity.blockedShared.bind(webSecurity) as
-    WebSecurity['blockedShared'],
-  succeededShared: webSecurity.succeededShared.bind(webSecurity) as
-    WebSecurity['succeededShared'],
-  failedShared: webSecurity.failedShared.bind(webSecurity) as
-    WebSecurity['failedShared'],
-  sharesLimits: webSecurity.sharesLimits.bind(webSecurity) as
-    WebSecurity['sharesLimits'],
-  addressOf: webSecurity.addressOf.bind(webSecurity) as
-    WebSecurity['addressOf'],
-  report: webSecurity.report.bind(webSecurity) as WebSecurity['report'],
-  reset: webSecurity.reset.bind(webSecurity) as WebSecurity['reset']
+  tokenFor: slot.forward('tokenFor'),
+  field: slot.forward('field'),
+  checkCsrf: slot.forward('checkCsrf'),
+  attempt: slot.forward('attempt'),
+  blocked: slot.forward('blocked'),
+  succeeded: slot.forward('succeeded'),
+  attemptShared: slot.forward('attemptShared'),
+  blockedShared: slot.forward('blockedShared'),
+  succeededShared: slot.forward('succeededShared'),
+  failedShared: slot.forward('failedShared'),
+  sharesLimits: slot.forward('sharesLimits'),
+  addressOf: slot.forward('addressOf'),
+  report: slot.forward('report'),
+  reset: slot.forward('reset')
 };
