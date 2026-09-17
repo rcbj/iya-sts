@@ -916,6 +916,8 @@ unedited service behaves exactly as it did.
 | `oauth2.requireRequestObjectIssuerAudience` | `STS_OAUTH2_REQUIRE_REQUEST_OBJECT_ISSUER_AUDIENCE` | `false` | yes | Whether a request object must carry `iss` and `aud`. They are checked wherever present either way: `iss` must be the client and `aud` this authorization server's issuer or its authorization endpoint. |
 | `oauth2.requestUriTimeoutMs` | `STS_OAUTH2_REQUEST_URI_TIMEOUT_MS` | `5000` | yes | How long fetching a registered `request_uri` may take before the request is refused `invalid_request_uri`. |
 | `oauth2.requestUriMaxBytes` | `STS_OAUTH2_REQUEST_URI_MAX_BYTES` | `65536` | yes | The largest request object a `request_uri` may answer with; a longer answer is abandoned and refused. |
+| `oauth2.requestObjectJtiOnce` | `STS_OAUTH2_REQUEST_OBJECT_JTI_ONCE` | `true` | yes | Whether a request object's `jti` is accepted once. It is spent when an authorization response is issued on the object or a pushed authorization request keeps it, and a replay after that is refused with `invalid_request_object`. An object with no `jti` is accepted either way. |
+| `oauth2.requestObjectJtiRetentionS` | `STS_OAUTH2_REQUEST_OBJECT_JTI_RETENTION_S` | `3600` | yes | How long a spent `jti` is remembered when its request object has no `exp`. After this a replay of such an object is accepted; one with `exp` is remembered until then plus `oauth2.clientAssertionSkewS`. |
 | `oauth2.requestUriCacheS` | `STS_OAUTH2_REQUEST_URI_CACHE_S` | `0` | yes | How long a fetched request object is reused for the same `request_uri` (OpenID Connect Core section 6.2). Zero fetches on every request — and the authorization endpoint runs each request twice, before and after sign-in. A fragment names a version, so a changed fragment is a different entry. |
 | `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of the realm's RSA request object encryption key, published in the JWKS with `use: "enc"`. Read when a key set is made. |
 | `oauth2.requestObjectEncryptionCurve` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_CURVE` | `P-256` | yes | The curve of the realm's EC request object encryption key (ECDH-ES), published beside the RSA one. Read when a key set is made. |
@@ -3537,8 +3539,17 @@ Both discovery documents carry `request_parameter_supported`,
 `request_uri_parameter_supported`, `require_request_uri_registration`,
 `require_signed_request_object` and the three `request_object_*_values_supported` lists,
 and a named authorization server's profile narrows each of them at its endpoint. The
-sign-in and consent screens say when the request was a verified request object. **Not
-done**: a request object's `jti` is not remembered.
+sign-in and consent screens say when the request was a verified request object.
+
+**A request object's `jti` is accepted once** (since 2026-09-17). It is checked on every
+pass through the authorization endpoint and spent only when an authorization response is
+issued on the object, or when `POST /oauth2/par` keeps a pushed one — so the passes before
+and after the sign-in screen are one request, and a replay afterwards is refused with
+`invalid_request_object`. It is kept in the used-assertion history (`/admin/used-assertions`)
+beside RFC 7523 JWTs, until `exp` plus the clock skew, or for
+`oauth2.requestObjectJtiRetentionS` when the object has no `exp`.
+`oauth2.requestObjectJtiOnce=false` accepts a replay again; an object with no `jti` is
+accepted either way.
 
 ### Mutual TLS (RFC 8705)
 

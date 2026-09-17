@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2684** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2687** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 177
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 408
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 411
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 60
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1342,6 +1342,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0371` | A response_type duplicated in the query differs from the request object's (OpenID Connect Core section 6.1). | invalid_request_object (HTTP 400) |
 | `STS-OAUTH-0372` | A request_uri is a pushed authorization request URN and there is no pushed authorization request here to resolve it, or it resolved to nothing. | request_uri_not_supported or invalid_request_uri (HTTP 400) |
 | `STS-OAUTH-0373` | The authorization endpoint failed with an unexpected error while resolving a request object. | server_error (HTTP 500) |
+| `STS-OAUTH-0374` | A request object's jti has been used already: an authorization response was issued on it, or a pushed authorization request kept it, or a response on it is still being written. | invalid_request_object (HTTP 400) |
+| `STS-OAUTH-0375` | A request object's jti could not be recorded because the used-assertion history for the realm is full of unexpired rows (oauth2.assertionReplayCacheSize). | temporarily_unavailable (HTTP 503) |
+| `STS-OAUTH-0376` | A request object's jti could not be recorded because the used-assertion history's store could not be written or asked; nothing is issued on the object. | server_error (HTTP 500) |
 | `STS-OAUTH-0400` | A pushed authorization request arrived while oauth2.pushedAuthorizationRequests is off. | invalid_request (HTTP 404) |
 | `STS-OAUTH-0401` | The pushed authorization request endpoint was called with a method other than POST. | HTTP 405 with Allow: POST (RFC 9126 section 2.3) |
 | `STS-OAUTH-0402` | A pushed authorization request was larger than oauth2.parMaxBodyBytes. | HTTP 413 (RFC 9126 section 2.3) |

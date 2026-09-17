@@ -12918,7 +12918,12 @@ class AdminApi {
                      'expiry plus the skew allowed when it was read — and ' +
                      '`live` is how many are held against `cap` ' +
                      '(`oauth2.assertionReplayCacheSize`). No assertion and ' +
-                     'no credential is in any row.\n\nREAD ONLY.',
+                     'no credential is in any row.\n\nSince 2026-09-17 ' +
+                     '(#35) it also holds the `jti` of every RFC 9101 ' +
+                     'request object an authorization response was issued ' +
+                     'on, or a pushed authorization request kept, with ' +
+                     '`use` `request-object` and the client as issuer.' +
+                     '\n\nREAD ONLY.',
         mirrors: 'GET /admin/used-assertions',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -12929,8 +12934,11 @@ class AdminApi {
             description: '`jwt` (RFC 7523) or `saml` (RFC 7522).' },
           { name: 'use', in: 'query', required: false,
             schema: { type: 'string',
-                      enum: ['client-authentication', 'authorization-grant'] },
-            description: 'What the assertion was accepted AS.' },
+                      enum: ['client-authentication', 'authorization-grant',
+                             'request-object'] },
+            description: 'What the assertion was accepted AS — ' +
+                         '`request-object` is an RFC 9101 request object ' +
+                         'whose `jti` was spent (#35).' },
           { name: 'state', in: 'query', required: false,
             schema: { type: 'string', enum: ['reserved', 'spent'] },
             description: '`reserved` (its token request has not finished) or ' +

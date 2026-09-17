@@ -5099,6 +5099,22 @@ const CODES = [
     summary: 'The authorization endpoint failed with an unexpected error ' +
       'while resolving a request object.',
     spec: 'server_error (HTTP 500)' },
+  // #35 (2026-09-17): a request object's jti, remembered.
+  { code: 'STS-OAUTH-0374',
+    summary: 'A request object\'s jti has been used already: an ' +
+      'authorization response was issued on it, or a pushed authorization ' +
+      'request kept it, or a response on it is still being written.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0375',
+    summary: 'A request object\'s jti could not be recorded because the ' +
+      'used-assertion history for the realm is full of unexpired rows ' +
+      '(oauth2.assertionReplayCacheSize).',
+    spec: 'temporarily_unavailable (HTTP 503)' },
+  { code: 'STS-OAUTH-0376',
+    summary: 'A request object\'s jti could not be recorded because the ' +
+      'used-assertion history\'s store could not be written or asked; ' +
+      'nothing is issued on the object.',
+    spec: 'server_error (HTTP 500)' },
   // PUSHED AUTHORIZATION REQUESTS (RFC 9126), 2026-09-13. Block 0400..0449;
   // oauth-oidc/par.ts and the PAR endpoint in oauth-oidc/oauth2.ts.
   { code: 'STS-OAUTH-0400',

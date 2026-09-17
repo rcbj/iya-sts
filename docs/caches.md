@@ -174,7 +174,7 @@ something be used twice, which is why none of them has a control.
 
 | Store | Remembers | Scope | Limit | Forgets |
 |---|---|---|---|---|
-| Used assertions | every RFC 7523 JWT and RFC 7522 SAML assertion accepted, for a grant or client authentication | per realm, persisted in every store mode | `oauth2.assertionReplayCacheSize` (1000); **refuses new assertions when full** | once the assertion itself expires; a request that fails releases its claim |
+| Used assertions | every RFC 7523 JWT and RFC 7522 SAML assertion accepted, for a grant or client authentication, and the `jti` of every RFC 9101 request object an authorization response was issued on | per realm, persisted in every store mode | `oauth2.assertionReplayCacheSize` (1000); **refuses new assertions when full** | once the assertion itself expires; a request that fails releases its claim |
 | Kerberos authenticators | each authenticator the protected service accepted | per trust realm (the realm whose Kerberos realm issued the ticket), persisted | `krb5.replayCacheMaxEntries` (10000); **refuses when full** | after twice the clock skew |
 | DPoP proof IDs | each DPoP proof's `jti` | per realm, persisted | no size limit | after twice `oauth2.dpopIatSkewS` (300) |
 | DPoP nonces | server-issued DPoP nonces | per realm, persisted | none | after `oauth2.dpopNonceTtlS` (300) |

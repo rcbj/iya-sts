@@ -1332,7 +1332,9 @@ const SPECS: Spec[] = [
               'the OIDC 6.2 SHA-256 fragment and an optional cache; the five ' +
               'client metadata members; and the four error codes. Unsigned ' +
               'objects are accepted in development and refused in product. ' +
-              'A request object\'s jti is not remembered.' },
+              'A request object\'s jti is accepted once: looked at on ' +
+              'every pass, spent where an authorization response is issued ' +
+              'or a push is kept, and kept in the used-assertion history.' },
   { id: 'rfc7800', name: 'RFC 7800 — Proof-of-Possession Key Semantics',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7800',
     coverage: 'full for the use made of it: cnf.jwk binds an issued ' +
