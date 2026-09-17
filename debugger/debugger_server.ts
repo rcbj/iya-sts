@@ -76,14 +76,16 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `DebuggerServer` takes the modules it uses through its constructor
-// (`DebuggerServerDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `DebuggerServer` is exported beside them for the
-// composition root.
+// (`DebuggerServerDeps`). Since #50's R2 the composition root builds the
+// instance; the module's old names are FACADES forwarding to it, for the
+// callers that are not converted, and a process without the root builds a
+// default at load.
+// `DebuggerServer` is exported beside them for that root.
 //
-// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the
-// transitional code calls at load where the first route used to be
-// registered, so rule 1's order is unchanged.
+// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, on this listener's
+// own app, which `DebuggerServer.wire()` calls when the instance is installed
+// — standalone, at load, where the first route used to be registered — so
+// rule 1's order is unchanged.
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
@@ -92,6 +94,7 @@ import https = require('https');
 import path = require('path');
 import express = require('express');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log, PORT } = helpers;
 import config = require('../common/config');
 import mode = require('../common/mode');
@@ -203,6 +206,48 @@ class DebuggerServer {
   constructor(private readonly deps: DebuggerServerDeps) {
     deps.log.debug("Entering DebuggerServer.constructor().");
     deps.log.debug("Leaving DebuggerServer.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): DebuggerServerDeps {
+    helpers.log.debug("Entering DebuggerServer.defaultDeps().");
+    helpers.log.debug("Leaving DebuggerServer.defaultDeps().");
+    return {
+      fs: fs,
+      http: http,
+      https: https,
+      path: path,
+      express: express,
+      helpers: helpers,
+      log: log,
+      PORT: PORT,
+      config: config,
+      mode: mode,
+      realms: realms,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes,
+      proxyProtocol: proxyProtocol,
+      websecurity: websecurity,
+      oidcRp: oidcRp,
+      authn: authn,
+      jwtAccessToken: jwtAccessToken,
+      mtls: mtls,
+      dpop: dpop,
+      senderConstraints: senderConstraints,
+      tlsServer: tlsServer,
+      access: access,
+      apiProcess: apiProcess
+    };
+  }
+
+  // What loading this module did with its instance before #50's R2, now
+  // done by the slot for whichever instance is installed: the listener's
+  // own app (below) gets its routes.
+  static wire(instance: DebuggerServer): void {
+    helpers.log.debug("Entering DebuggerServer.wire().");
+    instance.registerRoutes(app);
+    helpers.log.debug("Leaving DebuggerServer.wire().");
   }
 
   esc(text) {
@@ -856,9 +901,10 @@ class DebuggerServer {
     };
   }
 
-  // THE ROUTES, registered where they always were: the transitional
-  // code below calls this at load, at the point the first of them
-  // used to be registered, so the route order is unchanged (rule 1).
+  // THE ROUTES, registered where they always were: `wire()` calls this on
+  // the listener's own app when the instance is installed (standalone, at
+  // load, at the point the first of them used to be registered), so the
+  // route order is unchanged (rule 1).
   registerRoutes(app: RouteApp): void {
     const { log, realms, dpop, authn, oidcRp, errorCodes, express, access,
             apiProcess, websecurity, config, tlsServer, path, fs } = this.deps;
@@ -1238,42 +1284,29 @@ class DebuggerServer {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const debuggerServer = new DebuggerServer({
-  fs: fs,
-  http: http,
-  https: https,
-  path: path,
-  express: express,
-  helpers: helpers,
-  log: log,
-  PORT: PORT,
-  config: config,
-  mode: mode,
-  realms: realms,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes,
-  proxyProtocol: proxyProtocol,
-  websecurity: websecurity,
-  oidcRp: oidcRp,
-  authn: authn,
-  jwtAccessToken: jwtAccessToken,
-  mtls: mtls,
-  dpop: dpop,
-  senderConstraints: senderConstraints,
-  tlsServer: tlsServer,
-  access: access,
-  apiProcess: apiProcess
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DebuggerServer>(
+  'debugger/debugger_server',
+  () => new DebuggerServer(DebuggerServer.defaultDeps()),
+  DebuggerServer.wire,
+  helpers.log);
 
 // ===========================================================================
 // THE APP.
 // ===========================================================================
 const app = express();
 
-debuggerServer.registerRoutes(app);
+// The routes go on it in `DebuggerServer.wire()`, when the instance is
+// installed (#50, R2) — this app is the listener's own, not the shared one,
+// so nothing else's order depends on when.
 
 // ---------------------------------------------------------------------------
 // THE API, FORWARDED.
@@ -1300,25 +1333,22 @@ let anchorCheckedAt = 0;
 const substitutedCache = new Map();
 const SUBSTITUTED_CACHE_MAX = 400;
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   DebuggerServer: DebuggerServer,
-  listen: debuggerServer.listen.bind(debuggerServer) as
-    DebuggerServer['listen'],
-  close: debuggerServer.close.bind(debuggerServer) as DebuggerServer['close'],
-  status: debuggerServer.status.bind(debuggerServer) as
-    DebuggerServer['status'],
+  installInstance: (instance: DebuggerServer): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  listen: slot.forward('listen'),
+  close: slot.forward('close'),
+  status: slot.forward('status'),
   // For tests/debugger_server.js, which drives the app in process.
   app: app,
-  verifyAccessToken: debuggerServer.verifyAccessToken.bind(debuggerServer) as
-    DebuggerServer['verifyAccessToken'],
-  checkAnchor: debuggerServer.checkAnchor.bind(debuggerServer) as
-    DebuggerServer['checkAnchor'],
-  isLanding: debuggerServer.isLanding.bind(debuggerServer) as
-    DebuggerServer['isLanding'],
-  authorizationBaseOf:
-    debuggerServer.authorizationBaseOf.bind(debuggerServer) as
-      DebuggerServer['authorizationBaseOf'],
-  debuggerBaseOf: debuggerServer.debuggerBaseOf.bind(debuggerServer) as
-    DebuggerServer['debuggerBaseOf'],
+  verifyAccessToken: slot.forward('verifyAccessToken'),
+  checkAnchor: slot.forward('checkAnchor'),
+  isLanding: slot.forward('isLanding'),
+  authorizationBaseOf: slot.forward('authorizationBaseOf'),
+  debuggerBaseOf: slot.forward('debuggerBaseOf'),
   STS_URL_PLACEHOLDER: STS_URL_PLACEHOLDER
 };

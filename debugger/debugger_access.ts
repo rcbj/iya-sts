@@ -64,13 +64,15 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `DebuggerAccess` takes the modules it uses through its constructor
-// (`DebuggerAccessDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `DebuggerAccess` is exported beside them for the
-// composition root.
+// (`DebuggerAccessDeps`). Since #50's R2 the composition root builds the
+// instance; the module's old names are FACADES forwarding to it, for the
+// callers that are not converted, and a process without the root builds a
+// default at load.
+// `DebuggerAccess` is exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import realms = require('../common/realms');
 import accessGate = require('../common/access_gate');
@@ -115,6 +117,20 @@ class DebuggerAccess {
   constructor(private readonly deps: DebuggerAccessDeps) {
     deps.log.debug("Entering DebuggerAccess.constructor().");
     deps.log.debug("Leaving DebuggerAccess.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): DebuggerAccessDeps {
+    helpers.log.debug("Entering DebuggerAccess.defaultDeps().");
+    helpers.log.debug("Leaving DebuggerAccess.defaultDeps().");
+    return {
+      log: log,
+      realms: realms,
+      accessGate: accessGate,
+      adminRbac: adminRbac,
+      audit: audit
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -270,29 +286,35 @@ class DebuggerAccess {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const debuggerAccess = new DebuggerAccess({
-  log: log,
-  realms: realms,
-  accessGate: accessGate,
-  adminRbac: adminRbac,
-  audit: audit
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DebuggerAccess>(
+  'debugger/debugger_access',
+  () => new DebuggerAccess(DebuggerAccess.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   DebuggerAccess: DebuggerAccess,
+  installInstance: (instance: DebuggerAccess): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PERMISSION_BASE: PERMISSION_BASE,
   PERMISSION_NAME: PERMISSION_NAME,
   PERMISSION_ID: PERMISSION_ID,
   UI_CLIENT_ID: UI_CLIENT_ID,
   API_IDENTIFIER: API_IDENTIFIER,
   CONSOLE_ROLES: CONSOLE_ROLES,
-  isAdministrator: debuggerAccess.isAdministrator.bind(debuggerAccess) as
-    DebuggerAccess['isAdministrator'],
-  asksForPermission: debuggerAccess.asksForPermission.bind(debuggerAccess) as
-    DebuggerAccess['asksForPermission'],
-  narrowScope: debuggerAccess.narrowScope.bind(debuggerAccess) as
-    DebuggerAccess['narrowScope']
+  isAdministrator: slot.forward('isAdministrator'),
+  asksForPermission: slot.forward('asksForPermission'),
+  narrowScope: slot.forward('narrowScope')
 };
