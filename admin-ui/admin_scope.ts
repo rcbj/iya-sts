@@ -45,15 +45,20 @@
 // shape: `AdminScope` takes the logger and the two `config` readers it asks
 // through its constructor. The three tables of names stay module constants,
 // exported as static members; the two tables of RULES are built in the
-// constructor, because each rule logs through the instance's logger. The
-// module still exports every name it did, from a TRANSITIONAL instance at the
-// bottom, for `admin-ui/admin.ts`, `mgmt-api/admin_api.ts` and the test;
-// `AdminScope` is exported beside them for the composition root.
+// constructor, because each rule logs through the instance's logger.
+//
+// R2 (#50): the composition root (`common/protocol_stack.ts`) builds the
+// instance and installs it; this module builds none of its own. It still
+// exports every name it did, as FACADES that forward to that instance, for
+// `admin-ui/admin.ts`, `mgmt-api/admin_api.ts` and the test. A process
+// without the root builds a default instance at load, as loading this module
+// always did.
 // ---------------------------------------------------------------------------
 
 
 import helpers = require('../common/helpers');
 import config = require('../common/config');
+import InstanceSlot = require('../common/instance_slot');
 
 // What a gate state is, as far as this file reads one: `gateStateFor()`'s
 // answer in `admin-core/admin_views.ts`.
@@ -220,6 +225,21 @@ class AdminScope {
     deps.log.debug("Leaving AdminScope.constructor().");
   }
 
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50). The setting table is read when
+  // it is asked, as `config.SETTINGS` was.
+  static defaultDeps(): AdminScopeDeps {
+    helpers.log.debug("Entering AdminScope.defaultDeps().");
+    helpers.log.debug("Leaving AdminScope.defaultDeps().");
+    return {
+      log: helpers.log,
+      settings: function () {
+        return config.SETTINGS;
+      },
+      isPerProcess: config.isPerProcess
+    };
+  }
+
   // The one key on `/admin/keys` that is not a realm's.
   private tlsServerKeyRule(body: any): string {
     const { log } = this.deps;
@@ -375,30 +395,34 @@ class AdminScope {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one. The setting table is read when it is
-// asked, as `config.SETTINGS` was.
-const scope = new AdminScope({
-  log: helpers.log,
-  settings: function () {
-    return config.SETTINGS;
-  },
-  isPerProcess: config.isPerProcess
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AdminScope>(
+  'admin-ui/admin_scope',
+  () => new AdminScope(AdminScope.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AdminScope: AdminScope,
+  installInstance: (instance: AdminScope): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SERVICE_PAGES: AdminScope.SERVICE_PAGES,
   SERVICE_SETTING_PREFIXES: AdminScope.SERVICE_SETTING_PREFIXES,
   SERVICE_SETTING_KEYS: AdminScope.SERVICE_SETTING_KEYS,
-  pageIsService: scope.pageIsService.bind(scope) as
-    AdminScope['pageIsService'],
-  settingIsServiceOnly: scope.settingIsServiceOnly.bind(scope) as
-    AdminScope['settingIsServiceOnly'],
-  serviceSettingsIn: scope.serviceSettingsIn.bind(scope) as
-    AdminScope['serviceSettingsIn'],
-  actionRuleFor: scope.actionRuleFor.bind(scope) as
-    AdminScope['actionRuleFor'],
-  refusalFor: scope.refusalFor.bind(scope) as AdminScope['refusalFor'],
-  pageVisible: scope.pageVisible.bind(scope) as AdminScope['pageVisible']
+  pageIsService: slot.forward('pageIsService'),
+  settingIsServiceOnly: slot.forward('settingIsServiceOnly'),
+  serviceSettingsIn: slot.forward('serviceSettingsIn'),
+  actionRuleFor: slot.forward('actionRuleFor'),
+  refusalFor: slot.forward('refusalFor'),
+  pageVisible: slot.forward('pageVisible')
 };

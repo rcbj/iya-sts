@@ -80,14 +80,17 @@
 // PURPOSE_WRITES is built by the constructor, because its rows read
 // `applications` and call a method.
 //
-// The TRANSITIONAL code at the bottom builds one instance from the real
-// modules and exports its `registerRoutes(app)`, which
-// `common/protocol_stack.ts` calls at 18a, where requiring this module used
-// to register them (#50, R1) — requiring the module registers nothing, so
-// `mgmt-api/admin_api.ts`'s require of this file is a cache hit that could
-// not move a route anyway. It also exports the old names from the instance:
-// `pkiView`, `pkiAction`, `pkiActionNames`, `paneHtml` and `returnTo`.
-// `PkiAdmin` is exported beside them for the composition root.
+// The module exports `registerRoutes(app)`, which `common/protocol_stack.ts`
+// calls at 18a, where requiring this module used to register them (#50, R1)
+// — requiring the module registers nothing, so `mgmt-api/admin_api.ts`'s
+// require of this file is a cache hit that could not move a route anyway. It
+// also exports the old names: `pkiView`, `pkiAction`, `pkiActionNames`,
+// `paneHtml` and `returnTo`.
+//
+// R2 (#50): the composition root builds the instance and installs it; this
+// module builds none of its own, and its exports are FACADES that forward to
+// that instance, for the JavaScript callers. A process without the root
+// builds a default instance at load, as loading this module always did.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -127,6 +130,7 @@ import pqcBadge = require('./pqc_badge');
 // `pagingJson()`). A LIBRARY that registers nothing, and `admin.js` above has
 // already loaded it, so this require is a cache hit that moves no route.
 import adminViews = require('../admin-core/admin_views');
+import InstanceSlot = require('../common/instance_slot');
 
 type Json = any;
 
@@ -252,6 +256,33 @@ class PkiAdmin {
     deps.log.debug("Entering PkiAdmin.constructor().");
     this.purposeWrites = this.purposeWritesTable();
     deps.log.debug("Leaving PkiAdmin.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): PkiAdminDeps {
+    helpers.log.debug("Entering PkiAdmin.defaultDeps().");
+    helpers.log.debug("Leaving PkiAdmin.defaultDeps().");
+    return {
+      log: helpers.log,
+      parseBody: helpers.parseBody,
+      stsKeysFor: helpers.stsKeysFor,
+      config: config,
+      realms: realms,
+      pki: pki,
+      pkiRevocation: pkiRevocation,
+      authoring: authoring,
+      applications: applications,
+      personAssertions: personAssertions,
+      errorCodes: errorCodes,
+      certificateViews: certificateViews,
+      certificateDialog: certificateDialog,
+      pqcSupport: pqcSupport,
+      pqcBadge: pqcBadge,
+      adminViews: adminViews,
+      admin: admin,
+      esc: admin.esc
+    };
   }
 
   // The action names this page's form can post, for the management API.
@@ -4766,43 +4797,39 @@ class PkiAdmin {
     log.debug("Leaving PkiAdmin.registerRoutes().");
   }
 }
-// THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules; its routes are registered by the composition root, below.
-const pkiAdmin = new PkiAdmin({
-  log: helpers.log,
-  parseBody: helpers.parseBody,
-  stsKeysFor: helpers.stsKeysFor,
-  config: config,
-  realms: realms,
-  pki: pki,
-  pkiRevocation: pkiRevocation,
-  authoring: authoring,
-  applications: applications,
-  personAssertions: personAssertions,
-  errorCodes: errorCodes,
-  certificateViews: certificateViews,
-  certificateDialog: certificateDialog,
-  pqcSupport: pqcSupport,
-  pqcBadge: pqcBadge,
-  adminViews: adminViews,
-  admin: admin,
-  esc: admin.esc
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PkiAdmin>(
+  'admin-ui/pki_admin',
+  () => new PkiAdmin(PkiAdmin.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => pkiAdmin.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   PkiAdmin: PkiAdmin,
+  installInstance: (instance: PkiAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7: every control on this page has an
   // operation, and both go through THESE functions so the API decides nothing
   // the console does not.
-  pkiView: pkiAdmin.pkiJson.bind(pkiAdmin) as PkiAdmin['pkiJson'],
-  pkiAction: pkiAdmin.pkiAction.bind(pkiAdmin) as PkiAdmin['pkiAction'],
-  pkiActionNames: pkiAdmin.pkiActionNames.bind(pkiAdmin) as
-    PkiAdmin['pkiActionNames'],
+  pkiView: slot.forward('pkiJson'),
+  pkiAction: slot.forward('pkiAction'),
+  pkiActionNames: slot.forward('pkiActionNames'),
   // For `tests/pki_authoring.js` ONLY, and it is worth saying why a renderer
   // is exported at all. The pane's field table is declared in
   // `common/pki_authoring.ts` and DRAWN here, and the two going out of step is
@@ -4811,11 +4838,10 @@ export = {
   // drawn and never parsed is a control that does nothing. Neither shows up as
   // an error anywhere. So the test renders the pane and compares the two
   // lists, which it cannot do without this.
-  paneHtml: pkiAdmin.certificatePane.bind(pkiAdmin) as
-    PkiAdmin['certificatePane'],
+  paneHtml: slot.forward('certificatePane'),
   // For `tests/pki_key_pair_paging.js` ONLY. Where a Take-off button in one of
   // the two paged tables sends the browser is a `Location` header built out
   // of a request body, so the test holds the rebuild — the page kept, anything
   // else dropped — rather than trusting that a redirect nobody reads is right.
-  returnTo: pkiAdmin.pkiReturnTo.bind(pkiAdmin) as PkiAdmin['pkiReturnTo']
+  returnTo: slot.forward('pkiReturnTo')
 };

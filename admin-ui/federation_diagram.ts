@@ -78,11 +78,13 @@
 // constructor, and every function this file had is a method of it. The
 // palette and the metrics stay module-level constants.
 //
-// The module still exports `render`, `COLOURS` and `hexPath` — `render` bound
-// to a TRANSITIONAL instance at the bottom, `COLOURS` from the class's static
-// member, `hexPath` the delegation picture's own, as it always was — for
-// `admin-ui/admin.ts` and the tests. `FederationDiagram` is exported beside
-// them for the composition root. Still a LIBRARY: no route.
+// R2 (#50): the composition root (`common/protocol_stack.ts`) builds the
+// instance and installs it; this module builds none of its own. It still
+// exports `render`, `COLOURS` and `hexPath` — `render` a FACADE that forwards
+// to that instance, `COLOURS` from the class's static member, `hexPath` the
+// delegation picture's own, as it always was — for `admin-ui/admin.ts` and the
+// tests. A process without the root builds a default instance at load, as
+// loading this module always did. Still a LIBRARY: no route.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -90,6 +92,7 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import dagre = require('@dagrejs/dagre');
 import delegationMap = require('./delegation_map');
+import InstanceSlot = require('../common/instance_slot');
 
 // What a federation diagram needs from the rest of the service. The three
 // functions are `delegation_map.ts`'s — see the header for why they are shared.
@@ -183,6 +186,22 @@ class FederationDiagram {
   constructor(private readonly deps: FederationDiagramDeps) {
     deps.log.debug("Entering FederationDiagram.constructor().");
     deps.log.debug("Leaving FederationDiagram.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): FederationDiagramDeps {
+    helpers.log.debug("Entering FederationDiagram.defaultDeps().");
+    helpers.log.debug("Leaving FederationDiagram.defaultDeps().");
+    return {
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      errorCodes: errorCodes,
+      dagre: dagre,
+      textWidth: delegationMap.textWidth,
+      wrapLabel: delegationMap.wrapLabel,
+      hexPath: delegationMap.hexPath
+    };
   }
 
 
@@ -861,22 +880,29 @@ class FederationDiagram {
 }
 
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const federationDiagram = new FederationDiagram({
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape,
-  errorCodes: errorCodes,
-  dagre: dagre,
-  textWidth: delegationMap.textWidth,
-  wrapLabel: delegationMap.wrapLabel,
-  hexPath: delegationMap.hexPath
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<FederationDiagram>(
+  'admin-ui/federation_diagram',
+  () => new FederationDiagram(FederationDiagram.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   FederationDiagram: FederationDiagram,
-  render: federationDiagram.render.bind(federationDiagram) as
-    FederationDiagram['render'],
+  installInstance: (instance: FederationDiagram): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  render: slot.forward('render'),
   // Exported for the legend on the page, so that the swatch beside "a foreign
   // identity provider" and the shape in the picture cannot come to be drawn
   // from two different palettes — `delegation_map.ts`'s rule, and admin.js

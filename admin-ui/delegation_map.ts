@@ -97,18 +97,21 @@
 // had is a method of it. The palette, the metrics and the other numbers stay
 // module-level constants, because they are constants rather than state.
 //
-// The module still exports `render`, `edgeSample`, `COLOURS`, `personGlyph`,
-// `hexPath`, `textWidth`, `wrapLabel` and `MAX_LABEL_CHARS` — the functions
-// bound to a TRANSITIONAL instance at the bottom, the two constants from the
-// class's static members — for `admin-ui/admin.ts`,
-// `admin-ui/federation_diagram.ts` and the tests. `DelegationMap` is exported
-// beside them for the composition root. Still a LIBRARY: no route.
+// R2 (#50): the composition root (`common/protocol_stack.ts`) builds the
+// instance and installs it; this module builds none of its own. It still
+// exports `render`, `edgeSample`, `COLOURS`, `personGlyph`, `hexPath`,
+// `textWidth`, `wrapLabel` and `MAX_LABEL_CHARS` — the functions as FACADES
+// that forward to that instance, the two constants from the class's static
+// members — for `admin-ui/admin.ts`, `admin-ui/federation_diagram.ts` and the
+// tests. A process without the root builds a default instance at load, as
+// loading this module always did. Still a LIBRARY: no route.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 // The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
 import errorCodes = require('../common/error_codes');
 import dagre = require('@dagrejs/dagre');
+import InstanceSlot = require('../common/instance_slot');
 
 // What a delegation map needs from the rest of the service.
 // What `render()` answers: the picture and its size, and — only when the
@@ -488,6 +491,19 @@ class DelegationMap {
   constructor(private readonly deps: DelegationMapDeps) {
     deps.log.debug("Entering DelegationMap.constructor().");
     deps.log.debug("Leaving DelegationMap.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): DelegationMapDeps {
+    helpers.log.debug("Entering DelegationMap.defaultDeps().");
+    helpers.log.debug("Leaving DelegationMap.defaultDeps().");
+    return {
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      errorCodes: errorCodes,
+      dagre: dagre
+    };
   }
 
 
@@ -2386,31 +2402,38 @@ class DelegationMap {
 }
 
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const delegationMap = new DelegationMap({
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape,
-  errorCodes: errorCodes,
-  dagre: dagre
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DelegationMap>(
+  'admin-ui/delegation_map',
+  () => new DelegationMap(DelegationMap.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   DelegationMap: DelegationMap,
-  render: delegationMap.render.bind(delegationMap) as DelegationMap['render'],
+  installInstance: (instance: DelegationMap): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  render: slot.forward('render'),
   // The key beside the picture draws its sample lines with this, so that the
   // round end and the pointed end in the legend are the ones in the drawing.
-  edgeSample: delegationMap.edgeSample.bind(delegationMap) as
-    DelegationMap['edgeSample'],
+  edgeSample: slot.forward('edgeSample'),
   // Exported for the legend on the page, so that the swatch beside "an
   // application" and the box in the picture cannot come to be drawn from two
   // different palettes. admin.js draws the key out of these rather than naming
   // the colours a second time.
   COLOURS: DelegationMap.COLOURS,
-  personGlyph: delegationMap.personGlyph.bind(delegationMap) as
-    DelegationMap['personGlyph'],
-  hexPath: delegationMap.hexPath.bind(delegationMap) as
-    DelegationMap['hexPath'],
+  personGlyph: slot.forward('personGlyph'),
+  hexPath: slot.forward('hexPath'),
   // ---------------------------------------------------------------------
   // THE TEXT METRIC AND THE IDENTIFIER WRAP, exported for the SECOND picture
   // in this console — `admin-ui/federation_diagram.ts`, which lays its own
@@ -2429,9 +2452,7 @@ export = {
   // (see BREAK_AFTER above), because there are no spaces in a service
   // principal name and a word-wrap gives up on one.
   // ---------------------------------------------------------------------
-  textWidth: delegationMap.textWidth.bind(delegationMap) as
-    DelegationMap['textWidth'],
-  wrapLabel: delegationMap.wrapLabel.bind(delegationMap) as
-    DelegationMap['wrapLabel'],
+  textWidth: slot.forward('textWidth'),
+  wrapLabel: slot.forward('wrapLabel'),
   MAX_LABEL_CHARS: DelegationMap.MAX_LABEL_CHARS
 };

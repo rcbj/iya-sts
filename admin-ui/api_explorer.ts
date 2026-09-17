@@ -92,13 +92,16 @@
 // console shell, the read layer, the management API's table, the document
 // builder, the page body and the authorization server through its
 // constructor, and its `registerRoutes(app)` holds the three routes in their
-// old order. The TRANSITIONAL code at the bottom builds one from the real
-// modules and exports its `registerRoutes(app)`, which
+// old order. The module exports `registerRoutes(app)`, which
 // `common/protocol_stack.ts` calls at 19a, the point in the route order where
 // requiring this module used to register them (#50, R1) — requiring the
-// module registers nothing. It still exports `PATH` and `explorerJson` from
-// the instance (the management API calls the second); `ApiExplorer` is
-// exported beside them.
+// module registers nothing. It still exports `PATH` and `explorerJson` (the
+// management API calls the second).
+//
+// R2 (#50): the composition root builds the instance and installs it; this
+// module builds none of its own, and its exports are FACADES that forward to
+// that instance, for the JavaScript callers. A process without the root
+// builds a default instance at load, as loading this module always did.
 //
 // **NO SCRIPT TEXT LIVES HERE.** The browser script `/explorer.js` serves is
 // `docs.SCRIPT`, read by `mgmt-api/admin_api_docs.ts` out of
@@ -121,6 +124,7 @@ import spec = require('../mgmt-api/admin_api_spec');
 import docs = require('../mgmt-api/admin_api_docs');
 import oauth2 = require('../oauth-oidc/oauth2');
 import version = require('../common/version');
+import InstanceSlot = require('../common/instance_slot');
 
 type Req = any;
 type Res = any;
@@ -156,6 +160,25 @@ class ApiExplorer {
   constructor(private readonly deps: ApiExplorerDeps) {
     deps.log.debug("Entering ApiExplorer.constructor().");
     deps.log.debug("Leaving ApiExplorer.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): ApiExplorerDeps {
+    helpers.log.debug("Entering ApiExplorer.defaultDeps().");
+    helpers.log.debug("Leaving ApiExplorer.defaultDeps().");
+    return {
+      log: helpers.log,
+      baseUrlOf: helpers.baseUrlOf,
+      errorCodes: errorCodes,
+      realms: realms,
+      admin: admin,
+      adminViews: adminViews,
+      adminApi: adminApi,
+      spec: spec,
+      docs: docs,
+      oauth2: oauth2
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -381,20 +404,20 @@ class ApiExplorer {
   }
 }
 
-// THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules; its routes are registered by the composition root, below.
-const explorer = new ApiExplorer({
-  log: helpers.log,
-  baseUrlOf: helpers.baseUrlOf,
-  errorCodes: errorCodes,
-  realms: realms,
-  admin: admin,
-  adminViews: adminViews,
-  adminApi: adminApi,
-  spec: spec,
-  docs: docs,
-  oauth2: oauth2
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ApiExplorer>(
+  'admin-ui/api_explorer',
+  () => new ApiExplorer(ApiExplorer.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -408,10 +431,14 @@ helpers.log.info('The API explorer is at ' + PATH + ': every operation of ' +
                  'calls it makes use a token minted for the reader carrying ' +
                  'exactly what their roles grant.');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => explorer.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   ApiExplorer: ApiExplorer,
+  installInstance: (instance: ApiExplorer): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PATH: PATH,
-  explorerJson: explorer.explorerJson.bind(explorer) as
-    ApiExplorer['explorerJson']
+  explorerJson: slot.forward('explorerJson')
 };

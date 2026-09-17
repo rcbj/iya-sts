@@ -124,12 +124,16 @@
 // tables are still declared at module scope, where they were, so what a slot
 // sets is what the pages read.
 //
-// THE TRANSITIONAL CODE at the bottom builds ONE instance from the real
-// modules, exports its `registerRoutes(app)` for the composition root to
-// call, and exports the old names from that instance, for every module that
-// requires this one by them. It goes when the composition root builds the
-// modules as well as registering their routes (#50's R2); `AdminConsole` is
-// exported beside them for that root.
+// **SINCE R2 (#50, 2026-09-16) THE COMPOSITION ROOT BUILDS THE INSTANCE**
+// and installs it; this module builds none of its own. It exports
+// `registerRoutes(app)` for the root to call, and the old names, as FACADES
+// that forward to that instance, for every module that requires this one by
+// them. What loading this module used to do with its own instance — the
+// sidebar's flattening, the setting-homes check, the module constants drawn
+// with `note()` and `warn()`, and the read layer's settings block — is a
+// list of `WIRE_STEPS`, each beside the declaration it fills, run by
+// `AdminConsole.wire()` when the instance is installed. A process without the
+// root builds a default instance at load, as loading this module always did.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -775,6 +779,7 @@ import krb5Principals = require('../kerberos/krb5_principals');
 // requires only `config`, `bunyan` and zod, so it closes no cycle here and
 // moves nothing in the route order.
 import validation = require('../common/validation');
+import InstanceSlot = require('../common/instance_slot');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -2708,6 +2713,194 @@ class AdminConsole {
     deps.log.debug("Leaving AdminConsole.constructor().");
   }
 
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): AdminConsoleDeps {
+    log.debug("Entering AdminConsole.defaultDeps().");
+    log.debug("Leaving AdminConsole.defaultDeps().");
+    return {
+      log: log,
+      xmlEscape: xmlEscape,
+      baseUrlOf: baseUrlOf,
+      parseBody: parseBody,
+      userFor: userFor,
+      multipartParts: multipartParts,
+      errorCodes: errorCodes,
+      resourceMetadata: resourceMetadata,
+      adminActions: adminActions,
+      adminViews: adminViews,
+      protocolEndpoints: protocolEndpoints,
+      pagingOf: pagingOf,
+      pagingJson: pagingJson,
+      pagedRows: pagedRows,
+      tokensView: tokensView,
+      sessionsView: sessionsView,
+      DEFAULT_PER_PAGE: DEFAULT_PER_PAGE,
+      DELEGATION_PER_PAGE: DELEGATION_PER_PAGE,
+      MAX_ROWS: MAX_ROWS,
+      auditView: auditView,
+      errorCodesView: errorCodesView,
+      usedAssertionsView: usedAssertionsView,
+      delegationView: delegationView,
+      clusterSummary: clusterSummary,
+      permissionGroupsView: permissionGroupsView,
+      queryOne: queryOne,
+      chooserMatches: chooserMatches,
+      claimsRequestPreview: claimsRequestPreview,
+      userinfoClaimsJson: userinfoClaimsJson,
+      signalsJson: signalsJson,
+      ssfJson: ssfJson,
+      ssfDeadLettersJson: ssfDeadLettersJson,
+      caepJson: caepJson,
+      caepSessionsState: caepSessionsState,
+      caepApplicationsState: caepApplicationsState,
+      riscJson: riscJson,
+      riscAccountsState: riscAccountsState,
+      riscApplicationsState: riscApplicationsState,
+      spiffeJson: spiffeJson,
+      spiffeEntriesJson: spiffeEntriesJson,
+      spiffeAgentsJson: spiffeAgentsJson,
+      spiffeSelectorText: spiffeSelectorText,
+      newUserContainer: newUserContainer,
+      CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
+      knownUserKeys: knownUserKeys,
+      saml2Facts: saml2Facts,
+      valuesFor: valuesFor,
+      saml11Facts: saml11Facts,
+      asDriftRows: asDriftRows,
+      pageParamsOf: pageParamsOf,
+      applicationPermissionsState: applicationPermissionsState,
+      queryWith: queryWith,
+      DEFAULT_BLOCKS_PER_PAGE: DEFAULT_BLOCKS_PER_PAGE,
+      logoutFamilies: logoutFamilies,
+      claimsJson: claimsJson,
+      claimsPreviewUser: claimsPreviewUser,
+      claimsRequestParameter: claimsRequestParameter,
+      consentView: consentView,
+      consoleRpSession: consoleRpSession,
+      gateStateFor: gateStateFor,
+      metricsJson: metricsJson,
+      permissionsView: permissionsView,
+      realmJson: realmJson,
+      realmsJson: realmsJson,
+      rolesPreview: rolesPreview,
+      rolesRegister: rolesRegister,
+      samlAssertionSeconds: samlAssertionSeconds,
+      samlAssertionsJson: samlAssertionsJson,
+      samlAttributesJson: samlAttributesJson,
+      scimJson: scimJson,
+      scimMonitorJson: scimMonitorJson,
+      signOnSessionRows: signOnSessionRows,
+      tokenLifetimesJson: tokenLifetimesJson,
+      tokenSetView: tokenSetView,
+      vcJson: vcJson,
+      vcPreviewUser: vcPreviewUser,
+      vpConfigJson: vpConfigJson,
+      ROLE_ACTIONS: ROLE_ACTIONS,
+      ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
+      SAML11_RP_KIND: SAML11_RP_KIND,
+      SAML2_SP_KIND: SAML2_SP_KIND,
+      SAML_ASSERTION_SETTINGS: SAML_ASSERTION_SETTINGS,
+      applicationsAction: applicationsAction,
+      asAction: asAction,
+      caepAction: caepAction,
+      claimsAction: claimsAction,
+      configAction: configAction,
+      configSettingFor: configSettingFor,
+      consentAction: consentAction,
+      federationAction: federationAction,
+      groupsAction: groupsAction,
+      logoutAction: logoutAction,
+      permissionsAction: permissionsAction,
+      rbacAction: rbacAction,
+      realmsAction: realmsAction,
+      riscAction: riscAction,
+      rolesAction: rolesAction,
+      saml11Action: saml11Action,
+      saml2Action: saml2Action,
+      samlAssertionRowFor: samlAssertionRowFor,
+      samlAssertionsAction: samlAssertionsAction,
+      sessionsAction: sessionsAction,
+      signalsAction: signalsAction,
+      spiffeAgentsAction: spiffeAgentsAction,
+      spiffeEntriesAction: spiffeEntriesAction,
+      spiffeAction: spiffeAction,
+      ssfAction: ssfAction,
+      tokenAction: tokenAction,
+      tokenLifetimesAction: tokenLifetimesAction,
+      truthy: truthy,
+      userFieldsFrom: userFieldsFrom,
+      usersAction: usersAction,
+      vcAction: vcAction,
+      vpConfigAction: vpConfigAction,
+      config: config,
+      credentials: credentials,
+      totp: totp,
+      backupCodes: backupCodes,
+      webauthnPolicy: webauthnPolicy,
+      websecurity: websecurity,
+      accessGate: accessGate,
+      mode: mode,
+      persistence: persistence,
+      cluster: cluster,
+      clusterSecrets: clusterSecrets,
+      clusterBarrier: clusterBarrier,
+      secrets: secrets,
+      keystore: keystore,
+      realms: realms,
+      createClaims: createClaims,
+      stats: stats,
+      oidcRp: oidcRp,
+      sessions: sessions,
+      consoleSession: consoleSession,
+      endSessionById: endSessionById,
+      clearSessionCookie: clearSessionCookie,
+      LOGIN_PATH: LOGIN_PATH,
+      rbac: rbac,
+      adminScope: adminScope,
+      loginRealmChooser: loginRealmChooser,
+      vcClaims: vcClaims,
+      vpConfig: vpConfig,
+      claimAttributes: claimAttributes,
+      groupClaims: groupClaims,
+      auditLog: auditLog,
+      applications: applications,
+      saml11: saml11,
+      authorizationServers: authorizationServers,
+      federation: federation,
+      federationGraph: federationGraph,
+      federationDiagram: federationDiagram,
+      spiffeCa: spiffeCa,
+      spiffeRegistry: spiffeRegistry,
+      spiffeAuth: spiffeAuth,
+      signals: signals,
+      oauth2: oauth2,
+      delegation: delegation,
+      appPermissions: appPermissions,
+      issuanceGate: issuanceGate,
+      delegationMap: delegationMap,
+      userGraph: userGraph,
+      credentialGraph: credentialGraph,
+      krb5Principals: krb5Principals,
+      validation: validation,
+      loadHelpers: function () {
+        return require('../common/helpers');
+      }
+    };
+  }
+
+  // The work loading this module did with its instance (#50, R2): the
+  // `WIRE_STEPS` below the class, in the order they are written. Run once by
+  // the slot, for whichever instance is installed.
+  static wire(instance: AdminConsole): void {
+    log.debug("Entering AdminConsole.wire(). " + WIRE_STEPS.length +
+              " step(s).");
+    WIRE_STEPS.forEach(function (step) {
+      step(instance);
+    });
+    log.debug("Leaving AdminConsole.wire().");
+  }
+
   // Is this row of a section's `items` a GROUP of pages rather than a page? One
   // predicate, used by both the flattening and the sidebar, so the two cannot
   // disagree about what they are looking at. A group has `items`; a page has a
@@ -2741,7 +2934,8 @@ class AdminConsole {
   }
 
   // Every group `config.js` declares, in its order. Read off the table rather
-  // than off `config.groups()` because this runs at require time and that call
+  // than off `config.groups()` because this runs at start-up (at require time
+  // until #50's R2; when the instance is installed now) and that call
   // describes every setting — the group NAME is all that is being checked, and
   // asking for a hundred and fifty-four descriptions to get twenty-two strings
   // would also drag a realm lookup into module load.
@@ -2758,9 +2952,10 @@ class AdminConsole {
     return seen;
   }
 
-  // The three ways this table can be wrong, checked once at require time. Each
-  // would otherwise be found by a person who could not find a setting, which is
-  // the slowest way to find any of them.
+  // The three ways this table can be wrong, checked once at start-up (when the
+  // instance is installed, since #50's R2). Each would otherwise be found by a
+  // person who could not find a setting, which is the slowest way to find any
+  // of them.
   checkSettingHomes() {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AdminConsole.checkSettingHomes().");
@@ -36066,179 +36261,29 @@ class AdminConsole {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root builds the modules as well as
-// registering their routes (#50's R2).
-const consoleInstance = new AdminConsole({
-  log: log,
-  xmlEscape: xmlEscape,
-  baseUrlOf: baseUrlOf,
-  parseBody: parseBody,
-  userFor: userFor,
-  multipartParts: multipartParts,
-  errorCodes: errorCodes,
-  resourceMetadata: resourceMetadata,
-  adminActions: adminActions,
-  adminViews: adminViews,
-  protocolEndpoints: protocolEndpoints,
-  pagingOf: pagingOf,
-  pagingJson: pagingJson,
-  pagedRows: pagedRows,
-  tokensView: tokensView,
-  sessionsView: sessionsView,
-  DEFAULT_PER_PAGE: DEFAULT_PER_PAGE,
-  DELEGATION_PER_PAGE: DELEGATION_PER_PAGE,
-  MAX_ROWS: MAX_ROWS,
-  auditView: auditView,
-  errorCodesView: errorCodesView,
-  usedAssertionsView: usedAssertionsView,
-  delegationView: delegationView,
-  clusterSummary: clusterSummary,
-  permissionGroupsView: permissionGroupsView,
-  queryOne: queryOne,
-  chooserMatches: chooserMatches,
-  claimsRequestPreview: claimsRequestPreview,
-  userinfoClaimsJson: userinfoClaimsJson,
-  signalsJson: signalsJson,
-  ssfJson: ssfJson,
-  ssfDeadLettersJson: ssfDeadLettersJson,
-  caepJson: caepJson,
-  caepSessionsState: caepSessionsState,
-  caepApplicationsState: caepApplicationsState,
-  riscJson: riscJson,
-  riscAccountsState: riscAccountsState,
-  riscApplicationsState: riscApplicationsState,
-  spiffeJson: spiffeJson,
-  spiffeEntriesJson: spiffeEntriesJson,
-  spiffeAgentsJson: spiffeAgentsJson,
-  spiffeSelectorText: spiffeSelectorText,
-  newUserContainer: newUserContainer,
-  CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
-  knownUserKeys: knownUserKeys,
-  saml2Facts: saml2Facts,
-  valuesFor: valuesFor,
-  saml11Facts: saml11Facts,
-  asDriftRows: asDriftRows,
-  pageParamsOf: pageParamsOf,
-  applicationPermissionsState: applicationPermissionsState,
-  queryWith: queryWith,
-  DEFAULT_BLOCKS_PER_PAGE: DEFAULT_BLOCKS_PER_PAGE,
-  logoutFamilies: logoutFamilies,
-  claimsJson: claimsJson,
-  claimsPreviewUser: claimsPreviewUser,
-  claimsRequestParameter: claimsRequestParameter,
-  consentView: consentView,
-  consoleRpSession: consoleRpSession,
-  gateStateFor: gateStateFor,
-  metricsJson: metricsJson,
-  permissionsView: permissionsView,
-  realmJson: realmJson,
-  realmsJson: realmsJson,
-  rolesPreview: rolesPreview,
-  rolesRegister: rolesRegister,
-  samlAssertionSeconds: samlAssertionSeconds,
-  samlAssertionsJson: samlAssertionsJson,
-  samlAttributesJson: samlAttributesJson,
-  scimJson: scimJson,
-  scimMonitorJson: scimMonitorJson,
-  signOnSessionRows: signOnSessionRows,
-  tokenLifetimesJson: tokenLifetimesJson,
-  tokenSetView: tokenSetView,
-  vcJson: vcJson,
-  vcPreviewUser: vcPreviewUser,
-  vpConfigJson: vpConfigJson,
-  ROLE_ACTIONS: ROLE_ACTIONS,
-  ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
-  SAML11_RP_KIND: SAML11_RP_KIND,
-  SAML2_SP_KIND: SAML2_SP_KIND,
-  SAML_ASSERTION_SETTINGS: SAML_ASSERTION_SETTINGS,
-  applicationsAction: applicationsAction,
-  asAction: asAction,
-  caepAction: caepAction,
-  claimsAction: claimsAction,
-  configAction: configAction,
-  configSettingFor: configSettingFor,
-  consentAction: consentAction,
-  federationAction: federationAction,
-  groupsAction: groupsAction,
-  logoutAction: logoutAction,
-  permissionsAction: permissionsAction,
-  rbacAction: rbacAction,
-  realmsAction: realmsAction,
-  riscAction: riscAction,
-  rolesAction: rolesAction,
-  saml11Action: saml11Action,
-  saml2Action: saml2Action,
-  samlAssertionRowFor: samlAssertionRowFor,
-  samlAssertionsAction: samlAssertionsAction,
-  sessionsAction: sessionsAction,
-  signalsAction: signalsAction,
-  spiffeAgentsAction: spiffeAgentsAction,
-  spiffeEntriesAction: spiffeEntriesAction,
-  spiffeAction: spiffeAction,
-  ssfAction: ssfAction,
-  tokenAction: tokenAction,
-  tokenLifetimesAction: tokenLifetimesAction,
-  truthy: truthy,
-  userFieldsFrom: userFieldsFrom,
-  usersAction: usersAction,
-  vcAction: vcAction,
-  vpConfigAction: vpConfigAction,
-  config: config,
-  credentials: credentials,
-  totp: totp,
-  backupCodes: backupCodes,
-  webauthnPolicy: webauthnPolicy,
-  websecurity: websecurity,
-  accessGate: accessGate,
-  mode: mode,
-  persistence: persistence,
-  cluster: cluster,
-  clusterSecrets: clusterSecrets,
-  clusterBarrier: clusterBarrier,
-  secrets: secrets,
-  keystore: keystore,
-  realms: realms,
-  createClaims: createClaims,
-  stats: stats,
-  oidcRp: oidcRp,
-  sessions: sessions,
-  consoleSession: consoleSession,
-  endSessionById: endSessionById,
-  clearSessionCookie: clearSessionCookie,
-  LOGIN_PATH: LOGIN_PATH,
-  rbac: rbac,
-  adminScope: adminScope,
-  loginRealmChooser: loginRealmChooser,
-  vcClaims: vcClaims,
-  vpConfig: vpConfig,
-  claimAttributes: claimAttributes,
-  groupClaims: groupClaims,
-  auditLog: auditLog,
-  applications: applications,
-  saml11: saml11,
-  authorizationServers: authorizationServers,
-  federation: federation,
-  federationGraph: federationGraph,
-  federationDiagram: federationDiagram,
-  spiffeCa: spiffeCa,
-  spiffeRegistry: spiffeRegistry,
-  spiffeAuth: spiffeAuth,
-  signals: signals,
-  oauth2: oauth2,
-  delegation: delegation,
-  appPermissions: appPermissions,
-  issuanceGate: issuanceGate,
-  delegationMap: delegationMap,
-  userGraph: userGraph,
-  credentialGraph: credentialGraph,
-  krb5Principals: krb5Principals,
-  validation: validation,
-  loadHelpers: function () {
-    return require('../common/helpers');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`, which runs `AdminConsole.wire()`. Every name this
+// module exports that the instance answers is a FACADE that forwards to it,
+// for the JavaScript that still calls this module through `require()`; a
+// process that never runs the root gets a default instance, built from
+// `defaultDeps()` (see `common/instance_slot.ts`).
+//
+// `WIRE_STEPS` is the work loading this module used to do with its own
+// instance — the sidebar's flattening, the setting-homes check, the module
+// constants drawn with `note()` and `warn()`, and the read layer's settings
+// block. Each step stays beside the declaration it fills, and
+// `AdminConsole.wire()` runs them in the order they are written, once, for
+// whichever instance is installed.
+// ---------------------------------------------------------------------------
+const WIRE_STEPS: Array<(instance: AdminConsole) => void> = [];
+
+const slot = new InstanceSlot<AdminConsole>(
+  'admin-ui/admin',
+  () => new AdminConsole(AdminConsole.defaultDeps()),
+  AdminConsole.wire,
+  log);
 
 // Every page in every section, flattened, with the section it belongs to on
 // each row. Derived rather than typed for the reason above; the `section`
@@ -36246,9 +36291,11 @@ const consoleInstance = new AdminConsole({
 // lookup. A page inside a group is flattened to the same shape as one outside
 // it, so nothing downstream of here can tell them apart.
 const NAV = [];
-SECTIONS.forEach(function (section) {
-  consoleInstance.sectionPages(section).forEach(function (item) {
-    NAV.push({ path: item.path, label: item.label, section: section.title });
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  SECTIONS.forEach(function (section) {
+    instance.sectionPages(section).forEach(function (item) {
+      NAV.push({ path: item.path, label: item.label, section: section.title });
+    });
   });
 });
 
@@ -36476,15 +36523,20 @@ const SETTING_HOMES = [
 
 // Kept, not just logged: /admin/config renders it. A line in a log that scrolls
 // past at startup is not a thing anybody reads twice.
-const SETTING_HOME_PROBLEMS = consoleInstance.checkSettingHomes();
+let SETTING_HOME_PROBLEMS: ReturnType<AdminConsole['checkSettingHomes']>;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  SETTING_HOME_PROBLEMS = instance.checkSettingHomes();
+});
 
 // The two measurements the folds below are decided by. They are declared
 // HERE, above everything, rather than beside note() where they are read:
 // several of this file's module-level constants are built by calling note()
-// and warn() at require time, and a `const` is in its temporal dead zone
-// until the line that declares it runs — so a definition beside the
-// function throws `Cannot access before initialization` while the module
-// is still loading, which takes the whole service down (rule 1).
+// and warn() (at require time until #50's R2; in `WIRE_STEPS` now, which a
+// default instance runs at the end of this module's load), and a `const` is
+// in its temporal dead zone until the line that declares it runs — so a
+// definition beside the function throws `Cannot access before
+// initialization` while the module is still loading, which takes the whole
+// service down (rule 1).
 // About one rendered line of `.note` text in this console's content column.
 // The column is 62rem at `.note`'s .78em, so a line is nearer 130 characters
 // than this; the number is deliberately under that, because the test worth
@@ -36735,15 +36787,19 @@ const MAX_CRUMB = 44;
 // and the guard that let the request through cannot come to disagree about who
 // somebody is.
 // ---------------------------------------------------------------------------
-const OPEN_BANNER =
-  consoleInstance.warn('<strong>This console is not protected.</strong> The ' +
-  'gate is OFF, so nothing here checks a credential — and nothing else in ' +
-  'this service does either: the username typed at the sign-in screen is the ' +
-  'identity in every token it issues. Anyone who can reach this port can ' +
-  'revoke every token and change what the next one contains. That is fine on ' +
-  'a laptop or a compose network and is not fine on a public address. Say ' +
-  'who may get in on <a href="/admin/rbac">Admin roles</a>, which draws ' +
-  'every setting behind this page.');
+let OPEN_BANNER: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  OPEN_BANNER =
+    instance.warn('<strong>This console is not protected.</strong> The ' +
+    'gate is OFF, so nothing here checks a credential — and nothing else in ' +
+    'this service does either: the username typed at the sign-in screen is ' +
+    'the identity in every token it issues. Anyone who can reach this port ' +
+    'can revoke every token and change what the next one contains. That is ' +
+    'fine on a laptop or a compose network and is not fine on a public ' +
+    'address. Say who may get in on <a href="/admin/rbac">Admin roles</a>, ' +
+    'which draws ' +
+    'every setting behind this page.');
+});
 
 // ---------------------------------------------------------------------------
 // THE REALM CHOOSER, at the top of the sidebar's own card.
@@ -37400,50 +37456,59 @@ const GROUP_RULES = {
 // most needs is still the first: CARRYING a fact and ACTING on it are different
 // claims, and this is the same line this service already draws between an
 // identity being recorded and an identity being authenticated.
-const GROUPS_CAVEAT =
-  consoleInstance.note('<strong>A group here grants nothing, with exactly ' +
-  'two exceptions and they are named below.</strong> No <em>endpoint</em> in ' +
-  'this service checks a group, and nothing in any protocol decides anything ' +
-  'on one. Adding somebody to <code>cn=directory-admins</code> changes what ' +
-  'a directory client sees, and what a token <em>says</em>, and changes ' +
-  'nothing at all about what that token can DO &mdash; on a service that ' +
-  'authenticates nobody, it could hardly be otherwise.') +
-  // THE EXCEPTION, said HERE and not only on the page that owns it. A reader
-  // meeting this caveat on the groups page and then finding cn=admin-write in
-  // the table above it would be entitled to conclude that one of the two was
-  // lying. The general claim is still the one that matters — it is true of
-  // every group but these two, and true of these two everywhere except one
-  // console — so it is qualified rather than dropped.
-  consoleInstance.note('<strong>The two exceptions are <code>' +
-  consoleInstance.esc(config.value('admin.readGroup')) + '</code> and <code>' +
-  consoleInstance.esc(config.value('admin.writeGroup')) + '</code>, which ' +
-  'decide who may use THIS CONSOLE</strong> &mdash; see <a ' +
-  'href="/admin/rbac">Admin roles</a>, where they are granted and taken ' +
-  'away. They are ordinary groups and appear in the table above like any ' +
-  'other, deliberately: the alternative was a membership store of the ' +
-  'console\'s own that an <code>ldapmodify</code> could not see. Even those ' +
-  'two grant nothing outside <code>/admin</code> &mdash; no token, ' +
-  'assertion, ticket, PAC or credential is changed by being in one, and ' +
-  'every protocol endpoint answers a member exactly as it answers anybody ' +
-  'else.') +
-  consoleInstance.note('<strong>A token can now carry one.</strong> With ' +
-  '<code>groups.claim</code> on &mdash; it is on by default &mdash; every ' +
-  'OAuth 2.0 access token, OIDC ID Token, SAML 2.0 assertion and SAML 1.1 ' +
-  'assertion this service issues carries a claim naming the groups its ' +
-  'subject is in, read from these entries at the moment it is minted. ' +
-  'Somebody in no group gets no claim at all rather than an empty list. What ' +
-  'it is called, whether each value is a <code>cn</code> or a whole DN, and ' +
-  'whether a person\'s own <code>memberOf</code> counts are the four ' +
-  'settings at the foot of this page; <a href="/admin/claims">the claims ' +
-  'page</a> shows what it would say about one person. No Kerberos PAC and no ' +
-  'WS-Federation-specific token carries a group either way.');
+let GROUPS_CAVEAT: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  GROUPS_CAVEAT =
+    instance.note('<strong>A group here grants nothing, with exactly ' +
+    'two exceptions and they are named below.</strong> No <em>endpoint</em> ' +
+    'in this service checks a group, and nothing in any protocol decides ' +
+    'anything on one. Adding somebody to <code>cn=directory-admins</code> ' +
+    'changes what a directory client sees, and what a token <em>says</em>, ' +
+    'and changes nothing at all about what that token can DO &mdash; on a ' +
+    'service that ' +
+    'authenticates nobody, it could hardly be otherwise.') +
+    // THE EXCEPTION, said HERE and not only on the page that owns it. A reader
+    // meeting this caveat on the groups page and then finding cn=admin-write in
+    // the table above it would be entitled to conclude that one of the two was
+    // lying. The general claim is still the one that matters — it is true of
+    // every group but these two, and true of these two everywhere except one
+    // console — so it is qualified rather than dropped.
+    instance.note('<strong>The two exceptions are <code>' +
+    instance.esc(config.value('admin.readGroup')) + '</code> and <code>' +
+    instance.esc(config.value('admin.writeGroup')) + '</code>, which ' +
+    'decide who may use THIS CONSOLE</strong> &mdash; see <a ' +
+    'href="/admin/rbac">Admin roles</a>, where they are granted and taken ' +
+    'away. They are ordinary groups and appear in the table above like any ' +
+    'other, deliberately: the alternative was a membership store of the ' +
+    'console\'s own that an <code>ldapmodify</code> could not see. Even ' +
+    'those two grant nothing outside <code>/admin</code> &mdash; no token, ' +
+    'assertion, ticket, PAC or credential is changed by being in one, and ' +
+    'every protocol endpoint answers a member exactly as it answers anybody ' +
+    'else.') +
+    instance.note('<strong>A token can now carry one.</strong> With ' +
+    '<code>groups.claim</code> on &mdash; it is on by default &mdash; every ' +
+    'OAuth 2.0 access token, OIDC ID Token, SAML 2.0 assertion and SAML 1.1 ' +
+    'assertion this service issues carries a claim naming the groups its ' +
+    'subject is in, read from these entries at the moment it is minted. ' +
+    'Somebody in no group gets no claim at all rather than an empty list. ' +
+    'What it is called, whether each value is a <code>cn</code> or a whole ' +
+    'DN, and whether a person\'s own <code>memberOf</code> counts are the ' +
+    'four settings at the foot of this page; <a href="/admin/claims">the ' +
+    'claims page</a> shows what it would say about one person. No Kerberos ' +
+    'PAC and no ' +
+    'WS-Federation-specific token carries a group either way.');
+});
 
-const GROUPS_LINKS =
-  consoleInstance.note('<a href="/admin/ldap/service">What this directory ' +
-  'is</a> &middot; <a href="/admin/ldap/directory">every entry in it</a> ' +
-  '&middot; <a href="/admin/ldap/directory?format=json">the same as JSON</a> ' +
-  '&middot; <a href="/admin/users">the people who have authenticated ' +
-  'here</a>.');
+let GROUPS_LINKS: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  GROUPS_LINKS =
+    instance.note('<a href="/admin/ldap/service">What this directory ' +
+    'is</a> &middot; <a href="/admin/ldap/directory">every entry in it</a> ' +
+    '&middot; <a href="/admin/ldap/directory?format=json">the same as ' +
+    'JSON</a> &middot; <a href="/admin/users">the people who have ' +
+    'authenticated ' +
+    'here</a>.');
+});
 
 // ---------------------------------------------------------------------------
 // GET /admin/applications
@@ -37472,24 +37537,29 @@ const GROUPS_LINKS =
 // entries through `applications.js` and mirrored on
 // `POST /admin-api/applications/{action}` (rule 7).
 // ---------------------------------------------------------------------------
-const APPLICATIONS_CAVEAT =
-  consoleInstance.note('<strong>An entry here grants nothing.</strong> Being ' +
-  'in this registry does not let an application do anything it could not do ' +
-  'before &mdash; this service issues a token to any client_id that asks. ' +
-  'The one place it is READ is RFC 9700 mode (<code>oauth2.rfc9700</code>), ' +
-  'which matches a redirect_uri against <code>oauthRedirectUri</code> by ' +
-  'exact string comparison, decides public-versus-confidential from ' +
-  '<code>oauthTokenEndpointAuthMethod</code>, and checks ' +
-  '<code>oauthClientSecret</code> at the token endpoint. With that mode off, ' +
-  'these entries are a record and nothing more.') +
-  consoleInstance.note('<strong>Two attributes hold credentials in the ' +
-  'clear</strong> &mdash; <code>oauthClientSecret</code> and ' +
-  '<code>appRegistrationAccessToken</code> &mdash; in a directory where ' +
-  'every bind succeeds. That is the same decision ' +
-  '<code>/krb5/principals</code> makes about the Kerberos passwords and it ' +
-  'costs more here than it does there: in RFC 9700 mode that secret is ' +
-  'checked, so anyone who can read this directory can authenticate as that ' +
-  'client. They are never written to the audit log.');
+let APPLICATIONS_CAVEAT: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  APPLICATIONS_CAVEAT =
+    instance.note('<strong>An entry here grants nothing.</strong> Being ' +
+    'in this registry does not let an application do anything it could not ' +
+    'do before &mdash; this service issues a token to any client_id that ' +
+    'asks. The one place it is READ is RFC 9700 mode ' +
+    '(<code>oauth2.rfc9700</code>), which matches a redirect_uri against ' +
+    '<code>oauthRedirectUri</code> by exact string comparison, decides ' +
+    'public-versus-confidential from ' +
+    '<code>oauthTokenEndpointAuthMethod</code>, and checks ' +
+    '<code>oauthClientSecret</code> at the token endpoint. With that mode ' +
+    'off, ' +
+    'these entries are a record and nothing more.') +
+    instance.note('<strong>Two attributes hold credentials in the ' +
+    'clear</strong> &mdash; <code>oauthClientSecret</code> and ' +
+    '<code>appRegistrationAccessToken</code> &mdash; in a directory where ' +
+    'every bind succeeds. That is the same decision ' +
+    '<code>/krb5/principals</code> makes about the Kerberos passwords and it ' +
+    'costs more here than it does there: in RFC 9700 mode that secret is ' +
+    'checked, so anyone who can read this directory can authenticate as that ' +
+    'client. They are never written to the audit log.');
+});
 
 const APPLICATIONS_LINKS =
   '<p class="sub"><a href="/admin/ldap/applications">the same registry as ' +
@@ -37595,32 +37665,37 @@ const SAML_KEY_SOURCE_FIELDS = [
 // absences are the interesting half — each is a fact about the protocol rather
 // than a gap in this form.
 // ---------------------------------------------------------------------------
-const NEW_APPLICATION_LOGOUT_INTRO =
-  consoleInstance.note('Where this application is sent, or pinged, when a ' +
-  'session it was part of ends. <strong>Every one of these takes MORE THAN ' +
-  'ONE address, one per line</strong> — a service provider commonly has a ' +
-  'different endpoint per binding, and an OAuth client registering several ' +
-  'environments has a post-logout URI for each.') +
-  consoleInstance.note('<strong>ONLY FOUR FAMILIES HAVE ONE, AND THE ' +
-  'ABSENCES ARE NOT AN OVERSIGHT.</strong> SAML 1.1 is the one people look ' +
-  'for: it has NO Single Logout at all &mdash; that arrived with SAML 2.0 ' +
-  '&mdash; so a field here would be a box whose value nothing could ever ' +
-  'read. WS-Trust issues a token and holds no session to end; Kerberos hands ' +
-  'out a ticket this service cannot recall; and federation deliberately does ' +
-  'not consume a partner\'s sign-out. The rule this form follows is the one ' +
-  'the identifiers follow: a field is offered where an attribute exists to ' +
-  'hold it, and nowhere else.') +
-  consoleInstance.warn('<strong>These are DECLARED and, today, mostly not ' +
-  'yet READ.</strong> <code>samlSingleLogoutService</code> is the exception ' +
-  'and always has been &mdash; SAML 2.0 Single Logout really does send a ' +
-  'LogoutRequest there. The OAuth post-logout URIs are matched by ' +
-  'RP-Initiated Logout when a client supplies one, and ' +
-  '<code>wsfedSignOutUri</code> is NEW and is not read by the sign-out yet: ' +
-  'a <code>wsignoutcleanup1.0</code> ping goes to the <code>wreply</code> ' +
-  'this service OBSERVED during sign-in, which is a different fact from the ' +
-  'one an operator declares here. Storing it is this change; changing where ' +
-  'a cleanup goes is a change to what the protocol does, and is deliberately ' +
-  'separate.');
+let NEW_APPLICATION_LOGOUT_INTRO: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_LOGOUT_INTRO =
+    instance.note('Where this application is sent, or pinged, when a ' +
+    'session it was part of ends. <strong>Every one of these takes MORE THAN ' +
+    'ONE address, one per line</strong> — a service provider commonly has a ' +
+    'different endpoint per binding, and an OAuth client registering several ' +
+    'environments has a post-logout URI for each.') +
+    instance.note('<strong>ONLY FOUR FAMILIES HAVE ONE, AND THE ' +
+    'ABSENCES ARE NOT AN OVERSIGHT.</strong> SAML 1.1 is the one people look ' +
+    'for: it has NO Single Logout at all &mdash; that arrived with SAML 2.0 ' +
+    '&mdash; so a field here would be a box whose value nothing could ever ' +
+    'read. WS-Trust issues a token and holds no session to end; Kerberos ' +
+    'hands out a ticket this service cannot recall; and federation ' +
+    'deliberately does not consume a partner\'s sign-out. The rule this form ' +
+    'follows is the one the identifiers follow: a field is offered where an ' +
+    'attribute exists to ' +
+    'hold it, and nowhere else.') +
+    instance.warn('<strong>These are DECLARED and, today, mostly not ' +
+    'yet READ.</strong> <code>samlSingleLogoutService</code> is the ' +
+    'exception and always has been &mdash; SAML 2.0 Single Logout really ' +
+    'does send a LogoutRequest there. The OAuth post-logout URIs are matched ' +
+    'by RP-Initiated Logout when a client supplies one, and ' +
+    '<code>wsfedSignOutUri</code> is NEW and is not read by the sign-out ' +
+    'yet: a <code>wsignoutcleanup1.0</code> ping goes to the ' +
+    '<code>wreply</code> this service OBSERVED during sign-in, which is a ' +
+    'different fact from the one an operator declares here. Storing it is ' +
+    'this change; changing where a cleanup goes is a change to what the ' +
+    'protocol does, and is deliberately ' +
+    'separate.');
+});
 
 // ---------------------------------------------------------------------------
 // WHERE A RECEIVER EXPECTS ITS EVENTS PUSHED. The `delivery` role of
@@ -37629,34 +37704,42 @@ const NEW_APPLICATION_LOGOUT_INTRO =
 // for it until 2026-09-12 — the one role of six the form had no section for.
 // `tests/application_form_roles.js` is what stops a seventh going the same way.
 // ---------------------------------------------------------------------------
-const NEW_APPLICATION_DELIVERY_INTRO =
-  consoleInstance.note('Where this Shared Signals receiver expects its ' +
-  'Security Event Tokens POSTed &mdash; an RFC 8935 push endpoint, one per ' +
-  'line if it runs one per environment.') +
-  consoleInstance.warn('<strong>This is a DECLARATION and nothing dials ' +
-  'it.</strong> A push goes to the <code>endpoint_url</code> on the STREAM, ' +
-  'which the receiver names when it creates one at <code>/ssf/stream</code>; ' +
-  'this service will not take a URL to open a connection to from an ' +
-  'application entry. What this field is for is writing down what the ' +
-  'receiver is EXPECTED to use, beside everything else the application is.');
+let NEW_APPLICATION_DELIVERY_INTRO: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_DELIVERY_INTRO =
+    instance.note('Where this Shared Signals receiver expects its ' +
+    'Security Event Tokens POSTed &mdash; an RFC 8935 push endpoint, one per ' +
+    'line if it runs one per environment.') +
+    instance.warn('<strong>This is a DECLARATION and nothing dials ' +
+    'it.</strong> A push goes to the <code>endpoint_url</code> on the ' +
+    'STREAM, which the receiver names when it creates one at ' +
+    '<code>/ssf/stream</code>; this service will not take a URL to open a ' +
+    'connection to from an application entry. What this field is for is ' +
+    'writing down what the ' +
+    'receiver is EXPECTED to use, beside everything else the application is.');
+});
 
 // ---------------------------------------------------------------------------
 // WHICH SHARED SIGNALS EVENTS A RECEIVER MAY BE SENT (2026-09-12). One field,
 // one family, and unlike the fields above it is ENFORCED.
 // ---------------------------------------------------------------------------
-const NEW_APPLICATION_EVENTS_INTRO =
-  consoleInstance.note('Shared Signals has no separate CAEP or RISC checkbox ' +
-  'because both are sent over it: <strong>CAEP</strong> is what happens to a ' +
-  'SESSION, <strong>RISC</strong> what happens to an ACCOUNT. A receiver ' +
-  'chooses event types itself, in the <code>events_requested</code> of the ' +
-  'stream it creates at <code>/ssf/stream</code>. This field is where an ' +
-  'operator LIMITS that choice for one application.') +
-  consoleInstance.warn('<strong>Leave it empty and nothing is ' +
-  'limited.</strong> Otherwise write one value per line: <code>caep</code>, ' +
-  '<code>risc</code>, or an event type URI. A stream this application owns ' +
-  'is agreed only those types, and every delivery checks again, so removing ' +
-  'a value later stops existing streams receiving it. SSF\'s own ' +
-  'verification and stream-updated events are always allowed.');
+let NEW_APPLICATION_EVENTS_INTRO: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_EVENTS_INTRO =
+    instance.note('Shared Signals has no separate CAEP or RISC checkbox ' +
+    'because both are sent over it: <strong>CAEP</strong> is what happens to ' +
+    'a SESSION, <strong>RISC</strong> what happens to an ACCOUNT. A receiver ' +
+    'chooses event types itself, in the <code>events_requested</code> of the ' +
+    'stream it creates at <code>/ssf/stream</code>. This field is where an ' +
+    'operator LIMITS that choice for one application.') +
+    instance.warn('<strong>Leave it empty and nothing is ' +
+    'limited.</strong> Otherwise write one value per line: ' +
+    '<code>caep</code>, <code>risc</code>, or an event type URI. A stream ' +
+    'this application owns is agreed only those types, and every delivery ' +
+    'checks again, so removing a value later stops existing streams ' +
+    'receiving it. SSF\'s own ' +
+    'verification and stream-updated events are always allowed.');
+});
 
 // ---------------------------------------------------------------------------
 // THE CLIENT SECRET. The `secret` role — `oauthClientSecret` for the two OAuth
@@ -37664,126 +37747,148 @@ const NEW_APPLICATION_EVENTS_INTRO =
 // below still speaks of OAuth only — and a warning that is the whole point of
 // it.
 // ---------------------------------------------------------------------------
-const NEW_APPLICATION_SECRET_INTRO =
-  consoleInstance.note('The <code>client_secret</code> for the two OAuth ' +
-  'families. Leave it empty and the entry simply has none, which is what a ' +
-  'public client is; a client registering through <code>POST ' +
-  '/oauth2/register</code> is minted one instead.') +
-  consoleInstance.warn('<strong>IT IS STORED IN THE CLEAR, IN A DIRECTORY ' +
-  'WHERE EVERY BIND SUCCEEDS.</strong> That is deliberate and it is the same ' +
-  'decision <code>GET /krb5/principals</code> makes about the Kerberos ' +
-  'passwords: a debugger whose accounts are unusable without reading the ' +
-  'source is worse than one that says what they are. Anybody who can reach ' +
-  'port 389 can read this value. It is never written to the audit log, which ' +
-  'is the one place it is kept back.\n\nNothing checks it today outside RFC ' +
-  '9700 mode. A mode that enforces client authentication everywhere is the ' +
-  'intended next step, and this field is what it will check against &mdash; ' +
-  'so a secret typed here is worth setting now even though it is not yet a ' +
-  'credential this service refuses anybody for.');
+let NEW_APPLICATION_SECRET_INTRO: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_SECRET_INTRO =
+    instance.note('The <code>client_secret</code> for the two OAuth ' +
+    'families. Leave it empty and the entry simply has none, which is what a ' +
+    'public client is; a client registering through <code>POST ' +
+    '/oauth2/register</code> is minted one instead.') +
+    instance.warn('<strong>IT IS STORED IN THE CLEAR, IN A DIRECTORY ' +
+    'WHERE EVERY BIND SUCCEEDS.</strong> That is deliberate and it is the ' +
+    'same decision <code>GET /krb5/principals</code> makes about the ' +
+    'Kerberos passwords: a debugger whose accounts are unusable without ' +
+    'reading the source is worse than one that says what they are. Anybody ' +
+    'who can reach port 389 can read this value. It is never written to the ' +
+    'audit log, which is the one place it is kept back.\n\nNothing checks it ' +
+    'today outside RFC 9700 mode. A mode that enforces client authentication ' +
+    'everywhere is the intended next step, and this field is what it will ' +
+    'check against &mdash; so a secret typed here is worth setting now even ' +
+    'though it is not yet a ' +
+    'credential this service refuses anybody for.');
+});
 
-const NEW_APPLICATION_IDENTIFIERS_INTRO =
-  consoleInstance.note('The name this application answers to in each family ' +
-  'it speaks. They are all optional and all independent of the ' +
-  '<em>Identifier</em> above &mdash; that one is the KEY this registry files ' +
-  'the entry under, and these are what the protocols will present. For an ' +
-  'ordinary OAuth client the two are the same string, which is what a ' +
-  'protocol sighting writes anyway; they differ when one application answers ' +
-  'to a client_id in one environment and another in the next, or when it is ' +
-  'a SAML service provider whose entityID is a URN and whose entry you would ' +
-  'rather file under a readable name.') +
-  consoleInstance.note('<strong>Several families share a field where the ' +
-  'specifications share the identifier.</strong> An OpenID Connect relying ' +
-  'party IS an OAuth client and an OpenID4VCI wallet authenticates as one, ' +
-  'so all three declare their name in <code>oauthClientId</code>; both SAML ' +
-  'profiles name the same party, so both use <code>samlEntityId</code>. Two ' +
-  'boxes writing one attribute would be a form that silently kept whichever ' +
-  'was filled in second.') +
-  consoleInstance.note('<strong>Four of these are declaration and only ever ' +
-  'declaration.</strong> Nothing in this service writes ' +
-  '<code>federationPartnerId</code>, <code>ldapBindDn</code>, ' +
-  '<code>scimClientId</code> or <code>spiffeWorkloadId</code>, because those ' +
-  'surfaces either authenticate the CALLER rather than an application, or ' +
-  'file the identity in a container of their own. The value is a note about ' +
-  'what this application is, in the one place the rest of what it is already ' +
-  'lives &mdash; and, like every other field here, it grants nothing: a ' +
-  'federation partner declared here federates with nobody until a ' +
-  'relationship under <code>ou=federations</code> says so.');
+let NEW_APPLICATION_IDENTIFIERS_INTRO: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_IDENTIFIERS_INTRO =
+    instance.note('The name this application answers to in each family ' +
+    'it speaks. They are all optional and all independent of the ' +
+    '<em>Identifier</em> above &mdash; that one is the KEY this registry ' +
+    'files the entry under, and these are what the protocols will present. ' +
+    'For an ordinary OAuth client the two are the same string, which is what ' +
+    'a protocol sighting writes anyway; they differ when one application ' +
+    'answers to a client_id in one environment and another in the next, or ' +
+    'when it is a SAML service provider whose entityID is a URN and whose ' +
+    'entry you would ' +
+    'rather file under a readable name.') +
+    instance.note('<strong>Several families share a field where the ' +
+    'specifications share the identifier.</strong> An OpenID Connect relying ' +
+    'party IS an OAuth client and an OpenID4VCI wallet authenticates as one, ' +
+    'so all three declare their name in <code>oauthClientId</code>; both ' +
+    'SAML profiles name the same party, so both use ' +
+    '<code>samlEntityId</code>. Two boxes writing one attribute would be a ' +
+    'form that silently kept whichever ' +
+    'was filled in second.') +
+    instance.note('<strong>Four of these are declaration and only ever ' +
+    'declaration.</strong> Nothing in this service writes ' +
+    '<code>federationPartnerId</code>, <code>ldapBindDn</code>, ' +
+    '<code>scimClientId</code> or <code>spiffeWorkloadId</code>, because ' +
+    'those surfaces either authenticate the CALLER rather than an ' +
+    'application, or file the identity in a container of their own. The ' +
+    'value is a note about what this application is, in the one place the ' +
+    'rest of what it is already lives &mdash; and, like every other field ' +
+    'here, it grants nothing: a federation partner declared here federates ' +
+    'with nobody until a ' +
+    'relationship under <code>ou=federations</code> says so.');
+});
 
-const NEW_APPLICATION_REDIRECTS_INTRO =
-  consoleInstance.note('Where a response goes back to. Only three families ' +
-  'send one through a browser, which is why there are three of these and ' +
-  'fourteen identifiers above.') +
-  consoleInstance.note('<strong>Only the OAuth list is ever CHECKED, and ' +
-  'only in RFC 9700 mode.</strong> <code>oauthRedirectUri</code> is what ' +
-  'section 2.1\'s exact string comparison reads &mdash; give an application ' +
-  'its redirect URIs here and the next authorization request is judged ' +
-  'against them rather than against the <code>oauth2.redirectUris</code> ' +
-  'setting, which is most of the reason to create an entry before the ' +
-  'application connects. <code>samlAssertionConsumerService</code> and ' +
-  '<code>wsfedReplyUrl</code> are RECORDED AND NOT CHECKED: a SAML response ' +
-  'goes wherever the AuthnRequest asked and a <code>wsignin1.0</code> ' +
-  'response goes to whatever <code>wreply</code> named, because a mock that ' +
-  'refused would remove a test case rather than add one. The SAML one is ' +
-  'READ for something else &mdash; it is the fallback used when a Single ' +
-  'Logout has nowhere else to go, which is why WS-Federation\'s ' +
-  '<code>wreply</code> stopped being written into it on 2026-08-25 and has a ' +
-  'field of its own.') +
-  consoleInstance.note('<strong>What a client has actually USED is a ' +
-  'different attribute and is not here.</strong> ' +
-  '<code>appRedirectUriObserved</code> records a redirect_uri seen on a ' +
-  'request this service answered, it is not editable anywhere in this ' +
-  'console, and RFC 9700 section 2.1 is entirely about not confusing the two.');
+let NEW_APPLICATION_REDIRECTS_INTRO: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_REDIRECTS_INTRO =
+    instance.note('Where a response goes back to. Only three families ' +
+    'send one through a browser, which is why there are three of these and ' +
+    'fourteen identifiers above.') +
+    instance.note('<strong>Only the OAuth list is ever CHECKED, and ' +
+    'only in RFC 9700 mode.</strong> <code>oauthRedirectUri</code> is what ' +
+    'section 2.1\'s exact string comparison reads &mdash; give an ' +
+    'application its redirect URIs here and the next authorization request ' +
+    'is judged against them rather than against the ' +
+    '<code>oauth2.redirectUris</code> setting, which is most of the reason ' +
+    'to create an entry before the application connects. ' +
+    '<code>samlAssertionConsumerService</code> and ' +
+    '<code>wsfedReplyUrl</code> are RECORDED AND NOT CHECKED: a SAML ' +
+    'response goes wherever the AuthnRequest asked and a ' +
+    '<code>wsignin1.0</code> response goes to whatever <code>wreply</code> ' +
+    'named, because a mock that refused would remove a test case rather than ' +
+    'add one. The SAML one is READ for something else &mdash; it is the ' +
+    'fallback used when a Single Logout has nowhere else to go, which is why ' +
+    'WS-Federation\'s <code>wreply</code> stopped being written into it on ' +
+    '2026-08-25 and has a ' +
+    'field of its own.') +
+    instance.note('<strong>What a client has actually USED is a ' +
+    'different attribute and is not here.</strong> ' +
+    '<code>appRedirectUriObserved</code> records a redirect_uri seen on a ' +
+    'request this service answered, it is not editable anywhere in this ' +
+    'console, and RFC 9700 section 2.1 is entirely about not confusing the ' +
+    'two.');
+});
 
-const NEW_APPLICATION_NOTES =
-  consoleInstance.note('<strong>Declaring a protocol family grants nothing ' +
-  'and refuses nothing.</strong> No endpoint in this service reads ' +
-  '<code>appAllowedProtocol</code>: an application declared for SAML 2.0 ' +
-  'alone is still issued an access token at <code>/oauth2/token</code>, and ' +
-  'one declared for nothing at all is treated exactly as it would have been. ' +
-  'It is a RECORD OF INTENT on the entry &mdash; what this application is ' +
-  'FOR, said before it has connected &mdash; and it is deliberately not a ' +
-  'permission, because a mock that refused a protocol would remove a test ' +
-  'case rather than add one. The configuration that DOES take effect is the ' +
-  'attributes underneath: give the entry its redirect URIs, its grant types ' +
-  'and its secret from <a href="/admin/applications">Applications</a>, and ' +
-  'RFC 9700 mode judges the next request against them.') +
-  consoleInstance.note('<strong>The families are DECLARED; ' +
-  '<code>appProtocol</code> is what HAPPENED.</strong> Those two attributes ' +
-  'sit next to each other on the entry and must not be read as one thing. ' +
-  'This form writes the first; the second is accumulated by the protocol ' +
-  'endpoints as they accept this identifier and is not editable here, for ' +
-  'the reason every derived attribute on that page is not &mdash; a form ' +
-  'that could rewrite it would make this console lie about the service\'s ' +
-  'own behaviour, in a way indistinguishable from the recording being ' +
-  'broken. The Applications drill-down shows both side by side, and says ' +
-  'which of the declared families the entry has actually been recorded in.') +
-  consoleInstance.note('<strong>One entry per identifier, whatever protocol ' +
-  'brought it.</strong> The key is the identifier exactly as it arrives ' +
-  '&mdash; not lower-cased and not namespaced by protocol &mdash; so this is ' +
-  'refused if the registry already holds one under that name, and an ' +
-  'application that appears under one name in two protocols is one entry ' +
-  'with two kinds. Change what an existing one holds rather than creating it ' +
-  'again.') +
-  // WHETHER an application entry survives a restart is a property of the whole
-  // service rather than of this page, which is why this note is computed here
-  // rather than asserted: an application IS a directory entry, so it persists
-  // exactly when the directory does.
-  (persistence.status().persistsDirectory
-    ? '<div class="ok"><strong>This entry will survive a restart.</strong> ' +
-      'An application here is a directory entry under ' +
-      '<code>ou=applications</code>, and this process is running with ' +
-      '<code>persistence.mode=' +
-      consoleInstance.esc(persistence.status().mode) + '</code> ' +
-      '— so it is written down along with every other application, person, ' +
-      'group, federation relationship and SPIFFE registration. That is a ' +
-      'property of the whole service and not of this page; see <a ' +
-      'href="/admin/persistence">Persistence</a>.</div>'
-    : consoleInstance.note('<strong>Nothing here is persisted on this ' +
-      'process.</strong> The entry is gone on restart, along with every ' +
-      'other application, person and group in the directory. That is a ' +
-      'property of the whole service and not of this page, and it is ' +
-      'changeable: <a href="/admin/persistence">Persistence</a> writes the ' +
-      'directory down, and is off by default.'));
+let NEW_APPLICATION_NOTES: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_NOTES =
+    instance.note('<strong>Declaring a protocol family grants nothing ' +
+    'and refuses nothing.</strong> No endpoint in this service reads ' +
+    '<code>appAllowedProtocol</code>: an application declared for SAML 2.0 ' +
+    'alone is still issued an access token at <code>/oauth2/token</code>, ' +
+    'and one declared for nothing at all is treated exactly as it would have ' +
+    'been. It is a RECORD OF INTENT on the entry &mdash; what this ' +
+    'application is FOR, said before it has connected &mdash; and it is ' +
+    'deliberately not a permission, because a mock that refused a protocol ' +
+    'would remove a test case rather than add one. The configuration that ' +
+    'DOES take effect is the attributes underneath: give the entry its ' +
+    'redirect URIs, its grant types and its secret from <a ' +
+    'href="/admin/applications">Applications</a>, and ' +
+    'RFC 9700 mode judges the next request against them.') +
+    instance.note('<strong>The families are DECLARED; ' +
+    '<code>appProtocol</code> is what HAPPENED.</strong> Those two ' +
+    'attributes sit next to each other on the entry and must not be read as ' +
+    'one thing. This form writes the first; the second is accumulated by the ' +
+    'protocol endpoints as they accept this identifier and is not editable ' +
+    'here, for the reason every derived attribute on that page is not ' +
+    '&mdash; a form that could rewrite it would make this console lie about ' +
+    'the service\'s own behaviour, in a way indistinguishable from the ' +
+    'recording being broken. The Applications drill-down shows both side by ' +
+    'side, and says ' +
+    'which of the declared families the entry has actually been recorded in.') +
+    instance.note('<strong>One entry per identifier, whatever protocol ' +
+    'brought it.</strong> The key is the identifier exactly as it arrives ' +
+    '&mdash; not lower-cased and not namespaced by protocol &mdash; so this ' +
+    'is refused if the registry already holds one under that name, and an ' +
+    'application that appears under one name in two protocols is one entry ' +
+    'with two kinds. Change what an existing one holds rather than creating ' +
+    'it ' +
+    'again.') +
+    // WHETHER an application entry survives a restart is a property of the
+    // whole service rather than of this page, which is why this note is
+    // computed here rather than asserted: an application IS a directory
+    // entry, so it persists exactly when the directory does.
+    (persistence.status().persistsDirectory
+      ? '<div class="ok"><strong>This entry will survive a restart.</strong> ' +
+        'An application here is a directory entry under ' +
+        '<code>ou=applications</code>, and this process is running with ' +
+        '<code>persistence.mode=' +
+        instance.esc(persistence.status().mode) + '</code> ' +
+        '— so it is written down along with every other application, person, ' +
+        'group, federation relationship and SPIFFE registration. That is a ' +
+        'property of the whole service and not of this page; see <a ' +
+        'href="/admin/persistence">Persistence</a>.</div>'
+      : instance.note('<strong>Nothing here is persisted on this ' +
+        'process.</strong> The entry is gone on restart, along with every ' +
+        'other application, person and group in the directory. That is a ' +
+        'property of the whole service and not of this page, and it is ' +
+        'changeable: <a href="/admin/persistence">Persistence</a> writes the ' +
+        'directory down, and is off by default.'));
+});
 
 // ---------------------------------------------------------------------------
 // CONFIGURE AN APPLICATION FROM ITS RFC 9728 METADATA (2026-09-13).
@@ -37838,25 +37943,30 @@ const RESOURCE_METADATA_OWNED = ['oauthClientId', 'oauthPermissionBaseUri',
 // disagree with what this service would actually publish, and which removals
 // hide something real.
 // ---------------------------------------------------------------------------
-const AS_CAVEAT =
-  consoleInstance.note('<strong>What a document says is what that ' +
-  'authorization server DOES.</strong> Advertise ' +
-  '<code>code_challenge_methods_supported: ["S256"]</code> here and this ' +
-  'server\'s own authorization endpoint refuses <code>plain</code> — at ' +
-  '<code>/{id}/oauth2/authorize</code>, and nowhere else. The members marked ' +
-  '<em>enforced</em> below drive behaviour; the rest are published and ' +
-  'cannot be made true by this service, which is still useful (a document a ' +
-  'client did not expect is a client error path worth running) and is listed ' +
-  'as <em>drift</em> so that nobody discovers it the hard way.') +
-  consoleInstance.note('<strong>Every authorization server starts ' +
-  'equal.</strong> A new one — or one created by somebody simply asking for ' +
-  'it — has exactly the capabilities the default server has, and differs ' +
-  'only where it has been made to. <strong>Every client may use every one of ' +
-  'them</strong>: nothing here restricts a client to a server, and <a ' +
-  'href="/admin/applications">the applications page</a> records which ones ' +
-  'each client has actually used. What does NOT cross between them is a ' +
-  'credential — an authorization code issued by one is refused at another\'s ' +
-  'token endpoint.');
+let AS_CAVEAT: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  AS_CAVEAT =
+    instance.note('<strong>What a document says is what that ' +
+    'authorization server DOES.</strong> Advertise ' +
+    '<code>code_challenge_methods_supported: ["S256"]</code> here and this ' +
+    'server\'s own authorization endpoint refuses <code>plain</code> — at ' +
+    '<code>/{id}/oauth2/authorize</code>, and nowhere else. The members ' +
+    'marked <em>enforced</em> below drive behaviour; the rest are published ' +
+    'and cannot be made true by this service, which is still useful (a ' +
+    'document a client did not expect is a client error path worth running) ' +
+    'and is listed ' +
+    'as <em>drift</em> so that nobody discovers it the hard way.') +
+    instance.note('<strong>Every authorization server starts ' +
+    'equal.</strong> A new one — or one created by somebody simply asking ' +
+    'for it — has exactly the capabilities the default server has, and ' +
+    'differs only where it has been made to. <strong>Every client may use ' +
+    'every one of them</strong>: nothing here restricts a client to a ' +
+    'server, and <a href="/admin/applications">the applications page</a> ' +
+    'records which ones each client has actually used. What does NOT cross ' +
+    'between them is a credential — an authorization code issued by one is ' +
+    'refused at another\'s ' +
+    'token endpoint.');
+});
 
 const AS_LINKS =
   '<p class="sub"><a href="/.well-known/oauth-authorization-server">the ' +
@@ -37909,19 +38019,22 @@ const AS_LINKS =
 // The caveat, on the page rather than only in a comment. It is the exact
 // counterpart of GROUPS_CAVEAT and it says the opposite thing about two named
 // groups, which is why it is worded to leave the general claim standing.
-const RBAC_CAVEAT =
-  consoleInstance.note('<strong>These two groups are the only groups in this ' +
-  'service that grant anything, and what they grant is this ' +
-  'console.</strong> Every other group here still grants nothing at all — ' +
-  'see <a href="/admin/groups">Groups</a>, which says so — and even these ' +
-  'two grant nothing outside <code>/admin</code>: no token\'s scopes change, ' +
-  'no assertion gains an attribute, no Kerberos PAC is affected, and a ' +
-  'member of <code>admin-write</code> gets exactly the same answer from ' +
-  '<code>/oauth2/token</code> as anybody else. They are also ordinary ' +
-  'directory entries, so <code>ldapmodify</code>, a SCIM PATCH, this page ' +
-  'and <code>POST /admin-api/rbac/grant</code> are four doors onto one ' +
-  'membership — which is the point rather than a leak: a role no test can ' +
-  'grant is a role no test can exercise.');
+let RBAC_CAVEAT: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  RBAC_CAVEAT =
+    instance.note('<strong>These two groups are the only groups in this ' +
+    'service that grant anything, and what they grant is this ' +
+    'console.</strong> Every other group here still grants nothing at all — ' +
+    'see <a href="/admin/groups">Groups</a>, which says so — and even these ' +
+    'two grant nothing outside <code>/admin</code>: no token\'s scopes ' +
+    'change, no assertion gains an attribute, no Kerberos PAC is affected, ' +
+    'and a member of <code>admin-write</code> gets exactly the same answer ' +
+    'from <code>/oauth2/token</code> as anybody else. They are also ordinary ' +
+    'directory entries, so <code>ldapmodify</code>, a SCIM PATCH, this page ' +
+    'and <code>POST /admin-api/rbac/grant</code> are four doors onto one ' +
+    'membership — which is the point rather than a leak: a role no test can ' +
+    'grant is a role no test can exercise.');
+});
 
 // ---------------------------------------------------------------------------
 // GET /admin/roles, POST /admin/roles — WHO HOLDS A ROLE, AND WHO REQUIRES ONE.
@@ -38054,46 +38167,54 @@ const SAML_PLACEHOLDERS = ['subject', 'audience', 'now', 'iso'];
 // existed is a URL in it, so an operator who could delete it could delete the
 // service.
 // ---------------------------------------------------------------------------
-const REALMS_CAVEAT =
-  consoleInstance.note('<strong>A realm separates what this service ISSUES, ' +
-  'not who it knows.</strong> Each realm has its own signing key, so a token ' +
-  'minted in one does not verify against another\'s JWKS — that is the point ' +
-  'of a realm rather than a side effect. Each realm also has a directory of ' +
-  'its own — its own <code>ou=users</code>, <code>ou=groups</code> and ' +
-  '<code>ou=applications</code> under <code>dc=&lt;id&gt;</code> — and so ' +
-  '<strong>administrators of its own</strong>: the two role groups in that ' +
-  'directory administer that realm and nothing outside it, while the ' +
-  'default realm\'s two groups administer every realm. A new realm is ' +
-  'seeded with an <code>admin</code> account that holds both. The table at ' +
-  'the foot of this page is the whole list of what is separated how.') +
-  (persistence.status().persistsRealms
-    ? '<div class="ok"><strong>A realm defined here WILL come back.</strong> ' +
-      'This process is running with ' +
-      '<code>persistence.mode=' +
-      consoleInstance.esc(persistence.status().mode) + '</code>, ' +
-      'so the realm rows — their names, descriptions and per-realm settings ' +
-      '— and each realm\'s own directory are written down and restored at ' +
-      'the next start. WHAT DOES NOT COME BACK IS THE KEYS: every realm\'s ' +
-      'signing key is regenerated on every start, exactly like the default ' +
-      'realm\'s, so a token minted in this realm today verifies against ' +
-      'nothing tomorrow. See <a ' +
-      'href="/admin/persistence">Persistence</a>.</div>'
-    : consoleInstance.note('<strong>Nothing here is persisted on this ' +
-      'process.</strong> Realms are held in memory and die with it, along ' +
-      'with the keys they signed with. Define them from <code>POST ' +
-      '/admin-api/realms</code> in whatever starts your stack if you want ' +
-      'them back — or turn on <a href="/admin/persistence">Persistence</a>, ' +
-      'which writes the realm registry and each realm\'s directory down. The ' +
-      'KEYS are regenerated on every start either way.'));
+let REALMS_CAVEAT: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  REALMS_CAVEAT =
+    instance.note('<strong>A realm separates what this service ISSUES, ' +
+    'not who it knows.</strong> Each realm has its own signing key, so a ' +
+    'token minted in one does not verify against another\'s JWKS — that is ' +
+    'the point of a realm rather than a side effect. Each realm also has a ' +
+    'directory of its own — its own <code>ou=users</code>, ' +
+    '<code>ou=groups</code> and <code>ou=applications</code> under ' +
+    '<code>dc=&lt;id&gt;</code> — and so <strong>administrators of its ' +
+    'own</strong>: the two role groups in that directory administer that ' +
+    'realm and nothing outside it, while the default realm\'s two groups ' +
+    'administer every realm. A new realm is seeded with an ' +
+    '<code>admin</code> account that holds both. The table at ' +
+    'the foot of this page is the whole list of what is separated how.') +
+    (persistence.status().persistsRealms
+      ? '<div class="ok"><strong>A realm defined here WILL come ' +
+        'back.</strong> ' +
+        'This process is running with ' +
+        '<code>persistence.mode=' +
+        instance.esc(persistence.status().mode) + '</code>, ' +
+        'so the realm rows — their names, descriptions and per-realm ' +
+        'settings — and each realm\'s own directory are written down and ' +
+        'restored at the next start. WHAT DOES NOT COME BACK IS THE KEYS: ' +
+        'every realm\'s signing key is regenerated on every start, exactly ' +
+        'like the default realm\'s, so a token minted in this realm today ' +
+        'verifies against nothing tomorrow. See <a ' +
+        'href="/admin/persistence">Persistence</a>.</div>'
+      : instance.note('<strong>Nothing here is persisted on this ' +
+        'process.</strong> Realms are held in memory and die with it, along ' +
+        'with the keys they signed with. Define them from <code>POST ' +
+        '/admin-api/realms</code> in whatever starts your stack if you want ' +
+        'them back — or turn on <a ' +
+        'href="/admin/persistence">Persistence</a>, which writes the realm ' +
+        'registry and each realm\'s directory down. The ' +
+        'KEYS are regenerated on every start either way.'));
+});
 
 // THE SIXTH THING THE READ LAYER IS HANDED, and the only one that is not an
 // inverted hook: `scimJson()` embeds this console's settings block in its
 // answer, and the alternative was for the page and /admin-api/scim to
 // assemble that block separately — which is the drift rule 7 exists to
-// prevent. It is handed over at require time because it is defined here and
-// never replaced.
-adminViews.setConfigSettingsJson(
-  consoleInstance.configSettingsJson.bind(consoleInstance));
+// prevent. It is handed over once, when the instance is installed (at require
+// time until #50's R2), because it is defined here and never replaced.
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  adminViews.setConfigSettingsJson(
+    instance.configSettingsJson.bind(instance));
+});
 
 // ---------------------------------------------------------------------------
 // /admin/token-lifetimes — HOW LONG WHAT THIS SERVICE ISSUES IS GOOD FOR.
@@ -38383,7 +38504,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'surprises people, which is why the sign-in screen says which of ' +
            'the two happened rather than answering &ldquo;wrong code&rdquo; ' +
            'to both.'],
-    status: consoleInstance.totpMechanismBlock.bind(consoleInstance),
+    status: slot.forward('totpMechanismBlock'),
     links: [['/admin/webauthn', 'the other second factor'],
             ['/admin/users', 'who holds one, and how to clear it'],
             ['/admin/crypto-metadata', 'every algorithm this service performs'],
@@ -38448,7 +38569,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'string compared against a stored string, so shortening the ' +
            'length changes what the next set looks like and leaves an ' +
            'existing set matching exactly as it did.'],
-    status: consoleInstance.backupCodesMechanismBlock.bind(consoleInstance),
+    status: slot.forward('backupCodesMechanismBlock'),
     links: [['/admin/totp', 'one of the two factors these stand in for'],
             ['/admin/webauthn', 'the other'],
             ['/admin/users', 'who holds a set, and how to clear one'],
@@ -38497,7 +38618,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'its several indistinguishable failures, so a wrong value looks ' +
            'like a broken authenticator. Widening it means every host under ' +
            'that suffix can assert these credentials.'],
-    status: consoleInstance.webauthnMechanismBlock.bind(consoleInstance),
+    status: slot.forward('webauthnMechanismBlock'),
     links: [['/admin/totp', 'the other second factor'],
             ['/admin/users', 'who holds a key, and how to remove one'],
             ['/admin/crypto-metadata', 'every algorithm this service performs'],
@@ -38782,7 +38903,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'log keeps answering out of its own copy, says so, and catches up ' +
            'when the database comes back — it does not refuse anything in ' +
            'the meantime.'],
-    status: consoleInstance.persistenceStatusBlock.bind(consoleInstance),
+    status: slot.forward('persistenceStatusBlock'),
     links: [['/admin/ldap/service', 'the directory, and this same status'],
             ['/admin/ldap/directory', 'every entry in it'],
             ['/admin/realms', 'the realms that are written down with it'],
@@ -38829,7 +38950,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'key-encryption key, with every live node\'s at startup; a node ' +
            'that differs does not start, because two nodes with different ' +
            'krbtgt keys seal tickets neither can open for the other.'],
-    status: consoleInstance.clusterStatusBlock.bind(consoleInstance),
+    status: slot.forward('clusterStatusBlock'),
     links: [['/admin/persistence', 'the store the cluster is built on'],
             ['/admin/database', 'the database itself'],
             ['/admin/secrets', 'where the key-encryption key comes from'],
@@ -38986,22 +39107,26 @@ const PROTOCOL_SETTINGS_PAGES = [
 // certificate stay on `/admin/applications` where every protocol module reads
 // them.
 // ---------------------------------------------------------------------------
-const FEDERATION_CAVEAT =
-  consoleInstance.note('<strong>This is the one feature here that has to be ' +
-  'configured before it will do anything, and the one page in this console ' +
-  'that configures a REFUSAL.</strong> Everywhere else this service accepts ' +
-  'what it is given — any username, any client_id, any entityID, any LDAP ' +
-  'bind. It cannot do that at an assertion consumer service: what arrives ' +
-  'there is an unauthenticated HTTP request claiming to be a person, and the ' +
-  'session it would produce is the same one <code>/oauth2/authorize</code>, ' +
-  '<code>/wsfed</code>, <code>/saml2</code> and this console all read. A ' +
-  'permissive version of it would not be a permissive mock; it would be an ' +
-  'authentication bypass for every protocol in this process.') +
-  consoleInstance.note('<strong>The gate is on the SIGNER, not on the ' +
-  'subject.</strong> Once a relationship is configured and enabled, ' +
-  'everything downstream is as permissive as the rest of this service: any ' +
-  'username in the assertion is accepted, any attribute is mapped, nothing ' +
-  'about the person is checked, and a directory entry is created for them.');
+let FEDERATION_CAVEAT: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  FEDERATION_CAVEAT =
+    instance.note('<strong>This is the one feature here that has to be ' +
+    'configured before it will do anything, and the one page in this console ' +
+    'that configures a REFUSAL.</strong> Everywhere else this service ' +
+    'accepts what it is given — any username, any client_id, any entityID, ' +
+    'any LDAP bind. It cannot do that at an assertion consumer service: what ' +
+    'arrives there is an unauthenticated HTTP request claiming to be a ' +
+    'person, and the session it would produce is the same one ' +
+    '<code>/oauth2/authorize</code>, <code>/wsfed</code>, ' +
+    '<code>/saml2</code> and this console all read. A permissive version of ' +
+    'it would not be a permissive mock; it would be an ' +
+    'authentication bypass for every protocol in this process.') +
+    instance.note('<strong>The gate is on the SIGNER, not on the ' +
+    'subject.</strong> Once a relationship is configured and enabled, ' +
+    'everything downstream is as permissive as the rest of this service: any ' +
+    'username in the assertion is accepted, any attribute is mapped, nothing ' +
+    'about the person is checked, and a directory entry is created for them.');
+});
 
 const FEDERATION_LINKS =
   '<p class="sub"><a href="/admin/federation/map">the picture</a> &middot; ' +
@@ -39028,9 +39153,15 @@ interface AdminConsoleAbsentNames {
   DEFAULT_PER_PAGE?: undefined;
 }
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 const consoleExports = {
-  registerRoutes: (target: any): void => consoleInstance.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   AdminConsole: AdminConsole,
+  installInstance: (instance: AdminConsole): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // THE SHELL, written for the first module outside this file that drew a
   // console page (many do now — `crypto_metadata.js`, `pki_admin.js`, the
   // `*_admin.js` of several families, `ldap_server.js`):
@@ -39041,14 +39172,11 @@ const consoleExports = {
   // a caller that needed the shell without the ?format=json half would
   // otherwise reimplement respond() badly. Neither decides anything: what that
   // page SAYS is entirely that module's.
-  respond: consoleInstance.respond.bind(consoleInstance) as
-    AdminConsole['respond'],
+  respond: slot.forward('respond'),
   // For `tests/protocol_endpoints.js`: which Protocols pages the endpoint
   // table and `SECTIONS` disagree about. See above respond().
-  protocolEndpointDrift:
-    consoleInstance.protocolEndpointDrift.bind(consoleInstance) as
-      AdminConsole['protocolEndpointDrift'],
-  page: consoleInstance.page.bind(consoleInstance) as AdminConsole['page'],
+  protocolEndpointDrift: slot.forward('protocolEndpointDrift'),
+  page: slot.forward('page'),
   // AND FOR A SECOND MODULE SINCE THE XACML WORK: `xacml/xacml_admin.ts`
   // draws the /admin/xacml pages (four then, six now) the way
   // `ldap/ldap_server.js` draws its (then five, now eight). Those two helpers
@@ -39058,21 +39186,16 @@ const consoleExports = {
   // other action here does. Keeping them private would have meant a second
   // settings renderer and a second redirect-or-JSON rule, and two of either is
   // how a console starts behaving differently on different pages.
-  configFormsFor: consoleInstance.configFormsFor.bind(consoleInstance) as
-    AdminConsole['configFormsFor'],
-  setXacmlPages: consoleInstance.setXacmlPages.bind(consoleInstance) as
-    AdminConsole['setXacmlPages'],
-  xacmlActionNames: consoleInstance.xacmlActionNames.bind(consoleInstance) as
-    AdminConsole['xacmlActionNames'],
+  configFormsFor: slot.forward('configFormsFor'),
+  setXacmlPages: slot.forward('setXacmlPages'),
+  xacmlActionNames: slot.forward('xacmlActionNames'),
   // The JSON counterpart of the block above, so that a page drawn
   // elsewhere can answer ?format=json with the SAME settings it just
   // rendered. `protocolSettingsJsonFor()` is not that function — it is
   // keyed by PROTOCOL_SETTINGS_PAGES and throws for a path that table
   // does not carry, which is correct for the pages this file generates
   // and wrong for one somebody else draws.
-  configSettingsJson:
-    consoleInstance.configSettingsJson.bind(consoleInstance) as
-      AdminConsole['configSettingsJson'],
+  configSettingsJson: slot.forward('configSettingsJson'),
   // ---------------------------------------------------------------------
   // THE ACTIONS ARE NOT HERE ANY MORE (2026-09-12). All thirty-one live in
   // `admin-core/admin_actions.ts`, which `mgmt-api/admin_api.ts` requires
@@ -39085,37 +39208,29 @@ const consoleExports = {
   // well would publish a SECOND way to reach the same function, and the
   // second way is the one that goes stale.
   // ---------------------------------------------------------------------
-  respondToAction: consoleInstance.respondToAction.bind(consoleInstance) as
-    AdminConsole['respondToAction'],
+  respondToAction: slot.forward('respondToAction'),
   // For `admin-ui/pki_admin.ts`, whose key-pair controls are drawn on an
   // application's page too — see applicationReturnTo().
-  applicationReturnTo:
-    consoleInstance.applicationReturnTo.bind(consoleInstance) as
-      AdminConsole['applicationReturnTo'],
-  userReturnTo: consoleInstance.userReturnTo.bind(consoleInstance) as
-    AdminConsole['userReturnTo'],
+  applicationReturnTo: slot.forward('applicationReturnTo'),
+  userReturnTo: slot.forward('userReturnTo'),
   // And the trail a page drawn there hangs under, so the one-time key page an
   // issue from a person's own page answers with is `Users › Signing key pair`
   // rather than a page with no way up.
-  upTo: consoleInstance.upTo.bind(consoleInstance) as AdminConsole['upTo'],
+  upTo: slot.forward('upTo'),
   // THE FOLDS AND THE TOOLTIPS, for the same one module. They are exported for
   // the reason page() is: `sts_metadata.js` draws a console page, and a page
   // drawn in this console's shell whose prose did not fold would be the one
   // page here that is still a wall of text — which is exactly what it was,
   // being the longest page in the service. See the block above note().
-  note: consoleInstance.note.bind(consoleInstance) as AdminConsole['note'],
-  warn: consoleInstance.warn.bind(consoleInstance) as AdminConsole['warn'],
-  bullet: consoleInstance.bullet.bind(consoleInstance) as
-    AdminConsole['bullet'],
-  tip: consoleInstance.tip.bind(consoleInstance) as AdminConsole['tip'],
+  note: slot.forward('note'),
+  warn: slot.forward('warn'),
+  bullet: slot.forward('bullet'),
+  tip: slot.forward('tip'),
   // Filled by ldap_server.js at its require time; see the note above it.
-  setDirectoryReader:
-    consoleInstance.setDirectoryReader.bind(consoleInstance) as
-      AdminConsole['setDirectoryReader'],
+  setDirectoryReader: slot.forward('setDirectoryReader'),
   // THE NINTH SLOT, filled by the same module, and the views behind it. See
   // the block above setDirectoryPages().
-  setDirectoryPages: consoleInstance.setDirectoryPages.bind(consoleInstance) as
-    AdminConsole['setDirectoryPages'],
+  setDirectoryPages: slot.forward('setDirectoryPages'),
   // ---------------------------------------------------------------------
   // THE LIST-PAGE FURNITURE, WRITTEN FOR THE FIRST MODULE OUTSIDE THIS
   // DIRECTORY THAT DREW LIST PAGES IN THIS SHELL (the certificate-enrollment,
@@ -39138,55 +39253,39 @@ const consoleExports = {
   // and passing this one keeps a single answer to "what is escaped how" on
   // pages that mix the two.
   // ---------------------------------------------------------------------
-  esc: consoleInstance.esc.bind(consoleInstance) as AdminConsole['esc'],
-  tile: consoleInstance.tile.bind(consoleInstance) as AdminConsole['tile'],
-  clipped: consoleInstance.clipped.bind(consoleInstance) as
-    AdminConsole['clipped'],
-  clippedValues: consoleInstance.clippedValues.bind(consoleInstance) as
-    AdminConsole['clippedValues'],
-  pageNavPair: consoleInstance.pageNavPair.bind(consoleInstance) as
-    AdminConsole['pageNavPair'],
+  esc: slot.forward('esc'),
+  tile: slot.forward('tile'),
+  clipped: slot.forward('clipped'),
+  clippedValues: slot.forward('clippedValues'),
+  pageNavPair: slot.forward('pageNavPair'),
   // For `admin-ui/pki_admin.ts`, whose two key-pair tables share one `per`
   // (2026-09-13) — the same control every multi-list page here draws.
-  perPageForm: consoleInstance.perPageForm.bind(consoleInstance) as
-    AdminConsole['perPageForm'],
-  perPageOptions: consoleInstance.perPageOptions.bind(consoleInstance) as
-    AdminConsole['perPageOptions'],
+  perPageForm: slot.forward('perPageForm'),
+  perPageOptions: slot.forward('perPageOptions'),
   queryWith: queryWith,
   // Filled by spiffe_server.js at its require time, for the reason beside the
   // requires at the top: this file must not require that module.
-  setSpiffeReader: consoleInstance.setSpiffeReader.bind(consoleInstance) as
-    AdminConsole['setSpiffeReader'],
-  setScimReader: consoleInstance.setScimReader.bind(consoleInstance) as
-    AdminConsole['setScimReader'],
-  setGroupReader: consoleInstance.setGroupReader.bind(consoleInstance) as
-    AdminConsole['setGroupReader'],
-  setDirectoryWriter:
-    consoleInstance.setDirectoryWriter.bind(consoleInstance) as
-      AdminConsole['setDirectoryWriter'],
-  setGroupWriter: consoleInstance.setGroupWriter.bind(consoleInstance) as
-    AdminConsole['setGroupWriter'],
+  setSpiffeReader: slot.forward('setSpiffeReader'),
+  setScimReader: slot.forward('setScimReader'),
+  setGroupReader: slot.forward('setGroupReader'),
+  setDirectoryWriter: slot.forward('setDirectoryWriter'),
+  setGroupWriter: slot.forward('setGroupWriter'),
   // Filled by logout/logout.ts at ITS require time — the sixth slot, and rule
   // 3e's test answers yes for the same two reasons at once. See the block above
   // setLogoutReader().
-  setLogoutReader: consoleInstance.setLogoutReader.bind(consoleInstance) as
-    AdminConsole['setLogoutReader'],
+  setLogoutReader: slot.forward('setLogoutReader'),
   // Filled by ./crypto_metadata.js at ITS require time — the seventh, and the
   // third to pass rule 3e's test both ways round. See the block above
   // setCryptoReporter().
-  setCryptoReporter: consoleInstance.setCryptoReporter.bind(consoleInstance) as
-    AdminConsole['setCryptoReporter'],
+  setCryptoReporter: slot.forward('setCryptoReporter'),
   // Filled by ../ssf/ssf.ts at ITS require time — the eighth, and the fourth
   // to pass rule 3e's test both ways round. See the block above
   // setSignalsReporter().
-  setSignalsReporter:
-    consoleInstance.setSignalsReporter.bind(consoleInstance) as
-      AdminConsole['setSignalsReporter'],
+  setSignalsReporter: slot.forward('setSignalsReporter'),
   // Filled by ../common/protocol_stack.ts on the line after it requires
   // ../tls/tls_server.js — the thirteenth, and the one slot here NOT filled by
   // the module that owns what it carries. See the block above setTruststore().
-  setTruststore: consoleInstance.setTruststore.bind(consoleInstance) as
-    AdminConsole['setTruststore'],
+  setTruststore: slot.forward('setTruststore'),
   // The Shared Signals page's view and its four actions, for admin_api.js.
   // Rule 7: the API calls exactly these, so an action added to that switch is
   // most of adding it there. `ssfAction` RESOLVES rather than returning — it
@@ -39204,13 +39303,11 @@ const consoleExports = {
   // said about which session" are two questions with two pages, and one
   // object carrying both would make /admin/ssf fail whole when the CAEP half
   // was not installed. See the block above setCaepReporter().
-  setCaepReporter: consoleInstance.setCaepReporter.bind(consoleInstance) as
-    AdminConsole['setCaepReporter'],
+  setCaepReporter: slot.forward('setCaepReporter'),
   // THE TENTH SLOT, filled by the same module for RISC. See
   // setRiscReporter()'s header on why it is a third object rather than
   // more members on the ninth.
-  setRiscReporter: consoleInstance.setRiscReporter.bind(consoleInstance) as
-    AdminConsole['setRiscReporter'],
+  setRiscReporter: slot.forward('setRiscReporter'),
   // The CAEP view and its three actions, for admin_api.js. Rule 7: the API
   // calls exactly these. `caepAction` RESOLVES, like `ssfAction` and for the
   // same reason — emitting a CAEP event signs a JWS and POSTs it.
@@ -39242,14 +39339,12 @@ const consoleExports = {
   // than one because LISTING what this process holds and HANDING A KEY OVER
   // are different acts, and only the second needs Admin Write.
   // For crypto_metadata.js's export route, which is the only caller.
-  mayWrite: consoleInstance.mayWrite.bind(consoleInstance) as
-    AdminConsole['mayWrite'],
+  mayWrite: slot.forward('mayWrite'),
   // The sign-out page's view and its four actions, for admin_api.js. Rule 7:
   // the API calls exactly these, so an action added to that switch is most of
   // adding it there — and the refusal sentence that names the four is what the
   // repository's own tests/vendored/admin_api.js reads to check the parity.
-  logoutView: consoleInstance.logoutView.bind(consoleInstance) as
-    AdminConsole['logoutView'],
+  logoutView: slot.forward('logoutView'),
   jtiFrom: jtiFrom,
   // The four action functions. admin_api.js calls exactly these — it decides
   // nothing about a revocation or a claim that this console does not — which is
@@ -39287,23 +39382,20 @@ const consoleExports = {
   // form on those pages posts `set-many` to /admin/config, which
   // `POST /admin-api/config/set-many` already mirrors. A second POST per page
   // would be that many more doors onto one function.
-  protocolSettingsJsonFor:
-    consoleInstance.protocolSettingsJsonFor.bind(consoleInstance) as
-      AdminConsole['protocolSettingsJsonFor'],
+  protocolSettingsJsonFor: slot.forward('protocolSettingsJsonFor'),
   // Where each group of settings is drawn, for the API's own /config resource
   // and for anything that wants to send a person to the right page.
   settingHomes: function () {
     log.debug("Entering settingHomes().");
+    const instance = slot.get();
     log.debug("Leaving settingHomes().");
     return SETTING_HOMES.map(function (row) {
       return { group: row.group, pages: row.pages,
-               labels: row.pages.map(
-                 consoleInstance.labelOfPath.bind(consoleInstance)) };
+               labels: row.pages.map(instance.labelOfPath.bind(instance)) };
     });
   },
   // above consoleJson().
-  consoleJson: consoleInstance.consoleJson.bind(consoleInstance) as
-    AdminConsole['consoleJson'],
+  consoleJson: slot.forward('consoleJson'),
   // The audit log's view is the whole function rather than a JSON builder, for
   // the reason the block above consoleJson() gives: the filtering and the
   // paging are work both the page and the API need, and two copies of it would
@@ -39353,10 +39445,8 @@ const consoleExports = {
   },
   // The ELEVENTH slot, filled by `xacml/xacml_role_pep.ts` at 23c. See its
   // header: a require in either direction fails rule 3e's test.
-  setRolePreviewer: consoleInstance.setRolePreviewer.bind(consoleInstance) as
-    AdminConsole['setRolePreviewer'],
-  usersView: consoleInstance.usersView.bind(consoleInstance) as
-    AdminConsole['usersView'],
+  setRolePreviewer: slot.forward('setRolePreviewer'),
+  usersView: slot.forward('usersView'),
   // The create page's own view, for GET /admin-api/users/new. Rule 7, and the
   // same argument `newApplicationView` makes below: what it answers is the
   // CATALOGUE the create takes — every attribute a person here may be given,
@@ -39366,12 +39456,9 @@ const consoleExports = {
   // `newUserAction` beside it, on purpose: that page's form posts
   // `action=create`, which `usersAction()` already answers, and a second
   // operation would be a second door onto one function pretending to be two.
-  newUserView: consoleInstance.newUserView.bind(consoleInstance) as
-    AdminConsole['newUserView'],
-  groupsView: consoleInstance.groupsView.bind(consoleInstance) as
-    AdminConsole['groupsView'],
-  applicationsView: consoleInstance.applicationsView.bind(consoleInstance) as
-    AdminConsole['applicationsView'],
+  newUserView: slot.forward('newUserView'),
+  groupsView: slot.forward('groupsView'),
+  applicationsView: slot.forward('applicationsView'),
   // The create page's own view, for GET /admin-api/applications/new. Rule 7:
   // every page of this console has an operation, and this one is worth more
   // than most as an API — what it answers is the two CLOSED VOCABULARIES the
@@ -39381,28 +39468,19 @@ const consoleExports = {
   // `action=create` to /admin/applications, so the operation that mirrors its
   // control already exists and a second one would be a second door onto one
   // function pretending to be two.
-  newApplicationView:
-    consoleInstance.newApplicationView.bind(consoleInstance) as
-      AdminConsole['newApplicationView'],
+  newApplicationView: slot.forward('newApplicationView'),
   // The three SPIFFE views and their three action handlers. admin_api.js calls
   // exactly these — rule 7 again: the API decides nothing the console does not,
   // and an action added to one of these switches is most of adding it there.
-  spiffeView: consoleInstance.spiffePage.bind(consoleInstance) as
-    AdminConsole['spiffePage'],
-  spiffeEntriesView: consoleInstance.spiffeEntriesView.bind(consoleInstance) as
-    AdminConsole['spiffeEntriesView'],
-  spiffeAgentsView: consoleInstance.spiffeAgentsView.bind(consoleInstance) as
-    AdminConsole['spiffeAgentsView'],
-  authorizationServersView:
-    consoleInstance.authorizationServersView.bind(consoleInstance) as
-      AdminConsole['authorizationServersView'],
+  spiffeView: slot.forward('spiffePage'),
+  spiffeEntriesView: slot.forward('spiffeEntriesView'),
+  spiffeAgentsView: slot.forward('spiffeAgentsView'),
+  authorizationServersView: slot.forward('authorizationServersView'),
   // The SAML 2.0 identity provider page and its four writes. Rule 7 again: the
   // API calls exactly these, so an action added to that switch is most of
   // adding it to /admin-api.
-  saml2View: consoleInstance.saml2View.bind(consoleInstance) as
-    AdminConsole['saml2View'],
-  saml11View: consoleInstance.saml11View.bind(consoleInstance) as
-    AdminConsole['saml11View'],
+  saml2View: slot.forward('saml2View'),
+  saml11View: slot.forward('saml11View'),
   // The roles page and its two writes. Rule 7 again — and this one is the page
   // most in need of the API half rather than least: `POST
   // /admin-api/rbac/grant` is gated by an access token rather than by the
@@ -39410,8 +39488,7 @@ const consoleExports = {
   // door onto the roster that does not depend on anybody already holding a
   // console role — which is what it was written for when the API was ungated
   // and `admin.openWhenEmpty` was off.
-  rbacView: consoleInstance.rbacView.bind(consoleInstance) as
-    AdminConsole['rbacView'],
+  rbacView: slot.forward('rbacView'),
   // `mfaView` is gone (2026-09-12): the page it belonged to split into
   // /admin/totp and /admin/webauthn and its columns moved onto /admin/users,
   // so nothing here drew from it. It is `adminViews.mfaRosterJson()` now —
@@ -39423,8 +39500,7 @@ const consoleExports = {
   // gated since 2026-09-09), is how a test configures a partner with no
   // browser at all, which is the only way the feature can be exercised
   // automatically.
-  federationView: consoleInstance.federationView.bind(consoleInstance) as
-    AdminConsole['federationView'],
+  federationView: slot.forward('federationView'),
   // The gate's answer for one request, so admin_api.js's own /rbac view can say
   // WHO IS ASKING without a second reading of the cookie that could disagree
   // with this one.
@@ -39453,8 +39529,7 @@ const consoleExports = {
   // page, so `/admin-api/signals` mirrors it, and both answer with this one
   // function — the reason every parity pair here does.
   SIGNALS_CONSOLE_ACTIONS: SIGNALS_CONSOLE_ACTIONS,
-  configJson: consoleInstance.configJson.bind(consoleInstance) as
-    AdminConsole['configJson'],
+  configJson: slot.forward('configJson'),
   // It takes the REQUEST, unlike most of the views here, and for a reason worth
   // the line: every URL it prints is built from the one the call arrived on —
   // that is what makes a realm's base URL correct through a published port, on
@@ -39464,8 +39539,7 @@ const consoleExports = {
   // management API takes the same two spellings of a list (`attribute` and
   // `attributes`), and reading a repeated form field is not something
   // helpers.parseBody() can answer.
-  listField: consoleInstance.listField.bind(consoleInstance) as
-    AdminConsole['listField'],
+  listField: slot.forward('listField'),
   // The console's own paging rules, so that /admin-api reports and clamps `per`
   // and `page` the way every page here does rather than inventing a second
   // ceiling. The drill-downs' session blocks start smaller, and the API

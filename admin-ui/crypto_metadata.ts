@@ -152,15 +152,19 @@
 //   * **`FAMILIES` IS BUILT BY THE CONSTRUCTOR**, because every row's
 //     `algorithms()` reads a module the constructor was given. `STANDARDS` is
 //     plain data and stays a module-level constant.
-//   * **`registerRoutes(app)` HOLDS THE THREE ROUTES** in their old order, and
-//     the TRANSITIONAL code at the bottom builds one instance from the real
-//     modules, fills `admin.js`'s `setCryptoReporter()` slot at load, and
-//     exports `registerRoutes(app)`, which `common/protocol_stack.ts` calls
-//     at 20a, where requiring this module used to register them (#50, R1) —
-//     requiring the module registers nothing. It also exports every old name —
-//     `setProtocolFamilies` (the slot `sts_metadata.js` fills) and the rest
-//     bound to that instance, `FAMILIES` and `STANDARDS` as the same arrays.
-//     `CryptoMetadata` is exported beside them for the composition root.
+//   * **`registerRoutes(app)` HOLDS THE THREE ROUTES** in their old order.
+//     The module exports it, and `common/protocol_stack.ts` calls it at 20a,
+//     where requiring this module used to register them (#50, R1) —
+//     requiring the module registers nothing. It also exports every old name
+//     — `setProtocolFamilies` (the slot `sts_metadata.js` fills) and the rest,
+//     `FAMILIES` and `STANDARDS` as the same arrays.
+//   * **R2 (#50): THE COMPOSITION ROOT BUILDS THE INSTANCE** and installs it;
+//     this module builds none of its own. The exports are FACADES that
+//     forward to that instance, for the JavaScript callers, and `FAMILIES` is
+//     a getter onto the instance's table. Filling `admin.js`'s
+//     `setCryptoReporter()` slot is `CryptoMetadata.wire()`, run when the
+//     instance is installed. A process without the root builds a default
+//     instance at load, as loading this module always did.
 //   * **THE FOUR REQUIRES THAT CAME AFTER `module.exports`** — node's
 //     `crypto`, the vendored `key_material.js`, `common/pki` (twice, under two
 //     names) and `common/keystore` — are in the import block now. They are
@@ -270,6 +274,7 @@ import stsKeystore = require('../common/keystore');
 // (rule 3w): it registers no route, so requiring it here moves nothing. The
 // same module as `pki` above, under the name the key-pair code reads it by.
 import stsPki = require('../common/pki');
+import InstanceSlot = require('../common/instance_slot');
 
 // ---------------------------------------------------------------------------
 // THE HIGHER-LEVEL STANDARDS — the envelopes the primitives above travel in.
@@ -684,6 +689,129 @@ class CryptoMetadata {
     deps.log.debug("Entering CryptoMetadata.constructor().");
     this.families = this.buildFamilies();
     deps.log.debug("Leaving CryptoMetadata.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): CryptoMetadataDeps {
+    helpers.log.debug("Entering CryptoMetadata.defaultDeps().");
+    helpers.log.debug("Leaving CryptoMetadata.defaultDeps().");
+    return {
+      log: helpers.log,
+      esc: helpers.xmlEscape,
+      baseUrlOf: helpers.baseUrlOf,
+      stsKeysFor: helpers.stsKeysFor,
+      parseBody: helpers.parseBody,
+      config: config,
+      errorCodes: errorCodes,
+      realms: realms,
+      admin: admin,
+      stsCrypto: stsCrypto,
+      xmldsig: stsCrypto.xmldsig,
+      pqJose: pqJose,
+      bbs2023: bbs2023,
+      krb5crypto: krb5crypto,
+      spiffeCa: spiffeCa,
+      webauthn: webauthn,
+      webauthnPolicy: webauthnPolicy,
+      totp: totp,
+      backupCodes: backupCodes,
+      dpop: dpop,
+      clientAuth: clientAuth,
+      mtls: mtls,
+      oauth2: oauth2,
+      introspectionJwt: introspectionJwt,
+      applicationRegistry: applicationRegistry,
+      tlsServer: tlsServer,
+      certificateDetails: certificateDetails,
+      certificateDialog: certificateDialog,
+      certificateViews: certificateViews,
+      pqcSupport: pqcSupport,
+      pqcBadge: pqcBadge,
+      scimAuth: scimAuth,
+      ssfEvents: ssfEvents,
+      ssfAuth: ssfAuth,
+      nodeCrypto: nodeCrypto,
+      keystore: keystore,
+      pki: pki,
+      stsKeystore: stsKeystore,
+      stsPki: stsPki,
+      loadRevocationStatus: function () {
+        return require('../common/revocation_status');
+      },
+      loadGnapHttpsig: function () {
+        return require('../gnap/gnap_httpsig');
+      },
+      loadGnapKeys: function () {
+        return require('../gnap/gnap_keys');
+      },
+      loadGnapTokens: function () {
+        return require('../gnap/gnap_tokens');
+      },
+      loadAcmeJws: function () {
+        return require('../acme/acme_jws');
+      },
+      loadEstCodec: function () {
+        return require('../est/est_codec');
+      },
+      loadEstKeyMaterial: function () {
+        return require('../common/vendored/key_material');
+      },
+      loadScepCms: function () {
+        return require('../scep/scep_cms');
+      }
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SLOT THIS MODULE FILLS, so that `/admin-api/crypto` can mirror this
+  // page without `mgmt-api/admin_api.ts` requiring this file. Rule 3e's test
+  // answers yes in both directions and that is why it is a slot rather than a
+  // require:
+  //
+  //   * a require from `admin_api.js` (19) to this module (20a) would MOVE
+  //     ROUTES — `tls/tls_server.js`'s six, which this file requires for the
+  //     server certificate, ahead of the management API's own routes and of
+  //     ldap, scim and spiffe. (It moved this page's own as well until #50's
+  //     R1; `common/protocol_stack.ts` registers those at 20a now, wherever
+  //     the module is loaded.)
+  //   * a require from `admin.js` (18) to this module would CLOSE A CYCLE:
+  //     this file requires that one for the shell.
+  //
+  // It carries one function and is validated when it is installed, for the
+  // same reason `setLogoutReader()` is: a page that could be drawn and an API
+  // that could not would be the parity rule failing silently, which is the
+  // one thing that rule exists to make impossible.
+  //
+  // It was load-time work with this module's own instance until #50's R2; the
+  // slot runs it now, once, for whichever instance is installed.
+  // -------------------------------------------------------------------------
+  static wire(instance: CryptoMetadata): void {
+    helpers.log.debug("Entering CryptoMetadata.wire().");
+    if (typeof admin.setCryptoReporter === 'function') {
+      // ONE OBJECT, VALIDATED WHOLE by the setter, which is the shape
+      // `setLogoutReader()` uses and for the same reason: a filler that
+      // installed the report and not the export would leave
+      // `/admin-api/keys` answering and `/admin-api/keys/export` not, which
+      // is the parity rule failing silently.
+      admin.setCryptoReporter({
+        report: instance.cryptoJson.bind(instance),
+        keys: instance.keysJson.bind(instance),
+        exportKey: instance.exportKey.bind(instance)
+      });
+    } else {
+      // An older copy of admin.js, which is a real possibility while this
+      // repository is vendored into another one. The PAGE still works — its
+      // route is registered by the composition root through
+      // `registerRoutes()` and does not go through the slot — and only the API
+      // mirror is missing, which is what this line says rather than leaving a
+      // 404 to be explained.
+      log.error(errorCodes.tag('STS-ADMIN-0596') +
+                'crypto metadata: this build of admin-ui/admin.ts offers no ' +
+                'setCryptoReporter(), so /admin/crypto-metadata is drawn and ' +
+                'GET /admin-api/crypto will not answer.');
+    }
+    helpers.log.debug("Leaving CryptoMetadata.wire().");
   }
 
   private refused(code, result) {
@@ -4297,77 +4425,19 @@ class CryptoMetadata {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules as the composition root will build one; then the slot below. Its
-// routes are registered by the composition root through the export — which,
-// since #50's R1, is AFTER the slot is filled rather than before it; nothing
-// reads the slot until a request arrives, so the order of the two is moot.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const cryptoMetadata = new CryptoMetadata({
-  log: helpers.log,
-  esc: helpers.xmlEscape,
-  baseUrlOf: helpers.baseUrlOf,
-  stsKeysFor: helpers.stsKeysFor,
-  parseBody: helpers.parseBody,
-  config: config,
-  errorCodes: errorCodes,
-  realms: realms,
-  admin: admin,
-  stsCrypto: stsCrypto,
-  xmldsig: stsCrypto.xmldsig,
-  pqJose: pqJose,
-  bbs2023: bbs2023,
-  krb5crypto: krb5crypto,
-  spiffeCa: spiffeCa,
-  webauthn: webauthn,
-  webauthnPolicy: webauthnPolicy,
-  totp: totp,
-  backupCodes: backupCodes,
-  dpop: dpop,
-  clientAuth: clientAuth,
-  mtls: mtls,
-  oauth2: oauth2,
-  introspectionJwt: introspectionJwt,
-  applicationRegistry: applicationRegistry,
-  tlsServer: tlsServer,
-  certificateDetails: certificateDetails,
-  certificateDialog: certificateDialog,
-  certificateViews: certificateViews,
-  pqcSupport: pqcSupport,
-  pqcBadge: pqcBadge,
-  scimAuth: scimAuth,
-  ssfEvents: ssfEvents,
-  ssfAuth: ssfAuth,
-  nodeCrypto: nodeCrypto,
-  keystore: keystore,
-  pki: pki,
-  stsKeystore: stsKeystore,
-  stsPki: stsPki,
-  loadRevocationStatus: function () {
-    return require('../common/revocation_status');
-  },
-  loadGnapHttpsig: function () {
-    return require('../gnap/gnap_httpsig');
-  },
-  loadGnapKeys: function () {
-    return require('../gnap/gnap_keys');
-  },
-  loadGnapTokens: function () {
-    return require('../gnap/gnap_tokens');
-  },
-  loadAcmeJws: function () {
-    return require('../acme/acme_jws');
-  },
-  loadEstCodec: function () {
-    return require('../est/est_codec');
-  },
-  loadEstKeyMaterial: function () {
-    return require('../common/vendored/key_material');
-  },
-  loadScepCms: function () {
-    return require('../scep/scep_cms');
-  }
-});
+const slot = new InstanceSlot<CryptoMetadata>(
+  'admin-ui/crypto_metadata',
+  () => new CryptoMetadata(CryptoMetadata.defaultDeps()),
+  CryptoMetadata.wire,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -4375,79 +4445,35 @@ const cryptoMetadata = new CryptoMetadata({
 
 const log = helpers.log;
 
-// ---------------------------------------------------------------------------
-// THE SLOT THIS MODULE FILLS, so that `/admin-api/crypto` can mirror this page
-// without `mgmt-api/admin_api.ts` requiring this file. Rule 3e's test answers
-// yes in both directions and that is why it is a slot rather than a require:
-//
-//   * a require from `admin_api.js` (19) to this module (20a) would MOVE
-//     ROUTES — `tls/tls_server.js`'s six, which this file requires for the
-//     server certificate, ahead of the management API's own routes and of
-//     ldap, scim and spiffe. (It moved this page's own as well until #50's
-//     R1; `common/protocol_stack.ts` registers those at 20a now, wherever
-//     the module is loaded.)
-//   * a require from `admin.js` (18) to this module would CLOSE A CYCLE: this
-//     file requires that one for the shell.
-//
-// It carries one function and is validated when it is installed, for the same
-// reason `setLogoutReader()` is: a page that could be drawn and an API that
-// could not would be the parity rule failing silently, which is the one thing
-// that rule exists to make impossible.
-// ---------------------------------------------------------------------------
-if (typeof admin.setCryptoReporter === 'function') {
-  // ONE OBJECT, VALIDATED WHOLE by the setter, which is the shape
-  // `setLogoutReader()` uses and for the same reason: a filler that installed
-  // the report and not the export would leave `/admin-api/keys` answering and
-  // `/admin-api/keys/export` not, which is the parity rule failing silently.
-  admin.setCryptoReporter({
-    report: cryptoMetadata.cryptoJson.bind(cryptoMetadata),
-    keys: cryptoMetadata.keysJson.bind(cryptoMetadata),
-    exportKey: cryptoMetadata.exportKey.bind(cryptoMetadata)
-  });
-} else {
-  // An older copy of admin.js, which is a real possibility while this
-  // repository is vendored into another one. The PAGE still works — its
-  // route is registered by the composition root through `registerRoutes()`
-  // and does not go through the slot — and only the API
-  // mirror is missing, which is what this line says rather than leaving a
-  // 404 to be explained.
-  log.error(errorCodes.tag('STS-ADMIN-0596') +
-            'crypto metadata: this build of admin-ui/admin.ts offers no ' +
-            'setCryptoReporter(), so /admin/crypto-metadata is drawn and ' +
-            'GET /admin-api/crypto will not answer.');
-}
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => cryptoMetadata.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   CryptoMetadata: CryptoMetadata,
-  FAMILIES: cryptoMetadata.families,
+  installInstance: (instance: CryptoMetadata): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  // The instance's table, read when asked (#50, R2): the same array the
+  // installed instance holds.
+  get FAMILIES() {
+    return slot.get().families;
+  },
   STANDARDS: STANDARDS,
   // Filled by ../sts_metadata.js at ITS require time — see the header for why
   // this direction and not the other.
-  setProtocolFamilies: cryptoMetadata.setProtocolFamilies.bind(
-    cryptoMetadata) as CryptoMetadata['setProtocolFamilies'],
+  setProtocolFamilies: slot.forward('setProtocolFamilies'),
   // For the tests, which assert these against what the modules that perform
   // the algorithms actually offer rather than against a list in a test.
-  driftReport: cryptoMetadata.driftReport.bind(
-    cryptoMetadata) as CryptoMetadata['driftReport'],
-  keyMaterial: cryptoMetadata.keyMaterial.bind(
-    cryptoMetadata) as CryptoMetadata['keyMaterial'],
-  kerberosEtypes: cryptoMetadata.kerberosEtypes.bind(
-    cryptoMetadata) as CryptoMetadata['kerberosEtypes'],
-  hashing: cryptoMetadata.hashing.bind(
-    cryptoMetadata) as CryptoMetadata['hashing'],
-  signatures: cryptoMetadata.signatures.bind(
-    cryptoMetadata) as CryptoMetadata['signatures'],
-  encryption: cryptoMetadata.encryption.bind(
-    cryptoMetadata) as CryptoMetadata['encryption'],
-  postQuantum: cryptoMetadata.postQuantum.bind(
-    cryptoMetadata) as CryptoMetadata['postQuantum'],
-  cryptoJson: cryptoMetadata.cryptoJson.bind(
-    cryptoMetadata) as CryptoMetadata['cryptoJson'],
-  keyInventory: cryptoMetadata.keyInventory.bind(
-    cryptoMetadata) as CryptoMetadata['keyInventory'],
-  keysJson: cryptoMetadata.keysJson.bind(
-    cryptoMetadata) as CryptoMetadata['keysJson'],
-  exportKey: cryptoMetadata.exportKey.bind(
-    cryptoMetadata) as CryptoMetadata['exportKey']
+  driftReport: slot.forward('driftReport'),
+  keyMaterial: slot.forward('keyMaterial'),
+  kerberosEtypes: slot.forward('kerberosEtypes'),
+  hashing: slot.forward('hashing'),
+  signatures: slot.forward('signatures'),
+  encryption: slot.forward('encryption'),
+  postQuantum: slot.forward('postQuantum'),
+  cryptoJson: slot.forward('cryptoJson'),
+  keyInventory: slot.forward('keyInventory'),
+  keysJson: slot.forward('keysJson'),
+  exportKey: slot.forward('exportKey')
 };

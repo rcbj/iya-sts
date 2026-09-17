@@ -39,11 +39,15 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `PqcBadge` takes the logger, the console's escaper and note drawer,
-// and `pqc_support` through its constructor. The module still exports `WORDS`
-// and its three functions from a TRANSITIONAL instance at the bottom, for
-// `admin-ui/certificate_dialog.ts`, `admin-ui/crypto_metadata.ts`,
-// `admin-ui/pki_admin.ts` and the test; `PqcBadge` is exported beside them
-// for the composition root.
+// and `pqc_support` through its constructor.
+//
+// R2 (#50): the composition root (`common/protocol_stack.ts`) builds the
+// instance and installs it; this module builds none of its own. It still
+// exports `WORDS`, and its three functions as FACADES that forward to that
+// instance, for `admin-ui/certificate_dialog.ts`,
+// `admin-ui/crypto_metadata.ts`, `admin-ui/pki_admin.ts` and the test. A
+// process without the root builds a default instance at load, as loading this
+// module always did.
 // ===========================================================================
 
 import bunyan = require('bunyan');
@@ -56,6 +60,7 @@ const log = bunyan.createLogger({
 
 import admin = require('./admin');
 import pqcSupport = require('../common/pqc_support');
+import InstanceSlot = require('../common/instance_slot');
 
 type PqcKind = 'pq' | 'composite' | 'kem' | 'hybrid';
 
@@ -115,6 +120,19 @@ class PqcBadge {
   constructor(private readonly deps: PqcBadgeDeps) {
     deps.log.debug("Entering PqcBadge.constructor().");
     deps.log.debug("Leaving PqcBadge.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): PqcBadgeDeps {
+    log.debug("Entering PqcBadge.defaultDeps().");
+    log.debug("Leaving PqcBadge.defaultDeps().");
+    return {
+      log: log,
+      esc: admin.esc,
+      note: admin.note,
+      pqcSupport: pqcSupport
+    };
   }
 
   // The icon for a classification, or '' where there is none — so a caller
@@ -181,19 +199,29 @@ class PqcBadge {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const pqcBadge = new PqcBadge({
-  log: log,
-  esc: admin.esc,
-  note: admin.note,
-  pqcSupport: pqcSupport
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PqcBadge>(
+  'admin-ui/pqc_badge',
+  () => new PqcBadge(PqcBadge.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PqcBadge: PqcBadge,
+  installInstance: (instance: PqcBadge): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   WORDS: WORDS,
-  badge: pqcBadge.badge.bind(pqcBadge) as PqcBadge['badge'],
-  badgeFor: pqcBadge.badgeFor.bind(pqcBadge) as PqcBadge['badgeFor'],
-  legend: pqcBadge.legend.bind(pqcBadge) as PqcBadge['legend']
+  badge: slot.forward('badge'),
+  badgeFor: slot.forward('badgeFor'),
+  legend: slot.forward('legend')
 };

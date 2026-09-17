@@ -104,12 +104,16 @@
 // codes and `realms` through its constructor, and every function below is one
 // of its methods. The two module-level lets — `installed` and `directory`, the
 // slot — stay where they were, with the same writers: `setDirectory()`, now a
-// method, and `inRosterRealm()`'s binding for one call. The module still
-// exports every name it did, the realm-taking wrappers included, from a
-// TRANSITIONAL instance at the bottom, for `admin-ui/admin.ts`,
+// method, and `inRosterRealm()`'s binding for one call.
+//
+// R2 (#50): the composition root (`common/protocol_stack.ts`) builds the
+// instance and installs it; this module builds none of its own. It still
+// exports every name it did, the realm-taking wrappers included, as FACADES
+// that forward to that instance, for `admin-ui/admin.ts`,
 // `mgmt-api/admin_api.ts`, `ldap/ldap_server.js`, `server.js`, the
-// `admin-core/` layer and the tests; `AdminRbac` is exported beside them for
-// the composition root.
+// `admin-core/` layer and the tests. The wrapper table is built by the
+// instance, so it is made in `wire()`; a process without the root builds a
+// default instance at load, as loading this module always did.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -126,6 +130,7 @@ import errorCodes = require('../common/error_codes');
 // asks the registry whether a realm exists and never enters one itself — the
 // directory slot's `forRealm()` does that.
 import realms = require('../common/realms');
+import InstanceSlot = require('../common/instance_slot');
 
 // ---------------------------------------------------------------------------
 // A ROSTER PER REALM (2026-09-14, ticket #32), AND THE DEFAULT REALM'S IS STILL
@@ -217,6 +222,29 @@ class AdminRbac {
   constructor(private readonly deps: AdminRbacDeps) {
     deps.log.debug("Entering AdminRbac.constructor().");
     deps.log.debug("Leaving AdminRbac.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): AdminRbacDeps {
+    helpers.log.debug("Entering AdminRbac.defaultDeps().");
+    helpers.log.debug("Leaving AdminRbac.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      mode: mode,
+      audit: audit,
+      errorCodes: errorCodes,
+      realms: realms
+    };
+  }
+
+  // The work loading this module did with its instance (#50, R2): the
+  // realm-taking wrapper table the exports forward to.
+  static wire(instance: AdminRbac): void {
+    helpers.log.debug("Entering AdminRbac.wire().");
+    wrap = instance.wrappers();
+    helpers.log.debug("Leaving AdminRbac.wire().");
   }
 
   private refused(code, result) {
@@ -1468,40 +1496,66 @@ class AdminRbac {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one; the public functions are wrapped as
-// they were, so each takes the realm where it always did.
-const rbac = new AdminRbac({
-  log: helpers.log,
-  config: config,
-  mode: mode,
-  audit: audit,
-  errorCodes: errorCodes,
-  realms: realms
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`, which runs `AdminRbac.wire()`. The exports below are
+// FACADES that forward to that instance, for the JavaScript that still calls
+// this module through `require()`; the public functions still take the realm
+// where they always did, through the wrapper table `wire()` builds. A process
+// that never runs the root gets a default instance (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+type AdminRbacWrappers = ReturnType<AdminRbac['wrappers']>;
 
-const wrap = rbac.wrappers();
+// Filled by `AdminRbac.wire()`, once, for whichever instance is installed.
+let wrap: AdminRbacWrappers | null = null;
+
+const slot = new InstanceSlot<AdminRbac>(
+  'admin-ui/admin_rbac',
+  () => new AdminRbac(AdminRbac.defaultDeps()),
+  AdminRbac.wire,
+  helpers.log);
+
+// One wrapper, resolved at call time: `slot.get()` installs a default (and so
+// fills `wrap`) when nothing has been installed yet.
+function wrapped<K extends keyof AdminRbacWrappers>(
+  name: K): AdminRbacWrappers[K] {
+  helpers.log.debug("Entering wrapped(). " + String(name));
+  // Runs on every call of the export, so no Entering/Leaving pair — the
+  // hot-path exception the code style allows, stated here as it requires.
+  const facade = function (...args: unknown[]): unknown {
+    slot.get();
+    const target = wrap[name] as unknown as (...inner: unknown[]) => unknown;
+    return target.apply(null, args);
+  };
+  helpers.log.debug("Leaving wrapped().");
+  return facade as unknown as AdminRbacWrappers[K];
+}
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AdminRbac: AdminRbac,
   ROLES: AdminRbac.ROLES,
   ROLE_IDS: AdminRbac.ROLE_IDS,
-  roleFor: rbac.roleFor.bind(rbac) as AdminRbac['roleFor'],
-  setDirectory: rbac.setDirectory.bind(rbac) as AdminRbac['setDirectory'],
-  available: wrap.available,
-  roster: wrap.roster,
-  rosterFor: wrap.rosterFor,
-  rosterEmpty: wrap.rosterEmpty,
+  installInstance: (instance: AdminRbac): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  roleFor: slot.forward('roleFor'),
+  setDirectory: slot.forward('setDirectory'),
+  available: wrapped('available'),
+  roster: wrapped('roster'),
+  rosterFor: wrapped('rosterFor'),
+  rosterEmpty: wrapped('rosterEmpty'),
   // THE BOOTSTRAP ADMINISTRATOR (2026-09-13), one per realm since 2026-09-14.
-  seedBootstrapAdministrator: wrap.seedBootstrapAdministrator,
-  noteConsoleSignIn: rbac.noteConsoleSignIn.bind(rbac) as
-    AdminRbac['noteConsoleSignIn'],
-  bootstrapState: wrap.bootstrapState,
-  rolesOf: wrap.rolesOf,
-  grant: wrap.grant,
-  revoke: wrap.revoke,
-  candidates: wrap.candidates,
-  describe: wrap.describe,
-  isServiceRealm: rbac.isServiceRealm.bind(rbac) as
-    AdminRbac['isServiceRealm']
+  seedBootstrapAdministrator: wrapped('seedBootstrapAdministrator'),
+  noteConsoleSignIn: slot.forward('noteConsoleSignIn'),
+  bootstrapState: wrapped('bootstrapState'),
+  rolesOf: wrapped('rolesOf'),
+  grant: wrapped('grant'),
+  revoke: wrapped('revoke'),
+  candidates: wrapped('candidates'),
+  describe: wrapped('describe'),
+  isServiceRealm: slot.forward('isServiceRealm')
 };
