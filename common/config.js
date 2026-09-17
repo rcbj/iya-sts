@@ -6795,6 +6795,59 @@ const SETTINGS = [
     description: 'The most claims /admin/vc-verifier-config lets the ' +
                  'Verifier\'s request name.' },
 
+  // SIGNING IN WITH A WALLET (2026-09-17, #38). `oid4vc/vc_signin.ts` argues
+  // the mechanism; these are its four knobs. ON BY DEFAULT, in both modes,
+  // and the argument is the one rcbj made for the issue: the sign-in screen
+  // offers every mechanism the service supports, and this one is not weaker
+  // than the others it sits beside — it signs in only the directory entry a
+  // credential THIS REALM issued was issued for, on an access token this
+  // realm verified, and only for a wallet proving the key the credential is
+  // bound to. In product mode that token came from a person who signed in
+  // with a verified credential of their own (the offer page is gated there),
+  // so the wallet is never a way in that did not first go through one.
+  { key: 'oid4vp.signIn', group: 'OID4VP',
+    label: 'Sign in with a wallet',
+    env: 'OID4VP_SIGN_IN', type: 'bool', dflt: true, runtime: true,
+    description: 'Offer "Sign in with a wallet" on /authn/login and answer ' +
+                 '/authn/wallet: an OpenID4VP request for an SD-JWT VC this ' +
+                 'realm issued, whose verified presentation — Key Binding ' +
+                 'JWT included — starts a session for the directory entry ' +
+                 'the credential was issued for, and carries on with ' +
+                 'whatever flow was waiting at the sign-in screen. A ' +
+                 'credential from any other issuer, or one issued on an ' +
+                 'access token this service did not issue, still verifies ' +
+                 'and signs nobody in. Off removes the button and closes ' +
+                 'the door; the Verifier at /oid4vp/verifier is unaffected.' },
+
+  { key: 'oid4vp.signInTtlS', group: 'OID4VP',
+    label: 'Wallet sign-in lifetime (s)',
+    env: 'OID4VP_SIGN_IN_TTL_S', type: 'int', dflt: 300, min: 30,
+    max: 3600, runtime: true,
+    description: 'How long a wallet sign-in waits for the wallet to answer, ' +
+                 'and how long the browser that started it may take to ' +
+                 'collect the session. Short on purpose: a QR code that ' +
+                 'stays valid is a QR code somebody else has longer to ' +
+                 'relay.' },
+
+  { key: 'oid4vp.signInPollS', group: 'OID4VP',
+    label: 'Wallet sign-in page refresh (s)',
+    env: 'OID4VP_SIGN_IN_POLL_S', type: 'int', dflt: 3, min: 1, max: 60,
+    runtime: true,
+    description: 'How often the page a browser waits on while the wallet ' +
+                 'answers reloads itself. It is a <meta> refresh and not a ' +
+                 'script, so every reload is a whole page.' },
+
+  { key: 'oid4vp.signInCrossDevice', group: 'OID4VP',
+    label: 'Wallet sign-in QR code (cross-device)',
+    env: 'OID4VP_SIGN_IN_CROSS_DEVICE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Draw a QR code on the wallet sign-in page, so a wallet on ' +
+                 'another device can answer. Only the browser that started ' +
+                 'the sign-in can be signed in by it; what no Verifier can ' +
+                 'prevent is somebody showing their own code to a victim ' +
+                 'who scans it, which is why this can be turned off and the ' +
+                 'same-device link kept.' },
+
   // --- Kerberos ------------------------------------------------------------
   //
   // **A TRUST REALM HAS A KERBEROS OF ITS OWN SINCE 2026-09-15**, on the same

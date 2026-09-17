@@ -62,7 +62,7 @@ files did not change; the paths did.
 | `logout/` | The protocol-independent sign-out at `GET|POST /logout`, and the one model of what a live session is, per identity (`/admin/logout`) and service-wide (`/admin/sessions`). `logout/CLAUDE.md`. |
 | `portal/` | **The user portal**: the pages that belong to the person looking at them, where no route takes an identity from the request, behind a navigation column that is not the console's. `portal/CLAUDE.md`. |
 | `oauth-oidc/` | The authorization server and OpenID provider: RFC 9700 mode, DPoP, mTLS, client authentication, both RFC 7523 and RFC 7522 assertion profiles, the multi-AS profiles, the consent screen and UserInfo. `oauth-oidc/CLAUDE.md`. |
-| `authn/` | The sign-in service, which **owns the SESSION**: the WebAuthn relying party and the TOTP and recovery-code steps. `/authn/spnego` lives in `kerberos/`. `authn/CLAUDE.md`. |
+| `authn/` | The sign-in service, which **owns the SESSION**: the WebAuthn relying party and the TOTP and recovery-code steps. `/authn/spnego` lives in `kerberos/`, `/authn/wallet` in `oid4vc/`. `authn/CLAUDE.md`. |
 | `saml/` | The SAML 2.0 and SAML 1.1 assertion builders, each with a SEPARATE browser-facing identity provider rather than one with a version flag. `saml/CLAUDE.md`. |
 | `ws-trust/` | WS-Trust 1.0–1.4. `ws-trust/CLAUDE.md`. |
 | `ws-federation/` | WS-Federation 1.2's passive requestor profile and a mock relying party. `ws-federation/CLAUDE.md`. |
@@ -76,7 +76,7 @@ files did not change; the paths did.
 | `ssf/` | The Shared Signals Framework — the one family here that TALKS BACK — with CAEP and RISC as the two vocabularies over it and this service's own console and portal as registered receivers. `ssf/CLAUDE.md`. |
 | `spiffe/` | Six libraries, one server module and the vendored `protos/`: a trust domain per realm under the service Root, bound on an address of its own when turned on. `spiffe/CLAUDE.md`. |
 | `tls/` | The certificate three sockets share, the client truststore, the sighting on the main port and `GET /tls/sign-in`. **It owned the 8443 and 9443 listeners until 2026-09-16 and owns no socket now.** `tls/CLAUDE.md`. |
-| `oid4vc/` | OpenID4VCI, OpenID4VP and DID Core. `oid4vc/CLAUDE.md`. |
+| `oid4vc/` | OpenID4VCI, OpenID4VP and DID Core, and the wallet sign-in at `/authn/wallet` (`vc_signin.ts`). `oid4vc/CLAUDE.md`. |
 | `admin-core/` | What both admin surfaces DO, in a directory neither owns: `admin_actions.js`, `admin_views.js`, `certificate_views.js`. It requires route-registering modules, so it may be required at 18 or later and is not in `common/`. `admin-core/CLAUDE.md`. |
 | `admin-ui/` | The console at `/admin`, its gate and two roles, every setting drawn on its protocol's page (`SETTING_HOMES`), the two server-laid-out drawings, and the pages that report on this service itself — `/admin/crypto-metadata`, `/admin/pki`, `/admin/secrets`, `/admin/api-explorer`. `admin-ui/CLAUDE.md`. |
 | `mgmt-api/` | `/admin-api` — every console control, reachable by a machine (rule 7), gated by an OAuth 2.0 access token — its generated OpenAPI document, and the explorer's assets. `mgmt-api/CLAUDE.md`. |
@@ -120,7 +120,7 @@ these protocol families:
 - **OAuth 2.0 / OpenID Connect**: a full authorization server, with DPoP.
 - **RFC 7521/7523 and RFC 7521/7522**: JWT and SAML assertions as client credentials and as grants.
 - **WebAuthn Level 3, RFC 6238 TOTP and recovery codes**: the second factors on the sign-in screen.
-- **OpenID4VCI 1.0, OpenID4VP 1.0**, and W3C DID Core with DIF domain linkage.
+- **OpenID4VCI 1.0, OpenID4VP 1.0**, and W3C DID Core with DIF domain linkage — and a wallet sign-in, `/authn/wallet`.
 - **LDAP v3**: an embedded directory on 389 and LDAPS 636.
 - **SCIM 2.0**: provisioning into that same directory, with no store of its own.
 - **TLS / mutual TLS**: the main port asks every connection for a client certificate and requires none; `GET /tls/sign-in` signs the holder of a verified one in.
@@ -402,7 +402,8 @@ is and the named file says why.
 | 10a | `saml/saml2_sso` | After `authn`; it has no sign-in screen of its own. | `saml/CLAUDE.md` |
 | 10b | `saml/saml11_sso` | After `authn` and after `saml2_sso` (`slugOf()`). | `saml/CLAUDE.md` |
 | 10c | `federation/federation_sp` | After `authn`; it calls `startSession()` directly. | `federation/CLAUDE.md` |
-| 11–14 | `oid4vc/*` | `vc_offers` before `vc_issuer` (rule 2). `vc_offers` is loaded by `oauth2` and so REGISTERED just before `oauth2`'s own routes, where its routes always landed. | `oid4vc/CLAUDE.md` |
+| 11–14 | `oid4vc/*` | `vc_offers` before `vc_issuer` (rule 2). `vc_offers` is loaded by `oauth2` and so REGISTERED just before `oauth2`'s own routes, where its routes always landed. `vc_issued` (a library) is built before `vc_issuer`. | `oid4vc/CLAUDE.md` |
+| 14a | `oid4vc/vc_signin` | After `vc_verifier`, whose transactions it reads, and after `authn` (8), whose session it starts; `authn` declares its two paths and requires nothing here — `spnego_authn`'s arrangement (#38). | `oid4vc/CLAUDE.md` |
 | 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript, locked: their routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
 | 17 | `kerberos/spnego` | JavaScript, locked: registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
 | 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
@@ -477,6 +478,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3ac | `error_codes.js`, the three ways a code is recorded, why a returned refusal carries its code under a Symbol, and the three changes it made to `audit.js` | `common/CLAUDE.md` |
 | 3ae | `used_assertions.js`, why an RFC 7523 or RFC 7522 assertion is accepted once EVER — one history for both uses, persisted in every store with one and in both modes, claimed atomically on postgres, and spent only when tokens are issued | `common/CLAUDE.md` |
 | 3ag | `cert_enrollment.js`, the core ACME, EST and SCEP issue through: the identity rule, the profiles, the proof of possession, names from the entry, storage on the entry, the two entry-bound credentials | `common/CLAUDE.md` |
+| 3ar | `vc_issued.ts`, the register of credentials this realm issued for a person on an access token it verified, and why a credential's own `sub` cannot say whom a presentation signs in | `oid4vc/CLAUDE.md` |
 | 3ap | `cache_registry.js`, every cache and replay store describing itself to `/admin/caches`: why a leaf in JavaScript, why a row is five members, where a lookup is counted, and why valid is the owner's call | `common/CLAUDE.md` |
 | 3p | `user_graph.js`, and why the union of two registers is a library rather than a page | `common/CLAUDE.md` |
 | 3o | `federation.js`, why four modules may require it, and why `PATHS` is not beside the routes | `federation/CLAUDE.md` |
@@ -585,6 +587,7 @@ refusals are what establish it. Each is argued in its own file:
 | the delegation and federation pictures | laid out on the server, arriving as ordinary markup | `admin-ui/CLAUDE.md` |
 | the console's collapsible prose | a `<details>` needs no script | `admin-ui/CLAUDE.md` |
 | the one-time code screen `/authn/totp` | typing six digits needs none, and the QR code is a server-rendered SVG | `authn/CLAUDE.md` |
+| the wallet sign-in's wait page `/authn/wallet/wait` | a `<meta>` refresh is the poll, and its QR code is a server-rendered SVG | `oid4vc/CLAUDE.md` |
 | the console's account menu | `<details>`/`<summary>`; the cost (it does not close on an outside click) is stated on the page | `admin-ui/CLAUDE.md` |
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |
 
@@ -869,7 +872,7 @@ the file the row names.
 | ~~Require DPoP — nonce mode makes proofs fresher, not mandatory~~ — **reversed 2026-09-15 (#34)**: five settings, all off by default because neither OAuth 2.1 nor RFC 9700 asks for any of them (rule 3ao) | `oauth-oidc/CLAUDE.md` |
 | ~~Turn a verified client certificate into a login~~ — **reversed 2026-09-05**, with revocation consulted first since 2026-09-12 | `tls/CLAUDE.md` |
 | Verify anything in an issued credential's values, which are invented | `oid4vc/CLAUDE.md` |
-| Turn a verified presentation into a sign-on | `oid4vc/CLAUDE.md` |
+| ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17 (#38)**: `/authn/wallet` signs in the entry a holder-bound SD-JWT VC this realm issued was issued for; any other presentation still verifies and signs nobody in | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | Deactivate anybody on SCIM `active: false` | `scim/CLAUDE.md` |
 | Attest a workload or a node | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one, which is a different claim | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |

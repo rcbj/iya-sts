@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2700** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2719** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -72,7 +72,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 51
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 70
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
@@ -2126,6 +2126,25 @@ Raised from: oid4vc/.
 | `STS-VC-0049` | A pre-authorized code this process still held was already redeemed by another process against the same store (the cluster claim, #46). | invalid_grant (HTTP 400) |
 | `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_proof (HTTP 400) |
 | `STS-VC-0051` | The cluster claim store could not be asked about an OpenID4VCI single-use value — a pre-authorized code, a c_nonce or a Transaction Code attempt — so the request was refused rather than accepted unproven. | invalid_grant or invalid_proof (HTTP 400) |
+| `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 page |
+| `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 page |
+| `STS-VC-0054` | A wallet sign-in was refused for a request that demanded two factors: a presentation proves possession of one key. | HTTP 403 page |
+| `STS-VC-0055` | A wallet sign-in was asked about by a browser that did not start it (no binding cookie, or the wrong one), so it was not finished there. | HTTP 403 page |
+| `STS-VC-0056` | A wallet sign-in's transaction is unknown, has expired, or belongs to a different pending authentication. | HTTP 400 page |
+| `STS-VC-0057` | A second OpenID4VP response arrived for a sign-in's transaction, which is answered once. | invalid_request (HTTP 400) |
+| `STS-VC-0058` | A presentation verified and signed nobody in: the credential was signed by a certificate in oid4vp.trustedIssuerCertificates, not by this realm's issuer. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0059` | A presentation verified and signed nobody in: this realm has no record of issuing the credential for a person on an access token it verified (another realm's, a foreign token's, or unknown). | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0060` | A presentation verified and signed nobody in: the directory entry the credential was issued for no longer exists. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0061` | A presentation made to sign in did not verify (or was not a presentation at all), so nobody was signed in. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0062` | A wallet sign-in was already finished — here or on another node — and was not finished again. | HTTP 400 page |
+| `STS-VC-0063` | The cluster claim store could not be asked whether a wallet sign-in was already finished, so it was refused rather than finished unproven. | HTTP 503 page |
+| `STS-VC-0064` | A presentation verified and mapped to a person, and the issuance policy refused them a session. | HTTP 403 page |
+| `STS-VC-0065` | A wallet sign-in was returned to with a response_code that is not the one given to the wallet. | HTTP 403 page |
+| `STS-VC-0066` | A presentation verified and signed nobody in: its subject or holder key disagrees with what this realm recorded when it issued the credential. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0067` | An unexpected failure inside the wallet sign-in door. | HTTP 500 page |
+| `STS-VC-0068` | An issued credential could not be recorded as one that may sign its subject in; the credential was issued anyway. | — |
+| `STS-VC-0069` | A wallet sign-in request carried a malformed query parameter. | HTTP 400 page |
+| `STS-VC-0070` | A wallet sign-in was withdrawn by a sign-out after the wallet had presented and before the browser collected the session. | HTTP 403 page at /authn/wallet/wait |
 
 ## STS-SSF
 

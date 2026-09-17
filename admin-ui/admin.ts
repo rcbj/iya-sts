@@ -12209,7 +12209,8 @@ class AdminConsole {
       // it is what `/oauth2/revoke` does — so it stayed, renamed to say what it
       // does. What was ADDED is the act the old label promised, and it is the
       // SAME one `/admin/logout` performs: `logoutReader.terminate()` with an
-      // empty selection, which walks all ten families in `endOrder` so the
+      // empty selection, which walks every family (eleven since #38) in
+      // `endOrder` so the
       // front-channel notifications are built before the session they hang off
       // is destroyed. A second implementation here would be a second answer to
       // "what is a live session", which is the thing rule 3m exists to prevent.
@@ -31950,9 +31951,12 @@ class AdminConsole {
         'does not exist on the wire.') +
 
         self.warn('<strong>This asks; it does not admit anybody.</strong> A ' +
-        'presentation that verifies here starts no session, issues no token ' +
+        'presentation made to this door starts no session, issues no token ' +
         'and grants no access — the door says yes and that is the whole of ' +
-        'it. Nothing else in this service reads what was presented. The two ' +
+        'it. Signing in with a wallet is a different door, <code>' +
+        '/authn/wallet</code>, which asks for a credential this realm ' +
+        'issued with a request of its own and is not configured here ' +
+        '(<a href="/admin/oid4vp">OpenID4VP</a> has its switch). The two ' +
         'settings are also deliberately separate: this page decides what is ' +
         'ASKED FOR and <a href="/admin/vc">/admin/vc</a> decides what is ' +
         'ISSUED, so that asking for a claim the issuer does not mint stays ' +
@@ -31991,7 +31995,9 @@ class AdminConsole {
         'flight, which keeps the claims it was built with. Not the ' +
         '<code>vct</code> or the type array a credential is identified by. ' +
         'And not what a verified presentation is worth: nothing here turns ' +
-        'one into a credential of any kind.');
+        'one into a credential of any kind, and nothing here decides whether ' +
+        'one signs anybody in — that is <code>/authn/wallet</code>\'s ' +
+        'question, asked only of a credential this realm issued.');
 
       self.respond(req, res, vpConfigJson(), 'Verifier request',
                    '/admin/vc-verifier-config', inner);
@@ -38831,15 +38837,22 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the settings around its request.</strong> The DCQL query — which ' +
           'credential, which claims — is ' +
           '<a href="/admin/vc-verifier-config">Verifier request</a> next ' +
-          'door; these four are the client identifier it presents as, where ' +
-          'it sends a holder to present, how fresh a Key Binding JWT has to ' +
-          'be, and the claims it asks for when nothing else has been chosen.',
-    also: ['<strong>A verified presentation does not sign anybody ' +
-           'in.</strong> This verifier checks the presentation, reports what ' +
-           'it found and stops there: no session is started, no token is ' +
-           'issued, and nothing about the holder is written to the ' +
-           'directory. OpenID4VP is a presentation protocol here and not a ' +
-           'second front door.'],
+          'door; these settings are the client identifier it presents as, ' +
+          'where it sends a holder to present, how fresh a Key Binding JWT ' +
+          'has to be, the claims it asks for when nothing else has been ' +
+          'chosen — and the four that govern signing in with a wallet.',
+    also: ['<strong>A presentation can sign somebody in, at <code>' +
+           '/authn/wallet</code>, and only one kind can.</strong> ' +
+           '<code>oid4vp.signIn</code> offers "Sign in with a wallet" on the ' +
+           'sign-in screen: a holder-bound SD-JWT VC <em>this realm</em> ' +
+           'issued, on an access token it verified, signs in the directory ' +
+           'entry it was issued for, with <code>amr ["pop"]</code>. A ' +
+           'credential from a trusted foreign issuer, another realm or a ' +
+           'foreign access token still verifies, is recorded on ' +
+           '<a href="/admin/users">/admin/users</a> as a presentation, and ' +
+           'signs nobody in. The bar door at <code>/oid4vp/verifier</code> ' +
+           'signs nobody in whatever it is shown: nobody there asked to be ' +
+           'signed in.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 

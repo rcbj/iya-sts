@@ -132,7 +132,7 @@ is written down in
 | **mTLS-bound tokens (RFC 8705)** | the *other* sender constraint RFC 9700 names: with `global.https` on, the main listener asks for a client certificate and a Token Request made with one is answered with `cnf["x5t#S256"]` — the SHA-256 of its DER — on the access **and** refresh tokens, which the protected endpoints — UserInfo, the credential endpoints, SCIM, SSF, `/admin-api` and the embedded debugger — then check against the certificate the connection was made with, and introspection reports as `cnf` (§3.2). A client that registers `tls_client_certificate_bound_access_tokens: true` is refused a token without a certificate, in every mode (§3.4). A refresh by a client that authenticated by certificate may present a NEW certificate (§7.1, §6.3). Advertised only where it can actually be done |
 | **Resource Indicators (RFC 8707)** | `resource` at the authorization endpoint and on **every** grant at the token endpoint becomes the access token's `aud`, so a token can be restricted to one resource server or a small set of them — repeat the parameter for a set — and the resource server here refuses one issued for a different audience |
 | **OpenID4VCI 1.0** | a Credential Issuer: SD-JWT VC (RFC 9901), `jwt_vc_json`, `ldp_vc` with bbs-2023; Credential Offers, the pre-authorized code grant with `tx_code`, `authorization_details` (including its `claims` member, so a wallet can ask for a subset of the claims), batch issuance, response encryption, deferred issuance, the Notification Endpoint |
-| **OpenID4VP 1.0** | a Verifier with DCQL that **actually verifies** what it is sent, check by check |
+| **OpenID4VP 1.0** | a Verifier with DCQL that **actually verifies** what it is sent, check by check — and, since 2026-09-17, a **way to sign in**: "Sign in with a wallet" on the sign-in screen asks for an SD-JWT VC this realm issued, and a presentation whose Key Binding JWT verifies against the credential's key starts a session for the directory entry it was issued for (see *Signing in with a wallet*) |
 | **W3C DID Core 1.0** | its own `did:web` document, and the DIF Well Known DID Configuration that links it to its origin |
 | **TLS / mutual TLS (RFC 8446)** | **the main port asks every connection for a client certificate and requires none**, so presenting one is the client's decision and mutual TLS happens where every other protocol answers. `GET /tls/sign-in` signs the holder of a verified one in — revocation first, then the identity gate, then an application's certificate refused because it is an RFC 8705 client credential — and RFC 8705 binds a token to whatever was presented. The client truststore starts **empty** and is filled at runtime through `POST /tls/trust`, because the CA it has to verify is usually generated in a *browser* minutes before the connection and exists nowhere a file could hold it. `GET /tls` describes all of it. **This was two HTTPS listeners of its own until 2026-09-16** — 8443 asking for a certificate, 9443 requiring one — whose content was what the server saw of the connection; both were deleted, that report has no successor here, and nothing refuses a certificate at the handshake any more |
 | **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain PER TRUST REALM (2026-09-12 — a realm is created with `<realm>.<the service's>` and with SPIFFE off; turning it on binds a Workload API and a SPIRE Server API of its own, on an address of its own, because gRPC's path is the method name and the endpoint is the only thing a client can name a tenant with), in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.trustLocalSocket`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
@@ -1196,6 +1196,10 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, whose keys the mock Verifier accepts an SD-JWT VC or jwt_vc_json credential signature from IN ADDITION to this realm's own issuer. Empty — the default — trusts this issuer alone, which is what it always did. A certificate is used as a KEY: no chain is built and no revocation is checked. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` the Verifier requires of a presented SD-JWT VC. The default is the type this issuer mints; set it to accept a credential another issuer mints under its own type. |
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims /admin/vc-verifier-config lets the Verifier's request name. |
+| `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer "Sign in with a wallet" on /authn/login and answer /authn/wallet: a verified presentation of an SD-JWT VC this realm issued — Key Binding JWT included — starts a session for the directory entry the credential was issued for. Any other credential still verifies and signs nobody in. See *Signing in with a wallet*. |
+| `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet, and for the browser that started it to collect the session. |
+| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the wallet sign-in page reloads itself (a `<meta>` refresh, not a script). |
+| `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `true` | yes | Draw a QR code on the wallet sign-in page for a wallet on another device. Only the browser that started the sign-in can be signed in by it. |
 
 #### Kerberos
 
@@ -3964,6 +3968,57 @@ own screen for now: section 13.2.1 lets its sign-in request arrive as a cross-si
 form POST, `SameSite=Lax` keeps the cookie off that, and a redirect chain would
 lose the request.
 
+### Signing in with a wallet — `/authn/wallet`
+
+Since 2026-09-17 (#38) a verified OpenID4VP presentation **is** a way to sign
+in. The sign-in screen offers **Sign in with a wallet** to every request that
+reaches it — an authorization request, a `wsignin1.0`, a SAML `AuthnRequest`,
+the console — and the flow that was waiting carries on afterwards, exactly as it
+does after a password or a Kerberos ticket:
+
+```
+GET  /authn/wallet?authn=8mQ2…              Set-Cookie: sts_wallet_binding=…
+  303 -> /authn/wallet/wait?authn=8mQ2…&state=Zt1…
+GET  /authn/wallet/wait?…                    "Open your wallet" + QR code,
+                                             <meta http-equiv="refresh">
+     wallet: GET /oid4vp/request/{id}        the SIGNED request (by reference)
+     wallet: POST /oid4vp/response           verified, and WHOM it signs in decided
+GET  /authn/wallet/wait?…[&response_code=…]  Set-Cookie: sts_session=…
+  303 -> /oauth2/authorize?…                 the ORIGINAL request
+```
+
+**Who may be signed in is narrow on purpose.** Only an **SD-JWT VC this realm
+issued**, presented with a **Key Binding JWT** that verifies against the
+credential's `cnf` key for this request's nonce and audience, signs anybody in —
+and it signs in **the directory entry the credential was issued for**. That is
+recorded when the credential is issued, not read off the credential afterwards:
+the credential endpoint accepts access tokens it did not issue, so a credential's
+`sub` alone could name anybody, and only a credential issued on an access token
+**this realm verified**, whose subject (`urn:uuid:<entryUUID>`) names an entry
+and which was granted for credential issuance, is kept as one that may sign in.
+A credential from a partner in `oid4vp.trustedIssuerCertificates`, one from
+another realm, one issued on a foreign token, or one whose entry has since been
+deleted **still verifies** and is recorded as before — and the page says why it
+signed nobody in, with an error code (`STS-VC-0058` to `STS-VC-0061`,
+`STS-VC-0066`).
+
+**The session goes to the browser that started the sign-in and to no other.** The
+wallet answers this service directly (`direct_post`), so a `sts_wallet_binding`
+cookie set when the sign-in starts is what the wait page checks before it mints
+anything; a same-device wallet is also handed a one-time `response_code` it must
+bring back. A transaction is answered once and finished once (across a cluster
+too), and lives `oid4vp.signInTtlS` seconds. What no Verifier can prevent is
+somebody showing their own QR code to a victim; `oid4vp.signInCrossDevice` turns
+the code off for a deployment that would rather not offer it.
+
+**The session claims `amr ["pop"]` and `acr "1"`** — RFC 8176's proof of
+possession of a key whose storage nobody here knows, and one factor. The button
+is withheld from a request that demanded two. **The wait page runs no script**:
+a `<meta>` refresh every `oid4vp.signInPollS` seconds is the poll, and the QR
+code is an SVG this server draws. `oid4vp.signIn` turns the whole mechanism off;
+the Verifier at `/oid4vp/verifier` is unaffected either way and still signs
+nobody in, because nobody asked it to.
+
 ### Signing out of everything — `/logout`
 
 Every family here that can sign somebody **in** has a sign-out of its own, and
@@ -3996,6 +4051,7 @@ What it finds, and what it does about it:
 | Tokens | every access, refresh and ID token still revocable | adds the `jti` to the one revocation set `/oauth2/revoke` and the console write to |
 | Authorization codes | codes issued and not yet redeemed | discards them, so no more tokens come from that sign-on |
 | Pre-authorized codes | Credential Offer codes minted for that person | the same |
+| Wallet sign-ins | a wallet sign-in (`/authn/wallet`) whose presentation was accepted for that person and whose browser has not yet collected the session | withdraws it, so the browser is told a sign-out ended it and nobody is signed in |
 | Directory connections | every LDAP connection bound as them, on 389 and 636 | closes the socket — RFC 4511 section 4.2 makes the bind the state of a **connection**, so that is the only sign-out LDAP has |
 | Kerberos tickets | the principal, and its sign-out instant | stamps the instant; a `TGS-REQ` presenting a ticket authenticated before it is refused **KDC_ERR_TGT_REVOKED (20)** |
 | Issued and beyond recall | assertions, service tickets, credentials, SVIDs | **nothing** — and they are listed anyway |
@@ -5723,7 +5779,7 @@ Values may contain `${username}`-style placeholders, because a claim that can on
 
 **What a request asks for is frozen onto it, not read again when the answer arrives.** The list is editable while a presentation is in flight, and a Verifier that judged what came back against a list changed after it asked would refuse a wallet for correctly answering the question it was really asked. So `buildVpRequest()` stores the claims on the transaction and every check reads them from there — which is also what makes the verdict at `/oid4vp/result/:state` a true record of that exchange rather than of the console's current state.
 
-**And this page admits nobody.** A presentation that verifies here starts no session, issues no token and grants no access; the door says yes and that is the whole of it. It is the same disclaimer the groups page and the TLS report carry, for the same reason — a console page a click away from the tokens page would otherwise let somebody conclude that a verified credential had become an identity somewhere in this service.
+**And this page admits nobody.** A presentation made at the bar door starts no session, issues no token and grants no access; the door says yes and that is the whole of it. Signing in with a wallet is a different door — `/authn/wallet`, which asks for a credential this realm issued with a request of its own and is not configured here (see *Signing in with a wallet*) — and what this page sets does not change what that door asks for.
 **The metadata is built from the same list the credential is**, which is the reason not to keep the claim set anywhere else. An issuer whose `credential_configurations_supported` advertises five claims while its credentials carry fourteen is teaching every wallet developer who reads it that the metadata is not worth reading, and OID4VCI's whole discovery story rests on it being worth reading. So `vciMetadata()` derives its `claims` arrays from `vc_claims.js` and `subjectClaimsFrom()` derives the credential from the same place, and drift between them is not a state this service can reach. **`ldp_vc` carries a subset, and that is the format's doing rather than a choice**: it is signed over canonicalized JSON-LD, `bbs2023.js` canonicalizes with `safe: true`, and a term the vendored context does not define does not go missing quietly — it *throws*, inside a cryptosuite, at the moment a wallet asks for a credential. So each catalogue row names the JSON-LD term to use in that format or says it has none, `buildLdpVc()` filters what it is given through the context this process actually loaded (a hand-kept list agreeing with a vendored file is a drift waiting to happen, and this is the one where it would surface as a crypto bug), and both the page and `/admin/sts-metadata` name the selected attributes that format leaves out. The context is vendored precisely because editing it would invalidate every credential already issued against it, so "add a term" is not the fix it looks like.
 
 **A claim's value has three sources and the order between them is the whole policy.** The **access token** first, where it carries a claim of that name — that is a statement this service has already made about the person, from the sign-in or from `/admin/claims`, and a credential contradicting the token that authorised it would be indefensible. Then **the directory entry**, which is where the generated values live once an entry exists and is also where an `ldapmodify` lands: change `mail` on `uid=alice,ou=users` and the next credential says so. Then **a generated persona**, for a person with no entry, an entry without that attribute, or a directory that is not running. Nothing is ever left out because a source was missing, since a claim that silently did not arrive is indistinguishable at the wallet from a selection that never took effect.
@@ -6509,9 +6565,10 @@ long as the workload runs; `x509svidsIssued`, `x509firstIssued` and
 of it, including why `spiffeCredentialStatus` is **not** a revocation.
 
 **None of the three DID cases is a sign-on**, and each says so on its own record. A presentation
-that verifies still starts no session and issues no token — the Verifier's own section
-says why, and this is the same distinction a verified client certificate draws: it is
-*recorded*, which is a narrower claim and must not be merged with the other. A credential
+made to the Verifier at `/oid4vp/verifier` still starts no session and issues no token, and
+it is *recorded*, which is a narrower claim and must not be merged with the other. (A
+presentation made to `/authn/wallet` is a sign-on, of the directory entry the credential was
+issued for rather than of its DID — see *Signing in with a wallet*.) A credential
 request records that an access token was presented, not that anybody authenticated; this
 service does not verify tokens it did not issue. And `/did/generate` records an identity
 this service *created*, with nothing presented at all. The one DID deliberately left out

@@ -593,7 +593,11 @@ var config = {
     allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
     trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
     expectedVct: "urn:idptools:sd-jwt-vc:identity",    // Expected SD-JWT VC type (vct)
-    maxRequestedClaims: 40                             // Claims one request may ask for
+    maxRequestedClaims: 40,                            // Claims one request may ask for
+    signIn: true,                                      // Sign in with a wallet
+    signInTtlS: 300,                                   // Wallet sign-in lifetime (s)
+    signInPollS: 3,                                    // Wallet sign-in page refresh (s)
+    signInCrossDevice: true                            // Wallet sign-in QR code (cross-device)
   },
 
   // --- Kerberos --------------------------------------------------------
