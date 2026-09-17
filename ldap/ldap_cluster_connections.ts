@@ -86,9 +86,14 @@
 // constants declared as before (a store is per realm at its declaration); the
 // hooks, the timers, the replaceable cluster module and clock are the
 // instance's. The capability is still provided at require time, after the
-// stores, and the module still exports every old name from a TRANSITIONAL
-// instance for `ldap/ldap_server.js` and the tests.
-// `LdapClusterConnections` is exported beside them for the composition root.
+// stores, and the module still exports every old name, for
+// `ldap/ldap_server.js` and the tests. Since #50's R2 the composition root
+// builds the instance (`LdapClusterConnections.defaultDeps()`) and installs it;
+// the module's old export names are FACADES that forward to it, for the
+// JavaScript callers, and a process without the root builds a default when this
+// module finishes loading. Its `wire()` points the sign-out store's restore
+// hook at the installed instance. `LdapClusterConnections` is exported beside
+// them for the composition root.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -97,6 +102,7 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('../cluster/cluster_capabilities');
+import InstanceSlot = require('../common/instance_slot');
 
 const log = bunyan.createLogger({ name: 'sts-ldap-cluster' });
 config.registerLogger(log);
@@ -196,8 +202,8 @@ const MAINTAIN_EVERY_MS = 15 * 1000;
 const INSTRUCTION_TTL_MS = 2 * 60 * 1000;
 
 // The instance the sign-out store's restore hands an arriving row to. Set
-// below, where the transitional instance is built; a restore only happens
-// once the store is started, which is after this file has loaded.
+// by `LdapClusterConnections.wire()` when the instance is installed; a
+// restore only happens once the store is started, which is after that.
 let connections: LdapClusterConnections | null = null;
 
 // node id -> { node, name, at, rows: [...] }
@@ -264,14 +270,45 @@ class LdapClusterConnections {
     deps.log.debug("Leaving LdapClusterConnections.constructor().");
   }
 
-  // The default `loadCluster` for the transitional instance.
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): LdapClusterConnectionsDeps {
+    log.debug("Entering LdapClusterConnections.defaultDeps().");
+    log.debug("Leaving LdapClusterConnections.defaultDeps().");
+    return {
+      log: log,
+      errorCodes: errorCodes,
+      randomBytes: nodeCrypto.randomBytes,
+      loadCluster: LdapClusterConnections.clusterFromRequire,
+      loadPersistence: LdapClusterConnections.persistenceFromRequire
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once for
+  // whichever instance is installed (#50, R2): the sign-out store's restore
+  // hook above reaches the instance through `connections`, and it is set
+  // before anything could restore a sign-out row into that store.
+  //
+  // It also hands the instance the socket hooks `install()` was given before
+  // there was one — see `installHooks()` below.
+  static wire(instance: LdapClusterConnections): void {
+    log.debug("Entering LdapClusterConnections.wire().");
+    connections = instance;
+    if (pendingHooks) {
+      instance.install(pendingHooks.hooks);
+      pendingHooks = null;
+    }
+    log.debug("Leaving LdapClusterConnections.wire().");
+  }
+
+  // The default `loadCluster`, passed by `defaultDeps()`.
   static clusterFromRequire(): ClusterView {
     log.debug("Entering LdapClusterConnections.clusterFromRequire().");
     log.debug("Leaving LdapClusterConnections.clusterFromRequire().");
     return require('../cluster/cluster');
   }
 
-  // The default `loadPersistence` for the transitional instance.
+  // The default `loadPersistence`, passed by `defaultDeps()`.
   static persistenceFromRequire(): { flushMinted(): unknown } {
     log.debug("Entering LdapClusterConnections.persistenceFromRequire().");
     log.debug("Leaving LdapClusterConnections.persistenceFromRequire().");
@@ -784,41 +821,72 @@ class LdapClusterConnections {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one, before anything could
-// restore a sign-out row into the store above.
-connections = new LdapClusterConnections({
-  log: log,
-  errorCodes: errorCodes,
-  randomBytes: nodeCrypto.randomBytes,
-  loadCluster: LdapClusterConnections.clusterFromRequire,
-  loadPersistence: LdapClusterConnections.persistenceFromRequire
-});
-const instance: LdapClusterConnections = connections;
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<LdapClusterConnections>(
+  'ldap/ldap_cluster_connections',
+  () => new LdapClusterConnections(LdapClusterConnections.defaultDeps()),
+  LdapClusterConnections.wire,
+  log);
 
 // AT REQUIRE TIME, like every capability (cluster/CLAUDE.md): the code being
 // present is the capability, and this file is only loaded by the directory.
 capabilities.provide('ldap.connections-cluster');
 
+// ---------------------------------------------------------------------------
+// THE `install()` FACADE IS THE ONE THAT MAY BE CALLED BEFORE THERE IS AN
+// INSTANCE (#50, R2). `ldap/ldap_server.js` calls it at ITS require time, and
+// under the composition root that is before the root reaches this module's
+// build line: the directory is loaded inside an earlier line's requires, so
+// this module finishes loading, then the directory's load goes on and calls
+// `install()`, and only then does the root build this module. A plain facade
+// there would build a default, and the root's own install would be refused.
+//
+// So while nothing is installed the hooks are HELD, and `wire()` hands them to
+// whichever instance is installed. Nothing reads them before that — they are
+// consulted when a table is published, which is after the store has started —
+// so the directory sees exactly what it saw before. Once an instance exists
+// the call goes straight to it. With no root, this module built its default
+// when it finished loading, so the first branch is never taken.
+// ---------------------------------------------------------------------------
+let pendingHooks: { hooks: SocketHooks | null } | null = null;
+
+function installHooks(theHooks?: SocketHooks | null): void {
+  log.debug("Entering installHooks().");
+  if (slot.origin() === 'none') {
+    pendingHooks = { hooks: theHooks || null };
+    log.debug("Leaving installHooks(). Held until an instance is installed.");
+    return;
+  }
+  slot.get().install(theHooks);
+  log.debug("Leaving installHooks().");
+}
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   LdapClusterConnections: LdapClusterConnections,
+  installInstance: (instance: LdapClusterConnections): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   INSTRUCTION_TTL_MS: LdapClusterConnections.INSTRUCTION_TTL_MS,
-  install: instance.install.bind(instance) as
-    LdapClusterConnections['install'],
-  noteLocalChange: instance.noteLocalChange.bind(instance) as
-    LdapClusterConnections['noteLocalChange'],
-  publishNow: instance.publishNow.bind(instance) as
-    LdapClusterConnections['publishNow'],
-  remoteRows: instance.remoteRows.bind(instance) as
-    LdapClusterConnections['remoteRows'],
-  forgetRemote: instance.forgetRemote.bind(instance) as
-    LdapClusterConnections['forgetRemote'],
-  instructSignOut: instance.instructSignOut.bind(instance) as
-    LdapClusterConnections['instructSignOut'],
-  maintain: instance.maintain.bind(instance) as
-    LdapClusterConnections['maintain'],
-  report: instance.report.bind(instance) as LdapClusterConnections['report'],
-  reset: instance.reset.bind(instance) as LdapClusterConnections['reset'],
+  install: installHooks,
+  noteLocalChange: slot.forward('noteLocalChange'),
+  publishNow: slot.forward('publishNow'),
+  remoteRows: slot.forward('remoteRows'),
+  forgetRemote: slot.forward('forgetRemote'),
+  instructSignOut: slot.forward('instructSignOut'),
+  maintain: slot.forward('maintain'),
+  report: slot.forward('report'),
+  reset: slot.forward('reset'),
   // The two stores, for a test that plays "another node's row arrived" with
   // the accessor calls `persistence_minted.js`'s applier makes.
   CONNECTIONS_HANDLE: LdapClusterConnections.CONNECTIONS_HANDLE,
