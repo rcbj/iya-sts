@@ -165,7 +165,8 @@ that up silently.
      connection until the registry hit its cap).
    * **The selectors are spelt `transport:`, `endpoint:` and `peer:`** and never
      `unix:` or `k8s:`. Writing `unix:uid:1000` for a uid nothing read would be
-     inventing an attested fact, which is the `wauth` argument again. An
+     inventing an attested fact, which is the argument that stops `wauth`
+     being answered with a factor that did not happen. An
      ASSERTED selector — `spiffe.acceptAssertedSelectors`, OFF by default, sent
      in an `x-sts-workload-selector` header — is passed through VERBATIM,
      because it is the caller's own claim rather than this service's invention,
@@ -392,9 +393,9 @@ that up silently.
    `oauth2_bcp.js` follows by publishing its `enforced: 'no'` rows. It was SEVEN
    until `RenewAgent` became answerable; the note above that table records what
    its reason was and why it no longer holds. **Do not implement a WIT method by
-   inventing the token format**: that is the `wauth`-is-a-refusal argument, and
-   code written against the invention would work here and interoperate with
-   nothing.
+   inventing the token format**: that is the argument that stops `wauth`
+   being answered with a factor that did not happen, and code written against
+   the invention would work here and interoperate with nothing.
 
    **TWO gRPC TRAPS, BOTH ALREADY PAID FOR.** `keepCase: true` does not reach
    protobufjs's built-in well-known types, so a `google.protobuf.Struct` is built

@@ -3452,11 +3452,41 @@ class Authn {
     // process has already reported this session's end — the sweep on another
     // node, or a sign-out racing this one. See sessionEndOnce(). A sign-out
     // that found nothing to end has nothing to claim and is recorded as it was.
+    //
+    // AND THE BACK-CHANNEL LOGOUT TOKENS GO OUT WITH THE REPORT (2026-09-17,
+    // #36). OpenID Connect Back-Channel Logout 1.0 is this function's kind of
+    // consequence — every door ends a session here, so here is the one place
+    // every relying party on it is told — and it rides the same claim, so a
+    // session's end sends them ONCE for the cluster: the process that reports
+    // the end sends, and one that loses the claim hands its planned rows off.
+    // They are PLANNED before the claim, synchronously, so the door's answer
+    // can list them as pending even where the claim is still being asked;
+    // they are SENT inside the report, after the delete. Required LAZILY, as
+    // `frontchannel_logout.ts` requires this module: it is a library that
+    // registers nothing, loaded long before any session ends, and a require
+    // at load would put an OAuth module in this file's dependency list for a
+    // call only a sign-out makes. An EXPIRY does not come through here and
+    // sends nothing — `backchannel_logout.ts` argues it.
     if (session) {
+      let planned = [];
+      let backchannel = null;
+      try {
+        backchannel = require('../oauth-oidc/backchannel_logout');
+        planned = backchannel.plan(session, { via: via || 'a sign-out' });
+      } catch (e) {
+        log.debug("Caught in Authn.dropSession(): " + ((e && e.message) || e));
+        planned = [];
+      }
       this.sessionEndOnce(session.id, function () {
         self.reportSignOut(session, id, via, cookiePresented, req);
+        if (backchannel && planned.length) {
+          backchannel.dispatch(planned);
+        }
       }, function () {
         self.reportSignOutAlreadyEnded(session, via, cookiePresented);
+        if (backchannel && planned.length) {
+          backchannel.abandon(planned);
+        }
       });
     } else {
       this.reportSignOut(null, id, via, cookiePresented, req);

@@ -372,6 +372,13 @@ const ACTIONS = [
       'Everything held for one identity was ended, across every protocol' },
   { action: 'logout.selective', category: 'session',
     label: 'Named sessions or credentials were ended for one identity' },
+  // OPENID CONNECT BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36). ONE ROW PER
+  // DELIVERY, written when it reaches its final state — sent, or failed with
+  // its code — and never one per attempt: a relying party that is down would
+  // otherwise write a row per retry. `oauth-oidc/backchannel_logout.ts`.
+  { action: 'logout.backchannel', category: 'session',
+    label: 'A back-channel Logout Token reached a relying party, or finally ' +
+           'did not' },
 
   // The four the request that started this feature named, plus the two that
   // fall out of the same operations on something that is not a person. The

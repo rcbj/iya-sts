@@ -1259,6 +1259,8 @@ class CryptoMetadata {
         signs: 'Every access token and refresh token, and the ID Token, with ' +
                'the realm\'s RSA key as RS256. A client that registers ' +
                '`id_token_signed_response_alg` gets that algorithm instead, ' +
+               'for its ID Token and its back-channel Logout Token alike ' +
+               '(section 2.4: the same keys as ID Tokens), ' +
                'out of the shared JWS table — every curve, both Edwards ' +
                'curves, and the post-quantum and composite ones. A signed ' +
                'UserInfo response the same way, plus the HMAC family (signed ' +
@@ -1480,7 +1482,10 @@ class CryptoMetadata {
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
-        whatItDoesNot: 'It fakes no `wauth` and dereferences no `wreqptr` — ' +
+        whatItDoesNot: 'It fakes no `wauth` — a demand the session cannot ' +
+                       'meet is a step-up, and an AuthenticationMethod is ' +
+                       'what the session did — and dereferences no ' +
+                       '`wreqptr` — ' +
                        'fetching a URL somebody registered is a server-side ' +
                        'request forgery with a citation attached.',
         envelopes: ['xmldsig', 'c14n', 'wss'],

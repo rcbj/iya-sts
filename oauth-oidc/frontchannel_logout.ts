@@ -177,7 +177,14 @@ class FrontchannelLogout {
   // not get its code — the same rule `audit()`, `signJwt()`'s recorder and the
   // directory's user observer follow.
   // -------------------------------------------------------------------------
-  noteClient(session: Json, clientId: string): void {
+  //
+  // `facts` (2026-09-17, #36) carries what Back-Channel Logout needs and only
+  // this moment knows: `iss`, the issuer identifier the client's ID Token is
+  // issued under — this process runs several named authorization servers and
+  // a Logout Token must name the one the relying party trusts — and `sub`.
+  // Both are kept on the row, the latest winning, because a client served by
+  // one authorization server is served by it every time.
+  noteClient(session: Json, clientId: string, facts?: Json): void {
     const { log, loadAuthn } = this.deps;
     log.debug("Entering FrontchannelLogout.noteClient().");
     try {
@@ -187,10 +194,13 @@ class FrontchannelLogout {
       }
       session.oidcClients = session.oidcClients || {};
       const known = session.oidcClients[clientId];
+      const said = facts || {};
       session.oidcClients[clientId] = {
         first: (known && known.first) || Date.now(),
         last: Date.now(),
-        count: ((known && known.count) || 0) + 1
+        count: ((known && known.count) || 0) + 1,
+        iss: String(said.iss || (known && known.iss) || ''),
+        sub: String(said.sub || (known && known.sub) || '')
       };
       // AND THE SESSION STORE IS TOLD (2026-09-14, #46): the assignment above
       // edits an object the store does not journal, so another node's copy of

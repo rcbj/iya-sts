@@ -213,33 +213,12 @@ const MEMBER_BY_NAME: Record<string, Json> = {};
 MEMBERS.forEach(function (row) { MEMBER_BY_NAME[row.name] = row; });
 
 // ---------------------------------------------------------------------------
-// WHICH ADDRESSES ARE INTERNAL.
-//
-// Loopback, the RFC 1918 and RFC 6598 private ranges, link-local (the cloud
-// instance-metadata address among them), unique-local IPv6, "this network",
-// multicast and the reserved blocks — every range whose address a request from
-// inside this process's network would reach something that network did not
-// mean to publish. The documentation ranges are included because nothing
-// legitimate lives there. A NAT64 prefix is included because it embeds an IPv4
-// address that may be any of the above.
+// WHICH ADDRESSES ARE INTERNAL, AND RESOLVING A NAME ONCE, are
+// `federation/federation_http.ts`'s since 2026-09-17 (#36): a second outbound
+// requester — the back-channel logout delivery — needed the same check, and
+// the module that owns the outbound policy is where one copy of it lives. The
+// two methods below ask it and keep this import's own refusal codes.
 // ---------------------------------------------------------------------------
-const INTERNAL = (function () {
-  const list = new net.BlockList();
-  [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
-   ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24],
-   ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15],
-   ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4],
-   ['240.0.0.0', 4]].forEach(function (row) {
-    list.addSubnet(row[0] as string, row[1] as number, 'ipv4');
-  });
-  [['::', 128], ['::1', 128], ['64:ff9b::', 96], ['100::', 64],
-   ['2001:db8::', 32], ['fc00::', 7], ['fe80::', 10],
-   ['ff00::', 8]].forEach(function (row) {
-    list.addSubnet(row[0] as string, row[1] as number, 'ipv6');
-  });
-  return list;
-})();
-
 class ProtectedResourceMetadata {
   static readonly WELL_KNOWN = WELL_KNOWN;
   static readonly MEMBERS = MEMBERS;
@@ -637,32 +616,11 @@ class ProtectedResourceMetadata {
   // arrived, because `::ffff:127.0.0.1` reaches loopback exactly as `127.0.0.1`
   // does.
   internalAddressProblem(address: Json) {
-    const { net, log } = this.deps;
+    const { fedHttp, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.internalAddressProblem(). " +
               "address=" + address);
-    let text = String(address || '').replace(/^\[|\]$/g, '');
-    const mappedDotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(text);
-    const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(text);
-    if (mappedDotted) {
-      text = mappedDotted[1];
-    } else if (mappedHex) {
-      const high = parseInt(mappedHex[1], 16);
-      const low = parseInt(mappedHex[2], 16);
-      text = [high >> 8, high & 255, low >> 8, low & 255].join('.');
-    }
-    const family = net.isIP(text);
-    if (!family) {
-      log.debug("Leaving " +
-                "ProtectedResourceMetadata.internalAddressProblem(). Not an " +
-                "address.");
-      return '"' + address + '" is not an IP address';
-    }
-    const internal = INTERNAL.check(text, family === 4 ? 'ipv4' : 'ipv6');
-    log.debug("Leaving ProtectedResourceMetadata.internalAddressProblem(). " +
-              "internal=" + internal);
-    return internal
-      ? text + ' is a loopback, private, link-local or reserved address'
-      : '';
+    log.debug("Leaving ProtectedResourceMetadata.internalAddressProblem().");
+    return fedHttp.internalAddressProblem(address);
   }
 
   // ---------------------------------------------------------------------------
@@ -671,55 +629,26 @@ class ProtectedResourceMetadata {
   // `{ ok, address, family }` or a refusal. In development the name is resolved
   // by the connection itself and nothing is pinned; in product every address
   // the name resolves to is checked and the first is what the request connects
-  // to.
+  // to. The resolution and the check are `federation_http.ts`'s; the refusal
+  // codes are this import's.
   // ---------------------------------------------------------------------------
   private vetHost(hostname: Json) {
-    const { dns, net, mode, log } = this.deps;
+    const { fedHttp, log } = this.deps;
     const self = this;
     log.debug("Entering ProtectedResourceMetadata.vetHost(). " +
               "hostname=" + hostname);
-    const host = String(hostname || '').replace(/^\[|\]$/g, '');
-    if (mode.dialsInternalAddresses()) {
-      log.debug("Leaving ProtectedResourceMetadata.vetHost(). Development: " +
-                "not pinned.");
-      return Promise.resolve({ ok: true, address: '', family: 0 });
-    }
-    const judge = function (addresses) {
-      log.debug("Entering judge().");
-      const bad = addresses.map(function (one) {
-        return self.internalAddressProblem(one.address);
-      }).filter(function (one) { return !!one; });
-      if (bad.length || !addresses.length) {
-        log.debug("Leaving judge(). Refused.");
-        return self.refusal('STS-REG-0080', '"' + host + '" resolves to ' +
-          (bad.length ? bad.join('; ') : 'no address') + '. This service is ' +
-          'running as a product (global.mode=product), so a URL an ' +
-          'administrator names may not reach an address inside this ' +
-          'service\'s own network. Paste or upload the document instead.');
+    log.debug("Leaving ProtectedResourceMetadata.vetHost(). Asking the " +
+              "outbound policy.");
+    return fedHttp.vetHost(hostname).then(function (vetted) {
+      if (vetted.ok) {
+        return { ok: true, address: vetted.address, family: vetted.family };
       }
-      log.debug("Leaving judge(). ok.");
-      return { ok: true, address: addresses[0].address,
-               family: addresses[0].family };
-    };
-    const literal = net.isIP(host);
-    if (literal) {
-      log.debug("Leaving ProtectedResourceMetadata.vetHost(). A literal " +
-                "address.");
-      return Promise.resolve(judge([{ address: host, family: literal }]));
-    }
-    log.debug("Leaving ProtectedResourceMetadata.vetHost(). Resolving.");
-    return new Promise(function (resolve) {
-      dns.lookup(host, { all: true }, function (error, addresses) {
-        if (error) {
-          log.debug("Caught in ProtectedResourceMetadata.vetHost(): " +
-                    ((error && error.message) ||
-                                               error));
-          resolve(self.refusal('STS-REG-0081', '"' + host + '" could not be ' +
-                          'resolved: ' + error.message + '.'));
-          return;
-        }
-        resolve(judge(addresses || []));
-      });
+      if (vetted.kind === 'unresolved' && /could not be resolved/.test(
+        String(vetted.why || ''))) {
+        return self.refusal('STS-REG-0081', vetted.why + '.');
+      }
+      return self.refusal('STS-REG-0080', vetted.why + ' Paste or upload ' +
+                          'the document instead.');
     });
   }
 

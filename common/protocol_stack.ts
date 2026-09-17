@@ -336,6 +336,9 @@ class ProtocolStack {
     this.build('oauth-oidc/frontchannel_logout',
                require('../oauth-oidc/frontchannel_logout'),
                'FrontchannelLogout');
+    this.build('oauth-oidc/backchannel_logout',
+               require('../oauth-oidc/backchannel_logout'),
+               'BackchannelLogout');
     this.build('oauth-oidc/refresh_token_crypto',
                require('../oauth-oidc/refresh_token_crypto'),
                'RefreshTokenCrypto');

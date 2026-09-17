@@ -331,7 +331,12 @@ var config = {
     parAllowUnregisteredRedirectUris: false,     // Pushed requests may name an unregistered redirect_uri
     stepUpAcrValues: "",                         // Step-up: acr values this service's resource server requires
     stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
-    frontchannelLogout: true                     // OpenID Connect Front-Channel Logout
+    frontchannelLogout: true,                    // OpenID Connect Front-Channel Logout
+    backchannelLogout: true,                     // OpenID Connect Back-Channel Logout
+    backchannelLogoutTokenTtlS: 120,             // Back-channel Logout Token lifetime (seconds)
+    backchannelLogoutAttempts: 3,                // Back-channel logout delivery attempts
+    backchannelLogoutTimeoutMs: 5000,            // Back-channel logout request timeout (ms)
+    backchannelLogoutBackoffMs: 1000             // Back-channel logout retry backoff (ms)
   },
 
   // --- PKI -------------------------------------------------------------

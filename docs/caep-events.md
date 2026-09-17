@@ -210,9 +210,11 @@ Per-protocol edges:
   demand, never reach the answer step. `IsPassive` with nothing usable, and a
   sign-in that came back carrying an authentication error, answer with a status
   `Response` and emit nothing.
-- **WS-Federation** — the call sits *below* the two `wauth` refusals, because
-  those end in a 400 and nothing was honoured; a `wfresh` too old never reaches
-  it and re-authenticates instead.
+- **WS-Federation** — the call sits in the branch that answers from the
+  session, which a `wauth` the session cannot meet never reaches: that request
+  is sent to sign in again (a re-authentication, which reports itself), or
+  refused if the one attempt did not produce the factor. A `wfresh` too old
+  never reaches it either and re-authenticates instead.
 - **SAML 1.1** — that profile has no `ForceAuthn` and no
   `RequestedAuthnContext`, so every arrival with a session is either single
   sign-on or that session's own sign-in coming back — exactly the pair the rule
