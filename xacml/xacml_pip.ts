@@ -58,13 +58,15 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `XacmlPip` takes the logger, the error-code registry, the engine's
 // vocabulary and its datatypes through its constructor. The directory slot
-// (`setDirectory()`) is a method of it and is still exported under its old
-// name, as are `resolverFor`, `locateSubject`, `rawAttribute`,
-// `directoryAttributeFor`, `subjectOf`, `available` and `ATTRIBUTE_PREFIX` —
-// as FACADES forwarding to the instance the composition root builds and
-// installs (#50's R2), for `ldap/ldap_server.js` and the other callers that
-// are not converted. A process without the root builds a default when this
-// module loads. `XacmlPip` is exported for the root.
+// (`setDirectory()`) is a STATIC method of it, because `ldap/ldap_server.js`
+// fills it before the composition root builds the instance (#50, R2), and is
+// still exported under its old name, as are `ATTRIBUTE_PREFIX` and — as
+// FACADES — `resolverFor`, `locateSubject`, `rawAttribute`,
+// `directoryAttributeFor`, `subjectOf` and `available`, forwarding to the
+// instance the composition root builds and installs — for
+// `ldap/ldap_server.js` and the other callers that are not converted. A
+// process without the root builds a default when this module loads.
+// `XacmlPip` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -136,8 +138,14 @@ class XacmlPip {
     };
   }
 
-  setDirectory(fns: PipDirectory | null | undefined): void {
-    const { log } = this.deps;
+  // STATIC, BECAUSE THE SLOT IS FILLED BEFORE THE ROOT BUILDS THE INSTANCE
+  // (#50, R2). `ldap/ldap_server.js` fills it at ITS load, which happens
+  // inside the require that loads this module and so before
+  // `common/protocol_stack.ts` reaches this module's build line; a facade
+  // there would build a default instance and the root's install would be
+  // refused. What it installs is module-level, so it needs no instance.
+  static setDirectory(fns: PipDirectory | null | undefined): void {
+    const { log } = helpers;
     log.debug('Entering XacmlPip.setDirectory().');
     directory = fns || null;
     log.debug('Leaving XacmlPip.setDirectory(). The PIP ' +
@@ -401,7 +409,7 @@ export = {
   XacmlPip: XacmlPip,
   installInstance: (instance: XacmlPip): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  setDirectory: slot.forward('setDirectory'),
+  setDirectory: XacmlPip.setDirectory,
   resolverFor: slot.forward('resolverFor'),
   locateSubject: slot.forward('locateSubject'),
   rawAttribute: slot.forward('attributeOf'),

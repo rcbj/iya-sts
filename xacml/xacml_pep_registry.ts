@@ -91,9 +91,12 @@
 // realm registry, the policy repository and the hash function through its
 // constructor. The directory functions still arrive through the
 // `setDirectory()` slot `ldap/ldap_server.js` fills at require time, and are
-// held by the instance. Since #50's R2 the composition root builds that
-// instance and installs it here. The module still exports `SCHEMA`, and
-// every old function as a FACADE forwarding to the instance, for
+// held at module level, because that fill comes before the composition root
+// builds the instance (#50, R2), so `setDirectory()` and
+// `directoryInstalled()` are static. The root builds the instance and
+// installs it here. The module still exports `SCHEMA`, the two static slot
+// functions, and every other old function as a FACADE forwarding to the
+// instance, for
 // `xacml/xacml.ts`, the console, the management API, `ldap_server.js` and the
 // tests, which are not all converted; a process without the root builds a
 // default when this module loads. `PepRegistry` is exported for the root.
@@ -288,12 +291,15 @@ const SCHEMA = {
   ]
 };
 
+// The directory functions, installed by `ldap/ldap_server.js` — module-level,
+// as `xacml_store.ts` and `xacml_pip.ts` hold theirs, because the slot is
+// filled before the composition root builds the instance (#50, R2; see
+// `PepRegistry.setDirectory()`).
+let directory: PepDirectory | null = null;
+let warnedAboutNoDirectory = false;
+
 class PepRegistry {
   static readonly SCHEMA = SCHEMA;
-
-  // The directory functions, installed by `ldap/ldap_server.js`.
-  private directory: PepDirectory | null = null;
-  private warnedAboutNoDirectory = false;
 
   constructor(private readonly deps: PepRegistryDeps) {
     deps.log.debug("Entering PepRegistry.constructor().");
@@ -316,12 +322,18 @@ class PepRegistry {
     };
   }
 
-  setDirectory(fns?: PepDirectory | null): void {
-    const { log } = this.deps;
+  // STATIC, BECAUSE THE SLOT IS FILLED BEFORE THE ROOT BUILDS THE INSTANCE
+  // (#50, R2). `ldap/ldap_server.js` fills it at ITS load, which happens
+  // inside the require that loads this module and so before
+  // `common/protocol_stack.ts` reaches this module's build line; a facade
+  // there would build a default instance and the root's install would be
+  // refused. What it installs is module-level, so it needs no instance.
+  static setDirectory(fns?: PepDirectory | null): void {
+    const { log } = helpers;
     log.debug('Entering PepRegistry.setDirectory().');
-    this.directory = fns || null;
+    directory = fns || null;
     log.debug('Leaving PepRegistry.setDirectory(). The PEP register ' +
-              (this.directory ? 'has its container.' : 'has none.'));
+              (directory ? 'has its container.' : 'has none.'));
   }
 
   // WHAT IS CURRENTLY INSTALLED, so that a test which stubs the slot can put
@@ -332,22 +344,22 @@ class PepRegistry {
   // which is a fact about the file list rather than about the test. Nothing
   // in the service calls this, exactly as nothing calls
   // `applications.directoryInstalled()`.
-  directoryInstalled(): PepDirectory | null {
-    const { log } = this.deps;
+  static directoryInstalled(): PepDirectory | null {
+    const { log } = helpers;
     log.debug("Entering PepRegistry.directoryInstalled().");
     log.debug("Leaving PepRegistry.directoryInstalled().");
-    return this.directory;
+    return directory;
   }
 
   private haveDirectory(): boolean {
     const { log } = this.deps;
     log.debug("Entering PepRegistry.haveDirectory().");
-    if (this.directory) {
+    if (directory) {
       log.debug("Leaving PepRegistry.haveDirectory().");
       return true;
     }
-    if (!this.warnedAboutNoDirectory) {
-      this.warnedAboutNoDirectory = true;
+    if (!warnedAboutNoDirectory) {
+      warnedAboutNoDirectory = true;
       log.warn('xacml: the embedded directory was never loaded, so there is ' +
                'no ou=peps to register a remote Policy Enforcement Point ' +
                'in. Registration is refused and the register is empty. This ' +
@@ -377,7 +389,7 @@ class PepRegistry {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.certificateIdentity().');
     if (!this.haveDirectory() ||
-        typeof this.directory.certificateIdentity !== 'function') {
+        typeof directory.certificateIdentity !== 'function') {
       // NO FALLBACK NAMING RULE, deliberately. Inventing one here would be
       // the second answer to "what identity is this certificate" that the
       // slot exists to prevent, and it would only ever be used in a process
@@ -395,7 +407,7 @@ class PepRegistry {
     // arriving on the main port or 636 — which is two identities for one
     // certificate. The other side of the slot has that function; this module
     // does not and should not.
-    const named = this.directory.certificateIdentity(certificate);
+    const named = directory.certificateIdentity(certificate);
     log.debug('Leaving PepRegistry.certificateIdentity(). dn=' + named.dn);
     return { dn: named.dn || '', commonName: named.commonName || '',
              subject: named.subject || '' };
@@ -556,7 +568,7 @@ class PepRegistry {
     const current = this.syncToken();
     const now = Date.now();
     const stale = this.staleAfterS() * 1000;
-    const rows = this.directory.allPeps().map(function (entry): PepRow {
+    const rows = directory.allPeps().map(function (entry): PepRow {
       const at = self.attributeReader(entry.attributes);
       const lastSeen = at('xacmlPepLastSeen') || '';
       const seenAt = lastSeen ? Date.parse(lastSeen) : NaN;
@@ -695,7 +707,7 @@ class PepRegistry {
     } else if (existing && existing.description) {
       attributes.description = existing.description;
     }
-    const written = this.directory.writePep(name, attributes);
+    const written = directory.writePep(name, attributes);
     if (!written) {
       log.debug('Leaving PepRegistry.register(). The directory refused it.');
       return errorCodes.mark({ ok: false,
@@ -770,7 +782,7 @@ class PepRegistry {
       xacmlPepUndischargeable: String(said.undischargeable === undefined
         ? existing.undischargeable : this.number(said.undischargeable))
     });
-    const written = this.directory.writePep(name, attributes);
+    const written = directory.writePep(name, attributes);
     log.debug('Leaving PepRegistry.heartbeat(). ' +
               (written ? 'Recorded.' : 'Refused.'));
     return written ? { ok: true, name: name, current: this.syncToken() }
@@ -797,7 +809,7 @@ class PepRegistry {
       log.debug('Leaving PepRegistry.recordNotify(). Not registered.');
       return false;
     }
-    const written = this.directory.writePep(name, this.attributesOf(existing, {
+    const written = directory.writePep(name, this.attributesOf(existing, {
       xacmlPepLastNotify: new Date().toISOString() + ' — ' + String(sentence)
     }));
     log.debug('Leaving PepRegistry.recordNotify(). ' +
@@ -817,7 +829,7 @@ class PepRegistry {
       log.debug('Leaving PepRegistry.setEnabled(). Not registered.');
       return false;
     }
-    const written = this.directory.writePep(name, this.attributesOf(existing, {
+    const written = directory.writePep(name, this.attributesOf(existing, {
       xacmlPepEnabled: on ? 'TRUE' : 'FALSE'
     }));
     log.debug('Leaving PepRegistry.setEnabled(). ' +
@@ -873,7 +885,7 @@ class PepRegistry {
       log.debug('Leaving PepRegistry.remove(). No directory.');
       return false;
     }
-    const removed = this.directory.deletePep(name);
+    const removed = directory.deletePep(name);
     log.debug('Leaving PepRegistry.remove(). ' +
               (removed ? 'Removed.' : 'Not there.'));
     return removed;
@@ -918,8 +930,8 @@ export = {
   installInstance: (instance: PepRegistry): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: PepRegistry.SCHEMA,
-  setDirectory: slot.forward('setDirectory'),
-  directoryInstalled: slot.forward('directoryInstalled'),
+  setDirectory: PepRegistry.setDirectory,
+  directoryInstalled: PepRegistry.directoryInstalled,
   certificateIdentity: slot.forward('certificateIdentity'),
   syncToken: slot.forward('syncToken'),
   staleAfterS: slot.forward('staleAfterS'),
