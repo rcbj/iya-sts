@@ -1979,8 +1979,10 @@ const SECTIONS = [
                'assertion is spent only when the token request it came with ' +
                'issued tokens; a request that failed for another reason ' +
                'releases it. A row is kept until the assertion would have ' +
-               'expired and not a moment longer. No control: forgetting a ' +
-               'row would make a still-valid assertion usable again.' },
+               'expired and not a moment longer. The <code>jti</code> of ' +
+               'every RFC 9101 request object something was issued on is ' +
+               'kept here too, as a request object. No control: forgetting ' +
+               'a row would make a still-valid assertion usable again.' },
       // Beside the tokens it points at rather than under Protocols, and that
       // was the decision: delegation is the one feature here that is
       // deliberately NOT a protocol family — six of its eight mechanisms come
@@ -27078,8 +27080,8 @@ class AdminConsole {
           return '<tr><td>' + self.esc(self.whenText(row.usedAt)) + '</td>' +
             '<td>' + self.esc(row.format === 'saml' ? 'SAML 2.0' : 'JWT') +
             '</td><td>' + self.esc(row.use === 'authorization-grant' ? 'grant'
-                                                                : 'client ' +
-                                                                    'auth') +
+              : row.use === 'request-object' ? 'request object'
+                : 'client auth') +
             '</td>' +
             '<td class="who">' + self.shortened(row.issuer, 40) + '</td>' +
             '<td class="who">' + self.shortened(row.identifier, 32) + '</td>' +

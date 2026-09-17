@@ -3339,7 +3339,7 @@ function create(options) {
     },
 
     // =====================================================================
-    // THE USED-ASSERTION HISTORY. Five statements, and the first is the one
+    // THE USED-ASSERTION HISTORY. Six statements, and the first is the one
     // the table exists for.
     // =====================================================================
 
@@ -3430,6 +3430,24 @@ function create(options) {
             [realm, key, reservation])
       ).then(function (r) {
         return r.rowCount || 0;
+      });
+    },
+
+    // ONE LIVE ROW BY ITS KEY, or null — `used_assertions.peek()`, the look an
+    // RFC 9101 request object gets on each pass through the authorization
+    // endpoint before it is claimed (#35). A read and nothing else: the claim
+    // above is what decides.
+    findUsedAssertion: function (realm, key, nowMs) {
+      log.debug("Entering findUsedAssertion(). realm=" + realm);
+      log.debug("Leaving findUsedAssertion().");
+      return pool.query(
+        'SELECT format, used_as, issuer, identifier, client_id, subject, ' +
+        'state, origin, used_at, spent_at, expires_at ' +
+        'FROM sts_used_assertions ' +
+        'WHERE realm = $1 AND key = $2 AND expires_at >= $3',
+        [realm, key, Number(nowMs)]
+      ).then(function (r) {
+        return r.rows[0] ? usedRowFrom(r.rows[0]) : null;
       });
     },
 
