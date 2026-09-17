@@ -70,6 +70,19 @@
 //   credential for a failure somewhere else.
 //
 // ---------------------------------------------------------------------------
+// AND AN RFC 9101 REQUEST OBJECT, SINCE 2026-09-17 (#35).
+//
+// A signed request object carrying a `jti` is recorded here too, as a third
+// USE of a `jwt`: it is a document a client signed, it is a bearer
+// credential for the authorization request inside it until it expires, and
+// the service used to say outright that it did not remember one. It is SPENT
+// where the authorization endpoint issues something on it, or where the
+// pushed authorization request endpoint keeps it — not where it is first
+// read, because the authorization endpoint reads every request twice, and
+// `peek()` is the look those earlier reads take. `request_object.ts` argues
+// it.
+//
+// ---------------------------------------------------------------------------
 // FOR HOW LONG: UNTIL IT WOULD HAVE EXPIRED, AND NOT A MOMENT LONGER.
 //
 // A row's `expiresAt` is the assertion's own expiry plus the clock skew the
@@ -121,16 +134,22 @@ const errorCodes = require('./error_codes');
 const log = bunyan.createLogger({ name: 'sts-used-assertions' });
 config.registerLogger(log);
 
-// The two formats and the two uses. Closed lists: a row carrying anything else
-// is refused at `claim()` rather than written, because a history whose rows can
-// say anything is one a page cannot draw a column for.
+// The two formats and the three uses. Closed lists: a row carrying anything
+// else is refused at `claim()` rather than written, because a history whose
+// rows can say anything is one a page cannot draw a column for.
 const FORMATS = {
   jwt: 'RFC 7523 JWT',
   saml: 'RFC 7522 SAML 2.0 assertion'
 };
 const USES = {
   'client-authentication': 'client authentication (RFC 7521 section 4.2)',
-  'authorization-grant': 'authorization grant (RFC 7521 section 4.1)'
+  'authorization-grant': 'authorization grant (RFC 7521 section 4.1)',
+  // RFC 9101 (#35, 2026-09-17). A request object is a JWT its CLIENT signs,
+  // so it is keyed exactly as a client assertion is — format `jwt`, the
+  // client as issuer, and its `jti` — and the two share one namespace, which
+  // is what RFC 7519 section 4.1.7 asks of a `jti` in the first place: one
+  // identifier, one document. `oauth-oidc/request_object.ts` argues the rest.
+  'request-object': 'request object (RFC 9101)'
 };
 
 // What a row is, spelt once. Every store hands rows back in this shape.
@@ -392,7 +411,10 @@ function flush() {
 // prove unused is not one it may accept).
 //
 // `request`, where there is one, binds the claim to its response: a 2xx makes
-// it `spent`, anything else releases it. Without one — a caller verifying an
+// it `spent`, anything else releases it. `keepBelow` moves that line for a
+// response whose success is not a 2xx — the authorization endpoint answers a
+// request object it issued on with a 302 or 303, so its claim passes 400 and
+// is kept by any status under it. Without a request — a caller verifying an
 // assertion outside a request, which is what the in-process tests do — the
 // claim is spent at once, which is what every caller did before this file.
 // ---------------------------------------------------------------------------
@@ -436,9 +458,65 @@ function claim(opts) {
     : claimInMemory(row, cap, now);
   return decided.then(function (result) {
     if (result.ok && o.request) {
-      bindToResponse(o.request, result.claim);
+      bindToResponse(o.request, result.claim, Number(o.keepBelow) || 300);
     }
     return result;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A LOOK, WITHOUT A CLAIM (#35). Resolves to `{ used: true, existing }` when a
+// live row holds this document, and `{ used: false }` otherwise — including
+// when a database store cannot be asked, or has no statement for it, with
+// `unknown: true` beside it.
+//
+// For a caller that meets one document more than once before it is spent: the
+// authorization endpoint reads a request object before the sign-in screen and
+// again after it, and refusing a replay on the FIRST pass saves a person a
+// sign-in that could only end in the refusal. It decides nothing on its own.
+// The claim is the authority, which is why a store that cannot answer here is
+// not a refusal here — the claim that follows fails closed on the same store.
+// ---------------------------------------------------------------------------
+/**
+ * @param {{ format?: string, issuer?: string, identifier?: string }} opts
+ * @returns {Promise<{ used: boolean, unknown?: boolean,
+ *                     existing?: Object }>}
+ */
+function peek(opts) {
+  log.debug("Entering peek().");
+  const o = opts || {};
+  const format = String(o.format || '');
+  if (!FORMATS[format] || !o.issuer || !o.identifier) {
+    log.debug("Leaving peek(). Nothing to look for.");
+    return Promise.resolve({ used: false });
+  }
+  const now = Date.now();
+  const realmId = realms.currentId();
+  const key = keyOf(format, o.issuer, o.identifier);
+  if (store.kind !== 'database') {
+    sweep(realmId, now);
+    const existing = partitionOf(realmId).get(key);
+    log.debug("Leaving peek(). " + (existing ? "Used." : "Not used."));
+    return Promise.resolve(existing
+      ? { used: true, existing: publicRow(existing) } : { used: false });
+  }
+  if (typeof store.driver.findUsedAssertion !== 'function') {
+    log.debug("Leaving peek(). The store has no look-up.");
+    return Promise.resolve({ used: false, unknown: true });
+  }
+  log.debug("Leaving peek(). Asking the database.");
+  return Promise.resolve().then(function () {
+    return store.driver.findUsedAssertion(realmId, key, now);
+  }).then(function (found) {
+    return found ? { used: true, existing: publicRow(found) }
+      : { used: false };
+  }, function (e) {
+    log.warn(errorCodes.tag('STS-STORE-0046') +
+             'used assertions: the ' + store.mode + ' store could not be ' +
+             'asked whether a document from "' + clip(o.issuer) + '" has ' +
+             'been used: ' + ((e && e.message) || e) + '. The look is ' +
+             'answered "not known"; the claim that decides fails closed.');
+    return { used: false, unknown: true };
   });
 }
 
@@ -566,7 +644,7 @@ function publicRow(row) {
 // is the client going away first. Both listeners are attached; the first to
 // run settles and the second finds nothing to do.
 // ---------------------------------------------------------------------------
-function bindToResponse(request, handle) {
+function bindToResponse(request, handle, keepBelow) {
   log.debug("Entering bindToResponse().");
   const res = request && request.res;
   if (!res || typeof res.once !== 'function') {
@@ -580,7 +658,7 @@ function bindToResponse(request, handle) {
   const onFinish = function () {
     if (!settled) {
       settled = true;
-      settle(handle, res.statusCode >= 200 && res.statusCode < 300);
+      settle(handle, res.statusCode >= 200 && res.statusCode < keepBelow);
     }
   };
   const onClose = function () {
@@ -714,6 +792,10 @@ function usedAs(existing) {
   const inFlight = existing.state === 'reserved'
     ? ', by a request that has not finished yet' : '';
   log.debug("Leaving usedAs().");
+  if (existing.use === 'request-object') {
+    log.debug("Leaving usedAs(). A request object.");
+    return ' — as an RFC 9101 request object' + inFlight;
+  }
   return ' — ' + (existing.format === 'saml' ? 'under RFC 7522 section ' +
     (existing.use === 'authorization-grant' ? '2.1' : '2.2')
     : 'as ' + (existing.use === 'authorization-grant'
@@ -771,6 +853,7 @@ module.exports = {
   clearStore: clearStore,
   flush: flush,
   claim: claim,
+  peek: peek,
   usedAs: usedAs,
   list: list,
   summary: summary

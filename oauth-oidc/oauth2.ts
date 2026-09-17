@@ -4697,7 +4697,7 @@ class OAuth2Server {
                                    issuedAcr?: Json): Promise<any> {
     const { log, logArtifact, randomId, hasScope, bcp, oauth21, frontchannel,
             applications, errorCodes, par, gate, debuggerAccess,
-            clusterClaims } = this.deps;
+            clusterClaims, requestObject } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.issueAuthorizationResponse().");
     // Everything minted below is this authorization server's, so the base it is
@@ -4941,6 +4941,26 @@ class OAuth2Server {
       }
       clusterClaims.releaseUnlessSucceeded(res, parClaim.handle);
       par.spend(pushedUri);
+    }
+
+    // RFC 9101: A REQUEST OBJECT'S `jti` IS SPENT HERE (#35), for the pushed
+    // request_uri's reason above — every pass before this one only looked at
+    // it (`request_object.ts`'s `lookUp()`). An atomic claim in the
+    // used-assertion history, bound to this response and kept by anything
+    // under 400: a redirect and a form_post page are what issuing looks like
+    // here. A pushed request carries no `once`; its push was its use.
+    if (req.stsJar && req.stsJar.once) {
+      const spent = await requestObject.spend({
+        once: req.stsJar.once, request: req, keepBelow: 400,
+        clientId: String(query.client_id)
+      });
+      if (!spent.ok) {
+        log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
+                  "request object's jti was not spent.");
+        errorCodes.mark(res, errorCodes.codeOf(spent) || 'STS-OAUTH-0374');
+        return self.oauthError(res, spent.status || 400, spent.error,
+                               spent.description);
+      }
     }
 
     // THE APPLICATION. Recorded here and not at the authentication funnel,
@@ -5380,7 +5400,8 @@ class OAuth2Server {
       if (result.used) {
         req.stsJar = { outer: outer, source: result.source, alg: result.alg,
                        encrypted: result.encrypted || '',
-                       pushed: result.pushed || null };
+                       pushed: result.pushed || null,
+                       once: result.once || null };
         Object.defineProperty(req, 'query', { value: result.params,
                                               writable: true,
                                               configurable: true,
@@ -10592,6 +10613,8 @@ class OAuth2Server {
     let source = 'form';
     let objectAlg = '';
     let objectEncrypted = '';
+    // What a pushed request object is remembered by (#35), spent in step 7.
+    let pushedOnce: Json = null;
     if (body.request !== undefined && String(body.request) !== '') {
       // Section 3: the form carries the client's authentication and `request`,
       // and "all other request parameters ... MUST appear as claims of the
@@ -10634,6 +10657,7 @@ class OAuth2Server {
           'STS-OAUTH-0424');
       }
       params = Object.assign({}, verified.params);
+      pushedOnce = verified.once || null;
       source = 'request';
       objectAlg = String(verified.alg || '');
       objectEncrypted = String(verified.encrypted || '');
@@ -10733,6 +10757,22 @@ class OAuth2Server {
 
     // --- 7. KEPT, AND ANSWERED
     // ------------------------------------------------
+    // A PUSHED REQUEST OBJECT'S `jti` IS SPENT HERE (#35): the push is the
+    // object's one use, and the URN answered below resolves to the kept
+    // parameters without reading the object again. Below every refusal, so a
+    // push refused for anything spends nothing, and bound to this response —
+    // the 201 keeps it, a store refusal below releases it.
+    if (pushedOnce) {
+      const spent = await requestObject.spend({
+        once: pushedOnce, request: req, clientId: clientId
+      });
+      if (!spent.ok) {
+        log.debug("Leaving OAuth2Server.parRequest(). The request object's " +
+                  "jti was not spent.");
+        return refuse(spent.status || 400, spent.error, spent.description,
+                      errorCodes.codeOf(spent) || 'STS-OAUTH-0374');
+      }
+    }
     const kept = par.push({
       clientId: clientId,
       authorizationServer: self.profileOf(req),
