@@ -2513,7 +2513,12 @@ async function theSamlRegistriesRoundTrip() {
     .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   await refused("/saml2/set-signing-certificate",
     { sp: sp, value: "MIIBtest" + "A".repeat(40) },
-    /RSA certificate|not an X\.509|not base64/i,
+    // WAS /RSA certificate|…/ until 2026-09-17. This service verifies XML
+    // signatures made with EC, EdDSA and post-quantum keys now (#37's
+    // follow-ups), so the refusal no longer says RSA — it names X.509 and
+    // what the key has to be good for. The point of the pattern is unchanged:
+    // a caller must be able to tell WHICH refusal it met.
+    /X\.509 certificate|not an X\.509|not base64/i,
     "a signing certificate that is not a certificate");
   const set = await ok("/saml2/set-signing-certificate",
     { sp: sp, value: minted.anchorPem }, "recorded a signing certificate");
