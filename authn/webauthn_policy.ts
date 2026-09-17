@@ -67,13 +67,15 @@
 // (`./webauthn`, which stays JavaScript: the parent project copies it) and
 // the error codes through its constructor. The two tables stay module-level
 // data, and `ALG_IDS` is still filled at load from the verifier's table.
-// The module still exports every old name, from a TRANSITIONAL instance at
-// the bottom, for `authn.ts`, `admin_views.ts`, the console and the tests;
-// `WebauthnPolicy` is exported beside them for the composition root.
+// Since #50's R2 the composition root builds the instance; every old name is
+// a FACADE forwarding to it, for `authn.ts`, `admin_views.ts`, the console
+// and the tests, and a process without the root builds a default at load.
+// `WebauthnPolicy` is exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import webauthn = require('./webauthn');
 // The error codes. A LEAF that requires nothing, so it cannot close a cycle
 // from here. A refusal this module RETURNS carries its code non-enumerably,
@@ -146,6 +148,19 @@ class WebauthnPolicy {
   constructor(private readonly deps: WebauthnPolicyDeps) {
     deps.log.debug("Entering WebauthnPolicy.constructor().");
     deps.log.debug("Leaving WebauthnPolicy.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): WebauthnPolicyDeps {
+    helpers.log.debug("Entering WebauthnPolicy.defaultDeps().");
+    helpers.log.debug("Leaving WebauthnPolicy.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log,
+      webauthn: webauthn,
+      errorCodes: errorCodes
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -491,34 +506,38 @@ class WebauthnPolicy {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const policy = new WebauthnPolicy({
-  config: config,
-  log: helpers.log,
-  webauthn: webauthn,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<WebauthnPolicy>(
+  'authn/webauthn_policy',
+  () => new WebauthnPolicy(WebauthnPolicy.defaultDeps()),
+  null,
+  helpers.log);
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   WebauthnPolicy: WebauthnPolicy,
-  settings: policy.settings.bind(policy) as WebauthnPolicy['settings'],
-  offered: policy.offered.bind(policy) as WebauthnPolicy['offered'],
-  roleAllowed: policy.roleAllowed.bind(policy) as WebauthnPolicy['roleAllowed'],
-  algorithmsOffered: policy.algorithmsOffered.bind(policy) as
-    WebauthnPolicy['algorithmsOffered'],
-  algorithmIds: policy.algorithmIds.bind(policy) as
-    WebauthnPolicy['algorithmIds'],
-  creationOptions: policy.creationOptions.bind(policy) as
-    WebauthnPolicy['creationOptions'],
-  requestOptions: policy.requestOptions.bind(policy) as
-    WebauthnPolicy['requestOptions'],
-  requireUserVerification: policy.requireUserVerification.bind(policy) as
-    WebauthnPolicy['requireUserVerification'],
-  report: policy.report.bind(policy) as WebauthnPolicy['report'],
-  failureCodeFor: policy.failureCodeFor.bind(policy) as
-    WebauthnPolicy['failureCodeFor'],
+  installInstance: (instance: WebauthnPolicy): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  settings: slot.forward('settings'),
+  offered: slot.forward('offered'),
+  roleAllowed: slot.forward('roleAllowed'),
+  algorithmsOffered: slot.forward('algorithmsOffered'),
+  algorithmIds: slot.forward('algorithmIds'),
+  creationOptions: slot.forward('creationOptions'),
+  requestOptions: slot.forward('requestOptions'),
+  requireUserVerification: slot.forward('requireUserVerification'),
+  report: slot.forward('report'),
+  failureCodeFor: slot.forward('failureCodeFor'),
   // The JOSE-name-to-COSE-identifier map, exported for the tests that assert
   // the offer cannot name something the verifier does not know. DATA, like the
   // two tables it is derived from.

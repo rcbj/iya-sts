@@ -66,29 +66,32 @@
 // WebAuthn libraries, the gate, `mode`, `config`, the audit log and the rest)
 // through its constructor, typed as `typeof` each. Its routes — the arrival
 // middleware first, then every `/authn/*` page, in the order they always
-// were — are registered by `registerRoutes(app)`. The TRANSITIONAL instance
-// at the bottom registers NOTHING at load (#50, R1): the module exports
-// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the point
-// in the route order where requiring this module used to register the routes
-// (rule 1). The audit actor slot is still filled at load, right after the
-// instance is built, as it was.
+// were — are registered by `registerRoutes(app)`. Loading the module
+// registers NOTHING (#50, R1): the module exports `registerRoutes(app)`, and
+// `common/protocol_stack.ts` calls it at the point in the route order where
+// requiring this module used to register the routes (rule 1). Since #50's R2
+// that root also BUILDS the instance, and the audit actor slot is filled by
+// `Authn.wire()` when the instance is installed — right after this module
+// finishes loading, as before; a process without the root builds a default,
+// and wires it, at load.
 //
 // What did NOT move into the class, and why:
 //
 //   * **THE STORES** (`sessions`, `pending`, `pendingMfa`,
 //     `pendingPasswordChange`) stay module-level `realms.map()` declarations,
 //     because a store becomes per realm at its declaration and nowhere else.
-//     `sessions`' `mergeRow` reaches the instance late — through a function
-//     that is called only once the store is open, long after this file has
-//     finished loading.
+//     `sessions`' `mergeRow` reaches the instance late — through the slot,
+//     in a function that is called only once the store is open, long after
+//     the instance is installed.
 //   * **THE TWO PIECES OF PROCESS STATE** — the session observer
 //     `setSessionObserver()` fills (rule 3e) and the sweep timer — stay
 //     module-level `let`s beside the stores, one each for the process.
 //   * **THE CONSTANTS, THE FORM SCHEMAS AND THE CEREMONY SCRIPT** stay
 //     module-level data.
 //
-// The module still exports every old name, bound to that instance, for the
-// protocol modules, the console, `ssf/ssf.ts` (which fills the observer slot)
+// The module still exports every old name, as a FACADE forwarding to that
+// instance, for the protocol modules, the console, `ssf/ssf.ts` (which fills
+// the observer slot)
 // and the tests, several of which replace an export such as `sessionOf` for a
 // moment: every caller outside this file reaches these through the module
 // object, as before, so the replacement is what they call. `Authn` is exported
@@ -107,6 +110,7 @@ import app = require('../common/app');
 // destructured because `sameIdentity()` and the provisioning refusal are the
 // only callers and both read better as `helpers.`.
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import stats = require('../common/admin_stats');
 // The federation register, for the buttons at the foot of the sign-in screen.
 // A plain require in the ordinary direction and it passes rule 3e's test both
@@ -311,11 +315,12 @@ const AUTHN_TTL_MS = 10 * 60 * 1000;
 // `mergeSessionRows()` below is what two copies of one live session become.
 // `persistence/persistence_minted.js` carries the mechanism.
 const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
-                              // Late-bound to the TRANSITIONAL instance at
+                              // Late-bound to the instance in the slot at
                               // the bottom: a merge happens only once the
-                              // store is open, after this file has loaded.
+                              // store is open, after the root installed it.
                               mergeRow: function (mine, theirs) {
-                                return authn.mergeSessionRows(mine, theirs);
+                                return slot.get().mergeSessionRows(mine,
+                                                                   theirs);
                               } });
 
 // The requests waiting at the login screen: what to do with the person once
@@ -964,6 +969,54 @@ class Authn {
   constructor(private readonly deps: AuthnDeps) {
     deps.log.debug("Entering Authn.constructor().");
     deps.log.debug("Leaving Authn.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): AuthnDeps {
+    helpers.log.debug("Entering Authn.defaultDeps().");
+    helpers.log.debug("Leaving Authn.defaultDeps().");
+    return {
+      crypto: crypto,
+      stsCrypto: stsCrypto,
+      realms: realms,
+      app: app,
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      baseUrlOf: helpers.baseUrlOf,
+      nowSec: helpers.nowSec,
+      randomId: helpers.randomId,
+      xmlEscape: helpers.xmlEscape,
+      parseBody: helpers.parseBody,
+      oauthError: helpers.oauthError,
+      userFor: helpers.userFor,
+      helpers: helpers,
+      stats: stats,
+      federation: federation,
+      applications: applications,
+      config: config,
+      gate: gate,
+      credentials: credentials,
+      websecurity: websecurity,
+      mode: mode,
+      validation: validation,
+      bcp: bcp,
+      audit: audit,
+      clusterClaims: clusterClaims,
+      errorCodes: errorCodes,
+      webauthnVerifier: webauthnVerifier,
+      webauthnPolicy: webauthnPolicy,
+      totp: totp
+    };
+  }
+
+  // What loading this module did with its instance before #50's R2, now
+  // done by the slot for whichever instance is installed: the audit log's
+  // actor resolver.
+  static wire(instance: Authn): void {
+    helpers.log.debug("Entering Authn.wire().");
+    audit.setActorResolver(instance.auditActorOf.bind(instance));
+    helpers.log.debug("Leaving Authn.wire().");
   }
 
   private secondsSetting(key, fallbackMs) {
@@ -7951,48 +8004,28 @@ class Authn {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const authn = new Authn({
-  crypto: crypto,
-  stsCrypto: stsCrypto,
-  realms: realms,
-  app: app,
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  baseUrlOf: helpers.baseUrlOf,
-  nowSec: helpers.nowSec,
-  randomId: helpers.randomId,
-  xmlEscape: helpers.xmlEscape,
-  parseBody: helpers.parseBody,
-  oauthError: helpers.oauthError,
-  userFor: helpers.userFor,
-  helpers: helpers,
-  stats: stats,
-  federation: federation,
-  applications: applications,
-  config: config,
-  gate: gate,
-  credentials: credentials,
-  websecurity: websecurity,
-  mode: mode,
-  validation: validation,
-  bcp: bcp,
-  audit: audit,
-  clusterClaims: clusterClaims,
-  errorCodes: errorCodes,
-  webauthnVerifier: webauthnVerifier,
-  webauthnPolicy: webauthnPolicy,
-  totp: totp
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Authn>(
+  'authn/authn',
+  () => new Authn(Authn.defaultDeps()),
+  Authn.wire,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
-audit.setActorResolver(authn.auditActorOf.bind(authn));
-
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 // ---------------------------------------------------------------------------
 // What the rest of this service uses.
@@ -8001,17 +8034,18 @@ audit.setActorResolver(authn.auditActorOf.bind(authn));
 // on the live store; `startSession` / `endSession` are functions rather than
 // four lines repeated per call site for the reason written above them.
 // ---------------------------------------------------------------------------
+
 export = {
-  registerRoutes: (target: any): void => authn.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   Authn: Authn,
+  installInstance: (instance: Authn): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // What two nodes' copies of one session become, for
   // `tests/cluster_lww_stores.js` — the merge is declared on the store and
   // the store is reached through the persistence layer, so the rule itself is
   // asserted here directly.
-  mergeSessionRows: authn.mergeSessionRows.bind(authn) as
-    Authn['mergeSessionRows'],
-  noteSessionChanged: authn.noteSessionChanged.bind(authn) as
-    Authn['noteSessionChanged'],
+  mergeSessionRows: slot.forward('mergeSessionRows'),
+  noteSessionChanged: slot.forward('noteSessionChanged'),
   LOGIN_PATH: LOGIN_PATH,
   MFA_SETUP_PATH: MFA_SETUP_PATH,
   // WHICH ENROLLED KEY AN ASSERTION IS CHECKED AGAINST, exported for
@@ -8019,8 +8053,7 @@ export = {
   // worth asserting — one person, two keys — cannot be built through any door
   // this service has, so it cannot be reached over HTTP; see the function's
   // own header and the vendored job's.
-  keyForAssertion: authn.keyForAssertion.bind(authn) as
-    Authn['keyForAssertion'],
+  keyForAssertion: slot.forward('keyForAssertion'),
   // THE ORIGIN AND THE RP ID, EXPORTED TOGETHER (2026-09-10). `/portal/keys`
   // runs a registration ceremony of its own and has to tell the verifier what
   // the browser was talking to — and these are, as `originOf()`'s own header
@@ -8028,13 +8061,12 @@ export = {
   // its host, and neither is the base URL, which in a realm carries a path.
   // A caller computing either for itself is a caller that will get the realm
   // case wrong exactly as this module once did.
-  originOf: authn.originOf.bind(authn) as Authn['originOf'],
+  originOf: slot.forward('originOf'),
   // THE TWO ADDRESS RULES OF 2026-09-12, beside the helpers they refine:
   // `/portal/keys` verifies a ceremony of its own and must refuse and accept
   // exactly what this module does.
-  expectedOriginFor: authn.expectedOriginFor.bind(authn) as
-    Authn['expectedOriginFor'],
-  rpIdProblem: authn.rpIdProblem.bind(authn) as Authn['rpIdProblem'],
+  expectedOriginFor: slot.forward('expectedOriginFor'),
+  rpIdProblem: slot.forward('rpIdProblem'),
   // The one script this service serves for a WebAuthn ceremony, for
   // `/portal/keys`, which runs a registration of its own against it rather
   // than carrying a second copy — see that page's own argument.
@@ -8051,66 +8083,58 @@ export = {
   //
   // Nothing in this service calls it from outside this file, and nothing
   // should: the RP ID is decided where the ceremony is drawn.
-  rpIdOf: authn.rpIdOf.bind(authn) as Authn['rpIdOf'],
+  rpIdOf: slot.forward('rpIdOf'),
   SESSION_COOKIE: SESSION_COOKIE,
   // THE SESSION CLOCKS (2026-09-12). `sessionEnded()` is exported for
   // `logout/logout.ts`'s list of what is live, which must agree with this file
   // about what has ended; the three readers are for the tests and for the
   // sentences `/admin/sessions` prints about the rule in force.
-  sessionEnded: authn.sessionEnded.bind(authn) as Authn['sessionEnded'],
-  sessionLifetimeMs: authn.sessionLifetimeMs.bind(authn) as
-    Authn['sessionLifetimeMs'],
-  sessionIdleTimeoutMs: authn.sessionIdleTimeoutMs.bind(authn) as
-    Authn['sessionIdleTimeoutMs'],
-  pendingTtlMs: authn.pendingTtlMs.bind(authn) as Authn['pendingTtlMs'],
-  mfaStepTtlMs: authn.mfaStepTtlMs.bind(authn) as Authn['mfaStepTtlMs'],
+  sessionEnded: slot.forward('sessionEnded'),
+  sessionLifetimeMs: slot.forward('sessionLifetimeMs'),
+  sessionIdleTimeoutMs: slot.forward('sessionIdleTimeoutMs'),
+  pendingTtlMs: slot.forward('pendingTtlMs'),
+  mfaStepTtlMs: slot.forward('mfaStepTtlMs'),
   // WHAT AN AUTHENTICATED IDENTITY IS (2026-09-14). `sessionStartedAt()` is
   // for every list that draws when a session BEGAN, now that `authTime` is
   // the most recent authentication; `cookieSession()` is the one reader of a
   // session cookie's `<sid>.<handle>`, exported for the tests that hold a
   // stale handle and for nothing else — a module reading the cookie for
   // itself would be a second place to get the handle check wrong.
-  sessionStartedAt: authn.sessionStartedAt.bind(authn) as
-    Authn['sessionStartedAt'],
-  signOnFactsFor: authn.signOnFactsFor.bind(authn) as Authn['signOnFactsFor'],
-  cookieSession: authn.cookieSession.bind(authn) as Authn['cookieSession'],
+  sessionStartedAt: slot.forward('sessionStartedAt'),
+  signOnFactsFor: slot.forward('signOnFactsFor'),
+  cookieSession: slot.forward('cookieSession'),
   MAX_SESSION_EVENTS: MAX_SESSION_EVENTS,
-  startArrivalSession: authn.startArrivalSession.bind(authn) as
-    Authn['startArrivalSession'],
+  startArrivalSession: slot.forward('startArrivalSession'),
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,
-  cookiesOf: authn.cookiesOf.bind(authn) as Authn['cookiesOf'],
-  sessionOf: authn.sessionOf.bind(authn) as Authn['sessionOf'],
+  cookiesOf: slot.forward('cookiesOf'),
+  sessionOf: slot.forward('sessionOf'),
   // The console's reader, and the ONE caller it has. It answers the same
   // question across every realm's partition because there is only ever one
   // session cookie in the browser; the header above it argues why that is the
   // boundary already drawn rather than a hole in this one. Every protocol
   // module keeps calling sessionOf() and keeps seeing its own realm only.
-  consoleSession: authn.consoleSession.bind(authn) as Authn['consoleSession'],
-  startSession: authn.startSession.bind(authn) as Authn['startSession'],
+  consoleSession: slot.forward('consoleSession'),
+  startSession: slot.forward('startSession'),
   // THE RELYING-PARTY HALF (2026-09-06), for `common/oidc_rp.ts` and for the
   // two surfaces that read what it makes. Three functions and no more: a
   // caller that wanted to create one of these without going through the code
   // flow would be a caller inventing a session out of nothing, which is the
   // thing moving these surfaces onto OIDC was for.
-  startRelyingPartySession: authn.startRelyingPartySession.bind(authn) as
-    Authn['startRelyingPartySession'],
-  renewRelyingPartySession: authn.renewRelyingPartySession.bind(authn) as
-    Authn['renewRelyingPartySession'],
-  tokensExpireAt: authn.tokensExpireAt.bind(authn) as Authn['tokensExpireAt'],
-  relyingPartySessionOf: authn.relyingPartySessionOf.bind(authn) as
-    Authn['relyingPartySessionOf'],
+  startRelyingPartySession: slot.forward('startRelyingPartySession'),
+  renewRelyingPartySession: slot.forward('renewRelyingPartySession'),
+  tokensExpireAt: slot.forward('tokensExpireAt'),
+  relyingPartySessionOf: slot.forward('relyingPartySessionOf'),
   // Exported for `logout/logout.ts`, which lists what is live and has to be
   // able to say which rows hang off which. It is a walk rather than an index;
   // see its header.
-  derivedFrom: authn.derivedFrom.bind(authn) as Authn['derivedFrom'],
-  endSession: authn.endSession.bind(authn) as Authn['endSession'],
+  derivedFrom: slot.forward('derivedFrom'),
+  endSession: slot.forward('endSession'),
   // The inverted hook `ssf/ssf.ts` fills, and the one call site that spends
   // it from outside this module. See setSessionObserver()'s header for why a
   // require the other way would move every /ssf route.
-  setSessionObserver: authn.setSessionObserver.bind(authn) as
-    Authn['setSessionObserver'],
-  notePresented: authn.notePresented.bind(authn) as Authn['notePresented'],
+  setSessionObserver: slot.forward('setSessionObserver'),
+  notePresented: slot.forward('notePresented'),
   // The three the protocol-independent logout needs, and the reason each is
   // here rather than reimplemented over there: /logout ends sessions it was not
   // handed a cookie for, so it names them by id — and every one of them still
@@ -8118,13 +8142,11 @@ export = {
   // revocation and the one `session.end` audit row live. A second delete
   // somewhere else would be a sign-out that revoked nothing and logged nothing,
   // and it would look exactly like this one from the outside.
-  sessionsOf: authn.sessionsOf.bind(authn) as Authn['sessionsOf'],
-  sessionById: authn.sessionById.bind(authn) as Authn['sessionById'],
-  endSessionById: authn.endSessionById.bind(authn) as Authn['endSessionById'],
-  clearSessionCookie: authn.clearSessionCookie.bind(authn) as
-    Authn['clearSessionCookie'],
-  beginAuthentication: authn.beginAuthentication.bind(authn) as
-    Authn['beginAuthentication'],
+  sessionsOf: slot.forward('sessionsOf'),
+  sessionById: slot.forward('sessionById'),
+  endSessionById: slot.forward('endSessionById'),
+  clearSessionCookie: slot.forward('clearSessionCookie'),
+  beginAuthentication: slot.forward('beginAuthentication'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A
   // person meets that screen and this one seconds apart in one flow, so two
   // hand-maintained copies would drift into looking like two services. It is
@@ -8160,7 +8182,6 @@ export = {
   //                          4.12's 303-not-307 to be got wrong.
   // ---------------------------------------------------------------------
   SPNEGO_PATH: SPNEGO_PATH,
-  pendingFor: authn.pendingFor.bind(authn) as Authn['pendingFor'],
-  completeAuthentication: authn.completeAuthentication.bind(authn) as
-    Authn['completeAuthentication']
+  pendingFor: slot.forward('pendingFor'),
+  completeAuthentication: slot.forward('completeAuthentication')
 };
