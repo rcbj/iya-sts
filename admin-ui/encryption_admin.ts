@@ -67,14 +67,17 @@
 // takes the console shell, the settings, the cryptography funnel, the
 // keystore, the secret reader, the mode, both persistence modules and the
 // logger through its constructor, and its `registerRoutes(app)` holds the
-// page's one route. `DATA_CLASSES` stays a module-level table. The
-// TRANSITIONAL code at the bottom builds one instance from the real modules
-// and exports its `registerRoutes(app)`, which `common/protocol_stack.ts`
-// calls at 18b, where requiring this module used to register the route (#50,
-// R1) — requiring it registers nothing. It also exports `encryptionView` and
-// `dataClasses` bound to the instance, for `mgmt-api/admin_api.ts`
-// and `tests/encryption_report.js`; `EncryptionAdmin` is exported beside them
-// for the composition root.
+// page's one route. `DATA_CLASSES` stays a module-level table. The module
+// exports `registerRoutes(app)`, which `common/protocol_stack.ts` calls at
+// 18b, where requiring this module used to register the route (#50, R1) —
+// requiring it registers nothing. It also exports `encryptionView` and
+// `dataClasses`, for `mgmt-api/admin_api.ts` and
+// `tests/encryption_report.js`.
+//
+// R2 (#50): the composition root builds the instance and installs it; this
+// module builds none of its own, and its exports are FACADES that forward to
+// that instance, for the JavaScript callers. A process without the root
+// builds a default instance at load, as loading this module always did.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -87,6 +90,7 @@ import secrets = require('../common/secrets');
 import mode = require('../common/mode');
 import persistence = require('../persistence/persistence');
 import minted = require('../persistence/persistence_minted');
+import InstanceSlot = require('../common/instance_slot');
 
 type Req = any;
 type Res = any;
@@ -320,6 +324,24 @@ class EncryptionAdmin {
   constructor(private readonly deps: EncryptionAdminDeps) {
     deps.log.debug("Entering EncryptionAdmin.constructor().");
     deps.log.debug("Leaving EncryptionAdmin.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): EncryptionAdminDeps {
+    helpers.log.debug("Entering EncryptionAdmin.defaultDeps().");
+    helpers.log.debug("Leaving EncryptionAdmin.defaultDeps().");
+    return {
+      log: helpers.log,
+      admin: admin,
+      config: config,
+      crypto: crypto,
+      keystore: keystore,
+      secrets: secrets,
+      mode: mode,
+      persistence: persistence,
+      minted: minted
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -805,19 +827,20 @@ class EncryptionAdmin {
   }
 }
 
-// THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules; its route is registered by the composition root, below.
-const encryptionAdmin = new EncryptionAdmin({
-  log: helpers.log,
-  admin: admin,
-  config: config,
-  crypto: crypto,
-  keystore: keystore,
-  secrets: secrets,
-  mode: mode,
-  persistence: persistence,
-  minted: minted
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<EncryptionAdmin>(
+  'admin-ui/encryption_admin',
+  () => new EncryptionAdmin(EncryptionAdmin.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -828,14 +851,17 @@ helpers.log.info('The encryption report is at /admin/encryption: what this ' +
                  'algorithm, and how many encryptions and decryptions have ' +
                  'happened in this process.');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => encryptionAdmin.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   EncryptionAdmin: EncryptionAdmin,
+  installInstance: (instance: EncryptionAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7 — the page and the operation read one
   // function, so the API cannot report a different number from the console.
-  encryptionView: encryptionAdmin.encryptionJson.bind(encryptionAdmin) as
-    EncryptionAdmin['encryptionJson'],
+  encryptionView: slot.forward('encryptionJson'),
   // For `tests/encryption_report.js` — see `EncryptionAdmin.dataClasses()`.
-  dataClasses: encryptionAdmin.dataClasses.bind(encryptionAdmin) as
-    EncryptionAdmin['dataClasses']
+  dataClasses: slot.forward('dataClasses')
 };

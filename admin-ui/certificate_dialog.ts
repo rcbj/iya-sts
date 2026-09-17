@@ -58,10 +58,14 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `CertificateDialog` takes the logger, the console's escaper and the
 // post-quantum icon through its constructor, and every helper that was a
-// free function is a private method. The module still exports `PARAM`,
-// `FROM` and its four functions from a TRANSITIONAL instance at the bottom,
-// for the two pages and `tests/certificate_details.js`; `CertificateDialog`
-// is exported beside them for the composition root.
+// free function is a private method.
+//
+// R2 (#50): the composition root (`common/protocol_stack.ts`) builds the
+// instance and installs it; this module builds none of its own. It still
+// exports `PARAM`, `FROM`, and its four functions as FACADES that forward to
+// that instance, for the two pages and `tests/certificate_details.js`. A
+// process without the root builds a default instance at load, as loading this
+// module always did.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -75,6 +79,7 @@ const log = bunyan.createLogger({
 import admin = require('./admin');
 // The post-quantum icon beside the key, the same one the two pages draw.
 import pqcBadge = require('./pqc_badge');
+import InstanceSlot = require('../common/instance_slot');
 
 type Json = any;
 
@@ -150,6 +155,18 @@ class CertificateDialog {
   constructor(private readonly deps: CertificateDialogDeps) {
     deps.log.debug("Entering CertificateDialog.constructor().");
     deps.log.debug("Leaving CertificateDialog.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): CertificateDialogDeps {
+    log.debug("Entering CertificateDialog.defaultDeps().");
+    log.debug("Leaving CertificateDialog.defaultDeps().");
+    return {
+      log: log,
+      esc: admin.esc,
+      pqcBadge: pqcBadge
+    };
   }
 
   private fromOf(value: Json): string {
@@ -507,24 +524,32 @@ class CertificateDialog {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const certificateDialog = new CertificateDialog({
-  log: log,
-  esc: admin.esc,
-  pqcBadge: pqcBadge
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<CertificateDialog>(
+  'admin-ui/certificate_dialog',
+  () => new CertificateDialog(CertificateDialog.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   CertificateDialog: CertificateDialog,
+  installInstance: (instance: CertificateDialog): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PARAM: PARAM,
   FROM: FROM,
-  requested: certificateDialog.requested.bind(certificateDialog) as
-    CertificateDialog['requested'],
-  link: certificateDialog.link.bind(certificateDialog) as
-    CertificateDialog['link'],
-  dialog: certificateDialog.dialog.bind(certificateDialog) as
-    CertificateDialog['dialog'],
-  fieldsHtml: certificateDialog.fieldsHtml.bind(certificateDialog) as
-    CertificateDialog['fieldsHtml']
+  requested: slot.forward('requested'),
+  link: slot.forward('link'),
+  dialog: slot.forward('dialog'),
+  fieldsHtml: slot.forward('fieldsHtml')
 };

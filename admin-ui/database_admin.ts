@@ -72,13 +72,16 @@
 // shape, for a module that has a route (rule 1): `DatabaseAdmin` takes
 // the console shell, the error codes, the settings, the persistence layer and
 // the logger through its constructor, and its `registerRoutes(app)` holds the
-// page's one route. The TRANSITIONAL code at the bottom builds one from the
-// real modules and exports its `registerRoutes(app)`, which
+// page's one route. The module exports `registerRoutes(app)`, which
 // `common/protocol_stack.ts` calls at 18c, where requiring this module used to
 // register the route (#50, R1) — requiring it registers nothing. It also
-// exports `databaseView` and `sections` bound to the instance, for
-// `mgmt-api/admin_api.ts` and `tests/database_metrics.js`; `DatabaseAdmin`
-// is exported beside them for the composition root.
+// exports `databaseView` and `sections`, for `mgmt-api/admin_api.ts` and
+// `tests/database_metrics.js`.
+//
+// R2 (#50): the composition root builds the instance and installs it; this
+// module builds none of its own, and its exports are FACADES that forward to
+// that instance, for the JavaScript callers. A process without the root
+// builds a default instance at load, as loading this module always did.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -88,6 +91,7 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import config = require('../common/config');
 import persistence = require('../persistence/persistence');
+import InstanceSlot = require('../common/instance_slot');
 
 type Req = any;
 type Res = any;
@@ -141,6 +145,20 @@ class DatabaseAdmin {
   constructor(private readonly deps: DatabaseAdminDeps) {
     deps.log.debug("Entering DatabaseAdmin.constructor().");
     deps.log.debug("Leaving DatabaseAdmin.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): DatabaseAdminDeps {
+    helpers.log.debug("Entering DatabaseAdmin.defaultDeps().");
+    helpers.log.debug("Leaving DatabaseAdmin.defaultDeps().");
+    return {
+      log: helpers.log,
+      admin: admin,
+      errorCodes: errorCodes,
+      config: config,
+      persistence: persistence
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -851,15 +869,20 @@ class DatabaseAdmin {
   }
 }
 
-// THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules; its route is registered by the composition root, below.
-const databaseAdmin = new DatabaseAdmin({
-  log: helpers.log,
-  admin: admin,
-  errorCodes: errorCodes,
-  config: config,
-  persistence: persistence
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DatabaseAdmin>(
+  'admin-ui/database_admin',
+  () => new DatabaseAdmin(DatabaseAdmin.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -870,14 +893,17 @@ helpers.log.info('The database report is at /admin/database: everything ' +
                  'state of the schema this service owns in it. It is empty ' +
                  'unless persistence.mode is postgres, and says so.');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => databaseAdmin.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   DatabaseAdmin: DatabaseAdmin,
+  installInstance: (instance: DatabaseAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report different numbers.
-  databaseView: databaseAdmin.databaseJson.bind(databaseAdmin) as
-    DatabaseAdmin['databaseJson'],
+  databaseView: slot.forward('databaseJson'),
   // For `tests/database_metrics.js` — see `DatabaseAdmin.sections()`.
-  sections: databaseAdmin.sections.bind(databaseAdmin) as
-    DatabaseAdmin['sections']
+  sections: slot.forward('sections')
 };

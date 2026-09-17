@@ -77,13 +77,16 @@
 // the console shell, the error codes, the settings, the secret reader, the
 // keystore, the mode and the logger through its constructor, and its
 // `registerRoutes(app)` holds the page's one route. `SECRET_NOTES` stays a
-// module-level table. The TRANSITIONAL code at the bottom builds one instance
-// from the real modules and exports its `registerRoutes(app)`, which
+// module-level table. The module exports `registerRoutes(app)`, which
 // `common/protocol_stack.ts` calls at 18d, where requiring this module used to
 // register the route (#50, R1) — requiring it registers nothing. It also
-// exports `secretsView` and `secretNotes` bound to the instance, for
-// `mgmt-api/admin_api.ts` and `tests/secret_store_report.js`; `SecretsAdmin`
-// is exported beside them for the composition root.
+// exports `secretsView` and `secretNotes`, for `mgmt-api/admin_api.ts` and
+// `tests/secret_store_report.js`.
+//
+// R2 (#50): the composition root builds the instance and installs it; this
+// module builds none of its own, and its exports are FACADES that forward to
+// that instance, for the JavaScript callers. A process without the root
+// builds a default instance at load, as loading this module always did.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -95,6 +98,7 @@ import config = require('../common/config');
 import secrets = require('../common/secrets');
 import keystore = require('../common/keystore');
 import mode = require('../common/mode');
+import InstanceSlot = require('../common/instance_slot');
 
 type Req = any;
 type Res = any;
@@ -190,6 +194,22 @@ class SecretsAdmin {
   constructor(private readonly deps: SecretsAdminDeps) {
     deps.log.debug("Entering SecretsAdmin.constructor().");
     deps.log.debug("Leaving SecretsAdmin.constructor().");
+  }
+
+  // What the composition root passes: the real modules, as the load-time
+  // instance was built from before R2 (#50).
+  static defaultDeps(): SecretsAdminDeps {
+    helpers.log.debug("Entering SecretsAdmin.defaultDeps().");
+    helpers.log.debug("Leaving SecretsAdmin.defaultDeps().");
+    return {
+      log: helpers.log,
+      admin: admin,
+      errorCodes: errorCodes,
+      config: config,
+      secrets: secrets,
+      keystore: keystore,
+      mode: mode
+    };
   }
 
   private ago(iso: Json): string {
@@ -727,17 +747,20 @@ class SecretsAdmin {
   }
 }
 
-// THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules; its route is registered by the composition root, below.
-const secretsAdmin = new SecretsAdmin({
-  log: helpers.log,
-  admin: admin,
-  errorCodes: errorCodes,
-  config: config,
-  secrets: secrets,
-  keystore: keystore,
-  mode: mode
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SecretsAdmin>(
+  'admin-ui/secrets_admin',
+  () => new SecretsAdmin(SecretsAdmin.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -749,15 +772,18 @@ helpers.log.info('The secret store report is at /admin/secrets: where the ' +
                  'other end is doing. No secret value appears on it and it ' +
                  'has no control.');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => secretsAdmin.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   SecretsAdmin: SecretsAdmin,
+  installInstance: (instance: SecretsAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report a different state of the same
   // store.
-  secretsView: secretsAdmin.secretsJson.bind(secretsAdmin) as
-    SecretsAdmin['secretsJson'],
+  secretsView: slot.forward('secretsJson'),
   // For `tests/secret_store_report.js` — see `SecretsAdmin.secretNotes()`.
-  secretNotes: secretsAdmin.secretNotes.bind(secretsAdmin) as
-    SecretsAdmin['secretNotes']
+  secretNotes: slot.forward('secretNotes')
 };
