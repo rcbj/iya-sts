@@ -2833,9 +2833,10 @@ class Credentials {
   }
 
   // ---------------------------------------------------------------------------
-  // WRITE THE SET, sealing where the key outlives the process. ONE place, so
-  // that an issue and a spend cannot disagree about what is on the entry — the
-  // same arrangement `writeTotpRecord()` has with its two callers.
+  // WRITE THE SET, sealing a LEGACY set where the key outlives the process.
+  // ONE place, so that an issue and a spend cannot disagree about what is on
+  // the entry — the same arrangement `writeTotpRecord()` has with its two
+  // callers.
   //
   // The counts are computed HERE from the array rather than taken from the
   // caller, which is what makes the header's "the vault is authoritative and
@@ -2843,7 +2844,7 @@ class Credentials {
   // everybody remembering.
   // ---------------------------------------------------------------------------
   private writeBackupCodesRecord(username, codes, meta) {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, keystore, backupCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug('Entering Credentials.writeBackupCodesRecord().');
@@ -2863,6 +2864,36 @@ class Credentials {
       return { hash: String(one.hash || ''), usedAt: Number(one.usedAt || 0) };
     });
     const plain = JSON.stringify(list);
+    // **A LEGACY SET IS STILL A LIST OF CODES, AND IT IS SEALED AS IT WAS**
+    // (#70). Until then this wrote every set in the clear with `hashed: true`,
+    // so the first spend from a pre-2026-09-11 set that product mode had
+    // sealed put its remaining codes — working credentials, not hashes — in
+    // every directory dump. The rule is the one the old writer had and
+    // `writeTotpRecord()` still has: sealed wherever the key-encryption key
+    // outlives the process, and a set that cannot be sealed there is NOT
+    // written — the spend that asked is refused (STS-AUTHN-0093), which is
+    // the fail-closed answer `backupFinish()` already gives a failed write.
+    const legacy = list.some((one) => {
+      return one.hash && !backupCodes.isHash(one.hash);
+    });
+    let vault = plain;
+    let sealedVault = false;
+    if (legacy && keystore.persists()) {
+      const sealedText = keystore.seal(plain, 'recovery-codes');
+      if (!sealedText) {
+        log.error(errorCodes.tag('STS-AUTHN-0195') +
+                  'credentials: the legacy recovery codes for ' + name +
+                  ' could not be sealed, so they were NOT written. Storing ' +
+                  'them in the clear would put working codes in every ' +
+                  'directory dump.');
+        log.debug('Leaving Credentials.writeBackupCodesRecord(). A legacy ' +
+                  'set could not be sealed.');
+        return coded('STS-AUTHN-0195', { ok: false, errors: ['The recovery ' +
+            'codes could not be encrypted, so the change was not stored.'] });
+      }
+      vault = sealedText;
+      sealedVault = true;
+    }
     const out = {
       version: 2,
       total: list.length,
@@ -2877,9 +2908,12 @@ class Credentials {
       // old code had to refuse on: a set that could not be sealed was not
       // written at all, and a set that would not OPEN was a live credential
       // nobody could check.
-      sealed: false,
-      hashed: true,
-      vault: plain
+      //
+      // (A LEGACY set is the exception, above: its entries are codes, so it
+      // is sealed where the key persists and `hashed` says what it holds.)
+      sealed: sealedVault,
+      hashed: !legacy,
+      vault: vault
     };
     let written = false;
     try {

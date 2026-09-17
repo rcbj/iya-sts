@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2681** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2682** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -61,7 +61,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 176
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 177
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 408
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 60
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
@@ -1002,6 +1002,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0192` | Whether another process had already reported a session's end could not be asked, so it was reported here and a receiver may be told twice. | none — logged |
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
+| `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
 
 ## STS-OAUTH
 

@@ -561,9 +561,100 @@ function run(t) {
             'including the replay refusal');
     t.check(credentials.mechanismsFor(frank).backupCodes.present,
             'and the console counts it like any other set');
+    // #70: the spend REWROTE the set, and until then it came back labelled
+    // `hashed` while holding codes.
+    t.check(credentials.backupCodeStatus(frank).legacy,
+            'and after the spend rewrote it, it is still reported as a ' +
+            'LEGACY set of codes rather than relabelled as hashes');
   } else {
     t.log.warn('this directory would not take a hand-written record, so the ' +
                'legacy-set path is not covered by this run.');
+  }
+
+  t.log.info('=== a LEGACY set stays SEALED where the key persists ===');
+
+  // **#70.** A set an older build sealed in product mode holds CODES. Every
+  // spend rewrites it, and the writer used to write every set in the clear —
+  // so the first spend published the remaining working codes on the entry.
+  // Product mode cannot be turned on in this process, so the two keystore
+  // answers that decide it are stood in for, and put back in `finally`:
+  // `persists()` says the key outlives the process, and `seal()`/`open()`
+  // are a marked round trip, so the bytes on the entry show which happened.
+  const keystore = require('../common/keystore');
+  const grace = somebody();
+  enrolAuthenticator(grace);
+  const sealedCodes = backupCodes.generate({ count: 3, length: 10 });
+  const MARK = 'test-sealed:';
+  const realPersists = keystore.persists;
+  const realSeal = keystore.seal;
+  const realOpen = keystore.open;
+  try {
+    keystore.persists = function () {
+      return true;
+    };
+    keystore.seal = function (text) {
+      return MARK + Buffer.from(String(text)).toString('base64');
+    };
+    keystore.open = function (text) {
+      const value = String(text || '');
+      return value.indexOf(MARK) === 0
+        ? Buffer.from(value.slice(MARK.length), 'base64').toString()
+        : null;
+    };
+    const sealedRecord = JSON.stringify({
+      version: 1, total: 3, remaining: 3,
+      generatedAt: Date.now(), lastUsedAt: 0, sealed: true,
+      vault: keystore.seal(JSON.stringify(sealedCodes.map(function (code) {
+        return { code: code, usedAt: 0 };
+      })))
+    });
+    const graceView = ldap.objectFor(grace);
+    const graceEntry = (graceView && graceView.entry) || null;
+    const graceAttrs = graceEntry ?
+      Object.assign({}, graceEntry.attributes || graceEntry) : null;
+    let graceWrote = false;
+    if (graceAttrs) {
+      graceAttrs.stsBackupCodes = sealedRecord;
+      graceWrote = !!(ldap.writePerson(graceView.dn, graceAttrs) || {}).ok;
+    }
+    t.check(graceWrote, 'a sealed version 1 record can be put on an entry');
+    if (graceWrote) {
+      const spent = credentials.verifyBackupCode(grace, sealedCodes[0]);
+      t.check(spent.ok, 'a code from a SEALED legacy set verifies');
+      const after = ldap.objectFor(grace);
+      const afterRaw = String(((after && after.entry &&
+        (after.entry.attributes || after.entry)) || {}).stsBackupCodes || '');
+      let afterRecord = {};
+      try {
+        afterRecord = JSON.parse(afterRaw);
+      } catch (e) {
+        log.debug('Caught in run(): ' + ((e && e.message) || e));
+      }
+      t.check(afterRecord.sealed === true &&
+              String(afterRecord.vault || '').indexOf(MARK) === 0,
+              'AND THE REWRITE IS SEALED AGAIN — the spend did not put the ' +
+              'set in the clear', afterRecord.sealed);
+      t.check(!sealedCodes.some(function (code) {
+        return afterRaw.indexOf(code) >= 0;
+      }), 'so not one of the remaining codes appears on the entry');
+      t.check(afterRecord.hashed === false,
+              'and the record does not claim to hold hashes');
+      t.check(!credentials.verifyBackupCode(grace, sealedCodes[0]).ok &&
+              credentials.verifyBackupCode(grace, sealedCodes[1]).ok,
+              'and it still works: the spent code is refused and the next ' +
+              'one verifies through the resealed vault');
+    }
+    keystore.seal = function () {
+      return null;
+    };
+    const refused = credentials.verifyBackupCode(grace, sealedCodes[2]);
+    t.check(!refused.ok && refused.reason === 'store',
+            'and a legacy set that CANNOT be sealed is not rewritten in the ' +
+            'clear: the spend is refused instead', refused.reason);
+  } finally {
+    keystore.persists = realPersists;
+    keystore.seal = realSeal;
+    keystore.open = realOpen;
   }
 
   t.log.info('=== the asynchronous door refuses in the SAME ORDER ===');

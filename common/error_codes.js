@@ -3683,6 +3683,11 @@ const CODES = [
       'decides whether its credential id is already registered elsewhere ' +
       'could not be asked.',
     spec: 'none — fail closed' },
+  { code: 'STS-AUTHN-0195',
+    summary: 'A recovery-code set written before 2026-09-11 (codes, not ' +
+      'hashes) could not be sealed under the key-encryption key when it was ' +
+      'rewritten, so the change was not stored.',
+    spec: 'none — the spend that asked is refused (STS-AUTHN-0093)' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
