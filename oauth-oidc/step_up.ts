@@ -104,12 +104,13 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape. `StepUp` takes the logger, `config`, `error_codes` and the OAuth
 // monitor through its constructor. The module still exports its six
-// constants and its twelve functions, the functions bound to a TRANSITIONAL
-// instance built from the real modules at the bottom, which goes when the
-// composition root exists.
+// constants and its twelve functions, the functions as FACADES over the
+// instance the composition root builds and installs (R2); a process without
+// the root builds a default one at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import monitor = require('./oauth2_monitor');
@@ -172,6 +173,19 @@ class StepUp {
   constructor(private readonly deps: StepUpDeps) {
     deps.log.debug("Entering StepUp.constructor().");
     deps.log.debug("Leaving StepUp.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): StepUpDeps {
+    helpers.log.debug("Entering StepUp.defaultDeps().");
+    helpers.log.debug("Leaving StepUp.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      errorCodes: errorCodes,
+      monitor: monitor
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -552,39 +566,44 @@ class StepUp {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const stepUp = new StepUp({
-  log: helpers.log,
-  config: config,
-  errorCodes: errorCodes,
-  monitor: monitor
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<StepUp>(
+  'oauth-oidc/step_up',
+  () => new StepUp(StepUp.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   StepUp: StepUp,
+  installInstance: (instance: StepUp): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   LEVELS: StepUp.LEVELS,
   SUPPORTED: StepUp.SUPPORTED,
   KEY_ALIASES: StepUp.KEY_ALIASES,
   HONOURED: StepUp.HONOURED,
   ACR_VALUE: StepUp.ACR_VALUE,
   MAX_AGE_LIMIT: StepUp.MAX_AGE_LIMIT,
-  parseAcrValues: stepUp.parseAcrValues.bind(stepUp) as
-    StepUp['parseAcrValues'],
-  parseMaxAge: stepUp.parseMaxAge.bind(stepUp) as StepUp['parseMaxAge'],
-  requirementOf: stepUp.requirementOf.bind(stepUp) as
-    StepUp['requirementOf'],
-  ownResourceRequirement: stepUp.ownResourceRequirement.bind(stepUp) as
-    StepUp['ownResourceRequirement'],
-  meets: stepUp.meets.bind(stepUp) as StepUp['meets'],
-  satisfiedAcr: stepUp.satisfiedAcr.bind(stepUp) as StepUp['satisfiedAcr'],
-  demandsSecondFactor: stepUp.demandsSecondFactor.bind(stepUp) as
-    StepUp['demandsSecondFactor'],
-  assessSession: stepUp.assessSession.bind(stepUp) as
-    StepUp['assessSession'],
-  unmetRefusal: stepUp.unmetRefusal.bind(stepUp) as StepUp['unmetRefusal'],
-  tokenRefusal: stepUp.tokenRefusal.bind(stepUp) as StepUp['tokenRefusal'],
-  challengeHeader: stepUp.challengeHeader.bind(stepUp) as
-    StepUp['challengeHeader'],
-  record: stepUp.record.bind(stepUp) as StepUp['record']
+  parseAcrValues: slot.forward('parseAcrValues'),
+  parseMaxAge: slot.forward('parseMaxAge'),
+  requirementOf: slot.forward('requirementOf'),
+  ownResourceRequirement: slot.forward('ownResourceRequirement'),
+  meets: slot.forward('meets'),
+  satisfiedAcr: slot.forward('satisfiedAcr'),
+  demandsSecondFactor: slot.forward('demandsSecondFactor'),
+  assessSession: slot.forward('assessSession'),
+  unmetRefusal: slot.forward('unmetRefusal'),
+  tokenRefusal: slot.forward('tokenRefusal'),
+  challengeHeader: slot.forward('challengeHeader'),
+  record: slot.forward('record')
 };

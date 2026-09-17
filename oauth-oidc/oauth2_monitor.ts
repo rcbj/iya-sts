@@ -45,11 +45,14 @@
 // store and the replication reader through its constructor. The store is
 // still declared at module scope, as `realms.map()`, because a store becomes
 // per realm at its declaration. The module still exports `SECTIONS`,
-// `EVENTS`, `record`, `snapshot`, `emptyRow` and `reset` from a TRANSITIONAL
-// instance for the modules that require it by those names.
+// `EVENTS`, `record`, `snapshot`, `emptyRow` and `reset` for the modules that
+// require it by those names — the functions, since R2, FACADES over the
+// instance the composition root builds and installs; a process without the
+// root builds a default one at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import replication = require('../persistence/persistence_replication');
@@ -157,6 +160,19 @@ class OAuth2Monitor {
   constructor(private readonly deps: OAuth2MonitorDeps) {
     deps.log.debug("Entering OAuth2Monitor.constructor().");
     deps.log.debug("Leaving OAuth2Monitor.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): OAuth2MonitorDeps {
+    helpers.log.debug("Entering OAuth2Monitor.defaultDeps().");
+    helpers.log.debug("Leaving OAuth2Monitor.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      counters: counters,
+      replication: replication
+    };
   }
 
   emptyRow(): CounterRow {
@@ -310,21 +326,32 @@ class OAuth2Monitor {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const monitor = new OAuth2Monitor({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  counters: counters,
-  replication: replication
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<OAuth2Monitor>(
+  'oauth-oidc/oauth2_monitor',
+  () => new OAuth2Monitor(OAuth2Monitor.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   OAuth2Monitor: OAuth2Monitor,
+  installInstance: (instance: OAuth2Monitor): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SECTIONS: OAuth2Monitor.SECTIONS,
   EVENTS: OAuth2Monitor.EVENTS,
-  record: monitor.record.bind(monitor) as OAuth2Monitor['record'],
-  snapshot: monitor.snapshot.bind(monitor) as OAuth2Monitor['snapshot'],
-  emptyRow: monitor.emptyRow.bind(monitor) as OAuth2Monitor['emptyRow'],
-  reset: monitor.reset.bind(monitor) as OAuth2Monitor['reset']
+  record: slot.forward('record'),
+  snapshot: slot.forward('snapshot'),
+  emptyRow: slot.forward('emptyRow'),
+  reset: slot.forward('reset')
 };

@@ -114,10 +114,13 @@
 // module-level, declared at load as before (a store becomes per realm at its
 // declaration). The module still exports every name it exported — `get` is
 // still the VIEW of a profile, and `MAX_PROFILES` still a getter over the
-// setting — bound to a TRANSITIONAL instance built from the real modules.
+// setting. Since R2 the functions are FACADES over the instance the
+// composition root builds and installs; a process that loads this module
+// without the root builds a default instance at load, as it always did.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and nothing else here, so it cannot join a cycle and it registers
@@ -482,6 +485,17 @@ class AuthorizationServers {
   constructor(private readonly deps: AuthorizationServersDeps) {
     deps.log.debug("Entering AuthorizationServers.constructor().");
     deps.log.debug("Leaving AuthorizationServers.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): AuthorizationServersDeps {
+    helpers.log.debug("Entering AuthorizationServers.defaultDeps().");
+    helpers.log.debug("Leaving AuthorizationServers.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log
+    };
   }
 
   // Which document a member belongs to: 'gnap' for the rows marked so, and
@@ -1075,18 +1089,31 @@ class AuthorizationServers {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const servers = new AuthorizationServers({
-  config: config,
-  log: helpers.log
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AuthorizationServers>(
+  'oauth-oidc/authorization_servers',
+  () => new AuthorizationServers(AuthorizationServers.defaultDeps()),
+  null,
+  helpers.log);
 const log = helpers.log;
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AuthorizationServers: AuthorizationServers,
-  documentOf: servers.documentOf.bind(servers) as
-    AuthorizationServers['documentOf'],
+  installInstance: (instance: AuthorizationServers): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  documentOf: slot.forward('documentOf'),
   DEFAULT_ID: AuthorizationServers.DEFAULT_ID,
   // For `jwt_access_token.ts`, which recognises an issuer or an audience under
   // `<base>/<id>` as a named authorization server's only if the id is one this
@@ -1095,27 +1122,22 @@ export = {
   get MAX_PROFILES() {
     log.debug("Entering MAX_PROFILES().");
     log.debug("Leaving MAX_PROFILES().");
-    return servers.maxProfiles();
+    return slot.get().maxProfiles();
   },
-  ensure: servers.ensure.bind(servers) as AuthorizationServers['ensure'],
-  capabilitiesOf: servers.capabilitiesOf.bind(servers) as
-    AuthorizationServers['capabilitiesOf'],
-  capabilityList: servers.capabilityList.bind(servers) as
-    AuthorizationServers['capabilityList'],
+  ensure: slot.forward('ensure'),
+  capabilitiesOf: slot.forward('capabilitiesOf'),
+  capabilityList: slot.forward('capabilityList'),
   MEMBERS: AuthorizationServers.MEMBERS,
   GROUPS: AuthorizationServers.GROUPS,
-  apply: servers.apply.bind(servers) as AuthorizationServers['apply'],
-  driftOf: servers.driftOf.bind(servers) as AuthorizationServers['driftOf'],
-  create: servers.create.bind(servers) as AuthorizationServers['create'],
-  setMember: servers.setMember.bind(servers) as
-    AuthorizationServers['setMember'],
-  removeMember: servers.removeMember.bind(servers) as
-    AuthorizationServers['removeMember'],
-  resetMember: servers.resetMember.bind(servers) as
-    AuthorizationServers['resetMember'],
-  remove: servers.remove.bind(servers) as AuthorizationServers['remove'],
-  get: servers.view.bind(servers) as AuthorizationServers['view'],
-  has: servers.has.bind(servers) as AuthorizationServers['has'],
-  list: servers.list.bind(servers) as AuthorizationServers['list'],
-  count: servers.count.bind(servers) as AuthorizationServers['count']
+  apply: slot.forward('apply'),
+  driftOf: slot.forward('driftOf'),
+  create: slot.forward('create'),
+  setMember: slot.forward('setMember'),
+  removeMember: slot.forward('removeMember'),
+  resetMember: slot.forward('resetMember'),
+  remove: slot.forward('remove'),
+  get: slot.forward('view'),
+  has: slot.forward('has'),
+  list: slot.forward('list'),
+  count: slot.forward('count')
 };

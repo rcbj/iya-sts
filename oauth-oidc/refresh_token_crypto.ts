@@ -61,14 +61,16 @@
 // shape. `RefreshTokenCrypto` takes the logger, the realm key reader,
 // `config`, `crypto` and `error_codes` through its constructor. The module
 // still exports `kindOf`, `symmetricBytes`, `symmetricKeyFor`, `configured`,
-// `isEncrypted`, `seal`, `open`, `claimsOfIssued` and `describe`, bound to a
-// TRANSITIONAL instance built from the real modules at the bottom, which goes
-// when the composition root exists. The HKDF `info` label is unchanged byte
-// for byte: changing it would strand every refresh token already issued.
+// `isEncrypted`, `seal`, `open`, `claimsOfIssued` and `describe`, as FACADES
+// over the instance the composition root builds and installs (R2); a process
+// without the root builds a default one at load. The HKDF `info` label is
+// unchanged byte for byte: changing it would strand every refresh token
+// already issued.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
@@ -104,6 +106,20 @@ class RefreshTokenCrypto {
   constructor(private readonly deps: RefreshTokenCryptoDeps) {
     deps.log.debug("Entering RefreshTokenCrypto.constructor().");
     deps.log.debug("Leaving RefreshTokenCrypto.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): RefreshTokenCryptoDeps {
+    helpers.log.debug("Entering RefreshTokenCrypto.defaultDeps().");
+    helpers.log.debug("Leaving RefreshTokenCrypto.defaultDeps().");
+    return {
+      log: helpers.log,
+      refreshTokenKeysFor: helpers.refreshTokenKeysFor,
+      config: config,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes
+    };
   }
 
   // A thrown refusal carrying its error code under the Symbol `mark()` uses,
@@ -402,28 +418,36 @@ class RefreshTokenCrypto {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const rtc = new RefreshTokenCrypto({
-  log: helpers.log,
-  refreshTokenKeysFor: helpers.refreshTokenKeysFor,
-  config: config,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<RefreshTokenCrypto>(
+  'oauth-oidc/refresh_token_crypto',
+  () => new RefreshTokenCrypto(RefreshTokenCrypto.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   RefreshTokenCrypto: RefreshTokenCrypto,
-  kindOf: rtc.kindOf.bind(rtc) as RefreshTokenCrypto['kindOf'],
-  symmetricBytes: rtc.symmetricBytes.bind(rtc) as
-    RefreshTokenCrypto['symmetricBytes'],
-  symmetricKeyFor: rtc.symmetricKeyFor.bind(rtc) as
-    RefreshTokenCrypto['symmetricKeyFor'],
-  configured: rtc.configured.bind(rtc) as RefreshTokenCrypto['configured'],
-  isEncrypted: rtc.isEncrypted.bind(rtc) as RefreshTokenCrypto['isEncrypted'],
-  seal: rtc.seal.bind(rtc) as RefreshTokenCrypto['seal'],
-  open: rtc.open.bind(rtc) as RefreshTokenCrypto['open'],
-  claimsOfIssued: rtc.claimsOfIssued.bind(rtc) as
-    RefreshTokenCrypto['claimsOfIssued'],
-  describe: rtc.describe.bind(rtc) as RefreshTokenCrypto['describe']
+  installInstance: (instance: RefreshTokenCrypto): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  kindOf: slot.forward('kindOf'),
+  symmetricBytes: slot.forward('symmetricBytes'),
+  symmetricKeyFor: slot.forward('symmetricKeyFor'),
+  configured: slot.forward('configured'),
+  isEncrypted: slot.forward('isEncrypted'),
+  seal: slot.forward('seal'),
+  open: slot.forward('open'),
+  claimsOfIssued: slot.forward('claimsOfIssued'),
+  describe: slot.forward('describe')
 };

@@ -95,17 +95,18 @@
 // libraries and the logger) through its constructor as `WsFederationDeps`,
 // and nothing inside the class requires a module on its own.
 //
-// **THE MODULE STILL EXPORTS WHAT IT DID**, from a TRANSITIONAL instance
-// built at the bottom with the real modules, for `logout/logout.ts`, the
-// management API and the tests, which are not converted. That instance
-// REGISTERS NOTHING at load (#50, R1): the module exports
-// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it exactly where
-// rule 1 had the routes registered before. At load the instance makes the
-// startup check (`warnAtStartup()`) that used to run as a top-level
-// expression after the routes — so it now runs BEFORE they are registered,
-// which changes nothing it reports. The per-realm store and the vocabulary
-// stay module-level constants, declared as they were. The instance goes when
-// the composition root also constructs the modules (#50's R2).
+// **THE MODULE STILL EXPORTS WHAT IT DID**, for `logout/logout.ts`, the
+// management API and the tests, which are not converted. It REGISTERS
+// NOTHING at load (#50, R1): the module exports `registerRoutes(app)`, and
+// `common/protocol_stack.ts` calls it exactly where rule 1 had the routes
+// registered before. Since R2 that root also builds the instance and
+// installs it, and the exported functions are FACADES that forward to it.
+// `WsFederation.wire()` makes the startup check (`warnAtStartup()`) that used
+// to run as a top-level expression after the routes — when the root installs
+// the instance, so still BEFORE the routes are registered, which changes
+// nothing it reports; a process without the root builds a default instance
+// and makes the check at load. The per-realm store and the vocabulary stay
+// module-level constants, declared as they were.
 // ---------------------------------------------------------------------------
 
 import xmldom = require('@xmldom/xmldom');
@@ -114,6 +115,7 @@ const { DOMParser } = xmldom;
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // TWO settings here, and they are not the same one. wsfed.entityId names
 // THIS identity provider in the federation metadata; saml.issuer is who
 // signed an assertion, which is what the relying party below checks a
@@ -323,6 +325,52 @@ class WsFederation {
   constructor(private readonly deps: WsFederationDeps) {
     deps.log.debug("Entering WsFederation.constructor().");
     deps.log.debug("Leaving WsFederation.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): WsFederationDeps {
+    helpers.log.debug("Entering WsFederation.defaultDeps().");
+    helpers.log.debug("Leaving WsFederation.defaultDeps().");
+    return {
+      stsCrypto: stsCrypto,
+      app: app,
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      STS: helpers.STS,
+      xmlEscape: helpers.xmlEscape,
+      genId: helpers.genId,
+      iso: helpers.iso,
+      baseUrlOf: helpers.baseUrlOf,
+      randomId: helpers.randomId,
+      parseBody: helpers.parseBody,
+      firstByLocal: helpers.firstByLocal,
+      textByLocal: helpers.textByLocal,
+      config: config,
+      gate: gate,
+      buildSamlAssertion: saml2.buildSamlAssertion,
+      buildSaml11Assertion: saml11.buildSaml11Assertion,
+      sessionOf: authn.sessionOf,
+      endSession: authn.endSession,
+      beginAuthentication: authn.beginAuthentication,
+      notePresented: authn.notePresented,
+      noteSessionChanged: authn.noteSessionChanged,
+      applications: applications,
+      mode: mode,
+      authnContext: authnContext,
+      documentSettings: documentSettings,
+      returnAddress: returnAddress,
+      personAttributes: personAttributes,
+      errorCodes: errorCodes
+    };
+  }
+
+  // The work loading this module did with its own instance before R2,
+  // run once for whichever instance is installed.
+  static wire(instance: WsFederation): void {
+    helpers.log.debug("Entering WsFederation.wire().");
+    instance.warnAtStartup();
+    helpers.log.debug("Leaving WsFederation.wire().");
   }
 
   // How long the MOCK RELYING PARTY below keeps a wctx it minted. It is the
@@ -2174,63 +2222,44 @@ class WsFederation {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const wsFederation = new WsFederation({
-  stsCrypto: stsCrypto,
-  app: app,
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  STS: helpers.STS,
-  xmlEscape: helpers.xmlEscape,
-  genId: helpers.genId,
-  iso: helpers.iso,
-  baseUrlOf: helpers.baseUrlOf,
-  randomId: helpers.randomId,
-  parseBody: helpers.parseBody,
-  firstByLocal: helpers.firstByLocal,
-  textByLocal: helpers.textByLocal,
-  config: config,
-  gate: gate,
-  buildSamlAssertion: saml2.buildSamlAssertion,
-  buildSaml11Assertion: saml11.buildSaml11Assertion,
-  sessionOf: authn.sessionOf,
-  endSession: authn.endSession,
-  beginAuthentication: authn.beginAuthentication,
-  notePresented: authn.notePresented,
-  noteSessionChanged: authn.noteSessionChanged,
-  applications: applications,
-  mode: mode,
-  authnContext: authnContext,
-  documentSettings: documentSettings,
-  returnAddress: returnAddress,
-  personAttributes: personAttributes,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<WsFederation>(
+  'ws-federation/wsfed',
+  () => new WsFederation(WsFederation.defaultDeps()),
+  WsFederation.wire,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
-wsFederation.warnAtStartup();
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => wsFederation.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   WsFederation: WsFederation,
+  installInstance: (instance: WsFederation): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
-  issuerDisagreement: wsFederation.issuerDisagreement.bind(wsFederation) as
-    WsFederation['issuerDisagreement'],
+  issuerDisagreement: slot.forward('issuerDisagreement'),
   SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
-  federationMetadata: wsFederation.federationMetadata.bind(wsFederation) as
-    WsFederation['federationMetadata'],
-  verifySignInResponse: wsFederation.verifySignInResponse.bind(wsFederation) as
-    WsFederation['verifySignInResponse'],
-  verifyAssertionSignature:
-    wsFederation.verifyAssertionSignature.bind(wsFederation) as
-    WsFederation['verifyAssertionSignature'],
+  federationMetadata: slot.forward('federationMetadata'),
+  verifySignInResponse: slot.forward('verifySignInResponse'),
+  verifyAssertionSignature: slot.forward('verifyAssertionSignature'),
   // The cleanup requests one session is owed. Read by ../logout/logout.ts so
   // that a global sign-out sends exactly what wsignout1.0 sends — see the block
   // above cleanupTargetsFor(). That module requires this one in the ordinary
   // direction: common/protocol_stack.ts loads this at 10 and that one last but
   // one, so the require moves no route and closes no cycle.
-  cleanupTargetsFor: wsFederation.cleanupTargetsFor.bind(wsFederation) as
-    WsFederation['cleanupTargetsFor']
+  cleanupTargetsFor: slot.forward('cleanupTargetsFor')
 };

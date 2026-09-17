@@ -93,13 +93,14 @@
 // OAuth monitor through its constructor. The STORE stays a module-level
 // `realms.map()`, declared at load as before, so it is per realm and
 // persisted exactly as it was. The module still exports
-// `REQUEST_URI_PREFIX` and its nine functions, bound to a TRANSITIONAL
-// instance built from the real modules at the bottom, which goes when the
-// composition root exists.
+// `REQUEST_URI_PREFIX` and its nine functions, the functions as FACADES over
+// the instance the composition root builds and installs (R2); a process
+// without the root builds a default one at load.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -135,6 +136,19 @@ class PushedRequests {
   constructor(private readonly deps: PushedRequestsDeps) {
     deps.log.debug("Entering PushedRequests.constructor().");
     deps.log.debug("Leaving PushedRequests.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): PushedRequestsDeps {
+    helpers.log.debug("Entering PushedRequests.defaultDeps().");
+    helpers.log.debug("Leaving PushedRequests.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      errorCodes: errorCodes,
+      monitor: monitor
+    };
   }
 
   private refusal(errorCode: string, error: string,
@@ -524,26 +538,36 @@ class PushedRequests {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const pushed = new PushedRequests({
-  log: helpers.log,
-  config: config,
-  errorCodes: errorCodes,
-  monitor: monitor
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PushedRequests>(
+  'oauth-oidc/par',
+  () => new PushedRequests(PushedRequests.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PushedRequests: PushedRequests,
+  installInstance: (instance: PushedRequests): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   REQUEST_URI_PREFIX: PushedRequests.REQUEST_URI_PREFIX,
-  isPushedRequestUri: pushed.isPushedRequestUri.bind(pushed) as
-    PushedRequests['isPushedRequestUri'],
-  lifetimeS: pushed.lifetimeS.bind(pushed) as PushedRequests['lifetimeS'],
-  push: pushed.push.bind(pushed) as PushedRequests['push'],
-  resolve: pushed.resolve.bind(pushed) as PushedRequests['resolve'],
-  spend: pushed.spend.bind(pushed) as PushedRequests['spend'],
-  sweep: pushed.sweep.bind(pushed) as PushedRequests['sweep'],
-  list: pushed.list.bind(pushed) as PushedRequests['list'],
-  get: pushed.get.bind(pushed) as PushedRequests['get'],
-  remove: pushed.remove.bind(pushed) as PushedRequests['remove']
+  isPushedRequestUri: slot.forward('isPushedRequestUri'),
+  lifetimeS: slot.forward('lifetimeS'),
+  push: slot.forward('push'),
+  resolve: slot.forward('resolve'),
+  spend: slot.forward('spend'),
+  sweep: slot.forward('sweep'),
+  list: slot.forward('list'),
+  get: slot.forward('get'),
+  remove: slot.forward('remove')
 };

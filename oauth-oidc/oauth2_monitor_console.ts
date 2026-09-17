@@ -48,11 +48,14 @@
 // shape: `OAuth2MonitorConsole` takes the logger, the error-code table, the
 // audit log, the validator, the view layer, the PAR store, the counters and
 // the step-up library through its constructor. The module still exports its
-// old names from a TRANSITIONAL instance built from the real modules, for
-// the page and the management API, which require it by those names.
+// old names, for the page and the management API, which require it by those
+// names — the functions, since R2, FACADES over the instance the composition
+// root builds and installs; a process without the root builds a default one
+// at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import validation = require('../common/validation');
@@ -119,6 +122,23 @@ class OAuth2MonitorConsole {
   constructor(private readonly deps: OAuth2MonitorConsoleDeps) {
     deps.log.debug("Entering OAuth2MonitorConsole.constructor().");
     deps.log.debug("Leaving OAuth2MonitorConsole.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): OAuth2MonitorConsoleDeps {
+    helpers.log.debug("Entering OAuth2MonitorConsole.defaultDeps().");
+    helpers.log.debug("Leaving OAuth2MonitorConsole.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      audit: audit,
+      validation: validation,
+      adminViews: adminViews,
+      par: par,
+      monitor: monitor,
+      stepUp: stepUp
+    };
   }
 
   private refused(code: string, sentence: string): Json {
@@ -452,33 +472,37 @@ class OAuth2MonitorConsole {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const monitorConsole = new OAuth2MonitorConsole({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  audit: audit,
-  validation: validation,
-  adminViews: adminViews,
-  par: par,
-  monitor: monitor,
-  stepUp: stepUp
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<OAuth2MonitorConsole>(
+  'oauth-oidc/oauth2_monitor_console',
+  () => new OAuth2MonitorConsole(OAuth2MonitorConsole.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   OAuth2MonitorConsole: OAuth2MonitorConsole,
+  installInstance: (instance: OAuth2MonitorConsole): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PAGE_PATH: OAuth2MonitorConsole.PAGE_PATH,
   MONITOR_ACTIONS: OAuth2MonitorConsole.MONITOR_ACTIONS,
   STATES: OAuth2MonitorConsole.STATES,
   MAX_LIMIT: OAuth2MonitorConsole.MAX_LIMIT,
-  checkQuery: monitorConsole.checkQuery.bind(monitorConsole) as
-    OAuth2MonitorConsole['checkQuery'],
-  monitorView: monitorConsole.monitorView.bind(monitorConsole) as
-    OAuth2MonitorConsole['monitorView'],
-  monitorAction: monitorConsole.monitorAction.bind(monitorConsole) as
-    OAuth2MonitorConsole['monitorAction'],
-  consoleActorOf: monitorConsole.consoleActorOf.bind(monitorConsole) as
-    OAuth2MonitorConsole['consoleActorOf'],
+  checkQuery: slot.forward('checkQuery'),
+  monitorView: slot.forward('monitorView'),
+  monitorAction: slot.forward('monitorAction'),
+  consoleActorOf: slot.forward('consoleActorOf'),
   // The query-string builder the page's paging and `back` use, handed on from
   // the view layer: `admin.queryWith` is a re-export of a function that moved,
   // and tests/admin_actions_layer.js refuses a call through the console.

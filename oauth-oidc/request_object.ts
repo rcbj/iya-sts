@@ -130,9 +130,10 @@
 // requires this one and is still required only when a pushed request's URN
 // arrives. The request_uri cache is still declared at module scope, as
 // `realms.map()`, because a store becomes per realm at its declaration. The
-// module still exports its old names from a TRANSITIONAL instance built from
-// the real modules, for `oauth2.ts`, `par.ts` and the tests, which require it
-// by those names.
+// module still exports its old names, for `oauth2.ts`, `par.ts` and the
+// tests, which require it by those names — the functions, since R2, FACADES
+// over the instance the composition root builds and installs; a process
+// without the root builds a default one at load.
 // ---------------------------------------------------------------------------
 
 import http = require('http');
@@ -147,6 +148,7 @@ import config = require('../common/config');
 import mode = require('../common/mode');
 import version = require('../common/version');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 // `keysForParty()`: which of a client's registered keys may verify something it
 // signed. One answer for RFC 7523, the software statement and this.
@@ -243,6 +245,34 @@ class RequestObject {
   constructor(private readonly deps: RequestObjectDeps) {
     deps.log.debug("Entering RequestObject.constructor().");
     deps.log.debug("Leaving RequestObject.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): RequestObjectDeps {
+    helpers.log.debug("Entering RequestObject.defaultDeps().");
+    helpers.log.debug("Leaving RequestObject.defaultDeps().");
+    return {
+      http: http,
+      nodeCrypto: nodeCrypto,
+      https: https,
+      stsCrypto: stsCrypto,
+      pki: pki,
+      errorCodes: errorCodes,
+      revocationStatus: revocationStatus,
+      applications: applications,
+      config: config,
+      mode: mode,
+      version: version,
+      helpers: helpers,
+      assertionGrant: assertionGrant,
+      log: helpers.log,
+      // Required LAZILY: `par.ts` requires this module for
+      // `verifyObject()`, and a require back at load would close the cycle.
+      loadPar: function () {
+        return require('./par');
+      }
+    };
   }
 
   private skewSeconds(): Json {
@@ -1284,46 +1314,36 @@ class RequestObject {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const requestObject = new RequestObject({
-  http: http,
-  nodeCrypto: nodeCrypto,
-  https: https,
-  stsCrypto: stsCrypto,
-  pki: pki,
-  errorCodes: errorCodes,
-  revocationStatus: revocationStatus,
-  applications: applications,
-  config: config,
-  mode: mode,
-  version: version,
-  helpers: helpers,
-  assertionGrant: assertionGrant,
-  log: helpers.log,
-  // Required LAZILY: `par.ts` requires this module for `verifyObject()`, and
-  // a require back at load would close the cycle.
-  loadPar: function () {
-    return require('./par');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<RequestObject>(
+  'oauth-oidc/request_object',
+  () => new RequestObject(RequestObject.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   RequestObject: RequestObject,
+  installInstance: (instance: RequestObject): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   TYP: RequestObject.TYP,
   MEDIA_TYPE: RequestObject.MEDIA_TYPE,
   PAR_URN_PREFIX: RequestObject.PAR_URN_PREFIX,
   ROUND_TRIP_FIELDS: RequestObject.ROUND_TRIP_FIELDS,
-  typProblem: requestObject.typProblem.bind(requestObject) as
-    RequestObject['typProblem'],
-  signedRequired: requestObject.signedRequired.bind(requestObject) as
-    RequestObject['signedRequired'],
-  fragmentProblem: requestObject.fragmentProblem.bind(requestObject) as
-    RequestObject['fragmentProblem'],
-  parametersFrom: requestObject.parametersFrom.bind(requestObject) as
-    RequestObject['parametersFrom'],
-  verifyObject: requestObject.verifyObject.bind(requestObject) as
-    RequestObject['verifyObject'],
-  resolve: requestObject.resolve.bind(requestObject) as
-    RequestObject['resolve']
+  typProblem: slot.forward('typProblem'),
+  signedRequired: slot.forward('signedRequired'),
+  fragmentProblem: slot.forward('fragmentProblem'),
+  parametersFrom: slot.forward('parametersFrom'),
+  verifyObject: slot.forward('verifyObject'),
+  resolve: slot.forward('resolve')
 };

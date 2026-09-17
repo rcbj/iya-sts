@@ -31,12 +31,15 @@
 // shape: `OAuth2MonitorApi` takes the modules it uses through its
 // constructor (`OAuth2MonitorApiDeps`), the view model among them as a
 // LOADER so it is still required lazily, and the module still exports
-// `ROUTES` from a TRANSITIONAL instance built from the real modules, for
-// `mgmt-api/admin_api.ts`, which is not converted. The table is built by
-// `buildRoutes()`, called at load where it was declared.
+// `ROUTES`, for `mgmt-api/admin_api.ts`. Since R2 the composition root builds
+// the instance and installs it; `OAuth2MonitorApi.wire()` builds the table
+// with `buildRoutes()` for that instance, and `ROUTES` is a getter over it.
+// A process without the root builds a default instance, and the table, at
+// load, where it was always declared.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 
 type Req = any;
@@ -57,6 +60,30 @@ class OAuth2MonitorApi {
   constructor(private readonly deps: OAuth2MonitorApiDeps) {
     deps.log.debug("Entering OAuth2MonitorApi.constructor().");
     deps.log.debug("Leaving OAuth2MonitorApi.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its own
+  // instance from before R2 — the view model as a LOADER, so it is still
+  // required lazily.
+  static defaultDeps(): OAuth2MonitorApiDeps {
+    helpers.log.debug("Entering OAuth2MonitorApi.defaultDeps().");
+    helpers.log.debug("Leaving OAuth2MonitorApi.defaultDeps().");
+    return {
+      log: helpers.log,
+      parseBody: helpers.parseBody,
+      errorCodes: errorCodes,
+      loadConsoleModel: function () {
+        return require('./oauth2_monitor_console');
+      }
+    };
+  }
+
+  // The work loading this module did with its own instance before R2: the
+  // route table, built once for whichever instance is installed.
+  static wire(instance: OAuth2MonitorApi): void {
+    helpers.log.debug("Entering OAuth2MonitorApi.wire().");
+    routes = instance.buildRoutes();
+    helpers.log.debug("Leaving OAuth2MonitorApi.wire().");
   }
 
   // error-code: none — the helper's definition, not a call to it.
@@ -252,18 +279,40 @@ class OAuth2MonitorApi {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const monitorApi = new OAuth2MonitorApi({
-  log: helpers.log,
-  parseBody: helpers.parseBody,
-  errorCodes: errorCodes,
-  loadConsoleModel: function () {
-    return require('./oauth2_monitor_console');
+// The table `buildRoutes()` made for the installed instance, filled by
+// `wire()`. Read through the `ROUTES` getter below.
+let routes: Json[] = [];
+
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES for the JavaScript that
+// still calls this module through `require()` — `ROUTES` a getter over the
+// table the instance built; a process that never runs the root gets a
+// default instance, built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<OAuth2MonitorApi>(
+  'oauth-oidc/oauth2_monitor_api',
+  () => new OAuth2MonitorApi(OAuth2MonitorApi.defaultDeps()),
+  OAuth2MonitorApi.wire,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
+export = {
+  OAuth2MonitorApi: OAuth2MonitorApi,
+  installInstance: (instance: OAuth2MonitorApi): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  // A GETTER, so the table is the installed instance's: under the root it is
+  // built when the root installs that instance, and `mgmt-api/admin_api.ts`
+  // reads it after that.
+  get ROUTES(): Json[] {
+    helpers.log.debug("Entering ROUTES().");
+    slot.get();
+    helpers.log.debug("Leaving ROUTES().");
+    return routes;
   }
-});
-
-const ROUTES = monitorApi.buildRoutes();
-
-export = { OAuth2MonitorApi: OAuth2MonitorApi, ROUTES: ROUTES };
+};

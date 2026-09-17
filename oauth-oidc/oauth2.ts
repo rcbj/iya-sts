@@ -84,14 +84,15 @@
 // scope, because a store becomes per realm at its declaration. The three
 // refusal types are module-level classes that take the logger first.
 //
-// THE TRANSITIONAL CODE at the bottom builds ONE instance from the real
-// modules, declares `oauth.codes-once` as the old last statement did, and
-// exports the old names from that instance, for every module that requires
+// The code at the bottom declares `oauth.codes-once` at load, as the old last
+// statement did, and exports the old names, for every module that requires
 // this one by them. It registers NOTHING (#50, R1): it exports
 // `registerRoutes(app)`, and `common/protocol_stack.ts` — the composition
 // root — calls it at the point in the route order where requiring this module
-// used to register the routes. The instance goes when that root also
-// constructs the modules (R2); `OAuth2Server` is exported beside them for it.
+// used to register the routes. Since R2 that root also builds the one
+// `OAuth2Server` and installs it, and the exported functions are FACADES that
+// forward to it; a process that loads this module without the root builds a
+// default instance at load, as loading it always did.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -105,6 +106,7 @@ import jwt = require('jsonwebtoken');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import dpop = require('./dpop');
 // WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
 // `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
@@ -1260,6 +1262,97 @@ class OAuth2Server {
   constructor(private readonly deps: OAuth2ServerDeps) {
     deps.log.debug("Entering OAuth2Server.constructor().");
     deps.log.debug("Leaving OAuth2Server.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): OAuth2ServerDeps {
+    helpers.log.debug("Entering OAuth2Server.defaultDeps().");
+    helpers.log.debug("Leaving OAuth2Server.defaultDeps().");
+    return {
+      crypto: crypto,
+      realms: realms,
+      forge: forge,
+      jwt: jwt,
+      stsCrypto: stsCrypto,
+      app: app,
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      STS: helpers.STS,
+      baseUrlOf: helpers.baseUrlOf,
+      b64u: helpers.b64u,
+      jsonFromB64u: helpers.jsonFromB64u,
+      nowSec: helpers.nowSec,
+      randomId: helpers.randomId,
+      xmlEscape: helpers.xmlEscape,
+      parseBody: helpers.parseBody,
+      bodyValues: helpers.bodyValues,
+      plainOauthError: helpers.oauthError,
+      signJwt: helpers.signJwt,
+      signJwtAs: helpers.signJwtAs,
+      allSigningKeys: helpers.allSigningKeys,
+      allSigningKeysAsync: helpers.allSigningKeysAsync,
+      signJwtAsAsync: helpers.signJwtAsAsync,
+      userFor: helpers.userFor,
+      hasScope: helpers.hasScope,
+      signingKeyFor: helpers.signingKeyFor,
+      certificateHeaderFor: helpers.certificateHeaderFor,
+      publishedKidFor: helpers.publishedKidFor,
+      nameForSubject: helpers.nameForSubject,
+      hasSubjectResolver: helpers.hasSubjectResolver,
+      LEGACY_SUBJECT_PREFIX: helpers.LEGACY_SUBJECT_PREFIX,
+      requestObjectKeysFor: helpers.requestObjectKeysFor,
+      dpop: dpop,
+      joseKid: joseKid,
+      mtls: mtls,
+      clientAuth: clientAuth,
+      assertionGrant: assertionGrant,
+      softwareStatement: softwareStatement,
+      samlAssertionGrant: samlAssertionGrant,
+      mode: mode,
+      authorizationServers: authorizationServers,
+      stats: stats,
+      VCI_CONFIGS: vcConfigs.VCI_CONFIGS,
+      VCI_CONFIG_ID: vcConfigs.VCI_CONFIG_ID,
+      VCI_SCOPE: vcConfigs.VCI_SCOPE,
+      vciFormatOf: vcConfigs.vciFormatOf,
+      vcClaims: vcClaims,
+      deferredAccessTokens: vcOffers.deferredAccessTokens,
+      issuerStates: vcOffers.issuerStates,
+      preAuthorizedCodes: vcOffers.preAuthorizedCodes,
+      checkTxCode: vcOffers.checkTxCode,
+      spendPreAuthorizedCode: vcOffers.spendPreAuthorizedCode,
+      config: config,
+      authn: authn,
+      sessionOf: authn.sessionOf,
+      endSession: authn.endSession,
+      bcp: bcp,
+      oauth21: oauth21,
+      senderConstraints: senderConstraints,
+      frontchannel: frontchannel,
+      applications: applications,
+      validation: validation,
+      errorCodes: errorCodes,
+      refreshTokenCrypto: refreshTokenCrypto,
+      jwtAccessToken: jwtAccessToken,
+      introspectionJwt: introspectionJwt,
+      stepUp: stepUp,
+      requestObject: requestObject,
+      richAuthorization: richAuthorization,
+      par: par,
+      oauthMonitor: oauthMonitor,
+      delegation: delegation,
+      consent: consent,
+      consentScreen: consentScreen,
+      claimAttributes: claimAttributes,
+      gate: gate,
+      debuggerAccess: debuggerAccess,
+      credentials: credentials,
+      websecurity: websecurity,
+      clusterClaims: clusterClaims,
+      clusterBarrier: clusterBarrier,
+      capabilities: capabilities
+    };
   }
 
   // EVERY OAUTH ERROR BODY THIS MODULE WRITES GOES THROUGH HERE, so OAuth 2.1
@@ -11952,94 +12045,20 @@ class OAuth2Server {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules; its routes registered by the composition root, below; and the
-// capability this module declares, as its last statement always did.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const server = new OAuth2Server({
-  crypto: crypto,
-  realms: realms,
-  forge: forge,
-  jwt: jwt,
-  stsCrypto: stsCrypto,
-  app: app,
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  STS: helpers.STS,
-  baseUrlOf: helpers.baseUrlOf,
-  b64u: helpers.b64u,
-  jsonFromB64u: helpers.jsonFromB64u,
-  nowSec: helpers.nowSec,
-  randomId: helpers.randomId,
-  xmlEscape: helpers.xmlEscape,
-  parseBody: helpers.parseBody,
-  bodyValues: helpers.bodyValues,
-  plainOauthError: helpers.oauthError,
-  signJwt: helpers.signJwt,
-  signJwtAs: helpers.signJwtAs,
-  allSigningKeys: helpers.allSigningKeys,
-  allSigningKeysAsync: helpers.allSigningKeysAsync,
-  signJwtAsAsync: helpers.signJwtAsAsync,
-  userFor: helpers.userFor,
-  hasScope: helpers.hasScope,
-  signingKeyFor: helpers.signingKeyFor,
-  certificateHeaderFor: helpers.certificateHeaderFor,
-  publishedKidFor: helpers.publishedKidFor,
-  nameForSubject: helpers.nameForSubject,
-  hasSubjectResolver: helpers.hasSubjectResolver,
-  LEGACY_SUBJECT_PREFIX: helpers.LEGACY_SUBJECT_PREFIX,
-  requestObjectKeysFor: helpers.requestObjectKeysFor,
-  dpop: dpop,
-  joseKid: joseKid,
-  mtls: mtls,
-  clientAuth: clientAuth,
-  assertionGrant: assertionGrant,
-  softwareStatement: softwareStatement,
-  samlAssertionGrant: samlAssertionGrant,
-  mode: mode,
-  authorizationServers: authorizationServers,
-  stats: stats,
-  VCI_CONFIGS: vcConfigs.VCI_CONFIGS,
-  VCI_CONFIG_ID: vcConfigs.VCI_CONFIG_ID,
-  VCI_SCOPE: vcConfigs.VCI_SCOPE,
-  vciFormatOf: vcConfigs.vciFormatOf,
-  vcClaims: vcClaims,
-  deferredAccessTokens: vcOffers.deferredAccessTokens,
-  issuerStates: vcOffers.issuerStates,
-  preAuthorizedCodes: vcOffers.preAuthorizedCodes,
-  checkTxCode: vcOffers.checkTxCode,
-  spendPreAuthorizedCode: vcOffers.spendPreAuthorizedCode,
-  config: config,
-  authn: authn,
-  sessionOf: authn.sessionOf,
-  endSession: authn.endSession,
-  bcp: bcp,
-  oauth21: oauth21,
-  senderConstraints: senderConstraints,
-  frontchannel: frontchannel,
-  applications: applications,
-  validation: validation,
-  errorCodes: errorCodes,
-  refreshTokenCrypto: refreshTokenCrypto,
-  jwtAccessToken: jwtAccessToken,
-  introspectionJwt: introspectionJwt,
-  stepUp: stepUp,
-  requestObject: requestObject,
-  richAuthorization: richAuthorization,
-  par: par,
-  oauthMonitor: oauthMonitor,
-  delegation: delegation,
-  consent: consent,
-  consentScreen: consentScreen,
-  claimAttributes: claimAttributes,
-  gate: gate,
-  debuggerAccess: debuggerAccess,
-  credentials: credentials,
-  websecurity: websecurity,
-  clusterClaims: clusterClaims,
-  clusterBarrier: clusterBarrier,
-  capabilities: capabilities
-});
+const slot = new InstanceSlot<OAuth2Server>(
+  'oauth-oidc/oauth2',
+  () => new OAuth2Server(OAuth2Server.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -12047,10 +12066,15 @@ const server = new OAuth2Server({
 
 capabilities.provide('oauth.codes-once');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => server.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   OAuth2Server: OAuth2Server,
-  asMetadata: server.asMetadata.bind(server) as OAuth2Server['asMetadata'],
+  installInstance: (instance: OAuth2Server): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  asMetadata: slot.forward('asMetadata'),
   // THE TWO ADVERTISED SIGNING LISTS, for `admin-ui/crypto_metadata.ts`.
   // They are already in the discovery document, so exporting them
   // publishes nothing new; what it buys is that the crypto page reports the
@@ -12062,9 +12086,8 @@ export = {
   // nobody checks.
   ID_TOKEN_SIGNING_ALGS: ID_TOKEN_SIGNING_ALGS,
   USERINFO_SIGNING_ALGS: USERINFO_SIGNING_ALGS,
-  accessToken: server.accessToken.bind(server) as
-    OAuth2Server['accessToken'],
-  tokenSet: server.tokenSet.bind(server) as OAuth2Server['tokenSet'],
+  accessToken: slot.forward('accessToken'),
+  tokenSet: slot.forward('tokenSet'),
   // THE ID TOKEN BUILDER, for GNAP (2026-09-12). RFC 9635 section 3.4.1
   // lets a grant response carry an OpenID Connect ID Token as a SUBJECT
   // ASSERTION, and a second builder in `gnap/` would be a second answer to
@@ -12073,21 +12096,20 @@ export = {
   // would disagree with this one the first time either grew a claim.
   // `gnap/gnap.ts` is required long after this module, so the require runs
   // in the ordinary direction.
-  idToken: server.idToken.bind(server) as OAuth2Server['idToken'],
+  idToken: slot.forward('idToken'),
   // The outstanding authorization codes, for the protocol-independent
   // logout. Functions rather than the Map, and both stores behind them —
   // see the block above outstandingCodesFor(). `logout/logout.ts` requires
   // this module in the ordinary direction: `common/protocol_stack.ts` loads
   // it long before that one, so the require moves no route and closes no
   // cycle.
-  outstandingCodesFor: server.outstandingCodesFor.bind(server) as
-    OAuth2Server['outstandingCodesFor'],
-  dropCode: server.dropCode.bind(server) as OAuth2Server['dropCode'],
+  outstandingCodesFor: slot.forward('outstandingCodesFor'),
+  dropCode: slot.forward('dropCode'),
   // Which issuer identifier a sign-out should put in a front-channel
   // notification's `iss`. This process runs several named authorization
   // servers and an RP is expecting the one that issued ITS tokens, so the
   // caller has to be able to ask rather than assume the default.
-  issuerOf: server.issuerOf.bind(server) as OAuth2Server['issuerOf'],
+  issuerOf: slot.forward('issuerOf'),
   // ----------------------------------------------------------------------
   // OIDC Core section 5.5, for the CONSOLE — /admin/userinfo-claims
   // previews what a claims request would return, and it does it by calling
@@ -12103,12 +12125,9 @@ export = {
   // admin.js is required after this one (rule 5), so the require runs in
   // the ordinary direction and closes no cycle.
   // ----------------------------------------------------------------------
-  parseClaimsRequest: server.parseClaimsRequest.bind(server) as
-    OAuth2Server['parseClaimsRequest'],
-  requestedClaimsOf: server.requestedClaimsOf.bind(server) as
-    OAuth2Server['requestedClaimsOf'],
-  requestedClaimNames: server.requestedClaimNames.bind(server) as
-    OAuth2Server['requestedClaimNames'],
+  parseClaimsRequest: slot.forward('parseClaimsRequest'),
+  requestedClaimsOf: slot.forward('requestedClaimsOf'),
+  requestedClaimNames: slot.forward('requestedClaimNames'),
   CLAIMS_REQUEST_MEMBERS: CLAIMS_REQUEST_MEMBERS,
   // A GETTER, so a reader holding this module sees
   // `oauth2.maxRequestedClaims` as it is now rather than the default it was
@@ -12116,19 +12135,15 @@ export = {
   get MAX_REQUESTED_CLAIMS() {
     helpers.log.debug("Entering MAX_REQUESTED_CLAIMS().");
     helpers.log.debug("Leaving MAX_REQUESTED_CLAIMS().");
-    return server.maxRequestedClaims();
+    return slot.get().maxRequestedClaims();
   },
   PERSONA_CLAIMS: PERSONA_CLAIMS,
   // The RFC 8414 `signed_metadata` signer, for the OID4VCI issuer
   // metadata's copy of the same construct. See its header.
-  signPublishedDocument: server.signPublishedDocument.bind(server) as
-    OAuth2Server['signPublishedDocument'],
-  authCodeTtlMs: server.authCodeTtlMs.bind(server) as
-    OAuth2Server['authCodeTtlMs'],
-  registrationOpen: server.registrationOpen.bind(server) as
-    OAuth2Server['registrationOpen'],
-  registrationReachable: server.registrationReachable.bind(server) as
-    OAuth2Server['registrationReachable']
+  signPublishedDocument: slot.forward('signPublishedDocument'),
+  authCodeTtlMs: slot.forward('authCodeTtlMs'),
+  registrationOpen: slot.forward('registrationOpen'),
+  registrationReachable: slot.forward('registrationReachable')
   // `registeredClients` used to be exported from here. It is not a Map in
   // this module any more — the registrations are entries under
   // ou=applications, and `applications.registrationOf()` is how anything
