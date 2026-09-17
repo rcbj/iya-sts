@@ -20,13 +20,15 @@
 // shape: `VcDid` takes the logger, the key and base-URL readers of
 // `helpers.js`, the identity registry, the settings, the error codes, the
 // signer and the configuration table through its constructor, and registers
-// its four routes from `registerRoutes(app)`. The TRANSITIONAL instance at
-// the bottom registers nothing at load (#50, R1): the module exports
+// its four routes from `registerRoutes(app)`. Loading the module registers
+// nothing (#50, R1): the module exports
 // `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the point
 // in the route order where the `app.get()` calls used to run at load, so the
 // route order is unchanged. The two DID flags are still read ONCE, at
-// require time, as module-scope constants. The module still exports its old
-// names from that instance for `vc_issuer.ts` and the tests.
+// require time, as module-scope constants. Since #50's R2 the composition
+// root builds the instance; the module's old names are FACADES forwarding to
+// it, for `vc_issuer.ts` and the tests, and a process without the root builds
+// a default at load.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -36,6 +38,7 @@ import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The identity registry, for ONE call at the generator endpoint below: a DID
 // this service mints is an identity it has created, and this is the funnel the
 // embedded directory grows an entry off. A library — it registers no route and
@@ -127,6 +130,28 @@ class VcDid {
   constructor(private readonly deps: VcDidDeps) {
     deps.log.debug("Entering VcDid.constructor().");
     deps.log.debug("Leaving VcDid.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): VcDidDeps {
+    helpers.log.debug("Entering VcDid.defaultDeps().");
+    helpers.log.debug("Leaving VcDid.defaultDeps().");
+    return {
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      PORT: helpers.PORT,
+      STS: helpers.STS,
+      baseUrlOf: helpers.baseUrlOf,
+      bbsKeyPair: helpers.bbsKeyPair,
+      signingKeyFor: helpers.signingKeyFor,
+      stsKeysFor: helpers.stsKeysFor,
+      stats: stats,
+      config: config,
+      errorCodes: errorCodes,
+      stsCrypto: stsCrypto,
+      VCI_CONFIGS: vcConfigs.VCI_CONFIGS
+    };
   }
 
   // did:web for whatever host this request arrived on, so the same container
@@ -703,37 +728,39 @@ class VcDid {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Its routes are registered
-// by the composition root, below, not here.
-const did = new VcDid({
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  PORT: helpers.PORT,
-  STS: helpers.STS,
-  baseUrlOf: helpers.baseUrlOf,
-  bbsKeyPair: helpers.bbsKeyPair,
-  signingKeyFor: helpers.signingKeyFor,
-  stsKeysFor: helpers.stsKeysFor,
-  stats: stats,
-  config: config,
-  errorCodes: errorCodes,
-  stsCrypto: stsCrypto,
-  VCI_CONFIGS: vcConfigs.VCI_CONFIGS
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<VcDid>(
+  'oid4vc/vc_did',
+  () => new VcDid(VcDid.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => did.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   VcDid: VcDid,
-  stsDid: did.stsDid.bind(did) as VcDid['stsDid'],
-  didWebPartsOf: did.didWebPartsOf.bind(did) as VcDid['didWebPartsOf'],
-  stsDidDocument: did.stsDidDocument.bind(did) as VcDid['stsDidDocument'],
-  domainLinkageCredential: did.domainLinkageCredential.bind(did) as
-    VcDid['domainLinkageCredential'],
-  issuerDidFor: did.issuerDidFor.bind(did) as VcDid['issuerDidFor'],
+  installInstance: (instance: VcDid): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  stsDid: slot.forward('stsDid'),
+  didWebPartsOf: slot.forward('didWebPartsOf'),
+  stsDidDocument: slot.forward('stsDidDocument'),
+  domainLinkageCredential: slot.forward('domainLinkageCredential'),
+  issuerDidFor: slot.forward('issuerDidFor'),
   DID_CONFIGURATION_CONTEXT: VcDid.DID_CONFIGURATION_CONTEXT,
   SD_JWT_ISSUER_DID: VcDid.SD_JWT_ISSUER_DID,
   LDP_VC_ISSUER_DID: VcDid.LDP_VC_ISSUER_DID

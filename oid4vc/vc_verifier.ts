@@ -64,12 +64,13 @@
 // error codes, the revocation check, the identity registry, the request
 // configuration, the signer and verifier, and the two stores through its
 // constructor, and registers its six endpoints from `registerRoutes(app)`.
-// The TRANSITIONAL instance at the bottom does not call it (#50, R1): the
-// module exports it, and `common/protocol_stack.ts` calls it at the point in
-// the route order where requiring this module used to register the endpoints.
-// The stores stay
-// module-scope `realms.map()` declarations. The module still exports its four
-// old names from that instance. Two method aliases keep the spellings
+// Loading the module does not call it (#50, R1): the module exports it, and
+// `common/protocol_stack.ts` calls it at the point in the route order where
+// requiring this module used to register the endpoints. The stores stay
+// module-scope `realms.map()` declarations. Since #50's R2 that root also
+// BUILDS the instance; the module's four old names are FACADES forwarding to
+// it, and a process without the root builds a default at load. Two method
+// aliases keep the spellings
 // `tests/revocation_status.js` reads in this file's source.
 // ---------------------------------------------------------------------------
 
@@ -85,6 +86,7 @@ import qrcode = require('qrcode');
 import app = require('../common/app');
 import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // THE MODE (2026-09-12), for one question: may a response go to an address the
 // request named — the `wallet` query parameter. A LEAF requiring only `config`.
@@ -260,6 +262,40 @@ class VcVerifier {
   constructor(private readonly deps: VcVerifierDeps) {
     deps.log.debug("Entering VcVerifier.constructor().");
     deps.log.debug("Leaving VcVerifier.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): VcVerifierDeps {
+    helpers.log.debug("Entering VcVerifier.defaultDeps().");
+    helpers.log.debug("Leaving VcVerifier.defaultDeps().");
+    return {
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      STS: helpers.STS,
+      baseUrlOf: helpers.baseUrlOf,
+      b64u: helpers.b64u,
+      b64uDecode: helpers.b64uDecode,
+      jsonFromB64u: helpers.jsonFromB64u,
+      nowSec: helpers.nowSec,
+      randomId: helpers.randomId,
+      xmlEscape: helpers.xmlEscape,
+      bbsKeyPair: helpers.bbsKeyPair,
+      parseBody: helpers.parseBody,
+      oauthError: helpers.oauthError,
+      signJwt: helpers.signJwt,
+      stsKeysFor: helpers.stsKeysFor,
+      kidNamesKey: helpers.kidNamesKey,
+      config: config,
+      mode: mode,
+      errorCodes: errorCodes,
+      revocationStatus: revocationStatus,
+      stats: stats,
+      vpConfig: vpConfig,
+      stsCrypto: stsCrypto,
+      vpTransactions: vpTransactions,
+      vpRequests: vpRequests
+    };
   }
 
   private vpClientId() {
@@ -1794,50 +1830,37 @@ class VcVerifier {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Its endpoints are
-// registered by the composition root, below, not here.
-const verifier = new VcVerifier({
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  STS: helpers.STS,
-  baseUrlOf: helpers.baseUrlOf,
-  b64u: helpers.b64u,
-  b64uDecode: helpers.b64uDecode,
-  jsonFromB64u: helpers.jsonFromB64u,
-  nowSec: helpers.nowSec,
-  randomId: helpers.randomId,
-  xmlEscape: helpers.xmlEscape,
-  bbsKeyPair: helpers.bbsKeyPair,
-  parseBody: helpers.parseBody,
-  oauthError: helpers.oauthError,
-  signJwt: helpers.signJwt,
-  stsKeysFor: helpers.stsKeysFor,
-  kidNamesKey: helpers.kidNamesKey,
-  config: config,
-  mode: mode,
-  errorCodes: errorCodes,
-  revocationStatus: revocationStatus,
-  stats: stats,
-  vpConfig: vpConfig,
-  stsCrypto: stsCrypto,
-  vpTransactions: vpTransactions,
-  vpRequests: vpRequests
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<VcVerifier>(
+  'oid4vc/vc_verifier',
+  () => new VcVerifier(VcVerifier.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => verifier.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   VcVerifier: VcVerifier,
-  verifyPresentation: verifier.verifyPresentation.bind(verifier) as
-    VcVerifier['verifyPresentation'],
+  installInstance: (instance: VcVerifier): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  verifyPresentation: slot.forward('verifyPresentation'),
   // For tests/revocation_status.js, which asks it about a revoked certificate.
-  issuerCertificateRevocation:
-    verifier.issuerCertificateRevocation.bind(verifier) as
-      VcVerifier['issuerCertificateRevocation'],
-  buildVpRequest: verifier.buildVpRequest.bind(verifier) as
-    VcVerifier['buildVpRequest'],
-  vpDcqlQuery: verifier.vpDcqlQuery.bind(verifier) as VcVerifier['vpDcqlQuery']
+  issuerCertificateRevocation: slot.forward('issuerCertificateRevocation'),
+  buildVpRequest: slot.forward('buildVpRequest'),
+  vpDcqlQuery: slot.forward('vpDcqlQuery')
 };

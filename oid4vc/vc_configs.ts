@@ -19,13 +19,17 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `VcConfigs` takes the logger and the settings reader through its
 // constructor, and the constants are its static members. The module still
-// exports every old name from a TRANSITIONAL instance, as ONE `export =` at
-// the bottom where `module.exports` was, with every constant computed at load
-// as before — this file breaks require cycles (root `CLAUDE.md` rule 2), and
-// what an early caller sees must not change.
+// exports every old name, as ONE `export =` at the bottom where
+// `module.exports` was, with every constant computed at load as before — this
+// file breaks require cycles (root `CLAUDE.md` rule 2), and what an early
+// caller sees must not change. Since #50's R2 the composition root builds the
+// instance and the functions are FACADES forwarding to it, which an early
+// caller may hold without building anything; a process without the root
+// builds a default at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 
 // One credential configuration.
@@ -140,6 +144,14 @@ class VcConfigs {
     deps.log.debug("Leaving VcConfigs.constructor().");
   }
 
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): VcConfigsDeps {
+    helpers.log.debug("Entering VcConfigs.defaultDeps().");
+    helpers.log.debug("Leaving VcConfigs.defaultDeps().");
+    return { log: helpers.log, config: config };
+  }
+
   // A FUNCTION rather than the constant this was, so that /admin/config can
   // change it and the next metadata document says so. Same for every
   // runtime-settable value in this service; the ones that are still constants
@@ -200,16 +212,31 @@ class VcConfigs {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const configs = new VcConfigs({ log: helpers.log, config: config });
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<VcConfigs>(
+  'oid4vc/vc_configs',
+  () => new VcConfigs(VcConfigs.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   VcConfigs: VcConfigs,
-  vciAuthorizationServer: configs.vciAuthorizationServer.bind(configs) as
-    VcConfigs['vciAuthorizationServer'],
+  installInstance: (instance: VcConfigs): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  vciAuthorizationServer: slot.forward('vciAuthorizationServer'),
   VCI_CONFIG_ID: VcConfigs.VCI_CONFIG_ID,
-  vciBatchSize: configs.vciBatchSize.bind(configs) as
-    VcConfigs['vciBatchSize'],
+  vciBatchSize: slot.forward('vciBatchSize'),
   VCI_VCT: VcConfigs.VCI_VCT,
   VCI_SCOPE: VcConfigs.VCI_SCOPE,
   VCI_JWT_CONFIG_ID: VcConfigs.VCI_JWT_CONFIG_ID,
@@ -223,11 +250,8 @@ export = {
   VCI_LDP_DID_SCOPE: VcConfigs.VCI_LDP_DID_SCOPE,
   VC_CONTEXT: VcConfigs.VC_CONTEXT,
   VCI_CONFIGS: VcConfigs.VCI_CONFIGS,
-  vciConfigIds: configs.vciConfigIds.bind(configs) as
-    VcConfigs['vciConfigIds'],
-  vciFormatOf: configs.vciFormatOf.bind(configs) as VcConfigs['vciFormatOf'],
-  vciUsesIssuerDid: configs.vciUsesIssuerDid.bind(configs) as
-    VcConfigs['vciUsesIssuerDid'],
-  configIdOfIdentifier: configs.configIdOfIdentifier.bind(configs) as
-    VcConfigs['configIdOfIdentifier']
+  vciConfigIds: slot.forward('vciConfigIds'),
+  vciFormatOf: slot.forward('vciFormatOf'),
+  vciUsesIssuerDid: slot.forward('vciUsesIssuerDid'),
+  configIdOfIdentifier: slot.forward('configIdOfIdentifier')
 };

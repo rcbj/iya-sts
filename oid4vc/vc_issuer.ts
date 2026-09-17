@@ -48,13 +48,15 @@
 // at `sendVciMetadata()` names.
 //
 // The routes are registered by `registerRoutes(app)`, in the order they
-// always had. Since #50's R1 the TRANSITIONAL instance at the bottom does not
-// call it: the module exports it, and `common/protocol_stack.ts` calls it at
+// always had. Since #50's R1 loading the module does not call it: the module
+// exports it, and `common/protocol_stack.ts` calls it at
 // the point in the route order where requiring this module used to register
 // the routes — so `capabilities.provide()`, still run at require time, now
-// runs BEFORE the routes are registered rather than after. That instance also
-// supplies the module's old exports, as bound methods, for the unconverted
-// modules and tests that require it. `VcIssuer` is exported beside them.
+// runs BEFORE the routes are registered rather than after. Since #50's R2
+// that root also BUILDS the instance; the module's old exports are FACADES
+// forwarding to it, for the unconverted modules and tests that require it,
+// and a process without the root builds a default at load. `VcIssuer` is
+// exported beside them.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -71,6 +73,7 @@ import app = require('../common/app');
 import config = require('../common/config');
 import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import dpop = require('../oauth-oidc/dpop');
 // The error codes (common/error_codes.js). A LEAF that requires nothing; a code
 // is marked on the response object and never put in an error_description.
@@ -292,10 +295,68 @@ class VcIssuer {
     deps.log.debug("Leaving VcIssuer.constructor().");
   }
 
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): VcIssuerDeps {
+    helpers.log.debug("Entering VcIssuer.defaultDeps().");
+    helpers.log.debug("Leaving VcIssuer.defaultDeps().");
+    return {
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      STS: helpers.STS,
+      baseUrlOf: helpers.baseUrlOf,
+      b64u: helpers.b64u,
+      jsonFromB64u: helpers.jsonFromB64u,
+      randomId: helpers.randomId,
+      bbsKeyPair: helpers.bbsKeyPair,
+      vciError: helpers.vciError,
+      signingKeyFor: helpers.signingKeyFor,
+      requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
+      certificateHeaderFor: helpers.certificateHeaderFor,
+      publishedKidFor: helpers.publishedKidFor,
+      crypto: crypto,
+      stsCrypto: stsCrypto,
+      config: config,
+      bbs2023: bbs2023,
+      dpop: dpop,
+      errorCodes: errorCodes,
+      stats: stats,
+      vciAuthorizationServer: vcConfigs.vciAuthorizationServer,
+      vciBatchSize: vcConfigs.vciBatchSize,
+      VCI_CONFIGS: vcConfigs.VCI_CONFIGS,
+      VCI_CONFIG_ID: vcConfigs.VCI_CONFIG_ID,
+      VCI_JWT_CONFIG_ID: vcConfigs.VCI_JWT_CONFIG_ID,
+      VCI_JWT_SCOPE: vcConfigs.VCI_JWT_SCOPE,
+      VCI_JWT_TYPES: vcConfigs.VCI_JWT_TYPES,
+      VCI_LDP_CONFIG_ID: vcConfigs.VCI_LDP_CONFIG_ID,
+      VCI_LDP_SCOPE: vcConfigs.VCI_LDP_SCOPE,
+      VCI_SCOPE: vcConfigs.VCI_SCOPE,
+      VCI_VCT: vcConfigs.VCI_VCT,
+      VC_CONTEXT: vcConfigs.VC_CONTEXT,
+      configIdOfIdentifier: vcConfigs.configIdOfIdentifier,
+      vciConfigIds: vcConfigs.vciConfigIds,
+      vciFormatOf: vcConfigs.vciFormatOf,
+      vciUsesIssuerDid: vcConfigs.vciUsesIssuerDid,
+      issuerDidFor: vcDid.issuerDidFor,
+      stsDid: vcDid.stsDid,
+      vcClaims: vcClaims,
+      deferredIntervalS: vcOffers.deferredIntervalS,
+      deferredReadyMs: vcOffers.deferredReadyMs,
+      deferredAccessTokens: vcOffers.deferredAccessTokens,
+      deferredTransactions: vcOffers.deferredTransactions,
+      offerTtlMs: vcOffers.offerTtlMs,
+      clusterClaims: clusterClaims,
+      vciNonces: vciNonces,
+      notificationIds: notificationIds,
+      lastCredentialRequestStore: lastCredentialRequestStore,
+      loadOauth2: VcIssuer.loadOauth2
+    };
+  }
+
   // `oauth2.js`, required LAZILY at the moment its published-document signer
   // is called: it requires this module's siblings for their stores, and a
-  // top-level require back would be a cycle (rule 2). The default for the
-  // transitional instance below.
+  // top-level require back would be a cycle (rule 2). The default the
+  // composition root passes (`defaultDeps()`).
   static loadOauth2() {
     helpers.log.debug("Entering VcIssuer.loadOauth2().");
     helpers.log.debug("Leaving VcIssuer.loadOauth2().");
@@ -2284,60 +2345,21 @@ class VcIssuer {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one. Its routes are registered by that
-// root, below, not here.
-const issuer = new VcIssuer({
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  STS: helpers.STS,
-  baseUrlOf: helpers.baseUrlOf,
-  b64u: helpers.b64u,
-  jsonFromB64u: helpers.jsonFromB64u,
-  randomId: helpers.randomId,
-  bbsKeyPair: helpers.bbsKeyPair,
-  vciError: helpers.vciError,
-  signingKeyFor: helpers.signingKeyFor,
-  requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
-  certificateHeaderFor: helpers.certificateHeaderFor,
-  publishedKidFor: helpers.publishedKidFor,
-  crypto: crypto,
-  stsCrypto: stsCrypto,
-  config: config,
-  bbs2023: bbs2023,
-  dpop: dpop,
-  errorCodes: errorCodes,
-  stats: stats,
-  vciAuthorizationServer: vcConfigs.vciAuthorizationServer,
-  vciBatchSize: vcConfigs.vciBatchSize,
-  VCI_CONFIGS: vcConfigs.VCI_CONFIGS,
-  VCI_CONFIG_ID: vcConfigs.VCI_CONFIG_ID,
-  VCI_JWT_CONFIG_ID: vcConfigs.VCI_JWT_CONFIG_ID,
-  VCI_JWT_SCOPE: vcConfigs.VCI_JWT_SCOPE,
-  VCI_JWT_TYPES: vcConfigs.VCI_JWT_TYPES,
-  VCI_LDP_CONFIG_ID: vcConfigs.VCI_LDP_CONFIG_ID,
-  VCI_LDP_SCOPE: vcConfigs.VCI_LDP_SCOPE,
-  VCI_SCOPE: vcConfigs.VCI_SCOPE,
-  VCI_VCT: vcConfigs.VCI_VCT,
-  VC_CONTEXT: vcConfigs.VC_CONTEXT,
-  configIdOfIdentifier: vcConfigs.configIdOfIdentifier,
-  vciConfigIds: vcConfigs.vciConfigIds,
-  vciFormatOf: vcConfigs.vciFormatOf,
-  vciUsesIssuerDid: vcConfigs.vciUsesIssuerDid,
-  issuerDidFor: vcDid.issuerDidFor,
-  stsDid: vcDid.stsDid,
-  vcClaims: vcClaims,
-  deferredIntervalS: vcOffers.deferredIntervalS,
-  deferredReadyMs: vcOffers.deferredReadyMs,
-  deferredAccessTokens: vcOffers.deferredAccessTokens,
-  deferredTransactions: vcOffers.deferredTransactions,
-  offerTtlMs: vcOffers.offerTtlMs,
-  clusterClaims: clusterClaims,
-  vciNonces: vciNonces,
-  notificationIds: notificationIds,
-  lastCredentialRequestStore: lastCredentialRequestStore,
-  loadOauth2: VcIssuer.loadOauth2
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<VcIssuer>(
+  'oid4vc/vc_issuer',
+  () => new VcIssuer(VcIssuer.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -2354,19 +2376,21 @@ void jwt;
 // this file.
 capabilities.provide('oid4vc.once');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => issuer.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   VcIssuer: VcIssuer,
-  vciMetadata: issuer.vciMetadata.bind(issuer) as VcIssuer['vciMetadata'],
+  installInstance: (instance: VcIssuer): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  vciMetadata: slot.forward('vciMetadata'),
   // For tests/cluster_single_use_protocols.js: the c_nonce's spend, driven
   // twice with the local map restored between, which is what another node
   // that has not yet caught up looks like.
-  spendProofNonces:
-    issuer.spendProofNonces.bind(issuer) as VcIssuer['spendProofNonces'],
-  buildCredentialFor:
-    issuer.buildCredentialFor.bind(issuer) as VcIssuer['buildCredentialFor'],
-  subjectClaimsFrom:
-    issuer.subjectClaimsFrom.bind(issuer) as VcIssuer['subjectClaimsFrom'],
+  spendProofNonces: slot.forward('spendProofNonces'),
+  buildCredentialFor: slot.forward('buildCredentialFor'),
+  subjectClaimsFrom: slot.forward('subjectClaimsFrom'),
   vciNonces: vciNonces,
   VCI_NONCE_TTL_MS: VcIssuer.VCI_NONCE_TTL_MS,
   // The request-encryption half, for `tests/vci_request_encryption_key.js`:
@@ -2374,14 +2398,8 @@ export = {
   // encrypted to one realm's published key and refused by another's is a claim
   // about these three and about nothing a single HTTP request can separate.
   credentialRequestEncryptionMetadata:
-    issuer.credentialRequestEncryptionMetadata.bind(issuer) as
-      VcIssuer['credentialRequestEncryptionMetadata'],
-  decryptJweRequest:
-    issuer.decryptJweRequest.bind(issuer) as VcIssuer['decryptJweRequest'],
-  readPossiblyEncryptedRequest:
-    issuer.readPossiblyEncryptedRequest.bind(issuer) as
-      VcIssuer['readPossiblyEncryptedRequest'],
-  lastCredentialRequest:
-    issuer.lastCredentialRequest.bind(issuer) as
-      VcIssuer['lastCredentialRequest']
+    slot.forward('credentialRequestEncryptionMetadata'),
+  decryptJweRequest: slot.forward('decryptJweRequest'),
+  readPossiblyEncryptedRequest: slot.forward('readPossiblyEncryptedRequest'),
+  lastCredentialRequest: slot.forward('lastCredentialRequest')
 };

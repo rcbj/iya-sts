@@ -43,16 +43,18 @@
 // authentication service (still required lazily, inside the offer page) and
 // the five stores through its constructor, and registers the three pages from
 // `registerRoutes(app)`. The stores stay module-scope `realms.map()`
-// declarations. The TRANSITIONAL instance at the bottom registers nothing
-// (#50, R1) — the module exports `registerRoutes(app)`, and
-// `common/protocol_stack.ts` calls it at the point in the route order where
-// requiring this module used to register the pages, which is IMMEDIATELY
-// BEFORE `oauth2.ts`'s routes, because `oauth2.ts` is what first requires this
-// file. The module exports every old name from that instance, as ONE
-// `export =` where
-// `module.exports` was — this file breaks a require cycle (root `CLAUDE.md`
-// rule 2: `oauth2.js` requires it for its stores), so what that caller sees
-// and when must not change.
+// declarations. Loading the module registers nothing (#50, R1) — the module
+// exports `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at
+// the point in the route order where requiring this module used to register
+// the pages, which is IMMEDIATELY BEFORE `oauth2.ts`'s routes, because
+// `oauth2.ts` is what first requires this file. Since #50's R2 that root also
+// BUILDS the instance, and the module exports every old name as a FACADE
+// forwarding to it, as ONE `export =` where `module.exports` was — this file
+// breaks a require cycle (root `CLAUDE.md` rule 2: `oauth2.js` requires it for
+// its stores), so what that caller sees and when must not change. That is why
+// `deferredAccessTokens` is a stable forwarding object rather than a getter:
+// `oauth2.ts` reads it at its own load. A process without the root builds a
+// default at load.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -63,6 +65,7 @@ import qrcode = require('qrcode');
 import realms = require('../common/realms');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // THE MODE (2026-09-12), for two questions only — are the test controls open
 // (an anonymous offer page), and may a response go to an address the request
@@ -308,6 +311,37 @@ class VcOffers {
     };
     this.deferredAccessTokens = facade;
     deps.log.debug("Leaving VcOffers.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): VcOffersDeps {
+    helpers.log.debug("Entering VcOffers.defaultDeps().");
+    helpers.log.debug("Leaving VcOffers.defaultDeps().");
+    return {
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      baseUrlOf: helpers.baseUrlOf,
+      randomId: helpers.randomId,
+      xmlEscape: helpers.xmlEscape,
+      vciError: helpers.vciError,
+      userFor: helpers.userFor,
+      walletBaseUrl: helpers.walletBaseUrl,
+      config: config,
+      mode: mode,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes,
+      clusterClaims: clusterClaims,
+      validation: validation,
+      loadAuthn: function () {
+        return require('../authn/authn');
+      },
+      credentialOffers: credentialOffers,
+      issuerStates: issuerStates,
+      preAuthorizedCodes: preAuthorizedCodes,
+      deferredTransactions: deferredTransactions,
+      deferredAccessTokenStore: deferredAccessTokenStore
+    };
   }
 
   private deferredTokenKey(token: unknown) {
@@ -991,59 +1025,82 @@ class VcOffers {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Its pages are
-// registered by the composition root, below, not here.
-const offers = new VcOffers({
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  baseUrlOf: helpers.baseUrlOf,
-  randomId: helpers.randomId,
-  xmlEscape: helpers.xmlEscape,
-  vciError: helpers.vciError,
-  userFor: helpers.userFor,
-  walletBaseUrl: helpers.walletBaseUrl,
-  config: config,
-  mode: mode,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes,
-  clusterClaims: clusterClaims,
-  validation: validation,
-  loadAuthn: function () {
-    return require('../authn/authn');
-  },
-  credentialOffers: credentialOffers,
-  issuerStates: issuerStates,
-  preAuthorizedCodes: preAuthorizedCodes,
-  deferredTransactions: deferredTransactions,
-  deferredAccessTokenStore: deferredAccessTokenStore
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<VcOffers>(
+  'oid4vc/vc_offers',
+  () => new VcOffers(VcOffers.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// THE SET-SHAPED FACADE, EXPORTED AS A STABLE OBJECT (#50, R2). Each member
+// forwards to the instance's own `deferredAccessTokens`, so a module that
+// reads this export at ITS load — `oauth-oidc/oauth2.ts` does — holds the same
+// shape it always did and builds nothing before the root installs the
+// instance. A getter answering `slot.get().deferredAccessTokens` would have
+// built the default at that read, and the root's install would then refuse.
+const deferredAccessTokens = {
+  add: function (token: unknown): unknown {
+    helpers.log.debug("Entering deferredAccessTokens.add().");
+    slot.get().deferredAccessTokens.add(token);
+    helpers.log.debug("Leaving deferredAccessTokens.add().");
+    return deferredAccessTokens;
+  },
+  has: function (token: unknown): boolean {
+    helpers.log.debug("Entering deferredAccessTokens.has().");
+    helpers.log.debug("Leaving deferredAccessTokens.has().");
+    return slot.get().deferredAccessTokens.has(token);
+  },
+  delete: function (token: unknown): boolean {
+    helpers.log.debug("Entering deferredAccessTokens.delete().");
+    helpers.log.debug("Leaving deferredAccessTokens.delete().");
+    return slot.get().deferredAccessTokens.delete(token);
+  },
+  clear: function (): void {
+    helpers.log.debug("Entering deferredAccessTokens.clear().");
+    slot.get().deferredAccessTokens.clear();
+    helpers.log.debug("Leaving deferredAccessTokens.clear().");
+  },
+  get size(): number {
+    helpers.log.debug("Entering deferredAccessTokens.size().");
+    helpers.log.debug("Leaving deferredAccessTokens.size().");
+    return slot.get().deferredAccessTokens.size;
+  }
+};
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => offers.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   VcOffers: VcOffers,
+  installInstance: (instance: VcOffers): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   credentialOffers: credentialOffers,
   issuerStates: issuerStates,
   preAuthorizedCodes: preAuthorizedCodes,
   deferredTransactions: deferredTransactions,
-  deferredAccessTokens: offers.deferredAccessTokens,
-  deferredReadyMs: offers.deferredReadyMs.bind(offers) as
-    VcOffers['deferredReadyMs'],
-  deferredIntervalS: offers.deferredIntervalS.bind(offers) as
-    VcOffers['deferredIntervalS'],
+  deferredAccessTokens: deferredAccessTokens,
+  deferredReadyMs: slot.forward('deferredReadyMs'),
+  deferredIntervalS: slot.forward('deferredIntervalS'),
   OFFER_TTL_MS: VcOffers.OFFER_TTL_MS,
-  offerTtlMs: offers.offerTtlMs.bind(offers) as VcOffers['offerTtlMs'],
-  checkTxCode: offers.checkTxCode.bind(offers) as VcOffers['checkTxCode'],
-  spendPreAuthorizedCode: offers.spendPreAuthorizedCode.bind(offers) as
-    VcOffers['spendPreAuthorizedCode'],
-  walletFor: offers.walletFor.bind(offers) as VcOffers['walletFor'],
-  vciOfferUsername: offers.vciOfferUsername.bind(offers) as
-    VcOffers['vciOfferUsername'],
-  buildCredentialOffer: offers.buildCredentialOffer.bind(offers) as
-    VcOffers['buildCredentialOffer'],
-  renderOfferQrPage: offers.renderOfferQrPage.bind(offers) as
-    VcOffers['renderOfferQrPage']
+  offerTtlMs: slot.forward('offerTtlMs'),
+  checkTxCode: slot.forward('checkTxCode'),
+  spendPreAuthorizedCode: slot.forward('spendPreAuthorizedCode'),
+  walletFor: slot.forward('walletFor'),
+  vciOfferUsername: slot.forward('vciOfferUsername'),
+  buildCredentialOffer: slot.forward('buildCredentialOffer'),
+  renderOfferQrPage: slot.forward('renderOfferQrPage')
 };
