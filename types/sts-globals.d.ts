@@ -15,7 +15,7 @@ import 'http';
 
 declare module 'http' {
   interface IncomingMessage {
-    // `common/request_worker.js`: the pool ticket and the protocol worker the
+    // `common/request_worker.ts`: the pool ticket and the protocol worker the
     // front process named in its routing headers, stashed before the headers
     // are stripped.
     stsPoolTicket?: number;

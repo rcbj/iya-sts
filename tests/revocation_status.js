@@ -3257,7 +3257,7 @@ async function theMainPort(t, minted) {
   }, function (req, res) {
     status.annotateRequest(req).then(function () {
       const verified = mtls.peerVerified(req);
-      // WHAT A WORKER IS HANDED, decoded the way `request_worker.js`'s
+      // WHAT A WORKER IS HANDED, decoded the way `request_worker.ts`'s
       // `decodePeer()` decodes it, and put on a shim socket the way that file
       // does — then asked the same question.
       const forwarded = requestPool.peerOf(req);

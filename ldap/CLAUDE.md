@@ -1413,7 +1413,7 @@ differently:
   answer it belongs to, so the client could be told a connection had ended
   while it was still open — the same bug, made rarer and harder to see.
   `common/request_pool.js`'s `LDAP_DROP_HEADER` carries the argument and
-  `common/request_worker.js` holds the other end.
+  `common/request_worker.ts` holds the other end.
 
 **An ask that cannot be made THROWS**, and that is deliberate: the driver
 records the row as not ended, with the reason, where returning the rows would
@@ -1499,7 +1499,7 @@ protocol-independent half — the front process accepts the connection, decodes
 the BER and writes the reply, and hands a `{ kind, args }` pair to a worker.
 
 **THE CHANNEL HAD EXISTED SINCE 2026-09-09 AND NOTHING FILLED IT.**
-`common/request_pool.js` offered `runOperation()`, `common/request_worker.js`
+`common/request_pool.js` offered `runOperation()`, `common/request_worker.ts`
 offered `register()`, the root `CLAUDE.md` said the LDAP protocol fanned out —
 and no module in the tree called either function. Naming `ldap` in that setting
 dispatched nothing at all. The prose described a mechanism and there was no
@@ -2303,7 +2303,7 @@ counted with `attemptShared()` in `sts_cluster_windows`, so N nodes are one
 limit rather than N (`common/CLAUDE.md`, *Several nodes: one rate-limit
 budget*). That read is a round trip, so the handler finishes in `finishBind()`
 when it is in, and marks the request `stsAsyncOperation`; `performOperation()`
-then answers a PROMISE, which `request_worker.js`'s `handleOperation()` already
+then answers a PROMISE, which `request_worker.ts`'s `handleOperation()` already
 resolves. **With no shared store the bind is synchronous exactly as before** —
 every in-process caller of `performOperation()` reads its answer in the same
 tick. **Since 2026-09-14 the shared count also decides the ANSWER**: a failure

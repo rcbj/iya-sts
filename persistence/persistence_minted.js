@@ -897,7 +897,7 @@ function dirty() {
 // pool checkout, a BEGIN and a statement per row, each taking a row lock held
 // to COMMIT. Two flushes from one process could run at once — this function
 // has two callers that do not wait for each other: `persistence.js`'s
-// scheduled flush, and `request_worker.js`'s commit announcement through
+// scheduled flush, and `request_worker.ts`'s commit announcement through
 // `flushMinted()` — and a key written between their two journal takes is in
 // BOTH, carrying two different values. The two transactions then commit in
 // whatever order their locks allow, and `ON CONFLICT DO UPDATE` keeps

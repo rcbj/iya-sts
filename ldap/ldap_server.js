@@ -9162,7 +9162,7 @@ const liveConnections = new Set();
 // AND THE SAME QUESTION ASKED IN A PROCESS THAT HOLDS NO SOCKETS (2026-09-09).
 //
 // `common/request_pool.js` runs the whole protocol stack in N request workers,
-// and a worker BINDS NOTHING — `common/request_worker.js` loads this module for
+// and a worker BINDS NOTHING — `common/request_worker.ts` loads this module for
 // its HTTP views and never calls `listen()`. So the Set above is permanently
 // empty there, and every question about directory connections was answered
 // "there are none" by the process that answers `/logout`.
@@ -9200,7 +9200,7 @@ const liveConnections = new Set();
 let connectionMirror = null;
 let remoteDropper = null;
 
-// Filled by common/request_worker.js, with the rows the front process has just
+// Filled by common/request_worker.ts, with the rows the front process has just
 // published — every push replaces the whole snapshot, because a delta would be
 // a second thing to get wrong for no saving on a list this short.
 //
@@ -10004,7 +10004,7 @@ function performOperation(operation, shape) {
   });
   // A HANDLER THAT SAID IT WENT ASYNCHRONOUS (2026-09-14, #46): the bind asks
   // the cluster's shared rate limiter before it looks at a password. The
-  // answer is a promise then — `request_worker.js`'s `handleOperation()`
+  // answer is a promise then — `request_worker.ts`'s `handleOperation()`
   // resolves whatever an operation returns — and the same reading below.
   if (!called && req.stsAsyncOperation) {
     log.debug('Leaving performOperation(). Waiting for the handler.');
@@ -10194,14 +10194,14 @@ function throughTheRequestPool(operation, local) {
 // ---------------------------------------------------------------------------
 // AND THE REGISTRATION ON THE WORKER SIDE.
 //
-// `common/request_worker.js` offers `register(kind, fn)` and its header says
+// `common/request_worker.ts` offers `register(kind, fn)` and its header says
 // the table is filled BY THE MODULE THAT OWNS THE OPERATION — so this is that
 // module doing it, at require time, exactly as requiring this module is what
 // registers its routes (rule 1 — it is still JavaScript, so #50's R1 did not
 // move them into a `registerRoutes(app)`).
 //
 // **IT IS GUARDED AND SILENT IN A PROCESS THAT IS NOT A WORKER.** Requiring
-// `request_worker.js` from the front process is harmless (its child wiring is
+// `request_worker.ts` from the front process is harmless (its child wiring is
 // behind the `begin` message), but registering there would be filling a table
 // nothing will ever read, and `register()` THROWS on a second registration —
 // which in a process that loads this module twice would turn a duplicate
@@ -10210,7 +10210,7 @@ function throughTheRequestPool(operation, local) {
 function registerWorkerOperations() {
   log.debug('Entering registerWorkerOperations().');
   // ONLY IN A PROCESS THAT IS ACTUALLY A WORKER (2026-09-12). Requiring
-  // `request_worker.js` pulls `common/service_state.ts` in at module scope —
+  // `request_worker.ts` pulls `common/service_state.ts` in at module scope —
   // the store, the keys, the minted rows and coordination — and installs
   // `process.on('message')` handlers, which in a process that will never
   // answer an operation is a table nothing reads bought with half the
@@ -15808,7 +15808,7 @@ module.exports = {
   // SOCKET (2026-09-09). `setConnectionWatcher()` and `connectionSnapshot()`
   // are the FRONT process's half, filled and read by common/request_pool.js;
   // `setConnectionMirror()` and `setRemoteDropper()` are a request worker's,
-  // filled by common/request_worker.js. A process that uses none of them is a
+  // filled by common/request_worker.ts. A process that uses none of them is a
   // process that holds its own listeners and behaves as this module always
   // has. See the block above boundConnections().
   setConnectionWatcher: setConnectionWatcher,

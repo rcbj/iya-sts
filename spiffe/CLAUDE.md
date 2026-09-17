@@ -632,7 +632,7 @@ service that was working. It forks an echo child now and asks.
 
 ### The worker table is filled only in a worker
 
-Requiring `common/request_worker.js` pulls `common/service_state.ts` in at
+Requiring `common/request_worker.ts` pulls `common/service_state.ts` in at
 module scope. Registering from the front process is therefore a table nothing
 there will ever read, bought with a load of the store, the keys, the minted rows
 and coordination — so `registerWorkerMethod()` returns early unless

@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 // THE FRONT PROCESS'S END OF THE REQUEST WORKERS: FORK, ROUTE, PROXY, DRAIN.
 //
-// `request_worker.js` says what a worker is and why it speaks real HTTP over a
+// `request_worker.ts` says what a worker is and why it speaks real HTTP over a
 // unix socket. This file is the half that runs where the sockets are, and its
 // job is the sentence the whole change exists for: **the front process should
 // be doing request/response I/O and nothing else.**
@@ -1524,7 +1524,7 @@ function ensureSocketDir() {
   try {
     fs.chmodSync(socketDir, 0o700);
   } catch (e) {
-    // See request_worker.js: a filesystem that does not carry modes is not a
+    // See request_worker.ts: a filesystem that does not carry modes is not a
     // reason to refuse to serve, and the socket itself is narrowed too.
     log.warn(errorCodes.tag('STS-WORKER-0010') +
              'request_pool: could not narrow the mode on ' + socketDir + ': ' +
@@ -1715,7 +1715,7 @@ function receivePublishedKeys(entry, published) {
 //
 // `ldap_server.js` IS REQUIRED LAZILY, INSIDE BOTH, and that is a rule rather
 // than a convenience: this module is loaded by `server.js` before the protocol
-// stack and by `request_worker.js` as part of it, and a require at the top of
+// stack and by `request_worker.ts` as part of it, and a require at the top of
 // this file would pull the whole directory — and its eight `/admin/ldap/*`
 // console pages — into the router at a point of its own choosing. The same
 // lazy-require-inside-the-one-function shape `xacml_admin.js` uses on
@@ -2169,7 +2169,7 @@ function fork(pool) {
                   // of 64 was never anywhere near being reached by it. What
                   // fixes that failure is the explicit backlog on the worker's
                   // own socket — see `bindSocket()` in
-                  // `common/request_worker.js`. This bounds the OTHER end,
+                  // `common/request_worker.ts`. This bounds the OTHER end,
                   // which is real (the suite runs many jobs at once) and is
                   // not the thing that was measured.
                   //
@@ -2200,7 +2200,7 @@ function fork(pool) {
                   generation: generation };
   workers.push(entry);
   // TELL IT WHAT IT IS. Nothing is loaded in the child until this arrives —
-  // see request_worker.js for why the certificate travels here rather than in
+  // see request_worker.ts for why the certificate travels here rather than in
   // the fork's environment.
   try {
     // THE SIGNING KEYS TRAVEL WITH THE CERTIFICATE, for the same reason and on

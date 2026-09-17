@@ -696,7 +696,7 @@ failing their own OpenID Connect back channel with **`unable to get local
 issuer certificate`** — the console's *Signing in did not complete*.
 
 `server.js` now hands all four across, `request_pool.js` carries them,
-`request_worker.js` installs them, and `trustAnchorPems()` **prefers a handed-in
+`request_worker.ts` installs them, and `trustAnchorPems()` **prefers a handed-in
 anchor over anything this process's own PKI would answer** — because a worker
 does not own the socket and did not make the certificate, so its own Root is
 not an answer it can honestly give. The handed anchor still goes through

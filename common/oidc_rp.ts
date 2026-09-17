@@ -992,7 +992,7 @@ class OidcRelyingParty {
       // first, so naming itself names no protocol worker at all and the
       // token request is routed by load. The front process knows which
       // protocol worker holds this browser and says so on the request
-      // (`request_pool.js`'s PROTOCOL_WORKER_HEADER); `request_worker.js`
+      // (`request_pool.js`'s PROTOCOL_WORKER_HEADER); `request_worker.ts`
       // puts it on `req`, and the caller passes `req` as `options.from`. No
       // hint — a browser the protocol pool holds nothing for — means no
       // cookie, which is the load-routed request this was before 2026-09-07

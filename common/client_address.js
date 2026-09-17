@@ -38,7 +38,7 @@
 // one of them, and the client is the RIGHT-MOST `X-Forwarded-For` entry that is
 // not one of them. A request worker believes what the front process wrote,
 // always: the unix socket it listens on is reachable by nothing else
-// (`request_worker.js` argues that), and the front process writes ONE address,
+// (`request_worker.ts` argues that), and the front process writes ONE address,
 // the one it resolved here.
 //
 // **WHAT THIS IS NOT.** It does not read a client certificate from a header
