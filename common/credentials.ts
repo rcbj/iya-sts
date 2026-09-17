@@ -1520,9 +1520,10 @@ class Credentials {
     // credential is a passwordless key has no second-factor step to stand in
     // for, and its lost-key story is an operator and an activation link.
     //
-    // It cannot fail the enrolment — see the TOTP call site — and it does
-    // nothing when a set already exists, so enrolling a fourth key leaves the
-    // list issued with the first one working.
+    // (Until 2026-09-11 the issue here could not fail the enrolment, and did
+    // nothing when a set already existed, so enrolling a fourth key left the
+    // list issued with the first one working. The `mfa`-only condition above
+    // now decides the ADVICE below instead.)
     // **NO SET IS ISSUED HERE ANY MORE (2026-09-11)**, and what replaces it is
     // an ADVICE flag rather than silence. The header on the recovery-codes
     // section carries the argument and what it costs; the short version is that
@@ -3722,8 +3723,8 @@ class Credentials {
   // CLEAR THE SET. An operator's act on that person's row under `/admin/users`.
   // (This said it was the ONLY way to a second set, issued by the next second
   // factor enrolled; since 2026-09-11 a person generates a new set themselves
-  // and nothing issues one automatically — the log line below still says the
-  // old thing.)
+  // on `/portal/mfa` and nothing issues one automatically. The log line below
+  // said the old thing until 2026-09-17, #70.)
   //
   // **IT CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which is
   // `removeTotp()`'s position exactly: a recovery code is never a way in on its
@@ -3758,7 +3759,9 @@ class Credentials {
                                    e.message] });
     }
     log.info('credentials: the recovery codes for ' + name + ' were cleared. ' +
-             'The next second factor they enrol issues a new set.');
+             'Nothing issues a new set: they generate and confirm one ' +
+             'themselves on /portal/mfa, which prompts them to while they ' +
+             'hold a second factor.');
     log.debug('Leaving Credentials.removeBackupCodes(). Cleared.');
     return { ok: true, username: name };
   }

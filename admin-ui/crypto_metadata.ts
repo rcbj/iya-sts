@@ -471,21 +471,43 @@ const STANDARDS = [
           'with the mechanism\'s key.' },
   { key: 'x509', name: 'X.509 / PKIX',
     specs: ['RFC 5280'],
-    coverage: 'mock: every certificate here is self-signed, generated at ' +
-              'start and valid for years, with no CRL, no OCSP and no path ' +
-              'longer than one. SPIFFE\'s authority signs SVIDs, which is ' +
-              'the only two-level chain in the process.',
-    what: 'RSA 2048 with SHA-256 for the signing and TLS certificates; the ' +
-          'SPIFFE authority is whatever `spiffe.x509KeyType` says. THE ' +
+    // **THIS ROW SAID EVERY CERTIFICATE WAS SELF-SIGNED, WITH NO CRL, NO OCSP
+    // AND NO PATH LONGER THAN ONE, until 2026-09-17 (#70)** — six days after
+    // `common/pki.js` made every key pair a leaf of one service Root
+    // (`common/CLAUDE.md` 3w) and `pki/pki_service.ts` began publishing a CRL
+    // and an OCSP responder per CA (`docs/pki.md`).
+    coverage: 'partial: one Root for the service, an Intermediate per trust ' +
+              'realm (and one for the process) and an Issuing CA per use ' +
+              'case, so a leaf path is four certificates long and an SVID ' +
+              'under a SPIFFE downstream CA five. RFC 5280 CRLs and RFC 6960 ' +
+              'OCSP are published per CA, and a presented certificate is ' +
+              'checked against them under pki.revocationCheck. Kept only ' +
+              'in PRODUCT mode, where the keystore persists; in DEVELOPMENT ' +
+              'mode the hierarchy is rebuilt at every start. With no ' +
+              'hierarchy (pki.autoBuild off) a key keeps the self-signed ' +
+              'certificate it was born with, and a realm\'s SPIFFE ' +
+              'authority falls back to a self-signed one.',
+    what: 'The CA key is the hierarchy\'s, chosen on /admin/pki ' +
+          '(`pki.keyAlgorithm`, RSA 2048 by default; the SPIFFE Issuing CA ' +
+          'prefers EC P-256); the signing key is RSA 2048, and the TLS ' +
+          'certificate is whatever `tls.certificateAlgorithms` asks for. ' +
+          '`spiffe.x509KeyType` decides the key in each SVID. THE ' +
           'SUBJECTALTNAME IS THE ONLY PLACE THE NAMES ARE on the TLS ' +
           'certificate — RFC 6125 has said the CN is ignored since 2011.' },
   { key: 'tls', name: 'TLS',
     specs: ['RFC 8446 (1.3)', 'RFC 5246 (1.2)'],
-    coverage: 'mock: node\'s OpenSSL defaults, unnarrowed. This service ' +
-              'chooses no cipher suite, no protocol floor and no curve — ' +
-              'what it configures is which sockets are TLS and which ' +
+    // "UNNARROWED … NO CIPHER SUITE, NO PROTOCOL FLOOR" stopped being true on
+    // 2026-09-12, when `tls.minVersion` and `tls.ciphers` arrived
+    // (`ldap/CLAUDE.md`, *THE SOCKETS*); corrected 2026-09-17 (#70), with the
+    // debugger listener added to the sockets that share the certificate.
+    coverage: 'mock: node\'s OpenSSL defaults, except where two settings ' +
+              'narrow them on LDAPS 636 and the main port — ' +
+              '`tls.minVersion` (TLS 1.2 by default) and `tls.ciphers` ' +
+              '(node\'s list when empty). This service chooses no curve; ' +
+              'what else it configures is which sockets are TLS and which ' +
               'certificate they serve.',
-    what: 'LDAPS 636 and the main port share one certificate. ' +
+    what: 'LDAPS 636, the main port and the debugger listener share one ' +
+          'certificate. ' +
           '`STS_HTTPS=false` is the supported way back to plain HTTP, not an ' +
           'escape hatch.' },
   { key: 'cose', name: 'COSE — CBOR Object Signing and Encryption',
@@ -878,13 +900,20 @@ class CryptoMetadata {
       // the first time an algorithm was added to that table.
       // ----------------------------------------------------------------------
       {
+        // `signs`, `verifies` and `keys` described one three-tier hierarchy
+        // PER REALM, ending at the realm's own Root, until 2026-09-17 (#70);
+        // it has been one Root for the service since 2026-09-11, and the
+        // realm boundary is the Intermediate (`common/CLAUDE.md` 3w).
         name: 'PKI',
-        signs: 'CERTIFICATES. Three of them when a hierarchy is built — the ' +
-               'Root signs itself, the Intermediate, then the Issuing CA — ' +
-               'and one per application key pair issued afterwards, signed ' +
-               'by the Issuing CA. The signature algorithm is the one chosen ' +
-               'for the hierarchy and is constrained by the ISSUER\'s key ' +
-               'family rather than the subject\'s, which is the mistake ' +
+        signs: 'CERTIFICATES. The Root signs itself once for the service; ' +
+               'it signs an Intermediate per trust realm and one for the ' +
+               'process; each Intermediate signs an Issuing CA per use case; ' +
+               'and each Issuing CA signs the leaves of its use case — the ' +
+               'service\'s own signing and listener keys, and the key pairs ' +
+               'issued to applications and people. The signature ' +
+               'algorithm is the one chosen for the hierarchy and is ' +
+               'constrained by the ISSUER\'s key family rather than the ' +
+               'subject\'s, which is the mistake ' +
                '`common/vendored/x509.js`\'s own header spends a paragraph ' +
                'on: importing a key under one digest and signing with ' +
                'another produces a certificate whose declared algorithm and ' +
@@ -893,20 +922,24 @@ class CryptoMetadata {
         verifies: 'A CERTIFICATE PATH. When an RFC 7523 assertion arrives ' +
                   'carrying an `x5c` header, every link is checked — the ' +
                   'signature, the issuer name and the validity window — and ' +
-                  'the path must END AT THIS REALM\'S OWN ROOT. That last ' +
-                  'check is the one the security claim rests on: a chain ' +
-                  'that is internally consistent and anchored somewhere else ' +
-                  'verifies every link and proves nothing here.',
+                  'the path must END AT THE SERVICE ROOT AND PASS THROUGH ' +
+                  'THIS REALM\'S OWN INTERMEDIATE. The second half is the ' +
+                  'realm boundary: every realm shares the Root, so a chain ' +
+                  'that merely reaches it proves nothing about which realm ' +
+                  'issued it — and one anchored somewhere else verifies ' +
+                  'every link and proves nothing here at all.',
         encrypts: 'Nothing itself. In PRODUCT mode the hierarchy it built is ' +
                   'sealed AES-256-GCM under the key-encryption key, by ' +
                   'common/keystore.js, in the same `sts_keys` row family as ' +
                   'the signing keys — this module hands it over and does not ' +
                   'do the encryption.',
         decrypts: 'Nothing.',
-        keys: 'THREE CA KEY PAIRS PER TRUST REALM, plus one per application ' +
-              'key pair issued. The CA private keys never leave this ' +
-              'process. An application\'s DOES: it is handed over once, at ' +
-              'issuance, and written onto that application\'s directory ' +
+        keys: 'ONE ROOT KEY PAIR FOR THE SERVICE, an Intermediate for each ' +
+              'trust realm and one for the process, an Issuing CA under ' +
+              'each per use case, plus one per key pair issued. The CA ' +
+              'private keys never leave this process. An application\'s ' +
+              'DOES: it is handed over once, at issuance, and written onto ' +
+              'that application\'s directory ' +
               'entry under `oauthAssertionPrivateKey` — **sealed AES-256-GCM ' +
               'under the same key-encryption key as the hierarchy above it ' +
               'wherever that key outlives the process**, so a directory ' +
@@ -1547,14 +1580,24 @@ class CryptoMetadata {
                    ['Kerberos v5 (1.2.840.113554.1.2.2)']]];
         } },
 
+      // **`signs` SAID "FROM A SELF-SIGNED AUTHORITY GENERATED AT START" UNTIL
+      // 2026-09-17 (#70)**, six days after the X.509 authority became the
+      // realm's SPIFFE Issuing CA under the service Root
+      // (`spiffe/spiffe_ca.ts`, `spiffe/CLAUDE.md`). The self-signed authority
+      // is the FALLBACK of a realm with no hierarchy, and `keyMaterial()`'s
+      // `authoritySource` says which one a realm is using.
       { name: 'SPIFFE',
-        signs: 'X509-SVIDs, from a self-signed authority generated at start, ' +
-               'and JWT-SVIDs as ordinary JWS. The authority\'s key type is ' +
-               'a setting and each type fixes both the certificate signature ' +
-               'algorithm and the JWS `alg` — a certificate whose declared ' +
-               'algorithm and actual signature disagree parses perfectly and ' +
-               'is refused with a message about a signature, naming neither ' +
-               'hash.',
+        signs: 'X509-SVIDs, under this realm\'s SPIFFE Issuing CA — a CA ' +
+               'under the realm\'s Intermediate and the service Root, so the ' +
+               'bundle publishes the Root and an SVID carries the Issuing CA ' +
+               'and the Intermediate in its chain. A realm with no hierarchy ' +
+               'falls back to a self-signed authority, which is then its own ' +
+               'anchor. JWT-SVIDs are ordinary JWS, from a JWT authority ' +
+               'generated per start in either mode. Each key type fixes both ' +
+               'the certificate signature algorithm and the JWS `alg` — a ' +
+               'certificate whose declared algorithm and actual signature ' +
+               'disagree parses perfectly and is refused with a message ' +
+               'about a signature, naming neither hash.',
         verifies: 'An X509-SVID over mutual TLS on the SPIRE Server API\'s ' +
                   'TCP port, and a JWT-SVID at `ValidateJWTSVID`.',
         encrypts: '',
@@ -1565,24 +1608,47 @@ class CryptoMetadata {
         whatItDoesNot: 'It attests no workload and no node — what the ' +
                        'Workload API lacks is ATTESTATION, not ' +
                        'authentication, and its specification says it MUST ' +
-                       'NOT authenticate. It revokes no credential either; ' +
-                       'the directory records who may still be ISSUED one, ' +
-                       'which is a different claim. Ed25519 is available for ' +
-                       'the X.509 authority and NOT for the JWT one, which ' +
-                       'is a limit of `jsonwebtoken` and not of the ' +
+                       'NOT authenticate. It records no SVID it mints, so ' +
+                       'one is revoked only by naming its serial by hand; ' +
+                       'revoking the realm\'s SPIFFE Issuing CA on ' +
+                       '/admin/pki is what refuses every SVID under it at ' +
+                       'the SPIRE Server API. The directory records who ' +
+                       'may still be ISSUED one, which is a different ' +
+                       'claim. Ed25519 is available for an X509-SVID key ' +
+                       '(and a self-signed fallback authority) and NOT for ' +
+                       'the JWT authority, ' +
+                       'which is a limit of `jsonwebtoken` and not of the ' +
                        'specification.',
         envelopes: ['x509', 'jws', 'jwk', 'mtls'],
+        // **TWO ROWS HERE NAMED ONE KEY FOR ANOTHER UNTIL 2026-09-17 (#70).**
+        // `X.509 authority in this process` printed `spiffe.x509KeyType`,
+        // which decides the key in each SVID and — since the authority became
+        // the realm's Issuing CA — the authority's only on the self-signed
+        // fallback. The authority's own key type is read off the authority
+        // now, as `keyMaterial()` already did. Both settings are read in the
+        // AMBIENT realm, so the rows say "this realm".
         algorithms: function () {
           log.debug("Entering algorithms().");
+          const authority = (spiffeCa.state().x509Authorities || [])[0];
           log.debug("Leaving algorithms().");
           return [
-            ['Authority key types', spiffeCa.KEY_TYPES.map(function (t) {
-              return t.id + ' (' + t.sigAlg + (t.jwtAlg ? ', ' + t.jwtAlg
-                                                        : ', no JWT) ') + ')';
-            })],
-            ['X.509 authority in this process',
+            ['Key types offered (SVID, fallback authority, JWT authority)',
+             spiffeCa.KEY_TYPES.map(function (t) {
+               // `', no JWT'` printed `ed25519 (ed25519, no JWT) )` until
+               // 2026-09-17 — a closing parenthesis inside the string too.
+               return t.id + ' (' + t.sigAlg + (t.jwtAlg ? ', ' + t.jwtAlg
+                                                         : ', no JWT') + ')';
+             })],
+            ['X.509 authority in this realm',
+             [authority
+               ? String(authority.keyType) + ' — ' +
+                 (authority.source === 'pki'
+                   ? 'this realm\'s SPIFFE Issuing CA, under the service Root'
+                   : 'self-signed: this realm has no certificate authority')
+               : 'none yet']],
+            ['X509-SVID key in this realm',
              [String(config.value('spiffe.x509KeyType'))]],
-            ['JWT authority in this process',
+            ['JWT authority in this realm',
              [String(config.value('spiffe.jwtKeyType'))]]
           ];
         } },
@@ -1683,19 +1749,38 @@ class CryptoMetadata {
           ];
         } },
 
+      // **`verifies` AND `hashes` DESCRIBED DEVELOPMENT MODE AS THE WHOLE
+      // SERVICE UNTIL 2026-09-17 (#70)** — "every bind succeeds" and "no
+      // `userPassword` is stored" — five days after product mode began
+      // verifying binds and authorizing writes, and the LDAP add and modify
+      // began storing a scrypt hash like every other door (both 2026-09-12;
+      // `ldap/CLAUDE.md`, `common/credentials.ts`). Both modes are stated,
+      // as the TOTP and PKI rows state theirs.
       { name: 'LDAP',
         signs: 'Nothing.',
-        verifies: 'Nothing. Every bind succeeds — any DN, any password, ' +
-                  'anonymous, on 389 and on 636 alike — except the one ' +
-                  'password spelled `invalid`, which exists so a client\'s ' +
-                  'failure path can be exercised.',
+        verifies: 'A simple bind\'s password, in PRODUCT mode, against the ' +
+                  'entry\'s scrypt `userPassword` — after refusing an ' +
+                  'anonymous bind, any bind on the plain port 389, an empty ' +
+                  'password and a DN or address past its failed-bind limit. ' +
+                  'Writes are then authorized there (an administrator ' +
+                  'anything, anybody else a few attributes of their own ' +
+                  'entry) and a read needs a bind. In DEVELOPMENT mode every ' +
+                  'bind succeeds — any DN, any password, anonymous, on 389 ' +
+                  'and on 636 alike — and nothing is authorized. In both ' +
+                  'modes the one password spelled `invalid` is refused, so a ' +
+                  'client\'s failure path can be exercised.',
         encrypts: 'The LDAPS listener on 636 is TLS, on the certificate ' +
-                  '`tls/tls_server.js` generates and three other sockets ' +
-                  'share. One set of handlers and one store sit behind both ' +
-                  'ports.',
+                  '`tls/tls_server.js` holds — certified under the service ' +
+                  'Root — which the main port and the debugger listener ' +
+                  'present too. One set of handlers and one store sit behind ' +
+                  'both directory ports.',
         decrypts: 'The same connection, in the other direction.',
-        hashes: 'None. No password is ever hashed here because none is ever ' +
-                'checked, and no `userPassword` is stored.',
+        hashes: '`userPassword` is stored as a scrypt hash in BOTH modes, ' +
+                'through crypto.hashSecret(), whichever door wrote it — an ' +
+                'LDAP add or modify included. Product mode refuses a value ' +
+                'sent already hashed, which cannot be held to the password ' +
+                'policy; development keeps one as given, which is how a ' +
+                'directory moves between two instances.',
         whatItDoesNot: 'It answers NO SASL MECHANISM — the root DSE omits ' +
                        '`supportedSASLMechanisms` rather than publishing it ' +
                        'empty, because an LDAP attribute always has at least ' +
@@ -1711,39 +1796,68 @@ class CryptoMetadata {
                    ['TLS, on the shared server certificate']]];
         } },
 
+      // **THIS ROW DESCRIBED THE ARRANGEMENT BEFORE 2026-09-11 UNTIL
+      // 2026-09-17 (#70)**: three self-signed certificates, none persisted,
+      // and a verified client certificate turned into a login nowhere. Since
+      // 2026-09-11 every one is a leaf of the service Root (`common/pki.js`,
+      // `tls/CLAUDE.md`), and a verified client certificate has been a sign-in
+      // since 2026-09-05 — at `GET /tls/sign-in` since 2026-09-16. LDAPS 636
+      // asks for no client certificate (`docs/pki.md`), so it left `verifies`.
       { name: 'PKI / X.509',
-        signs: 'Three self-signed certificates, all RSA 2048 with SHA-256, ' +
-               'all generated at start and none of them persisted: the ' +
-               'SIGNING certificate (serial 02, five years, no extensions at ' +
-               'all) and the TLS SERVER certificate (serial 03, two years, ' +
-               'with the subjectAltName that is the only place the names ' +
-               'are, because RFC 6125 has said the CN is ignored since ' +
-               '2011). SPIFFE\'s authority is the third and is configured ' +
-               'separately.',
-        verifies: 'A client certificate presented on the main port or on ' +
-                  'LDAPS 636, against whatever anchors have been added — and ' +
-                  'then turns it into a THUMBPRINT rather than into a login.',
-        encrypts: 'Every byte on LDAPS 636 and, since 2026-08-30, the main ' +
-                  'port too. The cipher suite and the key exchange are ' +
-                  'node\'s OpenSSL defaults; nothing here narrows them.',
+        signs: 'Nothing itself — the certificates this service PRESENTS are ' +
+               'issued by `common/pki.js` (the PKI row above) over keys made ' +
+               'here. The SIGNING certificate is the realm\'s RSA 2048 key, ' +
+               'certified twice, by the JOSE and the XML Issuing CAs. The ' +
+               'TLS SERVER certificate is issued by the TLS Issuing CA ' +
+               'under the process Intermediate, over a key generated at ' +
+               'every start, with the subjectAltName that is the only ' +
+               'place the names are, because RFC 6125 has said the CN is ' +
+               'ignored since 2011. SPIFFE\'s authority is the realm\'s ' +
+               'SPIFFE Issuing CA. All of them chain to one Root, which ' +
+               'PRODUCT mode keeps in the ' +
+               'keystore and DEVELOPMENT mode rebuilds at every start. With ' +
+               'no hierarchy, or with `tls.certificateFile` set, the ' +
+               'certificate is self-signed or the one supplied.',
+        verifies: 'A client certificate presented on the main port (or on ' +
+                  'the debugger listener, which asks the same way), against ' +
+                  'the truststore\'s anchors (the service Root among them ' +
+                  'under `tls.trustIssuedClientCertificates`), with its ' +
+                  'revocation checked under `pki.revocationCheck` — and ' +
+                  'then `GET /tls/sign-in` turns a verified one into a ' +
+                  'SESSION in the realm of the authority that signed it, ' +
+                  'while RFC 8705 client authentication binds it to a ' +
+                  'token. LDAPS 636 asks for no client certificate.',
+        encrypts: 'Every byte on LDAPS 636 and, when `global.https` is on ' +
+                  '(every appconfig file in env/ sets it, since 2026-08-30), ' +
+                  'on the main port and the debugger listener. The key ' +
+                  'exchange is node\'s OpenSSL default; on 636 and the main ' +
+                  'port the protocol floor is ' +
+                  '`tls.minVersion` (TLS 1.2 by default) and the suites ' +
+                  '`tls.ciphers` (node\'s list when empty).',
         decrypts: 'The same.',
-        hashes: 'SHA-256 over the DER, everywhere a certificate is named: ' +
-                'RFC 8705\'s `x5t#S256` confirmation, `/tls`\'s fingerprint, ' +
-                'and the SPKI pin the test suite carries.',
-        whatItDoesNot: 'It turns a verified client certificate into a LOGIN ' +
-                       'nowhere. The first fetch of the server certificate ' +
-                       'cannot be verified and that is a consequence of the ' +
-                       'key being regenerated per start rather than a gap — ' +
-                       'there is no plain listener left to fetch it from.',
+        hashes: 'SHA-256, everywhere a certificate is named: over the DER ' +
+                'for RFC 8705\'s `x5t#S256` confirmation and `/tls`\'s ' +
+                'fingerprint, and over the public key for the SPKI pin the ' +
+                'test suite carries.',
+        whatItDoesNot: 'The first fetch of the anchor cannot be verified — ' +
+                       'there is no plain listener left to fetch it from, so ' +
+                       'it is made with verification off. In DEVELOPMENT ' +
+                       'mode that fetch is owed again after every restart, ' +
+                       'because the Root is rebuilt; in PRODUCT mode, and ' +
+                       'with a supplied certificate, it is owed once. An ' +
+                       'application\'s certificate is refused as a sign-in: ' +
+                       'it is an RFC 8705 client credential.',
         envelopes: ['x509', 'tls', 'mtls'],
+        // **THE `Server certificate` ROW SAID "self-signed" UNCONDITIONALLY
+        // UNTIL 2026-09-17 (#70)**, a literal beside a certificate that had
+        // stopped being one. It is read off the certificate now, as
+        // `keyMaterial()`'s signing row is.
         algorithms: function () {
           log.debug("Entering algorithms().");
           const cert = tlsServer.serverCertificate();
           log.debug("Leaving algorithms().");
           return [
-            ['Server certificate',
-             ['RSA 2048, SHA-256, self-signed, valid to ' +
-              String(cert.notAfter)]],
+            ['Server certificate', [self.listenerCertificateSummary(cert)]],
             ['Certificate binding', [mtls.CONFIRMATION_MEMBER +
                                      ' — SHA-256 over the DER, base64url']]
           ];
@@ -1884,61 +1998,62 @@ class CryptoMetadata {
       // ---------------------------------------------------------------------
       // RECOVERY CODES (2026-09-10). A family that SIGNS NOTHING and verifies
       // no signature, with a row anyway because what it keeps at rest is a set
-      // of live credentials. It was written when the set was ENCRYPTED under
-      // the key-encryption key; since 2026-09-11 each code is stored as a
-      // scrypt HASH (`common/backup_codes.ts`'s header records the reversal),
-      // and the `encrypts`/`decrypts`/`hashes` strings below still describe the
-      // old design — the `At rest` row, read from `report()`, is the current
-      // one.
+      // of live credentials.
+      //
+      // **IT WAS WRITTEN WHEN THE SET WAS ENCRYPTED, AND ITS PROSE SAID SO
+      // UNTIL 2026-09-17 (#70).** Since 2026-09-11 a person GENERATES a set on
+      // `/portal/mfa`, is shown it once, and each code is stored as a scrypt
+      // HASH that nothing can show again (`common/backup_codes.ts`'s header,
+      // `common/CLAUDE.md` 3y). The `At rest` row, read from `report()`, had
+      // been right since 2026-09-12; `verifies`, `encrypts`, `decrypts`,
+      // `hashes` and `whatItDoesNot` were rewritten to match it, and the
+      // `Comparison` row now names the hash comparison a running service
+      // makes as well as the string one a legacy set still gets.
       //
       // The table is read from `common/backup_codes.ts`, which is this page's
       // design everywhere: the facts live with the code that performs them.
       // ---------------------------------------------------------------------
       { name: 'Recovery codes',
         signs: 'Nothing. There is no MAC and no signature anywhere in this ' +
-               'mechanism — a recovery code is a random string compared ' +
-               'against a stored one, which is the whole difference from the ' +
-               'TOTP row above where the "code" is a truncated HMAC.',
-        verifies: 'A presented code, against every code in the person\'s ' +
-                  'set, in constant time through common/crypto.js\'s ' +
-                  'constantTimeEquals(). EVERY code is compared even after a ' +
-                  'match, deliberately: returning early would make the time ' +
-                  'taken depend on WHICH code matched. The shape is checked ' +
-                  'first, so a password typed into the box is refused on its ' +
-                  'characters rather than compared against the set.',
-        encrypts: 'THE WHOLE SET AS ONE BLOB — AES-256-GCM under the same ' +
-                  'key-encryption key that protects the signing keys, ' +
-                  'through common/keystore.js, wherever that key outlives ' +
-                  'the process. The counts sit OUTSIDE the ciphertext in the ' +
-                  'clear, so a console can say "7 of 10 unused" about a set ' +
-                  'it cannot open. In development mode the codes are stored ' +
-                  'as the strings they were shown as, because the ' +
-                  'key-encryption key there is generated per run and sealing ' +
-                  'would mean a printed recovery list that stopped working ' +
-                  'at the next restart — which is the precise failure this ' +
-                  'mechanism exists to prevent.',
-        decrypts: 'The same set, to check a code AND to show it to the ' +
-                  'person it belongs to. **THIS IS THE SECOND CREDENTIAL IN ' +
-                  'THIS SERVICE THAT CAN BE READ BACK, AND THE ONLY ONE ' +
-                  'WHOSE REASON IS NOT ARITHMETIC.** A TOTP secret cannot be ' +
-                  'hashed because verifying a code means COMPUTING it. A ' +
-                  'recovery code COULD be hashed, and is not, because a ' +
-                  'person may look at their remaining codes again on ' +
-                  '/portal/mfa — a list shown exactly once at the end of an ' +
-                  'enrolment is a list most people close without reading, ' +
-                  'and the moment it matters is months later.',
-        hashes: 'Nothing. Unlike userPassword (scrypt) and ' +
-                'stsActivationToken (scrypt), and see the row above for why.',
-        whatItDoesNot: 'It never issues a set on request — not from the ' +
-                       'portal, the console or /admin-api — because a set is ' +
-                       'created by the ACT of enrolling a second factor and ' +
-                       'by nothing else. It never issues a SECOND set: an ' +
-                       'operator\'s Clear is the only route to one, so a ' +
-                       'printed list cannot stop working underneath ' +
-                       'somebody. It never shows a code to anybody but its ' +
-                       'owner. And there is no counter-based or derived ' +
-                       'scheme here: these are random strings and nothing ' +
-                       'about one code says anything about the next.',
+               'mechanism — a recovery code is a random string checked ' +
+               'against a stored hash of one, which is the whole difference ' +
+               'from the TOTP row above where the "code" is a truncated HMAC.',
+        verifies: 'A presented code, against EVERY entry in the person\'s ' +
+                  'set — each a scrypt hash checked with ' +
+                  'crypto.verifySecret(), in parallel on the worker pool at ' +
+                  'the sign-in screen — and all of them are checked even ' +
+                  'after a match, so the time taken does not depend on WHICH ' +
+                  'code matched. The shape is checked first, so a password ' +
+                  'typed into the box is refused on its characters and costs ' +
+                  'no hashing at all. An entry written before 2026-09-11 is ' +
+                  'the code itself and is compared with ' +
+                  'crypto.constantTimeEquals().',
+        encrypts: '',
+        decrypts: 'Only a set written before 2026-09-11 in PRODUCT mode, ' +
+                  'which was sealed AES-256-GCM under the key-encryption key ' +
+                  'and is opened through common/keystore.js to check a code. ' +
+                  'Nothing written since is encrypted.',
+        hashes: 'EVERY CODE, ONE SCRYPT HASH EACH, through ' +
+                'crypto.hashSecret() — the same function and stored form as ' +
+                'userPassword and stsActivationToken — at the one moment the ' +
+                'codes exist in the clear: when the person confirms they ' +
+                'have saved them. The hashes are not secret and are stored ' +
+                'in the clear as one JSON array on the person\'s entry, with ' +
+                'the counts beside it, so a console can say "7 of 10 unused" ' +
+                'without walking the array.',
+        whatItDoesNot: 'It never shows a stored code again — not to the ' +
+                       'console, /admin-api or the person who owns it: a set ' +
+                       'is shown ONCE, on the response that generated it, ' +
+                       'and is not stored at all until its owner confirms ' +
+                       'it. It never generates a set by itself: a person ' +
+                       'generates one on /portal/mfa, and enrolling a second ' +
+                       'factor only raises a prompt to do so. Confirming a ' +
+                       'new set replaces the old one, and an operator\'s ' +
+                       'Clear removes a set without issuing another. A set ' +
+                       'written by an older build is not migrated. And there ' +
+                       'is no counter-based or derived scheme here: these ' +
+                       'are random strings and nothing about one code says ' +
+                       'anything about the next.',
         envelopes: [],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -1954,7 +2069,9 @@ class CryptoMetadata {
                           'chosen here because no pair of them is ' +
                           'confusable and NOT shared with the TOTP row ' +
                           'above']],
-            ['Comparison', [report.comparison]],
+            ['Comparison', [report.comparisonOfAHash,
+                            'A set written before 2026-09-11: ' +
+                            report.comparison]],
             ['At rest', [report.atRest]]
           ];
         } },
@@ -2284,6 +2401,70 @@ class CryptoMetadata {
     return held ? self.certificateFingerprint(held.certificatePem) : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // WHAT THE LISTENER CERTIFICATE IS, IN ONE LINE, READ OFF THE CERTIFICATE
+  // (2026-09-17, #70).
+  //
+  // The PKI / X.509 row printed `RSA 2048, SHA-256, self-signed` as a literal
+  // for five days after `common/pki.js` began certifying this key under the
+  // service Root — the same drift the signing row in `keyMaterial()` records.
+  // So the key, the issuer and the chain are read from the PEM
+  // `tls/tls_server.js` presents, by node's own parser: the key's type and
+  // size from its public key, and "self-signed" only where the certificate
+  // names itself as issuer AND its own key verifies it. The issuer is printed
+  // as the certificate spells it rather than as "the service Root", because a
+  // `tls.certificateFile` leaf has a chain too and it is not this service's.
+  // The signature algorithm is left out: node's X509Certificate does not
+  // report one on every version this runs on, and a guess would be the
+  // literal again.
+  // ---------------------------------------------------------------------------
+  listenerCertificateSummary(cert: { certPem?: string; chainPem?: string[];
+                                     notAfter?: string }): string {
+    const { log, nodeCrypto } = this.deps;
+    log.debug("Entering CryptoMetadata.listenerCertificateSummary().");
+    const held = cert || {};
+    const validTo = ', valid to ' + String(held.notAfter || '');
+    let read: InstanceType<typeof nodeCrypto.X509Certificate> | null = null;
+    try {
+      read = new nodeCrypto.X509Certificate(String(held.certPem || ''));
+    } catch (e) {
+      log.debug("Caught in CryptoMetadata.listenerCertificateSummary(): " +
+                ((e && e.message) || e));
+      read = null;
+    }
+    if (!read) {
+      log.debug("Leaving CryptoMetadata.listenerCertificateSummary(). " +
+                "Unreadable.");
+      return 'not readable by node' + validTo;
+    }
+    const details: { modulusLength?: number; namedCurve?: string } =
+      read.publicKey.asymmetricKeyDetails || {};
+    const type = String(read.publicKey.asymmetricKeyType || 'unknown key')
+      .toUpperCase();
+    const key = details.modulusLength
+      ? type + ' ' + details.modulusLength
+      : (details.namedCurve ? type + ' ' + details.namedCurve : type);
+    let selfSigned = false;
+    try {
+      selfSigned = read.checkIssued(read) && read.verify(read.publicKey);
+    } catch (e) {
+      // A key type node's verify() does not take. Not self-signed as far as
+      // this line can say, which prints the issuer — the more useful answer.
+      log.debug("Caught in CryptoMetadata.listenerCertificateSummary(): " +
+                ((e && e.message) || e));
+      selfSigned = false;
+    }
+    const above = (held.chainPem || []).length;
+    const issuer = selfSigned
+      ? 'self-signed'
+      : 'issued by ' + read.issuer.split('\n').join(', ') +
+        (above ? ' (presented with ' + above + ' certificate' +
+                 (above === 1 ? '' : 's') + ' above it)' : '');
+    log.debug("Leaving CryptoMetadata.listenerCertificateSummary(). " +
+              "selfSigned=" + selfSigned);
+    return key + ', ' + issuer + validTo;
+  }
+
   keyMaterial() {
     const { log, stsKeysFor, config, realms, pqJose, bbs2023, spiffeCa,
             tlsServer } = this.deps;
@@ -2352,10 +2533,16 @@ class CryptoMetadata {
           }),
         notAfter: cert.notAfter,
         perRealm: false,
-        what: 'RSA 2048, SHA-256, self-signed, serial 03, two years. Shared ' +
-              'by LDAPS 636 and — when `global.https` is on — the main port. ' +
-              'Two years rather than five because this one is put in ' +
-              'somebody\'s truststore by hand.'
+        // This said *RSA 2048, SHA-256, self-signed, serial 03, two years*
+        // until 2026-09-17 (#70), six days after the key was certified under
+        // the service Root; the key and issuer are read off the certificate
+        // now, as the PKI / X.509 family row reads them.
+        what: self.listenerCertificateSummary(cert) + '. The key is ' +
+              'generated at every start and certified by the TLS Issuing CA ' +
+              'under the process Intermediate wherever a hierarchy exists — ' +
+              'unless `tls.certificateFile` supplies the pair instead. ' +
+              'Shared by LDAPS 636 and — when `global.https` is on — the ' +
+              'main port and the debugger listener.'
       },
       spiffe: {
         enabled: spiffe.enabled,
@@ -2685,14 +2872,21 @@ class CryptoMetadata {
       },
       kerberos: self.kerberosEtypes(),
       tls: {
-        what: 'Node\'s OpenSSL defaults, unnarrowed. This service chooses no ' +
-              'cipher suite, no protocol floor and no curve — what it ' +
+        // "UNNARROWED" and "TWO SOCKETS" were both corrected on 2026-09-17
+        // (#70): `tls.minVersion` and `tls.ciphers` have narrowed 636 and the
+        // main port since 2026-09-12, and `debugger/debugger_server.ts`
+        // presents the same certificate when `global.https` is on.
+        what: 'Node\'s OpenSSL defaults, except the protocol floor ' +
+              '(`tls.minVersion`, TLS 1.2 by default) and the cipher list ' +
+              '(`tls.ciphers`, node\'s when empty) on LDAPS 636 and the ' +
+              'main port. This service chooses no curve — what else it ' +
               'configures is which sockets are TLS and which certificate ' +
               'they serve.',
-        // TWO SOCKETS SINCE 2026-09-16, and it was four: the 8443 and 9443
+        // THREE SOCKETS SINCE 2026-09-16, and it was five: the 8443 and 9443
         // listeners were deleted, so the certificate this service mints is
-        // presented by the main port and by LDAPS 636 and nowhere else.
-        sockets: ['main port (when global.https is on)', 'LDAPS 636']
+        // presented by the main port, LDAPS 636 and the debugger listener.
+        sockets: ['main port (when global.https is on)', 'LDAPS 636',
+                  'debugger listener (when global.https is on)']
       }
     };
     log.debug("Leaving CryptoMetadata.encryption(). " +

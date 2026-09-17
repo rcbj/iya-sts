@@ -9021,9 +9021,12 @@ const SETTINGS = [
     dflt: 'ec-p256', runtime: false, realmRuntime: true,
     restartReason: 'the X.509 authority is generated with this key type at ' +
                    'startup',
-    description: 'The key the trust domain\'s X.509 authority is generated ' +
-                 'with, and therefore the key type of every X509-SVID it ' +
-                 'signs. EC P-256 by default because that is what SPIRE ' +
+    description: 'The key type of every X509-SVID, and of the self-signed ' +
+                 'X.509 authority a realm with no certificate hierarchy ' +
+                 'falls back to. It no longer decides the authority\'s key ' +
+                 'where there is a hierarchy: that is the realm\'s SPIFFE ' +
+                 'Issuing CA, under the Root. EC P-256 by default because ' +
+                 'that is what SPIRE ' +
                  'issues and what the X509-SVID specification recommends. ' +
                  'RSA 4096 takes several seconds to generate at startup, ' +
                  'which is worth knowing before wondering why the bundle ' +
