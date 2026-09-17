@@ -17,10 +17,11 @@
 //      product default, and a service provider's metadata overriding it;
 //   B. the HTTP Redirect binding: a query signature made with a REGISTERED key
 //      is verified and recorded; RelayState or SigAlg changed after signing is
-//      refused (STS-SAML-0061), and so is a Signature with no SigAlg;
+//      refused (STS-SAML-0061), and so is a Signature with no SigAlg; SHA-1
+//      is refused (0073) unless saml.allowSha1Signatures is on;
 //   C. the HTTP POST binding: an enveloped signature verifies; an altered
 //      request is refused (0061), a wrapping attempt is refused (0062), and
-//      an inclusive-c14n signature is refused (0064);
+//      an inclusive-c14n signature verifies (0064 is retired);
 //   D. a certificate that is only in the request's KeyInfo is NOT trusted:
 //      the request is `no-certificate`, the certificate is OBSERVED and not
 //      registered, development encrypts to it and product does not, and
@@ -456,10 +457,19 @@ function run(t) {
     'SigAlg=' + encodeURIComponent(RSA_SHA256),
     'SigAlg=' + encodeURIComponent(
       'http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256')));
-  t.check(ecAlg.statusCode === 403 && codeOf(ecAlg) === 'STS-SAML-0062',
-          'a SigAlg this service has no verifier for (ECDSA) cannot be ' +
+  t.check(ecAlg.statusCode === 403 && codeOf(ecAlg) === 'STS-SAML-0061',
+          'a SigAlg swapped for ECDSA after signing does not verify against ' +
+          'the registered RSA key and is REFUSED, STS-SAML-0061 — ECDSA is ' +
+          'verified now (#37 follow-up), so this is a wrong signature',
+          ecAlg.statusCode + ' ' + codeOf(ecAlg));
+  const md5Alg = getSso(signedRaw.replace(
+    'SigAlg=' + encodeURIComponent(RSA_SHA256),
+    'SigAlg=' + encodeURIComponent(
+      'http://www.w3.org/2001/04/xmldsig-more#rsa-md5')));
+  t.check(md5Alg.statusCode === 403 && codeOf(md5Alg) === 'STS-SAML-0062',
+          'a SigAlg this service does not verify (RSA-MD5) cannot be ' +
           'checked and is REFUSED, STS-SAML-0062 — not reported as a wrong ' +
-          'signature', ecAlg.statusCode + ' ' + codeOf(ecAlg));
+          'signature', md5Alg.statusCode + ' ' + codeOf(md5Alg));
   const noAlg = getSso(signedRaw.replace(/&SigAlg=[^&]*/, ''));
   t.check(noAlg.statusCode === 403 && codeOf(noAlg) === 'STS-SAML-0062',
           'a Signature with no SigAlg cannot be checked and is REFUSED, ' +
@@ -478,9 +488,19 @@ function run(t) {
   const sha1 = getSso(redirectQuery(stsCrypto,
     authnRequest({ issuer: spA, id: '_rB4' }), undefined, keyA.privateKeyPem,
     RSA_SHA1));
-  t.check(toSignIn(sha1) &&
-          / weak$/.test(String(fieldsOf(spA).samlAuthnRequestVerification)),
-          'SHA-1 verifies (no weak-algorithm policy exists) and is recorded ' +
+  t.check(sha1.statusCode === 403 && codeOf(sha1) === 'STS-SAML-0073',
+          'SHA-1 is REFUSED by default (saml.allowSha1Signatures is off), ' +
+          'STS-SAML-0073', sha1.statusCode + ' ' + codeOf(sha1));
+  const sha1On = withSettings(config, { 'saml.allowSha1Signatures': true },
+    function () {
+      return getSso(redirectQuery(stsCrypto,
+        authnRequest({ issuer: spA, id: '_rB5' }), undefined,
+        keyA.privateKeyPem, RSA_SHA1));
+    });
+  t.check(toSignIn(sha1On) &&
+          /^verified .* weak$/.test(
+            String(fieldsOf(spA).samlAuthnRequestVerification)),
+          'with saml.allowSha1Signatures on, SHA-1 verifies and is recorded ' +
           'as weak', String(fieldsOf(spA).samlAuthnRequestVerification));
 
   // -------------------------------------------------------------------------
@@ -540,11 +560,19 @@ function run(t) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
   }
   if (inclusive && /REC-xml-c14n-20010315/.test(inclusive)) {
-    const badC14n = postSso(inclusive);
-    t.check(badC14n.statusCode === 403 &&
-            codeOf(badC14n) === 'STS-SAML-0064',
-            'an inclusive-c14n signature is REFUSED, STS-SAML-0064',
-            badC14n.statusCode + ' ' + codeOf(badC14n));
+    const okC14n = postSso(inclusive);
+    t.check(toSignIn(okC14n) && /^verified post /.test(
+              String(fieldsOf(spP).samlAuthnRequestVerification)),
+            'an INCLUSIVE-c14n signature on the request is VERIFIED (#37 ' +
+            'follow-up; STS-SAML-0064 is retired)',
+            okC14n.statusCode + ' ' + codeOf(okC14n) + ' ' +
+            String(fieldsOf(spP).samlAuthnRequestVerification));
+    const badInclusive = postSso(inclusive.replace('Version="2.0"',
+      'Version="2.0" ForceAuthn="false"'));
+    t.check(badInclusive.statusCode === 403 &&
+            codeOf(badInclusive) === 'STS-SAML-0061',
+            'and one altered after signing is refused, STS-SAML-0061',
+            badInclusive.statusCode + ' ' + codeOf(badInclusive));
   } else {
     t.check(false, 'the signer produced an inclusive-c14n signature to ' +
                    'test with', String(inclusive).slice(0, 200));
@@ -776,7 +804,7 @@ function run(t) {
     location: base + '/s-acs', index: 0 }] });
   const unsignedS = adminActions.saml2Action({ action: 'upload-metadata',
                                                sp: spS, document: plainS });
-  t.check(!unsignedS.ok && /signed with that key/.test(
+  t.check(!unsignedS.ok && /signed by a trust anchor/.test(
             unsignedS.errors.join(' ')),
           'with it set, an UNSIGNED document is refused',
           JSON.stringify(unsignedS.errors));
@@ -986,8 +1014,9 @@ function run(t) {
   t.check(removed.ok && !fieldsOf(spJ).samlSigningCertificate,
           'remove takes one off, by value (a PEM is normalised)');
   const unknown = adminActions.saml2Action({ action: 'nope', sp: spJ });
-  t.check(/The nine are: .*upload-metadata/.test(unknown.errors.join(' ')),
-          'an unknown action names all nine', unknown.errors.join(' '));
+  t.check(/The eleven are: .*upload-metadata.*mdq-import/.test(
+            unknown.errors.join(' ')),
+          'an unknown action names all eleven', unknown.errors.join(' '));
   t.check(/verifyQueryString/.test(String(stsCrypto.verifyQueryString)) ||
           typeof stsCrypto.verifyQueryString === 'function',
           'the detached verifier lives in common/crypto.js');
