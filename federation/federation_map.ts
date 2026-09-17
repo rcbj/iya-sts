@@ -77,15 +77,17 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `FederationMap` takes the logger, `config` and the identity-key
 // reader through its constructor. The default table is still BUILT AT LOAD,
-// by the static `FederationMap.buildDefaults()` that the transitional section
-// calls with the credential catalogue, into the same module-level
-// `DEFAULT_MAP`, which is exported as it always was. The module still exports
-// its old names from a TRANSITIONAL instance for `federation_sp.ts` and the
-// tests, which are not converted.
+// by the static `FederationMap.buildDefaults()`, called at the bottom with
+// the credential catalogue, into the same module-level `DEFAULT_MAP`, which
+// is exported as it always was. Since #50's R2 the composition root builds
+// the instance; the module's old names are FACADES forwarding to it, for
+// `federation_sp.ts` and the tests, which are not converted, and a process
+// without the root builds a default at load.
 // ---------------------------------------------------------------------------
 
 import config = require('./../common/config');
 import helpers = require('./../common/helpers');
+import InstanceSlot = require('./../common/instance_slot');
 import vcClaims = require('./../oid4vc/vc_claims');
 // `identityKeyOf()`, and ONLY that. See usernameFor() below, where the reason
 // is argued: the local name a foreign subject becomes has to be the SAME name
@@ -157,6 +159,20 @@ class FederationMap {
   constructor(private readonly deps: FederationMapDeps) {
     deps.log.debug("Entering FederationMap.constructor().");
     deps.log.debug("Leaving FederationMap.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): FederationMapDeps {
+    helpers.log.debug("Entering FederationMap.defaultDeps().");
+    helpers.log.debug("Leaving FederationMap.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      identityKeyOf: function (value: string): string {
+        return stats.identityKeyOf(value);
+      }
+    };
   }
 
   private static addDefault(log: FederationMapDeps['log'], incoming: string,
@@ -614,26 +630,35 @@ class FederationMap {
   }
 }
 
-// THE TRANSITIONAL SECTION — see the header above. The default table is built
-// here, at load, as it always was.
+// The default table is built here, at load, as it always was — from static
+// data, with no instance (see the header above).
 FederationMap.buildDefaults(helpers.log, vcClaims.VC_ATTRIBUTES);
 
-const fedMap = new FederationMap({
-  log: helpers.log,
-  config: config,
-  identityKeyOf: function (value: string): string {
-    return stats.identityKeyOf(value);
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<FederationMap>(
+  'federation/federation_map',
+  () => new FederationMap(FederationMap.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   FederationMap: FederationMap,
+  installInstance: (instance: FederationMap): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   DEFAULT_MAP: DEFAULT_MAP,
-  relationshipMap: fedMap.relationshipMap.bind(fedMap) as
-    FederationMap['relationshipMap'],
-  flatten: fedMap.flatten.bind(fedMap) as FederationMap['flatten'],
-  usernameFor: fedMap.usernameFor.bind(fedMap) as
-    FederationMap['usernameFor'],
-  mapIncoming: fedMap.mapIncoming.bind(fedMap) as
-    FederationMap['mapIncoming']
+  relationshipMap: slot.forward('relationshipMap'),
+  flatten: slot.forward('flatten'),
+  usernameFor: slot.forward('usernameFor'),
+  mapIncoming: slot.forward('mapIncoming')
 };
