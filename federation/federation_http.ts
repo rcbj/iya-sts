@@ -654,6 +654,178 @@ class FederationHttp {
   }
 
   // -------------------------------------------------------------------------
+  // A DOCUMENT A TRUSTED ISSUER PUBLISHED (2026-09-17, #38's follow-ups): a
+  // Token Status List (draft-ietf-oauth-status-list) or a Bitstring Status
+  // List credential, fetched by `oid4vc/vc_status.ts` for a credential a
+  // presentation carried.
+  //
+  // THE THIRD ARGUMENT, AND IT IS NOT EITHER OF THE OTHER TWO. The URL comes
+  // out of a CREDENTIAL, which a presenter handed over — the caller's kind of
+  // URL, which the header says this module will not dial. What makes this one
+  // different is where it sits inside that credential: under a signature that
+  // has already VERIFIED against a certificate an ADMINISTRATOR put in
+  // `oid4vp.trustedIssuerCertificates`. The presenter cannot choose it; the
+  // issuer the administrator trusted did. `vc_status.ts` calls this only after
+  // that verification, and never for a credential this realm signed (whose
+  // list it reads from its own store). What is fetched is then verified
+  // against that same certificate, so nothing that arrives is believed on
+  // its own say-so (header point 5).
+  //
+  // Everything else here still applies: the kill switch, https unless
+  // `federation.outboundAllowInsecure`, the internal-address check in product
+  // mode with the connection pinned, the body cap, the timeout — and NO
+  // REDIRECT, which the draft's section 8.2 says a client SHOULD follow and
+  // its section 11.4 says is where the risk is; a list that has moved is a
+  // failure, and the verifier refuses the credential rather than follow it.
+  // It sends nothing but `Accept`. It NEVER rejects: `{ ok, status, body,
+  // contentType, kind, why, url }`.
+  // -------------------------------------------------------------------------
+  fetchPublished(raw: string, options?: { accept?: string;
+                                          timeoutMs?: number }):
+      Promise<{ ok: boolean; status: number; body: Buffer;
+                contentType: string; kind: string; why: string;
+                url: string }> {
+    const { log } = this.deps;
+    const self = this;
+    const opts = options || {};
+    log.debug("Entering FederationHttp.fetchPublished().");
+    const empty = Buffer.alloc(0);
+    const refused = function (kind: string, why: string): Promise<any> {
+      log.debug("Entering refused(). " + kind);
+      log.debug("Leaving refused().");
+      return Promise.resolve({ ok: false, status: 0, body: empty,
+                               contentType: '', kind: kind, why: why,
+                               url: String(raw || '') });
+    };
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.fetchPublished(). Outbound is off.");
+      return refused('outbound-off', 'federation.outbound is off, so this ' +
+                     'service makes no outbound request at all');
+    }
+    const problem = this.urlProblem(raw);
+    if (problem) {
+      log.debug("Leaving FederationHttp.fetchPublished(). " + problem);
+      return refused('url', 'the URL cannot be dialled: ' + problem);
+    }
+    const target = new URL(String(raw));
+    const secure = target.protocol === 'https:';
+    if (!secure) {
+      log.warn('outbound: fetching ' + target.origin + ' over plain http ' +
+               'because federation.outboundAllowInsecure is ON.');
+    }
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
+                                                 : this.timeoutMs();
+    const cap = this.maxBodyBytes();
+    const transport = secure ? this.deps.https : this.deps.http;
+    log.debug("Leaving FederationHttp.fetchPublished(). Vetting the host.");
+    return this.vetHost(target.hostname).then(function (vetted) {
+      if (!vetted.ok) {
+        return { ok: false, status: 0, body: empty, contentType: '',
+                 kind: vetted.kind || 'internal', why: vetted.why || '',
+                 url: String(raw) };
+      }
+      return new Promise<any>(function (resolve) {
+        let settled = false;
+        const done = function (result) {
+          log.debug("Entering done().");
+          if (!settled) {
+            settled = true;
+            resolve(Object.assign({ body: empty, contentType: '', why: '',
+                                    kind: '', url: String(raw) }, result));
+          }
+          log.debug("Leaving done().");
+        };
+        const requestOptions: any = {
+          protocol: target.protocol,
+          hostname: target.hostname,
+          port: target.port || (secure ? 443 : 80),
+          path: target.pathname + target.search,
+          method: 'GET',
+          headers: {
+            'Accept': String(opts.accept || '*/*'),
+            'User-Agent': self.deps.userAgent
+          },
+          rejectUnauthorized: secure && !self.allowInsecure()
+        };
+        if (vetted.address) {
+          requestOptions.servername = target.hostname;
+          requestOptions.lookup = function (hostname, lookupOptions,
+                                            callback) {
+            log.debug("Entering lookup().");
+            log.debug("Leaving lookup().");
+            if (lookupOptions && lookupOptions.all) {
+              callback(null, [{ address: vetted.address,
+                                family: vetted.family }]);
+              return;
+            }
+            callback(null, vetted.address, vetted.family);
+          };
+        }
+        let request = null;
+        try {
+          request = transport.request(requestOptions, function (response) {
+            const status = response.statusCode || 0;
+            const contentType = String(response.headers['content-type'] ||
+                                       '');
+            if (status >= 300 && status < 400) {
+              response.destroy();
+              done({ ok: false, status: status, kind: 'redirect',
+                     why: 'it answered ' + status + ' redirecting to "' +
+                          (response.headers.location || '(no Location)') +
+                          '", and a redirect is not followed' });
+              return;
+            }
+            const chunks: Buffer[] = [];
+            let bytes = 0;
+            response.on('data', function (chunk) {
+              bytes += chunk.length;
+              if (bytes > cap) {
+                response.destroy();
+                done({ ok: false, status: status, kind: 'too-large',
+                       why: 'it answered with more than ' + cap +
+                            ' bytes (federation.maxResponseBytes)' });
+                return;
+              }
+              chunks.push(chunk);
+            });
+            response.on('end', function () {
+              const ok = status >= 200 && status < 300;
+              done({ ok: ok, status: status, body: Buffer.concat(chunks),
+                     contentType: contentType, kind: ok ? '' : 'status',
+                     why: ok ? '' : 'it answered ' + status });
+            });
+            response.on('error', function (e) {
+              log.debug("Caught in a callback in fetchPublished(): " +
+                        ((e && e.message) || e));
+              done({ ok: false, status: status, kind: 'network',
+                     why: 'the response failed: ' + e.message });
+            });
+          });
+        } catch (e) {
+          log.debug("Caught in FederationHttp.fetchPublished(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'build',
+                 why: 'the request could not be built: ' + e.message });
+          return;
+        }
+        request.setTimeout(timeoutMs, function () {
+          request.destroy();
+          done({ ok: false, status: 0, kind: 'timeout',
+                 why: 'it did not answer within ' + timeoutMs + 'ms' });
+        });
+        request.on('error', function (e) {
+          log.debug("Caught in a request callback in fetchPublished(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'network',
+                 why: 'the request failed: ' +
+                      (e.code ? e.code + ' — ' : '') + e.message });
+        });
+        request.end();
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // THE REQUEST.
   //
   //   record     the federation relationship, as `federation.js` hands it back
@@ -915,6 +1087,7 @@ export = {
   internalAddressProblem: slot.forward('internalAddressProblem'),
   vetHost: slot.forward('vetHost'),
   deliverForm: slot.forward('deliverForm'),
+  fetchPublished: slot.forward('fetchPublished'),
   maxBodyBytes: slot.forward('maxBodyBytes'),
   urlProblem: slot.forward('urlProblem'),
   fetchJson: slot.forward('fetchJson'),

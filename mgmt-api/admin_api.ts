@@ -201,6 +201,8 @@ import databaseAdmin = require('../admin-ui/database_admin');
 import secretsAdmin = require('../admin-ui/secrets_admin');
 // 18g (#74), the same ordinary-direction require and the same reason.
 import cachesAdmin = require('../admin-ui/caches_admin');
+// THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
+import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -365,6 +367,7 @@ interface AdminApiDeps {
   databaseAdmin: typeof databaseAdmin;
   secretsAdmin: typeof secretsAdmin;
   cachesAdmin: typeof cachesAdmin;
+  vcStatusAdmin: typeof vcStatusAdmin;
   debuggerAdmin: typeof debuggerAdmin;
   config: typeof config;
   rbac: typeof rbac;
@@ -425,6 +428,7 @@ class AdminApi {
       databaseAdmin: databaseAdmin,
       secretsAdmin: secretsAdmin,
       cachesAdmin: cachesAdmin,
+      vcStatusAdmin: vcStatusAdmin,
       debuggerAdmin: debuggerAdmin,
       config: config,
       rbac: rbac,
@@ -1749,6 +1753,83 @@ class AdminApi {
       // parameters, so the list and one cache's paged entries are one
       // operation, as `/admin/caches` and `/admin/caches?cache=` are one page.
       // ---------------------------------------------------------------------
+      // THE STATUS LISTS (#38's follow-ups): `vcStatusAdmin.statusView()`
+      // and `statusAction()`, the two functions `/admin/vc-status` answers.
+      { method: 'GET', path: BASE + '/vc-status', tag: 'Credential status',
+        operationId: 'getCredentialStatus',
+        summary: 'This realm\'s credential status lists',
+        description: 'Where this realm\'s Token Status List ' +
+                     '(`tokenStatusList`, draft-ietf-oauth-status-list), its ' +
+                     '`aggregation` and its two Bitstring Status List ' +
+                     'credentials (`bitstring`) are served, the list `size` ' +
+                     'and `bits`, `ttlS` and `lifetimeS`, the counts ' +
+                     '(`allocated`, `valid`, `suspended`, `invalid`), and a ' +
+                     'page of `rows` — each issued credential\'s `idx`, ' +
+                     '`format`, `configId`, effective `status` (VALID, ' +
+                     'INVALID or SUSPENDED), the `explicit` status set here, ' +
+                     '`via`, `changedAt`, `allocatedAt` and `expiresAt` — ' +
+                     'answered in `rowsPaging`.',
+        mirrors: 'GET /admin/vc-status',
+        parameters: [].concat(self.pagingParameters()),
+        responseDescription: 'The lists and their credentials.',
+        responseSchema: { type: 'object',
+          description: 'The lists, the counts and a page of `rows`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API credential status " +
+                    "endpoint.");
+          self.sendJson(res, 200, vcStatusAdmin.statusView(req,
+                                                           req.query).json);
+          log.debug("Leaving the management API credential status " +
+                    "endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/vc-status/:action',
+        tag: 'Credential status',
+        mirrors: 'POST /admin/vc-status',
+        handler: function (req, res) {
+          log.debug("Entering the management API credential status action.");
+          const result = vcStatusAdmin.statusAction(
+            self.withAction(req, parseBody(req)),
+            'the management API at /admin-api/vc-status');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-VC-0082');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API credential status action.");
+        },
+        actions: ['suspend', 'reinstate', 'revoke'].map(function (action) {
+          return {
+            action: action,
+            operationId: action + 'Credential',
+            summary: action === 'suspend'
+              ? 'Suspend one issued credential (SUSPENDED)'
+              : action === 'reinstate'
+                ? 'Reinstate a suspended credential (VALID)'
+                : 'Revoke one issued credential (INVALID, final)',
+            description: 'Sets the status-list entry `idx` names, in this ' +
+                         'realm\'s Token Status List and Bitstring Status ' +
+                         'Lists at once. A credential that is not VALID is ' +
+                         'refused by every verifier reading the list and ' +
+                         'signs nobody in at `/authn/wallet`. `reinstate` ' +
+                         'applies to a SUSPENDED credential only; INVALID ' +
+                         'is final. A refusal is 400 with `errors`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                idx: { type: 'integer', minimum: 0,
+                       description: 'The index, as GET /admin-api/vc-status ' +
+                                    'lists it.' }
+              },
+              required: ['idx'],
+              examples: [{ idx: 4711 }],
+              additionalProperties: false
+            },
+            responseDescription: 'The index and its new status.'
+          };
+        })
+      },
+
       { method: 'GET', path: BASE + '/caches', tag: 'Service',
         operationId: 'getCaches',
         summary: 'Every cache this service holds, or one cache\'s entries',

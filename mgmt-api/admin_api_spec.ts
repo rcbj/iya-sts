@@ -5508,6 +5508,8 @@ const TAG_DESCRIPTIONS = {
                             'custom claims are in, and the same two halves: ' +
                             'a typed attribute and a directory one.',
   'Credential claims': 'What an issued Verifiable Credential carries.',
+  'Credential status': 'The status lists every issued Verifiable ' +
+    'Credential names, and suspending, reinstating or revoking one.',
   'Verifier request': 'What the mock OID4VP Verifier asks a wallet for.',
   'Token lifetimes': 'How long an access token, an ID Token and a refresh ' +
                      'token issued here last, and how far out a clock may be ' +

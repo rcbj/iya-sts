@@ -452,6 +452,17 @@ class ProtocolStack {
     require('../oid4vc/vc_did');
     this.build('oid4vc/vc_did', require('../oid4vc/vc_did'), 'VcDid');
     this.register(app, require('../oid4vc/vc_did'), 'oid4vc/vc_did');
+    // THE STATUS LISTS AND THEIR TWO LIBRARIES (#38's follow-ups): the codec
+    // (Token Status List, CBOR/COSE, Bitstring Status List), the holder's
+    // Data Integrity proof, and the lists themselves, whose routes —
+    // /oid4vci/status-lists/* — register here, ahead of the issuer that
+    // references them. None requires the issuer or the verifier.
+    this.build('oid4vc/vc_status_codec', require('../oid4vc/vc_status_codec'),
+               'VcStatusCodec');
+    this.build('oid4vc/vc_data_integrity',
+               require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
+    this.build('oid4vc/vc_status', require('../oid4vc/vc_status'), 'VcStatus');
+    this.register(app, require('../oid4vc/vc_status'), 'oid4vc/vc_status');
     // The register of credentials issued for a directory entry (#38): a
     // library both the issuer and the verifier read, built before either.
     this.build('oid4vc/vc_issued', require('../oid4vc/vc_issued'), 'VcIssued');
@@ -763,6 +774,14 @@ class ProtocolStack {
                'CachesAdmin');
     this.register(app, require('../admin-ui/caches_admin'),
                   'admin-ui/caches_admin');
+    // 18h. THE STATUS LISTS' PAGE (#38's follow-ups), 18a's placement and
+    // reason: the console's shell and `oid4vc/vc_status` already loaded, and
+    // `mgmt-api/admin_api` requires it.
+    require('../admin-ui/vc_status_admin');
+    this.build('admin-ui/vc_status_admin',
+               require('../admin-ui/vc_status_admin'), 'VcStatusAdmin');
+    this.register(app, require('../admin-ui/vc_status_admin'),
+                  'admin-ui/vc_status_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

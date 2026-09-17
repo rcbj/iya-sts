@@ -1146,6 +1146,14 @@ const SECTIONS = [
                    'selection also populates the directory, so an LDAP ' +
                    'client and a wallet describe one person. It applies to ' +
                    'all five OID4VCI configurations at once.' },
+          { path: '/admin/vc-status', label: 'Credential status',
+            blurb: 'This realm\'s status lists — the Token Status List every ' +
+                   'JOSE credential names and the two Bitstring Status ' +
+                   'Lists the W3C ones name — where they are served, and ' +
+                   'every issued credential\'s index and status, with ' +
+                   'Suspend, Reinstate and Revoke. A revoked or suspended ' +
+                   'credential is refused by every verifier that reads the ' +
+                   'list, this one included, and signs nobody in.' },
           { path: '/admin/oid4vp', label: 'OpenID4VP',
             blurb: 'The verifier\'s own settings: the client identifier it ' +
                    'presents as, where it sends a holder to present, how ' +
@@ -39021,7 +39029,21 @@ const PROTOCOL_SETTINGS_PAGES = [
           'authorization server the credential endpoint will take a token ' +
           'from, how big a batch may be, and how long a deferred issuance ' +
           'pretends to take.',
-    also: ['<strong>The two DID settings change what a VERIFIER has to ' +
+    also: ['<strong>Every credential names its status.</strong> A ' +
+           'dc+sd-jwt and a jwt_vc_json credential carry a Token Status ' +
+           'List reference and a jwt_vc_json and an ldp_vc a Bitstring ' +
+           'Status List entry, served at <code>/oid4vci/status-lists</code> ' +
+           'and signed with the credential key — which may be post-quantum. ' +
+           '<code>oid4vci.statusListTtlS</code> is how long a verifier may ' +
+           'keep a list; <a href="/admin/vc-status">Credential status</a> ' +
+           'suspends and revokes.',
+           '<strong>Key attestations.</strong> A wallet may say how its key ' +
+           'is kept (OpenID4VCI Appendix D); one signed by a certificate in ' +
+           '<code>oid4vci.keyAttestationTrustedCertificates</code> is ' +
+           'recorded, and decides whether a wallet sign-in claims ' +
+           '<code>hwk</code> and <code>acr "mfa"</code>. ' +
+           '<code>oid4vci.keyAttestationRequired</code> requires one.',
+           '<strong>The two DID settings change what a VERIFIER has to ' +
            'resolve, and they are restart-only.</strong> With ' +
            '<code>oid4vci.sdJwtIssuerDid</code> or ' +
            '<code>oid4vci.ldpVcIssuerDid</code> on, the issuer names itself ' +
@@ -39049,19 +39071,38 @@ const PROTOCOL_SETTINGS_PAGES = [
           'door; these settings are the client identifier it presents as, ' +
           'where it sends a holder to present, how fresh a Key Binding JWT ' +
           'has to be, the claims it asks for when nothing else has been ' +
-          'chosen — and the four that govern signing in with a wallet.',
+          'chosen — the settings that govern signing in with a wallet, and ' +
+          'how long a status list another issuer published is kept.',
     also: ['<strong>A presentation can sign somebody in, at <code>' +
-           '/authn/wallet</code>, and only one kind can.</strong> ' +
-           '<code>oid4vp.signIn</code> offers "Sign in with a wallet" on the ' +
-           'sign-in screen: a holder-bound SD-JWT VC <em>this realm</em> ' +
-           'issued, on an access token it verified, signs in the directory ' +
-           'entry it was issued for, with <code>amr ["pop"]</code>. A ' +
+           '/authn/wallet</code>.</strong> <code>oid4vp.signIn</code> offers ' +
+           '"Sign in with a wallet" on the sign-in screen: a holder-bound ' +
+           'credential <em>this realm</em> issued — in any format ' +
+           '<code>oid4vp.signInFormats</code> names: SD-JWT VC, JWT VC or ' +
+           'LDP VC — on an access token it verified and nobody has ' +
+           'disowned since, presented with a fresh holder proof, signs in ' +
+           'the directory entry it was issued for, with <code>amr ' +
+           '["pop"]</code> (and <code>hwk</code>, and <code>acr ' +
+           '"mfa"</code>, where a verified key attestation says so). A ' +
            'credential from a trusted foreign issuer, another realm or a ' +
            'foreign access token still verifies, is recorded on ' +
            '<a href="/admin/users">/admin/users</a> as a presentation, and ' +
            'signs nobody in. The bar door at <code>/oid4vp/verifier</code> ' +
            'signs nobody in whatever it is shown: nobody there asked to be ' +
-           'signed in.'],
+           'signed in.',
+           '<strong>The Digital Credentials API is the default way in, and ' +
+           'the plain QR code is off.</strong> A browser that has the API ' +
+           'asks a wallet on this device or a nearby one, which the browser ' +
+           'checks is near it; <code>oid4vp.signInDcApiResponseMode</code> ' +
+           'decides whether the answer is encrypted. <code>' +
+           'oid4vp.signInCrossDevice</code> adds a plain QR code for a ' +
+           'wallet the browser cannot reach — the one path somebody can ' +
+           'relay to a victim, which is why it is off.',
+           '<strong>Every credential\'s status is consulted.</strong> One ' +
+           'this realm issued is read from <a href="/admin/vc-status">' +
+           'Credential status</a>; one a trusted foreign issuer signed has ' +
+           'its status list fetched, kept for its ttl and at most <code>' +
+           'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
+           'cannot be read is refused.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 

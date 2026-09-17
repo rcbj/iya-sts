@@ -239,6 +239,14 @@ class ProtocolEndpoints {
         // The wallet sign-in (#38), whose four settings are on this page.
         '/authn/wallet', '/authn/wallet/wait'
       ].map(route),
+      // THE STATUS LISTS (#38's follow-ups): what a verifier fetches to ask
+      // whether a credential this realm issued is still good, and the
+      // credential endpoints that put the reference in it.
+      '/admin/vc-status': [
+        '/oid4vci/status-lists/1', '/oid4vci/status-lists',
+        '/oid4vci/status-lists/bitstring/:purpose', '/oid4vci/credential',
+        '/oid4vci/deferred_credential'
+      ].map(route),
       '/admin/vc-verifier-config': ['/oid4vp/verifier', '/oid4vp/start',
                                     '/oid4vp/request/:id',
                                     '/oid4vp/response'].map(route),
