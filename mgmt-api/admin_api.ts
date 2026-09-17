@@ -749,8 +749,12 @@ class AdminApi {
   //
   // Written once because three lists page identically, and because a caller
   // that has learned to walk one of them has learned to walk all three.
+  //
+  // The two numbers are `admin_views`' — they moved there from the console,
+  // which never exported them, so until #70 this read both off `admin` and
+  // the document said "maximum: undefined" and "Defaults to undefined".
   pagingParameters() {
-    const { log, admin } = this.deps;
+    const { log, adminViews } = this.deps;
     log.debug("Entering AdminApi.pagingParameters().");
     log.debug("Leaving AdminApi.pagingParameters().");
     return [
@@ -760,9 +764,11 @@ class AdminApi {
                      'refused: a page past the end returns the last one, and ' +
                      'the reply says which page it actually is.' },
       { name: 'per', in: 'query', required: false,
-        schema: { type: 'integer', minimum: 1, maximum: admin.MAX_ROWS },
-        description: 'Rows per page. Defaults to ' + admin.DEFAULT_PER_PAGE +
-                     ' and is capped at ' + admin.MAX_ROWS + '. On a ' +
+        schema: { type: 'integer', minimum: 1,
+                  maximum: adminViews.MAX_ROWS },
+        description: 'Rows per page. Defaults to ' +
+                     adminViews.DEFAULT_PER_PAGE + ' and is capped at ' +
+                     adminViews.MAX_ROWS + '. On a ' +
                      'drill-down it is SHARED by every list in the reply, ' +
                      'which each carry a page number of their own.' }
     ];
@@ -2292,8 +2298,8 @@ class AdminApi {
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
-                         admin.DEFAULT_BLOCKS_PER_PAGE + ' rather than ' +
-                         admin.DEFAULT_PER_PAGE +
+                         adminViews.DEFAULT_BLOCKS_PER_PAGE + ' rather than ' +
+                         adminViews.DEFAULT_PER_PAGE +
                          ' because each one carries a ' +
                          'token list of its own. Only the sessions ON this ' +
                          'page are in the reply.' },
@@ -15705,8 +15711,9 @@ function startupBanner(operations: number): string {
          operations +
          ' operations over the same functions ' +
          'the /admin console calls. Its OpenAPI document is at ' + BASE +
-         '/openapi.json and an explorer that calls it is at ' + BASE +
-         '/docs. ' +
+         '/openapi.json and an explorer that calls it is on the console, ' +
+         'at /admin/api-explorer (it was ' + BASE + '/docs until ' +
+         '2026-09-09). ' +
          (config.value('adminApi.authRequired')
            ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
              'audience ' +

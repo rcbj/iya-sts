@@ -101,10 +101,10 @@
 // method of the same name — with ONE exception each for two names the old
 // file declared TWICE (`credentialCell()`, `samlOverrideFieldRow()`): the
 // later declaration is the one JavaScript's hoisting gave every caller, so
-// it keeps the name, and the earlier one is kept as an `unreached…()` method
-// nothing calls. A class cannot hold two methods of one name, and renaming
-// the earlier one is the only way to keep both texts without changing which
-// one runs.
+// it keeps the name. The earlier `samlOverrideFieldRow()` is kept as an
+// `unreached…()` method nothing calls; the earlier `credentialCell()` was
+// the delegation table's own and is `delegationCredentialCell()` since #70,
+// which fixed that table's two calls to reach it.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which holds every
 // route and middleware of the old file in the old order — the console gate
@@ -7688,17 +7688,19 @@ class AdminConsole {
   // column is narrow and a reader is scanning for one fact — and `?format=json`
   // carries the objects for anything that is not a person.
   //
-  // UNREACHED (#50): the old file declared a second `credentialCell()` — the
-  // person's way in, under the users list — and JavaScript's hoisting gave
-  // that later one to EVERY caller, the delegation table's two calls
-  // included. A class cannot hold both under one name, so this one was
-  // renamed and `this.credentialCell()` still calls the one that ran before.
-  unreachedCredentialCell(list, label) {
+  //
+  // Named for the delegation table since #70: the old file declared a second
+  // `credentialCell()` — the person's way in, under the users list — and
+  // JavaScript's hoisting gave that later one to both of this table's calls,
+  // so the cell drew "unknown" for every delegation instead of what it
+  // consumed and produced. The TypeScript conversion (#50) kept that
+  // behaviour and surfaced it; the calls now reach this method.
+  delegationCredentialCell(list, label) {
     const { log } = this.deps;
     const self = this;
-    log.debug("Entering AdminConsole.unreachedCredentialCell().");
+    log.debug("Entering AdminConsole.delegationCredentialCell().");
     if (!list || !list.length) {
-      log.debug("Leaving AdminConsole.unreachedCredentialCell().");
+      log.debug("Leaving AdminConsole.delegationCredentialCell().");
       // NOTHING rather than a dash, because the two directions share one cell
       // now: a dash under the arrow for a direction that genuinely has no
       // credential reads as a value that failed to load, where an absent line
@@ -7707,7 +7709,7 @@ class AdminConsole {
       // having drawn neither.
       return '';
     }
-    log.debug("Leaving AdminConsole.unreachedCredentialCell().");
+    log.debug("Leaving AdminConsole.delegationCredentialCell().");
     // A DIV rather than a run of spans, because the cell holds BOTH directions
     // now and everything in them is inline: without a block the "out" label
     // continued the last note of the "in" list on the same line, which read as
@@ -7829,8 +7831,10 @@ class AdminConsole {
          '</span>' :
          '') +
       '</td>' +
-      '<td class="who">' + this.credentialCell(row.consumed, '&rarr; in') +
-        this.credentialCell(row.produced, '&larr; out') + '</td>' +
+      '<td class="who">' +
+        this.delegationCredentialCell(row.consumed, '&rarr; in') +
+        this.delegationCredentialCell(row.produced, '&larr; out') +
+        '</td>' +
       '</tr>';
   }
 
@@ -12244,11 +12248,8 @@ class AdminConsole {
   // `primary` key cannot sign in at all however much is enrolled on them. That
   // state is the ordinary one for somebody provisioned and not yet activated,
   // and saying "none" plainly is what sends the reader to the activation link
-  // on their row. `_label` is here for the delegation table's two calls, which
-  // were written for `unreachedCredentialCell()` and pass a second argument
-  // this method has never read (#50: the old file's hoisting gave them this
-  // one).
-  credentialCell(factors, _label?) {
+  // on their row.
+  credentialCell(factors) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.credentialCell().");
     if (!factors) {
@@ -39141,18 +39142,6 @@ const FEDERATION_LINKS =
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
-// THREE NAMES CALLERS READ THAT THIS MODULE HAS NEVER EXPORTED, declared as
-// absent so that the callers type-check as they ran: `messagesOf` (which
-// `est/est_admin.ts` and `scep/scep_admin.ts` test with `typeof` before
-// calling) and `MAX_ROWS` / `DEFAULT_PER_PAGE` (which
-// `mgmt-api/admin_api.ts` reads into its OpenAPI document; both moved to
-// `admin-core/admin_views.ts`). Each reads as `undefined`, as it did.
-interface AdminConsoleAbsentNames {
-  messagesOf?: (req: unknown) => string;
-  MAX_ROWS?: undefined;
-  DEFAULT_PER_PAGE?: undefined;
-}
-
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
@@ -39173,6 +39162,10 @@ const consoleExports = {
   // otherwise reimplement respond() badly. Neither decides anything: what that
   // page SAYS is entirely that module's.
   respond: slot.forward('respond'),
+  // The notice or error a redirect brought back, for the family pages drawn
+  // outside this file (EST, SCEP, GNAP). Unexported until #70, so those pages
+  // tested for it, found nothing and never showed one.
+  messagesOf: slot.forward('messagesOf'),
   // For `tests/protocol_endpoints.js`: which Protocols pages the endpoint
   // table and `SECTIONS` disagree about. See above respond().
   protocolEndpointDrift: slot.forward('protocolEndpointDrift'),
@@ -39548,4 +39541,4 @@ const consoleExports = {
   DEFAULT_BLOCKS_PER_PAGE: DEFAULT_BLOCKS_PER_PAGE
 };
 
-export = consoleExports as typeof consoleExports & AdminConsoleAbsentNames;
+export = consoleExports;
