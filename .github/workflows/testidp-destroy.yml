@@ -1,0 +1,79 @@
+name: testidp destroy
+
+# ---------------------------------------------------------------------------
+# TAKE THE `testidp` ENVIRONMENT (test-idp.iyasec.io) DOWN (2026-09-17)
+#
+# `deploy/aws/terraform-local.sh testidp destroy`, run from GitHub, in the
+# Terraform image. The entrypoint retries a failed destroy once after a minute
+# (an ENI a stopped task has not released yet is the usual cause) before
+# failing. Automated database backups go with it (`delete_automated_backups`
+# in envs/testidp.tfvars), and the four secrets are deleted with no recovery
+# window — nothing of the environment's data survives this. The container log
+# group is `foundation/`'s and keeps its 14 days.
+#
+# `confirm` must be typed as `testidp`, so a mis-click on the wrong workflow
+# does not delete a running deployment. It shares `testidp-deploy.yml`'s
+# concurrency group, so it waits for an apply in progress rather than racing it.
+#
+# NOTE: a workflow_dispatch workflow can only be dispatched once the file is on
+# the default branch.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type testidp to confirm the environment and all its data are deleted"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-cluster-testidp
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-west-2
+  TF_ENV: testidp
+  TF_IMAGE: mock-sts-terraform
+
+jobs:
+  destroy:
+    if: ${{ github.event.inputs.confirm == 'testidp' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Build terraform image
+        run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
+
+      - name: Terraform destroy (testidp)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          docker run --rm \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION \
+            -e TF_ENV \
+            -e TF_ACTION=destroy \
+            "${TF_IMAGE}"
+
+      - name: Say so if it did not come down
+        if: failure()
+        run: |
+          echo "::error::terraform destroy failed; testidp may still be running and billing. Re-run this workflow."
+
+  refused:
+    if: ${{ github.event.inputs.confirm != 'testidp' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse
+        run: |
+          echo "::error::confirm must be exactly 'testidp'; nothing was destroyed."
+          exit 1

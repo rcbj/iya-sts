@@ -7,6 +7,9 @@
 #   deploy/aws/terraform-local.sh testidp destroy
 # ALLOWED_CIDR is left unset: the launcher admits THIS host's current public
 # address and nothing else, looked up on every build.
+# Or from GitHub: .github/workflows/testidp-deploy.yml (allowed_ip is a
+# required input — a workflow cannot see its dispatcher's address) and
+# testidp-destroy.yml.
 #
 # What makes it different from `dev` and `ci`, and why:
 #   * a public name and certificate — test-idp.iyasec.io, TLS ended at the
