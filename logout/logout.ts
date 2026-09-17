@@ -164,6 +164,9 @@ import saml2Sso = require('../saml/saml2_sso');
 // The pre-authorized codes a Credential Offer minted. Exported as Maps by that
 // module, which is what rule 2 made it for.
 import vcOffers = require('../oid4vc/vc_offers');
+// The wallet sign-ins a wallet has answered and no browser has collected yet
+// (#38). A cache hit, like every require here — `vc_verifier` is at 11-14.
+import vcVerifier = require('../oid4vc/vc_verifier');
 // The principal database, for the sign-out instant that stops an older
 // ticket-granting ticket at the KDC.
 import krb5Principals = require('../kerberos/krb5_principals');
@@ -205,6 +208,7 @@ interface LogoutDeps {
   wsfed: typeof wsfed;
   saml2Sso: typeof saml2Sso;
   vcOffers: typeof vcOffers;
+  vcVerifier: typeof vcVerifier;
   krb5Principals: typeof krb5Principals;
   ldapServer: typeof ldapServer;
 }
@@ -253,6 +257,7 @@ class Logout {
       wsfed: wsfed,
       saml2Sso: saml2Sso,
       vcOffers: vcOffers,
+      vcVerifier: vcVerifier,
       krb5Principals: krb5Principals,
       ldapServer: ldapServer
     };
@@ -394,7 +399,7 @@ class Logout {
   // ---------------------------------------------------------------------------
   private buildFamilies() {
     const { log, authn, config, frontchannel, krb5Principals, ldapServer,
-      oauth2, saml2Sso, stats, vcOffers, wsfed } = this.deps;
+      oauth2, saml2Sso, stats, vcOffers, vcVerifier, wsfed } = this.deps;
     log.debug("Entering Logout.buildFamilies().");
     log.debug("Leaving Logout.buildFamilies().");
     return [
@@ -825,6 +830,57 @@ class Logout {
           return { ok: true, message: 'a pre-authorized code was discarded; ' +
                                       'the Credential Offer it came from ' +
                                       'can no longer be redeemed' };
+        } },
+
+      // -----------------------------------------------------------------------
+      // A WALLET SIGN-IN NOBODY HAS COLLECTED YET (2026-09-17, #38). This
+      // file said OpenID4VP transactions carry no user, and for the bar door
+      // they still do not. A sign-in's transaction does, from the moment the
+      // wallet's presentation is accepted until the browser that started it
+      // comes back for the session — a window of one poll, and a session
+      // that would begin after a sign-out that could not see it.
+      { id: 'wallet-signin', endOrder: 25,
+        label: 'Wallet sign-ins not yet collected',
+        protocol: 'OpenID4VP',
+        spec: 'OpenID for Verifiable Presentations 1.0 section 8.2',
+        what: 'A wallet has presented a credential for this person to sign ' +
+              'a browser in, and that browser has not yet come back for ' +
+              'the session. Ending it means the browser is told a sign-out ' +
+              'withdrew it and nobody is signed in.',
+        collect: (ctx) => {
+          log.debug("Entering wallet-signin.collect().");
+          const rows = vcVerifier.signInsAwaitingCollection()
+            .filter((one) => {
+              return stats.holderKeyOf(one.username, one.subject) === ctx.key;
+            }).map((one) => {
+              return this.row('wallet-signin', 'wallet sign-in',
+                              this.handleFor(one.state), {
+                label: 'a wallet sign-in waiting for its browser',
+                detail: 'presentation accepted ' + (one.decidedAt || ''),
+                expiresAt: one.expires || 0,
+                secret: one.state
+              });
+            });
+          log.debug("Leaving wallet-signin.collect().");
+          return rows;
+        },
+        terminate: (r, ctx) => {
+          log.debug("Entering wallet-signin.terminate().");
+          const match = vcVerifier.signInsAwaitingCollection()
+            .filter((one) => {
+              return stats.holderKeyOf(one.username, one.subject) ===
+                ctx.key && this.handleFor(one.state) === r.handle;
+            })[0];
+          if (!match || !vcVerifier.withdrawSignIn(match.state,
+                                                   'a sign-out')) {
+            log.debug("Leaving wallet-signin.terminate(). Nothing left.");
+            return { ok: false, message: 'that wallet sign-in has already ' +
+                                         'been collected or has expired, so ' +
+                                         'there is nothing left to end' };
+          }
+          log.debug("Leaving wallet-signin.terminate().");
+          return { ok: true, message: 'a wallet sign-in was withdrawn before ' +
+                                      'its browser collected it' };
         } },
 
       // -----------------------------------------------------------------------

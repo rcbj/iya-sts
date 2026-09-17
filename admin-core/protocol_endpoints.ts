@@ -235,7 +235,9 @@ class ProtocolEndpoints {
                     '/oid4vci/deferred_credential', '/issuer/offer'].map(route),
       '/admin/oid4vp': [
         '/oid4vp/verifier', '/oid4vp/start', '/oid4vp/request/:id',
-        '/oid4vp/response', '/oid4vp/result/:state', '/oid4vp/done'
+        '/oid4vp/response', '/oid4vp/result/:state', '/oid4vp/done',
+        // The wallet sign-in (#38), whose four settings are on this page.
+        '/authn/wallet', '/authn/wallet/wait'
       ].map(route),
       '/admin/vc-verifier-config': ['/oid4vp/verifier', '/oid4vp/start',
                                     '/oid4vp/request/:id',

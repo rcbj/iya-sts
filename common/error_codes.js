@@ -8006,6 +8006,86 @@ const CODES = [
       'Code attempt — so the request was refused rather than accepted ' +
       'unproven.',
     spec: 'invalid_grant or invalid_proof (HTTP 400)' },
+  // --- signing in with a wallet, /authn/wallet (2026-09-17, #38) -----------
+  { code: 'STS-VC-0052',
+    summary: 'A wallet sign-in was refused because oid4vp.signIn is off.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0053',
+    summary: 'A wallet sign-in named no pending authentication — never ' +
+      'started, expired, or already used — so there was nothing to sign in ' +
+      'to.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0054',
+    summary: 'A wallet sign-in was refused for a request that demanded two ' +
+      'factors: a presentation proves possession of one key.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0055',
+    summary: 'A wallet sign-in was asked about by a browser that did not ' +
+      'start it (no binding cookie, or the wrong one), so it was not ' +
+      'finished there.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0056',
+    summary: 'A wallet sign-in\'s transaction is unknown, has expired, or ' +
+      'belongs to a different pending authentication.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0057',
+    summary: 'A second OpenID4VP response arrived for a sign-in\'s ' +
+      'transaction, which is answered once.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-VC-0058',
+    summary: 'A presentation verified and signed nobody in: the credential ' +
+      'was signed by a certificate in oid4vp.trustedIssuerCertificates, not ' +
+      'by this realm\'s issuer.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0059',
+    summary: 'A presentation verified and signed nobody in: this realm has ' +
+      'no record of issuing the credential for a person on an access token ' +
+      'it verified (another realm\'s, a foreign token\'s, or unknown).',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0060',
+    summary: 'A presentation verified and signed nobody in: the directory ' +
+      'entry the credential was issued for no longer exists.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0061',
+    summary: 'A presentation made to sign in did not verify (or was not a ' +
+      'presentation at all), so nobody was signed in.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0062',
+    summary: 'A wallet sign-in was already finished — here or on another ' +
+      'node — and was not finished again.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0063',
+    summary: 'The cluster claim store could not be asked whether a wallet ' +
+      'sign-in was already finished, so it was refused rather than finished ' +
+      'unproven.',
+    spec: 'HTTP 503 page' },
+  { code: 'STS-VC-0064',
+    summary: 'A presentation verified and mapped to a person, and the ' +
+      'issuance policy refused them a session.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0065',
+    summary: 'A wallet sign-in was returned to with a response_code that is ' +
+      'not the one given to the wallet.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0066',
+    summary: 'A presentation verified and signed nobody in: its subject or ' +
+      'holder key disagrees with what this realm recorded when it issued ' +
+      'the credential.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0067',
+    summary: 'An unexpected failure inside the wallet sign-in door.',
+    spec: 'HTTP 500 page' },
+  { code: 'STS-VC-0068',
+    summary: 'An issued credential could not be recorded as one that may ' +
+      'sign its subject in; the credential was issued anyway.',
+    spec: '' },
+  { code: 'STS-VC-0069',
+    summary: 'A wallet sign-in request carried a malformed query parameter.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0070',
+    summary: 'A wallet sign-in was withdrawn by a sign-out after the wallet ' +
+      'had presented and before the browser collected the session.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
   // ===== SSF ===============================================================
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +

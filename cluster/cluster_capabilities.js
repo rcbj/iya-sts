@@ -130,8 +130,9 @@ const CAPABILITIES = [
           'cluster.' },
   { id: 'oid4vc.once', section: '2',
     by: 'oid4vc/vc_issuer.ts',
-    what: 'An OpenID4VCI pre-authorized code and c_nonce are spent once, and ' +
-          'tx_code failures are counted across the cluster.' },
+    what: 'An OpenID4VCI pre-authorized code and c_nonce are spent once, ' +
+          'tx_code failures are counted across the cluster, and an ' +
+          'OpenID4VP wallet sign-in is finished once (oid4vc/vc_signin.ts).' },
   { id: 'gnap.once', section: '2',
     by: 'gnap/gnap_store.ts',
     what: 'A GNAP continuation, interaction reference, user code and request ' +

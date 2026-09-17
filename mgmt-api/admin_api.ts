@@ -1096,11 +1096,15 @@ class AdminApi {
       { path: '/oid4vp-settings', console: '/admin/oid4vp', tag: 'OpenID4VP',
         operationId: 'getOid4vpSettings',
         summary: 'The mock Verifier\'s own settings',
-        description: 'The four `oid4vp.*` settings: the client identifier ' +
+        description: 'The `oid4vp.*` settings: the client identifier ' +
                      'the verifier presents as, where it sends a holder to ' +
-                     'present, the Key Binding JWT\'s maximum age, and the ' +
-                     'claims asked for when nothing else has been ' +
-                     'chosen.\n\n`oid4vp.walletUrl` is DERIVED: with no ' +
+                     'present, the Key Binding JWT\'s maximum age, the ' +
+                     'claims asked for when nothing else has been chosen, ' +
+                     'and — since 2026-09-17 — the four that govern signing ' +
+                     'in with a wallet at `/authn/wallet` (`oid4vp.signIn`, ' +
+                     '`signInTtlS`, `signInPollS`, `signInCrossDevice`), ' +
+                     'set like every setting with `POST /config/set`.' +
+                     '\n\n`oid4vp.walletUrl` is DERIVED: with no ' +
                      'value of its own it is the OID4VCI wallet, since it is ' +
                      'the same wallet in every arrangement this service is ' +
                      'used in. Its `source` is `default` ' +
@@ -3088,7 +3092,8 @@ class AdminApi {
       //
       // It is a SEPARATE resource from /logout rather than a shape of it, and
       // the two questions are why: that one is *what is alice still signed
-      // into*, keyed on one identity and reaching ten families; this one is
+      // into*, keyed on one identity and reaching eleven families (ten until
+      // the wallet sign-in of 2026-09-17, #38); this one is
       // *who is signed in at all*, across everybody, in the three families that
       // have a session. A `user` parameter on the one below could not have
       // answered it, because the answer has no user in it.

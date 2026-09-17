@@ -1790,8 +1790,14 @@ const SPECS: Spec[] = [
     url: 'https://openid.net/specs/openid-4-verifiable-presentations-1_0.html',
     coverage: 'partial: Authorization Requests by value and as a signed ' +
               'Request Object by reference, response_mode=direct_post, a ' +
-              'DCQL query, and full verification of what comes back. No ' +
-              'presentation_definition (DIF PE) — DCQL only.' },
+              'DCQL query, and full verification of what comes back. Since ' +
+              '2026-09-17 a presentation can SIGN SOMEBODY IN at ' +
+              '/authn/wallet — same-device with the section 8.2 ' +
+              'response_code, cross-device by QR code — but only a ' +
+              'holder-bound SD-JWT VC this realm issued, and only as the ' +
+              'directory entry it was issued for; anything else verifies and ' +
+              'signs nobody in. No presentation_definition (DIF PE) — DCQL ' +
+              'only; no Digital Credentials API; no wallet attestation.' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +
@@ -5340,8 +5346,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The oid4vp.* settings: the verifier\'s client_id, ' +
           'the wallet it sends a holder to (which falls back to the OID4VCI ' +
           'one, since it is the same wallet in every arrangement this ' +
-          'service is used in), the Key Binding JWT\'s maximum age, and the ' +
-          'claims asked for by default. The DCQL query itself is ' +
+          'service is used in), the Key Binding JWT\'s maximum age, the ' +
+          'claims asked for by default, and the four that govern signing in ' +
+          'with a wallet at /authn/wallet (oid4vp.signIn, its lifetime, its ' +
+          'refresh and its QR code). The DCQL query itself is ' +
           '/admin/vc-verifier-config. Add ?format=json.' },
   { path: '/admin/kerberos', group: 'Admin', name: 'Kerberos settings',
     specs: ['rfc4120', 'rfc3961', 'rfc4178', 'rfc4559', 'ms-kkdcp', 'ms-sfu'],
@@ -5511,8 +5519,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'PATH DIFFERS BY FORMAT and the page shows which: top level for ' +
           'dc+sd-jwt, under credentialSubject for jwt_vc_json, and under the ' +
           'vendored JSON-LD context\'s own term for ldp_vc, which cannot ' +
-          'carry every claim at all. This page ASKS and admits nobody: a ' +
-          'presentation that verifies starts no session and issues no token. ' +
+          'carry every claim at all. This page configures the BAR DOOR, ' +
+          'whose presentations admit nobody; the wallet sign-in at ' +
+          '/authn/wallet asks for a request of its own. ' +
           'Add ?format=json; POST {"action":"select","claims":[...]} for the ' +
           'same thing without a browser.' },
 
@@ -5920,7 +5929,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'and paged with ?page= and ?per=. It is a SEPARATE resource from ' +
           '/admin-api/logout rather than a shape of it: that one answers ' +
           '"what is alice still signed into", keyed on one identity across ' +
-          'ten families, and this one answers "who is signed in at all", ' +
+          'eleven families, and this one answers "who is signed in at all", ' +
           'which has no user in it. Both read logout/logout.ts, the one ' +
           'model of what a live session is. Every row carries the key and id ' +
           'the revoke takes, the sessionId that GET ' +
@@ -7635,6 +7644,39 @@ const ENDPOINTS: EndpointEntry[] = [
           'because a bare 401 Negotiate is a dead end in every browser not ' +
           'configured for this host. krb5.spnegoAuthentication turns it off, ' +
           'and it then answers 403 saying so rather than 404.' },
+  { path: '/authn/wallet', group: 'Authentication',
+    name: 'Sign in with a wallet',
+    specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'oidc'],
+    effect: 'builds an OpenID4VP request bound to the pending sign-in, sets ' +
+            'the browser-binding cookie and redirects to the wait page',
+    what: 'A VERIFIED PRESENTATION AS A SIGN-IN (2026-09-17). Offered on ' +
+          '/authn/login to every flow in progress, like the Kerberos ' +
+          'button: it takes ?authn= and NEVER a returnTo. The request is ' +
+          'always by reference (signed) and asks for this issuer\'s SD-JWT ' +
+          'VC and its subject only. Only a credential THIS REALM issued, on ' +
+          'an access token it verified, for a person — recorded at issuance, ' +
+          'because the credential endpoint accepts tokens it did not issue — ' +
+          'and presented with a Key Binding JWT against its cnf key signs ' +
+          'anybody in, and it signs in the directory entry it was issued ' +
+          'for. Withheld from a request demanding two factors: the session ' +
+          'claims amr ["pop"] and acr "1". oid4vp.signIn turns it off, and ' +
+          'it then answers 403 saying so.' },
+  { path: '/authn/wallet/wait', group: 'Authentication',
+    name: 'Wallet sign-in: wait, and finish',
+    specs: ['oid4vp', 'oidc'],
+    effect: 'once the wallet has answered, establishes the browser session ' +
+            'and returns to whatever was interrupted',
+    what: 'The page the browser waits on: the same-device wallet link and a ' +
+          'server-drawn QR code (oid4vp.signInCrossDevice), reloaded by a ' +
+          '<meta> refresh every oid4vp.signInPollS seconds — NO SCRIPT. Once ' +
+          'the wallet has answered it either signs the browser in or says ' +
+          'why nobody was: the presentation did not verify, the credential ' +
+          'was a trusted foreign issuer\'s, this realm has no record of ' +
+          'issuing it to a person on a token it verified, or the entry is ' +
+          'gone. It finishes ONLY in the browser that started the sign-in ' +
+          '(a hashed binding cookie), ONLY with the right response_code ' +
+          'where one is carried (OpenID4VP section 8.2), and ONCE — across ' +
+          'a cluster too; the transaction lives oid4vp.signInTtlS.' },
   { path: '/authn/webauthn', group: 'Authentication', name: 'WebAuthn ' +
       'security-key step',
     specs: ['oidc', 'webauthn'],
@@ -8261,7 +8303,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Where the wallet POSTs the vp_token, and where it is really ' +
           'verified: issuer signature, every Disclosure digest against _sd, ' +
           'the Key Binding JWT including sd_hash, the validity window, and ' +
-          'whether the claims asked for arrived.' },
+          'whether the claims asked for arrived. For a transaction started ' +
+          'at /authn/wallet it also decides WHOM the presentation signs in, ' +
+          'answers once, and sends a same-device wallet back with a ' +
+          'response_code; the session itself is set on the browser\'s next ' +
+          'request, never on this one, which is the wallet\'s.' },
   { path: '/oid4vp/result/:state', group: 'VC Presentation (OID4VP)',
     name: 'Verification verdict (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
@@ -8901,7 +8947,8 @@ const PROTOCOLS: Protocol[] = [
           'Offers, pre-authorized codes, deferred and batch issuance, ' +
           'notifications) and a verifier that checks a presentation properly ' +
           '— every disclosure digest, the key binding, and whether what was ' +
-          'asked for arrived.' }
+          'asked for arrived — and, at /authn/wallet, signs in the holder of ' +
+          'a credential this realm issued (the Authentication group).' }
 ];
 // Groups of endpoints that are NOT a protocol family, and so are not expected
 // to be claimed by a row above. Four, and each is the service talking about

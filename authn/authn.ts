@@ -248,6 +248,18 @@ const MFA_SETUP_PATH = '/authn/mfa-setup';
 // all.
 // ---------------------------------------------------------------------------
 const SPNEGO_PATH = '/authn/spnego';
+// ---------------------------------------------------------------------------
+// WHERE A PERSON SIGNS IN WITH A WALLET (2026-09-17, #38), and the same
+// arrangement as `SPNEGO_PATH` for a smaller reason. The endpoints are
+// `oid4vc/vc_signin.ts`'s, because what they drive is the OpenID4VP Verifier
+// and that module is required at #11-14; this module is at #8 and reads
+// nothing of that family. The two paths are declared here because this module
+// owns `/authn/*` and draws the button that links to the first. No slot, for
+// SPNEGO's reason: two files read two constants and one setting
+// (`oid4vp.signIn`), and nothing has to point anywhere.
+// ---------------------------------------------------------------------------
+const WALLET_PATH = '/authn/wallet';
+const WALLET_WAIT_PATH = '/authn/wallet/wait';
 
 const SESSION_COOKIE = 'sts_session';
 
@@ -2240,6 +2252,10 @@ class Authn {
   // screen (password)", which for somebody who typed a password AND a code is a
   // report that quietly loses the second factor — the same defect the
   // passwordless ceremony had before this function replaced the conditional.
+  //
+  // **AND FIVE (2026-09-17, #38)**: `pop`, a wallet's presentation. Callers
+  // that know better pass their own `method` (`vc_signin.ts` does), and this
+  // branch is what a session row reads when nothing did.
   private methodPhraseFor(amr) {
     const { log } = this.deps;
     log.debug("Entering Authn.methodPhraseFor().");
@@ -2247,6 +2263,15 @@ class Authn {
     const key = factors.indexOf('hwk') >= 0;
     const password = factors.indexOf('pwd') >= 0;
     const code = factors.indexOf('otp') >= 0;
+    // A WALLET (2026-09-17, #38): RFC 8176's `pop`, proof of possession of a
+    // key whose storage nobody here knows. Asked first because it is never
+    // combined with the others — the sign-in that produces it asks for
+    // nothing else.
+    if (factors.indexOf('pop') >= 0) {
+      log.debug("Leaving Authn.methodPhraseFor().");
+      return 'a wallet (a verifiable presentation, proof of possession of ' +
+             'the holder key)';
+    }
     if (key && password) {
       log.debug("Leaving Authn.methodPhraseFor().");
       return 'sign-in screen (password and a security key)';
@@ -4656,6 +4681,49 @@ class Authn {
     return html;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE WALLET BUTTON (2026-09-17, #38) — `integratedOptionHtml()`'s argument
+  // made again, and it holds for the same reasons: a person at this screen is
+  // in the middle of something, the record carries it, and whether somebody
+  // holds a credential this realm issued is a fact about their wallet and not
+  // about the relying party. So it is offered to every application with
+  // nothing registered, whenever `oid4vp.signIn` is on.
+  //
+  // **WITHHELD UNDER `forceMfa`, AND SAID SO.** A presentation proves
+  // possession of one key — `amr ["pop"]`, `acr "1"` — and a request that
+  // demanded two factors must not be offered a way to be answered with one.
+  // The door refuses the same record too (`vc_signin.ts`), because a button
+  // is markup and the record is what decides.
+  //
+  // ONE SETTING, where Kerberos has two: Kerberos keeps a door for scripted
+  // clients that holds no screen, and a wallet sign-in has no use outside a
+  // browser that is waiting to be signed in, so a switch that closed the
+  // button and left the door open would describe a state nobody can use.
+  // ---------------------------------------------------------------------------
+  private walletOptionHtml(record) {
+    const { log, config } = this.deps;
+    log.debug("Entering Authn.walletOptionHtml().");
+    if (!config.value('oid4vp.signIn')) {
+      log.debug("Leaving Authn.walletOptionHtml(). Not offered.");
+      return '';
+    }
+    if (record.forceMfa) {
+      log.debug("Leaving Authn.walletOptionHtml(). Withheld: two factors " +
+                "were demanded.");
+      return '<div class="fed"><p id="wallet-withheld">Signing in with a ' +
+        'wallet is not offered for this request: it demands two factors, ' +
+        'and a presentation proves possession of one key.</p></div>';
+    }
+    const html = '<div class="fed"><p>Or sign in with a wallet that holds ' +
+      'a credential this service issued to you. Nothing is typed: your ' +
+      'wallet proves it holds the key the credential is bound to.</p>' +
+      '<a class="fedbtn" id="wallet-signin" href="' + WALLET_PATH +
+      '?authn=' + encodeURIComponent(record.id) + '">Sign in with a wallet' +
+      '<span>OpenID4VP &middot; SD-JWT VC</span></a></div>';
+    log.debug("Leaving Authn.walletOptionHtml(). Offered.");
+    return html;
+  }
+
   private loginPage(base, record, error) {
     const { log, xmlEscape, config, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.loginPage(). protocol=" + record.protocol +
@@ -4817,6 +4885,8 @@ class Authn {
       // this is offered to everybody — a configured route belongs above an
       // ambient one.
       this.integratedOptionHtml(record) +
+      // AND THE WALLET (#38), last: offered to everybody, like Kerberos.
+      this.walletOptionHtml(record) +
       '<div class="meta"><div>No password is checked. The username you enter ' +
       'is the identity the issued tokens describe.</div><div>Passwordless: ' +
       'the password field is not read at all, and the security key becomes ' +
@@ -8182,6 +8252,10 @@ export = {
   //                          4.12's 303-not-307 to be got wrong.
   // ---------------------------------------------------------------------
   SPNEGO_PATH: SPNEGO_PATH,
+  // The wallet door's two paths (#38), for `oid4vc/vc_signin.ts`, which uses
+  // `pendingFor` and `completeAuthentication` for the Kerberos door's reasons.
+  WALLET_PATH: WALLET_PATH,
+  WALLET_WAIT_PATH: WALLET_WAIT_PATH,
   pendingFor: slot.forward('pendingFor'),
   completeAuthentication: slot.forward('completeAuthentication')
 };

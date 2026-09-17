@@ -2093,8 +2093,11 @@ class CryptoMetadata {
         hashes: 'SHA-256 for every SD-JWT disclosure digest, and inside the ' +
                 'BBS ciphersuite for the message mapping.',
         whatItDoesNot: 'It verifies nothing in a credential\'s VALUES, which ' +
-                       'are invented, and it turns a verified presentation ' +
-                       'into a sign-on nowhere.',
+                       'are invented, and a verified presentation signs ' +
+                       'somebody in only at /authn/wallet, only for a ' +
+                       'holder-bound SD-JWT VC this realm issued — never ' +
+                       'at the bar door, and never on a foreign issuer\'s ' +
+                       'signature.',
         envelopes: ['jws', 'sdjwt', 'dataintegrity', 'did'],
         algorithms: function () {
           log.debug("Entering algorithms().");
