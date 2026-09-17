@@ -1495,6 +1495,44 @@ const SCHEMAS = {
                           'authenticated before now, not just this one.' }
     }),
 
+  BackchannelDelivery: openObject(
+    'One OpenID Connect Back-Channel Logout 1.0 delivery: a signed Logout ' +
+    'Token this service POSTs to a relying party\'s registered ' +
+    'backchannel_logout_uri when a session it was issued an authorization ' +
+    'response on ends. The token itself is never in a reply.',
+    {
+      id: { type: 'string' },
+      sessionId: { type: 'string',
+                   description: 'The sign-on session whose end it reports ' +
+                                '— the Logout Token\'s `sid`.' },
+      clientId: { type: 'string', description: 'The token\'s `aud`.' },
+      uri: { type: 'string' },
+      sessionRequired: { type: 'boolean',
+                         description: 'What the client registered as ' +
+                                      'backchannel_logout_session_required. ' +
+                                      '`sid` is sent either way.' },
+      state: { type: 'string',
+               enum: ['pending', 'sent', 'failed', 'elsewhere'],
+               description: '`pending` until it is accepted (`sent`: 200 ' +
+                            'or 204), refused or out of attempts ' +
+                            '(`failed`), or handed to the process that ' +
+                            'reported the session\'s end (`elsewhere`). ' +
+                            'A sign-out answers BEFORE its deliveries are ' +
+                            'made, so its own reply says `pending`.' },
+      attempts: { type: 'integer' },
+      status: { type: 'integer',
+                description: 'The last HTTP status, or 0 where none came ' +
+                             'back.' },
+      errorCode: { type: 'string',
+                   description: 'The STS-OAUTH-05xx code of a failure.' },
+      why: { type: 'string' },
+      via: { type: 'string',
+             description: 'Which door ended the session.' },
+      queuedAt: { type: 'string', format: 'date-time' },
+      finishedAt: { type: 'string',
+                    description: 'ISO 8601, or empty while pending.' }
+    }),
+
   LogoutInventory: openObject(
     'What this service is still holding for one identity, across every ' +
     'protocol family — or, with no `user`, the list of families a logout ' +
@@ -1525,7 +1563,15 @@ const SCHEMAS = {
                   items: { $ref: '#/components/schemas/LogoutFamily' } },
       rows: { type: 'array', items: { $ref: '#/components/schemas/LogoutRow' },
               description: 'The same rows flattened, filtered and paged — ' +
-                           'which is what the console table shows.' }
+                           'which is what the console table shows.' },
+      backchannelDeliveries: {
+        type: 'array',
+        items: { $ref: '#/components/schemas/BackchannelDelivery' },
+        description: 'The most recent back-channel Logout Token deliveries ' +
+                     'THIS PROCESS made in this realm, newest first, with or ' +
+                     'without `user` — where a delivery a sign-out reported ' +
+                     'as `pending` is seen to have arrived. Every final ' +
+                     'outcome is also a `logout.backchannel` audit row.' }
     }, PAGING_PROPERTIES)),
 
   UserList: openObject(

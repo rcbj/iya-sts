@@ -961,6 +961,26 @@ const SCHEMA = {
             'boolean FALSE rather than unknown — so an absent value here ' +
             'means the client did not ask, which is a different fact from ' +
             'the client not having registered.' },
+    { name: 'oauthBackchannelLogoutUri', kind: 'single',
+      from: 'POST /oauth2/register, the console, or by hand',
+      what: 'WHERE THIS SERVICE POSTS A LOGOUT TOKEN WHEN THE USER SIGNS OUT ' +
+            '— OpenID Connect Back-Channel Logout 1.0 section 2.2\'s ' +
+            'backchannel_logout_uri. Every sign-out of a session this client ' +
+            'was issued an authorization response on sends one, ' +
+            'server-to-server, after the sign-out has answered, through the ' +
+            'outbound policy (https unless ' +
+            'federation.outboundAllowInsecure; no internal address in ' +
+            'product mode). SINGLE-valued, like the front-channel URI: the ' +
+            'specification defines one per client. http or https with no ' +
+            'fragment.' },
+    { name: 'oauthBackchannelLogoutSessionRequired', kind: 'single',
+      from: 'POST /oauth2/register, the console, or by hand',
+      what: 'TRUE if this client requires `sid` in the Logout Token — ' +
+            'Back-Channel Logout 1.0 section 2.2\'s ' +
+            'backchannel_logout_session_required. This service puts `sid` ' +
+            'AND `sub` in every Logout Token it sends, so the flag is always ' +
+            'honoured; it is recorded because "false" and "not stated" are ' +
+            'different facts about a client, as for the front-channel flag.' },
     { name: 'oauthGrantType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'Grant types registered or observed at the token endpoint.' },
     { name: 'oauthResponseType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
@@ -2976,6 +2996,8 @@ const EDITABLE = {
   oauthPostLogoutRedirectUri: 'multi',
   oauthFrontchannelLogoutUri: 'set',
   oauthFrontchannelLogoutSessionRequired: 'set',
+  oauthBackchannelLogoutUri: 'set',
+  oauthBackchannelLogoutSessionRequired: 'set',
   oauthGrantType: 'multi',
   oauthResponseType: 'multi',
   oauthScope: 'multi',
@@ -3988,6 +4010,8 @@ function openSealedFields(fields, identifier) {
 //
 // `oauthRedirectUri` and `oauthPostLogoutRedirectUri` are addresses a browser
 // is SENT to, and `oauthFrontchannelLogoutUri` is one a sign-out page FRAMES.
+// `oauthBackchannelLogoutUri` (2026-09-17, #36) is one this service POSTs a
+// Logout Token to, and takes the same http(s)-only rule.
 // Until this date none of the three was checked on the way in — at
 // registration, at a console `add` or at `/admin-api` — so `javascript:` could
 // be stored in all of them. The two redirect attributes were caught again at
@@ -4007,7 +4031,8 @@ function openSealedFields(fields, identifier) {
 const ADDRESS_ATTRIBUTES = {
   oauthRedirectUri: 'redirect',
   oauthPostLogoutRedirectUri: 'redirect',
-  oauthFrontchannelLogoutUri: 'frontchannel'
+  oauthFrontchannelLogoutUri: 'frontchannel',
+  oauthBackchannelLogoutUri: 'backchannel'
 };
 
 function addressProblem(attribute, value) {
@@ -4019,7 +4044,9 @@ function addressProblem(attribute, value) {
   }
   const problem = kind === 'frontchannel'
     ? validation.frontchannelUriProblem(String(value))
-    : validation.redirectUriProblem(String(value));
+    : kind === 'backchannel'
+      ? validation.backchannelUriProblem(String(value))
+      : validation.redirectUriProblem(String(value));
   log.debug("Leaving addressProblem().");
   return problem ? '"' + value + '" cannot be ' + attribute + ': it ' +
                    problem + '.' : null;
@@ -4037,6 +4064,8 @@ function registrationUriProblem(metadata) {
     ['post_logout_redirect_uris', 'oauthPostLogoutRedirectUri',
      'invalid_client_metadata'],
     ['frontchannel_logout_uri', 'oauthFrontchannelLogoutUri',
+     'invalid_client_metadata'],
+    ['backchannel_logout_uri', 'oauthBackchannelLogoutUri',
      'invalid_client_metadata']
   ];
   for (let i = 0; i < members.length; i++) {
@@ -6127,6 +6156,12 @@ function applyRegistrationFields(record, registration, statement) {
     setField(record, 'oauthFrontchannelLogoutSessionRequired',
              meta.frontchannel_logout_session_required ? 'TRUE' : 'FALSE');
   }
+  // Back-Channel Logout 1.0 section 2.2, the same way (2026-09-17, #36).
+  setField(record, 'oauthBackchannelLogoutUri', meta.backchannel_logout_uri);
+  if (meta.backchannel_logout_session_required !== undefined) {
+    setField(record, 'oauthBackchannelLogoutSessionRequired',
+             meta.backchannel_logout_session_required ? 'TRUE' : 'FALSE');
+  }
   // RFC 7591 section 2 `client_uri`: "URL string of a web page providing
   // information about the client". That is the application's home page, which
   // is the fact appHomePageUrl holds, so a registered client arrives with one
@@ -6367,6 +6402,14 @@ function registrationOf(clientId) {
     document.frontchannel_logout_session_required =
       String(fields.oauthFrontchannelLogoutSessionRequired).toUpperCase() === 'TRUE';
   }
+  if (fields.oauthBackchannelLogoutUri !== undefined) {
+    document.backchannel_logout_uri = fields.oauthBackchannelLogoutUri;
+  }
+  if (fields.oauthBackchannelLogoutSessionRequired !== undefined) {
+    document.backchannel_logout_session_required =
+      String(fields.oauthBackchannelLogoutSessionRequired)
+        .toUpperCase() === 'TRUE';
+  }
   if (fields.oauthGrantType) document.grant_types = fields.oauthGrantType.slice(
       0);
   if (fields.oauthResponseType) document.response_types =
@@ -6497,6 +6540,8 @@ function clientConfigOf(identifier) {
              post_logout_redirect_uris: [], token_endpoint_auth_method: '',
              frontchannel_logout_uri: '',
              frontchannel_logout_session_required: false,
+             backchannel_logout_uri: '',
+             backchannel_logout_session_required: false,
              client_secret: '' };
   }
   const fields = loaded.record.fields;
@@ -6547,6 +6592,14 @@ function clientConfigOf(identifier) {
       ? '' : String(fields.oauthFrontchannelLogoutUri),
     frontchannel_logout_session_required:
       String(fields.oauthFrontchannelLogoutSessionRequired ||
+             '').toUpperCase() === 'TRUE',
+    // Where a sign-out POSTs this client a Logout Token (Back-Channel Logout
+    // 1.0, 2026-09-17), and whether it asked for `sid` in it — defaulted
+    // FALSE by the same RFC 7591 rule.
+    backchannel_logout_uri: fields.oauthBackchannelLogoutUri === undefined
+      ? '' : String(fields.oauthBackchannelLogoutUri),
+    backchannel_logout_session_required:
+      String(fields.oauthBackchannelLogoutSessionRequired ||
              '').toUpperCase() === 'TRUE',
     token_endpoint_auth_method: method,
     client_secret: fields.oauthClientSecret === undefined

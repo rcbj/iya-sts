@@ -1628,6 +1628,24 @@ section 3 holds it: two ends of one session with a shared stub store report
 once (with the losing row coded), the same without one report twice (the
 control), and an unreachable store still reports.
 
+**THE BACK-CHANNEL LOGOUT TOKENS RIDE THE SAME CLAIM (2026-09-17, #36).**
+`dropSession()` asks `oauth-oidc/backchannel_logout.ts` to PLAN a delivery for
+every OIDC relying party on the session that registered a
+`backchannel_logout_uri` — synchronously, before the claim, so the door's
+answer can list them as `pending` — and the `emit` that `sessionEndOnce()`
+lets out DISPATCHES them; `onLost` hands them off (`elsewhere`), because the
+winner sends. It is the reason a Logout Token reaches a relying party from
+every door, `wsignout1.0` and SAML Single Logout included: this function is the
+one they share. The require is LAZY, like `frontchannel_logout.ts`'s require of
+this module, and is caught — a delivery that cannot be planned never stops a
+sign-out. **`expireSession()` plans nothing**: an expiry sends no Logout Token,
+by decision (`oauth-oidc/CLAUDE.md`, 3aq). **What an `authn.session-end` claim
+that REJECTS does to the planned rows** — the `.catch` above logs
+`STS-AUTHN-0192` and runs neither callback — is that they stay `pending` in
+this process's register; nothing is sent for them. It is the same case in
+which `session.end` is not written either, and it is recorded here rather than
+papered over.
+
 ## SEVERAL NODES: THE THREE SECOND-FACTOR DOORS SPEND IN THE STORE (2026-09-14, #46)
 
 `POST /authn/totp` and the assertion branch of `POST /authn/webauthn` are

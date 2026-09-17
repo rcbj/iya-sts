@@ -1362,10 +1362,11 @@ class AdminApi {
                      'response.\n\nThe assertion it carries is a SAML 1.1 ' +
                      'one, so its Issuer is `saml.issuer` (on `GET /saml2` ' +
                      'and `GET /saml11`) and its contents are `GET ' +
-                     '/saml-attributes`. `wauth` is recorded and not ' +
-                     'honoured and `wreqptr` is never dereferenced; ' +
-                     'neither is a setting, and the page ' +
-                     'says so rather than implying a missing one.' },
+                     '/saml-attributes`. A `wauth` the session cannot meet ' +
+                     'is a step-up through the sign-in screen, and ' +
+                     '`wreqptr` is never dereferenced; neither is a ' +
+                     'setting, and the page says so rather than implying a ' +
+                     'missing one.' },
       { path: '/tls', console: '/admin/tls', tag: 'TLS',
         operationId: 'getTlsSettings',
         summary: 'The TLS certificate\'s own settings',
@@ -3322,7 +3323,14 @@ class AdminApi {
                          'is something this process performs. They come back ' +
                          'in `notifications` and `cleanups` so a caller ' +
                          'can load them, and `/logout` is the page where ' +
-                         'a browser does it by itself.',
+                         'a browser does it by itself.\n\n**The ' +
+                         'back-channel Logout Tokens ARE sent from here** ' +
+                         '(OpenID Connect Back-Channel Logout 1.0), to every ' +
+                         'relying party on an ended session that registered ' +
+                         'a `backchannel_logout_uri` — after this reply, so ' +
+                         '`backchannel` lists each with the state it has ' +
+                         'now, nearly always `pending`, and `GET ' +
+                         '/admin-api/logout` lists where each got to.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -3337,8 +3345,10 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The act, in `result`: `terminated`, ' +
-                                 '`skipped`, `unknown`, and the three ' +
-                                 'fan-outs a browser has to perform.' },
+                                 '`skipped`, `unknown`, the three ' +
+                                 'fan-outs a browser has to perform, and ' +
+                                 '`backchannel`, the one this service ' +
+                                 'performs itself.' },
           { action: 'end', operationId: 'endLiveSessions',
             summary: 'End named items and nothing else',
             description: 'The selective half. `select` carries row ids from ' +

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2687** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2700** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 177
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 411
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 424
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 60
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1425,6 +1425,19 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0529` | A DPoP-bound access token was presented with no proof while oauth2.accessTokenRequireDpop is on. | invalid_token (HTTP 401) |
 | `STS-OAUTH-0530` | An access token carrying no cnf x5t#S256 was presented at a resource while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
 | `STS-OAUTH-0531` | A certificate-bound access token was presented at a resource over a connection carrying no matching certificate, while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
+| `STS-OAUTH-0532` | A back-channel Logout Token was not sent because federation.outbound is off, so this service makes no outbound request. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0533` | A back-channel Logout Token was not sent because the client's backchannel_logout_uri cannot be dialled: not http(s), plain http with federation.outboundAllowInsecure off, or not a URL. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0534` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri resolves to a loopback, private, link-local or reserved address. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0535` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri's host could not be resolved. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0536` | A relying party answered a back-channel Logout Token with 400, which Back-Channel Logout 1.0 section 2.8 makes a final refusal; it is not retried. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0537` | A relying party answered a back-channel Logout Token with a status other than 200, 204 or 400 — after every attempt where the status is one worth retrying (5xx, 408, 429). | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0538` | A relying party did not answer a back-channel Logout Token within oauth2.backchannelLogoutTimeoutMs, on every attempt. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0539` | A back-channel Logout Token could not be delivered because the connection failed (DNS, refused, TLS), on every attempt. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0540` | A relying party answered a back-channel Logout Token with a redirect, which is not followed. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0541` | A back-channel Logout Token could not be signed — the client registered an id_token_signed_response_alg this service cannot use for it, or an HMAC algorithm with no client secret. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0542` | A back-channel Logout Token was not sent because the session did not record the issuer that client's ID Token was issued by (a session older than the feature), and no fallback was available. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0543` | A back-channel Logout Token request could not be built from its options. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0544` | A stored backchannel_logout_uri is not an http or https URL without a fragment, so the client was not sent a Logout Token. | none — the delivery is listed with the reason, and the value is logged |
 
 ## STS-SAML
 
@@ -1537,8 +1550,8 @@ Raised from: ws-federation/.
 | `STS-WSFED-0006` | wauth demanded an authentication method this identity provider cannot perform or report. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0007` | The sign-in at the authentication service was cancelled or failed, so nothing is posted to the relying party. | HTTP 200 error page; the relying party is never posted to |
 | `STS-WSFED-0008` | wfresh is not a non-negative number of minutes. | HTTP 400 error page (the profile defines no error response) |
-| `STS-WSFED-0009` | wauth demanded a hardware token and the existing browser session used no security key. | HTTP 400 error page (the profile defines no error response) |
-| `STS-WSFED-0010` | wauth demanded multi-factor authentication and the existing browser session had only one factor. | HTTP 400 error page (the profile defines no error response) |
+| `STS-WSFED-0009` | wauth demanded a hardware token, the person was sent to sign in again with a second factor required (a step-up), and the session that came back still used no security key. | HTTP 400 error page (the profile defines no error response) |
+| `STS-WSFED-0010` | wauth demanded multi-factor authentication, the person was sent to sign in again with a second factor required (a step-up), and the session that came back still had only one factor. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0011` | The issuance policy (the role gate) refused a token for the signed-in person to this wtrealm. | HTTP 403 error page |
 | `STS-WSFED-0012` | The request asked for wattr1.0 (attribute service) or wpseudo1.0 (pseudonym service), neither of which is implemented. | HTTP 501 error page |
 | `STS-WSFED-0013` | The passive requestor endpoint was sent a wa value it does not understand. | HTTP 400 error page (the profile defines no error response) |
@@ -3013,8 +3026,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0053` | An ssfAllowedEvents value was neither caep, risc nor an event type URI this transmitter knows. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0060` | A write of oauthAssertionKeySource or oauthSamlAssertionKeySource named a value outside issued, uploaded-realm-ca and uploaded-external-ca. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0061` | Regenerating the client secret of sts-management-api was refused because adminApi.clientSecret pins it. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-REG-0070` | A client registration (RFC 7591 or 7592) named a redirect_uri, post_logout_redirect_uri or frontchannel_logout_uri that is not a usable address — not http(s) with a host, not a private-use scheme named for a domain, or (for the front-channel URI) not http(s). | invalid_redirect_uri or invalid_client_metadata (HTTP 400) |
-| `STS-REG-0071` | A console or /admin-api write put an unusable address on oauthRedirectUri, oauthPostLogoutRedirectUri or oauthFrontchannelLogoutUri. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0070` | A client registration (RFC 7591 or 7592) named a redirect_uri, post_logout_redirect_uri, frontchannel_logout_uri or backchannel_logout_uri that is not a usable address — not http(s) with a host, not a private-use scheme named for a domain, or (for the two logout URIs) not http(s). | invalid_redirect_uri or invalid_client_metadata (HTTP 400) |
+| `STS-REG-0071` | A console or /admin-api write put an unusable address on oauthRedirectUri, oauthPostLogoutRedirectUri, oauthFrontchannelLogoutUri or oauthBackchannelLogoutUri. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0072` | An RFC 7591 registration or RFC 7592 update named an RFC 9701 introspection_signed_response_alg, introspection_encrypted_response_alg or introspection_encrypted_response_enc this service cannot honour, or an enc with no alg. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0073` | A console or /admin-api write put an unusable RFC 9701 algorithm on oauthIntrospectionSignedResponseAlg, oauthIntrospectionEncryptedResponseAlg or oauthIntrospectionEncryptedResponseEnc, or an enc on an entry with no alg. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0074` | An RFC 9728 protected resource metadata import named no document: nothing pasted, nothing uploaded and no URL. | the caller's refusal (errors on a console or /admin-api reply) |
