@@ -21,6 +21,11 @@
 //      loads one module relies on.
 //   3. A second `installInstance()` is refused: two instances of one module
 //      would split its state.
+//   4. A REQUEST WORKER's load order holds claim 1 too. `request_worker.js`
+//      requires `service_state` — and through it converted modules — before
+//      it loads the stack, so it has to defer to the root first; on
+//      2026-09-17 it did not, and every worker failed to start in dispatch
+//      mode while this file, which only loaded the stack, stayed green.
 //
 // IN A CHILD PROCESS for `spiffe_join_token.js`'s reason: loading the whole
 // stack builds a certificate authority and registers every route on the shared
@@ -53,6 +58,14 @@ function childScript(mode) {
       "} catch (e) {",
       "  out.secondInstall = String(e && e.message);",
       "}"
+    ]
+    : mode === 'worker'
+    ? [
+      "require(" +
+      JSON.stringify(path.join(ROOT, 'common/request_worker')) + ");",
+      "const stack = require(" +
+      JSON.stringify(path.join(ROOT, 'common/protocol_stack')) + ");",
+      "out.origins = stack.instanceOrigins();"
     ]
     : [
       "const context = require(" +
@@ -112,6 +125,17 @@ function run(t) {
             'and every one of them says root (' + origins.length + ')');
     t.check(/already installed/.test(String(stack.secondInstall)),
             'a second installInstance() is refused', stack.secondInstall);
+  }
+
+  t.log.info('=== a request worker: required first, then the stack ===');
+  const worker = runChild(t, 'worker');
+  if (worker) {
+    const early = (worker.origins || []).filter(function (row) {
+      return row.origin !== 'root';
+    });
+    t.check((worker.origins || []).length > 0 && early.length === 0,
+            'in a worker\'s load order every instance is the root\'s too',
+            JSON.stringify(early));
   }
 
   t.log.info('=== one module alone: it builds its own default ===');
