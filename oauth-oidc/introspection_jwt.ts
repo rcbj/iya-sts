@@ -76,11 +76,14 @@
 // crypto module, the application registry, the error-code table and the
 // RFC 9068 library through its constructor. The media type, the `typ` and
 // the algorithm lists are its static constants. The module still exports
-// every name it exported, the functions bound to a TRANSITIONAL instance
-// built from the real modules.
+// every name it exported, the functions as FACADES over the instance the
+// composition root builds and installs (R2); a process without the root
+// builds a default one at load. The two `helpers` signing functions are
+// passed as they are, so the signer is the one `helpers.js` holds.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 // The application registry owns what a VALUE of one of its attributes may be,
 // which is where the three RFC 9701 client metadata members are checked on the
@@ -155,6 +158,22 @@ class IntrospectionJwt {
   constructor(private readonly deps: IntrospectionJwtDeps) {
     deps.log.debug("Entering IntrospectionJwt.constructor().");
     deps.log.debug("Leaving IntrospectionJwt.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): IntrospectionJwtDeps {
+    helpers.log.debug("Entering IntrospectionJwt.defaultDeps().");
+    helpers.log.debug("Leaving IntrospectionJwt.defaultDeps().");
+    return {
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      signJwtAsAsync: helpers.signJwtAsAsync,
+      stsCrypto: stsCrypto,
+      applications: applications,
+      errorCodes: errorCodes,
+      jwtAccessToken: jwtAccessToken
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -573,22 +592,28 @@ class IntrospectionJwt {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one. The two `helpers`
-// functions are passed as they are, so the signer is the one `helpers.js`
-// holds.
-const introspection = new IntrospectionJwt({
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  signJwtAsAsync: helpers.signJwtAsAsync,
-  stsCrypto: stsCrypto,
-  applications: applications,
-  errorCodes: errorCodes,
-  jwtAccessToken: jwtAccessToken
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<IntrospectionJwt>(
+  'oauth-oidc/introspection_jwt',
+  () => new IntrospectionJwt(IntrospectionJwt.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   IntrospectionJwt: IntrospectionJwt,
+  installInstance: (instance: IntrospectionJwt): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   MEDIA_TYPE: IntrospectionJwt.MEDIA_TYPE,
   TYP: IntrospectionJwt.TYP,
   DEFAULT_SIGNING_ALG: IntrospectionJwt.DEFAULT_SIGNING_ALG,
@@ -596,16 +621,10 @@ export = {
   SIGNING_ALGS: IntrospectionJwt.SIGNING_ALGS,
   ENCRYPTION_ALGS: IntrospectionJwt.ENCRYPTION_ALGS,
   ENCRYPTION_ENCS: IntrospectionJwt.ENCRYPTION_ENCS,
-  wantsJwt: introspection.wantsJwt.bind(introspection) as
-    IntrospectionJwt['wantsJwt'],
-  protectionFor: introspection.protectionFor.bind(introspection) as
-    IntrospectionJwt['protectionFor'],
-  intendedFor: introspection.intendedFor.bind(introspection) as
-    IntrospectionJwt['intendedFor'],
-  recipientKey: introspection.recipientKey.bind(introspection) as
-    IntrospectionJwt['recipientKey'],
-  claimsFor: introspection.claimsFor.bind(introspection) as
-    IntrospectionJwt['claimsFor'],
-  respond: introspection.respond.bind(introspection) as
-    IntrospectionJwt['respond']
+  wantsJwt: slot.forward('wantsJwt'),
+  protectionFor: slot.forward('protectionFor'),
+  intendedFor: slot.forward('intendedFor'),
+  recipientKey: slot.forward('recipientKey'),
+  claimsFor: slot.forward('claimsFor'),
+  respond: slot.forward('respond')
 };

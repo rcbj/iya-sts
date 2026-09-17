@@ -72,15 +72,18 @@
 // the session owner, the consent register, the audit log and the rest through
 // its constructor, and its `registerRoutes(app)` holds the GET and the POST in
 // their old order. The pending store stays module-level, declared at load as
-// before. The TRANSITIONAL code at the bottom builds one from the real
-// modules and logs the line it always logged, and registers NOTHING (#50,
-// R1): the module exports `registerRoutes(app)`, which
+// before. The module logs the line it always logged at load, and registers
+// NOTHING (#50, R1): it exports `registerRoutes(app)`, which
 // `common/protocol_stack.ts` calls at the point in the route order where
-// requiring this module used to register the routes. The module still
-// exports `CONSENT_PATH`, `beginConsent` and `pendingFor`.
+// requiring this module used to register the routes. Since R2 that root also
+// builds the instance and installs it, and `registerRoutes`, `beginConsent`
+// and `pendingFor` are FACADES that forward to it; a process that loads this
+// module without the root builds a default instance at load. The module
+// still exports `CONSENT_PATH`.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import app = require('../common/app');
 // The pending-record clock, shared with the sign-in screen. See consentTtlMs().
 import config = require('../common/config');
@@ -202,6 +205,29 @@ class ConsentScreen {
   constructor(private readonly deps: ConsentScreenDeps) {
     deps.log.debug("Entering ConsentScreen.constructor().");
     deps.log.debug("Leaving ConsentScreen.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): ConsentScreenDeps {
+    helpers.log.debug("Entering ConsentScreen.defaultDeps().");
+    helpers.log.debug("Leaving ConsentScreen.defaultDeps().");
+    return {
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      parseBody: helpers.parseBody,
+      randomId: helpers.randomId,
+      oauthError: helpers.oauthError,
+      baseUrlOf: helpers.baseUrlOf,
+      config: config,
+      consent: consent,
+      applications: applications,
+      audit: audit,
+      errorCodes: errorCodes,
+      validation: validation,
+      authn: authn,
+      authorizationDetails: authorizationDetails
+    };
   }
 
   private consentTtlMs(): number {
@@ -669,24 +695,21 @@ class ConsentScreen {
   }
 }
 
-// THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules; its routes are registered by the composition root, below.
-const screen = new ConsentScreen({
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape,
-  parseBody: helpers.parseBody,
-  randomId: helpers.randomId,
-  oauthError: helpers.oauthError,
-  baseUrlOf: helpers.baseUrlOf,
-  config: config,
-  consent: consent,
-  applications: applications,
-  audit: audit,
-  errorCodes: errorCodes,
-  validation: validation,
-  authn: authn,
-  authorizationDetails: authorizationDetails
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ConsentScreen>(
+  'oauth-oidc/consent_screen',
+  () => new ConsentScreen(ConsentScreen.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -698,11 +721,15 @@ helpers.log.info('The consent screen is registered at ' + CONSENT_PATH +
                  'for that application, and they come back to the request ' +
                  'they interrupted.');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => screen.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   ConsentScreen: ConsentScreen,
+  installInstance: (instance: ConsentScreen): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   CONSENT_PATH: ConsentScreen.CONSENT_PATH,
-  beginConsent: screen.beginConsent.bind(screen) as
-    ConsentScreen['beginConsent'],
-  pendingFor: screen.pendingFor.bind(screen) as ConsentScreen['pendingFor']
+  beginConsent: slot.forward('beginConsent'),
+  pendingFor: slot.forward('pendingFor')
 };

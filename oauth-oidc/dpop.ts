@@ -49,10 +49,11 @@
 // (`DpopDeps`); the REQUIRES are exactly the ones this library always had,
 // and no new one, so rule 3's no-cycle argument above is unchanged. The two
 // stores (`seenJtis`, `issuedNonces`) stay module-level `realms.map()`s,
-// declared at load. The TRANSITIONAL code at the bottom builds one instance
-// from the real modules, declares `oauth.dpop-jti` at load as the file always
-// did, and exports every old name — the constants from statics, the
-// functions bound to the instance — until the composition root exists.
+// declared at load. Since R2 the composition root builds the instance and
+// installs it, and `Dpop.wire()` declares `oauth.dpop-jti` for it — at load
+// for a process without the root, as the file always did. The module exports
+// every old name — the constants from statics, the functions as FACADES that
+// forward to the installed instance.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -67,6 +68,7 @@ import realms = require('../common/realms');
 // service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The registry of error codes: a leaf. A refusal is MARKED on the response and
 // named on the refusal object this module hands back; neither is serialised.
 import errorCodes = require('../common/error_codes');
@@ -304,6 +306,43 @@ class Dpop {
   constructor(private readonly deps: DpopDeps) {
     deps.log.debug("Entering Dpop.constructor().");
     deps.log.debug("Leaving Dpop.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): DpopDeps {
+    helpers.log.debug("Entering Dpop.defaultDeps().");
+    helpers.log.debug("Leaving Dpop.defaultDeps().");
+    return {
+      log: helpers.log,
+      b64u: helpers.b64u,
+      jsonFromB64u: helpers.jsonFromB64u,
+      nowSec: helpers.nowSec,
+      randomId: helpers.randomId,
+      STS: helpers.STS,
+      vciError: helpers.vciError,
+      forwardedFrom: helpers.forwardedFrom,
+      trustProxy: helpers.trustProxy,
+      baseUrlOf: helpers.baseUrlOf,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes,
+      mtls: mtls,
+      senderConstraints: senderConstraints,
+      jwtAccessToken: jwtAccessToken,
+      bcp: bcp,
+      config: config,
+      stepUp: stepUp,
+      clusterClaims: clusterClaims,
+      capabilities: capabilities
+    };
+  }
+
+  // The work loading this module did with its own instance before R2,
+  // run once for whichever instance is installed.
+  static wire(instance: Dpop): void {
+    helpers.log.debug("Entering Dpop.wire().");
+    instance.provideCapability();
+    helpers.log.debug("Leaving Dpop.wire().");
   }
 
   private iatSkewSeconds(): number {
@@ -1317,35 +1356,28 @@ class Dpop {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and the capability declared at load,
-// where it always was.
-const dpop = new Dpop({
-  log: helpers.log,
-  b64u: helpers.b64u,
-  jsonFromB64u: helpers.jsonFromB64u,
-  nowSec: helpers.nowSec,
-  randomId: helpers.randomId,
-  STS: helpers.STS,
-  vciError: helpers.vciError,
-  forwardedFrom: helpers.forwardedFrom,
-  trustProxy: helpers.trustProxy,
-  baseUrlOf: helpers.baseUrlOf,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes,
-  mtls: mtls,
-  senderConstraints: senderConstraints,
-  jwtAccessToken: jwtAccessToken,
-  bcp: bcp,
-  config: config,
-  stepUp: stepUp,
-  clusterClaims: clusterClaims,
-  capabilities: capabilities
-});
-dpop.provideCapability();
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Dpop>(
+  'oauth-oidc/dpop',
+  () => new Dpop(Dpop.defaultDeps()),
+  Dpop.wire,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Dpop: Dpop,
+  installInstance: (instance: Dpop): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PROOF_TYP: Dpop.PROOF_TYP,
   SIGNING_ALGS: Dpop.SIGNING_ALGS,
   IAT_SKEW_SECONDS: Dpop.IAT_SKEW_SECONDS,
@@ -1355,20 +1387,19 @@ export = {
   // purpose, so that a shared misunderstanding could not make both ends agree
   // and interoperate with nobody.
   canonicalJwk: stsCrypto.canonicalJwk,
-  thumbprint: dpop.thumbprint.bind(dpop) as Dpop['thumbprint'],
-  athOf: dpop.athOf.bind(dpop) as Dpop['athOf'],
-  htuOf: dpop.htuOf.bind(dpop) as Dpop['htuOf'],
-  normalizeHtu: dpop.normalizeHtu.bind(dpop) as Dpop['normalizeHtu'],
-  verifyProof: dpop.verifyProof.bind(dpop) as Dpop['verifyProof'],
+  thumbprint: slot.forward('thumbprint'),
+  athOf: slot.forward('athOf'),
+  htuOf: slot.forward('htuOf'),
+  normalizeHtu: slot.forward('normalizeHtu'),
+  verifyProof: slot.forward('verifyProof'),
   // #46: the middleware that reserves a proof's jti across the cluster.
-  proofClaims: dpop.proofClaims.bind(dpop) as Dpop['proofClaims'],
-  jktOf: dpop.jktOf.bind(dpop) as Dpop['jktOf'],
-  setNonceMode: dpop.setNonceMode.bind(dpop) as Dpop['setNonceMode'],
-  nonceModeOn: dpop.nonceModeOn.bind(dpop) as Dpop['nonceModeOn'],
-  issueNonce: dpop.issueNonce.bind(dpop) as Dpop['issueNonce'],
-  nonceIsCurrent: dpop.nonceIsCurrent.bind(dpop) as Dpop['nonceIsCurrent'],
-  state: dpop.state.bind(dpop) as Dpop['state'],
-  forgetProofs: dpop.forgetProofs.bind(dpop) as Dpop['forgetProofs'],
-  presentedAccessToken: dpop.presentedAccessToken.bind(dpop) as
-    Dpop['presentedAccessToken']
+  proofClaims: slot.forward('proofClaims'),
+  jktOf: slot.forward('jktOf'),
+  setNonceMode: slot.forward('setNonceMode'),
+  nonceModeOn: slot.forward('nonceModeOn'),
+  issueNonce: slot.forward('issueNonce'),
+  nonceIsCurrent: slot.forward('nonceIsCurrent'),
+  state: slot.forward('state'),
+  forgetProofs: slot.forward('forgetProofs'),
+  presentedAccessToken: slot.forward('presentedAccessToken')
 };

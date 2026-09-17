@@ -83,10 +83,12 @@
 // and the logger through its constructor, and reaches `authn/authn.ts`
 // through a LOADER in the same place it used to require it, because that
 // require was lazy and stays lazy. The module still exports every function it
-// exported, bound to a TRANSITIONAL instance built from the real modules.
+// exported, as FACADES over the instance the composition root builds and
+// installs (R2); a process without the root builds a default one at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import app = require('../common/app');
 import config = require('../common/config');
 import applications = require('../common/applications');
@@ -129,6 +131,25 @@ class FrontchannelLogout {
   constructor(private readonly deps: FrontchannelLogoutDeps) {
     deps.log.debug("Entering FrontchannelLogout.constructor().");
     deps.log.debug("Leaving FrontchannelLogout.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): FrontchannelLogoutDeps {
+    helpers.log.debug("Entering FrontchannelLogout.defaultDeps().");
+    helpers.log.debug("Leaving FrontchannelLogout.defaultDeps().");
+    return {
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      app: app,
+      config: config,
+      applications: applications,
+      validation: validation,
+      errorCodes: errorCodes,
+      loadAuthn: function (): SessionNotice {
+        return require('../authn/authn');
+      }
+    };
   }
 
   // Is the feature on at all? Read per call rather than captured at require
@@ -411,36 +432,34 @@ class FrontchannelLogout {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const frontchannel = new FrontchannelLogout({
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape,
-  app: app,
-  config: config,
-  applications: applications,
-  validation: validation,
-  errorCodes: errorCodes,
-  loadAuthn: function (): SessionNotice {
-    return require('../authn/authn');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<FrontchannelLogout>(
+  'oauth-oidc/frontchannel_logout',
+  () => new FrontchannelLogout(FrontchannelLogout.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   FrontchannelLogout: FrontchannelLogout,
-  enabled: frontchannel.enabled.bind(frontchannel) as
-    FrontchannelLogout['enabled'],
-  noteClient: frontchannel.noteClient.bind(frontchannel) as
-    FrontchannelLogout['noteClient'],
-  clientsOf: frontchannel.clientsOf.bind(frontchannel) as
-    FrontchannelLogout['clientsOf'],
-  notificationsFor: frontchannel.notificationsFor.bind(frontchannel) as
-    FrontchannelLogout['notificationsFor'],
-  frameOriginsOf: frontchannel.frameOriginsOf.bind(frontchannel) as
-    FrontchannelLogout['frameOriginsOf'],
-  contentSecurityPolicyFor:
-    frontchannel.contentSecurityPolicyFor.bind(frontchannel) as
-      FrontchannelLogout['contentSecurityPolicyFor'],
-  render: frontchannel.render.bind(frontchannel) as
-    FrontchannelLogout['render']
+  installInstance: (instance: FrontchannelLogout): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  enabled: slot.forward('enabled'),
+  noteClient: slot.forward('noteClient'),
+  clientsOf: slot.forward('clientsOf'),
+  notificationsFor: slot.forward('notificationsFor'),
+  frameOriginsOf: slot.forward('frameOriginsOf'),
+  contentSecurityPolicyFor: slot.forward('contentSecurityPolicyFor'),
+  render: slot.forward('render')
 };

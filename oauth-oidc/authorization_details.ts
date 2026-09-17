@@ -89,9 +89,10 @@
 // constructor. The definition cache and the consent store stay module-level,
 // declared at load as before (a store becomes per realm at its declaration).
 // The module still exports `COMMON_ARRAYS` and every function it exported,
-// bound to a TRANSITIONAL instance built from the real modules, for
-// `oauth2.ts`, `consent_screen.ts` and the rest that require it by those
-// names.
+// for `oauth2.ts`, `consent_screen.ts` and the rest that require it by those
+// names. Since R2 those functions are FACADES: the composition root builds
+// the instance and installs it, and a process that loads this module without
+// the root builds a default instance at load, as loading it always did.
 // ===========================================================================
 
 import crypto = require('crypto');
@@ -99,6 +100,7 @@ import applications = require('../common/applications');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 
 // A loose JSON-shaped object: a detail, a definition, a refusal.
@@ -133,6 +135,20 @@ class AuthorizationDetails {
   constructor(private readonly deps: AuthorizationDetailsDeps) {
     deps.log.debug("Entering AuthorizationDetails.constructor().");
     deps.log.debug("Leaving AuthorizationDetails.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): AuthorizationDetailsDeps {
+    helpers.log.debug("Entering AuthorizationDetails.defaultDeps().");
+    helpers.log.debug("Leaving AuthorizationDetails.defaultDeps().");
+    return {
+      crypto: crypto,
+      applications: applications,
+      config: config,
+      errorCodes: errorCodes,
+      log: helpers.log
+    };
   }
 
   private refusal(errorCode: string, description: string): Json {
@@ -776,36 +792,40 @@ class AuthorizationDetails {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const details = new AuthorizationDetails({
-  crypto: crypto,
-  applications: applications,
-  config: config,
-  errorCodes: errorCodes,
-  log: helpers.log
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AuthorizationDetails>(
+  'oauth-oidc/authorization_details',
+  () => new AuthorizationDetails(AuthorizationDetails.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AuthorizationDetails: AuthorizationDetails,
+  installInstance: (instance: AuthorizationDetails): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   COMMON_ARRAYS: AuthorizationDetails.COMMON_ARRAYS,
-  declaredTypes: details.declaredTypes.bind(details) as
-    AuthorizationDetails['declaredTypes'],
-  typesSupported: details.typesSupported.bind(details) as
-    AuthorizationDetails['typesSupported'],
-  parse: details.parse.bind(details) as AuthorizationDetails['parse'],
-  covers: details.covers.bind(details) as AuthorizationDetails['covers'],
-  coveredProblem: details.coveredProblem.bind(details) as
-    AuthorizationDetails['coveredProblem'],
-  narrow: details.narrow.bind(details) as AuthorizationDetails['narrow'],
-  audienceFor: details.audienceFor.bind(details) as
-    AuthorizationDetails['audienceFor'],
-  needsConsent: details.needsConsent.bind(details) as
-    AuthorizationDetails['needsConsent'],
-  describe: details.describe.bind(details) as AuthorizationDetails['describe'],
-  digestOf: details.digestOf.bind(details) as AuthorizationDetails['digestOf'],
-  noteConsented: details.noteConsented.bind(details) as
-    AuthorizationDetails['noteConsented'],
-  consumeConsented: details.consumeConsented.bind(details) as
-    AuthorizationDetails['consumeConsented']
+  declaredTypes: slot.forward('declaredTypes'),
+  typesSupported: slot.forward('typesSupported'),
+  parse: slot.forward('parse'),
+  covers: slot.forward('covers'),
+  coveredProblem: slot.forward('coveredProblem'),
+  narrow: slot.forward('narrow'),
+  audienceFor: slot.forward('audienceFor'),
+  needsConsent: slot.forward('needsConsent'),
+  describe: slot.forward('describe'),
+  digestOf: slot.forward('digestOf'),
+  noteConsented: slot.forward('noteConsented'),
+  consumeConsented: slot.forward('consumeConsented')
 };

@@ -84,9 +84,10 @@
 // libraries, the outbound policy and the two libraries beside it through its
 // constructor (`ProtectedResourceMetadataDeps`). The member table and the
 // internal-address list are still built at module scope, as data. The module
-// still exports its old names from a TRANSITIONAL instance built from the
-// real modules, for the admin surfaces and the tests that require it by
-// those names.
+// still exports its old names, for the admin surfaces and the tests that
+// require it by those names — the functions, since R2, FACADES over the
+// instance the composition root builds and installs; a process without the
+// root builds a default one at load.
 // ---------------------------------------------------------------------------
 
 import dns = require('dns');
@@ -96,6 +97,7 @@ import net = require('net');
 import url = require('url');
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import mode = require('../common/mode');
 // The failure codes. A refusal is returned with its code under the Symbol
@@ -245,6 +247,32 @@ class ProtectedResourceMetadata {
   constructor(private readonly deps: ProtectedResourceMetadataDeps) {
     deps.log.debug("Entering ProtectedResourceMetadata.constructor().");
     deps.log.debug("Leaving ProtectedResourceMetadata.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): ProtectedResourceMetadataDeps {
+    helpers.log.debug("Entering ProtectedResourceMetadata.defaultDeps().");
+    helpers.log.debug("Leaving ProtectedResourceMetadata.defaultDeps().");
+    return {
+      dns: dns,
+      http: http,
+      https: https,
+      net: net,
+      URL: url.URL,
+      helpers: helpers,
+      log: helpers.log,
+      config: config,
+      mode: mode,
+      errorCodes: errorCodes,
+      audit: audit,
+      applications: applications,
+      validation: validation,
+      fedHttp: fedHttp,
+      jwtAccessToken: jwtAccessToken,
+      authorizationServers: authorizationServers,
+      USER_AGENT: USER_AGENT
+    };
   }
 
   // A member name, with section 2.1's language tag taken off it — so
@@ -1282,58 +1310,44 @@ class ProtectedResourceMetadata {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const reader = new ProtectedResourceMetadata({
-  dns: dns,
-  http: http,
-  https: https,
-  net: net,
-  URL: url.URL,
-  helpers: helpers,
-  log: helpers.log,
-  config: config,
-  mode: mode,
-  errorCodes: errorCodes,
-  audit: audit,
-  applications: applications,
-  validation: validation,
-  fedHttp: fedHttp,
-  jwtAccessToken: jwtAccessToken,
-  authorizationServers: authorizationServers,
-  USER_AGENT: USER_AGENT
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ProtectedResourceMetadata>(
+  'oauth-oidc/protected_resource_metadata',
+  () => new ProtectedResourceMetadata(ProtectedResourceMetadata.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ProtectedResourceMetadata: ProtectedResourceMetadata,
+  installInstance: (instance: ProtectedResourceMetadata): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   WELL_KNOWN: ProtectedResourceMetadata.WELL_KNOWN,
   MEMBERS: ProtectedResourceMetadata.MEMBERS,
-  memberRowFor: reader.memberRowFor.bind(reader) as
-    ProtectedResourceMetadata['memberRowFor'],
-  parseDocument: reader.parseDocument.bind(reader) as
-    ProtectedResourceMetadata['parseDocument'],
-  wellKnownUrlFor: reader.wellKnownUrlFor.bind(reader) as
-    ProtectedResourceMetadata['wellKnownUrlFor'],
-  resourcesForWellKnownUrl: reader.resourcesForWellKnownUrl.bind(reader) as
-    ProtectedResourceMetadata['resourcesForWellKnownUrl'],
-  resourceCheckFor: reader.resourceCheckFor.bind(reader) as
-    ProtectedResourceMetadata['resourceCheckFor'],
-  internalAddressProblem: reader.internalAddressProblem.bind(reader) as
-    ProtectedResourceMetadata['internalAddressProblem'],
-  fetchDocument: reader.fetchDocument.bind(reader) as
-    ProtectedResourceMetadata['fetchDocument'],
-  authorizationServersOf: reader.authorizationServersOf.bind(reader) as
-    ProtectedResourceMetadata['authorizationServersOf'],
-  compareAuthorizationServers:
-    reader.compareAuthorizationServers.bind(reader) as
-    ProtectedResourceMetadata['compareAuthorizationServers'],
-  generateClientId: reader.generateClientId.bind(reader) as
-    ProtectedResourceMetadata['generateClientId'],
-  permissionFor: reader.permissionFor.bind(reader) as
-    ProtectedResourceMetadata['permissionFor'],
-  planFor: reader.planFor.bind(reader) as ProtectedResourceMetadata['planFor'],
-  load: reader.load.bind(reader) as ProtectedResourceMetadata['load'],
-  analyse: reader.analyse.bind(reader) as ProtectedResourceMetadata['analyse'],
-  documentFromForm: reader.documentFromForm.bind(reader) as
-    ProtectedResourceMetadata['documentFromForm']
+  memberRowFor: slot.forward('memberRowFor'),
+  parseDocument: slot.forward('parseDocument'),
+  wellKnownUrlFor: slot.forward('wellKnownUrlFor'),
+  resourcesForWellKnownUrl: slot.forward('resourcesForWellKnownUrl'),
+  resourceCheckFor: slot.forward('resourceCheckFor'),
+  internalAddressProblem: slot.forward('internalAddressProblem'),
+  fetchDocument: slot.forward('fetchDocument'),
+  authorizationServersOf: slot.forward('authorizationServersOf'),
+  compareAuthorizationServers: slot.forward('compareAuthorizationServers'),
+  generateClientId: slot.forward('generateClientId'),
+  permissionFor: slot.forward('permissionFor'),
+  planFor: slot.forward('planFor'),
+  load: slot.forward('load'),
+  analyse: slot.forward('analyse'),
+  documentFromForm: slot.forward('documentFromForm')
 };

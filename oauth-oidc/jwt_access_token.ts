@@ -65,11 +65,13 @@
 // shape. `JwtAccessTokens` takes the logger, `jsonFromB64u`, `config`,
 // `error_codes` and `authorization_servers` through its constructor. The
 // module still exports the four constants and the nine functions it always
-// did, the functions bound to a TRANSITIONAL instance built from the real
-// modules at the bottom, which goes when the composition root exists.
+// did, the functions as FACADES over the instance the composition root
+// builds and installs (R2); a process without the root builds a default one
+// at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // The registry of error codes: a leaf. A refusal carries its code under the
 // Symbol `mark()` sets, so a caller that answers it can mark the response
@@ -139,6 +141,20 @@ class JwtAccessTokens {
   constructor(private readonly deps: JwtAccessTokensDeps) {
     deps.log.debug("Entering JwtAccessTokens.constructor().");
     deps.log.debug("Leaving JwtAccessTokens.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): JwtAccessTokensDeps {
+    helpers.log.debug("Entering JwtAccessTokens.defaultDeps().");
+    helpers.log.debug("Leaving JwtAccessTokens.defaultDeps().");
+    return {
+      log: helpers.log,
+      jsonFromB64u: helpers.jsonFromB64u,
+      config: config,
+      errorCodes: errorCodes,
+      authorizationServers: authorizationServers
+    };
   }
 
   header(): { typ: string } {
@@ -694,35 +710,39 @@ class JwtAccessTokens {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const tokens = new JwtAccessTokens({
-  log: helpers.log,
-  jsonFromB64u: helpers.jsonFromB64u,
-  config: config,
-  errorCodes: errorCodes,
-  authorizationServers: authorizationServers
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<JwtAccessTokens>(
+  'oauth-oidc/jwt_access_token',
+  () => new JwtAccessTokens(JwtAccessTokens.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   JwtAccessTokens: JwtAccessTokens,
+  installInstance: (instance: JwtAccessTokens): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   TYP: JwtAccessTokens.TYP,
   MEDIA_TYPE: JwtAccessTokens.MEDIA_TYPE,
   RESOURCE_PATH: JwtAccessTokens.RESOURCE_PATH,
   OIDC_SCOPES: JwtAccessTokens.OIDC_SCOPES,
-  header: tokens.header.bind(tokens) as JwtAccessTokens['header'],
-  isAccessTokenType: tokens.isAccessTokenType.bind(tokens) as
-    JwtAccessTokens['isAccessTokenType'],
-  typOf: tokens.typOf.bind(tokens) as JwtAccessTokens['typOf'],
-  issuerFor: tokens.issuerFor.bind(tokens) as JwtAccessTokens['issuerFor'],
-  defaultAudienceFor: tokens.defaultAudienceFor.bind(tokens) as
-    JwtAccessTokens['defaultAudienceFor'],
-  isHostedIssuer: tokens.isHostedIssuer.bind(tokens) as
-    JwtAccessTokens['isHostedIssuer'],
-  isOwnResourceAudience: tokens.isOwnResourceAudience.bind(tokens) as
-    JwtAccessTokens['isOwnResourceAudience'],
-  resourceServerRefusal: tokens.resourceServerRefusal.bind(tokens) as
-    JwtAccessTokens['resourceServerRefusal'],
-  audiencePlan: tokens.audiencePlan.bind(tokens) as
-    JwtAccessTokens['audiencePlan']
+  header: slot.forward('header'),
+  isAccessTokenType: slot.forward('isAccessTokenType'),
+  typOf: slot.forward('typOf'),
+  issuerFor: slot.forward('issuerFor'),
+  defaultAudienceFor: slot.forward('defaultAudienceFor'),
+  isHostedIssuer: slot.forward('isHostedIssuer'),
+  isOwnResourceAudience: slot.forward('isOwnResourceAudience'),
+  resourceServerRefusal: slot.forward('resourceServerRefusal'),
+  audiencePlan: slot.forward('audiencePlan')
 };

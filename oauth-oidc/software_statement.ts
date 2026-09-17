@@ -92,9 +92,11 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SoftwareStatement` takes every module it uses through its
 // constructor (`SoftwareStatementDeps`, the helpers member by member as this
-// module destructured them). The module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for `oauth2.ts`,
-// `admin-core/` and the tests, which require it by those names.
+// module destructured them). The module still exports its old names, for
+// `oauth2.ts`, `admin-core/` and the tests, which require it by those names
+// — the functions, since R2, FACADES over the instance the composition root
+// builds and installs; a process without the root builds a default one at
+// load.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -106,6 +108,7 @@ import applications = require('../common/applications');
 import validation = require('../common/validation');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import assertionGrant = require('./assertion_grant');
 import jwtAccessToken = require('./jwt_access_token');
 
@@ -164,6 +167,30 @@ class SoftwareStatement {
   constructor(private readonly deps: SoftwareStatementDeps) {
     deps.log.debug("Entering SoftwareStatement.constructor().");
     deps.log.debug("Leaving SoftwareStatement.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): SoftwareStatementDeps {
+    helpers.log.debug("Entering SoftwareStatement.defaultDeps().");
+    helpers.log.debug("Leaving SoftwareStatement.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
+      pki: pki,
+      errorCodes: errorCodes,
+      revocationStatus: revocationStatus,
+      applications: applications,
+      validation: validation,
+      config: config,
+      log: helpers.log,
+      STS: helpers.STS,
+      signJwtAs: helpers.signJwtAs,
+      nowSec: helpers.nowSec,
+      randomId: helpers.randomId,
+      assertionGrant: assertionGrant,
+      jwtAccessToken: jwtAccessToken
+    };
   }
 
   requiresTrustedIssuer(): Json {
@@ -929,46 +956,40 @@ class SoftwareStatement {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const statements = new SoftwareStatement({
-  nodeCrypto: nodeCrypto,
-  stsCrypto: stsCrypto,
-  pki: pki,
-  errorCodes: errorCodes,
-  revocationStatus: revocationStatus,
-  applications: applications,
-  validation: validation,
-  config: config,
-  log: helpers.log,
-  STS: helpers.STS,
-  signJwtAs: helpers.signJwtAs,
-  nowSec: helpers.nowSec,
-  randomId: helpers.randomId,
-  assertionGrant: assertionGrant,
-  jwtAccessToken: jwtAccessToken
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SoftwareStatement>(
+  'oauth-oidc/software_statement',
+  () => new SoftwareStatement(SoftwareStatement.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SoftwareStatement: SoftwareStatement,
+  installInstance: (instance: SoftwareStatement): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   TYPE: SoftwareStatement.TYPE,
   JWT_CLAIMS: SoftwareStatement.JWT_CLAIMS,
   SERVER_MEMBERS: SoftwareStatement.SERVER_MEMBERS,
-  requiresTrustedIssuer: statements.requiresTrustedIssuer.bind(statements) as
-    SoftwareStatement['requiresTrustedIssuer'],
-  opensRegistration: statements.opensRegistration.bind(statements) as
-    SoftwareStatement['opensRegistration'],
-  required: statements.required.bind(statements) as
-    SoftwareStatement['required'],
-  issuedLifetimeSeconds: statements.issuedLifetimeSeconds.bind(statements) as
-    SoftwareStatement['issuedLifetimeSeconds'],
-  declaringApplication: statements.declaringApplication.bind(statements) as
-    SoftwareStatement['declaringApplication'],
-  verify: statements.verify.bind(statements) as SoftwareStatement['verify'],
-  resolve: statements.resolve.bind(statements) as SoftwareStatement['resolve'],
-  updateProblem: statements.updateProblem.bind(statements) as
-    SoftwareStatement['updateProblem'],
-  issue: statements.issue.bind(statements) as SoftwareStatement['issue'],
-  describe: statements.describe.bind(statements) as
-    SoftwareStatement['describe']
+  requiresTrustedIssuer: slot.forward('requiresTrustedIssuer'),
+  opensRegistration: slot.forward('opensRegistration'),
+  required: slot.forward('required'),
+  issuedLifetimeSeconds: slot.forward('issuedLifetimeSeconds'),
+  declaringApplication: slot.forward('declaringApplication'),
+  verify: slot.forward('verify'),
+  resolve: slot.forward('resolve'),
+  updateProblem: slot.forward('updateProblem'),
+  issue: slot.forward('issue'),
+  describe: slot.forward('describe')
 };

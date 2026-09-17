@@ -47,16 +47,18 @@
 // shape, for a module that registers routes (rule 1): `OAuth2MonitorAdmin`
 // takes the console shell, the view model and the rest through its
 // constructor, and its `registerRoutes(app)` holds the page's two routes in
-// their old order. The TRANSITIONAL code at the bottom builds one from the
-// real modules and registers NOTHING (#50, R1): the module exports its
+// their old order. The module registers NOTHING (#50, R1): it exports its
 // `registerRoutes(app)` beside the class, and `common/protocol_stack.ts`
 // calls it at the point in the route order where requiring this module used
-// to register the routes. It exports nothing else: it is required for its
-// routes.
+// to register the routes. Since R2 that root also builds the instance and
+// installs it, and `registerRoutes` is a FACADE that forwards to it; a
+// process without the root builds a default instance at load. It exports
+// nothing else: it is required for its routes.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import admin = require('../admin-ui/admin');
 import consoleModel = require('./oauth2_monitor_console');
@@ -89,6 +91,21 @@ class OAuth2MonitorAdmin {
   constructor(private readonly deps: OAuth2MonitorAdminDeps) {
     deps.log.debug("Entering OAuth2MonitorAdmin.constructor().");
     deps.log.debug("Leaving OAuth2MonitorAdmin.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): OAuth2MonitorAdminDeps {
+    helpers.log.debug("Entering OAuth2MonitorAdmin.defaultDeps().");
+    helpers.log.debug("Leaving OAuth2MonitorAdmin.defaultDeps().");
+    return {
+      log: helpers.log,
+      parseBody: helpers.parseBody,
+      errorCodes: errorCodes,
+      admin: admin,
+      esc: admin.esc,
+      consoleModel: consoleModel
+    };
   }
 
   private code(value: Json) {
@@ -533,22 +550,33 @@ class OAuth2MonitorAdmin {
   }
 }
 
-// THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules; its routes are registered by the composition root, below.
-const monitorAdmin = new OAuth2MonitorAdmin({
-  log: helpers.log,
-  parseBody: helpers.parseBody,
-  errorCodes: errorCodes,
-  admin: admin,
-  esc: admin.esc,
-  consoleModel: consoleModel
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<OAuth2MonitorAdmin>(
+  'oauth-oidc/oauth2_monitor_admin',
+  () => new OAuth2MonitorAdmin(OAuth2MonitorAdmin.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => monitorAdmin.registerRoutes(target),
-  OAuth2MonitorAdmin: OAuth2MonitorAdmin
+  registerRoutes: slot.forward('registerRoutes'),
+  OAuth2MonitorAdmin: OAuth2MonitorAdmin,
+  installInstance: (instance: OAuth2MonitorAdmin): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin()
 };
