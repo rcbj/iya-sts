@@ -57,8 +57,12 @@
 // process-wide collections (`values`, `generatedHere`) stay module-scope
 // declarations, and the two `capabilities.provide()` calls still run at
 // require time, before the exports are assigned. The module still exports
-// `DECLARED`, `get`, `text`, `describe`, `start` and `reset` from a
-// TRANSITIONAL instance for the unconverted modules that require it.
+// `DECLARED`, `get`, `text`, `describe`, `start` and `reset`, for the
+// unconverted modules that require it. Since #50's R2 the composition root
+// builds the instance (`ClusterSecrets.defaultDeps()`) and installs it; the
+// module's old export names are FACADES that forward to it, for the JavaScript
+// callers, and a process without the root builds a default when this module
+// finishes loading.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -66,6 +70,7 @@ import nodeCrypto = require('crypto');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('./cluster_capabilities');
+import InstanceSlot = require('../common/instance_slot');
 
 const log = bunyan.createLogger({ name: 'sts-cluster-secrets' });
 config.registerLogger(log);
@@ -192,8 +197,23 @@ class ClusterSecrets {
     deps.log.debug("Leaving ClusterSecrets.constructor().");
   }
 
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ClusterSecretsDeps {
+    log.debug("Entering ClusterSecrets.defaultDeps().");
+    log.debug("Leaving ClusterSecrets.defaultDeps().");
+    return {
+      log: log,
+      errorCodes: errorCodes,
+      env: process.env,
+      randomBytes: nodeCrypto.randomBytes,
+      clusterStore: ClusterSecrets.persistenceClusterStore,
+      isActiveActive: ClusterSecrets.clusterIsActiveActive
+    };
+  }
+
   // The persistence store to share through, required LAZILY: the default
-  // `clusterStore` for the transitional instance below.
+  // `clusterStore` in `defaultDeps()`.
   static persistenceClusterStore(): SharedSecretStore | null | undefined {
     log.debug("Entering ClusterSecrets.persistenceClusterStore().");
     const persistence = require('../persistence/persistence');
@@ -456,24 +476,32 @@ capabilities.provide('cluster.shared-secrets');
 // request workers in `STS_BBS_KEYPAIR`, which `helpers.bbsKeyPair()` adopts.
 capabilities.provide('vc.keys-agreement');
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one. `env` is `process.env`
-// itself, because writing into it is how a request worker inherits a value.
-const secrets = new ClusterSecrets({
-  log: log,
-  errorCodes: errorCodes,
-  env: process.env,
-  randomBytes: nodeCrypto.randomBytes,
-  clusterStore: ClusterSecrets.persistenceClusterStore,
-  isActiveActive: ClusterSecrets.clusterIsActiveActive
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ClusterSecrets>(
+  'cluster/cluster_secrets',
+  () => new ClusterSecrets(ClusterSecrets.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ClusterSecrets: ClusterSecrets,
+  installInstance: (instance: ClusterSecrets): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   DECLARED: ClusterSecrets.DECLARED,
-  get: secrets.get.bind(secrets) as ClusterSecrets['get'],
-  text: secrets.text.bind(secrets) as ClusterSecrets['text'],
-  describe: secrets.describe.bind(secrets) as ClusterSecrets['describe'],
-  start: secrets.start.bind(secrets) as ClusterSecrets['start'],
-  reset: secrets.reset.bind(secrets) as ClusterSecrets['reset']
+  get: slot.forward('get'),
+  text: slot.forward('text'),
+  describe: slot.forward('describe'),
+  start: slot.forward('start'),
+  reset: slot.forward('reset')
 };
