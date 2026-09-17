@@ -43,6 +43,10 @@ const ldap = require('../ldap/ldap_server');
 // Registers `/admin/pki` and starts nothing.
 const pkiAdmin = require('../admin-ui/pki_admin');
 const app = require('../common/app');
+// Loading a module registers nothing since #50's R1; the composition root
+// (`common/protocol_stack.ts`) does, so a test that loads one module
+// registers its routes itself.
+pkiAdmin.registerRoutes(app);
 
 const log = require('bunyan').createLogger({ name: 'pki_key_pair_paging',
   level: process.env.LOG_LEVEL || 'info' });
@@ -152,11 +156,18 @@ async function runBody(t) {
   }
   for (const name of PEOPLE) {
     ldap.createUser(name, {});
+    // `keyAlg`, the management API's spelling, where the applications above
+    // use the console's `leafKeyAlg`: both must reach the issue. Until
+    // 2026-09-16 `keyAlg` was accepted and ignored, and the leaf came out in
+    // the Issuing CA's algorithm.
     const issued = await pkiAdmin.pkiAction({
       action: 'issue', target: 'person', purpose: 'jwt', identifier: name,
-      leafKeyAlg: 'ec-p256' });
+      keyAlg: 'ec-p256' });
     t.check(issued.ok, 'a key pair is issued to ' + name,
             ((issued && issued.errors) || []).join(' '));
+    t.check(/^A ec-p256 /.test(String(issued && issued.why)),
+            'in the ec-p256 the API spelling asked for',
+            String(issued && issued.why).slice(0, 80));
   }
 
   // -------------------------------------------------------------------------

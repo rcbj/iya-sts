@@ -11,10 +11,11 @@
 // that grows one — every route on it is about a person, and the person's name
 // is right there in the URL of the page that linked to it.
 //
-// So the rule in `portal/portal.js` is absolute: **no route takes a username,
-// an id or a DN from a query string or a body.** `/portal/activate` is the one
-// exception and is not one — nobody is signed in there, and what authorises it
-// is the token, which is a credential.
+// So the rule in `portal/portal.ts` is absolute: **no route takes a username,
+// an id or a DN from a query string or a body.** `/portal/activate` — and,
+// since 2026-09-13, `/portal/reset-password`, which keeps its arrangement —
+// are the exceptions and are not really exceptions: nobody is signed in
+// there, and what authorises each is the token, which is a credential.
 //
 // This file asserts the rule by TRYING to break it. It is deliberately written
 // as "here is every parameter a future author might plausibly read, and here is

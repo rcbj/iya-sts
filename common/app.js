@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: app.js
@@ -8,16 +9,22 @@
 // CORS, the body parser and the call log.
 //
 // It is a module of its own, and the reason is the registration order. Each
-// protocol module registers its endpoints as a side effect of being required
-// (`const app = require('./app')` then `app.get(...)` at its top level), which
-// keeps every handler exactly where it was written instead of wrapped in a
-// register() function and re-indented. Express applies middleware in the order
+// protocol module used to register its endpoints as a side effect of being
+// required (`const app = require('./app')` then `app.get(...)` at its top
+// level), which kept every handler exactly where it was written instead of
+// wrapped in a register() function and re-indented. Since #50's R1
+// (2026-09-16) a module converted to TypeScript exports `registerRoutes(app)`
+// instead and `common/protocol_stack.ts` calls it; the JavaScript ones still
+// register when required. Either way, Express applies middleware in the order
 // it was added and only to routes added AFTER it, so the middleware has to be
-// installed by the time any protocol module is loaded — i.e. here, in the
-// module they all require, rather than in server.js, which requires them.
+// installed before the first route is registered — i.e. here, in the module
+// every route module requires and every registration is made against, rather
+// than in server.js, which loads them.
 //
-// The consequence to remember when adding a module: server.js requires the
-// protocol modules in a deliberate order, and that order is the route order.
+// The consequence to remember when adding a module: `common/protocol_stack.ts`
+// (which server.js and every request worker load) requires the protocol
+// modules and calls their `registerRoutes(app)` in a deliberate order, and
+// that order is the route order.
 // Nothing here has overlapping paths, so it does not currently matter — but a
 // new module that registers a wildcard would matter a great deal.
 // ---------------------------------------------------------------------------
@@ -31,9 +38,8 @@ const { log, headersOf, bodyOf } = helpers;
 // realm's statistics, the audit log records the realm's rows, and the CORS
 // decision reads the realm's applications and asks oauth2_bcp.js which path is
 // an authorization endpoint — both questions with a different answer in each
-// realm. It requires config.js and
-// nothing else here, so it cannot join a cycle; helpers.js above has already
-// pulled it in anyway.
+// realm. It requires config.js and the error-code table and nothing else here,
+// so it cannot join a cycle; helpers.js above has already pulled it in anyway.
 const realms = require('./realms');
 // The service's own record of what it has done. Required HERE, and the position
 // is load-bearing twice over: the call log below is where the per-endpoint
@@ -53,12 +59,13 @@ const corsPolicy = require('./cors');
 // The service's account of WHAT HAPPENED, as against how much of it. Required
 // here for the same reason admin_stats.js is and with the same consequence: the
 // call log below is the single place every answered request passes through, so
-// one call there covers three of the six audit categories — the admin console,
+// one call there covers three of the audit categories — the admin console,
 // the management API and every protocol endpoint — instead of a recording site
 // in each of forty route handlers, thirty-seven of which would never be added.
 // It is a library like admin_stats.js (it registers no route) and it requires
-// only helpers.js and config.js, which is what keeps it out of the cycles rule
-// 2 exists to avoid.
+// only helpers, config, realms, the error-code table and the replication
+// fan-in — none of which requires it back — which is what keeps it out of the
+// cycles rule 2 exists to avoid.
 const audit = require('./audit');
 // Where a signed token's `x5u` points. A library (rule 3) that `helpers.js`
 // has already loaded, so this is a cache hit; the middleware below is its one
@@ -66,13 +73,16 @@ const audit = require('./audit');
 const certificateHeader = require('./jose_certificate_header');
 
 // The input guard. A LEAF (rule 3) — it registers no route of its own and
-// requires only `config`, `bunyan` and zod, so requiring it here closes no
-// cycle and moves nothing in the route order. `common/validation.js` is where
-// every decision about what a value from outside may be is argued.
+// requires only `config`, the error-code table and npm packages (bunyan, zod,
+// xmldom), so requiring it here closes no cycle and moves nothing in the route
+// order. `common/validation.js` is where every decision about what a value
+// from outside may be is argued.
 const validation = require('./validation');
 // The request worker pool. A LIBRARY as far as rule 1 goes — it registers no
-// route and requires only `config` plus node builtins, so it can neither join a
-// cycle nor move a route. Its middleware is installed below the realm one.
+// route, and at load it requires only `config`, `keystore`, the error-code
+// table, `client_address` and node builtins (the modules that register routes
+// only lazily, inside functions), so it can neither join a cycle nor move a
+// route. Its middleware is installed below the realm one.
 const requestPool = require('./request_pool');
 // THE CLUSTER BARRIER (2026-09-14, #46). A LIBRARY with a middleware, and a
 // LEAF as far as the require order goes: it requires config, the error-code
@@ -91,9 +101,9 @@ const app = express();
 // in this service that knows that, and what it does is three things:
 //
 //   1. STRIPS THE PREFIX. `/realm/acme/oauth2/token` becomes `/oauth2/token`
-//      before the router ever sees it, so every one of this service's forty
-//      route registrations matches unchanged. That is the trick the whole
-//      feature rests on: no protocol module has a realm-aware path, because no
+//      before the router ever sees it, so every one of this service's route
+//      registrations matches unchanged. That is the trick the whole feature
+//      rests on: no protocol module has a realm-aware path, because no
 //      protocol module has a realm-aware anything.
 //
 //   2. ENTERS THE REALM, for the request and for everything it awaits. Every
@@ -237,8 +247,9 @@ function enterMatchedRealm(req, res, next, match) {
   // rewritten. There is one such page — /admin/api-explorer, whose explorer
   // builds request URLs in JavaScript — and it is handled in
   // mgmt-api/admin_api_explorer.js by being given the prefix as a value rather
-  // than by having its markup rewritten. A fifth scripted page would need the
-  // same treatment and would not get it for free. (It was /admin-api/docs
+  // than by having its markup rewritten. Another page that builds URLs in a
+  // script would need the same treatment and would not get it for free.
+  // (It was /admin-api/docs
   // until 2026-09-09; the page moved into the console, the limitation did
   // not move with it.)
   // ---------------------------------------------------------------------
@@ -311,9 +322,6 @@ realms.reserve(function () {
   return Object.keys(seen);
 });
 
-// Chrome Private Network Access: when a PUBLIC page calls a LOCAL (loopback)
-// server — which is exactly the live-site test setup, an HTTPS page on
-// idptools.com calling this mock at http://localhost:8081 — Chrome may send a
 // ---------------------------------------------------------------------------
 // AND HERE THE FRONT PROCESS STOPS HANDLING THE REQUEST AND STARTS PROXYING IT.
 //
@@ -385,6 +393,9 @@ app.use(function (req, res, next) {
   });
 });
 
+// Chrome Private Network Access: when a PUBLIC page calls a LOCAL (loopback)
+// server — which is exactly the live-site test setup, an HTTPS page on
+// idptools.com calling this mock on localhost:8081 — Chrome may send a
 // CORS preflight carrying Access-Control-Request-Private-Network and require
 // this header on the response. Answer it so the call isn't blocked. Registered
 // BEFORE the CORS preflight so the header is set before the preflight
@@ -415,24 +426,28 @@ app.use(function (req, res, next) {
 //   X-Frame-Options: DENY             no framing of the login screen the
 //                                     authorization endpoint serves
 //
-// The HTML this service does emit (the login screen, the credential-offer and
-// verifier pages) builds its markup from server-side values, and where a
-// caller-supplied value appears in it, it is escaped at that point with
-// xmlEscape().
+// The HTML this service does emit (the login screen, the console, the portal,
+// the credential-offer and verifier pages) builds its markup from server-side
+// values, and where a caller-supplied value appears in it, it is escaped at
+// that point with xmlEscape().
 //
 // The policy is as tight as these pages allow, and it is worth saying what each
 // clause is for, because a stricter-looking one would break them:
-//   script-src 'none'   they contain no <script> at all, inline or external —
-//                       so this is the clause that makes the whole family of
-//                       js/reflected-xss reports moot rather than merely
-//                       unlikely: a JSON body rendered as a document still runs
-//                       nothing.
-//   style-src           six pages carry an inline <style> block, so
+//   script-src 'none'   the pages under it contain no <script> at all, inline
+//                       or external — so this is the clause that makes the
+//                       whole family of js/reflected-xss reports moot rather
+//                       than merely unlikely: a JSON body rendered as a
+//                       document still runs nothing. The few pages that need
+//                       one name a single 'self' resource through
+//                       contentSecurityPolicy() below (the root CLAUDE.md
+//                       lists them).
+//   style-src           many pages carry an inline <style> block, so
 //                       'unsafe-inline' is required; extracting them to files
 //                       would buy nothing here since no untrusted value reaches
 //                       a style.
-//   img-src data:       the two QR pages embed the code as a data: URI produced
-//                       by the qrcode library server-side.
+//   img-src data:       the QR pages (the Credential Offer, the verifier's
+//                       request, the authenticator-app setup) embed the code as
+//                       a data: URI produced by the qrcode library server-side.
 //
 // NOT present, and it must not be added back: **form-action**. It looks
 // obviously right here — the only form posts to /authn/login, which is
@@ -443,9 +458,10 @@ app.use(function (req, res, next) {
 // `form-action 'self'` therefore blocks the browser from ever reaching the
 // client, and the symptom is remote from the cause — the sign-in appears to
 // succeed and the wallet simply never comes back. It cost a full SD-JWT VC
-// issuance run to find, and tests/sd_jwt_vc_issuance.js is what catches it (H.1
-// signs in here). Enumerating allowed redirect origins is not a fix either:
-// this mock accepts arbitrary redirect_uris on purpose.
+// issuance run to find, and the parent project's tests/sd_jwt_vc_issuance.js
+// is what catches it (H.1 signs in here). Enumerating allowed redirect origins
+// is not a fix either: in development mode this service accepts arbitrary
+// redirect_uris on purpose.
 const CSP_DIRECTIVES = {
   'default-src': "'none'",
   'script-src': "'none'",
@@ -467,10 +483,11 @@ const CSP_DIRECTIVES = {
 // **`frame-ancestors` HAS NO FALLBACK.** `default-src` covers most fetch
 // directives and not this one, so a page that sets `Content-Security-Policy:
 // default-src 'none'` and nothing else is framable as far as CSP is concerned.
-// That is the trap this list exists to close: five routes here relax the policy
-// so they can load a named script, each by SETTING THE WHOLE HEADER, and any of
-// them could have left this clause out without anything failing — the page
-// works, the script runs, and the protection is quietly gone.
+// That is the trap this list exists to close: several routes here relax the
+// policy — most so they can load a named script — each by SETTING THE WHOLE
+// HEADER, and any of them could have left this clause out without anything
+// failing — the page works, the script runs, and the protection is quietly
+// gone.
 //
 // So a relaxation goes through `contentSecurityPolicy()` below, which starts
 // from the base and re-adds the framing clauses whatever the caller asked for.
@@ -517,10 +534,11 @@ app.use(function (req, res, next) {
   //
   // So the header is re-checked at the moment it is flushed. The test is
   // deliberately "does it still carry the clause" rather than "is it still the
-  // value I set": five routes here legitimately relax the policy to load a
-  // named script, and every one of them goes through contentSecurityPolicy(),
-  // which cannot drop the framing clauses — so a policy without them was set by
-  // something that is not us, and the base policy is put back.
+  // value I set": several routes here legitimately relax the policy, and
+  // every one of them goes through contentSecurityPolicy(), which cannot drop
+  // the framing clauses, or (mgmt-api/admin_api_docs.ts, a leaf) writes them
+  // out itself — so a policy without them was set by something that is not
+  // us, and the base policy is put back.
   //
   // Wrapping writeHead rather than adding a final 404 handler is deliberate
   // too. A handler would have to reproduce Express's body byte for byte:
@@ -611,13 +629,13 @@ app.options('*', corsPolicy.preflight());
 // **`application/pkcs10` JOINED THEM ON 2026-09-13, FOR EST.** An EST body is
 // base64 text rather than DER (RFC 8951), so the text parser would not corrupt
 // it — but it would strip a byte-order mark and replace an invalid byte with
-// U+FFFD before `est/est.js` could refuse the body for containing one, which
+// U+FFFD before `est/est.ts` could refuse the body for containing one, which
 // turns a malformed request into a different malformed request. Taken raw, the
 // bytes EST checks are the bytes the client sent.
 // **`application/x-pki-message` JOINED THEM THE SAME DAY, FOR SCEP.** A
 // PKIOperation POST (RFC 8894 section 4.3) is a binary CMS SignedData, which
 // is the OCSP case exactly: the text parser would drain the stream and decode
-// DER as UTF-8, so `scep/scep.js` would verify a signature over bytes the
+// DER as UTF-8, so `scep/scep.ts` would verify a signature over bytes the
 // client never signed and refuse every correct request as badMessageCheck.
 app.use(bodyParser.raw({
   type: ['application/kerberos', 'application/octet-stream',
@@ -859,7 +877,7 @@ app.use(function (req, res, next) {
 // **AFTER THE CALL LOG ON PURPOSE.** A refusal is exactly the request an
 // operator wants to find afterwards, and the middleware above is what puts a
 // request in `/admin/audit`. Registered ahead of it, every refusal this makes
-// would be invisible — which is the same argument `common/websecurity.js` makes
+// would be invisible — which is the same argument `common/websecurity.ts` makes
 // about a rate-limit lockout nobody can see being a support call with no
 // evidence in it.
 //
@@ -913,16 +931,21 @@ app.get('/healthcheck', function (req, res) {
   log.debug("Leaving the healthcheck endpoint.");
 });
 
-module.exports = app;
-// The policy builder, for the five routes that relax it. Exported off the app
-// object rather than as a second module because every one of them already
-// requires this file — and because a relaxation belongs beside the policy it
-// relaxes, where the next reader will find both.
-module.exports.contentSecurityPolicy = contentSecurityPolicy;
-module.exports.CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY;
-// For the one page that builds URLs in a script and therefore cannot have its
-// markup rewritten. See the comment on res.send above.
-module.exports.withRealmLinks = withRealmLinks;
-// For tests/front_process_realm_arrival.js, which drives it beside the request
-// pool's second ask; nothing in the service calls it off the export.
-module.exports.enterRealm = enterRealm;
+// The app, with four members hung off it. One `Object.assign` rather than an
+// assignment followed by four more (#50, 2026-09-16): the same object either
+// way, and the type checker accepts only this form.
+module.exports = Object.assign(app, {
+  // The policy builder, for the routes that relax it. Exported off the app
+  // object rather than as a second module because every one of them already
+  // requires this file — and because a relaxation belongs beside the policy
+  // it relaxes, where the next reader will find both.
+  contentSecurityPolicy: contentSecurityPolicy,
+  CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
+  // For the one page that builds URLs in a script and therefore cannot have
+  // its markup rewritten. See the comment on res.send above.
+  withRealmLinks: withRealmLinks,
+  // For tests/front_process_realm_arrival.js, which drives it beside the
+  // request pool's second ask; nothing in the service calls it off the
+  // export.
+  enterRealm: enterRealm
+});

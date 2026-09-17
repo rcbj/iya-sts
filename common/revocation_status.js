@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: revocation_status.js
@@ -8,7 +9,7 @@
 // `common/pki_revocation.js` PUBLISHES — every certificate authority this
 // service holds signs an RFC 5280 CRL and answers RFC 6960 OCSP. Until this
 // file existed nothing here CONSULTED anything: a client certificate presented
-// on 8443, 9443 or the main port, an X509-SVID at the SPIRE Server API and a
+// on the main port, an X509-SVID at the SPIRE Server API and a
 // chain in an assertion's `x5c` were all checked against their anchors and
 // never against a list, so **a certificate revoked on this service's own
 // /admin/pki still authenticated to this service.** `common/mode.js` carried
@@ -42,7 +43,8 @@
 //     responder its Authority Information Access names and by the CRL its
 //     `cRLDistributionPoints` names** — in the order `pki.revocationOcsp`
 //     chooses, `first` by default, with the other as the fallback — each
-//     fetched over http or https only, with a timeout, a size cap and a cache
+//     fetched over http or https (and a CRL over LDAP too, point 1 below),
+//     with a timeout, a size cap and a cache
 //     that honours the document's own validity, and each verified against a
 //     key the certificate's ISSUER vouched for: its own, a delegated OCSP
 //     responder it certified, or the CRL issuer it named. A CRL and an OCSP
@@ -53,7 +55,7 @@
 // ---------------------------------------------------------------------------
 // THE OUTBOUND REQUEST, AND WHY IT IS ALLOWED. This is the FIFTH outbound
 // request in this repository, and it is argued from scratch rather than cited,
-// because `federation/federation_http.js` is explicit that "this feature needs
+// because `federation/federation_http.ts` is explicit that "this feature needs
 // it" is the argument every SSRF ever shipped was made with.
 //
 //   **THE URL IS WRITTEN BY AN AUTHORITY THE OPERATOR CHOSE TO TRUST, AND ONLY
@@ -252,7 +254,7 @@ const log = bunyan.createLogger({
 const mode = require('./mode');
 // The registry of failures (a leaf). A verdict this module RETURNS carries its
 // code non-enumerably through `mark()`, because verdicts are copied whole onto
-// `/tls/whoami` and `/admin-api` replies and a code must never reach a client.
+// `/tls/sign-in` and `/admin-api` replies and a code must never reach a client.
 const errorCodes = require('./error_codes');
 const keystore = require('./keystore');
 const pki = require('./pki');
@@ -741,7 +743,8 @@ function integerExtensionOf(ext) {
     return null;
   }
   const integer = derParse(ext.extnValue.valueBlock.valueHexView);
-  const hex = Buffer.from(integer.valueBlock.valueHexView).toString('hex');
+  const hex = Buffer.from(/** @type {any} */ (integer).valueBlock.valueHexView)
+    .toString('hex');
   log.debug("Leaving integerExtensionOf().");
   return BigInt('0x' + (hex || '0'));
 }
@@ -1810,7 +1813,7 @@ function reasonOfEntry(entry) {
   }
   try {
     const decoded = asn1js.fromBER(found.extnValue.valueBlock.valueHexView);
-    const code = decoded.result.valueBlock.valueDec;
+    const code = /** @type {any} */ (decoded.result).valueBlock.valueDec;
     log.debug('Leaving reasonOfEntry(). code=' + code);
     return { code: code, id: reasonNameOf(code) };
   } catch (e) {
@@ -3930,7 +3933,7 @@ function describePolicy() {
     effective: p.effective,
     decidedBy: p.decidedBy,
     requireDistributionPoint: p.requireDistributionPoint,
-    consultedAt: ['the 8443 and 9443 listeners (a session and the recorded ' +
+    consultedAt: ['GET /tls/sign-in (a session and the recorded ' +
                   'authentication)', 'the main port (the remote XACML PEP ' +
                   'and XACML user chains, SCIM\'s client-certificate scheme, ' +
                   'RFC 8705 client ' +

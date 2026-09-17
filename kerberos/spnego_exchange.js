@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: spnego_exchange.js
@@ -19,10 +20,11 @@
 // reverse, and neither would show up as a failure anywhere.
 //
 // So the split is the same one `krb5_service.js` already made one layer down
-// and for the same reason, which that module's header states as a promise:
-// *"the acceptor logic here is written as its own function so that phase adds a
-// transport and no protocol code"*. This is that promise kept a second time.
-// The layering is now three deep and each layer adds exactly one thing:
+// and for the same reason, which that module's header stated as a promise when
+// it was written: *"the acceptor logic here is written as its own function so
+// that phase adds a transport and no protocol code"*. This is that promise
+// kept a second time. The layering is now three deep and each layer adds
+// exactly one thing:
 //
 //   krb5_service.js   the AP-REQ. Every Kerberos check, over any transport.
 //   THIS FILE         the RFC 4178 negotiation and the RFC 4559 header around
@@ -70,9 +72,9 @@ const gss = require('./krb5_gss.js');
 const spnego = require('./krb5_spnego.js');
 const principals = require('./krb5_principals.js');
 const krb5Service = require('./krb5_service.js');
-// PER PROCESS AND NOT PER REALM — see the store below. Required only for
-// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
-// move a route or join a cycle.
+// PER TRUST REALM SINCE 2026-09-15 — see the store below. Required only for
+// `map()`, and it is a LEAF that registers no route, so this cannot move a
+// route or join a cycle.
 const realms = require('../common/realms');
 // ERROR CODES. A LEAF, already in this closure through common/audit.js. Every
 // refusing verdict below carries `errorCode` in its facts, and applyVerdict()
@@ -94,11 +96,16 @@ const capabilities = require('../cluster/cluster_capabilities');
 // could act on.
 const SUPPORTED_MECHS = [spnego.KRB5_MECH_OID, spnego.MS_KRB5_MECH_OID];
 
-// The canonical SPN both doors are behind. One name, because a client derives
-// its SPN from the URL's host and both doors are on the same host — see
-// principals.SERVICE_DOMAINS, which is the list of hosts this service holds a
-// key for.
-const SPN = krb5Service.SERVICE_PRINCIPAL.join('/');
+// The canonical SPN both doors are behind, in the AMBIENT trust realm. One
+// name, because a client derives its SPN from the URL's host and both doors are
+// on the same host — see principals.SERVICE_DOMAINS, which is the list of hosts
+// this service holds a key for. A function since 2026-09-15, because
+// `krb5.servicePrincipal` is a setting a trust realm may carry.
+function spn() {
+  log.debug("Entering spn().");
+  log.debug("Leaving spn().");
+  return krb5Service.SERVICE_PRINCIPAL.join('/');
+}
 
 // ---------------------------------------------------------------------------
 // THE FIFTEEN OUTCOMES. Named here rather than left implicit in the branches
@@ -188,7 +195,7 @@ const OUTCOMES = {
 // ---------------------------------------------------------------------------
 function volunteerTheSpn(res) {
   log.debug('Entering volunteerTheSpn().');
-  res.set('X-Krb5-Service-Principal', SPN + '@' + principals.REALM);
+  res.set('X-Krb5-Service-Principal', spn() + '@' + principals.REALM);
   res.set('X-Krb5-Accepts-Spn-Hosts', principals.SERVICE_DOMAINS.join(','));
   log.debug('Leaving volunteerTheSpn().');
 }
@@ -230,9 +237,10 @@ function applyVerdict(res, verdict) {
 // 4559 section 5 means by the authentication being connection-based, and it is
 // why HTTP/2 and connection-pooling proxies break SPNEGO in ways nothing
 // reports. Node's Express gives no stable connection identity here, so this
-// stands in with the remote address plus the mechanism list, held briefly.
-// Being a stand-in is stated rather than hidden: it is the one place this mock
-// is structurally unlike a real server.
+// stood in with the remote address plus the mechanism list, held briefly — and
+// since 2026-09-14 with a negotiation id the client carries (see below). Being
+// a stand-in is stated rather than hidden: it is the one place this mock is
+// structurally unlike a real server.
 //
 // **THE DOOR IS PART OF THE KEY SINCE 2026-08-26, and that is not tidiness.**
 // The stand-in was only ever a diagnostic while one door used it; with a
@@ -258,11 +266,12 @@ function maxPending() {
   return config.value('krb5.spnegoMaxPending');
 }
 // -------------------------------------------------------------------------
-// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06).
-// `realms.sharedMap()` is a plain Map that reports its writes so product mode
-// can write them down; `scope: 'shared'` is what says the store deliberately
-// has no realm in it, which is the discriminator `tests/realm_isolation.js`
-// checks against.
+// PERSISTED (2026-09-06), AND PER TRUST REALM SINCE 2026-09-15.
+// `realms.map()` is a Map per realm that reports its writes so product mode can
+// write them down; the DECLARATION is what says a store is partitioned, which
+// is the discriminator `tests/realm_isolation.js` checks against. It was
+// `sharedMap({ scope: 'shared' })` while SPNEGO's acceptor answered in no
+// realm.
 // -------------------------------------------------------------------------
 //
 // ---------------------------------------------------------------------------
@@ -300,8 +309,13 @@ function maxPending() {
 // SPENDS the negotiation through a claim before it is accepted, so the one
 // continuation cannot be answered twice at two nodes.
 // ---------------------------------------------------------------------------
-const pending = realms.sharedMap({ persist: 'spnego.pending',
-                                   scope: 'shared' });
+// **AND THE PER-REALM SPLIT (2026-09-15) FIXED A BUG RATHER THAN ONLY
+// SATISFYING A RULE**: the key is
+// `door|id`, where the door is the path with the realm prefix already stripped,
+// so a negotiation begun under one realm's prefix could be continued under
+// another's — one shared row under one key, whichever realm asked. A realm's
+// pending negotiations are now its own.
+const pending = realms.map({ persist: 'spnego.pending' });
 const PENDING_COOKIE = 'sts_spnego_negotiation';
 
 function whoIs(req) {
@@ -782,7 +796,7 @@ async function continuation(req, door, parsed) {
   // unspent is not one it completes.
   const spent = await clusterClaims.claim({
     scope: 'spnego.continuation', value: entry.id || entryKey,
-    realm: '', ttlMs: Math.max(1000, pendingTtlMs())
+    ttlMs: Math.max(1000, pendingTtlMs())
   });
   if (!spent.ok) {
     const code = spent.reason === 'used' ? 'STS-KRB-0119' : 'STS-KRB-0120';
@@ -924,7 +938,7 @@ async function accept(door, ctx) {
     responseToken: responseToken,
     mechListMic: mic
   });
-  log.info('krb5-spnego: ACCEPTED ' + (result.client || '?') + ' for ' + SPN +
+  log.info('krb5-spnego: ACCEPTED ' + (result.client || '?') + ' for ' + spn() +
     ' at ' + door + ' over ' + spnego.mechName(ctx.selected) +
     (ctx.micVerified ? ', mechListMIC verified' : '') +
     (ctx.rawKerberos ? ' (a bare Kerberos token, no negotiation)' : ''));
@@ -958,7 +972,13 @@ async function accept(door, ctx) {
 capabilities.provide('spnego.pending');
 
 module.exports = {
-  SPN: SPN,
+  // The acceptor's SPN in the AMBIENT realm. A getter since 2026-09-15, for
+  // `krb5_principals.js`'s reason.
+  get SPN() {
+    log.debug("Entering SPN().");
+    log.debug("Leaving SPN().");
+    return spn();
+  },
   SUPPORTED_MECHS: SUPPORTED_MECHS,
   OUTCOMES: OUTCOMES,
   negotiate: negotiate,

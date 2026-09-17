@@ -28,7 +28,7 @@
 // `run.js`'s one process would register every route on the shared app ahead of
 // every later file — a test whose side effects land on somebody else's file,
 // which tests/CLAUDE.md records happening twice. So a child loads
-// `common/protocol_stack.js`, serves it on an ephemeral loopback port, drives
+// `common/protocol_stack.ts`, serves it on an ephemeral loopback port, drives
 // it over real HTTP, and hands back a list of findings this file asserts. That
 // is `kerberos_product_mode.js`'s shape, for the same reason.
 // ===========================================================================

@@ -5,7 +5,7 @@ added 2026-09-13 as one of the three certificate-enrollment families beside
 `acme/` and `scep/`. `docs/est.md` is the user-facing half; this is why it is
 built the way it is.
 
-**EVERYTHING THAT IS NOT A WIRE FORMAT IS `common/cert_enrollment.js`'s.** Who
+**EVERYTHING THAT IS NOT A WIRE FORMAT IS `common/cert_enrollment.ts`'s.** Who
 may be issued a certificate for whom, which names it may carry, whether a
 request proves possession, the profiles and the five refused ones, what the
 certificate contains, where it is kept, revocation and host names are decided
@@ -19,11 +19,11 @@ when registered).
 
 | Module | What it is |
 |---|---|
-| `est.js` | The routes. Six operations at `/.well-known/est/` and under `/.well-known/est/:label/`, the checks every operation makes before a credential is read, EST's own authentication, and the answers. Requires `./est_admin` itself, so the family is ONE line in `common/protocol_stack.js` (23f). |
-| `est_codec.js` | **The four wire shapes EST adds and nothing else**: a request body decoded strictly (RFC 8951), a certs-only CMS message, the CSR attributes document and the `multipart/mixed` server-key response. A LIBRARY (rule 3): no route, requires only `helpers.js`. |
-| `est_console.js` | The view and action model both admin doors render — `estView()`, `estMonitorView()`, `estAction()`. No route, no `res`, no markup (`gnap/gnap_console.js`'s arrangement; `tests/admin_actions_layer.js` allows it to require `admin-core/admin_views`). |
-| `est_admin.js` | `GET/POST /admin/est` (Protocols) and `GET /admin/est/monitor` (Monitoring), drawn in the console shell through `admin.respond()`. |
-| `est_api.js` | `module.exports = { ROUTES }` — `GET /admin-api/est`, `GET /admin-api/est/monitor`, `POST /admin-api/est/:action` — spread into `mgmt-api/admin_api.js`'s table. Requires `./est_console` LAZILY inside each handler (rule 1). |
+| `est.ts` | The routes. Six operations at `/.well-known/est/` and under `/.well-known/est/:label/`, the checks every operation makes before a credential is read, EST's own authentication, and the answers. Requires `./est_admin` itself, so the family is ONE require in `common/protocol_stack.ts` (23f), followed by two `register()` calls — `est`, then `est_admin` (#50's R1: neither registers anything when required). |
+| `est_codec.ts` | **The four wire shapes EST adds and nothing else**: a request body decoded strictly (RFC 8951), a certs-only CMS message, the CSR attributes document and the `multipart/mixed` server-key response. A LIBRARY (rule 3): no route, requires only `helpers.js`. |
+| `est_console.ts` | The view and action model both admin doors render — `estView()`, `estMonitorView()`, `estAction()`. No route, no `res`, no markup (`gnap/gnap_console.ts`'s arrangement; `tests/admin_actions_layer.js` allows it to require `admin-core/admin_views`). |
+| `est_admin.ts` | `GET/POST /admin/est` (Protocols) and `GET /admin/est/monitor` (Monitoring), drawn in the console shell through `admin.respond()`. |
+| `est_api.ts` | `module.exports = { ROUTES }` — `GET /admin-api/est`, `GET /admin-api/est/monitor`, `POST /admin-api/est/:action` — spread into `mgmt-api/admin_api.ts`'s table. Requires `./est_console` LAZILY inside each handler (rule 1). |
 
 ## The decisions
 
@@ -75,13 +75,16 @@ when registered).
   the padding). `application/pkcs10` is in `common/app.js`'s raw-parser list so
   the bytes checked are the bytes sent.
 * **REFUSALS ARE PLAIN TEXT, ONE SENTENCE** — RFC 7030 section 4.2.3 asks for "a
-  human-readable error message". `estError(req, res, ctx, status, sentence)` is
-  the one writer; the code is marked on `res` on the line before and read back
-  for the monitor, never put in the body. A refusal at 400/401/403/409/413/415 is
-  counted against the caller with `core.countFailure()`; a 404 label, 405, 501 or
-  503 is the server's own shape and is not.
+  human-readable error message". `estError(req, res, ctx, status, sentence,
+  headers)` is the one writer; the code is marked on `res` on the line before
+  and read back for the monitor, never put in the body. A refusal at
+  400/401/403/409/413/415 is counted against the caller with
+  `core.countFailure()` — or, where the throttle is shared across nodes (#46),
+  `core.countFailureShared()`, whose answer can turn the refusal into the
+  throttle's 429; a 404 label, 405, 501 or 503 is the server's own shape and is
+  not.
 * **THE WRONG METHOD IS MIDDLEWARE, NOT `app.all()`.** Express 4 records `all` as
-  every method it knows on the ROUTE, so `sts_metadata.js` would list thirty-four
+  every method it knows on the ROUTE, so `sts_metadata.ts` would list thirty-four
   methods per EST path. A middleware after the routes answers 405 with `Allow`.
 * **THE CONSOLE'S ISSUE-SERVER-KEY ANSWERS A 200 PAGE**, not a 303, because its
   answer carries a private key; every other EST action goes through
@@ -150,9 +153,11 @@ removed, and the KEM-profile check removed from the console (handlers); the
   trips the default 60 in a realm it has not touched. The protocol job raises
   `est.attemptsPerAddress` in each of its realms.
 * **The console's user page dumps the whole directory entry**, and in
-  development mode nothing is sealed, so `stsEnrolledPrivateKey` is visible there
-  exactly as `stsAssertionPrivateKey` is. The EST view carries none. The
-  attribute also comes back lower-cased, because the core's attribute names are
-  not merged into `ldap_server.js`'s `learnName()` — an integrator's item.
+  development mode nothing is sealed — so `stsEnrolledPrivateKey` was visible
+  there when this family was first built. It is WITHHELD now, from every dump
+  and every search in every mode (`cert_enrollment.withheldValues()`, called by
+  `ldap/ldap_server.js`), and the enrollment attribute names are in
+  `ldap_server.js`'s canonical list, so they no longer come back lower-cased.
+  The EST view carries no private key either.
 * **node's `X509Certificate` cannot read an ML-KEM key**, so the protocol job
   reads the SubjectPublicKeyInfo OID out of the DER itself.

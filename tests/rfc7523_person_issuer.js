@@ -145,11 +145,12 @@ async function run(t) {
 
   // **USED AND NOT REBUILT, AND THE DIFFERENCE COST A SUITE ONCE.** Every file
   // in `tests/` runs in ONE process and this hierarchy is shared state, so a
-  // `buildChain()` here would REPLACE what is there — and
-  // `tests/pki_hierarchy.js`, which runs after this file, asserts the SHAPE of
-  // the tree it builds. `pki.start()` is what that file calls and is the one
-  // door that builds the whole tree rather than the legacy single chain;
-  // calling it only when there is nothing leaves an existing tree untouched.
+  // `buildChain()` here would REPLACE what is there — the whole tree
+  // `tests/pki_hierarchy.js` built before this file ran (name order; see the
+  // header), which the files after this one issue from. `pki.start()` is what
+  // that file calls and is the one door that builds the whole tree rather than
+  // the legacy single chain; calling it only when there is nothing leaves an
+  // existing tree untouched.
   // `tests/pki_anchor_drift.js` records the same mistake and restores at its
   // end; this file avoids making it.
   const built = pki.hasChain()

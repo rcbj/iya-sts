@@ -14,17 +14,18 @@
 //     format is a token whose introspection response lacks a member — which
 //     looks exactly like a model that never had one. Here every field of a
 //     fully populated model is compared, per format.
-//   * **THE REFUSALS ARE THE POINT, AND THEY ARE NINE-BY-THREE.** Expiry,
+//   * **THE REFUSALS ARE THE POINT, AND THEY ARE A MATRIX.** Expiry,
 //     not-before, audience, binding, access, tamper, wrong key and attenuation,
-//     for each of three formats, is a matrix; over HTTP each cell is a grant,
-//     a token and a request.
+//     for each of three formats — and all but attenuation for the two JWT
+//     formats, below — is a matrix; over HTTP each cell is a grant, a token
+//     and a request.
 //   * **ATTENUATION HAS NO ENDPOINT AT ALL.** RFC 9767 section 2.2's sub-token
 //     is made by a resource server offline; the only way to hold a narrowed
 //     macaroon or biscuit is to call the library.
 //   * **THE MATCHER IS A TABLE OF CASES.** `accessCovers()` is section 8's
 //     cross-product sentence, and its edges (a union covering what no single
 //     grant does, an empty dimension that must not be vacuous) are argued in
-//     `gnap/gnap_access.js` and pinned here.
+//     `gnap/gnap_access.ts` and pinned here.
 //
 // Every refusal is asserted by CODE, and the code is asserted to be MARKED on
 // the refusal object as well as named on it, because the route module reads
@@ -682,7 +683,7 @@ async function zcapCases(t) {
 //
 // They had no in-process case at all: the three library formats each have a
 // module of their own with `mint(model, keys)` / `verify(value, keys, ctx)`,
-// and the JWT formats live inside `gnap/gnap_tokens.js`'s dispatcher, keyed by
+// and the JWT formats live inside `gnap/gnap_tokens.ts`'s dispatcher, keyed by
 // the ambient REALM's signing key rather than by a key handed in. So an adapter
 // gives them the library shape — `keys.realm` is the realm the token is minted
 // and verified in, and "another AS key" is another realm, which is exactly what

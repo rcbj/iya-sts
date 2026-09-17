@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: request_pool.js
@@ -5,7 +6,7 @@
 // ---------------------------------------------------------------------------
 // THE FRONT PROCESS'S END OF THE REQUEST WORKERS: FORK, ROUTE, PROXY, DRAIN.
 //
-// `request_worker.js` says what a worker is and why it speaks real HTTP over a
+// `request_worker.ts` says what a worker is and why it speaks real HTTP over a
 // unix socket. This file is the half that runs where the sockets are, and its
 // job is the sentence the whole change exists for: **the front process should
 // be doing request/response I/O and nothing else.**
@@ -55,7 +56,7 @@
 // **THE STATE CHANNEL IS `persistence_replication.js` AND THERE IS NO
 // `state_channel.js` (corrected 2026-09-12).** This block named one, and so did
 // `request_worker.js`'s header; no such file was ever written. What was built
-// instead is the thing the root CLAUDE.md argues at length — a worker is just
+// instead is the thing `common/CLAUDE.md` argues at length — a worker is just
 // ANOTHER PROCESS AGAINST THE STORE, running the same four startup steps from
 // `service_state.js`, reconciled by the change log in
 // `persistence/persistence_replication.js`. A reader following either sentence
@@ -115,10 +116,11 @@ const WORKER_MODULE = path.join(__dirname, 'request_worker.js');
 // ---------------------------------------------------------------------------
 // THE SERVER CERTIFICATE, HANDED IN BY `server.js` BEFORE THE POOL STARTS.
 //
-// An INVERTED HOOK for the reason `admin.js` has eleven of them: this file is
-// loaded by `app.js`, which is above every route, and `tls/tls_server.js` sits
-// at 20 in the require order — so a require in the obvious direction would drag
-// three TLS routes to the front of the router (rule 1). The material travels
+// An INVERTED HOOK for the reason `admin.js` has its many slots (rule 3e):
+// this file is loaded by `app.js`, which is above every route, and
+// `tls/tls_server.js` sits at 20 in the require order — so a require in the
+// obvious direction would drag every /tls route to the front of the router
+// (rule 1). The material travels
 // the other way instead, filled once, before any worker is forked.
 // ---------------------------------------------------------------------------
 let tlsMaterial = null;
@@ -525,7 +527,8 @@ function awaitCommitConfirmations(servedBy) {
     return Promise.resolve();
   }
   log.debug("Leaving awaitCommitConfirmations().");
-  return new Promise(function (resolve) {
+  return new Promise(/** @param {(value?: any) => void} resolve */
+                     function (resolve) {
     let done = false;
     const waiter = { need: need, servedBy: servedBy, resolve: function () {
       log.debug("Entering resolve().");
@@ -660,7 +663,7 @@ const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 // (2026-09-13).
 //
 // The console and the portal redeem their authorization code over a real HTTP
-// request to this service's own token endpoint (`common/oidc_rp.js`), and the
+// request to this service's own token endpoint (`common/oidc_rp.ts`), and the
 // code lives in the memory of the worker that ran `/oauth2/authorize` until
 // replication carries it anywhere else. With one pool that worker was the one
 // running `/admin/callback` too — the browser's session held both to it — so
@@ -799,12 +802,14 @@ function peerOf(req) {
 // The session cookie, which is the affinity key. Named here rather than
 // imported from authn.js because this file must not require a protocol module:
 // it is loaded by app.js, which is above every route, and a require in that
-// direction would drag authn's routes to the front of the router (rule 1).
+// direction would have dragged authn's routes to the front of the router
+// (rule 1, before #50's R1) — and would still run authn's load-time code, and
+// reach its JavaScript requires, from underneath app.js.
 const SESSION_COOKIE = 'sts_session';
 
 // AND THE TWO RELYING-PARTY COOKIES (2026-09-08). Since this service's own
 // console and user portal became OpenID Connect clients, each holds a session
-// of its OWN on a cookie of its own — `common/oidc_rp.js` names them — and a
+// of its OWN on a cookie of its own — `common/oidc_rp.ts` names them — and a
 // request carrying one of those and no sign-on cookie was, to this file, a
 // request with no affinity at all. Two consequences, and the second is the one
 // that broke a suite: it was routed by load rather than to the worker holding
@@ -1397,10 +1402,12 @@ function poolFor(url) {
 //     what the CLIENT presented, and the surfaces that read it are asking about
 //     the client. `/tls` is asking about the socket.
 //
-// Nothing else is excluded, and in particular the mTLS surfaces are NOT — the
-// certificate travels in a header and is put back on the request before the
-// app sees it, so `mtls.js`, `scim_auth.js` and `/xacml/pep/*` behave in a
-// worker exactly as they do here.
+// Nothing else is excluded for this reason — the truststore's two doors and
+// the debugger's status pages are pinned for the socket reason argued below —
+// and in particular the mTLS surfaces are NOT: the certificate travels in a
+// header and is put back on the request before the app sees it, so `mtls.js`,
+// `scim_auth.js` and `/xacml/pep/*` behave in a worker exactly as they do
+// here.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // SPIFFE WAS ON THIS LIST FOR AN HOUR AND IS NOT ANY MORE (2026-09-08), and
@@ -1418,9 +1425,11 @@ function poolFor(url) {
 // the state was private at all, and the cost was a feature serialised through
 // one process for no reason anybody would find in the specification.
 //
-// `spiffe_ca.js` shares the authority now — one trust domain for the service,
-// `certificateDer` base64 on the way into the journal — so every process
-// answers the same bundle and a rotation from any of them is the service's.
+// `spiffe_ca.js` shares the authority now — `certificateDer` base64 on the
+// way into the journal — so every process answers the same bundle and a
+// rotation from any of them is the service's. (It said "one trust domain for
+// the service" here; since 2026-09-12 there is one per trust realm, each
+// shared the same way — `spiffe/CLAUDE.md`.)
 // The pins came off with it. `tests/request_routing.js` asserts they are off
 // and `tests/spiffe_authority.js` asserts the sharing that replaced them.
 // ---------------------------------------------------------------------------
@@ -1433,8 +1442,8 @@ function poolFor(url) {
 // SPIFFE's came off after an hour. SPIFFE's authority was STATE that happened
 // to be private — two module arrays — and the fix was to make it a row every
 // process shares. The truststore is not state in that sense. It is the
-// CONFIGURATION OF A LISTENER: the `ca` half of the secure context 8443, 9443,
-// LDAPS 636 and the main port were created with, applied by
+// CONFIGURATION OF A LISTENER: the `ca` half of the secure context LDAPS 636
+// and the main port were created with, applied by
 // `setSecureContext()` on server objects only the front process holds. A
 // worker has the same module loaded and its own copy of the array, and
 // changing that copy changes nothing any handshake reads — so an add answered
@@ -1460,7 +1469,7 @@ function poolFor(url) {
 //
 // **THE EMBEDDED DEBUGGER'S STATUS IS THE SAME SHAPE OF FACT (2026-09-13).**
 // Its listener and its api child are held by the front process only
-// (`debugger/debugger_api_process.js`), so `/admin/debugger` and
+// (`debugger/debugger_api_process.ts`), so `/admin/debugger` and
 // `GET /admin-api/debugger` answered by a worker would report a listener that
 // never bound and a child that was never forked. Pinned for that reason; the
 // settings drawn on that page are ordinary configuration either way.
@@ -1515,7 +1524,7 @@ function ensureSocketDir() {
   try {
     fs.chmodSync(socketDir, 0o700);
   } catch (e) {
-    // See request_worker.js: a filesystem that does not carry modes is not a
+    // See request_worker.ts: a filesystem that does not carry modes is not a
     // reason to refuse to serve, and the socket itself is narrowed too.
     log.warn(errorCodes.tag('STS-WORKER-0010') +
              'request_pool: could not narrow the mode on ' + socketDir + ': ' +
@@ -1706,7 +1715,7 @@ function receivePublishedKeys(entry, published) {
 //
 // `ldap_server.js` IS REQUIRED LAZILY, INSIDE BOTH, and that is a rule rather
 // than a convenience: this module is loaded by `server.js` before the protocol
-// stack and by `request_worker.js` as part of it, and a require at the top of
+// stack and by `request_worker.ts` as part of it, and a require at the top of
 // this file would pull the whole directory — and its eight `/admin/ldap/*`
 // console pages — into the router at a point of its own choosing. The same
 // lazy-require-inside-the-one-function shape `xacml_admin.js` uses on
@@ -1845,8 +1854,9 @@ function receivePublishedPki(entry, published) {
   // dispatch mode, none of which names a certificate.
   //
   // This is the same rule the LDAP connection list established and it is the
-  // SECOND thing to need it, which the root CLAUDE.md said would take the
-  // argument being made again rather than the mechanism being copied. The
+  // SECOND thing to need it, which the root CLAUDE.md said (the rule is in
+  // `common/CLAUDE.md` now) would take the argument being made again rather
+  // than the mechanism being copied. The
   // shapes differ accordingly: the directory needed a MIRROR pushed out and an
   // instruction sent back, because the decision is a worker's; here the
   // decision is this process's alone — it owns the certificate — so nothing
@@ -1957,9 +1967,9 @@ function listenerRepairArmed() {
 function runListenerPass(repair) {
   log.debug("Entering runListenerPass(). repair=" + repair);
   // **LAZILY, AND THAT IS RULE 1 RATHER THAN TASTE.** `server.js` requires this
-  // module at 122 and the protocol stack — `tls/tls_server.js` with it — at
-  // 176, so a require at the top of this file would register `/tls`'s three
-  // views from HERE, ahead of every protocol module. Inside a function that
+  // module well before the protocol stack — `tls/tls_server.js` with it — so a
+  // require at the top of this file would register `/tls`'s views from HERE,
+  // ahead of every protocol module. Inside a function that
   // cannot run until a worker has published something, it is a cache hit.
   const tls = require('../tls/tls_server');
   log.debug("Leaving runListenerPass().");
@@ -2128,7 +2138,7 @@ function fork(pool) {
     // the top of this file for what happens without it.
     //
     // AND WHICH POOL IT IS IN. One thing in a worker reads it: the OpenID
-    // Connect back channel in `common/oidc_rp.js`, which names the worker that
+    // Connect back channel in `common/oidc_rp.ts`, which names the worker that
     // should redeem a code and has to know whether that can be itself — see
     // PROTOCOL_WORKER_HEADER.
     env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1',
@@ -2159,7 +2169,7 @@ function fork(pool) {
                   // of 64 was never anywhere near being reached by it. What
                   // fixes that failure is the explicit backlog on the worker's
                   // own socket — see `bindSocket()` in
-                  // `common/request_worker.js`. This bounds the OTHER end,
+                  // `common/request_worker.ts`. This bounds the OTHER end,
                   // which is real (the suite runs many jobs at once) and is
                   // not the thing that was measured.
                   //
@@ -2172,7 +2182,7 @@ function fork(pool) {
                   //
                   // **THE HAZARD A BOUND CREATES, WRITTEN DOWN BECAUSE IT IS
                   // THE REASON THE NUMBER IS NOT SMALL**: this service makes
-                  // requests to ITSELF — `common/oidc_rp.js`'s back channel
+                  // requests to ITSELF — `common/oidc_rp.ts`'s back channel
                   // dials the front process, which dispatches again — so a
                   // worker holding N in-flight requests that are each waiting
                   // on a reentrant call needs an N+1th connection to make
@@ -2190,7 +2200,7 @@ function fork(pool) {
                   generation: generation };
   workers.push(entry);
   // TELL IT WHAT IT IS. Nothing is loaded in the child until this arrives —
-  // see request_worker.js for why the certificate travels here rather than in
+  // see request_worker.ts for why the certificate travels here rather than in
   // the fork's environment.
   try {
     // THE SIGNING KEYS TRAVEL WITH THE CERTIFICATE, for the same reason and on
@@ -2219,7 +2229,7 @@ function fork(pool) {
   }
 
   const settled = new Promise(function (resolve) {
-    child.on('message', function (message) {
+    child.on('message', /** @param {any} message */ function (message) {
       if (message && message.ready) {
         entry.ready = true;
         quickExits[entry.pool] = 0;
@@ -2602,7 +2612,7 @@ function mutationKeyOf(req, url) {
 // TO THE SID.
 //
 // The handle ROTATES — on every re-authentication, and when an arrival session
-// becomes a sign-in (`authn/authn.js`, `mintSessionHandle()`) — and the sid
+// becomes a sign-in (`authn/authn.ts`, `mintSessionHandle()`) — and the sid
 // does not. Binding `s:<whole value>` would add a binding per rotation and
 // leave the old one pointing at a worker for a value no browser will present
 // again. The sid is also what the worker's store is keyed by, so it names the
@@ -3247,15 +3257,18 @@ let generation = 0;
 //
 // The generation moved only in receiveCommitted(), on a WORKER's announcement.
 // That is the whole story for anything that arrives over the dispatched HTTP
-// port — and this process answers on five more socket families that are never
-// dispatched at all, because they are not `app`: the two TLS listeners have a
-// handler of their own (`tls_server.js`), the directory has its own protocol,
-// and so do the KDC and SPIFFE's gRPC pair. Every session, principal and entry
-// minted there is written by THIS process, and no worker was ever told.
+// port — and this process answers on three more socket families that are never
+// dispatched at all, because they are not `app`: the directory has its own
+// protocol, and so do the KDC and SPIFFE's gRPC pair. `/tls` IS on `app` and
+// is still answered here, by `NEVER_DISPATCHED` above, because what it reads
+// is the connection. Every session, principal and entry minted there is
+// written by THIS process, and no worker was ever told.
 //
 // **THE SYMPTOM WAS A SIGN-OUT THAT LEFT A SESSION BEHIND.** A verified client
-// certificate on 9443 starts a sign-on session (2026-09-05); the session is
-// minted here, `/logout` is answered by a worker, and the worker's own copy of
+// certificate starts a sign-on session (2026-09-05, and at GET /tls/sign-in on
+// the main port since 2026-09-16, which is why that path is never dispatched);
+// the session is minted here, `/logout` is answered by a worker, and the
+// worker's own copy of
 // the session store had never heard of it — so a global sign-out reported
 // ending everything and left a live way in. It is intermittent by nature: the
 // worker gets there eventually on the replication poll, so the failure depends
@@ -3269,7 +3282,7 @@ let generation = 0;
 // the write is fetchable, and the barrier does the waiting.
 //
 // It is sampled at DISPATCH rather than pushed from the writer, and that is
-// deliberate: the alternative is every one of those five socket families
+// deliberate: the alternative is every one of those socket families
 // learning about this pool, which is the coupling `worker.js` and the
 // request-worker design have avoided from the start. A comparison of two
 // integers on a request that was about to cross a process boundary anyway is
@@ -3873,7 +3886,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // forwarded host from a peer that may not forward is dropped, so the worker
   // cannot believe what this process would not have. **Behind an L4 balancer
   // with `global.proxyProtocol` on, the peer IS the client**:
-  // `common/proxy_protocol.js` put the header's address on the socket before
+  // `common/proxy_protocol.ts` put the header's address on the socket before
   // this request was parsed, so what is written here is that address and the
   // balancer never appears (`tests/proxy_protocol.js` 3a).
   headers['x-forwarded-for'] = clientAddress.clientAddressOf(req) ||
@@ -4093,12 +4106,14 @@ function proxy(entry, req, res, atGeneration, ticket) {
 // OPERATIONS, WHICH ARE HOW A NON-HTTP FRONT END REACHES THE POOL.
 //
 // Everything above this line is about the express app, and it would be a
-// mistake to read the pool as being about HTTP. **The front process owns SIX
-// listener families and only one of them speaks HTTP**: the Kerberos KDC on TCP
-// and UDP 88, the Kerberos service on 8888, the LDAP directory on 389 and 636,
-// and SPIFFE's two gRPC surfaces are the others. The work those do has exactly
-// the same reason to leave the front process as a `/scim/v2` POST does, and the
-// transport they arrive on is not a reason to keep it there.
+// mistake to read the pool as being about HTTP. **The front process owns
+// every listener family and only the main port's HTTP is dispatched as
+// requests**: the Kerberos KDC on TCP and UDP 88, the Kerberos service on
+// 8888, the LDAP directory on 389 and 636, and SPIFFE's gRPC surfaces are the
+// others that carry protocol work (the debugger listener and the plain-HTTP
+// PKI listener are HTTP too, and are not dispatched). The work those do has
+// exactly the same reason to leave the front process as a `/scim/v2` POST
+// does, and the transport they arrive on is not a reason to keep it there.
 //
 // So an OPERATION is the protocol-independent half: a `{ kind, args }` pair the
 // front process sends to a worker and gets a result back from. The front
@@ -4258,9 +4273,9 @@ function runOperation(kind, args, opts) {
     // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST ONE, before the
     // generation is read. It matters more here than on the HTTP path, not
     // less: the front process is the one that holds every socket this service
-    // has, so it is the process that mints a session on 9443 and writes the
-    // Kerberos replay cache — and an LDAP operation is very often the next
-    // thing that has to see it.
+    // has, so it is the process that mints a session at /tls/sign-in and
+    // writes the Kerberos replay cache — and an LDAP operation is very often
+    // the next thing that has to see it.
     noteLocalWrites(localWriteCount());
     const wanted = generation;
     if (entry.generation >= wanted) {

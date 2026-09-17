@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: persistence/persistence_minted.js
@@ -10,7 +11,7 @@
 // Tokens, refresh tokens, authorization codes, pre-authorized codes, SAML
 // artifacts, Kerberos tickets, the replay caches, the statistics and the audit
 // log were all in memory and all gone on restart. `persistence.js`'s own header
-// says it, and `persistence/CLAUDE.md` calls it deliberate rather than
+// said it, and `persistence/CLAUDE.md` called it deliberate rather than
 // unfinished.
 //
 // **IT WAS DELIBERATE, AND IT RESTED ON EXACTLY ONE FACT: THE SIGNING KEY WAS
@@ -39,18 +40,17 @@
 // every run that has never heard of any of this behaving exactly as it did.
 //
 // ---------------------------------------------------------------------------
-// THIS IS STILL PERSISTENCE AND IS STILL NOT COORDINATION.
+// PERSISTENCE, AND — SINCE THE SAME DAY — COORDINATION TOO.
 //
-// The obvious wrong inference from "sessions are in the database" is that two
-// processes now share them. THEY DO NOT. Each holds its own copy in memory,
-// each writes its own changes down, and neither sees the other's until it
-// restarts — exactly what `persistence.js`'s SEAM section already says about
-// the directory, and for exactly the same reason. What this buys is that a
-// RESTART is survivable. What it does not buy is a second process.
-//
-// The seam is where it was: `persistence_postgres.js` emits a
-// `pg_notify('sts_ldap_change', …)` that nothing LISTENs to. A minted channel
-// beside it is what the coordination phase would need, and it is not this.
+// This block was headed *THIS IS STILL PERSISTENCE AND IS STILL NOT
+// COORDINATION*: each process held its own copy in memory and neither saw the
+// other's until it restarted, and the driver's `pg_notify` had no listener.
+// `persistence_replication.js` closed that seam (2026-09-06): every minted
+// write is also a row in the change log, and the appliers `persistence.js`
+// hands it put another process's rows into this one's stores — which is what
+// request workers and, since #46, other containers rely on. What this file
+// still owns is the WRITING DOWN; convergence is that module's, and
+// `persistence/CLAUDE.md` (*The seam is closed*) argues it.
 //
 // ---------------------------------------------------------------------------
 // A JOURNAL, AND NOT THE DIFF NEXT DOOR. THE TWO ARGUMENTS ARE OPPOSITE AND
@@ -897,7 +897,7 @@ function dirty() {
 // pool checkout, a BEGIN and a statement per row, each taking a row lock held
 // to COMMIT. Two flushes from one process could run at once — this function
 // has two callers that do not wait for each other: `persistence.js`'s
-// scheduled flush, and `request_worker.js`'s commit announcement through
+// scheduled flush, and `request_worker.ts`'s commit announcement through
 // `flushMinted()` — and a key written between their two journal takes is in
 // BOTH, carrying two different values. The two transactions then commit in
 // whatever order their locks allow, and `ON CONFLICT DO UPDATE` keeps

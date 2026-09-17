@@ -6,7 +6,7 @@
 // THE FOUR WIRE SHAPES EST ADDS, READ BACK BY A SECOND IMPLEMENTATION
 // (2026-09-13).
 //
-// `est/est_codec.js` writes a request-body decoder, a certs-only CMS message, a
+// `est/est_codec.ts` writes a request-body decoder, a certs-only CMS message, a
 // CSR attributes document and a multipart/mixed response by hand, in DER it
 // encodes itself. Every claim here is checked by READING what it wrote with
 // pkijs/asn1js or by hand — never with the codec — because a writer and a

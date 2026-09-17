@@ -8,9 +8,10 @@
 // One property, over every protocol family at once: **the document a client
 // has to read BEFORE it can do anything is readable by a client that has
 // nothing.** No cookie, no Authorization header, no client certificate, no
-// prior request. Nineteen documents across ten families, and the same four
-// questions asked of each — the status, the media type, the shape, and what
-// the response tried to give the caller besides the document.
+// prior request. Twenty-three documents — fourteen protocol families and the
+// service's own `/realms` — and the same four questions asked of each: the
+// status, the media type, the shape, and what the response tried to give the
+// caller besides the document.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS WORTH A JOB OF ITS OWN.
@@ -59,23 +60,24 @@
 //   4. **NOTHING ELSE.** No `Set-Cookie` — a document a stranger reads must
 //      not start a session for them — and `Cache-Control: no-store`, because
 //      every one of these documents describes key material that this service
-//      regenerates on every start (CLAUDE.md, *The signing key is regenerated
-//      on every start*). A cached copy outlives the key it names, and what
+//      regenerates on every start in development mode (root CLAUDE.md,
+//      *Signing keys, and any document that publishes one*, which states the
+//      no-store rule). A cached copy outlives the key it names, and what
 //      that produces at the far end is a client verifying today's signatures
 //      against yesterday's certificate. **`/sts/cert` was the one document
 //      here without that header** and this job is what found it; the header
-//      and the reason are now in `ws-trust/wstrust.js` beside the route.
+//      and the reason are now in `ws-trust/wstrust.ts` beside the route.
 //
 // ---------------------------------------------------------------------------
 // A BAD CREDENTIAL IS NOT THE ABSENCE OF ONE, AND SCIM IS THE ONE ROW WHERE
 // THAT SHOWS.
 //
 // Section 2 re-fetches every document with `Authorization: Bearer
-// not-a-real-token`. Seventeen answer 200 exactly as before — a public
+// not-a-real-token`. Twenty answer 200 exactly as before — a public
 // document does not become private because the caller mumbled — and the three
 // SCIM discovery endpoints answer 401. **That is asserted rather than
 // tolerated, in both directions**, because it is a documented decision and not
-// an accident: `scim/scim_auth.js`'s authenticate() states the order it
+// an accident: `scim/scim_auth.ts`'s authenticate() states the order it
 // resolves in, and its first rule is that a credential which was PRESENTED and
 // FAILED is always a refusal even where none was required — so that a client
 // testing its expired-token path cannot get a 200 because the endpoint would
@@ -113,9 +115,9 @@
 // and this plainly can be — which would put it in the parent project's suite.
 // It is here on `sts_route_inputs.js`'s argument, which is the third one:
 // **section 6 reads THIS WORKING TREE'S source.** The family list it checks
-// coverage against is `sts_metadata.js`'s own `PROTOCOLS`, and the well-known
+// coverage against is `sts_metadata.ts`'s own `PROTOCOLS`, and the well-known
 // paths in section 7 are the ones this tree REGISTERS — so adding a
-// twentieth protocol family, or a well-known document to an existing one,
+// protocol family, or a well-known document to an existing one,
 // fails this job until somebody says here whether it publishes something a
 // stranger may read. A copy over there would read the pinned `sts/` gitlink
 // and check a family list that is not the one running.
@@ -306,7 +308,7 @@ function certificatePem(text, where) {
 // ---------------------------------------------------------------------------
 // THE DOCUMENTS.
 //
-// `family` is the name of a card in `sts_metadata.js`'s PROTOCOLS — checked in
+// `family` is the name of a card in `sts_metadata.ts`'s PROTOCOLS — checked in
 // both directions in section 6, so a row here cannot name a family this
 // service does not claim and a family cannot arrive without an answer to
 // "what does a stranger read first".
@@ -646,7 +648,6 @@ const DOCUMENTS = [
       return bad;
     } },
 
-  // -- The TLS listeners' own certificate ----------------------------------
   // -- Certificate enrollment (2026-09-13) ----------------------------------
   // What each protocol's client reads BEFORE it holds anything: ACME's
   // directory, EST's CA certificates, SCEP's capability list. All three are
@@ -711,11 +712,14 @@ const DOCUMENTS = [
       return bad;
     } },
 
+  // -- The main port's own certificate -------------------------------------
+  // (The 8443/9443 listeners that also presented it were deleted 2026-09-16.)
   { family: "PKI / X.509", spec: "RFC 5280", path: "/tls/server-certificate",
     type: TEXT_TYPE, json: false, badCredential: "ignored",
-    // It is regenerated per start and signed by nobody, which /tls reports as
-    // two facts rather than one tick — so the document a client pins from has
-    // to be fetchable before that client trusts anything.
+    // The listener certificate, with its chain and the service Root since
+    // 2026-09-11, and regenerated per start in development mode — so the
+    // document a client builds its truststore from has to be fetchable before
+    // that client trusts anything.
     must: function (text) {
       log.debug("Entering must().");
       log.debug("Leaving must().");
@@ -723,10 +727,10 @@ const DOCUMENTS = [
     } },
 
   // -- The service's own directory of realms -------------------------------
-  // NOT a protocol family (`sts_metadata.js` files it under `Service`), and it
+  // NOT a protocol family (`sts_metadata.ts` files it under `Service`), and it
   // is here because it is the document a client reads to discover the OTHER
-  // documents' prefixes. `GET /realms` is ungated on purpose — CLAUDE.md's
-  // trust realm section calls it "the ungated directory a client discovers
+  // documents' prefixes. `GET /realms` is ungated on purpose — common/CLAUDE.md
+  // calls it "the ungated directory a client discovers
   // them from" — and nothing else asserts that it still is.
   { family: null, spec: "this service's own", path: "/realms",
     type: JSON_TYPE, json: true, badCredential: "ignored",
@@ -802,7 +806,7 @@ const CONTROLS = [
 
 // ---------------------------------------------------------------------------
 // The families that publish NOTHING a stranger can read, and why. Checked
-// against `sts_metadata.js`'s PROTOCOLS in section 6, so a twentieth family
+// against `sts_metadata.ts`'s PROTOCOLS in section 6, so a new family
 // arrives here as a failure rather than as silence. The NINETEENTH did
 // exactly that on 2026-09-10 — PKI arrived with no row and this job went red
 // naming it, which is the whole of what the check is for.
@@ -1003,7 +1007,7 @@ async function aBadCredentialIsNotTheAbsenceOfOne() {
         assert.strictEqual(r.status, 401,
           where + " answered " + r.status + " to a caller presenting a token " +
           "that does not verify, and this row expects 401. That is SCIM's " +
-          "documented order (scim/scim_auth.js's authenticate()): a " +
+          "documented order (scim/scim_auth.ts's authenticate()): a " +
           "credential which was presented and FAILED is always a refusal, " +
           "even on an endpoint that would have accepted nobody, so that a " +
           "client testing its expired-token path cannot get a 200 by " +
@@ -1076,7 +1080,7 @@ async function theGatedSurfacesStillRefuse() {
 // **WHAT NEITHER BRANCH CAN SHOW is a shim that widened to some other path** —
 // there is no way to ask this service what headers it saw. What keeps that
 // honest is that the shim's `WANTED` regex is one line in one file with this
-// paragraph pointing at it: widen it and eighteen documents above quietly stop
+// paragraph pointing at it: widen it and the documents above quietly stop
 // being fetched anonymously. It would be a change to the suite's plumbing made
 // for another job's convenience, which is exactly why it is written down here.
 // ===========================================================================
@@ -1253,9 +1257,11 @@ async function thePerPartnerDocuments() {
 // ===========================================================================
 // 6. EVERY PROTOCOL FAMILY IS ACCOUNTED FOR.
 //
-// Read off THIS WORKING TREE — `sts_metadata.js`'s PROTOCOLS, the table that
-// draws the cards on /admin/sts-metadata and is handed to the crypto report at
-// require time. A family is either covered by a row in DOCUMENTS or named in
+// Read off THIS WORKING TREE — `sts_metadata.ts`'s PROTOCOLS, the table that
+// draws the cards on /admin/sts-metadata and is handed to the crypto report
+// when its instance is wired. The SOURCE is read, not the `.js` an image build
+// compiles beside it (#50), and the declaration may carry a type annotation.
+// A family is either covered by a row in DOCUMENTS or named in
 // NO_PUBLIC_METADATA with a reason. Both directions: a row here naming a
 // family this service does not claim fails too, which is what a rename
 // produces.
@@ -1264,10 +1270,10 @@ function everyFamilyIsAccountedFor() {
   log.debug("Entering everyFamilyIsAccountedFor().");
   log.info("=== every protocol family this service advertises ===");
 
-  const source = fs.readFileSync(path.join(ROOT, "sts_metadata.js"), "utf8");
-  const block = source.split("const PROTOCOLS = [")[1];
+  const source = fs.readFileSync(path.join(ROOT, "sts_metadata.ts"), "utf8");
+  const block = source.split(/const PROTOCOLS(?:: [A-Za-z]+\[\])? = \[/)[1];
   assert.ok(block,
-    "sts_metadata.js no longer contains `const PROTOCOLS = [`. That table is " +
+    "sts_metadata.ts no longer contains `const PROTOCOLS = [`. That table is " +
     "where this service says which protocol families it offers, and this " +
     "section is the drift check between it and the documents above. If it " +
     "moved, follow it — do not delete this section.");
@@ -1283,7 +1289,7 @@ function everyFamilyIsAccountedFor() {
   // matching finds SOME families and reports everything covered.
   assert.ok(families.length >= 15,
     "only " + families.length + " protocol families were read out of " +
-    "sts_metadata.js and this service advertises nineteen. That is an " +
+    "sts_metadata.ts and this service advertises nineteen. That is an " +
     "extractor that broke rather than a service that shrank — the table's " +
     "rows are `  { name: '...'` and something has changed their shape.");
 
@@ -1324,7 +1330,7 @@ function everyFamilyIsAccountedFor() {
   });
   check("no row names a family this service does not claim", function () {
     assert.deepStrictEqual(invented, [],
-      "these name a protocol family that is not in sts_metadata.js's " +
+      "these name a protocol family that is not in sts_metadata.ts's " +
       "PROTOCOLS: " + invented.join(", ") + ". That is what a rename " +
       "produces — the family is still there under another name and this file " +
       "goes on reporting it covered.");
@@ -1343,9 +1349,9 @@ function everyFamilyIsAccountedFor() {
 // The other half of the drift check, one level down: a family that already has
 // a card can grow a SECOND document, and nothing above would notice. This
 // reads the registrations rather than the prose — the literal in `app.get()`,
-// and the constant where the path is one (ssf.js's WELL_KNOWN is the only such
-// case today, and a scan of string literals would have matched five sentences
-// of documentation instead).
+// and the constant where the path is one (ssf.ts's WELL_KNOWN and scim.js's
+// HOBA_REGISTER_PATH today; a scan of string literals would have matched
+// sentences of documentation instead).
 // ===========================================================================
 function everyWellKnownPathIsAccountedFor() {
   log.debug("Entering everyWellKnownPathIsAccountedFor().");
@@ -1497,7 +1503,7 @@ async function test() {
   // A FLOOR ON THE COUNT, for the reason sts_route_inputs.js gives: a section
   // that stops being called takes its assertions with it and the run still
   // says "passed", which is the one failure a suite cannot report about
-  // itself. Nineteen documents at five checks each is most of it.
+  // itself. Twenty-three documents at five checks each is most of it.
   assert.ok(checks >= 110,
     "only " + checks + " checks ran, and this file makes well over a hundred " +
     "against a healthy service. A count this low means a SECTION STOPPED " +

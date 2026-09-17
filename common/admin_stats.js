@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: admin_stats.js
@@ -9,12 +10,16 @@
 //
 // It is a LIBRARY, not a protocol module — like dpop.js it registers no route,
 // so its position in the require order does not matter and it cannot be the
-// reason a route is missing. `admin.js` is the console that renders what is in
-// here; this file holds the state and none of the HTML, which is the split that
-// lets the counters be read by a test over JSON without going near a page.
+// reason a route is missing. The console (`admin-ui/`, `admin-core/`) renders
+// what is in here; this file holds the state and none of the HTML, which is
+// the split that lets the counters be read by a test over JSON without going
+// near a page.
 //
-// It requires helpers.js and nothing else in this repository, deliberately: it
-// is called from app.js's call log, from helpers.js's signJwt(), from both
+// It requires only helpers.js and a handful of libraries that never require it
+// back — realms, config, audit, the error-code table, the replication fan-in,
+// the application registry, the federation release filter and roles — each
+// argued where it is required below, and deliberately: it is called from
+// app.js's call log, from helpers.js's signJwt(), from both
 // assertion builders, from the KDC and from the credential issuer, which
 // between them are most of the service. Anything it required, all of those
 // would then require transitively, and the cycles rule 2 of the architecture
@@ -22,12 +27,13 @@
 //
 // Three things are worth knowing before reading further.
 //
-// **Everything here is in memory and dies with the process.** That is the same
-// choice the signing key makes (regenerated on every start) and for the same
-// reason: nothing about a mock is worth persisting, and a statistics file that
-// outlived the key that signed the tokens it describes would be actively
-// misleading. The console says so on every page rather than leaving a reader to
-// wonder why the numbers reset.
+// **In development mode everything here is in memory and dies with the
+// process.** That is the same choice the signing key makes there (regenerated
+// on every start) and for the same reason: a statistics file that outlived the
+// key that signed the tokens it describes would be actively misleading. Where
+// the key persists — product mode on a postgres store — the stores declared
+// `persist` below are written down with the rest of the minted state
+// (persistence/CLAUDE.md).
 //
 // **The registries are bounded.** A long-running instance issuing tokens in a
 // loop must not become a memory leak, so the token, assertion, ticket and
@@ -46,8 +52,8 @@
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
         LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// config.js and the error-code table and nothing else here, so it cannot join a
+// cycle and it registers no route, so its position is not a position at all.
 const realms = require('./realms');
 // WHAT OTHER PROCESSES COUNTED, for the fan-in in snapshot(). A LIBRARY
 // (rule 3): it registers no route and requires only `config` and `realms`, so
@@ -55,9 +61,10 @@ const realms = require('./realms');
 // answers an empty array and every number this file reports is unchanged.
 const replication = require('../persistence/persistence_replication');
 // The audit log. A one-way require and it must stay one: audit.js requires
-// helpers.js and config.js and nothing else in this repository, precisely so
-// that this file — which most of the service already requires — can call it
-// without dragging a graph behind it.
+// helpers.js, config.js, realms.js, the error-code table and the replication
+// fan-in and nothing else in this repository, precisely so that this file —
+// which most of the service already requires — can call it without dragging a
+// graph behind it.
 //
 // It is called from ONE place in here, recordAuthentication() below, and that
 // is the point: that function is already the single funnel every one of the
@@ -74,11 +81,11 @@ const audit = require('./audit');
 const errorCodes = require('./error_codes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
-// registers no route, and it requires only helpers.js, config.js and audit.js —
-// none of which requires this file — so nothing about requiring it from here
-// closes a cycle or moves a route, and a slot would cost a reader an
-// indirection for nothing. It is the same argument applications.js is required
-// under, twenty lines above.
+// registers no route, and it requires only helpers.js, config.js, realms.js,
+// audit.js, the error-code table and applications.js — none of which requires
+// this file — so nothing about requiring it from here closes a cycle or moves
+// a route, and a slot would cost a reader an indirection for nothing. It is the
+// same argument applications.js is required under, a few lines below.
 const federation = require('./../federation/federation');
 // For one value: `oauth2.clockSkewS`, the allowance the OAuth endpoints apply
 // when they read back a token this service signed. It is read HERE so that the
@@ -276,7 +283,7 @@ const tokens = realms.map({ persist: 'admin_stats.tokens' });
 
 
 // What `typ` means, in the vocabulary the console and RFC 7009 use. Every token
-// this server issues is an RS256 JWT signed with the same key, so `typ` is the
+// this server issues is a JWT signed with the realm's own keys, so `typ` is the
 // only thing that tells them apart — the same fact UserInfo relies on.
 const KIND_BY_TYP = {
   'Bearer': 'access_token',
@@ -1093,9 +1100,9 @@ function freshScimCounts() {
     // silently dropped those would report far fewer failures than there were.
     byScimType: {},
     // WHICH AUTHENTICATION SCHEME GOT IN. Keyed by scim_auth.js's scheme ids,
-    // plus `anonymous` for a request nothing authenticated (a discovery call,
-    // or any call at all if the SCIM gate is ever off) and `refused` for one
-    // that never got past the gate. The VOCABULARY is not here, deliberately:
+    // plus `anonymous` for a request nothing authenticated (a discovery call
+    // with `scim.authDiscovery` off) and `refused` for one that never got past
+    // the gate. The VOCABULARY is not here, deliberately:
     // it belongs to scim_auth.js, this module cannot require that one (it
     // requires this), and the console draws the full list of schemes from the
     // surface description it already reads. So this is a plain tally and the
@@ -1174,7 +1181,7 @@ function scimDetailRow(table, operation) {
 // unhappy, which is the same guarantee audit() gives and for the same reason.
 //
 // **EVERYTHING IS READ BEFORE ANYTHING IS WRITTEN**, which is the rule
-// `xacml/xacml_monitor.js`'s `record()` states at length and had to learn the
+// `xacml/xacml_monitor.ts`'s `record()` states at length and had to learn the
 // hard way: a caller whose object throws on a property access — a getter, a
 // Proxy, a half-built object — otherwise leaves the row with the call counted
 // and no bucket, and the page's own arithmetic stops reconciling permanently
@@ -1558,7 +1565,7 @@ function resetScimForTests() {
 // `Alice` and `alice` stay two, because nothing in this service treats them as
 // one.
 //
-// Kept in memory and dropped with the process, like everything else here.
+// Persisted and dropped exactly as the other stores here are — see the header.
 // ---------------------------------------------------------------------------
 
 // The subject form this service issued until 2026-09-14, still READ — a
@@ -1772,10 +1779,10 @@ function renameIdentity(from, to) {
 // require.
 //
 // The embedded LDAP directory grows an entry for every person who authenticates
-// to this service, through any of the twelve protocol families —
+// to this service, through any of the protocol families —
 // recordAuthentication() below is the single funnel all of them already go
 // through at the moment the credential is ACCEPTED, so one observer here is one
-// place and not twelve.
+// place and not one per family.
 //
 // But ldap_server.js requires THIS file (it needs identityOf's normalisation,
 // so that `alice`, `urn:uuid:<entryUUID>` and `alice@REALM` seed one entry and
@@ -1962,13 +1969,14 @@ function recordAuthentication(detail) {
         // AS-REQ and a UsernameToken have no amr to state, and an entry with no
         // factors recorded is the honest answer for them rather than a default.
         amr: info.amr || [], acr: info.acr || '',
-        // Passed through untouched, and only the TLS listeners set it: a client
-        // certificate's identity IS a DN, so the entry the directory seeds for
-        // it is not `uid=<name>` and the facts that go in it — issuer, serial,
-        // validity — are on the certificate rather than in anything this file
-        // holds. It rides on the observer rather than on a second hook because
-        // this is already the funnel, and a second call at the TLS listener
-        // would be a second thing to keep right. Nothing here reads it.
+        // Passed through untouched, and only `tls/tls_server.js` sets it: a
+        // client certificate's identity IS a DN, so the entry the directory
+        // seeds for it is not `uid=<name>` and the facts that go in it —
+        // issuer, serial, validity — are on the certificate rather than in
+        // anything this file holds. It rides on the observer rather than on a second hook because
+        // this is already the funnel, and a second call at the certificate
+        // sighting would be a second thing to keep right. Nothing here reads
+        // it.
         certificate: info.certificate || null,
         // WHOSE identity this one belongs to, where the caller knows and only
         // where it does. It exists for one shape: a DECENTRALIZED IDENTIFIER,
@@ -1988,7 +1996,7 @@ function recordAuthentication(detail) {
         // itself would say nothing.
         linkedTo: info.linkedTo ? identityKeyOf(info.linkedTo) : '',
         // WHAT A FOREIGN IDENTITY PROVIDER SAID ABOUT THEM, where a federated
-        // sign-in is what brought us here. Only `federation/federation_sp.js`
+        // sign-in is what brought us here. Only `federation/federation_sp.ts`
         // sets it, and it is passed through UNTOUCHED for exactly the reason
         // `certificate` above is: this file counts, and the directory decides
         // what to do about it. Nothing here reads it.
@@ -2041,8 +2049,8 @@ function recordAuthentication(detail) {
            '). ' + record.authentications + ' time(s) so far; ' + users.size +
       ' ' +
                'user(s) known.');
-  // The audit log's authentication event. Here rather than at the fourteen call
-  // sites for the reason given at the require above, and here rather than at
+  // The audit log's authentication event. Here rather than at every call site
+  // for the reason given at the require above, and here rather than at
   // the TOP of this function because the row must mean "a credential was
   // accepted" — an identity that could not be read is not an authentication and
   // gets no row, which is the early return above.
@@ -2075,7 +2083,8 @@ function recordAuthentication(detail) {
   // THE APPLICATION on the other side of this authentication, where the caller
   // named one. A plain require in the ordinary direction rather than a fifth
   // hook (rule 3e): applications.js registers no route and requires only
-  // helpers.js, config.js and audit.js, so nothing about requiring it from here
+  // libraries that never require this file (helpers, config, audit, realms,
+  // roles, keystore and the like), so nothing about requiring it from here
   // closes a cycle or moves a route, and a slot would cost a reader an
   // indirection for nothing.
   //
@@ -2171,7 +2180,7 @@ const RESERVED_JWT_CLAIMS = [
 // DEFAULT realm's included, and every other realm's — while each realm's
 // console showed it as though it were that realm's own configuration. The
 // other half of the same claim set was already per realm
-// (`common/claim_attributes.js` holds the DIRECTORY ATTRIBUTES a set carries),
+// (`common/claim_attributes.ts` holds the DIRECTORY ATTRIBUTES a set carries),
 // so one set disagreed with itself about whether it belonged to a realm.
 //
 // The LABEL and the KIND are constants and are duplicated into every
@@ -2222,14 +2231,15 @@ const CLAIM_SETS = realms.obj(freshClaimSets,
 //   load-bearing in at least one of the two shapes, so the list applies whole.
 const CLAIM_SET_IDS = Object.keys(CLAIM_SETS);
 
-// THE FOUR SETS ARE ONE STORE AND TWO CONSOLE PAGES, and these two lists are
-// what says which page a set is on: /admin/claims configures the two JWT sets
-// and /admin/saml-attributes the two SAML ones (2026-08-24; before that, one
-// page carried all four and a reader configuring an assertion had to read past
-// two token sets to reach it).
+// THE FIVE SETS ARE ONE STORE AND THREE CONSOLE PAGES, and these lists are
+// what says which page a set is on: /admin/claims configures the two JWT sets,
+// /admin/userinfo-claims the UserInfo one and /admin/saml-attributes the two
+// SAML ones (the SAML split is 2026-08-24; before that, one page carried all
+// four and a reader configuring an assertion had to read past two token sets
+// to reach it).
 //
 // DERIVED FROM `kind` rather than typed out, for the reason NAV is derived from
-// SECTIONS in admin-ui/admin.js: a set added to CLAIM_SETS and forgotten in a
+// SECTIONS in admin-ui/admin.ts: a set added to CLAIM_SETS and forgotten in a
 // hand-written list would be a set with a store, an issuance path and no page
 // to configure it on, and nothing would fail. `jwt` is the OAuth/OIDC half;
 // everything else is an assertion. The STORE did not split and must not — one
@@ -2271,7 +2281,7 @@ const DEFAULT_SAML11_NAMESPACE =
 // of the architecture exists for, and the symptom arrives later as something
 // that is not a function.
 //
-// So the direction is inverted the same way setUserObserver() below and
+// So the direction is inverted the same way setUserObserver() above and
 // helpers.js's setJwtRecorder() are: this file offers the slot and
 // claim_attributes.js fills it at ITS require time. What that buys is the whole
 // point of doing it this way — NO ISSUANCE SITE CHANGED. oauth2.js's two calls
@@ -2340,19 +2350,20 @@ function resolvedSamlAttributes(id, context) {
 // ---------------------------------------------------------------------------
 // A SECOND SLOT, AND WHY IT IS NOT A FIFTH HOOK ADDED BY ANALOGY.
 //
-// CLAUDE.md rule 3e says the hooks on this file are four different problems
-// rather than a pattern, and that a fifth must not be added because the fourth
-// exists. The test it gives is the one that matters — a slot is what you reach
+// CLAUDE.md rule 3e says the hooks on this file are different problems rather
+// than a pattern, and that another must not be added by analogy. The test it
+// gives is the one that matters — a slot is what you reach
 // for when a require would CLOSE A CYCLE or MOVE A ROUTE — and this one fails
 // both ways round, which is why it is here:
 //
-//   * group_claims.js requires THIS file (for the four set ids, the reserved
+//   * group_claims.js requires THIS file (for the claim-set ids, the reserved
 //     names and identityKeyOf()), so a require in the other direction closes a
 //     loop and hands back a half-initialised module.
 //   * what it needs is the DIRECTORY's group membership, and only
-//     ldap_server.js can answer that — the last module server.js requires, so
-//     any require reaching it drags every /ldap route to the front of the
-//     express router that /admin/sts-metadata is built by walking.
+//     ldap_server.js can answer that — required late in
+//     `common/protocol_stack.ts` (21), so any require reaching it drags every
+//     /ldap route to the front of the express router that
+//     /admin/sts-metadata is built by walking.
 //
 // What it buys is the same thing the attribute resolver above buys: NO
 // ISSUANCE SITE CHANGED. oauth2.js's calls to jwtClaims() and the two assertion
@@ -2366,22 +2377,22 @@ function resolvedSamlAttributes(id, context) {
 // THE ROLES CLAIM, AND WHY IT IS A PLAIN REQUIRE WHERE THE GROUPS CLAIM NEEDED
 // A SLOT.
 //
-// CLAUDE.md rule 3e says the hooks on this file are four different problems
-// rather than a pattern, that a fifth must not be added because the fourth
-// exists, and that the group resolver is the one to check a new proposal
+// CLAUDE.md rule 3e says the hooks on this file are different problems rather
+// than a pattern, that another must not be added by analogy, and that the
+// group resolver is the one to check a new proposal
 // against — it was added only after showing a require failed BOTH ways round.
 //
 // THE ROLES CLAIM FAILS NEITHER, so it does not get a slot:
 //
-//   * `common/roles.js` is a LEAF. It requires `helpers` and `config` and
-//     nothing else in this repository, so requiring it here cannot close a
-//     cycle — which is the whole of why `group_claims.js` could not be
-//     required this way round: that file requires THIS one.
+//   * `common/roles.js` is a LEAF. It requires `helpers`, `config` and the
+//     error-code table and nothing else in this repository, so requiring it
+//     here cannot close a cycle — which is the whole of why `group_claims.js`
+//     could not be required this way round: that file requires THIS one.
 //   * It registers no route, so requiring it moves nothing in the router.
 //
 // The DIRECTORY still arrives at that module through a slot of its own that
 // `ldap_server.js` fills, for the reason it always does — only that module can
-// answer what is in `ou=roles`, and it is the last thing `server.js` requires.
+// answer what is in `ou=roles`, and it is required late in the protocol stack.
 //
 // So the rule is honoured by doing the ordinary thing where the ordinary thing
 // works, which is what the rule actually asks for. `audit.js` is required here
@@ -2999,7 +3010,7 @@ function tokenList() {
 //   * A global logout can report what it invalidated rather than only what it
 //     could reach, which is what makes "everything for this person is dead" a
 //     checkable claim instead of a hope.
-//   * CAEP can carry it. `ssf/caep.js` transmits a Security Event Token the
+//   * CAEP can carry it. `ssf/caep.ts` transmits a Security Event Token the
 //     moment a session is revoked, and a receiver that acts on one has been
 //     told about an assertion this service considers dead — which is the
 //     channel SAML and Kerberos do not have.
@@ -3044,10 +3055,16 @@ function artifactStateOf(record, nowMs) {
 }
 
 // ---------------------------------------------------------------------------
-// MARKING ONE ARTIFACT, AND WHY THERE IS NO SET BESIDE THE RECORD.
+// MARKING ONE ARTIFACT — AND THE REGISTER BESIDE THE RECORD THAT THIS COMMENT
+// ONCE ARGUED AGAINST.
 //
-// `revoke()` above keeps a per-realm Set of revoked jtis as well as the flag on
-// the record, and its comment says why: RFC 7009 lets a caller revoke a token
+// **SUPERSEDED ON 2026-09-08**: the mark is written to `revokedArtifacts` (see
+// the block above that store) as well as to the record, because with request
+// workers the record a console acts on is often another process's copy. What
+// follows is the original argument, kept because its premise is what expired.
+//
+// `revoke()` above keeps a per-realm register of revoked jtis as well as the
+// flag on the record, and its comment says why: RFC 7009 lets a caller revoke a token
 // this registry never saw, and a jti can be revoked whose record has already
 // been dropped to `MAX_TOKENS`. The set is authoritative there because
 // `/oauth2/introspect` asks it about tokens this file may no longer hold.
@@ -3393,9 +3410,9 @@ function issuedList() {
 //
 // `setKey` is what a page addresses a set BY, and it is not `setId`: a row with
 // no set id is a set of its own and needs a handle too, so it gets `one:` and
-// this service's own key for that row (a jti, `no-jti-N`, `artifact-N`). Every
-// row therefore has one, including a Kerberos ticket, which is the family with
-// no identifier of its own to quote.
+// this service's own key for that row (a jti, `no-jti-N`,
+// `artifact-<process tag>-N`). Every row therefore has one, including a
+// Kerberos ticket, which is the family with no identifier of its own to quote.
 // ---------------------------------------------------------------------------
 function issuedSets() {
   log.debug("Entering issuedSets().");
@@ -4027,9 +4044,8 @@ function snapshot() {
     uptimeMs: nowMs - STARTED_AT,
     now: nowMs,
     calls: { total: nums.callTotal + alsoElsewhere('callTotal'),
-             // THE ROWS ARE STILL THIS PROCESS'S, and `paths` counts every
-             // path anybody served. THE ROWS ARE MERGED NOW — see the block
-             // above — so this table means the same thing as the tiles beside
+             // `paths` counts every path anybody served. THE ROWS ARE MERGED
+             // — see the block above — so this table means the same thing as the tiles beside
              // it, which it did not until 2026-09-08. `pathsHere` and
              // `pathsElsewhere` still split the same list, because a reader
              // troubleshooting ONE worker wants to know which of these rows it

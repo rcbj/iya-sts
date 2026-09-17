@@ -1,20 +1,21 @@
+// @ts-check
 'use strict';
 //
 // File: tls_server.js
 //
 // ---------------------------------------------------------------------------
-// TWO HTTPS LISTENERS WHOSE ONLY CONTENT IS WHAT THE SERVER SAW.
+// THE CERTIFICATE THIS SERVICE PRESENTS, THE ONES IT IS PRESENTED WITH, AND
+// WHAT IT MAKES OF THEM.
 //
-// Everything else in this service is HTTP behind the one plain listener in
-// server.js. This is not: it is TLS, so it is its own socket — a third one
-// beside the KDC's port 88 and the directory's 389 — and it has the same
-// consequences those two have. `GET /admin/sts-metadata` is built by walking
-// the Express router, so it cannot see a socket; the two rows it carries for
-// this module are the plain-HTTP views below, and the listeners themselves are
-// described in their text.
+// This file owned two HTTPS listeners of its own until 2026-09-16 and owns
+// none now — the block below says what happened to them. What is left is a
+// LIBRARY plus six ordinary routes on the main app: the server certificate
+// and the hierarchy it is certified under, the client truststore a caller
+// fills at runtime, the record of every client certificate presented to this
+// process, and `GET /tls/sign-in`, which turns a verified one into a session.
 //
 // ---------------------------------------------------------------------------
-// WHY IT EXISTS, GIVEN THAT THE DEBUGGER ALREADY REPORTS THE HANDSHAKE.
+// WHY ANY OF IT EXISTS, GIVEN THAT THE DEBUGGER ALREADY REPORTS THE HANDSHAKE.
 //
 // The parent project's PKI page builds a certificate authority in the browser —
 // a Root, an Intermediate, an Issuing CA — issues a client certificate from it,
@@ -32,36 +33,45 @@
 // more. Under TLS 1.3 it has not even proved that — the client is finished
 // before the server has said anything about the certificate.
 //
-// So this is the other side, and the whole of its content is that answer: a
-// message, and three sections saying what arrived over HTTPS, what was
-// negotiated at the TLS layer, and what the client certificate is. Fetch
-// `/tls/whoami` over one of these listeners and the reply describes the very
-// connection it is travelling on.
+// **THE ANSWER TO THAT USED TO BE A CONNECTION ECHO, AND IT IS GONE.** The two
+// listeners served a report of what the server made of the handshake, at
+// `/tls/whoami` and on a page, and it was deleted with them: it is a debugging
+// surface rather than a protocol, and it is being taken up in the project that
+// asks the question. What this file still answers is the part that is about
+// this service rather than about the connection — whose anchors verify a
+// client certificate (`/tls/trust`), what this service presents
+// (`/tls/server-certificate`), what a certificate that verified is worth
+// (`/tls/sign-in`), and what arrived (the sighting, on /admin/tls).
 //
 // ---------------------------------------------------------------------------
-// TWO LISTENERS, BECAUSE "DOES THIS SERVER REQUIRE A CERTIFICATE" HAS TWO
-// ANSWERS AND BOTH ARE WORTH BEING ABLE TO REACH.
+// THIS MODULE OWNED TWO LISTENERS UNTIL 2026-09-16, AND OWNS NONE NOW.
 //
-//   * STS_TLS_PORT (8443) always ASKS for a client certificate and accepts
-//     whatever arrives, including nothing: `requestCert: true,
-//     rejectUnauthorized: false`. Every connection is answered and the answer
-//     says whether the certificate verified. This is the listener to point a
-//     debugger at, because a refusal at the TLS layer tells you almost nothing
-//     — node's own TLS server refuses a client certificate by closing the
-//     socket with no alert at all — while this one can tell you which check
-//     failed.
+// They were 8443 (`tls.port`), which asked every connection for a client
+// certificate and accepted whatever arrived, and 9443 (`tls.mutualPort`),
+// which required one at the handshake. Both settings are gone.
 //
-//   * STS_MTLS_PORT (9443) REQUIRES one: `rejectUnauthorized: true`, so node
-//     refuses the connection itself and no handler here ever runs. That is not
-//     redundancy — it is what makes the debugger's five mutual-authentication
-//     verdicts reachable against a real server rather than against a fixture.
-//     With the issuing CA trusted here the verdict is `required`; before it is
-//     trusted the verdict is `required-and-rejected`, which is the case an
-//     operator hits most and the one a single connection cannot tell from the
-//     first.
+// **THE FIRST WAS REDUNDANT THE DAY THE MAIN PORT LEARNED TO ASK.**
+// `server.js` binds the main listener `requestCert: true,
+// rejectUnauthorized: false` whenever `global.https` is on — the same posture,
+// on the port every other protocol in this service answers on — so a
+// deployment was paying for three HTTPS sockets to get two behaviours, and the
+// interesting one was on the port nobody was pointing at.
 //
-// Reaching the second listener at all is therefore the proof: if this page came
-// back from 9443, the certificate verified.
+// **THE SECOND HAS NO SUCCESSOR, AND THAT IS THE DELIBERATE LOSS.** Refusing a
+// connection during the handshake is a property of a SOCKET. This socket
+// carries OAuth, SAML, SCIM, the console and everything else, so it cannot
+// refuse every caller who has no client certificate. What a certificate is
+// worth is therefore decided one layer up, where it is USED: RFC 8705 client
+// authentication at the token endpoint, `/xacml`, `/scim/v2`, and
+// `GET /tls/sign-in` below, which turns a verified one into a session. A
+// client under test can no longer meet a TLS handshake this service refuses.
+//
+// What moved here rather than dying with them is argued where it now lives:
+// the sighting above `observeConnectionsOn()`, the sign-in above
+// `GET /tls/sign-in`. What was deleted outright is the connection ECHO — the
+// report of what the server made of the handshake, at `/tls/whoami` and on a
+// page — which was those listeners' whole content and is a debugging surface
+// rather than a protocol.
 //
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE IS EMPTY AT STARTUP AND IS FILLED AT RUNTIME.
@@ -80,18 +90,19 @@
 //     selects node's bundled root store — the opposite of what is wanted here,
 //     since a public root has no business verifying a client certificate issued
 //     by a private CA. So the empty case is passed explicitly, and with it
-//     every client certificate is unverified: on 8443 that is reported, and on
-//     9443 it means nothing can connect. That is the correct starting state and
-//     the `/tls` page says so.
-//   * the anchors go in over the MAIN port, not over 8443 or 9443. That port is
-//     normally plain HTTP, which is the one reachable before anything is
-//     trusted, and this is a mock: an endpoint that could only be called by
-//     somebody who had already been trusted would be a chicken-and-egg with a
-//     specification citation.
+//     every client certificate presented to this service is UNVERIFIED — it
+//     still arrives, and everything that reads one refuses it. That is the
+//     correct starting state and the `/tls` page says so.
+//   * the anchors go in over the main port, which is where everything else
+//     goes now too. Without `global.https` it is plain HTTP, which is the one
+//     thing reachable before anything is trusted, and this is a mock: an
+//     endpoint that could only be called by somebody who had already been
+//     trusted would be a chicken-and-egg with a specification citation.
 //
-//     `global.https` — which RFC 9700 mode turns on — takes that property away,
-//     and it is worth knowing rather than discovering: with it on there is no
-//     plain listener in this process at all, so the FIRST fetch of
+//     `global.https` — which every appconfig file in `env/` sets, and which
+//     RFC 9700 and OAuth 2.1 mode turn on by default — takes that property
+//     away, and it is worth knowing rather than discovering: with it on there
+//     is no plain listener in this process at all, so the FIRST fetch of
 //     /tls/server-certificate and the first POST to /tls/trust have to be made
 //     without verifying the certificate (`curl -k`). That is the ordinary
 //     bootstrap for a certificate regenerated on every start — it is the same
@@ -106,10 +117,11 @@
 // **THIS SECTION SAID "IT AUTHENTICATES NOBODY" UNTIL THAT DAY AND THE REASON
 // IT SAID SO IS WORTH KEEPING.** A verified client certificate here means one
 // thing exactly: a chain was built from what the client sent to an anchor
-// somebody POSTed to this process. No revocation is checked, so a revoked
-// certificate verifies here and would not verify anywhere that matters. A mock
-// that quietly turned a certificate into a TRUSTWORTHY identity would teach a
-// client something false about every server it will meet afterwards.
+// somebody POSTed to this process. No revocation was checked then, so a
+// revoked certificate verified here and would not have verified anywhere that
+// matters (revocation is consulted since 2026-09-12 — `checkedSocket()`).
+// A mock that quietly turned a certificate into a TRUSTWORTHY identity would
+// teach a client something false about every server it will meet afterwards.
 //
 // **WHAT CHANGED IS THE SESSION, NOT THE STRENGTH OF THE CLAIM.** PKI
 // client-certificate authentication is a real, deployed way for a person to
@@ -122,10 +134,13 @@
 // session was the one place this service made the opposite choice, and what it
 // cost was that a global sign-out could not end a way in that it could not see.
 //
-// So a request on a connection carrying a verified certificate starts a session
-// for its common name; `startCertificateSession()` below performs it and argues
-// the details, and every report this file emits says in the same breath that no
-// revocation was checked.
+// So a request to `GET /tls/sign-in` on a connection carrying a verified
+// certificate starts a session for its common name;
+// `startCertificateSession()` below performs it and argues the details, and
+// every report this file emits says in the same breath what the revocation
+// check found. It was every request to either deleted listener until
+// 2026-09-16, which meant loading a diagnostic page signed you in — a route
+// that has to be asked for is the better shape as well as the only one left.
 // ---------------------------------------------------------------------------
 
 const https = require('https');
@@ -139,10 +154,10 @@ const forge = require('node-forge');
 const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const helpers = require('../common/helpers');
-// THE CLUSTER BARRIER (2026-09-14, #46 section 4), for this listener's own
-// handler: these two sockets are not the express app, so `app.js` installing
-// it there never covered them. See makeHandler(). A library; app.js has
-// already loaded it.
+// THE CLUSTER BARRIER (2026-09-14, #46 section 4). It covered the two deleted
+// listeners, which were not the express app; what still needs it is
+// `GET /tls/sign-in`, which starts a session and must not answer before that
+// session has committed. A library; app.js has already loaded it.
 const clusterBarrier = require('../cluster/cluster_barrier');
 
 // The input validator. A LEAF (rule 3): it registers no route and closes no
@@ -164,28 +179,30 @@ const config = require('../common/config');
 // below.
 const authn = require('../authn/authn');
 // ERROR CODES and the audit log. Both already in this closure through authn.js.
-// The two listeners below answer with a handler of their own rather than
-// through Express, so a refused handshake there has no call log to carry a
-// code: it is recorded with audit.failure(). The plain-HTTP views on the main
-// port are ordinary routes and mark the response.
+// A failed handshake reaches a listener as a socket error and never as a
+// request, so it has no call log to carry a code: it is recorded with
+// audit.failure() in `observeConnectionsOn()`. The views on the main port are
+// ordinary routes and mark the response.
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
-// The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY: installed on both
-// listeners in listen(), and asked by whoami what the header said.
-const proxyProtocol = require('../common/proxy_protocol');
+// The PROXY protocol v2 reader was required here until 2026-09-16 and is not
+// any more: it was installed on this module's two listeners, and with those
+// deleted the only installs are `server.js`'s on the main port and the
+// debugger's on its own. Nothing in this file reads a proxied address.
 // REVOCATION, CONSULTED (2026-09-12). A LIBRARY that registers no route; it
 // requires `common/pki.js`, which this module already loads at require time to
-// register its certificate with it. A verified certificate on either listener
-// is checked BEFORE its session starts and before its authentication is
-// recorded, and the report says what the check found — see `checkedSocket()`
-// below.
+// register its certificate with it. A verified certificate is checked BEFORE
+// its session starts and before its authentication is recorded, and the report
+// says what the check found — see `checkedSocket()` below.
 const revocationStatus = require('../common/revocation_status');
 
-// The permissive listener: always asks, never refuses, always explains.
-const TLS_PORT = config.value('tls.port');
-// The strict one: node refuses an unverified client certificate during the
-// handshake, so nothing below ever runs for one.
-const MTLS_PORT = config.value('tls.mutualPort');
+// THE PORT THIS SERVICE ANSWERS ON, for the audit rows and the report below.
+// It was `tls.port` (8443) and `tls.mutualPort` (9443) until 2026-09-16, when
+// both listeners were deleted: what a client certificate is presented to now
+// is the main port, which `server.js` binds `requestCert: true,
+// rejectUnauthorized: false`.
+const MAIN_PORT = config.value('global.port');
+
 
 // The names the server certificate is issued for. A caller reaches this stack
 // as `localhost` from a host run, as `sts` from the compose network and as
@@ -235,9 +252,9 @@ function truststoreOpenToAnybody() {
 // OWNS (2026-09-12).
 //
 // `tls.minVersion` and `tls.ciphers`. They go into `secureContextOptions()`,
-// which is what 8443 and 9443 are created from AND what `applyAnchors()` hands
-// every registered listener — the main HTTPS port among them — so one function
-// is where the policy is stated; `ldap/ldap_server.js` asks it for LDAPS.
+// which is what `applyAnchors()` hands every registered listener — the main
+// HTTPS port among them — so one function is where the policy is stated;
+// `ldap/ldap_server.js` asks it for LDAPS.
 //
 // The defaults are node's own written down (TLSv1.2; an empty cipher string is
 // omitted, which means `tls.DEFAULT_CIPHERS`), so an unedited service
@@ -245,12 +262,14 @@ function truststoreOpenToAnybody() {
 //
 // **A CIPHER LIST THAT MATCHES NOTHING STOPS THE SERVICE HERE**, at require
 // time, naming the setting. Found any later it is a TypeError out of
-// `https.createServer()` a few hundred lines down, or — worse, through
+// `https.createServer()` in `server.js`, or — worse, through
 // `setSecureContext()` on a truststore change — a listener that silently keeps
 // its old context while the page says the new one is in force.
 // ---------------------------------------------------------------------------
 function protocolOptions() {
   log.debug("Entering protocolOptions().");
+  // `any`: the setting is a string, and the TLS types want a version literal.
+  /** @type {any} */
   const options = { minVersion: String(config.value('tls.minVersion') ||
                                        'TLSv1.2') };
   const ciphers = String(config.value('tls.ciphers') || '').trim();
@@ -305,25 +324,23 @@ function protocolOptions() {
 // entry on a list `tests/CLAUDE.md` argues.
 // ---------------------------------------------------------------------------
 
-// State the two listeners share.
+// State every registered listener shares (the two this module owned until
+// 2026-09-16, and now the main port and the debugger's).
 let anchors = [];
-let boundTlsPort = null;
-let boundMtlsPort = null;
-let tlsListening = false;
-let mtlsListening = false;
 let listenError = null;
 
 // ---------------------------------------------------------------------------
 // The server certificate.
 //
-// Self-signed and generated per start, exactly like the signing key in
-// helpers.js, and for the same reason: nothing about a mock is worth
-// persisting, and a certificate committed to a repository is a private key
-// committed to a repository. The consequence for a caller is that the anchor
-// changes on every restart, which is why `GET /tls/server-certificate` exists —
-// a debugger fetches it and puts it in its own truststore, rather than being
+// Generated per start and never written down, because a certificate committed
+// to a repository is a private key committed to a repository. It is born
+// SELF-SIGNED, and until 2026-09-11 it stayed that way, so the anchor changed
+// on every restart — which is why `GET /tls/server-certificate` exists: a
+// debugger fetches it and puts it in its own truststore, rather than being
 // told to disable verification, which is the habit this whole workflow is
-// trying to break.
+// trying to break. Since that day the key is certified under this service's
+// own Root, which is the anchor now — see the block above
+// `serverCertificateExtensions()`.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // A CERTIFICATE HANDED IN, RATHER THAN ONE MADE HERE (2026-09-07).
@@ -333,7 +350,7 @@ let listenError = null;
 // REQUEST WORKER existed. A worker loads this module like everything else, so
 // it made a certificate of its own — and `/admin` and `/portal` are OpenID
 // Connect relying parties that dial this service BACK on a loopback address and
-// PIN its certificate (`common/oidc_rp.js`). So a worker pinned the one it had
+// PIN its certificate (`common/oidc_rp.ts`). So a worker pinned the one it had
 // just made, the front process presented the one IT had made, and the back
 // channel failed TLS verification. The symptom is `TypeError: fetch failed`
 // during a console sign-in, which names nothing.
@@ -492,16 +509,13 @@ function makeServerCertificate() {
   };
 }
 
-// SHA-256 over the DER, rendered the way every tool renders it, so that what
-// this page prints can be compared with `openssl x509 -fingerprint -sha256`
-// without anybody having to reformat it. What to CALL the port these views
-// answer on. It is the plain HTTP port unless `global.https` has made it TLS as
-// well, and seven sentences in this module used to say "the plain HTTP port"
-// outright — each of them correct until the day somebody turned that setting
-// on, and then quietly wrong in the one place a reader goes when a handshake is
-// failing. Read per call rather than captured: the setting is restart-only, but
-// a captured const here would be a second thing to remember if that ever
-// changed.
+// What to CALL the port these views answer on. It is the plain HTTP port
+// unless `global.https` has made it TLS as well, and seven sentences in this
+// module used to say "the plain HTTP port" outright — each of them correct
+// until the day somebody turned that setting on, and then quietly wrong in
+// the one place a reader goes when a handshake is failing. Read per call
+// rather than captured: the setting is restart-only, but a captured const
+// here would be a second thing to remember if that ever changed.
 function mainPortPhrase() {
   log.debug("Entering mainPortPhrase().");
   log.debug("Leaving mainPortPhrase().");
@@ -537,17 +551,30 @@ function certificateProvenance() {
            '(tls.certificateFile), so it does NOT change when this service ' +
            'restarts — trust its issuer once';
   }
+  // #70: this said "self-signed" whatever the certificate was. Since
+  // 2026-09-11 the listener certificate is issued under this service's Root
+  // whenever there is a hierarchy, which is what a non-empty chain records;
+  // only a process with none still presents a self-signed one.
+  if (SERVER_CERTIFICATE && (SERVER_CERTIFICATE.chainPem || []).length) {
+    log.debug('Leaving certificateProvenance(). Issued under the Root.');
+    return 'issued by this service\'s TLS Issuing CA under its own Root ' +
+           'and reissued on every start, so trust the Root ' +
+           '(/pki/revocation lists it) rather than the certificate itself';
+  }
   log.debug('Leaving certificateProvenance(). Self-signed.');
   return 'self-signed and regenerated on every start';
 }
 
+// SHA-256 over the DER, rendered the way every tool renders it, so that what
+// a page prints can be compared with `openssl x509 -fingerprint -sha256`
+// without anybody having to reformat it.
 function fingerprintOf(pem) {
   log.debug("Entering fingerprintOf().");
   log.debug("Leaving fingerprintOf().");
   // `colon-hex` is what `openssl x509 -fingerprint -sha256` prints, which is
   // what a person is holding when they compare this by eye. It is the same
   // digest RFC 8705's `x5t#S256` uses in `oauth-oidc/mtls.js` and the same one
-  // SPIRE's authority id truncates in `spiffe/spiffe_ca.js` — three spellings
+  // SPIRE's authority id truncates in `spiffe/spiffe_ca.ts` — three spellings
   // of one computation, which is why the format is a parameter and the three
   // functions that each computed it are one.
   return stsCrypto.certificateThumbprint(pem, { format: 'colon-hex' });
@@ -556,8 +583,8 @@ function fingerprintOf(pem) {
 // ---------------------------------------------------------------------------
 // AN ML-DSA SERVER CERTIFICATE BESIDE THE RSA ONE, WHEN ASKED FOR.
 //
-// `tls.certificateAlgorithms` names what the listeners present. More than one
-// is the setting worth having: OpenSSL 3.5 serves whichever certificate
+// `tls.certificateAlgorithms` names what the TLS sockets present. More than
+// one is the setting worth having: OpenSSL 3.5 serves whichever certificate
 // matches the signature algorithms the CLIENT offered, so one port answers an
 // ordinary client with RSA and a post-quantum one with ML-DSA — which is how a
 // migration is actually run, and something a debugger can otherwise only be
@@ -808,7 +835,7 @@ function isSelfSignedPem(pem) {
   }
 }
 
-// Every certificate the listeners present, in the order the setting names
+// Every certificate the TLS sockets present, in the order the setting names
 // them. The FIRST is what every existing caller means by "the server
 // certificate" — GET /tls/server-certificate still returns it — and the rest
 // are additional choices OpenSSL may make on a client's behalf.
@@ -892,14 +919,14 @@ const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
 // end of it: anybody who wanted to verify this service had to fetch that exact
 // certificate and trust it, and a restart invalidated what they had trusted.
 // Now `common/pki.js` builds a Root for the service at startup, and this
-// listener's key is a leaf of it — so **one anchor covers 8443, 9443, LDAPS
-// 636, the main port AND every token this service signs**, and it survives a
+// certificate's key is a leaf of it — so **one anchor covers LDAPS 636, the
+// main port AND every token this service signs**, and it survives a
 // restart wherever the keystore does.
 //
 // **IT IS A REGISTRATION AND NOT A CALL, and the ordering is the whole of why
 // it works.** This module is required at 20 and its certificate is built at
 // require time; `pki.start()` runs afterwards, from
-// `common/service_state.js`, and BEFORE `listen()` binds anything. So the
+// `common/service_state.ts`, and BEFORE `listen()` binds anything. So the
 // swap below has already happened by the time a socket exists — nothing is
 // re-keyed under a live listener, and no client ever sees the self-signed one.
 //
@@ -959,11 +986,12 @@ function takeIssuedCertificate(record, certPem, chainPem) {
              'certificate could not be read back for its subject and ' +
              'expiry: ' + e.message);
   }
-  // **AND THE LISTENERS HAVE TO BE TOLD, because they were built at
-  // require time.** `permissiveServer` and `strictServer` are created at
-  // module top level with the secure context evaluated THERE — before
-  // `pki.start()` has run — so mutating the record above is invisible to
-  // a socket that already has a context. `applyAnchors()` is the rebuild
+  // **AND THE LISTENERS HAVE TO BE TOLD, because they were built before
+  // this ran.** Every listener this module knows — the main port and the
+  // debugger's, registered through `trustClientCertificatesOn()` — was
+  // created with the secure context evaluated THERE, before `pki.start()`
+  // had run, so mutating the record above is invisible to a socket that
+  // already has a context. `applyAnchors()` is the rebuild
   // path `POST /tls/trust` already uses, and it re-reads
   // `secureContextOptions()`, which is where the new certificate and its
   // chain are picked up. Without this line the certificate is issued,
@@ -973,7 +1001,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   log.info('tls: the ' + record.algorithm + ' listener certificate is ' +
            'issued by this service\'s ' +
            'own TLS Issuing CA and chains to its Root — so one anchor ' +
-           'covers 8443, 9443, LDAPS 636, the main port and every token ' +
+           'covers LDAPS 636, the main port and every token ' +
            'this service signs.');
   log.debug("Leaving takeIssuedCertificate().");
 }
@@ -1108,12 +1136,11 @@ function takeIssuedCertificate(record, certPem, chainPem) {
 // ldap_server.js's LDAPS listener on 636 serves this same certificate and key,
 // read through serverCertificate() below rather than generating a second pair.
 // That is a decision about what a CALLER has to do rather than a saving of one
-// keypair: this certificate is self-signed and regenerated on every start, so
-// anybody who wants to verify this service has to fetch it and trust it — and
-// one anchor covering 8443, 9443 and 636 is one fetch. Two keypairs would mean
-// an `ldapsearch` that verifies perfectly well against a truststore built for
-// the HTTPS ports failing with `unable to get local issuer certificate`, which
-// names nothing and reads as a broken directory.
+// keypair: anybody who wants to verify this service has to fetch its anchor
+// and trust it — and one anchor covering the main port and 636 is one fetch.
+// Two keypairs would mean an `ldapsearch` that verifies perfectly well against
+// a truststore built for the HTTPS port failing with `unable to get local
+// issuer certificate`, which names nothing and reads as a broken directory.
 //
 // The names are the other half of why one certificate works for both: they are
 // in the subjectAltName (see above — the CN is ignored by every current client)
@@ -1214,8 +1241,8 @@ function describePem(pem) {
 // recorded as an authentication. An anchor POSTed to /tls/trust that happens to
 // be the same Root is not added twice.
 //
-// Required lazily and answered '' on any failure: this is called while the two
-// listeners are created at require time, before the certificate authority has
+// Required lazily and answered '' on any failure: this is called whenever a
+// secure context is built, which can be before the certificate authority has
 // started, and a truststore must never be the thing that fails to build.
 // ---------------------------------------------------------------------------
 function issuedClientCertificateAnchor() {
@@ -1319,8 +1346,8 @@ function secureContextOptions() {
 //
 // While the certificate above was SELF-SIGNED those were one question with one
 // answer, and three callers in this repository answered it by pinning the leaf:
-// the back channel in `common/oidc_rp.js`, the loopback push in
-// `ssf/ssf_http.js`, and the suite's anchor in `tests/tools/trust.js`.
+// the back channel in `common/oidc_rp.ts`, the loopback push in
+// `ssf/ssf_http.ts`, and the suite's anchor in `tests/tools/trust.js`.
 //
 // The hour the leaf acquired an ISSUER all three broke, and they broke in the
 // way that names nothing about what changed. OpenSSL takes a self-signed leaf
@@ -1870,8 +1897,9 @@ function adoptServerCertificate(bundle) {
 // ---------------------------------------------------------------------------
 // LISTENERS THAT ARE NOT THIS MODULE'S, AND WHY THE TRUSTSTORE REACHES THEM.
 //
-// 8443 and 9443 are created below and this module owns them. **THE MAIN HTTPS
-// LISTENER IS NOT**: `server.js` creates it, because it is the one every
+// **THIS MODULE OWNS NO LISTENER SINCE 2026-09-16** and owned two until then.
+// **THE MAIN HTTPS LISTENER IS STILL NOT ITS**: `server.js` creates it,
+// because it is the one every
 // protocol family answers on and this module is required at 20 of a twenty-four
 // line require order. Until 2026-09-06 that meant the truststore stopped at
 // this module's own two sockets, and a client certificate presented on the main
@@ -1887,8 +1915,8 @@ function adoptServerCertificate(bundle) {
 // decision — and recognition is precisely the thing an unverified certificate
 // cannot support.
 //
-// So a listener created elsewhere registers here and gets every anchor change
-// the two below get. It is a REGISTRATION rather than a require in the other
+// So a listener created elsewhere registers here and gets every anchor change.
+// It is a REGISTRATION rather than a require in the other
 // direction for the ordinary reason: `server.js` requires this module, so this
 // module cannot require it back.
 //
@@ -1925,9 +1953,8 @@ function trustClientCertificatesOn(server, label) {
   // only picked anchors up on the NEXT change would be one whose behaviour
   // depended on the order two unrelated things happened in.
   applyAnchors();
-  log.info('tls: the client truststore now covers ' + label + ' as well as ' +
-           TLS_PORT + ' and ' + MTLS_PORT + '. A client certificate ' +
-           'presented there is verified against ' +
+  log.info('tls: the client truststore now covers ' + label + '. A client ' +
+           'certificate presented there is verified against ' +
            'the ' + anchors.length + ' anchor(s) ' +
            'at /tls/trust; one that chains to none of them is still accepted ' +
            'and still binds a token, which is what that port has always done.');
@@ -1942,9 +1969,11 @@ function trustClientCertificatesOn(server, label) {
 // truststore should not silently change its mind halfway through.
 function applyAnchors() {
   log.debug('Entering applyAnchors(). anchors=' + anchors.length);
-  [permissiveServer, strictServer].concat(
-    externalServers.map(function (one) { return one.server; })
-  ).forEach(function (server) {
+  // EVERY listener is an external one since 2026-09-16: this module creates
+  // none of its own any more, so the list that was "our two, plus theirs" is
+  // now just theirs — the main HTTPS port and the debugger's.
+  externalServers.map(function (one) { return one.server; })
+    .forEach(function (server) {
     try {
       server.setSecureContext(secureContextOptions());
     } catch (e) {
@@ -2152,7 +2181,7 @@ function listAnchors() {
 // the change log and `reloadStoredAnchors()`.
 //
 // **A SLOT BECAUSE A REQUIRE CANNOT WORK IN EITHER DIRECTION.** This module is
-// loaded from inside `admin-ui/admin.js`'s require, long before the directory
+// loaded from inside `admin-ui/admin.ts`'s require, long before the directory
 // module, and a require from here to it would register every /ldap route ahead
 // of the console's (rule 3e); the directory module requires THIS one for its
 // LDAPS certificate, so it fills the slot with a call in the ordinary
@@ -2317,9 +2346,10 @@ function clearAnchors() {
   anchors = [];
   applyAnchors();
   log.info('tls: the client truststore was emptied; ' + removed +
-           ' anchor(s) removed. Every client certificate is unverified ' +
-           'again, and nothing can connect to the listener ' +
-           'on ' + MTLS_PORT + '.');
+           ' anchor(s) removed. Every client certificate presented to this ' +
+           'service is unverified again, so nothing that asks for a VERIFIED ' +
+           'one — RFC 8705 client authentication, /xacml, GET /tls/sign-in — ' +
+           'will accept any of them.');
   log.debug('Leaving clearAnchors().');
   return { removed: removed, total: 0 };
 }
@@ -2413,433 +2443,6 @@ function describeCertificate(cert, depth) {
   return out;
 }
 
-// Walk the chain as OpenSSL assembled it, leaf first. `issuerCertificate` is a
-// self-reference at the end of the walk, which is what stops it; the loop is
-// additionally bounded, because the shape of that structure is decided by
-// somebody else's bytes.
-//
-// Note precisely whose certificates these are, because the obvious reading is
-// wrong in a way that matters here: this is the path that was BUILT, not the
-// bytes that arrived. When verification succeeds the last entry is the anchor
-// this service holds — which the client did not send and, for a root, must not
-// have. So a chain of three from a client that sent two is the normal, correct
-// case, and the report says so rather than letting a reader count the rows as
-// "what I sent".
-function chainOf(socket) {
-  log.debug('Entering chainOf().');
-  const out = [];
-  const seen = new Set();
-  let cert = socket.getPeerCertificate(true);
-  let depth = 0;
-  while (cert && Object.keys(cert).length && depth < 10) {
-    const fingerprint = cert.fingerprint256 || String(depth);
-    if (seen.has(fingerprint)) break;
-    seen.add(fingerprint);
-    out.push(describeCertificate(cert, depth));
-    if (!cert.issuerCertificate || cert.issuerCertificate === cert) break;
-    cert = cert.issuerCertificate;
-    depth += 1;
-  }
-  log.debug('Leaving chainOf(). ' + out.length + ' certificate(s).');
-  return out;
-}
-
-// The sentence that says what this connection actually proved. It is the one
-// piece of prose here that draws a conclusion rather than reporting a fact, so
-// it states what it is concluding from.
-function verdictFor(mode, presented, authorized, authorizationError) {
-  log.debug('Entering verdictFor(). mode=' + mode);
-  let verdict;
-  if (mode === 'required') {
-    verdict = 'You are reading this from the listener that REQUIRES a client ' +
-      'certificate, so the handshake could not have completed unless the ' +
-      'certificate verified against an anchor this service holds. Reaching ' +
-      'this page at all is the proof; the chain below is what was built. The ' +
-      'subject DN was recorded as an authentication when that handshake ' +
-      'completed — see below for what that does and does not mean.';
-  } else if (!presented) {
-    verdict = 'This listener asked for a client certificate and none was ' +
-      'presented. It answered anyway — never refusing is what makes it ' +
-      'useful for debugging — so this exchange proves the server certificate ' +
-      'and the transport, and says nothing whatever about client ' +
-      'authentication. Present one, or use ' +
-      'port ' + MTLS_PORT + ', which will not answer ' +
-      'without it.';
-  } else if (authorized) {
-    verdict = 'A client certificate was presented and it VERIFIED against ' +
-      anchors.length + ' anchor(s) this service was given at runtime. That ' +
-      'is the whole of what it PROVED: a chain was built from what you sent ' +
-      'to something somebody POSTed to /tls/trust. No session was started ' +
-      'and no token was issued. It was, however, written down — the subject ' +
-      'DN is now an identity in the admin console and an entry in this ' +
-      'service\'s LDAP directory, which is a record of what happened and not ' +
-      'a credential.';
-  } else {
-    verdict = 'A client certificate was presented and it did NOT verify: ' +
-      (authorizationError || 'no reason was given') + '. The connection ' +
-      'completed regardless, because this listener never refuses one — which ' +
-      'is exactly why it can tell you why. On port ' + MTLS_PORT + ' the ' +
-      'same certificate is refused during the handshake, and node refuses it ' +
-      'by closing the socket with no alert at all, so the far end learns ' +
-      'nothing. ' +
-      (anchors.length
-        ? 'This truststore holds ' + anchors.length + ' anchor(s); the ' +
-          'issuing CA is evidently not one of them.'
-        : 'This truststore is EMPTY — nothing has been POSTed to /tls/trust ' +
-          '— so no client certificate can verify here yet.');
-  }
-  log.debug('Leaving verdictFor().');
-  return verdict;
-}
-
-// Which server certificate this socket presented, found by fingerprint.
-// `getCertificate()` is node's accessor for the LOCAL certificate; with a
-// single one configured this is a lookup with one possible answer, and with
-// several it is the only way to know what the client was given.
-function servedCertificate(socket) {
-  log.debug('Entering servedCertificate().');
-  let local = null;
-  try {
-    local = typeof socket.getCertificate === 'function'
-      ? socket.getCertificate() : null;
-  } catch (e) {
-    log.debug('servedCertificate(): ' + e.message);
-    local = null;
-  }
-  const wanted = local && local.fingerprint256 ? local.fingerprint256 : null;
-  const found = wanted
-    ? SERVER_CERTIFICATES.filter(function (one) {
-        return one.fingerprint256 === wanted;
-      })[0]
-    : null;
-  log.debug('Leaving servedCertificate(). ' +
-            ((found || SERVER_CERTIFICATE).algorithm));
-  return found || SERVER_CERTIFICATE;
-}
-
-// ---------------------------------------------------------------------------
-// THE POST-QUANTUM READING OF ONE CONNECTION, IN TWO INDEPENDENT HALVES.
-//
-// They answer different questions on different timescales and a single
-// boolean would be wrong for almost every connection made today:
-//
-//   * the KEY EXCHANGE decides whether a RECORDING of this connection can be
-//     decrypted by a quantum computer years from now. OpenSSL 3.5 offers
-//     X25519MLKEM768 first and both ends usually take it without anybody
-//     asking, so this half is frequently post-quantum already.
-//   * the CERTIFICATES decide whether either end can be IMPERSONATED by one,
-//     which requires an attacker who has the machine NOW.
-//
-// Node cannot name a hybrid group: `getEphemeralKeyInfo()` describes ECDH and
-// DH and returns an empty object for anything else, which under OpenSSL 3.5
-// means an ML-KEM hybrid — or a resumed session, which has no ephemeral key at
-// all. Both readings are reported rather than one being guessed.
-function postQuantumOf(socket, leaf) {
-  log.debug('Entering postQuantumOf().');
-  let ephemeral = null;
-  try {
-    ephemeral = socket.getEphemeralKeyInfo ? socket.getEphemeralKeyInfo()
-      : null;
-  } catch (e) {
-    log.debug('postQuantumOf(): no ephemeral key info: ' + e.message);
-  }
-  const named = !!(ephemeral && ephemeral.name);
-  const served = servedCertificate(socket);
-  const serverIsPq = served.algorithm !== 'rsa';
-  let clientKeyType = null;
-  if (leaf && leaf.pem) {
-    try {
-      clientKeyType = new crypto.X509Certificate(leaf.pem)
-          .publicKey.asymmetricKeyType || null;
-    } catch (e) {
-      // A composite certificate, or one this OpenSSL cannot read. Reported as
-      // unknown rather than as classical: those are different answers.
-      log.debug('postQuantumOf(): the client key could not be read: ' +
-                e.message);
-      clientKeyType = null;
-    }
-  }
-  const out = {
-    keyExchange: {
-      namedByNode: named,
-      ephemeralKey: named ? ephemeral : null,
-      note: named
-        ? 'The negotiated group is ' + ephemeral.name + ', which node can ' +
-          'name — so it is a classical ECDH or DH group and a recording of ' +
-          'this connection is NOT safe from a future quantum computer.'
-        : 'Node could not name the negotiated group. Its API knows ECDH and ' +
-          'DH only, so under OpenSSL ' + process.versions.openssl + ' this ' +
-          'is either an ML-KEM hybrid — the default first choice from 3.5 — ' +
-          'or a resumed session with no ephemeral key of its own. This ' +
-          'service will not guess between the two.'
-    },
-    serverCertificate: {
-      algorithm: served.algorithm,
-      postQuantum: serverIsPq,
-      note: serverIsPq
-        ? 'This connection was authenticated with an ' + served.algorithm +
-          ' certificate, so the server cannot be impersonated by an ' +
-          'adversary with a quantum computer.'
-        : 'This connection was authenticated with an RSA certificate. Set ' +
-          'tls.certificateAlgorithms to add an ML-DSA one beside it — with ' +
-          'both configured, a client that offers ML-DSA signature ' +
-          'algorithms gets the ML-DSA certificate and everything else keeps ' +
-          'getting this one.'
-    },
-    clientCertificate: {
-      presented: !!leaf,
-      publicKeyType: clientKeyType,
-      postQuantum: /^(ml-dsa|slh-dsa)/.test(String(clientKeyType || '')),
-      note: leaf
-        ? (clientKeyType
-          ? 'The client certificate carries an ' + clientKeyType + ' key.'
-          : 'The client certificate carries a key this OpenSSL cannot ' +
-            'parse, which is what a COMPOSITE certificate looks like: no ' +
-            'released OpenSSL implements draft-ietf-lamps-pq-composite-sigs. ' +
-            'The chain was still built and reported.')
-        : 'No client certificate was presented.'
-    }
-  };
-  log.debug('Leaving postQuantumOf().');
-  return out;
-}
-
-function describeConnection(req, mode, revocation, identity) {
-  log.debug('Entering describeConnection(). mode=' + mode);
-  const socket = req.socket;
-  const cipher = socket.getCipher ? (socket.getCipher() || {}) : {};
-  const chain = chainOf(socket);
-  const leaf = chain.length ? chain[0] : null;
-  const presented = !!leaf;
-  const authorized = socket.authorized === true;
-  // THE REVOCATION VERDICT, computed by the handler before this was called
-  // (2026-09-12). `refusedOnRevocation` is what every "did it get in" field
-  // below is qualified by: a chain that verified and is revoked is reported as
-  // verified — that is what OpenSSL did — and as NOT authenticated, which is
-  // what this service decided.
-  const verdictHere = revocation || null;
-  const refusedOnRevocation = !!(verdictHere && verdictHere.refused);
-  // THE IDENTITY GATE (2026-09-13): a chain through this service's own Root
-  // that is not a TLS client or enrolled certificate verified and is not an
-  // identity. Kept apart from `refusedOnRevocation` for the reason that one is
-  // kept apart from `authorized`: each is true about a different thing.
-  const gated = identity || { issuedHere: false, accepted: false };
-  const refusedAsIdentity = !!(gated.issuedHere && !gated.accepted);
-  const accepted = presented && authorized && !refusedOnRevocation &&
-                   !refusedAsIdentity;
-  // The leaf's subject as a DN, computed ONCE. It is the string this service
-  // filed the identity under when the handshake completed, so it appears in two
-  // places below and in a link; reading the peer certificate again for each of
-  // them would be three chances to disagree with the chain the report is
-  // otherwise built from.
-  const subjectDn = presented ? dnRfc4514(socket.getPeerCertificate().subject)
-                              : null;
-  const authorizationError = socket.authorizationError
-    ? String(socket.authorizationError) : null;
-  // WHICH of the configured certificates this connection actually got. With
-  // one certificate it is that one; with several, OpenSSL chose on the
-  // client's behalf from the signature algorithms it offered, and the choice
-  // is the whole point of configuring several.
-  const served = servedCertificate(socket);
-  let ephemeral = null;
-  try {
-    ephemeral = socket.getEphemeralKeyInfo ? socket.getEphemeralKeyInfo()
-      : null;
-  } catch (e) {
-    // Not available on every negotiation, and it is a detail rather than the
-    // point of the page. Recorded so its absence is not read as an omission.
-    log.debug('describeConnection(): no ephemeral key info: ' + e.message);
-  }
-  const report = {
-    service: 'sts',
-    message: 'This is what the server saw. Everything below describes the ' +
-      'very connection this response is travelling on — the HTTPS request as ' +
-      'it arrived, what TLS negotiated underneath it, and the client ' +
-      'certificate, if any, exactly as it was presented.',
-    receivedAt: new Date().toISOString(),
-    https: {
-      method: req.method,
-      url: req.url,
-      httpVersion: req.httpVersion,
-      host: req.headers.host || null,
-      userAgent: req.headers['user-agent'] || null,
-      // Every header, with nothing removed. This mock issues test credentials
-      // only and the point of it is to show exactly what was exchanged.
-      headers: Object.assign({}, req.headers),
-      remoteAddress: socket.remoteAddress || null,
-      remotePort: socket.remotePort || null,
-      localPort: socket.localPort || null,
-      secure: true,
-      // WHAT A PROXY PROTOCOL HEADER SAID, when one was read: the balancer's
-      // own address (`via`) beside the client above, which the header put
-      // there. Null with global.proxyProtocol off, and for a connection from
-      // this host, which is served plain.
-      proxyProtocol: proxyProtocol.describe(socket)
-    },
-    tls: {
-      listener: mode,
-      listenerPort: mode === 'required' ? boundMtlsPort : boundTlsPort,
-      clientCertificatePolicy: mode === 'required'
-        ? 'requestCert: true, rejectUnauthorized: true — a certificate that ' +
-          'does not verify is refused during the handshake and no request is ' +
-          'ever read'
-        : 'requestCert: true, rejectUnauthorized: false — a certificate is ' +
-          'always asked for, whatever arrives is accepted, and the verdict ' +
-          'is reported rather than enforced',
-      protocol: socket.getProtocol ? socket.getProtocol() : null,
-      cipher: { name: cipher.name || null,
-                standardName: cipher.standardName || null,
-                version: cipher.version || null },
-      // The name in the ClientHello, which is what a virtual host would route
-      // on and what hostname verification is done against. Null means the
-      // client sent none — every client dialling by IP address does.
-      sniServername: socket.servername || null,
-      alpnProtocol: socket.alpnProtocol || null,
-      sessionReused: typeof socket.isSessionReused === 'function'
-        ? socket.isSessionReused() : null,
-      ephemeralKey: ephemeral || null,
-      // THE POST-QUANTUM READING OF THIS CONNECTION, and its two halves are
-      // deliberately separate fields — see postQuantumOf() below. A report
-      // that answered "is this post-quantum" with one boolean would be wrong
-      // for almost every connection made in 2026.
-      postQuantum: postQuantumOf(socket, leaf),
-      serverCertificate: {
-        subject: served.subject,
-        names: served.names,
-        algorithm: served.algorithm,
-        fingerprint256: served.fingerprint256,
-        notAfter: served.notAfter,
-        // What ELSE was on offer. With more than one certificate configured,
-        // WHICH one arrived is OpenSSL's answer to the signature algorithms
-        // this client offered — so naming the alternatives is the difference
-        // between "this server is RSA" and "this server gave YOU RSA".
-        alsoAvailable: SERVER_CERTIFICATES.filter(function (one) {
-          return one.fingerprint256 !== served.fingerprint256;
-        }).map(function (one) {
-          return { algorithm: one.algorithm,
-                  fingerprint256: one.fingerprint256 };
-        }),
-        selfSigned: true,
-        note: 'Self-signed and regenerated on every start, so it is an ' +
-          'anchor nobody can have baked in. GET /tls/server-certificate over ' +
-          mainPortPhrase() + ' for the PEM, and put it in your truststore ' +
-          'rather than switching verification off.' + bootstrapNote()
-      }
-    },
-    clientCertificate: {
-      presented: presented,
-      authorized: authorized,
-      authorizationError: authorizationError,
-      // The chain OpenSSL BUILT, leaf first — not a count of what arrived. Its
-      // last entry is the anchor this service holds whenever verification
-      // succeeded, and that certificate came from here rather than from the
-      // client. What the difference is for: a leaf presented without its
-      // intermediates is the commonest mutual-TLS mistake there is and is
-      // invisible from the client, and it shows here as a chain of one that
-      // did not verify.
-      chainLength: chain.length,
-      chainNote: 'the path as it was assembled, leaf first. When ' +
-        'verification succeeded the last entry is an anchor this service ' +
-        'holds — the client did not send it, and for a root it must not: a ' +
-        'server that does not already hold a root will not trust it because ' +
-        'somebody offered it.',
-      chain: chain,
-      subject: leaf ? leaf.subject : null,
-      // The same subject as a DIRECTORY writes it: leaf first, no spaces after
-      // the commas, values escaped. It is here because it is the exact string
-      // this service filed the identity under — /admin/users?user=<this> is the
-      // page for it — and because the difference between the two forms is worth
-      // seeing side by side rather than discovering. See dnRfc4514().
-      subjectRfc4514: subjectDn,
-      issuer: leaf ? leaf.issuer : null,
-      serialNumber: leaf ? leaf.serialNumber : null,
-      validFrom: leaf ? leaf.validFrom : null,
-      validTo: leaf ? leaf.validTo : null,
-      subjectAltName: leaf ? leaf.subjectAltName : null,
-      extendedKeyUsage: leaf ? leaf.extendedKeyUsage : null,
-      fingerprint256: leaf ? leaf.fingerprint256 : null,
-      // WHAT THE REVOCATION CHECK FOUND (2026-09-12): `status` good, revoked,
-      // unknown or unchecked; `policy` in force; `refused`; a sentence; and
-      // one link per certificate saying whether the register or a CRL
-      // answered it. Null when nothing was presented.
-      revocation: presented ? verdictHere : null,
-      // WHETHER THIS SERVICE ISSUED IT, AND WHETHER THAT MAKES IT AN IDENTITY
-      // (2026-09-13). `accepted` names the realm the session is started in —
-      // the realm whose TLS client or enrollment Issuing CA signed the leaf.
-      issuedHere: presented && authorized ? gated : null
-    },
-    truststore: {
-      anchors: anchors.length,
-      subjects: anchors.map(function (anchor) { return anchor.subject; }),
-      // The service Root, added for the TLS client certificates the user
-      // portal issues — `issuedClientCertificateAnchor()`.
-      issuedClientCertificates: issuedClientCertificateReport(),
-      note: 'The anchors this service verifies CLIENT certificates against. ' +
-        'They are POSTed to /tls/trust at runtime over ' + mainPortPhrase() +
-        ', because the CA in question is usually generated in a browser ' +
-        'minutes before the connection and exists nowhere else.' +
-        bootstrapNote()
-    },
-    authentication: {
-      // TRUE SINCE 2026-09-05 WHEN THE CERTIFICATE VERIFIED, and this member
-      // was the most important `false` in the report until then. What it meant
-      // was "no endpoint of this service will let the holder do anything an
-      // anonymous caller cannot", and that stopped being true the day a
-      // verified certificate started a session — so reporting `false` would
-      // now be this report contradicting the Set-Cookie header on the same
-      // response.
-      //
-      // **`revocationChecked` WAS THE CONSTANT `false` UNTIL 2026-09-12** and
-      // said, in the same object as `authenticated`, that the sign-in rested on
-      // a chain check alone. It is what the check did now: true whenever
-      // `pki.revocationCheck` is not off, and a certificate it REFUSED is not
-      // authenticated however well its chain built.
-      authenticated: accepted,
-      revocationChecked: !!(verdictHere && verdictHere.checked),
-      revocationStatus: verdictHere ? verdictHere.status : null,
-      refusedOnRevocation: refusedOnRevocation,
-      refusedAsIdentity: refusedAsIdentity,
-      sessionUrl: accepted
-        ? '/admin/sessions' : null,
-      // What DID happen, when the certificate verified: the subject DN was
-      // filed as an authentication. Recorded and not authenticated — the
-      // distinction the rest of this page exists to keep.
-      recorded: accepted,
-      identity: accepted ? subjectDn :
-                null,
-      consoleUrl: accepted
-        ? '/admin/users?user=' + encodeURIComponent(subjectDn) : null,
-      directoryUrl: accepted
-        ? '/admin/ldap/directory' : null,
-      note: 'A verified client certificate means a chain was built to an ' +
-        'anchor this service holds, AND that its revocation was consulted ' +
-        'under pki.revocationCheck — the register for a certificate this ' +
-        'service issued, the CRL it names for one from anybody else. One ' +
-        'that passes both starts a sign-on session and is filed as an ' +
-        'authentication on /admin/users, with an entry seeded in the ' +
-        'embedded LDAP directory; one refused on revocation gets neither. No ' +
-        'token is issued. The two links above are on the main port, not this ' +
-        'one.'
-    }
-  };
-  report.verdict = verdictFor(mode, presented, authorized, authorizationError);
-  if (presented && authorized && refusedOnRevocation) {
-    // THE ONE CONCLUSION THE CHAIN CHECK ALONE CANNOT DRAW, put in front of the
-    // one it did draw rather than replacing it: both are true, and a reader
-    // who sees only "it verified" goes looking for the wrong fault.
-    report.verdict = 'REFUSED ON REVOCATION: ' + verdictHere.why + ' No ' +
-      'session was started and no authentication was recorded. ' +
-      report.verdict;
-  }
-  if (presented && authorized && !refusedOnRevocation && refusedAsIdentity) {
-    report.verdict = 'NOT AN IDENTITY HERE: ' + gated.why + '. No session ' +
-      'was started and no authentication was recorded. ' + report.verdict;
-  }
-  log.debug('Leaving describeConnection(). presented=' + presented +
-            ' authorized=' + authorized);
-  return report;
-}
-
 // ---------------------------------------------------------------------------
 // Rendering.
 // ---------------------------------------------------------------------------
@@ -2881,142 +2484,9 @@ function rowsFrom(pairs) {
   }).join('');
 }
 
-function reportPage(report) {
-  log.debug('Entering reportPage().');
-  const httpsRows = rowsFrom([
-    ['Request', report.https.method + ' ' + report.https.url +
-      ' HTTP/' + report.https.httpVersion],
-    ['Host header', report.https.host],
-    ['User-Agent', report.https.userAgent],
-    ['From', report.https.remoteAddress + ':' + report.https.remotePort],
-    ['Arrived on', 'port ' + report.https.localPort]
-  ]);
-  const tlsRows = rowsFrom([
-    ['Listener', report.tls.listener + ' (port ' + report.tls.listenerPort +
-      ')'],
-    ['Client certificate policy', report.tls.clientCertificatePolicy],
-    ['Protocol', report.tls.protocol],
-    ['Cipher', (report.tls.cipher.standardName || report.tls.cipher.name) +
-      ' (' + report.tls.cipher.version + ')'],
-    ['SNI server name', report.tls.sniServername],
-    ['ALPN', report.tls.alpnProtocol],
-    ['Session reused', String(report.tls.sessionReused)],
-    ['Server certificate', report.tls.serverCertificate.subject],
-    ['Its names', report.tls.serverCertificate.names.join(', ')],
-    ['Its SHA-256', report.tls.serverCertificate.fingerprint256]
-  ]);
-  const certRows = report.clientCertificate.presented
-    ? rowsFrom([
-        ['Verified', report.clientCertificate.authorized ? 'yes' :
-          'no — ' + (report.clientCertificate.authorizationError || '')],
-        ['Subject', report.clientCertificate.subject],
-        ['Subject as a DN (RFC 4514)',
-          report.clientCertificate.subjectRfc4514],
-        ['Issuer', report.clientCertificate.issuer],
-        ['Serial', report.clientCertificate.serialNumber],
-        ['Valid from', report.clientCertificate.validFrom],
-        ['Valid to', report.clientCertificate.validTo],
-        ['subjectAltName', report.clientCertificate.subjectAltName],
-        ['extendedKeyUsage',
-          (report.clientCertificate.extendedKeyUsage || []).join(', ')],
-        ['SHA-256', report.clientCertificate.fingerprint256],
-        ['Certificates in the path built',
-          String(report.clientCertificate.chainLength) + ' (leaf first)'],
-        // The revocation check's answer and its sentence (2026-09-12).
-        ['Revocation', report.clientCertificate.revocation
-          ? report.clientCertificate.revocation.status + ' under ' +
-            report.clientCertificate.revocation.policy +
-            (report.clientCertificate.revocation.refused ? ' — REFUSED' : '') +
-            ' — ' + report.clientCertificate.revocation.why
-          : null]
-      ])
-    : '<tr><td colspan="2">Nothing was presented.</td></tr>';
-  const chainRows = (report.clientCertificate.chain || []).map(function (c) {
-    return '<tr><td>' + c.depth + '</td><td><code>' + xmlEscape(c.subject) +
-      '</code></td><td><code>' + xmlEscape(c.issuer) + '</code></td><td>' +
-      xmlEscape(c.validTo || '') + '</td></tr>';
-  }).join('');
-  const inner = '<h1>This is what the server saw</h1>' +
-    '<p class="sub">' + xmlEscape(report.message) + '</p>' +
-    '<p class="verdict">' + xmlEscape(report.verdict) + '</p>' +
-    '<h2>The HTTPS request</h2><table>' +
-    '<tr><th>Thing</th><th>Value</th></tr>' + httpsRows + '</table>' +
-    '<h2>The TLS connection underneath it</h2><table>' +
-    '<tr><th>Thing</th><th>Value</th></tr>' + tlsRows + '</table>' +
-    '<h2>The client certificate</h2><table>' +
-    '<tr><th>Thing</th><th>Value</th></tr>' + certRows + '</table>' +
-    (chainRows
-      ? '<h2>The chain that was built, leaf first</h2>' +
-        '<p class="sub">The path as it was assembled &mdash; not a list of ' +
-        'what arrived. When verification succeeded the last entry is an ' +
-        'anchor this service holds, which the client did not send. What this ' +
-        'does show is the commonest mutual-TLS mistake there is and one that ' +
-        'is invisible from the client: a leaf presented without its ' +
-        'intermediates, which appears here as a chain of one that did not ' +
-        'verify.</p>' +
-        '<table><tr><th>Depth</th><th>Subject</th><th>Issuer</th>' +
-        '<th>Not after</th></tr>' + chainRows + '</table>'
-      : '') +
-    '<h2>What this proves about who you are</h2>' +
-    '<p>' + xmlEscape(report.authentication.note) + '</p>' +
-    (report.authentication.recorded
-      ? '<table><tr><th>Thing</th><th>Value</th></tr>' + rowsFrom([
-          ['Recorded as', report.authentication.identity],
-          ['In the console', report.authentication.consoleUrl +
-            ' (on ' + mainPortPhrase() + ')'],
-          // Not "under ou=users": a subject that already lies inside this
-          // directory's own tree keeps its place there, so naming the branch
-          // here would be right most of the time and wrong exactly when a
-          // reader was testing that case.
-          ['In the directory', 'an entry derived from this subject — ' +
-            report.authentication.directoryUrl + ' lists every one, and ' +
-            '/admin/ldap/service says how the DN is chosen']
-        ]) + '</table>'
-      : '') +
-    '<p class="sub"><a href="/tls/whoami">This page as JSON</a></p>';
-  log.debug('Leaving reportPage().');
-  return pageShell('What the server saw', inner);
-}
-
-// One handler, given to both listeners with the mode they were created in.
-// Which listener answered is part of the report, so the two cannot be confused
-// by a reader looking at a saved response.
-function makeHandler(mode) {
-  log.debug('Entering makeHandler(). mode=' + mode);
-  log.debug('Leaving makeHandler().');
-  return function (req, res) {
-    log.debug('Entering the TLS listener handler. mode=' + mode + ' url=' +
-              req.url);
-    // THE REVOCATION CHECK COMES FIRST (2026-09-12), because what it answers
-    // decides three things below — the status on the strict listener, whether a
-    // session starts, and what the report says. It is asynchronous (a foreign
-    // CRL may be fetched), never rejects, and is cached per list rather than
-    // per connection, so a revocation made mid-connection is seen by the next
-    // request on it.
-    // ---------------------------------------------------------------------
-    // BEHIND THE CLUSTER BARRIER (2026-09-14, #46 section 4). A verified
-    // certificate here STARTS A SESSION, and this handler is not the express
-    // app `app.js` installs the barrier on — so in active-active mode a
-    // certificate sign-in on node A was answered before its session
-    // committed, and a global sign-out answered by node B a moment later
-    // listed the sessions B had and missed that one. The same two rules as
-    // every HTTP request: catch up with what other nodes committed first, and
-    // hold the answer until this request's own writes have committed. Outside
-    // active-active the middleware calls straight through.
-    // ---------------------------------------------------------------------
-    clusterBarrier.middleware()(req, res, function () {
-      checkedSocket(req.socket).then(function (revocation) {
-        answer(req, res, mode, revocation);
-      });
-    });
-    log.debug('Leaving the TLS listener handler. The answer follows the ' +
-              'check.');
-  };
-}
-
 // The revocation verdict for whatever this socket presented, or null when it
 // presented nothing. NEVER REJECTS: a check that threw is reported as unknown
-// by `revocation_status.js` itself, and a listener must answer either way.
+// by `revocation_status.js` itself, and the caller must answer either way.
 function checkedSocket(socket) {
   log.debug('Entering checkedSocket().');
   const input = revocationStatus.fromSocket(socket);
@@ -3033,90 +2503,6 @@ function checkedSocket(socket) {
               e.message);
     return null;
   });
-}
-
-// The answer, once the revocation check has spoken. Split out of the handler
-// for that reason only: everything in it ran synchronously before 2026-09-12.
-function answer(req, res, mode, revocation) {
-  log.debug('Entering answer(). mode=' + mode);
-  // THE IDENTITY GATE (2026-09-13), asked once and handed to everything below
-  // that reads it — see `issuedClientCertificateAnchor()`.
-  const identity = issuedIdentityOf(req.socket);
-  const report = describeConnection(req, mode, revocation, identity);
-  // Logged in full, like every other exchange this service records: this is
-  // the one place the server's own view of a handshake is written down, and
-  // when a mutual-TLS test fails it is the first thing worth reading.
-  log.debug({ tlsConnection: report },
-            'TLS connection on the ' + mode + ' listener: ' +
-            (report.clientCertificate.presented
-              ? (report.clientCertificate.authorized
-                  ? 'a verified client certificate'
-                  : 'an unverified client certificate')
-              : 'no client certificate'));
-  const path = String(req.url || '/').split('?')[0];
-  const query = String(req.url || '').split('?')[1] || '';
-  const wantsJson = /(^|&)format=json(&|$)/.test(query) ||
-      path === '/tls/whoami' ||
-      /application\/json/i.test(String(req.headers.accept || ''));
-  res.setHeader('Cache-Control', 'no-store');
-  // A VERIFIED CLIENT CERTIFICATE IS A SIGN-IN SINCE 2026-09-05, and the
-  // section below this function argued the opposite until that day. See it
-  // for what changed and what did not.
-  report.session = startCertificateSession(req, res, mode, revocation,
-                                           identity);
-  // **THE STRICT LISTENER REFUSES A CERTIFICATE THE POLICY REFUSED, AS A 403
-  // RATHER THAN AT THE HANDSHAKE** (2026-09-12). Its whole promise is that
-  // reaching it proves the certificate is acceptable, and after the
-  // revocation check that has two halves. It cannot be done at the handshake:
-  // node's `crl` secure-context option makes OpenSSL require a CRL for EVERY
-  // issuer — a client from an authority with no list loaded fails with
-  // UNABLE_TO_GET_CRL, measured — and it is static, leaf-only and fetches
-  // nothing. So the handshake completes and the REQUEST is refused, with the
-  // report as its body so the far end learns why. The permissive listener
-  // still answers 200 and reports, which is what it is for.
-  const refusedHere = mode === 'required' &&
-                      !!(revocation && revocation.refused);
-  if (refusedHere) {
-    errorCodes.mark(res, revocationStatus.codeOf(revocation));
-    audit.failure(revocation.status === 'revoked' ? 'STS-PKI-0118' :
-                  'STS-PKI-0119', {
-      protocol: 'TLS', channel: 'tls',
-      target: 'TLS port ' + (boundMtlsPort || MTLS_PORT),
-      summary: 'the required-client-certificate listener refused a verified ' +
-               'certificate on revocation: ' + revocation.why,
-      outcome: 'refused'
-    });
-  }
-  // **AND ONE IT REFUSES AS AN IDENTITY (2026-09-13).** The strict listener's
-  // handshake now completes for every key pair this service issued, because
-  // its Root is in the truststore for the TLS client certificates the portal
-  // issues. A leaf that is not one of those verified and is not acceptable
-  // here, and "reaching it proves the certificate is acceptable" is still the
-  // promise — so it is a 403 with the report, exactly as a revocation is.
-  const refusedAsIdentity = mode === 'required' && !refusedHere &&
-                            !!(identity && identity.issuedHere &&
-                               !identity.accepted);
-  if (refusedAsIdentity) {
-    errorCodes.mark(res, 'STS-TLS-0031');
-    audit.failure('STS-TLS-0031', {
-      protocol: 'TLS', channel: 'tls',
-      target: 'TLS port ' + (boundMtlsPort || MTLS_PORT),
-      summary: 'the required-client-certificate listener refused a verified ' +
-               'certificate this service issued, because it is not a TLS ' +
-               'client identity: ' + identity.why,
-      outcome: 'refused'
-    });
-  }
-  const status = refusedHere || refusedAsIdentity ? 403 : 200;
-  if (wantsJson) {
-    res.writeHead(status, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(report, null, 2));
-    log.debug('Leaving answer(). JSON, ' + status + '.');
-    return;
-  }
-  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(reportPage(report));
-  log.debug('Leaving answer(). HTML, ' + status + '.');
 }
 
 // ---------------------------------------------------------------------------
@@ -3143,10 +2529,10 @@ function answer(req, res, mode, revocation) {
 // SO THREE THINGS ARE TRUE AT ONCE AND THIS FUNCTION KEEPS THEM APART:
 //
 //   * the certificate VERIFIED — a chain to an anchor an operator installed,
-//     which is exactly what `describeConnection()` already reported;
-//   * NO REVOCATION WAS CHECKED, so a revoked certificate verifies here and
-//     would not verify anywhere that matters. The report says so and still
-//     does;
+//     which is all `socket.authorized` says;
+//   * ITS REVOCATION IS WHATEVER THE CHECK FOUND. This bullet read "no
+//     revocation was checked" until 2026-09-12; the verdict is consulted
+//     first now (below), and every report repeats what it found;
 //   * a SESSION EXISTS, which is this service tracking that the holder of that
 //     certificate got in — and which is what makes a global sign-out able to
 //     end it. Without it, an identity provider that had "signed somebody out"
@@ -3164,9 +2550,9 @@ function answer(req, res, mode, revocation) {
 // `"1"`. One factor, and a factor whose private key sits in a file: claiming
 // `hwk` would say a hardware key was used, and this service cannot know that.
 //
-// IT IS ONE SESSION PER CONNECTION AT MOST, not one per request: the cookie
-// comes back on the next request and is honoured, so six requests on one
-// connection are one sign-in. That is the same property
+// IT IS ONE SESSION PER BROWSER AT MOST, not one per request: the cookie
+// comes back on the next request and is honoured, so six requests to
+// /tls/sign-in are one sign-in. That is the same property
 // `recordClientCertificate()` achieves by living on `secureConnection`, arrived
 // at differently because a cookie needs a response to be written on and
 // `secureConnection` has none.
@@ -3243,9 +2629,9 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   log.debug('Entering startCertificateSessionIn(). mode=' + mode);
   const socket = req.socket;
   // ALREADY SIGNED IN ON THIS BROWSER. Read rather than replaced, so that a
-  // page load on 9443 does not mint a second session for somebody who already
-  // has one — which would leave a global sign-out reporting two where the
-  // person experienced one.
+  // second fetch of /tls/sign-in does not mint a second session for somebody
+  // who already has one — which would leave a global sign-out reporting two
+  // where the person experienced one.
   const existing = authn.sessionOf(req);
   if (existing) {
     log.debug('Leaving startCertificateSessionIn(). One was already open.');
@@ -3260,8 +2646,8 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     cert = socket.getPeerCertificate ? socket.getPeerCertificate() : null;
   } catch (e) {
     // A socket that went away between the handshake and this line. Swallowed
-    // for recordClientCertificate()'s reason: this runs inside a request
-    // handler on a listener of its own, and a throw here answers nothing.
+    // for recordClientCertificate()'s reason: this runs inside the
+    // /tls/sign-in handler, and a throw here answers nothing.
     log.debug('startCertificateSessionIn(): the peer certificate could not ' +
               'be read: ' + e.message);
     log.debug("Leaving startCertificateSessionIn().");
@@ -3316,9 +2702,9 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // carries on. A refusal reaching that branch would have been reported as
   // bookkeeping and the session started anyway.
   //
-  // The connection is untouched either way: this listener's whole content is
-  // what the SERVER saw of the handshake, and that is still reported. What is
-  // refused is the SESSION, which is the thing the policy is about.
+  // The connection is untouched either way, and /tls/sign-in still reports
+  // what arrived and whether it verified. What is refused is the SESSION,
+  // which is the thing the policy is about.
   if (!session) {
     log.info('tls: the issuance policy refused a session for ' + username +
              ' on a verified client certificate (' + mode + ' listener). The ' +
@@ -3355,11 +2741,12 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
 // THE ARGUMENT THAT USED TO BE HERE, AND WHAT OF IT STILL HOLDS.
 //
 // Everything below about RECORDING is unchanged and still correct. The
-// sentences saying no session starts are the ones the function above reversed;
-// they are kept because they name exactly what must not be lost — that
-// verification is a chain check and nothing more.
+// sentences saying no session starts are the ones the function above reversed,
+// and "no revocation is checked" stopped being true on 2026-09-12; they are
+// kept because they name exactly what must not be lost — that verification is
+// a chain check and nothing more.
 //
-// The two are worth holding apart, because this listener's whole value is that
+// The two are worth holding apart, because this module's whole value is that
 // it does not confuse them. What a verified certificate means here has not
 // changed and is stated everywhere this module speaks: OpenSSL built a chain
 // from what the client sent to an anchor somebody POSTed to /tls/trust. No
@@ -3386,7 +2773,7 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
 //     six authentications. The consequence to expect is the other way round and
 //     is honest: a client that opens six CONNECTIONS did present its
 //     certificate six times, and the console says six.
-//   * ONLY WHEN `authorized` IS TRUE. On the optional listener a certificate
+//   * ONLY WHEN `authorized` IS TRUE. On the main port a certificate
 //     that did not verify, or none at all, records nothing — the console lists
 //     identities that got somewhere, not names that were tried.
 //   * A RESUMED SESSION may carry no peer certificate: the client does not send
@@ -3406,8 +2793,7 @@ function recordClientCertificate(socket, mode, revocation) {
     audit.failure(revocation.status === 'revoked' ? 'STS-PKI-0118' :
                   'STS-PKI-0119', {
       protocol: 'TLS', channel: 'tls',
-      target: 'TLS port ' + (mode === 'required'
-        ? (boundMtlsPort || MTLS_PORT) : (boundTlsPort || TLS_PORT)),
+      target: 'the main port (' + MAIN_PORT + ')',
       summary: 'a verified client certificate was not recorded as an ' +
                'authentication because it was refused on revocation: ' +
                revocation.why,
@@ -3419,8 +2805,8 @@ function recordClientCertificate(socket, mode, revocation) {
   // NOT AN IDENTITY (2026-09-13), for `startCertificateSession()`'s reason: a
   // chain through this service's own Root from an authority that does not
   // issue TLS client identities is not an authentication, so it is not filed
-  // as one. It gets the refusal row the strict listener's 403 writes, once per
-  // handshake here rather than per request there.
+  // as one. It is logged, once per handshake; `GET /tls/sign-in` reports the
+  // same certificate as `refusedAsIdentity`.
   const gated = issuedIdentityOf(socket);
   if (gated.issuedHere && !gated.accepted) {
     log.info('tls: a verified client certificate on the ' + mode + ' ' +
@@ -3497,9 +2883,7 @@ function recordCertificateAuthentication(subject, common, cert, mode,
   stats.recordAuthentication({
     presented: subject,
     protocol: 'TLS',
-    method: 'client certificate on the ' + mode + '-client-certificate ' +
-      'listener (port ' + (mode === 'required'
-        ? (boundMtlsPort || MTLS_PORT) : (boundTlsPort || TLS_PORT)) + ')',
+    method: 'client certificate on the main port (' + MAIN_PORT + ')',
     note: 'the chain verified against one of the ' + anchors.length +
       ' anchor(s) in this service\'s truststore, and ' +
       (revocation && revocation.checked
@@ -3508,8 +2892,8 @@ function recordCertificateAuthentication(subject, common, cert, mode,
         : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)') +
       '. Since 2026-09-05 a sign-on session is started for the holder, so ' +
       'a global sign-out can end it; no token is issued.',
-    // Both DNs in RFC 4514 form, which is not the form the report on this
-    // connection shows — see dnRfc4514(). These two go into a DIRECTORY, and
+    // Both DNs in RFC 4514 form, which is not the form dnToString() renders
+    // for a reader — see dnRfc4514(). These two go into a DIRECTORY, and
     // that is the only form a directory takes.
     certificate: {
       subject: subject,
@@ -3526,24 +2910,16 @@ function recordCertificateAuthentication(subject, common, cert, mode,
 }
 
 // ---------------------------------------------------------------------------
-// The two listeners.
-//
-// Created at require time — creating a server binds nothing — and started from
-// listen() in server.js, for the same reason the KDC's and the directory's
-// sockets are: a bind can fail, and a require that throws takes the whole
-// service down where a route cannot.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // THE TRUSTSTORE FROM A FILE, READ BEFORE THE LISTENERS EXIST (2026-09-12).
 //
 // `tls.trustAnchorsFile`. Product mode refuses `POST /tls/trust` (see there),
 // and a deployment that verifies client certificates at all — a remote XACML
 // PEP is the one this service ships — needs its anchors from somewhere an
 // operator controls rather than from whoever reaches the port. So they are
-// CONFIGURATION: a PEM file read once, here, before 8443 and 9443 are created
-// from `secureContextOptions()`, which is why this pushes into `anchors`
-// directly rather than going through `addAnchors()` — that function re-applies
-// the context to listeners that do not exist yet.
+// CONFIGURATION: a PEM file read once, here, before any listener is given a
+// context built from `secureContextOptions()`, which is why this pushes into
+// `anchors` directly rather than going through `addAnchors()` — that function
+// re-applies the context to listeners that do not exist yet.
 //
 // A file that cannot be read, or holds no certificate, STOPS THE SERVICE. A
 // truststore silently empty because of a typo in a path is a deployment whose
@@ -3599,92 +2975,103 @@ let anchorsFileReport = { file: '', loaded: 0 };
   log.debug("Leaving loadAnchorsFile().");
 })();
 
-const permissiveServer = https.createServer(
-    Object.assign({ requestCert: true, rejectUnauthorized: false },
-                  secureContextOptions()),
-    makeHandler('optional'));
+// ---------------------------------------------------------------------------
+// THE TWO LISTENERS WERE DELETED ON 2026-09-16, AND THIS IS WHAT REPLACED
+// THEM.
+//
+// 8443 asked for a client certificate and never required one; 9443 required
+// one at the handshake. The MAIN PORT already does the first — `server.js`
+// binds it `requestCert: true, rejectUnauthorized: false` — so 8443 was a
+// second socket with the same posture as the one every other protocol answers
+// on, and a deployment paid for three HTTPS ports to get two behaviours.
+//
+// What moved here rather than dying with them:
+//
+//   * THE SIGHTING. `recordClientCertificate()` hung on those sockets'
+//     `secureConnection`, so the main port recorded nothing — a client
+//     certificate presented to the token endpoint was used and never seen on
+//     /admin/tls. `observeConnectionsOn()` below puts it on whatever listener
+//     is given to it, and `server.js` gives it the main one.
+//   * THE SIGN-IN. A verified client certificate is a session (2026-09-05),
+//     and that ran in the deleted handler. It is now `GET /tls/sign-in` on the
+//     main port. **The CLIENT decides whether to present a certificate**: this
+//     port asks for one and requires none, so the route signs in whoever
+//     presented a verified one and tells anybody else that there was nobody to
+//     sign in.
+//
+// What did NOT move, deliberately: the connection ECHO — the page and
+// /tls/whoami that reported what the server made of the handshake. It was the
+// two listeners' whole content, it is a debugging surface rather than a
+// protocol, and it is being taken up in the debugger project instead.
+//
+// The handshake REFUSAL 9443 performed has no replacement and cannot have one
+// here: refusing at the handshake is a property of a socket, and this socket
+// answers every other protocol. A certificate that does not verify is refused
+// where it is USED — the token endpoint (RFC 8705), /xacml, /scim — which is
+// the same answer arriving one layer up.
+// ---------------------------------------------------------------------------
 
-const strictServer = https.createServer(
-    Object.assign({ requestCert: true, rejectUnauthorized: true },
-                  secureContextOptions()),
-    makeHandler('required'));
-
-// The moment the credential is accepted, on both listeners. `secureConnection`
-// fires once per completed handshake — on the strict listener it cannot fire at
-// all unless the certificate verified, and on the permissive one the check
-// inside decides. See recordClientCertificate() for why it is here and not in
-// the request handler.
-// AFTER THE REVOCATION CHECK SINCE 2026-09-12, which is why these wait on a
-// promise: a certificate the policy refuses is recorded as a refusal rather
-// than as an authentication. `checkedSocket()` never rejects.
-permissiveServer.on('secureConnection', function (socket) {
-  checkedSocket(socket).then(function (revocation) {
-    recordClientCertificate(socket, 'optional', revocation);
+// Watch a listener this module did not create. `server.js` calls it for the
+// main HTTPS port; a second call for another listener would be the same two
+// lines, which is why this takes the server rather than reaching for one.
+//
+// AFTER THE REVOCATION CHECK (2026-09-12), which is why it waits on a promise:
+// a certificate the policy refuses is recorded as a refusal rather than as an
+// authentication. `checkedSocket()` never rejects.
+function observeConnectionsOn(server, label) {
+  log.debug('Entering observeConnectionsOn(). label=' + label);
+  if (!server || typeof server.on !== 'function') {
+    log.error(errorCodes.tag('STS-TLS-0010') +
+              'tls: observeConnectionsOn() was given something that is not a ' +
+              'TLS server (' + label + '), so client certificates presented ' +
+              'there are NOT recorded. /admin/tls will look quiet while they ' +
+              'arrive.');
+    log.debug('Leaving observeConnectionsOn(). Refused.');
+    return false;
+  }
+  server.on('secureConnection', function (socket) {
+    checkedSocket(socket).then(function (revocation) {
+      recordClientCertificate(socket, 'optional', revocation);
+    });
   });
-});
-
-strictServer.on('secureConnection', function (socket) {
-  checkedSocket(socket).then(function (revocation) {
-    recordClientCertificate(socket, 'required', revocation);
+  // A handshake that failed reaches a listener as a socket error and never as
+  // a request, so without this it is invisible: the far end sees a closed
+  // connection and this log says nothing at all. It is the single most
+  // confusing failure in mutual TLS, so it is logged with the reason OpenSSL
+  // gave. On this port a client certificate is never REQUIRED, so what lands
+  // here is a broken handshake rather than a refused credential.
+  server.on('tlsClientError', function (error, socket) {
+    log.warn('tls: a handshake failed on ' + label + ' from ' +
+             ((socket && socket.remoteAddress) || 'an unknown address') +
+             ': ' + error.message + '. A client certificate is asked for and ' +
+             'never required here, so this is the handshake itself rather ' +
+             'than a certificate being refused.');
+    audit.failure('STS-TLS-0021', {
+      protocol: 'TLS', channel: 'tls',
+      target: label,
+      summary: 'a TLS handshake failed: ' + error.message,
+      outcome: 'refused'
+    });
   });
-});
-
-// A refused client certificate reaches the STRICT listener as a socket error
-// and never as a request, so without this it is invisible: the far end sees a
-// closed connection with no alert and this log says nothing at all. It is the
-// single most confusing failure in mutual TLS, so it is logged with the reason
-// OpenSSL gave.
-strictServer.on('tlsClientError', function (error, socket) {
-  log.warn('tls: the listener on ' + (boundMtlsPort || MTLS_PORT) +
-           ' refused a connection from ' +
-           ((socket && socket.remoteAddress) || 'an unknown address') + ': ' +
-           error.message + '. That listener requires a client certificate ' +
-           'that verifies against one of the ' + anchors.length + ' ' +
-           'anchor(s) it holds. POST the issuing CA to /tls/trust on ' +
-           mainPortPhrase() + ', or use port ' + (boundTlsPort || TLS_PORT) +
-           ', which answers whatever arrives and says what it made of it.');
-  audit.failure('STS-TLS-0021', {
-    protocol: 'TLS', channel: 'tls',
-    target: 'TLS port ' + (boundMtlsPort || MTLS_PORT),
-    summary: 'the required-client-certificate listener refused a handshake: ' +
-             error.message,
-    outcome: 'refused'
-  });
-});
-
-permissiveServer.on('tlsClientError', function (error, socket) {
-  // This listener refuses nothing about the CLIENT certificate, so an error
-  // here is about the handshake itself — a version or cipher mismatch, or a
-  // caller that spoke something other than TLS at it.
-  log.warn('tls: a handshake failed on ' + (boundTlsPort || TLS_PORT) +
-           ' from ' + ((socket && socket.remoteAddress) || 'an unknown ' +
-           'address') + ': ' + error.message + '. This listener accepts any ' +
-           'client certificate or none, so this is not about one.');
-  audit.failure('STS-TLS-0022', {
-    protocol: 'TLS', channel: 'tls',
-    target: 'TLS port ' + (boundTlsPort || TLS_PORT),
-    summary:
-      'a handshake failed on the optional-client-certificate listener: ' +
-             error.message,
-    outcome: 'refused'
-  });
-});
+  log.debug('Leaving observeConnectionsOn(). Watching.');
+  return true;
+}
 
 // ---------------------------------------------------------------------------
-// The plain-HTTP views.
+// The views on the main port.
 //
-// These are the only surfaces of this module that /admin/sts-metadata can see,
-// since that page is built by walking the Express router and the two listeners
-// above are sockets. They are also the only way to configure the truststore,
-// and they are on the MAIN port on purpose — see the header, including what
-// global.https changes about that.
+// Every surface of this module is a route since 2026-09-16, so
+// /admin/sts-metadata, which walks the Express router, sees all of them. The
+// ungated truststore controls are on the MAIN port on purpose — see the
+// header, including what global.https changes about that — and the gated
+// doors are the console's and the management API's (`truststore` below).
 // ---------------------------------------------------------------------------
 
 function description(req) {
   log.debug('Entering description().');
   const host = String(req.get('host') || 'localhost').split(':')[0];
   const out = {
-    // What the listeners present, and — when there is more than one — the
+    // What this service presents, and — when there is more than one — the
     // fact that WHICH one arrives is decided by the client's own signature
     // algorithms rather than by this service.
     serverCertificates: SERVER_CERTIFICATES.map(function (one) {
@@ -3706,34 +3093,33 @@ function description(req) {
       : 'One certificate, self-signed and regenerated at every start. GET ' +
         '/tls/server-certificate for it. Add an ML-DSA one beside it with ' +
         'tls.certificateAlgorithms=rsa,ml-dsa-65.',
+    // ONE LISTENER SINCE 2026-09-16. This was two entries — 8443 asking for a
+    // client certificate and 9443 requiring one — and both sockets were
+    // deleted: the main port already had the first posture, and the second
+    // cannot be had on a port every other protocol answers on. What a client
+    // certificate is worth is now decided where it is USED.
     listeners: [
       { mode: 'optional',
-        url: 'https://' + host + ':' + (boundTlsPort || TLS_PORT) + '/',
-        port: boundTlsPort || TLS_PORT,
-        listening: tlsListening,
-        requestsClientCertificate: true,
+        url: 'https://' + host + ':' + MAIN_PORT + '/',
+        port: MAIN_PORT,
+        listening: true,
+        requestsClientCertificate: !!config.value('global.https'),
         requiresClientCertificate: false,
-        what: 'Always asks for a client certificate, accepts whatever ' +
-          'arrives including nothing, and reports the verdict instead of ' +
-          'enforcing it. Point a debugger here.' },
-      { mode: 'required',
-        url: 'https://' + host + ':' + (boundMtlsPort || MTLS_PORT) + '/',
-        port: boundMtlsPort || MTLS_PORT,
-        listening: mtlsListening,
-        requestsClientCertificate: true,
-        requiresClientCertificate: true,
-        what: 'Refuses a client certificate that does not verify, during the ' +
-          'handshake, the way a real server does — which is to say by ' +
-          'closing the socket with no alert. Reaching it is the proof that ' +
-          'the certificate verified.' }
+        what: 'The main port asks every connection for a client certificate ' +
+          'and requires none, so presenting one is the CLIENT\'s decision. ' +
+          'What arrives is recorded, and is judged where it is used: at the ' +
+          'token endpoint (RFC 8705), at /xacml, at /scim/v2, and at ' +
+          'GET /tls/sign-in, which starts a session for a verified one.' }
     ],
-    // Published because these pages are HTTP and the listeners are not: /tls
-    // answers 200 whether or not either socket bound, so a reader has no other
-    // way to tell a running listener from one whose port was already taken.
     listenError: listenError,
+    // `report: '/tls/whoami'` and `page: '/'` were here until 2026-09-16,
+    // and both were routes on the deleted listeners. What a caller can be
+    // pointed at now is the sign-in — which reports what the connection
+    // carried as well as signing its holder in — and the two documents.
     paths: {
-      report: '/tls/whoami',
-      page: '/'
+      signIn: '/tls/sign-in',
+      trust: '/tls/trust',
+      serverCertificate: '/tls/server-certificate'
     },
     serverCertificate: {
       subject: SERVER_CERTIFICATE.subject,
@@ -3763,33 +3149,33 @@ function description(req) {
       anchorsFile: anchorsFileReport.file || null,
       anchorsFromFile: anchorsFileReport.loaded
     },
-    // `tls.minVersion` and `tls.ciphers`, as every listener here applies them.
+    // `tls.minVersion` and `tls.ciphers`, as every TLS socket applies them.
     protocol: { minVersion: protocolOptions().minVersion,
                 ciphers: protocolOptions().ciphers || '(node default)' },
     // WHAT A PRESENTED CERTIFICATE IS HELD TO BEYOND ITS CHAIN (2026-09-12):
     // the policy in force, how it was decided, where it is and is not
     // consulted, and the one sentence every surface repeats. The verdict for
-    // a particular connection is on /tls/whoami.
+    // a particular connection is on /tls/sign-in.
     revocation: Object.assign(revocationStatus.describePolicy(),
                               { cache: revocationStatus.cacheReport() }),
     // FALSE SINCE 2026-09-05 AND KEPT UNDER ITS OLD NAME, because a client
     // reading this document by that key is entitled to a truthful answer
     // rather than a missing one. A verified client certificate now starts a
-    // sign-on session; what it still does not do is prove the certificate is
-    // CURRENTLY good, because no revocation is checked here.
+    // sign-on session at GET /tls/sign-in, after the revocation check that
+    // `revocation` above describes.
     authenticatesNobody: false,
     signsInVerifiedCertificates: {
       started: true,
-      what: 'a request on a connection carrying a client certificate that ' +
-        'VERIFIED starts a sign-on session for its common name (or its RFC ' +
-        '4514 subject, where it has no common name), and the response ' +
+      what: 'GET /tls/sign-in on a connection carrying a client certificate ' +
+        'that VERIFIED starts a sign-on session for its common name (or its ' +
+        'RFC 4514 subject, where it has no common name), and the response ' +
         'carries the session cookie',
-      when: 'on the first request of a connection, and not again while the ' +
+      when: 'when that route is asked, and not again while the ' +
         'browser sends the cookie back',
       note: 'REVOCATION IS CONSULTED BEFORE THE SESSION STARTS (see ' +
         '`revocation` above — it said NO REVOCATION IS CHECKED until ' +
-        '2026-09-12), and a certificate the policy refuses gets no session ' +
-        'and, on the required listener, a 403. The session is this service ' +
+        '2026-09-12), and a certificate the policy refuses gets no session; ' +
+        'the route still answers 200, saying so. The session is this service ' +
         'tracking that the holder got in — which is what lets /admin/logout ' +
         'end it.',
       endUrl: '/admin/logout'
@@ -3906,12 +3292,16 @@ app.get('/tls', function (req, res) {
     'which also says where each anchor came from, and <code>POST ' +
     '/admin-api/tls/trust/add</code> / ' +
     '<code>remove</code>.</p><h2>Revocation</h2><p>' +
-    xmlEscape(revocationStatus.describePolicy().sentence) + '</p><h2>It ' +
-    'authenticates nobody</h2><p>A verified client certificate here means ' +
-    'one thing: a chain was built from what the client sent to an anchor ' +
-    'somebody supplied. No session is started, no token is issued, and no ' +
-    'endpoint of this service will let the holder do anything an anonymous ' +
-    'caller cannot.</p><p>It is <em>recorded</em>, which is a different ' +
+    xmlEscape(revocationStatus.describePolicy().sentence) + '</p><h2>What a ' +
+    'verified certificate is worth here</h2><p>A verified client ' +
+    'certificate means one thing: a chain was built from what the client ' +
+    'sent to an anchor somebody supplied. No token is issued for presenting ' +
+    'one, and this port requires nobody to present one at all. What it is ' +
+    'good for is <a href="/tls/sign-in">GET /tls/sign-in</a>, which starts ' +
+    'a sign-on session for its holder, and the doors that read a certificate ' +
+    'for themselves: RFC 8705 client authentication at the token endpoint, ' +
+    '<code>/xacml</code> and <code>/scim/v2</code>.</p><p>It is also ' +
+    '<em>recorded</em>, which is a different ' +
     'claim. When the handshake completes with a certificate that verified, ' +
     'the subject DN is filed as an authentication on <a ' +
     'href="/admin/users">/admin/users</a> and the embedded LDAP directory ' +
@@ -3927,6 +3317,70 @@ app.get('/tls', function (req, res) {
   log.debug('Leaving GET /tls.');
 });
 
+// ---------------------------------------------------------------------------
+// A VERIFIED CLIENT CERTIFICATE IS A SIGN-IN, ON THE MAIN PORT (2026-09-16).
+//
+// It was a side effect of reaching 8443 or 9443 at all: the deleted handler
+// started a session for whatever verified, and every page load did it again.
+// Those sockets are gone, so it is a route — and being a route is better than
+// what it replaced, because a sign-in that happens because you loaded a
+// diagnostic page is a sign-in nobody asked for.
+//
+// **THE CLIENT DECIDES WHETHER TO PRESENT A CERTIFICATE.** The main port asks
+// every connection for one (`server.js`, `requestCert: true`) and requires
+// none, so a browser or a curl that has one sends it and a caller that has
+// none is simply not signed in. This route does not and cannot demand one at
+// the handshake: refusing there is a property of the socket, and this socket
+// answers every other protocol in the service.
+//
+// Everything it decides is `startCertificateSession()`'s, unchanged from when
+// the listeners called it: revocation first, then the identity gate, then an
+// application's certificate refused as a sign-in (it is an RFC 8705 client
+// credential), then the session in the certificate's own realm.
+//
+// Behind the cluster barrier for the reason the deleted handler was: this
+// STARTS A SESSION, and in active-active mode an answer sent before the
+// session committed left a sign-out on another node unable to see it.
+// ---------------------------------------------------------------------------
+app.get('/tls/sign-in', function (req, res) {
+  log.debug('Entering GET /tls/sign-in.');
+  clusterBarrier.middleware()(req, res, function () {
+    checkedSocket(req.socket).then(function (revocation) {
+      const identity = issuedIdentityOf(req.socket);
+      const session = startCertificateSession(req, res, 'optional', revocation,
+                                              identity);
+      const presented = !!(req.socket && req.socket.getPeerCertificate &&
+                           req.socket.getPeerCertificate().raw &&
+                           req.socket.getPeerCertificate().raw.length);
+      const answer = {
+        signedIn: !!session.started,
+        session: session,
+        clientCertificate: {
+          presented: presented,
+          verified: !!(req.socket && req.socket.authorized === true),
+          // The thumbprint the token endpoint would bind a token to, so that
+          // one request answers "is my certificate arriving, and as what".
+          thumbprint: presented
+            ? stsCrypto.certificateThumbprint(
+                req.socket.getPeerCertificate().raw)
+            : ''
+        },
+        revocation: revocation,
+        note: presented
+          ? 'This port asks for a client certificate and requires none. What ' +
+            'arrived is above; what it is worth is decided here for a ' +
+            'session, and at each door that reads one for everything else.'
+          : 'No client certificate arrived. This port asks every connection ' +
+            'for one and requires none, so presenting it is the client\'s ' +
+            'own doing — send one and this route will sign its holder in.'
+      };
+      res.set('Cache-Control', 'no-store');
+      res.status(200).type('application/json').send(JSON.stringify(answer));
+      log.debug('Leaving GET /tls/sign-in. signedIn=' + answer.signedIn);
+    });
+  });
+});
+
 app.get('/tls/server-certificate', function (req, res) {
   log.debug('Entering GET /tls/server-certificate.');
   // no-store for the same reason every document describing the signing key
@@ -3934,7 +3388,7 @@ app.get('/tls/server-certificate', function (req, res) {
   // copy outlives the key it describes and the failure it produces is a
   // handshake that does not verify — which reads as a broken server rather
   // than a stale anchor.
-  // EVERY certificate the listeners may present, concatenated. With the
+  // EVERY certificate the TLS sockets may present, concatenated. With the
   // default single RSA certificate this is byte-for-byte what it always was;
   // with an ML-DSA one configured beside it, a caller that put only the first
   // in its truststore would fail to verify the connection it actually got —
@@ -3977,16 +3431,11 @@ app.get('/tls/server-certificate', function (req, res) {
            SERVER_CERTIFICATES.length + ' certificate(s).');
 });
 
-// The body may be raw PEM (what a script sends), or the `certificates` member
-// of a form or JSON body (what the page above sends). They are told apart by
-// looking for the PEM header rather than by the content type, because a raw PEM
-// posted as text/plain would otherwise be run through URLSearchParams and come
-// out as a set of nonsense keys — a silent mangling rather than a refusal.
 // ---------------------------------------------------------------------------
 // A TEST CONTROL, AND PRODUCT MODE REFUSES IT (2026-09-12).
 //
-// Adding an anchor decides whose client certificates VERIFY on 8443, 9443 and
-// the main port — and since 2026-09-06 a verified certificate is an identity:
+// Adding an anchor decides whose client certificates VERIFY on the main port
+// — and since 2026-09-06 a verified certificate is an identity:
 // it resolves to a directory entry, a group and a role, and it is what admits a
 // remote XACML PEP to the documents this service enforces its own access with.
 // Both routes answered anybody who could reach the port. In development that is
@@ -3997,7 +3446,7 @@ app.get('/tls/server-certificate', function (req, res) {
 // **REFUSED RATHER THAN GATED, AND THE REFUSAL SAYS WHERE TO GO.** The obvious
 // alternative was to require the credential `/admin-api` requires — an access
 // token with `admin:write` — and it was not taken for a structural reason:
-// that verification is middleware inside `mgmt-api/admin_api.js`, exported as
+// that verification is middleware inside `mgmt-api/admin_api.ts`, exported as
 // nothing, and a second copy of it here would be a second answer to "who may
 // administer this service" (the mistake `logout.js` exists to prevent).
 //
@@ -4045,14 +3494,14 @@ function refuseTruststoreChange(req, res, route) {
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE AS THE GATED DOORS SEE IT (2026-09-12).
 //
-// Three functions, handed to `admin-ui/admin.js`'s `setTruststore()` slot and
+// Three functions, handed to `admin-ui/admin.ts`'s `setTruststore()` slot and
 // forwarded from there to the action and view layers in `admin-core/`. This
 // module cannot hand them over itself at require time, and the reason is worth
 // knowing before anybody tries: it is first loaded from INSIDE `admin.js`'s own
-// require — `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.js`
+// require — `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts`
 // → here — so a `require('../admin-ui/admin')` at this module's top level
 // would be a cycle and would hand back that module's half-built exports, on
-// which `setTruststore` does not exist yet. `common/protocol_stack.js` fills
+// which `setTruststore` does not exist yet. `common/protocol_stack.ts` fills
 // the slot on the line after it requires this module, where both are whole.
 //
 // **`add` IS STRICT AND `/tls/trust` IS NOT.** A block OpenSSL cannot read is
@@ -4080,6 +3529,11 @@ const truststore = {
   remove: removeAnchor
 };
 
+// The body may be raw PEM (what a script sends), or the `certificates` member
+// of a form or JSON body (what the /tls page sends). They are told apart by
+// looking for the PEM header rather than by the content type, because a raw PEM
+// posted as text/plain would otherwise be run through URLSearchParams and come
+// out as a set of nonsense keys — a silent mangling rather than a refusal.
 app.post('/tls/trust', function (req, res) {
   log.debug('Entering POST /tls/trust.');
   if (!truststoreOpenToAnybody()) {
@@ -4140,23 +3594,15 @@ app.post('/tls/trust/clear', function (req, res) {
     return res.status(200).type('html').send(pageShell('Truststore',
       '<h1>The truststore is empty</h1>' +
       '<p>' + result.removed + ' anchor(s) removed. No client certificate ' +
-      'verifies here now, and nothing can connect to the listener that ' +
-      'requires one — which is the state this service starts in.</p>' +
+      'verifies here now: one presented to the main port still arrives, and ' +
+      'everything that reads one refuses it — which is the state this ' +
+      'service starts in.</p>' +
       '<p class="sub"><a href="/tls">back to the TLS endpoint</a></p>'));
   }
   res.status(200).json({ removed: result.removed, anchors: 0 });
   log.debug('Leaving POST /tls/trust/clear.');
 });
 
-// ---------------------------------------------------------------------------
-// Starting the listeners.
-//
-// Called from server.js rather than at require time, for the reason the KDC and
-// the directory record: a bind can fail — 8443 and 9443 are ordinary ports, but
-// a second instance of this service is not an unusual thing to have running —
-// and a require that throws takes the whole service down where a route cannot.
-// Callers await `whenReady` rather than reading a port that is not bound yet.
-// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // GET /tls/forwarded — what a reverse proxy told this service, and what was
 // believed of it.
@@ -4173,8 +3619,8 @@ app.post('/tls/trust/clear', function (req, res) {
 // believed any of it, and what the effective base URL — the thing every issuer
 // and every endpoint in both discovery documents is built from — came out as.
 //
-// It lives in this module for the same reason /tls/whoami does: this file's
-// whole content is what the SERVER saw of a connection, and a forwarding header
+// It lives in this module for the same reason /tls/sign-in does: this file's
+// whole subject is what the SERVER saw of a connection, and a forwarding header
 // is what the server was TOLD about a connection it did not see. The difference
 // between those two sentences is the page.
 //
@@ -4264,7 +3710,7 @@ app.get('/tls/forwarded', function (req, res) {
             'in a header is a certificate anybody can write, so believing ' +
             'one would let any client claim any identity — and RFC 8705 ' +
             'binding here reads the certificate off the TLS handshake itself ' +
-            '(see /tls/whoami and mtls.js). A proxy that terminates mTLS in ' +
+            '(see /tls/sign-in and mtls.js). A proxy that terminates mTLS in ' +
             'front of this service therefore cannot pass the certificate ' +
             'through, which is a real limitation rather than an oversight: ' +
             'the alternative is trusting a header.' +
@@ -4336,84 +3782,58 @@ app.get('/tls/forwarded', function (req, res) {
   log.debug('Leaving GET /tls/forwarded. trustProxy=' + trusted);
 });
 
+// ---------------------------------------------------------------------------
+// THIS MODULE BINDS NOTHING SINCE 2026-09-16.
+//
+// It owned two listeners and started them from here, for the reason every
+// socket owner in this service does: a bind can fail, and a `require` that
+// throws takes the whole process down where a route cannot. Both are gone —
+// see the block above `observeConnectionsOn()` — and what is left is a
+// LIBRARY: the certificate, the truststore, the sightings and six routes on
+// the main app.
+//
+// `listen()` and `close()` are kept rather than deleted, because `server.js`
+// and three tests call them, and a socket owner that stops owning a socket
+// should not also change the shape of the module on the same day. `close()`
+// is a no-op; `listen()` binds nothing and reports no ports, and still does
+// the two truststore steps below.
+// ---------------------------------------------------------------------------
 function listen() {
   log.debug('Entering listen().');
-  function start(server, port, label) {
-    log.debug("Entering start().");
-    log.debug("Leaving start().");
-    return new Promise(function (resolve, reject) {
-      function onError(error) {
-        log.debug("Entering onError().");
-        server.removeListener('error', onError);
-        listenError = label + ' on ' + port + ': ' + error.message;
-        log.error(errorCodes.tag('STS-TLS-0025') +
-                  'tls: the ' + label + ' listener could not bind ' + port +
-                  ': ' + error.message);
-        reject(error);
-        log.debug("Leaving onError().");
-      }
-      server.once('error', onError);
-      // `global.host` — the literal '0.0.0.0' until 2026-09-12, so a service
-      // confined to 127.0.0.1 still offered both TLS ports on every interface.
-      server.listen(port, helpers.listenHost().replace(/^\[|\]$/g, ''),
-                    function () {
-        server.removeListener('error', onError);
-        const address = server.address();
-        resolve(address ? address.port : port);
-      });
-    });
-  }
-  // THE STORED ANCHORS COME BACK BEFORE ANYTHING BINDS. `persistence.start()`
-  // has restored the directory by now (server.js awaits it first), so this is
-  // the first moment ou=trustAnchors holds what was written before the
-  // restart — and a listener that bound a moment earlier would accept its first
-  // connections judged by a truststore missing every runtime anchor.
+  // ---------------------------------------------------------------------
+  // IT BINDS NOTHING AND IT IS STILL A STARTUP STEP, WHICH IS THE WHOLE
+  // REASON IT WAS NOT DELETED.
+  //
+  // These two calls were the last thing `listen()` did before binding 8443
+  // and 9443, and they are about the TRUSTSTORE rather than about a socket:
+  //
+  //   * the stored anchors come back. `persistence.start()` has restored the
+  //     directory by the time `server.js` calls this, so this is the first
+  //     moment `ou=trustAnchors` holds what was written before the restart.
+  //     Dropping it — which the first draft of the deletion did — left a
+  //     product service starting with an EMPTY client truststore however many
+  //     anchors its store held, so every certificate that used to verify was
+  //     unverified at the main port and nothing said why.
+  //     `tests/truststore_persistence.js` is what caught it.
+  //   * the context is re-applied whatever that found (2026-09-13): the main
+  //     port and the debugger's listener were created before the certificate
+  //     authority started, so the service Root that
+  //     `issuedClientCertificateAnchor()` adds for the portal's TLS client
+  //     certificates was not there to add.
+  // ---------------------------------------------------------------------
   reloadStoredAnchors();
-  // AND THE CONTEXT IS RE-APPLIED WHATEVER THAT FOUND (2026-09-13). The two
-  // listeners were created at require time, before the certificate authority
-  // started, so the service Root `issuedClientCertificateAnchor()` adds for
-  // the portal's TLS client certificates was not there to add. A listener
-  // re-certified under the hierarchy has already had it re-applied; one serving
-  // a supplied certificate never is, and would otherwise bind without it.
   applyAnchors();
-  // THE PROXY PROTOCOL HEADER COMES OFF BEFORE THE HANDSHAKE (2026-09-14):
-  // installed on the server objects themselves, so the client-certificate
-  // listeners, the `secureConnection` recording and `tlsClientError` all see
-  // the header's address and none of them changed. A no-op when it is off.
-  proxyProtocol.install(permissiveServer, {
-    label: 'the optional-client-certificate listener (' + TLS_PORT + ')',
-    channel: 'tls' });
-  proxyProtocol.install(strictServer, {
-    label: 'the required-client-certificate listener (' + MTLS_PORT + ')',
-    channel: 'tls' });
-  const whenReady = Promise.all([
-    start(permissiveServer, TLS_PORT, 'optional-client-certificate'),
-    start(strictServer, MTLS_PORT, 'required-client-certificate')
-  ]).then(function (ports) {
-    boundTlsPort = ports[0];
-    boundMtlsPort = ports[1];
-    tlsListening = true;
-    mtlsListening = true;
-    log.debug('Leaving listen(). Both listeners are up.');
-    return { tlsPort: boundTlsPort, mtlsPort: boundMtlsPort };
-  });
-  log.debug('Leaving listen(). Binding.');
-  return { whenReady: whenReady };
+  log.info('tls: no listener of this module\'s own to bind — the 8443 and ' +
+           '9443 listeners were deleted on 2026-09-16 and the main port ' +
+           'carries what they did. The client truststore holds ' +
+           anchors.length + ' anchor(s).');
+  log.debug('Leaving listen(). The truststore is current.');
+  return { whenReady: Promise.resolve({}) };
 }
 
 function close() {
   log.debug('Entering close().');
-  try {
-    permissiveServer.close();
-    strictServer.close();
-  } catch (e) {
-    // Closing a listener that never bound throws, and there is nothing useful
-    // to do about it: this exists for tests and for an orderly shutdown.
-    log.debug('close(): ' + e.message);
-  }
-  tlsListening = false;
-  mtlsListening = false;
-  log.debug('Leaving close().');
+  log.debug('Leaving close(). Nothing to close.');
 }
 
 module.exports = {
@@ -4432,7 +3852,7 @@ module.exports = {
   clearAnchors: clearAnchors,
   removeAnchor: removeAnchor,
   // The three the console and the management API reach the truststore
-  // through — see the block above it. `common/protocol_stack.js` hands this to
+  // through — see the block above it. `common/protocol_stack.ts` hands this to
   // `admin.setTruststore()`.
   truststore: truststore,
   // The truststore's durable half: `ldap/ldap_server.js` installs the store
@@ -4445,9 +3865,9 @@ module.exports = {
   trustClientCertificatesOn: trustClientCertificatesOn,
   // What secureContextOptions() would give a listener created elsewhere: the
   // certificates this service presents AND the anchors it verifies clients
-  // against. Exported so that server.js builds its listener from the same
-  // answer this module applies to its own two, rather than assembling a second
-  // one that can drift.
+  // against. Exported so that server.js and the debugger build their
+  // listeners from the same answer applyAnchors() re-applies to them, rather
+  // than assembling a second one that can drift.
   clientTruststoreOptions: secureContextOptions,
   // `tls.minVersion` / `tls.ciphers` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.
@@ -4457,8 +3877,8 @@ module.exports = {
     log.debug("Leaving trustAnchorsFileLoaded().");
     return anchorsFileReport;
   },
-  // See the note above it: the six modules that describe this certificate to
-  // a reader ask here rather than each asserting it is self-signed.
+  // See the note above it: the modules that describe this certificate to a
+  // reader ask here rather than each asserting it is self-signed.
   certificateProvenance: certificateProvenance,
   serverCertificatePem: function () {
     log.debug("Entering serverCertificatePem().");
@@ -4469,8 +3889,8 @@ module.exports = {
   // 636 — see the note above SERVER_CERTIFICATE. Handing a private key to
   // another module in this process is not the same act as publishing one: this
   // key is generated per start, exists only in memory and dies with the
-  // process, exactly like the signing key in helpers.js. Nothing here writes it
-  // to a response; GET /tls/server-certificate publishes the CERTIFICATE alone.
+  // process. Nothing here writes it to a response; GET
+  // /tls/server-certificate publishes the CERTIFICATE alone.
   serverCertificate: function () {
     log.debug("Entering serverCertificate().");
     log.debug("Leaving serverCertificate().");
@@ -4504,7 +3924,7 @@ module.exports = {
       notAfter: SERVER_CERTIFICATE.notAfter
     };
   },
-  // EVERY certificate the listeners present, with its chain and nothing
+  // EVERY certificate the TLS sockets present, with its chain and nothing
   // private (2026-09-13). `serverCertificate()` above answers the FIRST, which
   // is what every existing caller means; an ML-DSA certificate beside it is a
   // leaf of the same TLS Issuing CA now, and this is where that is visible.
@@ -4536,10 +3956,16 @@ module.exports = {
     log.debug("Leaving anchorCount().");
     return anchors.length;
   },
+  // The port a client certificate is presented to, for the pages that say so.
+  // It answered `{ tls, mtls }` — 8443 and 9443 — until both were deleted on
+  // 2026-09-16, and every caller wanted the same thing from it: where do I
+  // send one.
   ports: function () {
     log.debug("Entering ports().");
     log.debug("Leaving ports().");
-    return { tls: boundTlsPort || TLS_PORT,
-             mtls: boundMtlsPort || MTLS_PORT };
-  }
+    return { main: MAIN_PORT };
+  },
+  // Installed by `server.js` on the main HTTPS listener: the sighting, and the
+  // failed-handshake log that is otherwise invisible.
+  observeConnectionsOn: observeConnectionsOn
 };

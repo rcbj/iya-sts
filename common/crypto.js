@@ -1,3 +1,4 @@
+// @ts-check
 // File: common/crypto.js
 //
 // ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@
 // It requires npm packages, `./vendored/xmldsig.js`, and `./config` — and
 // `config.js` requires nothing in this repository, so there is no cycle to
 // close and no route order to disturb. It registers no endpoint, exactly like
-// `oauth-oidc/dpop.js` (rule 3), and it is BELOW `helpers.js` rather than
+// `oauth-oidc/dpop.ts` (rule 3), and it is BELOW `helpers.js` rather than
 // beside it: helpers requires this file for its key generation and its token
 // minting, so this file may never require helpers back. Concretely, that means
 // **nothing here reads `STS`, the ambient realm, or a session** — every
@@ -137,11 +138,13 @@ const log = bunyan.createLogger({
 // installed a real DOM (a test harness, a future jsdom), and quietly replacing
 // it would be the kind of action at a distance that is impossible to find.
 // ---------------------------------------------------------------------------
+// The casts are for the type checker (#50): xmldom's classes are the DOM's
+// in behaviour and not, to the letter, in their declared types.
 if (!global.DOMParser) {
-  global.DOMParser = xmldom.DOMParser;
+  global.DOMParser = /** @type {any} */ (xmldom.DOMParser);
 }
 if (!global.XMLSerializer) {
-  global.XMLSerializer = xmldom.XMLSerializer;
+  global.XMLSerializer = /** @type {any} */ (xmldom.XMLSerializer);
 }
 const xmldsig = require('./vendored/xmldsig.js');
 
@@ -540,7 +543,7 @@ function signQueryString(queryString, privateKeyPem, sigAlg) {
 // ===========================================================================
 //
 // ---------------------------------------------------------------------------
-// THIS SECTION IS MOVED FROM `saml/saml2.js` RATHER THAN REPLACED BY THE
+// THIS SECTION IS MOVED FROM `saml/saml2.ts` RATHER THAN REPLACED BY THE
 // VENDORED encryptXml()/decryptXml(), AND THAT IS A DELIBERATE EXCEPTION TO
 // EVERYTHING SAID AT THE TOP OF THIS FILE. It is worth the paragraph, because
 // the obvious reading of this refactor is that the vendored module always wins.
@@ -561,7 +564,7 @@ function signQueryString(queryString, privateKeyPem, sigAlg) {
 //
 // So this is centralization by MOVE. It was already one implementation with two
 // callers; it is now one implementation in the module where the other three
-// crypto families live, and `saml/saml2.js` re-exports it so WS-Trust's
+// crypto families live, and `saml/saml2.ts` re-exports it so WS-Trust's
 // `?encrypt=1` path is untouched.
 // ---------------------------------------------------------------------------
 
@@ -649,8 +652,8 @@ function transportOptions(transport) {
 // So it is an ordinary optional parameter. Not a sixth inverted slot (root
 // CLAUDE.md rule 3e): a slot costs every reader an indirection and is for a
 // require that would close a cycle or move a route, and a caller that already
-// has the function can simply hand it over. `saml/saml2.js` and
-// `ws-trust/wstrust.js` pass `helpers.logArtifact` and their log output is
+// has the function can simply hand it over. `saml/saml2.ts` and
+// `ws-trust/wstrust.ts` pass `helpers.logArtifact` and their log output is
 // byte-for-byte what it was before this move.
 // ---------------------------------------------------------------------------
 function artifact(opts, what, stage, value) {
@@ -887,7 +890,8 @@ function decryptElement(xml, privateKeyPem, opts) {
                              transport.scheme, transportOptions(transport));
     if (!key || key.length !== cipher.keyBytes) {
       // A WRONG KEY IS THE ORDINARY FAILURE and it is worth naming: this
-      // service regenerates its key on every start, so a service provider that
+      // service regenerates its key on every start in development mode (the
+      // default; product mode keeps it), so a service provider that
       // cached the certificate from a previous run encrypts to a key that no
       // longer exists. Under RSA-1_5 that unwraps to plausible-looking garbage
       // of the wrong length rather than failing, which is the whole reason the
@@ -1005,7 +1009,7 @@ function decryptElement(xml, privateKeyPem, opts) {
 // jsonwebtoken on its own.
 //
 // Those eight are still not counted, which is a documented property rather
-// than an oversight (see `oid4vc/vc_issuer.js` and `ws-trust/wstrust.js`),
+// than an oversight (see `oid4vc/vc_issuer.ts` and `ws-trust/wstrust.ts`),
 // and centralizing the signature does not change it.
 // ---------------------------------------------------------------------------
 // The `jsonwebtoken` sign options this service uses, passed through by name.
@@ -1022,7 +1026,7 @@ const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
 //
 // Every algorithm this service signs with or verifies is a row here, and every
 // module that touches a JWS reads this rather than keeping a table of its own.
-// `oauth-oidc/dpop.js` had the second one — nine rows, node-crypto parameters,
+// `oauth-oidc/dpop.ts` had the second one — nine rows, node-crypto parameters,
 // its own verifier — which is how DPoP came to accept a different set of
 // algorithms from everything else in the service for no reason anybody chose.
 //
@@ -1080,7 +1084,7 @@ const JWS_ALGS = {
 // `kty: 'AKP'` is RFC 9964's key type for all of them, which is also why they
 // are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
 // oct and not for AKP, so a DPoP proof signed with one could not be bound to
-// anything. See oauth-oidc/dpop.js. (RFC 9964 has since defined the
+// anything. See oauth-oidc/dpop.ts. (RFC 9964 has since defined the
 // AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; DPoP still
 // refuses these algorithms by name.)
 pqJose.PQ_ALGS.forEach(function (alg) {
@@ -1553,7 +1557,8 @@ function checkJwtClaims(claims, options) {
   const skew = options.clockTolerance === undefined ? tokenClockSkew()
                                                     : options.clockTolerance;
   if (claims.exp !== undefined && now > Number(claims.exp) + skew) {
-    const e = new Error('jwt expired');
+    // `any` because `expiredAt` is jsonwebtoken's member, not Error's.
+    const e = /** @type {any} */ (new Error('jwt expired'));
     e.name = 'TokenExpiredError';
     e.expiredAt = new Date(Number(claims.exp) * 1000);
     log.debug('Leaving checkJwtClaims(). Expired.');
@@ -1681,7 +1686,7 @@ function verifyJwsAsync(token, key, opts) {
 // ===========================================================================
 //
 // ---------------------------------------------------------------------------
-// WRITTEN OUT BY HAND, AND THAT IS KEPT ON PURPOSE. `oid4vc/vc_issuer.js` made
+// WRITTEN OUT BY HAND, AND THAT IS KEPT ON PURPOSE. `oid4vc/vc_issuer.ts` made
 // the argument where this code used to live and it still holds: OID4VCI
 // section 10 is a Credential Issuer and a Wallet encrypting to each other, and
 // having the steps visible — the content key, the wrap, the AAD, the tag — is
@@ -1692,12 +1697,15 @@ function verifyJwsAsync(token, key, opts) {
 // notion of what an `enc` value means. They are together here, over one table,
 // so a third algorithm is one row rather than two edits that have to agree.
 //
-// `common/vendored/jose_jwe.js` is the obvious alternative and is deliberately
-// not used: its own header says it exists so that OID4VCI's two ends do not
-// each implement the Concat KDF — and this service uses neither ECDH-ES nor the
-// KDF, only RSA-OAEP-256 with AES-GCM, which is the part of JWE with no room
-// for two readings to disagree. That file stays vendored for `key_material.js`
-// and `x509.js`, which SPIFFE reaches through.
+// `common/vendored/jose_jwe.js` is the obvious alternative and is not used
+// here. This paragraph used to justify that by saying this service used
+// neither ECDH-ES nor the Concat KDF, only RSA-OAEP-256 with AES-GCM — which
+// stopped being true when the table below grew to RFC 7518 section 4 entire
+// (2026-09-10): ECDH-ES and its KDF are implemented in this file
+// (`concatKdf()`), so the two-implementations risk that module's header warns
+// about is real and is answered by the interop tests rather than avoided.
+// That file stays vendored for `key_material.js` and `x509.js`, which require
+// it and which SPIFFE and `pki.js` reach through.
 // ---------------------------------------------------------------------------
 
 // The content encryption algorithms this service speaks, in both families RFC
@@ -2079,8 +2087,10 @@ function wrapCek(alg, recipientJwk, cek, header) {
       // Section 4.7: AES-GCM over the CEK, with the IV and the tag carried in
       // the header rather than in the encrypted_key segment.
       const iv = nodeCrypto.randomBytes(12);
-      const cipher = nodeCrypto.createCipheriv('aes-' + (kek.length * 8) +
-                                               '-gcm', kek, iv);
+      // A GCM cipher; the name is built, so the checker cannot see the mode.
+      const cipher = /** @type {import('crypto').CipherGCM} */ (
+        nodeCrypto.createCipheriv('aes-' + (kek.length * 8) + '-gcm', kek,
+                                  iv));
       const wrapped = Buffer.concat([cipher.update(cek), cipher.final()]);
       header.iv = b64u(iv);
       header.tag = b64u(cipher.getAuthTag());
@@ -2216,9 +2226,11 @@ function unwrapCek(header, encryptedKey, options, spec) {
           'section 4.7.1); this one has ' +
           (header.iv ? 'no tag' : (header.tag ? 'no iv' : 'neither')) + '.');
       }
-      const decipher = nodeCrypto.createDecipheriv(
-        'aes-' + (kek.length * 8) + '-gcm', kek,
-        Buffer.from(String(header.iv), 'base64url'));
+      // A GCM decipher; the name is built, so the checker cannot see the mode.
+      const decipher = /** @type {import('crypto').DecipherGCM} */ (
+        nodeCrypto.createDecipheriv('aes-' + (kek.length * 8) + '-gcm', kek,
+                                    Buffer.from(String(header.iv),
+                                                'base64url')));
       decipher.setAuthTag(Buffer.from(String(header.tag), 'base64url'));
       const out = Buffer.concat([decipher.update(encryptedKey),
                                  decipher.final()]);
@@ -2300,7 +2312,8 @@ function unwrapCek(header, encryptedKey, options, spec) {
 //   allowedEnc    the `enc` values this endpoint accepts. Required.
 //   expectedKid   when set, the header's kid must equal it. Checking it is
 //                 what makes key rotation DETECTABLE: this service regenerates
-//                 its keys on every start, so a wallet holding a stale one is
+//                 its keys on every start in development mode (and on a
+//                 rotation in product mode), so a wallet holding a stale one is
 //                 told exactly that instead of getting an opaque decryption
 //                 failure it will blame on its own code.
 //
@@ -2423,11 +2436,12 @@ function decryptJweCompact(compact, opts) {
 // ---------------------------------------------------------------------------
 // A CERTIFICATE SERIAL NUMBER, AND WHY IT CANNOT BE THE CONSTANT IT WAS.
 //
-// Every certificate this service mints is self-signed, regenerated on every
-// start, and carries a subject that never varies — `CN=localhost, O=sts`
-// for the listeners' one. The serial was a CONSTANT beside all that: '02' for
-// the signing key, '03' for the TLS server certificate, '04' for the ML-DSA
-// one. So two starts of this service produced two DIFFERENT KEYS under one
+// Every certificate this service minted was — until every key pair became a
+// leaf of `common/pki.js` on 2026-09-11 — self-signed, regenerated on every
+// start, and carried a subject that never varied: `CN=localhost, O=sts` for
+// the listeners' one. The serial was a CONSTANT beside all that: '02' for the
+// signing key, '03' for the TLS server certificate, '04' for the ML-DSA one.
+// So two starts of this service produced two DIFFERENT KEYS under one
 // (issuer, serial) pair, and that pair is the primary key NSS files a
 // certificate under.
 //
@@ -2494,7 +2508,7 @@ function certificateSerial(prefixHex) {
 // two callers want disjoint sets and a third will want a third — modelling it
 // would be inventing a certificate profile language for two users.
 //
-// A THIRD generator is deliberately NOT folded in: `spiffe/spiffe_ca.js` issues
+// A THIRD generator is deliberately NOT folded in: `spiffe/spiffe_ca.ts` issues
 // through `common/vendored/x509.js` because **node-forge cannot sign with an EC
 // key at all** and SPIFFE issues P-256. That is a capability gap, not a
 // duplication, and `common/vendored/CLAUDE.md` records it.
@@ -2594,7 +2608,7 @@ function selfSignedRsaCertificate(opts) {
 // NODE-FORGE CANNOT DO ANY OF THIS. It has no ML-DSA, cannot parse a
 // certificate whose signature algorithm it does not know, and cannot sign with
 // a key it cannot represent — which is the same capability gap
-// `spiffe/spiffe_ca.js` records for EC keys, one algorithm generation later.
+// `spiffe/spiffe_ca.ts` records for EC keys, one algorithm generation later.
 // ---------------------------------------------------------------------------
 const ML_DSA_OIDS = {
   'ml-dsa-44': '2.16.840.1.101.3.4.3.17',
@@ -2696,7 +2710,8 @@ function selfSignedMlDsaCertificate(opts) {
                     'post-quantum JOSE algorithms are unaffected: they come ' +
                     'from @noble/post-quantum and need nothing of OpenSSL.');
   }
-  const pair = nodeCrypto.generateKeyPairSync(algorithm);
+  // `any`: the algorithm is a variable, and the overloads want literals.
+  const pair = /** @type {any} */ (nodeCrypto.generateKeyPairSync)(algorithm);
   const spkiDer = pair.publicKey.export({ type: 'spki', format: 'der' });
 
   function bufferOf(bytes) {
@@ -2749,6 +2764,7 @@ function selfSignedMlDsaCertificate(opts) {
   function extension(extnOid, critical, valueAsn1) {
     log.debug("Entering extension().");
     const der = new Uint8Array(valueAsn1.toBER(false));
+    /** @type {any[]} */
     const value = [new asn1js.ObjectIdentifier({ value: extnOid })];
     if (critical) value.push(new asn1js.Boolean({ value: true }));
     value.push(new asn1js.OctetString({ valueHex: bufferOf(der) }));
@@ -2882,9 +2898,9 @@ function stripPem(pem) {
 // RFC 7638 JWK THUMBPRINT.
 //
 // THERE WERE THREE OF THESE, which is one more than the audit that started this
-// work had found: `oauth-oidc/dpop.js` (hand-built canonical JSON, full member
-// table), `spiffe/spiffe_ca.js` (JSON.stringify over an object literal whose
-// keys happen to be in lexicographic order) and `oid4vc/vc_issuer.js` (the same
+// work had found: `oauth-oidc/dpop.ts` (hand-built canonical JSON, full member
+// table), `spiffe/spiffe_ca.ts` (JSON.stringify over an object literal whose
+// keys happen to be in lexicographic order) and `oid4vc/vc_issuer.ts` (the same
 // trick, RSA only, inline in a key-generation IIFE).
 //
 // All three were correct. That is precisely the problem: RFC 7638 is a
@@ -2996,7 +3012,7 @@ function jwkThumbprintUri(jwk) {
 // `x5t#S256` at the far end — and that is nonetheless perfectly stable, so it
 // agrees with itself everywhere this service reports it and disagrees only with
 // the handshake. It was published on GET /admin/ldap/service and in /tls's
-// views as the certificate 636, 8443 and 9443 present.
+// views as the certificate 636 and the main port present.
 //
 // The first certificate is the leaf, which is what those sockets present and
 // what every consumer of a chain reads; the rest are the path to it.
@@ -3064,7 +3080,7 @@ function constantTimeEquals(a, b) {
 // value is an HMAC truncated to N digits, and an HMAC is a keyed signature —
 // so this is the fourth thing this service signs with, and the rule this
 // module was written to enforce is that there is one place it happens. A
-// `createHmac` in `common/totp.js` would be the fifth call site of a
+// `createHmac` in `common/totp.ts` would be the fifth call site of a
 // cryptographic primitive outside the one module that is supposed to hold
 // them all, and the argument against that is the same argument the six XML
 // signers lost in 2026-08-27.
@@ -3073,7 +3089,7 @@ function constantTimeEquals(a, b) {
 // other pair in this file makes: this function is handed a key, a counter and
 // a shape, and it answers with digits. It does not know what a time step is,
 // how wide a skew window an operator allows, whether a code has been spent
-// before, or what base32 is. `common/totp.js` owns all four, because all four
+// before, or what base32 is. `common/totp.ts` owns all four, because all four
 // are decisions about a deployment rather than about an algorithm — which is
 // why that module can be read for the mechanism's behaviour and this one for
 // its arithmetic.
@@ -3269,8 +3285,8 @@ function scryptParameters() {
   log.debug("Leaving scryptParameters().");
   return { N: n, r: r, p: p, keylen: SCRYPT_KEYLEN,
            // RFC 7914's memory is 128 * N * r (plus 128 * r * p for the
-           // parallel blocks); doubled for headroom exactly as the constant
-           // above is, so node never refuses a cost this file chose.
+           // parallel blocks); doubled for headroom exactly as the retired
+           // constant was, so node never refuses a cost this file chose.
            maxmem: 2 * 128 * r * (n + p) };
 }
 
@@ -3578,10 +3594,7 @@ function decryptWithKek(kek, stored, label) {
                                                Buffer.from(subkey), iv);
   decipher.setAuthTag(tag);
   // THROWS ON A BAD TAG, and that is the whole point of GCM here: the caller
-  // gets an error rather than the wrong key. `keystore.js` turns it into a
-  // fatal at startup, because a service that cannot read its own signing key
-  // must not come up generating a new one and silently invalidating every token
-  // it ever issued.
+  // gets an error rather than the wrong key.
   // **THE `final()` IS WRAPPED SO THAT A BAD TAG IS COUNTED AND STILL
   // THROWS.** The throw is the whole point of GCM here and must not be
   // softened into a return: `keystore.js` turns it into a fatal at startup,
@@ -3651,17 +3664,19 @@ function decryptWithKek(kek, stored, label) {
 // purpose from being the credential for another if a second caller ever
 // appears.
 // ---------------------------------------------------------------------------
-function deriveSharedCredential(secret, label) {
+// `...parts` rather than `arguments` (#50): the same inputs, in the same
+// order, and a signature the type checker can read.
+function deriveSharedCredential(secret, label, ...parts) {
   log.debug('Entering deriveSharedCredential(). label=' + label);
   const mac = nodeCrypto.createHmac('sha256', Buffer.from(String(secret || ''),
                                                           'utf8'));
   mac.update(String(label || ''), 'utf8');
-  for (let i = 2; i < arguments.length; i++) {
+  for (let i = 0; i < parts.length; i++) {
     // A SEPARATOR THAT CANNOT APPEAR IN A PART. Without one, ('ab', 'c') and
     // ('a', 'bc') derive the same credential, which is the ordinary way a
     // concatenated MAC input goes wrong.
     mac.update('\u0000', 'utf8');
-    mac.update(String(arguments[i] == null ? '' : arguments[i]), 'utf8');
+    mac.update(String(parts[i] == null ? '' : parts[i]), 'utf8');
   }
   log.debug('Leaving deriveSharedCredential().');
   return b64u(mac.digest());
@@ -3767,9 +3782,9 @@ function hashSecretAsync(plaintext, opts) {
   return deriveAsync(plaintext, spec, opts).then(function (derived) {
     return encodeStoredSecret(spec.N, spec.r, spec.p, salt, derived);
   }, function (e) {
-    // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block on
-    // deriveAsync() below for why that is the right answer rather than a
-    // fallback that hides something.
+    // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block in
+    // verifySecretAsync() below for why that is the right answer rather than
+    // a fallback that hides something.
     log.warn(errorCodes.tag('STS-KEYS-0006') +
              'crypto: the worker pool could not derive a password hash and ' +
              'it is being computed in this process instead: ' + e.message);
@@ -3885,8 +3900,8 @@ module.exports = {
   verifyJwsAsync: verifyJwsAsync,
   verifyCompactJwsAsync: verifyCompactJwsAsync,
   tokenClockSkew: tokenClockSkew,
-  // --- JWE ---
-  // The one JWS algorithm table and the operations built on it.
+  // The one JWS algorithm table and the operations built on it (the JWE
+  // exports follow from JWE_ALG down).
   b64u: b64u,
   JWS_ALGS: JWS_ALGS,
   JWS_SIGNING_ALGS: JWS_SIGNING_ALGS,
@@ -3937,7 +3952,7 @@ module.exports = {
   constantTimeEquals: constantTimeEquals,
   // --- one-time passwords (RFC 4226 section 5.3) ---
   // The primitive only. The time step, the skew window, the replay guard and
-  // base32 are `common/totp.js`'s, for the reason written above hotpCode().
+  // base32 are `common/totp.ts`'s, for the reason written above hotpCode().
   HOTP_ALGS: HOTP_ALGS,
   hotpSpec: hotpSpec,
   hotpCode: hotpCode,

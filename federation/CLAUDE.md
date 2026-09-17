@@ -5,16 +5,16 @@ Federation relationships: this service as either end of one, in five protocols.
 | File | What it is |
 |---|---|
 | `federation.js` | **The register.** The schema, the two conversions, the CRUD, the counters, the release filter, and the broker resolver (`identityProviderFor()` / `authenticationFor()` / `usableServiceProvider()`). A library (rule 3): it registers nothing. Directory-backed — `ou=federations` IS the store. |
-| `federation_map.js` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.js`**, which draws the picture — the near-collision is why that file is not called `federation_map.js` too. |
-| `federation_graph.js` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
-| `federation_http.js` | **The only outbound request in this repository.** A library, and the narrowest one here. |
-| `federation_sp.js` | The four endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued. |
+| `federation_map.ts` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.ts`**, which draws the picture — the near-collision is why that file is not called `federation_map.ts` too. |
+| `federation_graph.ts` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
+| `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. |
+| `federation_sp.ts` | The four endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued. |
 
 ---
 
 ## THE ONE FEATURE HERE THAT REFUSES BY DEFAULT, AND WHY THAT IS NOT A GAP
 
-Read the rest of this repository first and every refusal in `federation_sp.js`
+Read the rest of this repository first and every refusal in `federation_sp.ts`
 looks like something to relax. `README.md` and every directory `CLAUDE.md` say
 the same thing: this service checks no password, validates no access token and
 attests no workload. `/oauth2/token` mints a token for any username. `/saml2/sso`
@@ -65,29 +65,32 @@ Nothing about the person is checked. A directory entry is created for them.
 
 It registers no route, so it cannot join a cycle and its position in the require
 order is not a position at all. That property is load-bearing rather than
-incidental: **five modules reach it, and two of them could not reach anything
-heavier.**
+incidental: **several modules reach it, and two of them could not reach
+anything heavier.**
 
 | Who requires it | Why | Rule 3e's test |
 |---|---|---|
 | `common/admin_stats.js` | the release filter, at `jwtClaims()` and `samlAttributes()` | passes both ways: no route moves, no cycle closes |
-| `authn/authn.js` | the partner buttons on the sign-in screen | same, and see below |
-| `admin-ui/admin.js` | `/admin/federation` | same |
+| `authn/authn.ts` | the partner buttons on the sign-in screen | same, and see below |
+| `admin-ui/admin.ts` | `/admin/federation` | same |
+| `admin-core/admin_views.ts`, `admin_actions.js` | what `/admin/federation` and `/admin-api` show and do | same; they register nothing either |
 | `ldap/ldap_server.js` | fills `setDirectory()` at its own require time | the ordinary direction, exactly as `applications.js` |
-| `federation/federation_graph.js` | the graph `/admin/federation/map` is drawn from | the easiest of the five: it registers no route itself, and there is nothing in it this module wants |
+| `federation/federation_graph.ts` | the graph `/admin/federation/map` is drawn from | the easiest of them: it registers no route itself, and there is nothing in it this module wants |
+| `federation/federation_sp.ts` | the register the four endpoints serve | the ordinary direction; see 4b |
 
 ### AND IT REQUIRES ONE THING BACK — `common/applications.js`, since 2026-08-26
 
 This paragraph used to say the module requires only `config.js`, `helpers.js`
-and `audit.js`. It requires the applications registry as well now, and the
+and `audit.js`. It requires `realms.js`, `error_codes.js` and the applications
+registry as well now, and the
 direction is worth stating because rule 3o is otherwise entirely about who
 requires THIS.
 
 It is a plain require in the ordinary direction rather than a slot, and rule
 3e's test is not reached in either direction: `applications.js` registers no
-route, and it requires only `config.js`, `helpers.js` and `audit.js` — none of
-which reaches back here — so nothing about requiring it can close a cycle or
-move a route. A slot would have cost a reader an indirection for nothing. It is
+route, and none of what it requires (`config.js`, `helpers.js`, `realms.js`,
+`audit.js`, `roles.js`, `keystore.js` and leaves) reaches back here — so nothing
+about requiring it can close a cycle or move a route. A slot would have cost a reader an indirection for nothing. It is
 the same argument `admin_stats.js` makes above its own require of that file.
 
 **What it is for is ONE question and only one**: *is this application actually
@@ -95,8 +98,8 @@ configured to authenticate through this relationship, right now?* — asked at t
 moment a per-application use is recorded. See `fedApplicationUse` below, where
 the reason it has to be asked at all is the interesting half.
 
-**`authn.js` requires this and NOT `federation_sp.js`, and that direction is the
-arrangement rather than an accident.** `federation_sp.js` requires `authn.js` —
+**`authn.js` requires this and NOT `federation_sp.ts`, and that direction is the
+arrangement rather than an accident.** `federation_sp.ts` requires `authn.js` —
 it has no sign-in screen of its own and calls `startSession()` directly — so a
 require back from `authn.js` to that module would close a cycle. The register in
 the middle is what both halves can safely reach, and it is why `PATHS` lives in
@@ -115,8 +118,8 @@ Neither knows the other's half.
 ### `PATHS` is in the library and not beside the routes
 
 Three things need `/federation/acs/{id}` and only one of them may require the
-module that serves it. `admin-ui/admin.js` must not — `server.js` loads
-`federation_sp.js` at position 10c, BEFORE the console, and a require in the
+module that serves it. `admin-ui/admin.ts` must not — `common/protocol_stack.ts`
+loads `federation_sp.ts` at position 10c, BEFORE the console, and a require in the
 other direction would be the reason a route moved the day somebody reorders the
 two. But the console page's whole job is to tell an operator **which URL to
 configure at the partner**.
@@ -129,9 +132,9 @@ a 404 with nothing to point at.
 
 ---
 
-## 4b. `federation_sp.js` MUST COME AFTER `authn/authn.js`
+## 4b. `federation_sp.ts` MUST COME AFTER `authn/authn.ts`
 
-The same dependency `saml2_sso.js` and `saml11_sso.js` have, and **stronger than
+The same dependency `saml2_sso.ts` and `saml11_sso.ts` have, and **stronger than
 either**. Those two have no sign-in screen of their own and reach one through
 `beginAuthentication()`. This one does not go through that either: a federated
 sign-in ends by calling `startSession()` **directly**, because the person has
@@ -195,7 +198,7 @@ permissive, and each of the three was permissive:
 3. **THE PARTNER'S AUTHENTICATION CONTEXT** was read and thrown away
    (`amr: amr.length ? ['federated'] : ['federated']`). `federatedAmr()` keeps
    `federated` FIRST — the fact about what this service did — and the partner's
-   values behind it; a SAML partner's class travels on `acr`. `saml/authn_context.js`
+   values behind it; a SAML partner's class travels on `acr`. `saml/authn_context.ts`
    reads both, so a SAML assertion this service re-issues for a federated session
    carries the partner's class rather than a password. **A federated OpenID
    session's `amr` changed from the partner's list to `['federated', …that list]`**,
@@ -217,8 +220,8 @@ refusal would now reject.
 (5000; 0 rebuilds per token), `federation.maxResponseBytes` (262144, read once per
 request), `federation.jwtAlgorithms` (the old fixed list, intersected with the
 key's family so it can never add `none` or an HMAC), `federation.spNameIdFormat`.
-A signed outbound AuthnRequest reads `saml.signatureAlgorithm`. `saml/sp_metadata.js`
-now asks `federation_http.js` for the outbound policy — the kill switch, the scheme
+A signed outbound AuthnRequest reads `saml.signatureAlgorithm`. `saml/sp_metadata.ts`
+now asks `federation_http.ts` for the outbound policy — the kill switch, the scheme
 rule and the certificate switch — rather than keeping a copy that had drifted.
 
 `tests/saml_family_hardcoded.js` section F pins the audience rule both ways, the
@@ -227,7 +230,7 @@ OR/AND reading, `fedLocalEntityId`, `federatedAmr()`, the algorithm narrowing an
 
 ## THE SERVICE-PROVIDER HALF: SIX DECISIONS
 
-These are in `federation_sp.js`'s header at length. The short forms, and the one
+These are in `federation_sp.ts`'s header at length. The short forms, and the one
 line each that matters:
 
 1. **The person is authenticated through `authn.js`, not here.** This module
@@ -291,7 +294,7 @@ the first one in the document. A Response carrying a signed Assertion has two,
 and taking whichever came first is how a check ends up verifying the wrong
 element — and reporting success for a document whose assertion was swapped.
 
-The `idAttribute` argument WAS `wsfed.js`'s trap, made again: SAML 1.1's is
+The `idAttribute` argument WAS `wsfed.ts`'s trap, made again: SAML 1.1's is
 `AssertionID`, which xml-crypto did not look for; and passing `idAttribute:
 'ID'` for SAML 2.0, where it was already a default, made xml-crypto refuse a
 perfectly good document with a signature-wrapping error. **Symmetry between the
@@ -363,7 +366,7 @@ last hop ever draws a password field.
 
 ### `spnego` IS THE ONE THAT IS NEITHER THIS SERVICE'S SCREEN NOR SOMEBODY ELSE'S
 
-Added 2026-08-26 with `kerberos/spnego_authn.js`, and it is worth its own note
+Added 2026-08-26 with `kerberos/spnego_authn.ts`, and it is worth its own note
 because it breaks the shape the other four share. Three of them are a page
 here; the fourth is a redirect to a partner. This one is a **credential the
 browser already holds** — so a SAML 2.0 partner asking this service to
@@ -482,7 +485,7 @@ document about a PERSON — it names the partner, the subject and the attributes
 and there is no field in any of the five protocols for the application at THIS
 end. `authn.js` knows the pair at the moment it sends the browser away and never
 again. So the application id rides on the request context beside `returnTo`
-(`federation_sp.js`'s decision 3, one more field), and `completeSignIn()` spends
+(`federation_sp.ts`'s decision 3, one more field), and `completeSignIn()` spends
 it. **Both halves are one function now** — `fromContext()` — because five call
 sites build the result `completeSignIn()` is handed and five copies of
 `returnTo: (context && context.returnTo) || ''` is five places to remember and
@@ -552,7 +555,7 @@ directly; or a sign-in named an application that is not configured for this
 relationship and was refused a row.
 
 None of those is a fault, and every one of them makes a column of numbers fail
-to add up on a page about counting. `federation_graph.js` therefore reports
+to add up on a page about counting. `federation_graph.ts` therefore reports
 `attributed` and `unattributed` beside the total, and `/admin/federation/map`
 prints the remainder rather than leaving a reader to spot it. **Clamped at
 zero**, because `ldapmodify` is a door onto these attributes like any other and
@@ -563,7 +566,7 @@ the first.
 
 ## `/admin/federation/map`: THE REGISTER AS A PICTURE, AND THE ARROW IS THE REQUEST
 
-`federation_graph.js` builds the model and `../admin-ui/federation_diagram.js`
+`federation_graph.ts` builds the model and `../admin-ui/federation_diagram.ts`
 draws it; `admin.js` registers the route. The split is `delegation.js` /
 `delegation_map.js`'s exactly, and for the same reason: what a box IS belongs to
 whoever knows the registers, and it is the one question a layout engine has no
@@ -612,7 +615,7 @@ assert that nobody has ever signed in for the partner, in the same column that
 means exactly that two rows up.
 
 **IT ADDS NO SCRIPT**, and the argument is made again from scratch in
-`../admin-ui/federation_diagram.js` rather than cited from the delegation
+`../admin-ui/federation_diagram.ts` rather than cited from the delegation
 picture — the root `CLAUDE.md`'s rule about a refused candidate is exactly that
 "the same as the page next door" is not an argument, and that the second refusal
 is not cheaper than the first.
@@ -679,15 +682,15 @@ between two jobs in a pool is a flake rather than a failure.
 
 ---
 
-## `federation_http.js`: THE ONLY OUTBOUND REQUEST, AND HOW THE OLD POSITION SURVIVES
+## `federation_http.ts`: THE ONLY OUTBOUND REQUEST, AND HOW THE OLD POSITION SURVIVES
 
-Nothing else in this repository has ever dialled anything, and that was a
-position taken twice and argued in both places:
+Nothing in this repository had dialled anything before this module, and that
+was a position taken twice and argued in both places:
 
 * `oauthJwksUri` on an application entry is **recorded and never fetched** —
   `applications.js`'s schema row calls following it "a server-side request
   forgery with a specification citation attached";
-* WS-Federation's `wreqptr` gets the same refusal in `wsfed.js`, and
+* WS-Federation's `wreqptr` gets the same refusal in `wsfed.ts`, and
   `client_auth.js` says holding that position in one file and not the other
   would be no position at all.
 
@@ -724,17 +727,19 @@ arrives is trusted** — this module returns parsed JSON and a status and makes 
 judgement, because a fetcher that also validated is where both halves of a check
 end up half-written.
 
-**IT IS THE FIRST OF THREE OUTBOUND REQUESTS in this repository**, in a module
-of its own that will not take a URL from anywhere but a relationship entry. It
-is the STRONGEST of the three and the other two each argue their own case rather
-than citing it — SSF's is `ssf/ssf_http.js` and XACML's nudge is
-`xacml/xacml_pep_http.js`.
+**IT IS THE FIRST OF THIS REPOSITORY'S OUTBOUND REQUESTS**, in a module of its
+own that will not take a URL from anywhere but a relationship entry. It is the
+STRONGEST of them and the others each argue their own case rather than citing
+it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`,
+and the embedded debugger's api, the RFC 9728 import and a registered RFC 9101
+`request_uri` are indexed in the root `CLAUDE.md`'s *Things this service
+deliberately does not do*.
 
 ---
 
-## `federation_map.js`: THE OIDC HALF IS DERIVED, NOT WRITTEN
+## `federation_map.ts`: THE OIDC HALF IS DERIVED, NOT WRITTEN
 
-`../oid4vc/vc_claims.js`'s `VC_ATTRIBUTES` already carries, for every LDAP
+`../oid4vc/vc_claims.ts`'s `VC_ATTRIBUTES` already carries, for every LDAP
 attribute this service knows how to put on a person, the OpenID Connect claim
 name it corresponds to — the credential issuer needed exactly that mapping in
 the other direction. Writing a second table here would be writing the same
@@ -840,10 +845,11 @@ for nothing at all.
 
 ## WHAT A FEDERATED SIGN-IN WRITES, AND THE ONE FUNNEL IT GOES THROUGH
 
-`completeSignIn()` does five things in an order that is not arbitrary: map, then
-the identity funnel, then the relationship's counters, then the partner's
-application record, then the session — **last**, because it is the thing that has
-an effect outside this process and everything above it is a record of why.
+`completeSignIn()` does four things in an order that is not arbitrary: map, then
+the relationship's counters, then the partner's application record, then the
+session — **last**, because it is the thing that has an effect outside this
+process and everything above it is a record of why. The identity funnel runs
+inside that last step, as the next paragraph explains.
 
 **It calls `authn.startSession()` and NOT `stats.recordAuthentication()`.** It
 was written the other way round first and produced TWO authentication records
@@ -938,15 +944,16 @@ because doing it silently would be this repository teaching the mistake.
 
 ---
 
-## NO CSP RELAXATION, AND THE SIXTH SCRIPTED PAGE THAT IS NOT
+## NO CSP RELAXATION, AND THE SCRIPTED PAGE THAT IS NOT
 
-`app.js` sets `script-src 'none'` for the whole service, and six pages relax it
-by naming one resource. **This feature adds none.**
+`app.js` sets `script-src 'none'` for the whole service, and seven pages relax
+it by naming one resource (the root `CLAUDE.md` lists them). **This feature adds
+none.**
 
 The obvious candidate is the outbound HTTP-POST binding, which everywhere else
 in this service auto-submits. It is a REAL FORM WITH A REAL BUTTON here, and the
-difference from the six is the argument rather than an oversight: those
-auto-submit because the person has already decided and a click would be
+difference from the auto-submitting ones is the argument rather than an
+oversight: those auto-submit because the person has already decided and a click would be
 ceremony. This one is a person **leaving this service for a foreign identity
 provider**, which is exactly the moment a deliberate click is worth having.
 
@@ -990,7 +997,7 @@ asserts module contracts in process and drives nothing.
 **WHAT THE MOVE GAVE UP, said plainly.** The old stack had two DNS names and two
 origins, so it could prove the front-channel / back-channel distinction — a URL
 a BROWSER follows against a URL this SERVICE dials — which is the hard part of
-federating between containers and is the thing `federation_http.js` exists to
+federating between containers and is the thing `federation_http.ts` exists to
 get right. Two realms on one origin cannot make that distinction at all. What it
 bought is that the test now runs in the ordinary suite, on every stack, in about
 four seconds, instead of in a stack somebody has to remember to bring up.
@@ -1071,7 +1078,7 @@ still the parent's to write):
   `aud`**, the **wrong `iss`**, and the **wrong `nonce`**;
 * the OAuth 2.0 branch with an opaque token and no `fedUserinfoUrl`, which must
   refuse rather than sign somebody in as nobody;
-* every refusal in `federation_http.js`: outbound off, an `http://` URL with
+* every refusal in `federation_http.ts`: outbound off, an `http://` URL with
   the setting off, a redirect, an oversized body, a timeout, and an attribute
   name outside `DIALLABLE`;
 * a relationship **disabled**, and one **enabled and half-configured** — which
@@ -1095,7 +1102,7 @@ the custom claims, and **the protocol's own claims are untouched in both
 cases** — that third one is what catches a "simplification" that filters the
 whole payload.
 
-Drive it the way `tests/sts_dpop.js` is driven: write the partner side rather
+Drive it the way `tests/vendored/sts_dpop.js` is driven: write the partner side rather
 than importing this one. If both ends of the exchange came from this
 implementation, a shared misunderstanding about, say, which element the
 signature covers would pass and interoperate with nobody — and on this surface
@@ -1184,7 +1191,7 @@ maps them to** — `fedUsernameSource` (a `preferred_username` or an `email`), o
 subject. **A partner's `urn:uuid:` subject becomes `sub-<uuid>`** and is never looked up in
 this directory: it names an entry in the PARTNER's namespace, and resolving it here would
 file the person under a raw URN or, worse, find a local person holding that value
-(`federation_map.js`'s `usernameFor()`). Another instance of this service issues exactly
+(`federation_map.ts`'s `usernameFor()`). Another instance of this service issues exactly
 that form, so a relationship to one wants `fedUsernameSource` set.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms

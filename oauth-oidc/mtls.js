@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: mtls.js
@@ -40,10 +41,12 @@
 // certificate. On this service that means `global.https` — which RFC 9700 mode
 // turns on — because the main listener is where `/oauth2/token` lives, and
 // `server.js` sets `requestCert: true, rejectUnauthorized: false` on it: asked
-// for, never required, exactly the posture port 8443 has. A client that
-// presents none gets an ordinary Bearer or DPoP-bound token and nothing about
-// its behaviour changes, which is what keeps this invisible to every caller
-// that does not use it.
+// for, never required, which since 2026-09-16 is this service's only
+// posture — the 8443 and 9443 listeners are gone, and every client
+// certificate arrives on the main port. A client that presents none gets an
+// ordinary Bearer or DPoP-bound token and nothing about its behaviour
+// changes, which is what keeps this invisible to every caller that does not
+// use it.
 //
 // `rejectUnauthorized: false` is worth being precise about, because it looks
 // like a hole and is not: a certificate that did not build a chain to a trusted
@@ -64,11 +67,12 @@
 //
 // ---------------------------------------------------------------------------
 // It is a LIBRARY like `dpop.js` (rule 3): it registers no route and requires
-// only `helpers.js` and `config.js`, so it cannot join a cycle and its position
-// in the require order does not matter. `dpop.js` requires it, because
-// `presentedAccessToken()` there is the single check the four protected
-// endpoints share and a second one beside it would be a fourth caller nobody
-// updated.
+// only `helpers.js`, `config.js` and `common/crypto.js` — plus
+// `common/tls_client_certificates.js` lazily, in `peerVerified()` — so it
+// cannot join a cycle and its position in the require order does not matter.
+// `dpop.js` requires it, because `presentedAccessToken()` there is the single
+// check every protected endpoint shares and a second one beside it would be
+// another caller nobody updated.
 // ===========================================================================
 
 const crypto = require('crypto');
@@ -94,7 +98,7 @@ function peerCertificate(req) {
   const socket = req && req.socket;
   if (!socket || typeof socket.getPeerCertificate !== 'function') {
     // A plain HTTP connection. Not an error and not worth a log line per
-    // request: it is the ordinary case for this service's default listener.
+    // request: it is the ordinary case whenever `global.https` is off.
     log.debug("Leaving peerCertificate().");
     return null;
   }
@@ -153,10 +157,11 @@ function peerVerified(req) {
   // function is synchronous. **A REVOKED CERTIFICATE IS NOT VERIFIED**, which
   // is what every validator that checks means by the word — so every caller
   // that resolves a certificate to an identity through here (the remote XACML
-  // PEP chain and the XACML user chain) refuses it without learning a new
-  // question. It is read ONLY for a chain that verified: an unverified one is
-  // refused already, and its reason is the more useful one to report.
-  // `revocation` is carried out whole so a caller can mark the right code.
+  // PEP chain, the XACML user chain and RFC 8705's `tls_client_auth` in
+  // `client_auth.js`) refuses it without learning a new question. It is read
+  // ONLY for a chain that verified: an unverified one is refused already, and
+  // its reason is the more useful one to report. `revocation` is carried out
+  // whole so a caller can mark the right code.
   const revocation = req.certificateRevocation || null;
   if (socket.authorized && revocation && revocation.refused) {
     log.debug("Leaving peerVerified(). Verified, and refused on revocation.");
@@ -170,14 +175,14 @@ function peerVerified(req) {
     };
   }
   // A CHAIN THROUGH THIS SERVICE'S OWN ROOT IS NOT, ON ITS OWN, AN IDENTITY
-  // (2026-09-13). The listeners trust that Root for client certificates since
-  // the user portal started issuing TLS client certificates, and every key pair
-  // this service ever issued chains to it — an application's RFC 7523 key pair
-  // included. `common/tls_client_certificates.js` is the gate: a certificate
-  // this service issued verifies here only when it came from a TLS client
-  // Issuing CA, with clientAuth, in THIS request's realm. Required lazily: it
-  // reaches the certificate authority, and this module is on the token
-  // endpoint's path with three requires and no reason to carry a fourth.
+  // (2026-09-13). The main port trusts that Root for client certificates
+  // since the user portal started issuing TLS client certificates, and every
+  // key pair this service ever issued chains to it — an application's RFC 7523
+  // key pair included. `common/tls_client_certificates.js` is the gate: a
+  // certificate this service issued verifies here only when it came from a TLS
+  // client Issuing CA, with clientAuth, in THIS request's realm. Required
+  // lazily: it reaches the certificate authority, and this module is on the
+  // token endpoint's path with three requires and no reason to carry a fourth.
   if (socket.authorized) {
     let gate = null;
     try {
@@ -226,7 +231,7 @@ function peerVerified(req) {
 }
 
 // RFC 8705 `x5t#S256`: SHA-256 over the DER, base64url. The same digest
-// `tls/tls_server.js` prints as colon-hex and `spiffe/spiffe_ca.js` truncates
+// `tls/tls_server.js` prints as colon-hex and `spiffe/spiffe_ca.ts` truncates
 // as an authority id — three spellings of one computation, which is why the
 // shared function takes a format and the three that each computed it are one.
 function thumbprintOf(cert) {

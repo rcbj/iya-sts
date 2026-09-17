@@ -8,10 +8,11 @@
 //
 // `/admin/pki` and `/admin/crypto-metadata` open a certificate's every X.509
 // field and its trust chain in a dialog over the page. Three modules make it —
-// `common/certificate_details.js` (the model),
-// `admin-core/certificate_views.js` (which certificates may be opened) and
-// `admin-ui/certificate_dialog.js` (the one renderer) — and `tests/vendored/sts_admin_api_operations.js` drives the
-// same answer over HTTP. What is here is what a request cannot choose:
+// `common/certificate_details.ts` (the model),
+// `admin-core/certificate_views.ts` (which certificates may be opened) and
+// `admin-ui/certificate_dialog.ts` (the one renderer) — and
+// `tests/vendored/sts_admin_api_operations.js` drives the same answer over
+// HTTP. What is here is what a request cannot choose:
 //
 //   A. THE FIELDS AGAINST OPENSSL. The model is built on pkijs; node's
 //      X509Certificate and the `openssl` binary are a second reading, so a
@@ -335,8 +336,6 @@ function spawnChild() {
   });
   clean[CHILD_FLAG] = '1';
   clean.LOG_LEVEL = 'fatal';
-  clean.STS_TLS_PORT = '0';
-  clean.STS_MTLS_PORT = '0';
   const result = childProcess.spawnSync(process.execPath, [__filename], {
     cwd: path.resolve(__dirname, '..'), env: clean, encoding: 'utf8',
     timeout: 180000, maxBuffer: 64 * 1024 * 1024 });

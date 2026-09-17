@@ -103,9 +103,9 @@ function checkTheBoundedHelperExists(t) {
           'hands the hang straight back');
 
   // `timeout NAME=value cmd` asks the kernel to execute a program called
-  // `NAME=value`. That is the trap compose.sh's own header describes about
-  // `env docker_compose`, one layer along, and it is how every mode of this
-  // launcher failed on its first run.
+  // `NAME=value`. That is the trap compose.sh's `docker_compose()` avoids by
+  // putting `env` in front of those words, one layer along, and it is how
+  // every mode of this launcher failed on its first run.
   t.check(/timeoutCmd\}"?\s+--kill-after=30s\s+"\$\{seconds\}"\s*\\?\s*\n?\s*env\s/
     .test(helper) ||
           /--kill-after=30s "\$\{seconds\}" \\\n\s*env /.test(helper),
@@ -225,27 +225,9 @@ function checkTheLauncherIsBounded(t) {
           'it runs against the stopped stack, so the case worth having a ' +
           'log for is the case where this call is the one that hangs');
 
-  // ------------------------------------------------------------------------
-  // AND THE OTHER LAUNCHER, WHICH IS NOT WHAT CI RUNS AND IS BOUNDED ANYWAY.
-  //
-  // ./local-run-tests.sh brings up ONE service and drives it from the
-  // developer's own machine, so its `up` is detached and it has no stop phase
-  // to wedge in. What it does have is the same three `down` calls, reached by
-  // the same trap — the incident cost CI a green suite and would cost a
-  // developer a terminal that never comes back. The helper is shared, so
-  // bounding one launcher and not the other would be a decision nobody made.
-  // ------------------------------------------------------------------------
-  const local = read('local-run-tests.sh');
-  const localUnbounded = local.split('\n').filter(function (line) {
-    return /docker_compose\s+"\$\{COMPOSE_FILE_ARGS\[@\]\}"[^|]*down|^\s*docker_compose\s+"\$\{COMPOSE_FILE_ARGS\[@\]\}" --profile xacml\s*\\$/
-      .test(line);
-  });
-  t.check(localUnbounded.length === 0 &&
-          /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-\d+\}"/.test(local),
-          './local-run-tests.sh bounds its three teardowns too',
-          'same helper, same trap, same failure — a `down` that never ' +
-          'returns after the run has finished; found: ' +
-          localUnbounded.join(' | '));
+  // There was a second launcher here, ./local-run-tests.sh, with the same
+  // three `down` calls and its own bound. It was removed on 2026-09-16 (#50):
+  // ./docker-run-tests.sh is the one way the whole suite runs.
   log.debug("Leaving checkTheLauncherIsBounded().");
 }
 

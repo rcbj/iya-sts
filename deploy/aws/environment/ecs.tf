@@ -43,13 +43,13 @@ locals {
     STS_KEYS_SOURCE             = "persisted"
     STS_CLUSTER_MODE            = "active-active"
     STS_PUBLIC_BASE_URL         = local.public_base_url
-    STS_TLS_HOSTNAMES           = "${aws_lb.main.dns_name},localhost"
+    STS_TLS_HOSTNAMES           = join(",", distinct([local.public_host, aws_lb.main.dns_name, "localhost"]))
     STS_PROXY_PROTOCOL          = "v2"
     STS_TRUSTED_PROXIES         = join(",", local.public_cidrs)
-    STS_WORKERS_REQUEST_COUNT   = "0"
-    STS_WORKERS_SURFACE_COUNT   = "0"
-    STS_WORKERS_DISPATCH        = ""
-    STS_WORKERS_READ_YOUR_WRITE = "false"
+    STS_WORKERS_REQUEST_COUNT   = tostring(var.workers_request_count)
+    STS_WORKERS_SURFACE_COUNT   = tostring(var.workers_surface_count)
+    STS_WORKERS_DISPATCH        = var.workers_dispatch
+    STS_WORKERS_READ_YOUR_WRITE = tostring(var.workers_read_your_write)
     AWS_REGION                  = local.region
 
     # The key-encryption key and the database password, from Secrets Manager
@@ -69,8 +69,8 @@ locals {
     # WHERE A CERTIFICATE SAYS ITS CRL AND OCSP ADDRESSES ARE. Without these
     # the node writes its own container ports on `localhost`, which no relying
     # party can follow; sts_pki_distribution_points follows them as written.
-    PKI_DISTRIBUTION_BASE_URL  = "http://${aws_lb.main.dns_name}:${local.published_ports.pki.listener}"
-    PKI_DISTRIBUTION_LDAP_HOST = aws_lb.main.dns_name
+    PKI_DISTRIBUTION_BASE_URL  = "http://${local.public_host}:${local.published_ports.pki.listener}"
+    PKI_DISTRIBUTION_LDAP_HOST = local.public_host
     PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
 
     # The directory's ceiling, as the ENVIRONMENT's value rather than an

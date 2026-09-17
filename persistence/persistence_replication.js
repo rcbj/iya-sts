@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: persistence/persistence_replication.js
@@ -75,9 +76,9 @@
 // ---------------------------------------------------------------------------
 // WHAT STILL DOES NOT COORDINATE, SAID PLAINLY.
 //
-//   * **THE SOCKETS.** The KDC, the LDAP listeners, the two TLS ports and
-//     SPIFFE's four are bound per process. Coordination is about state, and a
-//     socket is not state.
+//   * **THE SOCKETS.** The KDC, the LDAP listeners, the main port, SPIFFE's
+//     gRPC sockets and the debugger listener are bound per process.
+//     Coordination is about state, and a socket is not state.
 //   * **THE REPLAY CACHES AND THE DPoP `jti` SETS CONVERGE RATHER THAN
 //     SYNCHRONISE, AND THAT IS A SECURITY STATEMENT.** Between a write in one
 //     process and its arrival in another there is a window the size of the
@@ -1272,7 +1273,7 @@ function status() {
     // Said on the page rather than only in a comment, because it is the one
     // thing about this feature that can be got wrong in a way that matters.
     note: 'Coordination shares STATE and not SOCKETS. The KDC, the LDAP ' +
-          'listeners, the two TLS ports and SPIFFE\'s four are bound per ' +
+          'listeners, the main port and SPIFFE\'s four are bound per ' +
           'process. And the replay caches and DPoP jti sets CONVERGE rather ' +
           'than synchronise: between a write in one process and its arrival ' +
           'in another there is a window the size of the poll interval in ' +

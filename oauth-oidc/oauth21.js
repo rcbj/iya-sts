@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: oauth21.js
@@ -38,12 +39,15 @@
 // IT IS A LEAF (rule 3, and `oauth-oidc/CLAUDE.md` rule 3ah).
 //
 // It registers no route and requires `helpers.js` and `config.js` and nothing
-// else. `oauth2_bcp.js` requires IT, for the two places RFC 9700 mode has to
-// step aside, and `oauth2.js` requires it for the rest — so it must never
-// require either of those back, nor `applications.js` or `client_auth.js`,
-// which `oauth2_bcp.js` already requires. Every record it decides about is
-// PASSED IN: the client's configuration, the authorization code, what the
-// request presented, what the observation found.
+// else. `oauth2_bcp.js` requires IT — for its own `enabled()`, the two places
+// RFC 9700 mode has to step aside, and the stricter checks that ride inside
+// its own (PKCE, the registered-URI rule, registration, the metadata) —
+// `sender_constraints.js` requires it (#34), and `oauth2.js` requires it for
+// the rest — so it must never require any of those back, nor
+// `applications.js` or `client_auth.js`, which `oauth2_bcp.js` already
+// requires. Every record it decides about is PASSED IN: the client's
+// configuration, the authorization code, what the request presented, what the
+// observation found.
 //
 // THE SPLIT IS `oauth2_bcp.js`'s: this decides and says why, and never touches
 // `res`. A refusal is
@@ -310,7 +314,32 @@ const REQUIREMENTS = [
     note: 'Since 2026-09-13 in every mode: a refresh that narrows its scope ' +
           'or its resources narrows the ACCESS token it mints, and the new ' +
           'refresh token carries what the presented one carried. RFC 6749 ' +
-          'section 6 says the same sentence.' }
+          'section 6 says the same sentence.' },
+
+  // #34 (2026-09-15). The row this issue was opened to settle: section 4.3.1
+  // is the one place either specification says anything MUST be done about a
+  // refresh token, and DPoP is one of two ways to do it rather than the
+  // requirement itself.
+  { id: 'refresh-public-rotation', section: '4.3.1', level: 'MUST',
+    appliesTo: 'authorization server', enforced: 'yes',
+    title: 'A public client\'s refresh token is sender-constrained OR ' +
+           'rotated with replay detection',
+    note: 'A CHOICE OF TWO, and this service takes the second: every refresh ' +
+          'token rotates on use, a replayed one is refused, and the whole ' +
+          'family descended from the original grant is revoked — ' +
+          '`refresh-rotation` and `refresh-replay-family` in the RFC 9700 ' +
+          'report are where it happens. **Neither this section nor RFC 9700 ' +
+          'requires DPoP**; `oauth2.refreshTokenRequireDpop` and ' +
+          '`oauth2.refreshTokenRequireMtls` are how an operator asks for the ' +
+          'first way as well, and both are off unless set. Rotation covers ' +
+          'EVERY client here rather than public ones alone, because this ' +
+          'server cannot authenticate a client it did not register and ' +
+          '"public" is the safe reading of an unknown one. **An UNDECLARED ' +
+          'client gets no refresh token at all in this mode** — see ' +
+          '`declared-client-at-token-endpoint`, which section 2.3.1 already ' +
+          'required and which this row depends on: rotation detects the ' +
+          'replay of a token belonging to somebody, and a client nobody ' +
+          'declared is nobody.' }
 ];
 
 function enabled() {
@@ -591,6 +620,22 @@ function tokenClientDeclarationRefusal(opts) {
       'is unaffected.');
   }
 
+  // #34 (2026-09-15): A REQUEST THAT NAMES NO CLIENT AT ALL used to skip this
+  // check entirely, because the condition below opens with `clientId &&`. For
+  // these four grants that is the same hole the check exists to close — the
+  // refresh grant reached it with no `client_id` and was rotated as if it
+  // belonged to somebody — and it is the case rcbj asked to have refused
+  // rather than treated as a public client.
+  if (!clientId && REGISTERED_CLIENT_GRANTS.indexOf(grant) >= 0) {
+    log.debug("Leaving tokenClientDeclarationRefusal(). No client at all.");
+    return refusal('STS-OAUTH-0297', 'invalid_client',
+      'declared-client-at-token-endpoint',
+      'sections 2.3.1 and 2.5: the ' + grant + ' grant is made by a client ' +
+      'in its own name, and this request named no client at all. Send ' +
+      'client_id, and register the client at POST /oauth2/register or ' +
+      'declare it on /admin/applications.');
+  }
+
   if (clientId && REGISTERED_CLIENT_GRANTS.indexOf(grant) >= 0 &&
       !registered.declared) {
     log.debug("Leaving tokenClientDeclarationRefusal(). The client declares " +
@@ -607,6 +652,75 @@ function tokenClientDeclarationRefusal(opts) {
   }
   log.debug("Leaving tokenClientDeclarationRefusal(). Nothing refused.");
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// THE TWO ASSERTION GRANTS, AND THE REFRESH TOKEN THEY MAY NOT MINT (#34,
+// 2026-09-15).
+//
+// RFC 7523 and RFC 7522 are deliberately outside `REGISTERED_CLIENT_GRANTS`
+// (see the comment above it): they authenticate the SUBJECT with a signature
+// and may arrive with no client at all, so refusing them for want of a
+// declared client would refuse the grant for being what it is. That stands.
+//
+// What does NOT stand is minting a refresh token into that arrangement while
+// this mode is on. Section 4.3.1's rotation is bookkeeping about a chain
+// belonging to a client, and a chain belonging to nobody cannot be checked
+// against the client presenting it — `checkRefreshRequest()` would refuse
+// every redemption of it for want of a `client_id` anyway, an hour later and
+// with a message about RFC 6749. So:
+//
+//   * a client NAMED on one of these grants must be declared, like any other
+//     client naming itself at this endpoint;
+//   * a grant with NO client gets its access token and no refresh token, which
+//     is the honest version of what the redemption would have done.
+// ---------------------------------------------------------------------------
+const ASSERTION_GRANTS = [
+  'urn:ietf:params:oauth:grant-type:jwt-bearer',
+  'urn:ietf:params:oauth:grant-type:saml2-bearer'
+];
+
+function assertionClientRefusal(opts) {
+  log.debug("Entering assertionClientRefusal().");
+  if (!enabled()) {
+    log.debug("Leaving assertionClientRefusal(). The mode is off.");
+    return null;
+  }
+  const o = opts || {};
+  const grant = String(o.grant || '');
+  const clientId = String(o.clientId || '');
+  const registered = o.registered || {};
+  if (clientId && ASSERTION_GRANTS.indexOf(grant) >= 0 &&
+      !registered.declared) {
+    log.debug("Leaving assertionClientRefusal(). Undeclared client.");
+    return refusal('STS-OAUTH-0299', 'invalid_client',
+      'declared-client-at-token-endpoint',
+      'sections 2.3.1 and 2.5: client "' + clientId + '" ' +
+      (registered.known ? 'has an entry here that was only ever SIGHTED'
+                        : 'is not registered here') + ', and named itself on ' +
+      'an assertion grant. The assertion may speak for the subject; the ' +
+      'client naming itself still has to be one this server knows. Register ' +
+      'it, declare it on /admin/applications, or send no client_id.');
+  }
+  log.debug("Leaving assertionClientRefusal(). Nothing refused.");
+  return null;
+}
+
+// Whether a refresh token is withheld from this grant. The caller sets
+// `withRefresh: false` and records STS-OAUTH-0298 on the audit row; the token
+// response is otherwise untouched, and RFC 6749 section 5.1 makes
+// `refresh_token` optional in it.
+function withholdsRefreshToken(opts) {
+  log.debug("Entering withholdsRefreshToken().");
+  if (!enabled()) {
+    log.debug("Leaving withholdsRefreshToken(). The mode is off.");
+    return false;
+  }
+  const o = opts || {};
+  const answer = ASSERTION_GRANTS.indexOf(String(o.grant || '')) >= 0 &&
+                 !String(o.clientId || '');
+  log.debug("Leaving withholdsRefreshToken(). " + answer);
+  return answer;
 }
 
 // What the token endpoint decides about what the client PRESENTED, once
@@ -828,7 +942,17 @@ function state() {
       'oauth2.authorizationCodeTtlS':
           config.value('oauth2.authorizationCodeTtlS'),
       'oauth2.loopbackPortWildcard':
-          !!config.value('oauth2.loopbackPortWildcard')
+          !!config.value('oauth2.loopbackPortWildcard'),
+      // #34 (2026-09-15): section 4.3.1's OTHER answer, which this mode does
+      // not require and an operator may. Reported here because a reader of
+      // this page is reading it to find out what section 4.3.1 means HERE, and
+      // "rotated" and "rotated and sender-constrained" are different answers.
+      'oauth2.refreshTokenRotation':
+          !!config.value('oauth2.refreshTokenRotation'),
+      'oauth2.refreshTokenRequireDpop':
+          !!config.value('oauth2.refreshTokenRequireDpop'),
+      'oauth2.refreshTokenRequireMtls':
+          !!config.value('oauth2.refreshTokenRequireMtls')
     },
     exemptions: [
       'The OpenID4VCI pre-authorized code grant is not held to the ' +
@@ -866,6 +990,9 @@ module.exports = {
   tokenCodeRefusal: tokenCodeRefusal,
   multipleMethodsRefusal: multipleMethodsRefusal,
   tokenClientDeclarationRefusal: tokenClientDeclarationRefusal,
+  ASSERTION_GRANTS: ASSERTION_GRANTS,
+  assertionClientRefusal: assertionClientRefusal,
+  withholdsRefreshToken: withholdsRefreshToken,
   tokenClientAuthenticationRefusal: tokenClientAuthenticationRefusal,
   strictClientAssertionAudience: strictClientAssertionAudience,
   loopbackAnyPort: loopbackAnyPort,

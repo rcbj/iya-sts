@@ -133,6 +133,16 @@ fi
 
 cd "${TF_DIR}"
 say "${TF_DIR}"
+
+# AN ENVIRONMENT'S OWN VALUES, when it has a file of them: envs/<name>.tfvars.
+# `dev` and `ci` have none and take the variables' defaults, which are the test
+# arrangement; a deployment (`testidp`) names what differs.
+VAR_FILE_ARGS=()
+if [ "${TF_STACK}" = "environment" ] && [ -f "envs/${TF_ENV}.tfvars" ];
+then
+  say "variables: envs/${TF_ENV}.tfvars"
+  VAR_FILE_ARGS=(-var-file="envs/${TF_ENV}.tfvars")
+fi
 say "state: s3://${bucket}/${STATE_KEY}"
 
 say "terraform init"
@@ -148,17 +158,17 @@ fi
 case "${TF_ACTION}" in
   init)     say "init only." ;;
   validate) terraform validate -no-color ;;
-  plan)     terraform plan -input=false -no-color ;;
-  apply)    terraform apply -input=false -no-color -auto-approve ;;
+  plan)     terraform plan -input=false -no-color "${VAR_FILE_ARGS[@]}" ;;
+  apply)    terraform apply -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" ;;
   destroy)
     # A destroy that fails half way leaves resources running and billing; the
     # usual cause is an ENI a stopped task has not released yet. Once more,
     # after a minute, before giving up.
-    if ! terraform destroy -input=false -no-color -auto-approve;
+    if ! terraform destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}";
     then
       say "destroy failed; retrying once in 60 seconds"
       sleep 60
-      terraform destroy -input=false -no-color -auto-approve || \
+      terraform destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" || \
         die "DESTROY FAILED TWICE — '${TF_ENV}' may still be running and billing. Re-run the destroy."
     fi
     ;;

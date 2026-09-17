@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: saml_assertion_grant.js
@@ -121,13 +122,14 @@
 //            rather than ignorable
 //
 // ---------------------------------------------------------------------------
-// A LIBRARY (rule 3). It registers no route. It requires `helpers.js`,
-// `config.js`, `applications.js`, `common/crypto.js` and
-// `common/used_assertions.js` —
-// none of which requires it back — and it is required by `oauth2.js` (9) and
-// by `client_auth.js`. **IT DOES NOT REQUIRE `assertion_grant.js` AND MUST
-// NOT**: the two share a framework and no code, and a require between them
-// would be the first step towards the format flag the header refuses.
+// A LIBRARY (rule 3). It registers no route. It requires only `common/`
+// libraries — `helpers.js`, `config.js`, `applications.js`, `crypto.js`,
+// `pki.js`, `revocation_status.js`, `person_assertions.js`,
+// `used_assertions.js` and `error_codes.js` — none of which requires it
+// back — and it is required by `oauth2.js` (9) and by `client_auth.js`. **IT
+// DOES NOT REQUIRE `assertion_grant.js` AND MUST NOT**: the two share a
+// framework and no code, and a require between them would be the first step
+// towards the format flag the header refuses.
 // ===========================================================================
 
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
@@ -771,7 +773,7 @@ async function verify(opts) {
     return refuse('STS-OAUTH-0059', parsed.why);
   }
   if (parsed.version && parsed.version !== '2.0') {
-    // SAML 1.1 assertions exist here — `saml/saml11.js` builds them — and this
+    // SAML 1.1 assertions exist here — `saml/saml11.ts` builds them — and this
     // profile is not about them. Named rather than left to fail somewhere in
     // the Conditions, because the two documents look alike enough that
     // somebody will send the wrong one.

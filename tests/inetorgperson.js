@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE SCHEMA THE ACCOUNT PAGE IS DRAWN FROM, AND THE TWO REFUSALS IN IT.
 //
-// `common/inetorgperson.js` is the fixed list `/portal`'s Overview looks each
+// `common/inetorgperson.ts` is the fixed list `/portal`'s Overview looks each
 // attribute up in. Four things about it are worth asserting in process, and
 // the middle two are the ones that matter:
 //
@@ -48,7 +48,8 @@ delete process.env.CONFIG_FILE;
 const schema = require('../common/inetorgperson');
 // THE OTHER CATALOGUE OF LDAP SPELLINGS IN THIS REPOSITORY. Required for the
 // cross-check at the end, and it is a LEAF (`crypto`, `realms`, `helpers`,
-// `admin_stats`) so requiring it here costs nothing and registers nothing.
+// `admin_stats`, `mode`, `error_codes`) so requiring it here costs nothing and
+// registers nothing.
 const vcClaims = require('../oid4vc/vc_claims');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -101,7 +102,7 @@ function run(t) {
           'the page prints both and a reader on a mock is about to go and ' +
           'write the attribute over LDAP');
 
-  // THE INVARIANT. `common/inetorgperson.js`'s whole reason for existing is
+  // THE INVARIANT. `common/inetorgperson.ts`'s whole reason for existing is
   // that the account page draws a LIST rather than the entry, because this
   // service writes credentials onto the same object. If one of those names
   // ever reached this list the page would print it, and nothing else in the
@@ -228,7 +229,7 @@ function run(t) {
           'draws all ' + all.length);
 
   t.log.info('=== the spellings agree with the other catalogue ===');
-  // `oid4vc/vc_claims.js` is the credential-claim catalogue and the THIRD
+  // `oid4vc/vc_claims.ts` is the credential-claim catalogue and the THIRD
   // independently maintained list of LDAP spellings in this repository
   // (`ldap_server.js`'s STANDARD_NAMES is the second, and `learnName()` merges
   // all of them so a disagreement is REPORTED at startup rather than resolved
@@ -267,7 +268,7 @@ function run(t) {
   // repository since those tables were: `givenName` cited as RFC 4519 2.6 (2.6
   // is `destinationIndicator` — that section is alphabetical, and `givenName`
   // is 2.12) and `labeledURI` as RFC 2079 2, in a document whose sections are
-  // unnumbered. `scim/scim_map.js` had a third, `employeeType` at RFC 2798 2.7
+  // unnumbered. `scim/scim_map.ts` had a third, `employeeType` at RFC 2798 2.7
   // rather than 2.5.
   //
   // It cannot check a citation against the RFC — nothing in this process can

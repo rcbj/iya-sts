@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: oauth2_bcp.js
@@ -5,8 +6,10 @@
 // ===========================================================================
 // RFC 9700 — OAuth 2.0 Security Best Current Practice — AS A MODE.
 //
-// This service is a mock: it authenticates nobody, checks no password and
-// accepts any client secret. None of that changes here. What this file adds is
+// In development mode this service is a mock: it checks no end user's
+// password, and with this mode off it accepts any client secret (product mode
+// is a different axis — `common/mode.js`). None of that changes here. What
+// this file adds is
 // the OTHER half of what a client author needs — a server that refuses exactly
 // what RFC 9700 says a conforming authorization server must refuse, so that the
 // client's error paths can be exercised against something that behaves like the
@@ -41,13 +44,15 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3 in CLAUDE.md).
 //
-// It registers no route and requires only `helpers.js` and `config.js`, so its
-// position in the require order does not matter and it cannot join a cycle.
-// `oauth2.js` requires IT — never the other way round — which is what keeps
-// this file free of the authorization server's state: the registered-client
-// record and the authorization code record are PASSED IN. There is deliberately
-// no second copy of `registeredClients` here (the one-store rule that keeps
-// WS-Federation out of a session store of its own).
+// It registers no route, so its position in the require order does not
+// matter, and it requires only libraries — `common/` modules, `client_auth.js`,
+// `oauth21.js`, `sender_constraints.js` and `cluster/`'s claims — none of
+// which requires it back, so it cannot join a cycle (each require below says
+// why). `oauth2.js` requires IT — never the other way round — which is what
+// keeps this file free of the authorization server's state: the
+// registered-client record and the authorization code record are PASSED IN.
+// There is deliberately no second copy of `registeredClients` here (the
+// one-store rule that keeps WS-Federation out of a session store of its own).
 //
 // ---------------------------------------------------------------------------
 // THE SPLIT WITH `oauth2.js`, which is the same split `authn.js` has.
@@ -75,7 +80,7 @@
 // request was insecure using the same insecure channel. It is a property of the
 // SOCKET, so it is settled where the socket is bound: `global.https` — whose
 // default is this mode's own flag — makes the main port an HTTPS listener
-// carrying the same certificate 8443, 9443 and LDAPS 636 already serve, and
+// carrying the same certificate LDAPS 636 already serves, and
 // then there is no unencrypted connection for an authorization response to be
 // sent over. That is also why `oauth2.rfc9700` is restart-only: a bound socket
 // is decided before the service is listening.
@@ -102,35 +107,36 @@
 //
 // NOT here: Pushed Authorization Requests (RFC 9126, `par.js`, 2026-09-13) and
 // Resource Indicators (RFC 8707), which are FEATURES in every mode rather than
-// constraints this mode enforces. (What follows about 8707 predates it being
-// read — see oauth-oidc/CLAUDE.md 3f — and is kept as written.) — `resource` is not read anywhere, so
-// there is nothing to restrict an audience by beyond the single resource server
-// every access token here is already restricted to. Client authentication at
-// `/oauth2/introspect` and `/oauth2/revoke` is likewise not enforced: those are
-// called by resource servers, which do not register here, so there is no
-// credential to check. And the requirements RFC 9700 places on the CLIENT stay
-// the client's — this service can detect several of them and fix none.
+// constraints this mode enforces — `resource` is read for every grant and the
+// protected endpoints refuse a token addressed elsewhere in both modes
+// (oauth-oidc/CLAUDE.md 3f and 3ah). Client authentication at
+// `/oauth2/introspect` is not this mode's either: an RFC 9701 JWT request
+// authenticates in every mode and a JSON one in product mode (3ai).
+// `/oauth2/revoke` authenticates nobody. And the requirements RFC 9700 places
+// on the CLIENT stay the client's — this service can detect several of them
+// and fix none.
 // ===========================================================================
 
 const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// config.js and error_codes.js and nothing else here, so it cannot join a
+// cycle, and it registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// applications.js registers no route and requires nothing from oauth-oidc/, so
+// this closes no cycle and moves nothing in the router. It is here for the
+// three per-client settings this file resolves — the refresh idle window, the
+// refresh lifetime a revoked family is remembered for, and revoke-on-logout.
+const applications = require('../common/applications');
 // HOW a client proves who it is — all six methods, verified. A library like
-// this one: it registers nothing and requires helpers.js, config.js and
-// mtls.js, so requiring it here cannot create a cycle. The split is the usual
+// this one: it registers nothing and requires `common/` libraries, mtls.js and
+// the two assertion-grant libraries, none of which requires this file, so
+// requiring it here cannot create a cycle. The split is the usual
 // one — that file is the protocol and this file is the policy: it says whether
 // what arrived PROVES the client, and this says whether the client had to prove
 // anything. A LIBRARY REQUIRING A LIBRARY, which is why this is a plain require
 // and not one of admin_stats.js's inverted slots (rule 3e's test).
-// applications.js registers no route and requires nothing from oauth-oidc/, so
-// this closes no cycle and moves nothing in the router. It is here for the two
-// per-client settings this file resolves — the refresh idle window and
-// revoke-on-logout.
-const applications = require('../common/applications');
 const clientAuth = require('./client_auth');
 // OAUTH 2.1 MODE, which IMPLIES this one (2026-09-13). A LEAF requiring only
 // helpers.js and config.js, so this require closes no cycle — and it is here
@@ -139,6 +145,13 @@ const clientAuth = require('./client_auth');
 // to oauth2.redirectUris), plus the refusals 2.1 adds at the checks already
 // in this file. `oauth-oidc/CLAUDE.md` rule 3ah.
 const oauth21 = require('./oauth21');
+// THE FIVE SETTINGS THAT ASK FOR MORE THAN EITHER SPECIFICATION DOES (#34,
+// 2026-09-15). A leaf requiring helpers.js, config.js and oauth21.js, so this
+// closes no cycle — and it must never require this file back, because
+// `dpop.js` requires it too and `dpop.js` is below this one. It is here for
+// ONE question: whether refresh tokens rotate, which is no longer the same
+// question as whether this mode is on.
+const senderConstraints = require('./sender_constraints');
 // The redirect allowlist's one question this file needs answered — is a URI a
 // native app's private-use one. validation.js requires config.js, zod and
 // error_codes.js and nothing here, so this closes no cycle.
@@ -227,11 +240,6 @@ const REQUIREMENTS = [
           'mode it is an open redirector, which is what /oauth2/logout has ' +
           'always been and now says.' },
 
-  // The one row whose answer is not a constant: it describes the socket this
-  // service is listening on, which is settled at startup rather than per
-  // request. Both fields are functions for that reason, and `state()` calls
-  // them — keeping the table the single source rather than moving half of this
-  // row's meaning into the view that renders it.
   // --- section 4.11.2 — the authorization server as an open redirector -----
   { id: 'no-redirect-invalid-combination', section: '4.11.2', level: 'MUST NOT',
     appliesTo: 'authorization server', enforced: 'yes',
@@ -295,6 +303,12 @@ const REQUIREMENTS = [
           'to a URI nobody registered, and it will not forward one at all ' +
           'before somebody has signed in.' },
 
+  // One of the two rows whose answer is not a constant (`tls-everywhere` is
+  // the other): it describes the socket this service is listening on, which is
+  // settled at startup rather than per request. Both fields are functions for
+  // that reason, and `state()` calls them — keeping the table the single
+  // source rather than moving half of this row's meaning into the view that
+  // renders it.
   { id: 'response-over-tls', section: '2.1', level: 'MUST NOT',
     appliesTo: 'authorization server',
     enforced: function () {
@@ -312,8 +326,8 @@ const REQUIREMENTS = [
                'http-scheme-refused), ' +
                'and the connection the response goes out over is TLS: ' +
                'global.https is on, so the main port is an HTTPS listener ' +
-               'serving the same self-signed certificate 8443, 9443 and ' +
-               'LDAPS 636 use — one pair per start, so a caller trusts this ' +
+               'serving the same self-signed certificate LDAPS 636 uses — ' +
+               'one pair per start, so a caller trusts this ' +
                'service once. It is not a check and could not be one: a ' +
                'request has already arrived by the time any code here runs, ' +
                'so this is settled by the socket rather than decided per ' +
@@ -362,8 +376,7 @@ const REQUIREMENTS = [
              'certificate regenerated every start is a real cost to pay ' +
              'before anything works. Turn global.https on — which RFC 9700 ' +
              'mode does by default — and every endpoint moves to TLS ' +
-             'together, on the certificate 8443, 9443 and LDAPS 636 already ' +
-             'share.';
+             'together, on the certificate LDAPS 636 already serves.';
     } },
 
   { id: 'proxy-headers-not-trusted', section: '2.6', level: 'MUST',
@@ -553,19 +566,35 @@ const REQUIREMENTS = [
 
   // --- section 2.2 / 2.2.1 — token replay prevention -----------------------
   { id: 'sender-constrained-tokens', section: '2.2, 2.2.1', level: 'SHOULD',
-    appliesTo: 'authorization server and resource server', enforced: 'detected',
+    appliesTo: 'authorization server and resource server',
+    // #34 (2026-09-15): 'detected' until an operator asks for more. The
+    // section is a SHOULD and this mode does not turn the settings on, so a
+    // reader of this report sees the difference between "observed" and
+    // "required" rather than one word covering both.
+    enforced: function () {
+      log.debug("Entering the sender-constrained-tokens enforcement report.");
+      const required = !!config.value('oauth2.accessTokenRequireDpop') ||
+                       !!config.value('oauth2.accessTokenRequireMtls');
+      log.debug("Leaving the sender-constrained-tokens enforcement report.");
+      return required ? 'yes' : 'detected';
+    },
     title: 'Sender-constrain access tokens (mTLS or DPoP)',
     note: 'BOTH mechanisms the section names are implemented — DPoP (RFC ' +
           '9449) in full, and RFC 8705 certificate-bound tokens (see ' +
           'mtls-bound-tokens) — and both are advertised. Whether a token is ' +
-          'BOUND is still the CLIENT\'s decision, because it binds by ' +
+          'BOUND is the CLIENT\'s decision by default, because it binds by ' +
           'sending a proof or by making the connection with a certificate, ' +
-          'so this stays a SHOULD that is observed and logged rather than ' +
-          'refused: every token issued without either gets a line saying a ' +
-          'bearer token went out. There is deliberately NO "DPoP required" ' +
-          'mode — this service exists to exercise Bearer clients too, and a ' +
-          'mode that refused them would remove the thing half its callers ' +
-          'are testing.' },
+          'so this is observed and logged rather than refused: every token ' +
+          'issued without either gets a line saying a bearer token went out. ' +
+          '**SINCE 2026-09-15 (#34) AN OPERATOR MAY REQUIRE IT**, with ' +
+          'oauth2.accessTokenRequireDpop or oauth2.accessTokenRequireMtls — ' +
+          'off unless set, and not turned on by this mode, because the ' +
+          'section is a SHOULD and this service exists to exercise Bearer ' +
+          'clients too. With one on, every surface that accepts a presented ' +
+          'access token refuses one that is not constrained, the management ' +
+          'API and the embedded debugger included. The refusal is at the ' +
+          'RESOURCE: the token endpoint goes on issuing bearer tokens, which ' +
+          'is what lets a client be tested against being refused.' },
 
   { id: 'mtls-bound-tokens', section: '2.2, 2.2.1', level: 'SHOULD',
     appliesTo: 'authorization server',
@@ -639,10 +668,21 @@ const REQUIREMENTS = [
           '"public" is the safe reading of an unknown one. Redeeming a ' +
           'refresh token REVOKES it, through the same set /oauth2/revoke ' +
           'writes to, so the retired token also reports inactive at ' +
-          '/oauth2/introspect. Without the mode a refresh token is reusable ' +
-          'until it expires when it expires — twenty-four hours later on the ' +
-          'default oauth2.refreshTokenTtlS, and for as long as that setting ' +
-          'says — which is the state this requirement exists about.' },
+          '/oauth2/introspect. **ROTATION IS NO LONGER THIS MODE\'S ALONE ' +
+          '(#34, 2026-09-15)**: oauth2.refreshTokenRotation does the same ' +
+          'thing with both modes off, and the replay detection beside it ' +
+          'comes with it, because rotation without replay detection is ' +
+          'bookkeeping nobody reads. What stays behind the mode is the rest ' +
+          'of what this row\'s neighbours check — the idle timeout, the ' +
+          'client binding, the scope narrowing. With neither the mode nor ' +
+          'that setting, a refresh token is reusable until it expires — ' +
+          'twenty-four hours later on the default oauth2.refreshTokenTtlS, ' +
+          'and for as long as that setting says — which is the state this ' +
+          'requirement exists about. The section\'s OTHER answer, a ' +
+          'sender-constrained refresh token, is what ' +
+          'oauth2.refreshTokenRequireDpop and oauth2.refreshTokenRequireMtls ' +
+          'require; neither is on unless an operator says so, and neither ' +
+          'specification asks for them.' },
 
   { id: 'refresh-replay-family', section: '2.2.2, 4.14.2', level: 'SHOULD',
     appliesTo: 'authorization server', enforced: 'yes',
@@ -2143,8 +2183,9 @@ function checkClientRegistration(metadata) {
 // SECTION 2.5 — client authentication, and the ONE place this service checks a
 // credential.
 //
-// Everywhere else it deliberately checks none: any password signs anybody in,
-// any bind succeeds, any client secret is accepted. Section 2.5 is not a
+// In development mode, everywhere else it deliberately checks none: any
+// password signs anybody in, any bind succeeds, any client secret is accepted
+// (product mode is a different axis — `common/mode.js`). Section 2.5 is not a
 // blanket "authenticate clients" — it is conditioned on it being *feasible* to
 // have a process for issuing credentials, and this service has one at
 // POST /oauth2/register, which mints a client_secret and hands it back. For a
@@ -2155,19 +2196,22 @@ function checkClientRegistration(metadata) {
 //
 // So the rule is narrow and its edges are the interesting part:
 //
-//   * REGISTERED and CONFIDENTIAL — the secret must be presented and must
-//     match. Confidential means a token_endpoint_auth_method other than "none",
-//     with RFC 7591 section 2's default (client_secret_basic) applying when the
-//     registration omitted it. This is the same test isConfidential() makes for
-//     the PKCE rule, and it must stay one function: a client that is public for
-//     PKCE and confidential for authentication would be exempt from both.
+//   * REGISTERED and CONFIDENTIAL — the credential its method names must be
+//     presented and must verify. Confidential means a
+//     token_endpoint_auth_method other than "none", with RFC 7591 section 2's
+//     default (client_secret_basic) applying when the registration omitted it.
+//     This is the same test isConfidential() makes for the PKCE rule, and it
+//     must stay one function: a client that is public for PKCE and
+//     confidential for authentication would be exempt from both.
 //   * REGISTERED and PUBLIC — nothing to authenticate with, by definition. A
 //     secret sent anyway is ignored rather than refused; RFC 6749 section 3.2.1
-//     asks the server not to rely on one, not to reject one.
-//   * REGISTERED with private_key_jwt or client_secret_jwt — ACCEPTED and NOT
-//     verified, because no public key was ever registered here to verify an
-//     assertion against. That is reported, at `asymmetric-client-auth`, rather
-//     than passed off as a check.
+//     asks the server not to rely on one, not to reject one. (OAuth 2.1 mode
+//     does refuse it — its section 3.2.2, in `oauth21.js`.)
+//   * REGISTERED and CONFIDENTIAL with NOTHING ON FILE for its method — not
+//     refused (see `credentialOnFile()` below); a half-configured client, and
+//     the log line says so. Every one of the six methods is VERIFIED when there
+//     is something to verify against; the assertion methods used to be
+//     accepted unverified, and `asymmetric-client-auth` records that change.
 //   * NOT REGISTERED — untouched, in this mode as in any other.
 //
 // The comparisons are timing-safe and they live in `client_auth.js` with the
@@ -2175,6 +2219,45 @@ function checkClientRegistration(metadata) {
 // web page that is close to decorative, and they are written that way anyway:
 // somebody will copy them.
 // ---------------------------------------------------------------------------
+
+// WHETHER A CONFIDENTIAL CLIENT HAS ANYTHING ON FILE TO CHECK ITS METHOD
+// AGAINST. One function, because the observation and the policy below it and
+// OAuth 2.1's PKCE exemption all ask it — and they were two inline copies of
+// one expression until 2026-09-13, which is the shape that disagrees the first
+// time a method is added.
+function credentialOnFile(registered) {
+  log.debug("Entering credentialOnFile().");
+  if (!registered || !isConfidential(registered)) {
+    log.debug("Leaving credentialOnFile(). Not a confidential client.");
+    return false;
+  }
+  const method = String(registered.token_endpoint_auth_method).trim();
+  const have =
+    (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 &&
+     registered.client_secret) ||
+    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri ||
+                                      registered.assertion_jwks)) ||
+    // RFC 7522 section 2.2. The two SAML attributes and NEITHER of the three
+    // above: a client holding a JWT key pair and no SAML certificate has
+    // nothing on file for this method, which is the whole point of the two
+    // sets being separate.
+    (method === 'saml2_bearer' && (registered.saml_signing_certificate ||
+                                   registered.saml_assertion_certificate)) ||
+    // RFC 8705 section 2.1 ALWAYS has something to check since 2026-09-13:
+    // a certificate this realm issued to the application needs nothing
+    // registered, so a `tls_client_auth` client is never "confidential with
+    // nothing on file" — which is what let one through unauthenticated in
+    // RFC 9700 mode when it had no subject DN.
+    method === 'tls_client_auth' ||
+    // Section 2.2 as well: a client that DECLARED a certificate method is held
+    // to it (`mtls.declaredRefusal()`), so "nothing on file" must not be the
+    // quiet pass it is for a half-configured secret client — `client_auth.js`
+    // refuses it by name (STS-OAUTH-0015), which is the sentence that says
+    // what to register.
+    method === 'self_signed_tls_client_auth';
+  log.debug("Leaving credentialOnFile().");
+  return !!have;
+}
 
 // ASYNCHRONOUS BECAUSE clientAuth.verify() IS, which is because a
 // `private_key_jwt` assertion may be signed with one of the eleven
@@ -2222,45 +2305,6 @@ function checkClientRegistration(metadata) {
 // about to mint several — and the alternative was a third state, "we did not
 // look", which every caller would have had to decide what to do about.
 // ---------------------------------------------------------------------------
-// WHETHER A CONFIDENTIAL CLIENT HAS ANYTHING ON FILE TO CHECK ITS METHOD
-// AGAINST. One function, because the policy below, the observation above it and
-// OAuth 2.1's PKCE exemption all ask it — and they were two inline copies of
-// one expression until 2026-09-13, which is the shape that disagrees the first
-// time a method is added.
-function credentialOnFile(registered) {
-  log.debug("Entering credentialOnFile().");
-  if (!registered || !isConfidential(registered)) {
-    log.debug("Leaving credentialOnFile(). Not a confidential client.");
-    return false;
-  }
-  const method = String(registered.token_endpoint_auth_method).trim();
-  const have =
-    (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 &&
-     registered.client_secret) ||
-    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri ||
-                                      registered.assertion_jwks)) ||
-    // RFC 7522 section 2.2. The two SAML attributes and NEITHER of the three
-    // above: a client holding a JWT key pair and no SAML certificate has
-    // nothing on file for this method, which is the whole point of the two
-    // sets being separate.
-    (method === 'saml2_bearer' && (registered.saml_signing_certificate ||
-                                   registered.saml_assertion_certificate)) ||
-    // RFC 8705 section 2.1 ALWAYS has something to check since 2026-09-13:
-    // a certificate this realm issued to the application needs nothing
-    // registered, so a `tls_client_auth` client is never "confidential with
-    // nothing on file" — which is what let one through unauthenticated in
-    // RFC 9700 mode when it had no subject DN.
-    method === 'tls_client_auth' ||
-    // Section 2.2 as well: a client that DECLARED a certificate method is held
-    // to it (`mtls.declaredRefusal()`), so "nothing on file" must not be the
-    // quiet pass it is for a half-configured secret client — `client_auth.js`
-    // refuses it by name (STS-OAUTH-0015), which is the sentence that says
-    // what to register.
-    method === 'self_signed_tls_client_auth';
-  log.debug("Leaving credentialOnFile().");
-  return !!have;
-}
-
 async function observeClientAuthentication(opts) {
   log.debug("Entering observeClientAuthentication(). client=" +
             (opts.clientId || '?'));
@@ -2449,7 +2493,8 @@ async function checkClientAuthentication(opts) {
 // SECTION 2.2.2 — REFRESH TOKENS, which is where most of this iteration's
 // substance is.
 //
-// A refresh token here is a signed JWT with a `jti`, and until this mode
+// A refresh token here is a signed JWT with a `jti` (encrypted to its realm
+// since 2026-09-12 — `refresh_token_crypto.js`), and until this mode
 // existed it was reusable for the whole of its life — twenty-four hours on the
 // default `oauth2.refreshTokenTtlS`, and thirty days before that setting
 // existed: redeeming one minted a new one and left the old one working. Section
@@ -2578,7 +2623,8 @@ const refreshTokens = realms.map({
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-// family -> { members: [jti], clientId, forget }
+// family -> { clientId, forget, lastUsedAt } — no `members` array since #46
+// (see `membersOf()`); a row restored from an older build may still carry one.
 const refreshFamilies = realms.map({ persist: 'oauth2_bcp.refreshFamilies' });
 
 function forgetStaleRefreshTokens() {
@@ -2629,11 +2675,6 @@ function forgetStaleRefreshTokens() {
             refreshFamilies.size + " family/families.");
 }
 
-// Called from refreshToken() in oauth2.js — the single function that mints one,
-// which is why there is no per-grant call site to forget. `parentJti` is empty
-// for the root of a family (an authorization code or a pre-authorized code
-// redeemed for the first time) and is the presented token's jti on a refresh.
-//
 // ---------------------------------------------------------------------------
 // THE FAMILY ACROSS NODES (2026-09-14, #46) — three things were wrong, and
 // each is the store converging where the rule needed it to agree.
@@ -2701,13 +2742,22 @@ function membersOf(familyId, alsoJti) {
   return Array.from(out);
 }
 
+// Called from refreshToken() in oauth2.js — the single function that mints one,
+// which is why there is no per-grant call site to forget. `parentJti` is empty
+// for the root of a family (any grant minting its first refresh token) and is
+// the presented token's jti on a refresh; `parentFamily` is that token's own
+// `refresh_family` claim.
 function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   log.debug("Entering noteRefreshIssued(). jti=" + jti + ", parent=" +
             (parentJti || '(root)'));
-  if (!enabled() || !jti) {
+  // ROTATION IS NO LONGER THE MODE'S ALONE (#34, 2026-09-15): the bookkeeping
+  // runs whenever rotation is required, which is either compliance mode OR
+  // `oauth2.refreshTokenRotation`. Everything else in this file still asks
+  // `enabled()`, because everything else in this file is an RFC 9700 rule.
+  if (!senderConstraints.rotationRequired() || !jti) {
     log.debug("Leaving noteRefreshIssued(). " +
-              (enabled() ? "No jti." : "RFC " +
-        "9700 mode is off."));
+              (senderConstraints.rotationRequired() ? "No jti."
+                                                    : "Rotation is off."));
     return;
   }
   const familyId = familyForIssuance(jti, parentJti, parentFamily);
@@ -2802,12 +2852,13 @@ function revokeFamily(familyId, clientId) {
 //
 // Resolves `{ ok: true }` or a refusal in `checkRefreshRequest()`'s shape,
 // with `revoke` and, for a server error, `status: 500`. Never rejects. A no-op
-// while the mode is off, where a refresh token is reusable by design.
+// while rotation is not required (neither compliance mode nor
+// `oauth2.refreshTokenRotation`), where a refresh token is reusable by design.
 // ---------------------------------------------------------------------------
 async function spendRefreshToken(opts) {
   log.debug("Entering spendRefreshToken().");
-  if (!enabled()) {
-    log.debug("Leaving spendRefreshToken(). RFC 9700 mode is off.");
+  if (!senderConstraints.rotationRequired()) {
+    log.debug("Leaving spendRefreshToken(). Rotation is off.");
     return { ok: true };
   }
   const o = opts || {};
@@ -2906,7 +2957,7 @@ function storeRefusal() {
 // makes the difference between "revoked" and "replayed" reportable later.
 function noteRefreshRotated(jti) {
   log.debug("Entering noteRefreshRotated(). jti=" + jti);
-  if (!enabled() || !jti) {
+  if (!senderConstraints.rotationRequired() || !jti) {
     log.debug("Leaving noteRefreshRotated(). Nothing to mark.");
     return;
   }
@@ -2936,10 +2987,24 @@ function scopeSet(scope) {
   return String(scope || '').split(/\s+/).filter(Boolean);
 }
 
+// THIS FUNCTION ANSWERS TWO DIFFERENT QUESTIONS SINCE #34 (2026-09-15), and
+// they are switched by different things:
+//
+//   * the REPLAY of a rotated token, which belongs to rotation and therefore
+//     runs whenever `senderConstraints.rotationRequired()` — a service with
+//     `oauth2.refreshTokenRotation` on and neither mode on rotates, so it must
+//     detect the replay that rotation is FOR. Rotation without replay
+//     detection is bookkeeping nobody reads;
+//   * the idle timeout, the client binding and the scope check below it, which
+//     are RFC 9700 section 2.2.2 and 2.3 rules and stay on `enabled()`.
+//
+// Keeping them in one function is deliberate: they are all "what this server
+// thinks of the refresh token being presented", and a second entry point would
+// be two orders for a caller to get right.
 function checkRefreshRequest(opts) {
   log.debug("Entering checkRefreshRequest().");
-  if (!enabled()) {
-    log.debug("Leaving checkRefreshRequest(). RFC 9700 mode is off.");
+  if (!enabled() && !senderConstraints.rotationRequired()) {
+    log.debug("Leaving checkRefreshRequest(). Neither mode nor rotation.");
     return { ok: true };
   }
   const claims = opts.claims || {};
@@ -2974,6 +3039,16 @@ function checkRefreshRequest(opts) {
                           'all ' + members.length + ' refresh token(s) ' +
                           'descended from the original grant have been ' +
                           'revoked. Start a new authorization request.' };
+  }
+
+  // Everything from here down is an RFC 9700 rule rather than a consequence of
+  // rotation, so a service rotating because `oauth2.refreshTokenRotation` is
+  // on and neither mode is stops here. It rotates and detects a replay; it
+  // does not acquire an idle timeout, a client binding it never had, or a
+  // scope check, none of which the operator asked for by asking for rotation.
+  if (!enabled()) {
+    log.debug("Leaving checkRefreshRequest(). Rotation only.");
+    return { ok: true };
   }
 
   // RFC 9700 section 2.2.2's lifetime paragraph: a refresh token SHOULD expire
@@ -3080,7 +3155,9 @@ function checkRefreshRequest(opts) {
 // there, where the session and the token registry are.
 //
 // Why it matters more than it looks: without it, signing out drops a cookie and
-// leaves a THIRTY-DAY credential in the client's hands. A person who signs out
+// leaves a long-lived credential in the client's hands (twenty-four hours on
+// the default `oauth2.refreshTokenTtlS`, thirty days at that setting's
+// ceiling). A person who signs out
 // of a shared browser has every reason to believe that ended their session, and
 // on this service it ended the half that was visible.
 // ---------------------------------------------------------------------------
@@ -3337,7 +3414,9 @@ function corsForbidden(req) {
 // the token endpoint would answer a request that was correct when it started
 // with a message about a policy that arrived in between. The authorization
 // endpoint is where PKCE is required; this endpoint's job is that a
-// code_verifier cannot be smuggled in where no challenge was.
+// code_verifier cannot be smuggled in where no challenge was. OAuth 2.1 mode
+// is the exception and refuses such a code at the token endpoint too
+// (section 4.1.3) — `oauth21.tokenCodeRefusal()`, asked by `oauth2.js`.
 // ---------------------------------------------------------------------------
 function checkTokenRequest(opts) {
   log.debug("Entering checkTokenRequest().");
@@ -3476,8 +3555,26 @@ function state() {
       // reading this page to find out what it is talking to needs to know that
       // the ID Tokens are being spoiled on purpose, and this is the page they
       // are reading.
-      'oauth2.breakIdTokenNonce': !!config.value('oauth2.breakIdTokenNonce')
+      'oauth2.breakIdTokenNonce': !!config.value('oauth2.breakIdTokenNonce'),
+      // #34 (2026-09-15). Reported here for the reason the row above is:
+      // a client author reading this page is trying to find out what this
+      // server will do to their request, and four of these five turn a SHOULD
+      // into a refusal. None of them is part of this mode, and the mode turns
+      // none of them on.
+      'oauth2.refreshTokenRotation':
+        !!config.value('oauth2.refreshTokenRotation'),
+      'oauth2.refreshTokenRequireDpop':
+        !!config.value('oauth2.refreshTokenRequireDpop'),
+      'oauth2.refreshTokenRequireMtls':
+        !!config.value('oauth2.refreshTokenRequireMtls'),
+      'oauth2.accessTokenRequireDpop':
+        !!config.value('oauth2.accessTokenRequireDpop'),
+      'oauth2.accessTokenRequireMtls':
+        !!config.value('oauth2.accessTokenRequireMtls')
     },
+    // The same five as one block, with what turned rotation on — the console
+    // page and both reports read this rather than each deciding for itself.
+    sender_constraints: senderConstraints.state(),
     // Reported beside the settings because it is the one thing here that a
     // caller cannot infer from its own request: it already knows what scheme it
     // used, and what it wants to know is whether that was the only option.
@@ -3515,7 +3612,7 @@ function state() {
 
 // #46: a rotated refresh token is redeemed once across the cluster and a
 // replay revokes its family by id (`spendRefreshToken()`); the hosted
-// surfaces' renewal is single-flight across nodes in `common/oidc_rp.js`,
+// surfaces' renewal is single-flight across nodes in `common/oidc_rp.ts`,
 // which this row names too. At require time — see cluster/CLAUDE.md.
 capabilities.provide('oauth.refresh-rotation');
 
@@ -3536,6 +3633,10 @@ module.exports = {
   // family by id.
   FAMILY_CLAIM: FAMILY_CLAIM,
   familyForIssuance: familyForIssuance,
+  // #34: re-exported so that `oauth2.js` asks ONE name whether refresh tokens
+  // rotate, whatever turned it on. The answer lives in sender_constraints.js,
+  // which this file may require and which may never require this file back.
+  rotationRequired: senderConstraints.rotationRequired,
   spendRefreshToken: spendRefreshToken,
   revokeFamily: revokeFamily,
   revokeRefreshOnLogout: revokeRefreshOnLogout,

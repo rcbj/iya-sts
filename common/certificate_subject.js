@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: common/certificate_subject.js

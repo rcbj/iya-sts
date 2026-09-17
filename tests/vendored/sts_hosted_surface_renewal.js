@@ -8,7 +8,7 @@
 //
 // An operator watched their console session expire an hour after signing in,
 // with its ID Token and access token, and was sent back through the sign-in
-// screen — off the page they were on. `common/oidc_rp.js` now keeps the tokens
+// screen — off the page they were on. `common/oidc_rp.ts` now keeps the tokens
 // a sign-in was issued and, when they run out, redeems the refresh token over
 // the loopback back channel and writes the new tokens onto the SAME session.
 // This job drives both surfaces through a real browser-shaped cookie jar and
@@ -49,7 +49,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }

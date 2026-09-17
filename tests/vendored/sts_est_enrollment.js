@@ -14,7 +14,7 @@
 // and only then is there anything worth asking `/.well-known/est`.
 //
 // The client is `est_client.js`, written from the RFCs with nothing from `est/`
-// or `common/cert_enrollment.js`, so a certs-only message, a multipart response
+// or `common/cert_enrollment.ts`, so a certs-only message, a multipart response
 // and a csrattrs document are read by a SECOND implementation. CSRs are built
 // with the parent project's vendored `x509.js`, the independent PKI code
 // `sts_user_credentials.js` builds its certificates with.
@@ -23,8 +23,8 @@
 // *No job removes a realm*). It changes ONE thing outside them, for as short a
 // time as the check takes: a default-realm person is put in the Admin Write
 // roster so an administrator's enrollment for somebody else can be asserted,
-// and taken out again in a `finally` — a left-over member closes the console's
-// empty-roster door for every later job in the run.
+// and taken out again in a `finally` — a left-over member would be a service
+// administrator nobody meant, for every later job in the run.
 //
 // Mostly negatives, for `sts_dpop.js`'s reason: an enrollment server that hands
 // a working client a certificate looks finished and can be worth nothing.
@@ -43,7 +43,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -620,11 +620,13 @@ async function test() {
           assert.ok(!/PRIVATE KEY/.test(viewAfterKeygen.raw));
           // The user page's `ldap.entry.attributes` is the stored
           // entry dumped whole, by `ldap/ldap_server.js`'s own decision ("a
-          // dump that silently dropped attributes would be the one thing a
-          // dump must not do"); in development mode nothing is sealed, so the
-          // key held on `stsEnrolledPrivateKey` is there exactly as
-          // `stsAssertionPrivateKey` is. Everything else in the reply must
-          // be free of it.
+          // dump that silently dropped two of the entry's attributes would be
+          // the one thing a dump must not do"). In development mode the key on
+          // `stsEnrolledPrivateKey` is stored unsealed, and the dump now
+          // WITHHOLDS its value in every mode
+          // (`cert_enrollment.withheldValues()`). The attribute is still
+          // dropped here so that this check is about everything ELSE in the
+          // reply, whatever the dump does with it.
           const body = JSON.parse(userAfterKeygen.raw);
           const attrs = (body && body.ldap && body.ldap.entry &&
                          body.ldap.entry.attributes) || {};

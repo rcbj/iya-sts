@@ -21,28 +21,34 @@ somebody came for is below the fold of a page about something else.
 | `/portal/password` | authenticated | **Password** — the form, and the POST that answers it |
 | `/portal/keys` | authenticated | **Security keys** — the list, and a Remove per key |
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
+| `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
+| `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
+| `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
 | `/portal/callback` | — | the OIDC redirect URI |
+| `/portal/signals/receive` | **unauthenticated** | this portal's Shared Signals push endpoint — see the A01 section |
 | `/portal/remove-key`, `/portal/signout` | authenticated | the two other POSTs |
 
 **FIVE PAGES SINCE 2026-09-10**, and the fifth is the first here that HANDS
-SOMEBODY A CREDENTIAL rather than taking one.
+SOMEBODY A CREDENTIAL rather than taking one. **EIGHT SINCE 2026-09-13** —
+`NAV` below is the list.
 
 **`NAV` IS THE PAGE LIST AND THERE IS NO SECOND COPY.** `navBar()` draws the
 column from it, `headingFor()` titles the page from it, and `paths()` reports it
-to `sts_metadata.js` — so a page added there appears in the column, in the
+to `sts_metadata.ts` — so a page added there appears in the column, in the
 browser tab and in the endpoint list, and one removed leaves none of the three
-behind. `tests/vendored/sts_portal_sessions.js` asserts, for each of the four,
-that its own entry is marked `aria-current="page"`.
+behind. `tests/vendored/sts_portal_sessions.js` asserts, for the first four
+(Overview, Applications, Password, Security keys), that its own entry is marked
+`aria-current="page"`.
 
 **A `GET` AND A `POST` SHARE `/portal/password`.** The form has to live
 somewhere now that it is not on the overview, and a form and the handler that
 answers it on two addresses is a distinction nobody could state a reason for.
-`sts_metadata.js` is keyed by path and merges the methods, so this costs one
+`sts_metadata.ts` is keyed by path and merges the methods, so this costs one
 entry rather than two.
 
 **THE GETs ASK THE ACCESS GATE FOR `read` AND THE POSTs FOR `manage-own`.**
 Drawing a page is reading. That distinction is the reason the portal has an
-action of its own at all — see `common/access_gate.js`'s `ACTION` — and a
+action of its own at all — see `common/access_gate.ts`'s `ACTION` — and a
 deployment that later lets a helpdesk role READ an account without changing it
 needs the two to have been kept apart from the beginning.
 
@@ -108,7 +114,7 @@ this".
 
 ### It is a DRY RUN, and the gate has to be told
 
-`preview: true` on the request, honoured in `xacml/xacml_role_pep.js`. Nothing
+`preview: true` on the request, honoured in `xacml/xacml_role_pep.ts`. Nothing
 is being issued — somebody is looking at a page — so the refusals must not be
 written to the audit log as `xacml.issuance.refused` and must not be counted on
 `/admin/xacml/monitor` as decisions this service made. Drawing this page for a
@@ -170,8 +176,8 @@ request the application never asked for and is not expecting. The page says so.
 Twenty rows a page. The scan stops at `portal.applicationScanLimit` entries —
 1,000 by default — and says when it bit, with the number in force: each entry
 costs a policy evaluation per distinct kind, on the one thread that answers
-every socket this service holds, which is the stall `CLAUDE.md`'s worker-pool
-section is about. **This heading said "a guard rather than a setting"** on the
+every socket this service holds, which is the stall `common/CLAUDE.md`'s
+worker-pool section is about. **This heading said "a guard rather than a setting"** on the
 argument that a configuration row would be a knob nobody turns until the day
 the page is already slow. The half about the page being slow still holds; what
 it left out is the deployment whose registry is past a thousand on purpose,
@@ -216,7 +222,7 @@ this one MINTS a shared secret and shows it. The design follows from that.
 
 Pressing *Set up* mints a secret and holds it in memory (`totp.enrolmentTtlMinutes`,
 per realm, like every other pending record in this service);
-`common/credentials.js` writes the attribute only when a code proves the app
+`common/credentials.ts` writes the attribute only when a code proves the app
 really has it.
 
 **An unconfirmed secret on somebody's entry would be a second factor they
@@ -229,7 +235,7 @@ own account with a form they abandoned. It is the same shape of lockout
 
 `script-src 'none'` covers every page here except `/portal/keys` (see below,
 2026-09-10), so a QR library running in the browser was never available on this
-one — `common/totp.js` renders an SVG and it arrives as
+one — `common/totp.ts` renders an SVG and it arrives as
 a `data:` URI, which `img-src 'self' data:` already allowed for the two OID4VC
 offer pages.
 
@@ -337,8 +343,8 @@ It arrived 2026-09-10, in a directory whose own file said every page of it was
 `script-src 'none'`.
 
 `app.js` sets `script-src 'none'` everywhere and the rule is that a page gets an
-exception only when it CANNOT work without one — four candidates have been
-refused on it, `/authn/totp` among them, which sits next door to a scripted page
+exception only when it CANNOT work without one — several candidates have been
+refused on it (the root `CLAUDE.md` lists them), `/authn/totp` among them, which sits next door to a scripted page
 and still had to argue its own case.
 
 **A WebAuthn ceremony is a browser API call.** There is no markup that invokes
@@ -543,7 +549,7 @@ the sign-on session at all: the browser goes to `/oauth2/authorize`, the sign-in
 screen is reached only because the AUTHORIZATION ENDPOINT decides it needs one,
 and what comes back is a code that buys an ID Token that establishes the
 portal's OWN session in its own cookie (`sts_portal`).
-`common/oidc_rp.js` runs it and argues it.
+`common/oidc_rp.ts` runs it and argues it.
 
 Three things about it are this directory's:
 
@@ -557,7 +563,7 @@ Three things about it are this directory's:
   `/realm/acme/portal` and then opening `/realm/acme/admin` meant signing in
   again, and so did the other direction.** Nothing here changed — the console's
   flow moved to the ambient realm to meet this one. `admin-ui/CLAUDE.md` argues
-  what that cost the console and `common/oidc_rp.js` holds the split.
+  what that cost the console and `common/oidc_rp.ts` holds the split.
 * **A `Location` HEADER IS NOT MARKUP, AND THIS SURFACE IS WHERE THAT COST
   SOMETHING.** `app.js` rewrites every root-relative `href`, `action` and `src`
   in an HTML response into the current realm — which is what carries this
@@ -595,7 +601,7 @@ Three things about it are this directory's:
 
 **They were on one page when this was written and the page split under
 them.** The narrow one moved into the shell and is now in the corner of
-ALL FOUR pages, which is the same decision rather than a new one — a
+EVERY page, which is the same decision rather than a new one — a
 person who wants out should not have to find the page it lives on first.
 The wider one stayed where it was, at the foot of the Overview.
 
@@ -643,7 +649,7 @@ that calls `beginAuthentication()` — so the reason below is why the flow works
 at all rather than why this file redirects where it does.
 
 `requireSignIn()` used to send an unauthenticated visitor through
-`authn.beginAuthentication()`, exactly as `saml2_sso.js` and `consent_screen.js`
+`authn.beginAuthentication()`, exactly as `saml2_sso.ts` and `consent_screen.js`
 do. This was a plain `303` to `/authn/login` at first **and it does not work**:
 that endpoint draws a form for a PENDING AUTHENTICATION RECORD, and a POST
 naming no record is answered `This sign-in form has expired`. The portal is not a
@@ -688,8 +694,8 @@ path was wrong, so the flow most people take was the one that failed.
 
 **AND THE SAME MISTAKE WAS IN TWO OTHER FILES**, found by looking for it rather
 than by being told: the federation index's *The sign-in screen* link
-(`federation/federation_sp.js`) and the admin console's 401 for a form posted
-with an expired session (`admin-ui/admin.js`, whose link was ALSO swallowed into
+(`federation/federation_sp.ts`) and the admin console's 401 for a form posted
+with an expired session (`admin-ui/admin.ts`, whose link was ALSO swallowed into
 a `<details>` summary and so was not clickable at all). The rule read off all
 three: **`/authn/login` is never a destination — link to a page that STARTS a
 sign-in, and let it mint the record.**
@@ -699,11 +705,11 @@ sign-in, and let it mint the record.**
 | | Control | Where |
 |---|---|---|
 | A01 | identity from the session, never the request | this directory, and THREE test files at three layers — see below |
-| A02 | scrypt for passwords, activation token hashed | `common/credentials.js`, `common/crypto.js` |
+| A02 | scrypt for passwords, activation token hashed | `common/credentials.ts`, `common/crypto.js` |
 | A03 | every value through `esc()`; no SQL built from input anywhere | this directory |
-| A04 | rate limiting on activation, sign-in and password change | `common/websecurity.js` |
+| A04 | rate limiting on activation, sign-in and password change | `common/websecurity.ts` |
 | A05 | the CSP `app.js` sets on every response | `common/app.js` |
-| A07 | CSRF tokens, the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `common/websecurity.js`, `authn/authn.js` |
+| A07 | CSRF tokens, the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `common/websecurity.ts`, `authn/authn.ts` |
 | A09 | every act audited | `common/audit.js` |
 
 **Changing a password requires the current one even though the person is signed
@@ -762,7 +768,7 @@ page must be drawn for the session's own person and must not name theirs.
 
 A person's own security activity: what this identity provider has SAID about
 their sessions and their account, to this portal, over OpenID CAEP and RISC.
-`ssf/ssf_receivers.js` holds the design, `ssf/CLAUDE.md` argues it, and the A01
+`ssf/ssf_receivers.ts` holds the design, `ssf/CLAUDE.md` argues it, and the A01
 half is above. Three things belong here.
 
 **IT IS UNDER *Your account* AND NOT UNDER *How you sign in*.** That section
@@ -801,7 +807,7 @@ not to hand*, which is a sentence about the second factor.
 ### There is no button that issues a set, and that is the shape of the feature
 
 **THIS SECTION REVERSED ON 2026-09-11.** It read: *a set is created by
-`common/credentials.js` at the moment a second factor is enrolled, once, and
+`common/credentials.ts` at the moment a second factor is enrolled, once, and
 there is no door here or anywhere else that creates one on request — a recovery
 mechanism a person has to remember to ask for produces exactly the population it
 exists to protect, one person at a time.* That argument is still true and the
@@ -846,7 +852,7 @@ every value.
 
 ### It draws a FIXED LIST and never the entry, which is the whole design
 
-`common/inetorgperson.js` is the list and this page is a reader of it.
+`common/inetorgperson.ts` is the list and this page is a reader of it.
 Iterating the stored attributes instead would have been shorter and is the one
 thing this section must not do: **an entry in this directory carries whatever
 anybody put on it**, and this service writes four `sts`-prefixed CREDENTIALS
@@ -868,7 +874,7 @@ attempt.
 ### The directory arrives through a SLOT, and it is the first this application has offered
 
 `portal.setDirectory()`, filled by `ldap/ldap_server.js` at its require time.
-Rule 3e's test answers yes both ways round: this module is at 8b and that one
+Rule 3e's test answers yes both ways round: this module is at 8a and that one
 at 21, so a require from here would register every `/ldap` route and the eight
 `/admin/ldap/*` console pages ahead of the authorization server and the
 console, and a require the other way would move every `/portal` route behind
@@ -892,8 +898,8 @@ be explored is the more useful half. So the set ones are drawn plainly and the
 rest are one fold per class.
 
 **`<details>` is MARKUP and not script**, which is why it is available at all:
-every page of this portal is `script-src 'none'`, and the console made exactly
-this argument for its own collapsible prose. There is no collapse-all and there
+every page of this portal but `/portal/keys` is `script-src 'none'`, and the
+console made exactly this argument for its own collapsible prose. There is no collapse-all and there
 will not be one.
 
 ### Nothing here can be edited
@@ -902,7 +908,7 @@ These attributes are written by an operator, by SCIM, or over LDAP. This portal
 changes how somebody AUTHENTICATES and not what the directory records about
 them, and the page says so rather than leaving a reader to wonder where the
 form is. **Most of them cannot be written through `/admin/users/new` either** —
-that form checks against `oid4vc/vc_claims.js`'s catalogue, which is
+that form checks against `oid4vc/vc_claims.ts`'s catalogue, which is
 twenty-seven claim-bearing attributes rather than this schema's fifty — so
 `departmentNumber` and `roomNumber` reach an entry over SCIM or LDAP or not at
 all.
@@ -1022,8 +1028,9 @@ would misfile the other three.
 Asked for by rcbj beside the RFC 7523 and RFC 7522 key pairs: a person generates
 a TLS client certificate that maps to their identity and installs it in their
 browser. `common/tls_client_certificates.js` issues, packages and revokes;
-`common/CLAUDE.md` 3ag argues the gate that makes the listeners' trust in the
-service Root safe, and `tls/CLAUDE.md` the listeners. What is this page's:
+`common/CLAUDE.md` 3ag argues the gate that makes trusting the
+service Root safe, and `tls/CLAUDE.md` what a presented certificate is worth.
+What is this page's:
 
 * **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
   one-time card with three `data:` links carrying `download` — the `.p12`, an
@@ -1042,28 +1049,43 @@ service Root safe, and `tls/CLAUDE.md` the listeners. What is this page's:
 * **A LIST WITH A REVOKE PER VALID ROW**, and the serial in that form is looked
   up among the signed-in person's own certificates, so another person naming it
   gets 400 `STS-PKI-0171` — `/portal/remove-key`'s arrangement. Revoking is real
-  revocation (the CRL, OCSP, the listeners refusing it), with two reasons a person
+  revocation (the CRL, OCSP, and every door that reads a certificate refusing
+  it), with two reasons a person
   can honestly give: `cessationOfOperation` and `keyCompromise`.
 * **A PACKAGING FAILURE REVOKES THE CERTIFICATE AT ONCE** (`STS-PORTAL-0042`): its
   key is gone, and a valid certificate nobody can present or knows to revoke is
   worse than a line on a list.
-* **WHERE IT WORKS** is drawn from `tls.port` and `tls.mutualPort` on the host the
-  page was reached at, because this module is required long before
-  `tls/tls_server.js` and cannot ask for the bound ports without moving routes.
+* **WHERE IT WORKS IS ONE ADDRESS SINCE 2026-09-16**, and the card says so:
+  `GET /tls/sign-in` on the host the page was reached at. It named two — the
+  8443 and 9443 listeners, built from `tls.port` and `tls.mutualPort`, because
+  this module is required long before `tls/tls_server.js` and could not ask for
+  the bound ports without moving routes — and both listeners and both settings
+  were deleted. `tlsListenerUrls()` now builds the address from the page's
+  `base` (`helpers.baseUrlOf(req)`), so it needs no setting and no require and
+  honours `global.publicBaseUrl` and the realm prefix. **The same commit
+  deleted the signing-key half of this page with it** — `SIGNING_KEY_PROFILES`,
+  `signingKeyProfile()`, `heldProfile()`, `freshInstructions()`,
+  `profileCard()` — and took a `req` its callers never passed, so every
+  `GET /portal/signing-key` answered 500 and the card said `localhost`; both
+  were restored on 2026-09-16, and `sts_portal_signing_key` is what caught it.
+  **The card also stopped promising a port that REQUIRES a certificate**: the
+  main port asks every connection for one and requires none, so it is the
+  browser that decides to send it.
 
 **NO `/admin-api` MIRROR**, for this page's standing reason: the answer is
 per-person. An operator revokes one on `/admin/pki`'s revocation pane, where it
 is listed like every other leaf of the `tls-client` authority.
 `tests/vendored/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
-handshake is `tests/tls_client_certificates.js`, because no launcher publishes
-9443 to a job.
+handshake was `tests/tls_client_certificates.js` in process, because no launcher
+published 9443 to a job — **a certificate now arrives on the port every job
+already uses**, which is the deletion's one gift to this page.
 
 ## THE SIGN-IN CAN BE REFUSED FOR A SECOND REASON, AND THE 503 SAYS WHICH (2026-09-12)
 
 `oidcRp.beginSignIn()` used to fail for one reason — `sts-user-portal` gone or
 without a secret — and the page said *which is what has happened*. In product
 mode it can also refuse because this portal is being reached at an address that
-entry does not carry as a redirect URI, which `common/oidc_rp.js` now refuses
+entry does not carry as a redirect URI, which `common/oidc_rp.ts` now refuses
 rather than writing the address onto the entry (an invented `Host` header would
 otherwise plant a callback on this service's own client). The reason is in
 `started.why` either way; `started.reason` says which kind it is, and the note
@@ -1089,7 +1111,7 @@ same day, so a caller that means to send a link creates with
 
 ACME and SCEP authenticate with a credential bound to ONE directory entry — an
 External Account Binding key and a single-use challenge password
-(`common/cert_enrollment.js`, rule 3ag). An administrator makes one for anybody
+(`common/cert_enrollment.ts`, rule 3ag). An administrator makes one for anybody
 on `/admin/acme` and `/admin/scep`; this page is where a person makes one for
 THEMSELVES, lists the certificates ACME, EST and SCEP issued them, and revokes
 one. EST needs nothing made first — the person's username and password are its
@@ -1109,9 +1131,9 @@ credential — so its card only lists the labelled addresses.
   `…PerAddress`) under its own bucket name, `portal-enrollment`; a protocol
   turned off in the realm is refused at the door as well as hidden on the page
   (`STS-PORTAL-0050`).
-* **IT IS A FILE BESIDE `portal.js` REGISTERED THROUGH `register(context)`**:
+* **IT IS A FILE BESIDE `portal.ts` REGISTERED THROUGH `register(context)`**:
   the shell, the sign-in, the CSRF field and the escaping are private to
-  `portal.js`, which hands them over at the foot of its own routes. That keeps
+  `portal.ts`, which hands them over at the foot of its own routes. That keeps
   the route order the column's and the new file to what is new.
 
 **THE TLS CLIENT CERTIFICATES THIS PORTAL ISSUES DIRECTLY are
@@ -1141,7 +1163,7 @@ three differences:
 * **On success it spends the link, clears `pwdReset`, clears the rate-limit
   bucket, audits `portal.password-reset`, and sends a CAEP `credential-change`
   (password, create, initiated by the user)** through
-  `ssf/account_signals.js`. It signs nobody in: the page links to `/portal`,
+  `ssf/account_signals.ts`. It signs nobody in: the page links to `/portal`,
   where the ordinary sign-in happens with the new password, for
   `/portal/activate`'s magic-link argument.
 

@@ -1,3 +1,4 @@
+// @ts-check
 // File: webauthn.js
 //
 // ---------------------------------------------------------------------------
@@ -32,7 +33,6 @@
 'use strict';
 
 const crypto = require('crypto');
-const stsCrypto = require('../common/crypto');
 // The service's shared logger when this module is loaded inside the service,
 // and a silent fallback when it is loaded ON ITS OWN — which the debugger's
 // cross-implementation test does, copying this one file next to its own
@@ -40,15 +40,33 @@ const stsCrypto = require('../common/crypto');
 // process.env.CONFIG_FILE relative to its own directory and pulls in the
 // service's dependencies. A verifier written to be checked by somebody else's
 // test has no business dragging the whole service in behind it.
-let log;
+//
+// THE FALLBACK IS SET BEFORE THE REQUIRE IS TRIED (fixed 2026-09-16). The catch
+// used to call `log.debug` while `log` was still undefined, so a standalone
+// load threw a TypeError from inside its own fallback. The caught reason is
+// kept in `loadProblem` and reported by the silent logger's owner, if any.
+const noop = function () {};
+/** @type {any} */
+let log = { debug: noop, info: noop, warn: noop, error: noop };
+let loadProblem = '';
 try {
   log = require('../common/helpers').log;
 } catch (e) {
-  log.debug("Caught in the load of authn/webauthn.js: " +
-            ((e && e.message) || e));
-  const noop = function () {};
-  log = { debug: noop, info: noop, warn: noop, error: noop };
+  loadProblem = 'the service logger is not reachable: ' +
+                ((e && e.message) || e);
 }
+// `common/crypto.js` for base64url, and the same standalone case: without it,
+// Node's own `base64url` encoding, which is what that function wraps.
+let stsCrypto = null;
+try {
+  stsCrypto = require('../common/crypto');
+} catch (e) {
+  loadProblem = (loadProblem ? loadProblem + '; ' : '') +
+                'common/crypto.js is not reachable: ' +
+                ((e && e.message) || e);
+}
+log.debug('authn/webauthn.js loaded' +
+          (loadProblem ? ' standalone (' + loadProblem + ').' : '.'));
 
 // --- CBOR, enough of it, decode only -----------------------------------------
 //
@@ -174,7 +192,13 @@ const COSE_ALGS = {
 
 // base64url, from common/crypto.js — see the note beside helpers.js's. This
 // was the third copy of the same three lines in this service.
-const b64u = stsCrypto.b64u;
+function b64uStandalone(buf) {
+  log.debug("Entering b64uStandalone().");
+  log.debug("Leaving b64uStandalone().");
+  return Buffer.from(buf).toString('base64url');
+}
+
+const b64u = stsCrypto ? stsCrypto.b64u : b64uStandalone;
 
 function coseKeyToJwk(coseKey) {
   log.debug('Entering coseKeyToJwk().');
@@ -440,7 +464,7 @@ function verifyAssertion(input) {
 }
 
 module.exports = {
-  // The COSE tables, for `admin-ui/crypto_metadata.js`, which reports what
+  // The COSE tables, for `admin-ui/crypto_metadata.ts`, which reports what
   // this relying party will accept rather than keeping a second copy of it.
   // They are DATA and not behaviour: exporting them cannot change what this
   // file verifies, and the alternative was a list of algorithms typed into a

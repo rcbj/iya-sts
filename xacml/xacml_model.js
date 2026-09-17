@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: xacml_model.js
@@ -425,7 +426,7 @@ function isEmptyBag(candidate) {
 // ---------------------------------------------------------------------------
 function IndeterminateError(status, message, detail) {
   log.debug("Entering IndeterminateError().");
-  const error = new Error(message);
+  const error = /** @type {any} */ (new Error(message));
   error.name = 'IndeterminateError';
   error.xacmlStatus = status || STATUS.PROCESSING_ERROR;
   error.xacmlDetail = detail || null;

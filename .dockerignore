@@ -54,6 +54,16 @@ SECURITY.md
 LICENSE.md
 clean.sh
 
+# Claude Code's per-checkout state, and above all its AGENT WORKTREES: a
+# session that isolates a subagent checks a second copy of this repository out
+# under .claude/worktrees/, and the context is copied whole. On 2026-09-16 one
+# appeared between two modes of ./docker-run-tests.sh and the next image
+# carried it, so every test that walks the tree for source (error_codes,
+# admin_actions_layer) found a second service in it and failed naming files
+# that are not this one. .git/info/exclude keeps it out of `git status`, which
+# is why nothing else noticed.
+.claude
+
 # ---------------------------------------------------------------------------
 # THREE OF THEM CAME BACK ON 2026-09-09, AND THE REASON IS THE SAME ONE THE
 # BLOCK BELOW GIVES ABOUT `tests`: THIS FILE SERVES TWO IMAGES THAT WANT

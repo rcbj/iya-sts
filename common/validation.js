@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: validation.js
@@ -14,9 +15,10 @@
 // **`String()` AT THE READ SITE IS A CONVENTION AND NOT A CONTROL**, and the
 // difference is the whole reason this file exists. It is applied by whoever
 // wrote the line, it cannot be checked, and where it is missing nothing says
-// so. `oauth2.js:3138` has it on `redirect_uri`; the same handler passes
-// `q.client_id` to `clientConfigOf()` without it four lines later. Neither is
-// a bug today. The point is that nobody can tell without reading both.
+// so. When this file was written, `oauth-oidc/oauth2.ts`'s authorization
+// endpoint had it on `redirect_uri` and passed `q.client_id` to
+// `clientConfigOf()` without it four lines later. Neither was a bug. The point
+// is that nobody could tell without reading both.
 //
 // ---------------------------------------------------------------------------
 // SHAPE IS VALIDATED UNCONDITIONALLY. EXISTENCE STAYS WITH `mode.js`.
@@ -113,10 +115,11 @@
 // A LIBRARY (rule 3): it registers no route, so its position in the require
 // order is not a position.
 //
-// It is a LEAF and must stay one. It requires `zod`, `bunyan` and `config` —
-// and `config` requires nothing here — so `helpers.js` may require it, and it
-// may NEVER require `helpers.js` back. That direction is load-bearing: the
-// normalisation has to be available to `parseBody()` itself, which is in
+// It is a LEAF and must stay one. It requires `zod`, `bunyan`, xmldom, node's
+// `zlib`, `config` and the error-code table — and neither of those two
+// requires anything that reaches back here — so `helpers.js` may require it,
+// and it may NEVER require `helpers.js` back. That direction is load-bearing:
+// the normalisation has to be available to `parseBody()` itself, which is in
 // helpers, and a cycle there would hand back a half-initialised module whose
 // exports are `undefined` and surface much later as something that is not a
 // function (rule 2).
@@ -462,10 +465,11 @@ function check(req, where, schema) {
 // **THIS IS WHAT EVERY BODY IN THIS SERVICE ACTUALLY USES, and the reason is a
 // property of `app.js` rather than a convenience here.** There is no
 // `bodyParser.json()` or `bodyParser.urlencoded()` in this service: the raw
-// parser takes the Kerberos DER and `bodyParser.text({ type: () => true })`
-// takes everything else, so **`req.body` IS A STRING** and
-// `helpers.parseBody()` is what turns it into an object — `JSON.parse` for a
-// JSON content type, `URLSearchParams` otherwise.
+// parser takes the few binary types (Kerberos, OCSP, PKCS#10, SCEP) and
+// `bodyParser.text({ type: () => true })` takes everything else, so
+// **`req.body` IS A STRING** and `helpers.parseBody()` is what turns it into
+// an object — `JSON.parse` for a JSON content type, `URLSearchParams`
+// otherwise.
 //
 // So a handler holds the parsed object and `check(req, 'body', …)` would look
 // at the raw text beside it and find no fields at all — silently, answering
@@ -848,11 +852,11 @@ function parseXml(xml, what, opts) {
 // 5mb, so ten times that payload is half a minute of a service that answers
 // nobody.
 //
-// **AND "ANSWERS NOBODY" IS LITERAL HERE.** This process runs six listener
-// families on ONE THREAD — the express app, the KDC on TCP and UDP 88, the
-// Kerberos service, the LDAP directory, two gRPC surfaces and two HTTPS
-// endpoints. That is the argument the root `CLAUDE.md` makes about
-// post-quantum signing, and the whole reason `common/worker_pool.js` exists:
+// **AND "ANSWERS NOBODY" IS LITERAL HERE.** This process runs every listener
+// it owns on ONE THREAD — the express app, the KDC on TCP and UDP 88, the
+// Kerberos service, the LDAP directory and the SPIFFE gRPC surfaces among
+// them. That is the argument `common/CLAUDE.md` makes about post-quantum
+// signing, and the whole reason `common/worker_pool.js` exists:
 // a synchronous computation here does not slow this service down, it STOPS it,
 // and a KDC that does not answer looks from the outside exactly like a KDC that
 // is not there.
@@ -1209,9 +1213,9 @@ function redirectType(options) {
 const redirectUri = redirectType({ privateUse: true });
 
 // An http(s) URL this service will DIAL. Narrower than `uri` on purpose: the
-// three outbound requests in this repository (a federation partner, an SSF push
-// endpoint, a XACML PEP's notify URL) each take an address somebody configured,
-// and none of them has any business being a non-HTTP scheme.
+// outbound requests in this repository (a federation partner, an SSF push
+// endpoint, a XACML PEP's notify URL among them) each take an address somebody
+// configured, and none of them has any business being a non-HTTP scheme.
 const httpUri = z.string().min(1).max(CAP.URI).refine(function (value) {
   let parsed = null;
   try {
@@ -1296,8 +1300,8 @@ function repeatable(inner) {
 // The first version of these schemas typed the sign-in form's `username` as
 // `vt.name.optional()`, so posting the form with the box empty was answered
 // 400 — where this service re-shows the screen and asks for a name.
-// **`oauth2_sts_endpoints.js` asserts exactly that**: *an empty username
-// should re-show the form, not redirect*.
+// **`tests/vendored/oauth2_sts_endpoints.js` asserts exactly that**: *an
+// empty username should re-show the form, not redirect*.
 //
 // The line is the one this whole file is about. *Is a name required here* is an
 // EXISTENCE question and belongs to the handler, which knows what it is asking

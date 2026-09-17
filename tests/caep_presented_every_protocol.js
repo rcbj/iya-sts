@@ -17,7 +17,7 @@
 // the day CAEP landed, because both go through the ONE funnel:
 // `authn.startSession()` and `authn.dropSession()`. `session-presented` did
 // not, because there is no funnel for it — a presentation is a thing each
-// protocol endpoint decides it is doing, and only `oauth-oidc/oauth2.js`
+// protocol endpoint decides it is doing, and only `oauth-oidc/oauth2.ts`
 // called `notePresented()`. So a receiver watching a stream saw a SAML session
 // start and end with every single sign-on between the two missing, and the
 // evidence of the gap was a count of zero, which in this protocol is also what
@@ -31,7 +31,7 @@
 // that `notePresented()` is protocol-independent (section A), and that every
 // module which answers a request out of an existing session actually calls it
 // (section B). B is a SOURCE check and it is the one that would catch the
-// regression, because the fifth browser SSO profile somebody adds will have
+// regression, because the next browser SSO profile somebody adds will have
 // the same hole and nothing else in either suite is looking for it.
 // ===========================================================================
 
@@ -46,17 +46,18 @@ const log =
     require('bunyan').createLogger({ name: 'caep_presented_every_protocol',
   level: process.env.LOG_LEVEL || 'info' });
 
-// The four browser SSO profiles: a module, and the identifier it passes as
-// `via` so the event says which door the session came back through. A profile
-// added here without a `notePresented()` fails section B by name.
+// The four browser SSO profiles, and GNAP's interaction: a module, and the
+// identifier it passes as `via` so the event says which door the session came
+// back through. A profile added here without a `notePresented()` fails
+// section B by name.
 const PROFILES = [
-  { file: '../oauth-oidc/oauth2.js', via: 'OAuth 2.0 / OIDC' },
-  { file: '../saml/saml2_sso.js', via: 'SAML 2.0' },
-  { file: '../saml/saml11_sso.js', via: 'SAML 1.1' },
-  { file: '../ws-federation/wsfed.js', via: 'WS-Federation' },
+  { file: '../oauth-oidc/oauth2.ts', via: 'OAuth 2.0 / OIDC' },
+  { file: '../saml/saml2_sso.ts', via: 'SAML 2.0' },
+  { file: '../saml/saml11_sso.ts', via: 'SAML 1.1' },
+  { file: '../ws-federation/wsfed.ts', via: 'WS-Federation' },
   // GNAP (2026-09-12): an interaction that meets a live sign-on session
   // approves without a new authentication, which is a presentation.
-  { file: '../gnap/gnap_interact.js', via: 'GNAP' }
+  { file: '../gnap/gnap_interact.ts', via: 'GNAP' }
 ];
 
 // A session in the shape `startSession()` leaves one, INCLUDING the flag that

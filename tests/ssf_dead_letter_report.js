@@ -6,9 +6,9 @@
 // MONITORING → SHARED SIGNALS → DEAD LETTERS COUNTS WHAT THE QUEUES HOLD
 // (2026-09-14).
 //
-// `ssf/ssf_dead_letter_report.js` is the one place the page and
+// `ssf/ssf_dead_letter_report.ts` is the one place the page and
 // `GET /admin-api/ssf/dead-letters` get their numbers, and
-// `admin-core/admin_views.js`'s `ssfDeadLettersState()` the one place the
+// `admin-core/admin_views.ts`'s `ssfDeadLettersState()` the one place the
 // letters are narrowed and paged. What this holds:
 //
 //   A. THE CAUSES. STS-SSF-0092, -0093 and -0096 are causes of their own and

@@ -5,9 +5,9 @@
 // ===========================================================================
 // A SECURITY KEY ENROLLED HERE IS DEMANDED HERE AFTERWARDS (2026-09-10).
 //
-// **THIS JOB EXISTS BECAUSE IT WAS NOT TRUE.** `authn/authn.js` kept a
+// **THIS JOB EXISTS BECAUSE IT WAS NOT TRUE.** `authn/authn.ts` kept a
 // credential store of its own — a per-realm map of ONE key per person — while
-// `common/credentials.js` kept the security keys on the person's directory
+// `common/credentials.ts` kept the security keys on the person's directory
 // entry, multi-valued, each with the ROLE it was enrolled in. Two stores, and
 // the role model was wired to the one nothing wrote:
 //
@@ -60,7 +60,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }

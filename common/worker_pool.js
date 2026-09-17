@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: worker_pool.js
@@ -441,9 +442,10 @@ function run(kind, job, opts) {
   const entry = workerFor(options.session);
   if (!entry) {
     // workers.count is 0, the pool has given up on children, or this process is
-    // shutting down. The SAME job table runs, in this process — see the note at
-    // the foot of worker.js. Blocking, and the only thing that changes about
-    // the answer is how long the event loop was busy producing it.
+    // shutting down. The SAME job table runs, in this process — see the header
+    // of worker.js (THE JOB TABLE IS EXPORTED). Blocking, and the only thing
+    // that changes about the answer is how long the event loop was busy
+    // producing it.
     log.debug('Leaving run(). Computing in this process.');
     try {
       log.debug("Leaving run().");
@@ -655,8 +657,9 @@ module.exports = {
 
 // ---------------------------------------------------------------------------
 // AND THE LAST LINE ARMS pq_jose.js. **REQUIRING THIS MODULE IS WHAT MAKES
-// ITS ASYNCHRONOUS HALF USE A POOL**, which is the same shape as rule 1 in the
-// root CLAUDE.md — requiring a protocol module is what registers its routes.
+// ITS ASYNCHRONOUS HALF USE A POOL**, which is the shape rule 1 in the root
+// CLAUDE.md had until #50's R1 — requiring a protocol module was what
+// registered its routes (it still is for the JavaScript ones).
 //
 // It is here rather than at whichever call site happened to want it first, and
 // that is a correction rather than a preference: common/crypto.js filled the

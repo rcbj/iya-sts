@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: xacml_pdp.js
@@ -20,9 +21,10 @@
 // THE FOUR THINGS A PDP GETS WRONG, IN THE ORDER THEY COST THE MOST.
 //
 // 1. COLLAPSING THE EXTENDED INDETERMINATE VALUES. Argued at length in
-//    `xacml_model.js`. `combine()` below is the only consumer of them and the
-//    reason they exist; `externalDecision()` is called ONCE, at the very
-//    bottom of `evaluate()`, and a second call site anywhere is a bug.
+//    `xacml_model.js`. The combining algorithms below (`COMBINERS`) are the
+//    only consumer of them and the reason they exist; `externalDecision()` is
+//    called ONCE, at the very bottom of `evaluate()`, and a second call site
+//    anywhere is a bug.
 //
 // 2. TREATING A MISSING ATTRIBUTE AS FALSE. An `AttributeDesignator` that
 //    finds nothing returns an EMPTY BAG, and what happens next is decided by
@@ -81,10 +83,11 @@ function makeContext(request, options) {
     countNodes: function () {
       log.debug("Entering countNodes().");
       log.debug("Leaving countNodes().");
-      // Replaced by `xacml_content.js` when XPath support is wired up. Until
-      // then this refuses rather than returning 0 — a node count of zero is a
-      // perfectly ordinary answer, so a stub returning it would make every
-      // XPath policy quietly evaluate against an empty document.
+      // To be replaced if XPath support is ever wired up (no module provides
+      // it today). Until then this refuses rather than returning 0 — a node
+      // count of zero is a perfectly ordinary answer, so a stub returning it
+      // would make every XPath policy quietly evaluate against an empty
+      // document.
       throw model.processingError(
         'This PDP has no XPath support wired up, so xpath-node-count and ' +
         'AttributeSelector cannot be evaluated.');
@@ -545,20 +548,8 @@ function withStatus(decision, error) {
 }
 
 // ---------------------------------------------------------------------------
-// THE COMBINING ALGORITHMS.
-//
-// Twelve identifiers, and each is transcribed from the specification's own
-// pseudocode in Appendix C rather than reasoned out — which is deliberate.
-// These are short enough to look obvious and are not: the ordering of the
-// final tests in `deny-overrides` alone distinguishes four different wrong
-// implementations that each pass the simple cases.
-//
-// THE ORDERED VARIANTS ARE THE UNORDERED ONES. This implementation evaluates
-// children in document order always, so `ordered-deny-overrides` and
-// `deny-overrides` are the same function here. That is conformant — the
-// specification PERMITS reordering for the unordered variants and does not
-// require it — and it is the right choice for a mock, where reproducibility is
-// the whole point.
+// THE COMBINING ALGORITHMS. Twelve identifiers; the block below says how they
+// are written and why.
 // ---------------------------------------------------------------------------
 const COMBINERS = {};
 

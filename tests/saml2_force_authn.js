@@ -66,7 +66,7 @@ function childMain() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const base = 'http://127.0.0.1:' + port;
-    // One of the classes `saml2_sso.js` reads as a demand for a second factor
+    // One of the classes `saml2_sso.ts` reads as a demand for a second factor
     // (`AC_MFA_DEMANDS`).
     const MFA =
       'urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract';

@@ -74,10 +74,12 @@
 // IN ADDITION, and it is not a difference these jobs could remove without
 // stopping being tests of the doors:
 //
-//   * **SCIM INVENTS THE REST.** `scim.js`'s create calls `createUser()`
-//     without `invent: false`, so `vc_claims.js` makes up every attribute the
-//     resource did not carry and writes it onto the entry. That is what a SCIM
-//     client actually gets here, and it is real work this door does per person.
+//   * **SCIM INVENTS THE REST, IN DEVELOPMENT MODE.** `scim.js`'s create
+//     calls `createUser()` without `invent: false`, so `vc_claims.js` makes up
+//     every attribute the resource did not carry and writes it onto the entry
+//     (product mode invents nothing — `mode.inventsClaimValues()`). That is
+//     what a SCIM client actually gets here, and it is real work this door
+//     does per person.
 //   * **THE LDAP `add` INVENTS NOTHING** and registers nobody: it is
 //     `putEntry()` and an audit row.
 //   * **`/admin-api` DOES EITHER**, and that job sends `invent: false` — which
@@ -98,7 +100,7 @@
 // `phoneNumbers` are multi-valued with a `type`, five attributes are members of
 // one `addresses` entry, and four live under the enterprise extension URN.
 //
-// **That table is `scim/scim_map.js`'s and this job READS it**, from
+// **That table is `scim/scim_map.ts`'s and this job READS it**, from
 // `GET /admin-api/scim`, exactly as the preflight reads the attribute catalogue
 // from `GET /admin-api/users/new`. A copy in here would be a second definition
 // of the mapping that would drift, and the drift would show up as five thousand
@@ -146,7 +148,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -250,7 +252,7 @@ async function readTheMapping(catalogue) {
       "phoneNumbers and only `type` tells telephoneNumber from mobile, five " +
       "are members of one addresses entry, and an extension member goes " +
       "under a URN rather than at the top level. They were added to " +
-      "scim/scim.js on 2026-09-06 for this job.");
+      "scim/scim.ts on 2026-09-06 for this job.");
   });
 
   const byLdap = {};

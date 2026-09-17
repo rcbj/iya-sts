@@ -204,3 +204,52 @@ variable "tags" {
     Lifecycle = "destroy-after-test-run"
   }
 }
+
+variable "public_hostname" {
+  description = <<-EOT
+    The name clients use, e.g. `test-idp.iyasec.io`. EMPTY (the default) keeps
+    the test arrangement: TLS passes through the load balancer and the nodes'
+    own certificates are what a client sees, under the NLB's DNS name. SET, the
+    443 listener TERMINATES TLS on a public ACM certificate for this name
+    (DNS-validated in `public_zone_name`), re-encrypts to the nodes, and a
+    CNAME in that zone points the name at the load balancer (dns.tf).
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "public_zone_name" {
+  description = "The public Route53 zone `public_hostname` is in, e.g. `iyasec.io`. Required when public_hostname is set."
+  type        = string
+  default     = ""
+}
+
+variable "tls_policy" {
+  description = "The NLB security policy on the 443 listener when public_hostname is set."
+  type        = string
+  default     = "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
+}
+
+variable "workers_request_count" {
+  description = "STS_WORKERS_REQUEST_COUNT on every node: request workers running the whole service. 0 is off."
+  type        = number
+  default     = 0
+}
+
+variable "workers_surface_count" {
+  description = "STS_WORKERS_SURFACE_COUNT on every node: workers running only /admin and /portal. 0 is off."
+  type        = number
+  default     = 0
+}
+
+variable "workers_dispatch" {
+  description = "STS_WORKERS_DISPATCH on every node: which paths go to the workers (`*` for all). Empty dispatches nothing."
+  type        = string
+  default     = ""
+}
+
+variable "workers_read_your_write" {
+  description = "STS_WORKERS_READ_YOUR_WRITE on every node. Required by the surface pool."
+  type        = bool
+  default     = false
+}

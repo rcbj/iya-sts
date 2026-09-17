@@ -4,7 +4,7 @@ The protocol-independent sign-out. One file:
 
 | File | What it is |
 |---|---|
-| `logout.js` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
+| `logout.ts` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
 
 It is a directory of its own rather than a file in `authn/` or in `common/`, and
 each of those was considered:
@@ -73,16 +73,16 @@ once.
 ## It is a plain require of everything and needs no slot — except one
 
 Rule 3e's test: a slot is what you reach for when a require would close a cycle
-or move a route. Neither applies to the nine requires at the top of `logout.js`,
-because `server.js` requires this module SECOND TO LAST — after every one of
-them, before `sts_metadata.js` — so each is a cache hit that registers nothing,
-and nothing in this service requires this file back.
+or move a route. Neither applies to the nine requires at the top of `logout.ts`,
+because `common/protocol_stack.ts` requires this module SECOND TO LAST — after
+every one of them, before `sts_metadata.ts` — so each is a cache hit that
+registers nothing, and nothing in this service requires this file back.
 
 **The one exception is `admin.js`, and it fails the test BOTH ways round**,
 which is why `setLogoutReader()` exists and is the console's sixth slot. This
 module requires `ldap_server.js`; `ldap_server.js` requires `admin.js`; so
-`admin.js -> logout.js -> ldap_server.js -> admin.js` is a cycle, and it would
-also drag every `/ldap` route into the router ahead of the console's own. The
+`admin.js -> logout.ts -> ldap_server.js -> admin.js` is a cycle, and it would
+also drag every `/admin/ldap/*` route into the router ahead of the console's own. The
 slot carries ONE object — `FAMILIES`, `inventoryFor`, `terminate` — validated
 whole at install time, because a partial one would leave `/admin/logout` listing
 what is live and unable to end any of it.
@@ -154,7 +154,7 @@ something that has since been reissued under the same id.
 |---|---|---|---|
 | `GET|POST /logout` | a person, about themselves | none | defaults to the session cookie; **renders the notifications**, because they are iframes in that person's browser |
 | `GET|POST /admin/logout` | an operator, about somebody | Admin Read / Admin Write | always names a `user`; filters, pages, and has the two **NON-SPEC undos** |
-| `GET|POST /admin-api/logout[/{action}]` | a test | none | the same two functions; four actions |
+| `GET|POST /admin-api/logout[/{action}]` | a test or a machine | an access token carrying `admin:read` / `admin:write` (`mgmt-api/CLAUDE.md`) | the same two functions; four actions |
 
 The console and the API call `admin.js`'s `logoutView()` / `logoutAction()`,
 which call this module — rule 7, which is what makes them one behaviour rather
@@ -217,7 +217,7 @@ they live rather than here:
   same way and will not be caught by anything this file does.
 
 And one that is a whole specification: **OpenID Connect Front-Channel Logout
-1.0**, in `oauth-oidc/frontchannel_logout.js`. See `oauth-oidc/CLAUDE.md`.
+1.0**, in `oauth-oidc/frontchannel_logout.ts`. See `oauth-oidc/CLAUDE.md`.
 
 **SPIFFE is deliberately absent from `FAMILIES` and that is an answer rather
 than a gap.** A SPIFFE identity is a WORKLOAD, attested per call and holding no
@@ -238,7 +238,7 @@ inventing a link that is not there.
 answers the other half — *who is signed in at all* — and it is what
 `/admin/sessions` and `GET /admin-api/sessions` draw.
 
-**It is HERE and not in `admin-ui/admin.js` because this module is the one model
+**It is HERE and not in `admin-ui/admin.ts` because this module is the one model
 of what a live session is.** That is this directory's whole reason to exist, and
 a console page that walked `authn.sessions`, `ldap_server.boundConnections()`
 and the ticket register itself would be a SECOND answer to *is this still live* —
@@ -302,9 +302,10 @@ anything but `true`.
 That is not a simplification of the other two, it is what they are. A Kerberos
 TGT exists because an AS-REQ decrypted under a real long-term key; an LDAP row
 exists because a Bind returned success. Both are a credential having been
-accepted — this service refuses no bind, which is a low bar, but it is still a
-credential presented and accepted, and an ANONYMOUS bind never reaches this
-list at all because it has no key and is left off a few lines earlier. So both
+accepted — in development mode this service refuses no bind, which is a low
+bar, but it is still a credential presented and accepted, and an ANONYMOUS bind
+never reaches this list at all because it has no key and is left off a few
+lines earlier. So both
 state `true` rather than leaving the field off: a missing field on two kinds of
 three would read as "unknown" on a page that is about exactly this distinction.
 

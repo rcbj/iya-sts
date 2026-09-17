@@ -469,15 +469,15 @@ function run(t) {
     log.debug("Leaving read().");
     return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
   };
-  const saml2 = read('saml/saml2_sso.js');
-  const saml11 = read('saml/saml11_sso.js');
-  const wsfed = read('ws-federation/wsfed.js');
+  const saml2 = read('saml/saml2_sso.ts');
+  const saml11 = read('saml/saml11_sso.ts');
+  const wsfed = read('ws-federation/wsfed.ts');
   const registry = read('common/applications.js');
-  [['saml/saml2_sso.js', saml2,
+  [['saml/saml2_sso.ts', saml2,
     /applications\.returnAddressesOf\(known,\s*'samlAssertionConsumerService'\)/],
-   ['saml/saml11_sso.js', saml11,
+   ['saml/saml11_sso.ts', saml11,
     /applications\.returnAddressesOf\(\s*early\.id/],
-   ['ws-federation/wsfed.js', wsfed,
+   ['ws-federation/wsfed.ts', wsfed,
     /applications\.returnAddressesOf\(realmEntry/]]
     .forEach(function (one) {
       t.check(one[2].test(one[1]), one[0] + ' asks ' +

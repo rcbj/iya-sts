@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: persistence/persistence.js
@@ -21,15 +22,20 @@
 //   * THE RUNTIME APPCONFIG OVERRIDES persist — the top of `config.js`'s five
 //     layers, the one a console Save or `POST /admin-api/config/set` writes.
 //
-// AND NOTHING ELSE DOES. Sessions, access tokens, authorization codes,
-// pre-authorized codes, SAML artifacts, Kerberos tickets, replay caches,
-// statistics and the audit log are all still in memory and still gone on
-// restart, and that is deliberate rather than unfinished: a mock whose issued
-// credentials outlived the process would hand a client a token signed by a key
-// that no longer exists, because THE SIGNING KEY IS STILL REGENERATED ON EVERY
-// START. See README.md. What persists here is the CONFIGURATION and the
-// DIRECTORY — the things somebody typed — and never the things this service
-// minted.
+// AND IN DEVELOPMENT MODE NOTHING ELSE DOES. Sessions, access tokens,
+// authorization codes, pre-authorized codes, SAML artifacts, Kerberos tickets,
+// replay caches, statistics and the audit log are in memory and gone on
+// restart, and that is deliberate rather than unfinished: a development-mode
+// signing key is regenerated on every start, so an issued credential that
+// outlived the process would be a token signed by a key that no longer exists.
+//
+// **THAT PARAGRAPH WAS THE WHOLE STORY UNTIL 2026-09-06 AND IS NOT ANY MORE.**
+// In PRODUCT mode on a postgres store the signing keys are kept (sealed, in
+// `sts_keys`) and so is what this process MINTS (`persistence_minted.js`);
+// and since 2026-09-13 the used-assertion history persists in every store and
+// both modes (`common/used_assertions.js`). `persistence/CLAUDE.md`'s *The
+// sentence this directory reverses* is the exact current wording, and
+// `docs/persistence.md` the operator's.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS NOT A node-ldapjs FEATURE, WHICH IS THE FIRST QUESTION ANYBODY
@@ -149,14 +155,15 @@
 //     Save.
 //   * `persistence.setDirectory()`, offered below and filled by
 //     `ldap/ldap_server.js`. This one is about ROUTE ORDER rather than a cycle:
-//     `ldap_server.js` registers `/ldap` and `/admin/ldap/directory` at its
+//     `ldap_server.js` registers the `/admin/ldap/*` console pages at its
 //     require time, and this module is required at #4a — far above `admin.js`.
-//     A require from here would drag both of those routes to the front of the
-//     express router, which is the exact failure rule 1 exists to prevent.
+//     A require from here would drag those routes to the front of the express
+//     router, which is the exact failure rule 1 exists to prevent.
 //
 // `realms.js` is a PLAIN REQUIRE in the ordinary direction, and it is worth
-// saying why it is not a third slot: that module requires only `config.js` and
-// `async_hooks`, it registers no route at all, and it does not require this one
+// saying why it is not a third slot: that module requires only `config.js`,
+// `error_codes.js`, `async_hooks` and bunyan, it registers no route at all, and
+// it does not require this one
 // — so a require of it here closes nothing and moves nothing. It fails rule
 // 3e's test in both directions, which is what makes it a require. What it needs
 // FROM here — "a realm changed, write it down" — arrives through
@@ -164,21 +171,16 @@
 // a slot that module offers.
 //
 // ---------------------------------------------------------------------------
-// THE SEAM: WHAT THIS IS DELIBERATELY NOT YET.
+// THE SEAM IS CLOSED (2026-09-06).
 //
-// The ask was persistence, and persistence is what this is. It is NOT
-// coordination: two processes pointed at one database will each hold their own
-// copy of the directory in memory, each write their own changes down, and
-// neither will see the other's until it restarts. That is not a bug to be found
-// later — it is written here so it is found now, it is stated on
-// `/admin/persistence`, and it is what the next phase closes.
-//
-// What that phase needs is already marked. `persistence_postgres.js` emits a
-// `pg_notify('sts_ldap_change', …)` after each transaction, carrying the realm
-// and the DNs that moved; nothing LISTENs to it yet. The listener, the
-// invalidation of the in-memory Map, and the question of what a per-process
-// cache means for `/oauth2/token` (nothing — no token is in the database) are
-// the phase, not this file.
+// This block said the module was persistence and NOT coordination — two
+// processes against one database each held their own copy and neither saw the
+// other's until it restarted — and that nothing LISTENed to the driver's
+// notification yet. `persistence_replication.js` closed it: a change log
+// written inside each transaction is the contract, `LISTEN`/`NOTIFY` is only
+// latency, and the appliers below reconcile every process — request workers
+// and, since #46, other containers. `persistence/CLAUDE.md` (*The seam is
+// closed*) argues it.
 // ---------------------------------------------------------------------------
 
 const path = require('path');
@@ -210,8 +212,8 @@ const usedAssertions = require('../common/used_assertions');
 // lets `tests/replication.js` drive it against a stub with no database.
 const replication = require('./persistence_replication');
 // The ordinary direction, and the header above argues why it is a require
-// rather than a third slot: realms.js requires config.js and async_hooks and
-// nothing else, registers no route, and does not require this module.
+// rather than a third slot: realms.js requires config.js, error_codes.js and
+// async_hooks, registers no route, and does not require this module.
 const realms = require('../common/realms');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. See common/error_codes.js.
@@ -1804,8 +1806,12 @@ function restoreRealms(rows, replicated) {
       // The realm is here because it replicated. Take what another process
       // changed — its overrides above all, which is what a realm-scoped
       // setting IS.
+      // `replicated`, so the realm registry does not re-judge a change the
+      // process that made it already judged (realms.js,
+      // kerberosOverrideProblem()).
       realms.update(row.id, { name: row.name, description: row.description,
-                              overrides: row.overrides || {} });
+                              overrides: row.overrides || {},
+                              replicated: true });
       return;
     }
     const result = realms.create({
@@ -2246,7 +2252,7 @@ function applyKeysChange(change) {
   // it was the worst defect in the issue for several: a realm created on node
   // A and first used on node B got two key sets and the later upsert won the
   // row; `keystore.rotate()` reached one node; and a rebuilt Root reached one
-  // node while the others served the old leaf on 8443, 9443 and 636.
+  // node while the others served the old leaf on the main port and 636.
   //
   // What changed is that the STORE now arbitrates (`mergeKeys()`, first
   // writer wins for a key set, a merge for a certificate authority), so the
@@ -2496,7 +2502,8 @@ function describeDatabase() {
 
 // config.js's slot. It calls this after every successful setOverride(),
 // clearOverride() and clearAllOverrides(), with the realm the write landed in
-// or null. See rule 3e in CLAUDE.md and the header above.
+// or null. See rule 3e in the root CLAUDE.md, 3q in persistence/CLAUDE.md,
+// and the header above.
 config.setOverrideStore(function (realmId) {
   configChanged(realmId);
 });
@@ -2568,7 +2575,7 @@ module.exports = {
     log.debug("Leaving restoreMinted().");
     return minted.restore();
   },
-  // THE MINTED FLUSH, for `common/request_worker.js`'s commit-before-answer.
+  // THE MINTED FLUSH, for `common/request_worker.ts`'s commit-before-answer.
   // The store's flush and this one are two schedulers, and a caller that
   // awaited only the first would leave everything this service MINTS exactly
   // as racy as it was — which is most of what a browser flow writes.
@@ -2588,7 +2595,7 @@ module.exports = {
       return both[0];
     });
   },
-  // THE STORE `cluster/cluster_claims.js` AND `cluster/cluster_secrets.js`
+  // THE STORE `cluster/cluster_claims.js` AND `cluster/cluster_secrets.ts`
   // WORK AGAINST (2026-09-14, #46): the open driver when it can hold an atomic
   // claim and a shared secret — postgres — and null otherwise, which those
   // modules answer from this process's memory. Handed over rather than
@@ -2657,7 +2664,7 @@ module.exports = {
         keystore.pendingWrites()));
   },
   // THE SEQUENCE THIS PROCESS'S LAST COMMIT REACHED, for
-  // `common/request_worker.js`'s commit announcement. It is the STORE's answer
+  // `common/request_worker.ts`'s commit announcement. It is the STORE's answer
   // and not this process's `applied`: what a reader has to wait for is the
   // sequence the write actually landed at, which only the store knows.
   // Whether this process has written any change rows — read either side of a

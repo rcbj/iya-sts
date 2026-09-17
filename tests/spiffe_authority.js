@@ -9,7 +9,7 @@
 // claims here are about it. They are about the path a realm with NO branch
 // takes, which is still a supported configuration in three ways
 // (`pki.autoBuild: false`, a Root that could not be built, and every
-// in-process caller that never runs `common/service_state.js`), and which is
+// in-process caller that never runs `common/service_state.ts`), and which is
 // what this service did for its whole life until that date.
 //
 // **THE CHILD IS NOT FASTIDIOUSNESS — IT IS `tls_trust_anchor.js`'s REASON
@@ -187,11 +187,12 @@ async function run(t) {
           seen.shape || 'nothing declares spiffe.authorities');
   // **THIS ASSERTED `scope === 'shared'` UNTIL 2026-09-11**, on the argument
   // that SPIFFE is one trust domain for the whole service because its sockets
-  // have no path to put a realm segment in. The trust DOMAIN is still one;
-  // what became per realm is the AUTHORITY, because `common/pki.js`'s SPIFFE
-  // Issuing CA is a realm's and rule 2 of the realm design says a store
-  // follows its declaration. The four sockets are unchanged and still answer
-  // in the default realm.
+  // have no path to put a realm segment in. The trust DOMAIN stayed one that
+  // day; what became per realm was the AUTHORITY, because `common/pki.js`'s
+  // SPIFFE Issuing CA is a realm's and rule 2 of the realm design says a store
+  // follows its declaration. Since 2026-09-12 a realm has a trust domain and
+  // sockets of its own as well (`tests/spiffe_realm_domains.js`); the default
+  // realm's four sockets still answer in the default realm.
   //
   // **WHAT MAKES THAT SAFE IS ASSERTED IN `tests/spiffe_pki.js`, NOT HERE**:
   // every realm's bundle publishes the same service Root, so partitioning the

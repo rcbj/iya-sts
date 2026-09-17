@@ -32,11 +32,11 @@
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
 // krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
-// oauth2.rfc9700, from oid4vci.walletUrl, from krb5.realm, and from the public
-// base URL or the listener's scheme, host and port). A literal here would
-// freeze the derivation at whatever it evaluated to the day this file was
-// written, so they resolve through their neighbour instead and are exempt from
-// the startup refusal for that reason.
+// oauth2.rfc9700 and oauth2.oauth21, from oid4vci.walletUrl, from krb5.realm,
+// and from the public base URL or the listener's scheme, host and port). A
+// literal here would freeze the derivation at whatever it evaluated to the day
+// this file was written, so they resolve through their neighbour instead and
+// are exempt from the startup refusal for that reason.
 //
 // See common/CLAUDE.md, and README.md's *Configuration*, which lists every
 // setting, its environment variable and its default in one table.
@@ -272,6 +272,11 @@ var config = {
     dpopNonceRequired: false,                    // Require a DPoP server nonce
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
     dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
+    refreshTokenRotation: false,                 // Rotate refresh tokens
+    refreshTokenRequireDpop: false,              // Require DPoP on refresh tokens
+    refreshTokenRequireMtls: false,              // Require mutual TLS on refresh tokens
+    accessTokenRequireDpop: false,               // Require DPoP for every access token
+    accessTokenRequireMtls: false,               // Require mutual TLS for every access token
     openRegistration: false,                     // Open dynamic client registration (product mode)
     softwareStatementRequireTrustedIssuer: true, // Refuse a software statement from an undeclared issuer
     softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint
@@ -524,8 +529,6 @@ var config = {
 
   // --- TLS -------------------------------------------------------------
   tls: {
-    port: 8443,                                          // TLS port; restart to apply
-    mutualPort: 9443,                                    // Mutual-TLS port; restart to apply
     trustIssuedClientCertificates: true,                 // Trust TLS client certificates issued on the user portal; restart to apply
     hostnames: "localhost,sts,sts-mock,sts.example.com", // Certificate hostnames; restart to apply
     ips: "127.0.0.1",                                    // Certificate IP addresses; restart to apply
@@ -588,6 +591,7 @@ var config = {
 
   // --- Kerberos --------------------------------------------------------
   krb5: {
+    enabled: true,                                                 // Enable Kerberos
     realm: "EXAMPLE.COM",                                          // Realm; restart to apply
     kdcPort: 88,                                                   // KDC port; restart to apply
     servicePort: 8888,                                             // Test service port; restart to apply

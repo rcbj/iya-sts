@@ -1,4 +1,5 @@
-# The mock STS: sixteen protocol families in one small Node service. See README.md.
+# iya-sts, the mock STS: every protocol family README.md lists, in one small Node
+# service. See README.md.
 #
 # Pinned to Node 24.16.0 via nvm rather than an official node image, which is what
 # the project this was extracted from does for all of its services.
@@ -31,6 +32,40 @@ ARG DEBUGGER_IMAGE=debugger-none
 FROM ubuntu:latest AS debugger-none
 RUN mkdir -p /debugger
 FROM ${DEBUGGER_IMAGE} AS debugger
+
+# ---------------------------------------------------------------------------
+# THE TYPESCRIPT BUILD (#50, 2026-09-16): COMPILED HERE, SHIPPED WITHOUT ITS
+# SOURCE.
+#
+# rcbj's three rules for the conversion: transpiling happens in a container
+# build step, nothing compiled is ever written to the host, and the final image
+# carries no `.ts`. So this stage takes the whole context, runs
+# `build-typescript.sh --strip` — the type check, then `tsc` emitting each
+# `x.js` beside its `x.ts`, then every `.ts`, `types/` and the tsconfig files
+# deleted — and the final stage below copies THIS stage's tree where it used to
+# copy the context. A layer of the final image therefore never held a `.ts`;
+# deleting them in the final stage instead would have left them in an earlier
+# layer of it.
+#
+# **AN OFFICIAL NODE IMAGE, UNLIKE THE FINAL STAGE**, which pins node through
+# nvm for the parent project's reason (the header). Nothing from this stage
+# runs: it only produces files, `tsc` is a native binary whose output does not
+# depend on the node beside it, and the version is still 24.16.0.
+#
+# The installs are the final stage's (for the types of what the service
+# requires) and `tests/package.json`'s (the compiler). Both `node_modules` are
+# removed at the end, so the COPY below cannot replace the final stage's own.
+# ---------------------------------------------------------------------------
+FROM node:24.16.0-bookworm-slim AS typescript
+WORKDIR /usr/src/sts
+COPY package*.json .npmrc ./
+COPY node-ldapjs ./node-ldapjs
+RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+COPY tests/package*.json ./tests/
+RUN npm install --prefix ./tests && npm cache clean --force
+COPY . ./
+RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
+ && rm -rf ./node_modules ./tests/node_modules ./node-ldapjs/node_modules
 
 FROM ubuntu:latest
 
@@ -140,7 +175,7 @@ RUN npm install --omit=dev && npm cache clean --force
 #                             and resolves path.join(__dirname, 'contexts') — so
 #                             they move when it moves and the file is not edited.
 #   spiffe/protos             the SPIFFE project's own workloadapi.proto and the
-#                             spire-api-sdk's, read by spiffe/spiffe_grpc.js at
+#                             spire-api-sdk's, read by spiffe/spiffe_grpc.ts at
 #                             module scope. Verbatim: the wire matching what a
 #                             real client expects is the entire reason
 #                             @grpc/grpc-js is a dependency here.
@@ -149,7 +184,11 @@ RUN npm install --omit=dev && npm cache clean --force
 # node_modules, .git, the documentation and the CI definitions are excluded in
 # .dockerignore; node-ldapjs is copied above, ahead of the install, and copying
 # it again here is a no-op on identical content.
-COPY . ./
+#
+# **FROM THE `typescript` STAGE, NOT FROM THE CONTEXT, SINCE #50
+# (2026-09-16)**: the same tree, with every `.ts` compiled and then removed —
+# see that stage. Everything said above about what rides along still holds.
+COPY --from=typescript /usr/src/sts/ ./
 
 # ---------------------------------------------------------------------------
 # THE SECRET-STORE SDK, AND WHY IT IS INSTALLED HERE RATHER THAN DECLARED AS A
@@ -230,8 +269,8 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # `tests/` is in the build context since 2026-08-29 and it is not here by
 # choice: ONE context serves two images — this one and the test runner
 # (tests/Dockerfile, built by docker-compose-run-tests.yml), which is nothing
-# BUT the suite and needs the whole source tree besides, because ten of its
-# jobs require this service's own modules. A context has one ignore file, and
+# BUT the suite and needs the whole source tree besides, because its
+# in-process jobs require this service's own modules. A context has one ignore file, and
 # the per-Dockerfile ignore file that would give it two is a BuildKit feature
 # that the legacy builder silently ignores. See .dockerignore, where the
 # failure that taught this is written down.
@@ -263,8 +302,9 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # A THIRD STEP OUT.** `README.md`, `docker-compose.yml` and this Dockerfile
 # were excluded in `.dockerignore` until that day, on the true grounds that
 # nothing reads them at runtime. What that overlooked is that they are the
-# SUBJECT of three in-process jobs — tests/readme_ports.js checks the README's
-# ports table against config.js and against the EXPOSE lines below it, and
+# SUBJECT of in-process jobs — tests/readme_ports.js checks the README's ports
+# table against config.js and against the EXPOSE lines below it,
+# tests/readme_settings.js checks its settings tables, and
 # tests/postgres_schema.js checks the application role in docker-compose.yml
 # against postgres/schema.sql — and those jobs run in the TESTS image, built
 # from this same context, where a file the context does not carry is an ENOENT
@@ -285,7 +325,8 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
 # from a workstation or CI and never by the service.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
-           ./.github ./docs ./docker-compose-run-tests.yml ./deploy
+           ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
+           ./build-typescript.sh
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory
@@ -302,7 +343,7 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # in exactly the situation where it is asked. See common/version.js.
 #
 # It runs AFTER `COPY . ./` because it needs the VERSION file and the module,
-# and after the `rm` above because neither is in the two directories removed.
+# and after the `rm` above because neither is among what that removes.
 # It is the LAST layer that touches the source, so a rebuild of an unchanged
 # tree still produces a new build number — which is correct: that is a
 # different artifact.
@@ -331,11 +372,19 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
 # change.
 ENV CONFIG_FILE=./env/local.js
 
-# 8081 is the HTTP service. The rest are the listeners that are NOT HTTP and so
-# are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected test
-# service, 389 the LDAP directory, 636 the same directory over TLS, 8443 the TLS
-# endpoint that asks for a client certificate and 9443 the one that requires it.
+# 8081 is the HTTP service. Most of the rest are the listeners that are NOT HTTP
+# and so are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected
+# test service, 389 the LDAP directory and 636 the same directory over TLS. The
+# two other HTTP listeners (8082, 8444) and the SPIFFE gRPC ones are explained
+# beside their own lines below.
 # EXPOSE documents them; each compose file decides which it publishes.
+#
+# **8443 AND 9443 WERE HERE UNTIL 2026-09-16** — the TLS endpoint that asked
+# for a client certificate and the one that required it. Both listeners were
+# deleted and neither number is bound by anything now: a client certificate is
+# presented to 8081, which asks for one and requires none. Removed rather than
+# left behind, because EXPOSE is read by `docker run -P` and a mapping onto a
+# port nothing listens on is a connection refused with no explanation.
 #
 # The four raw-socket ports were named in that sentence long before they were
 # listed below it, which made the sentence false in the direction that matters:
@@ -346,8 +395,8 @@ ENV CONFIG_FILE=./env/local.js
 #
 # 636 is a SEPARATE SOCKET rather than an option on 389 (ldapjs chooses between a
 # net.Server and a tls.Server at construction), and the two bind independently:
-# either can be up while the other is not, which is why GET /ldap reports them
-# separately. A compose file that publishes 389 and not 636 offers a directory a
+# either can be up while the other is not, which is why GET
+# /admin/ldap/service reports them separately. A compose file that publishes 389 and not 636 offers a directory a
 # TLS client cannot reach, with nothing in the image to say why.
 EXPOSE 8081
 # The plain-HTTP revocation listener (2026-09-13): /pki/ only, and the
@@ -357,14 +406,12 @@ EXPOSE 88/tcp
 EXPOSE 88/udp
 EXPOSE 389
 EXPOSE 636
-EXPOSE 8443
-EXPOSE 9443
 # 8888 IS THE KERBEROS-PROTECTED TEST SERVICE (krb5.servicePort), and it was
 # missing from this list until 2026-09-07 — found by `tests/readme_ports.js`,
 # which holds the README's ports table to config.js and this file to the table.
 # It is a raw TCP listener like 88 and 389, it is bound on every start, and the
-# sentence above enumerating "the listeners that are NOT HTTP" never mentioned
-# it either. Nothing failed, and nothing could: EXPOSE publishes nothing, so an
+# sentence above enumerating "the listeners that are NOT HTTP" did not mention
+# it either until then. Nothing failed, and nothing could: EXPOSE publishes nothing, so an
 # omission here costs exactly one thing — `docker run -P` leaves that port
 # unmapped, which is the one command that reads this.
 EXPOSE 8888

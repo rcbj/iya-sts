@@ -31,9 +31,14 @@ submodule: a plain `--init` there stops one level short of this one.
 ## Run it
 
 ```bash
-npm install
-CONFIG_FILE=./env/local.js node server.js
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 -e CONFIG_FILE=./env/local.js iya-sts
 ```
+
+**From an image, not from a checkout (since 2026-09-16).** Part of the service
+is written in TypeScript and is compiled only while the image is built, so
+`node server.js` on a checkout stops and says so. Every setting below that is
+shown as an environment variable is passed with `-e`.
 
 `CONFIG_FILE` selects a file in `env/` — `local.js`, `test.js` or
 `docker-tests.js`. At the default `debug` level every endpoint call and every
@@ -55,13 +60,11 @@ will not bind on an ordinary user account.
 
 | Port | What | Setting | Environment |
 |---|---|---|---|
-| 8081 | The main service — every protocol endpoint, the console, the API. **HTTPS**, since every appconfig file here sets `global.https`; `STS_HTTPS=false` makes it plain HTTP | `global.port` | `STS_PORT` |
+| 8081 | The main service — every protocol endpoint, the console, the API. **HTTPS**, since every appconfig file here sets `global.https`; `STS_HTTPS=false` makes it plain HTTP. It asks every connection for a client certificate and requires none, so it is also where mutual TLS happens | `global.port` | `STS_PORT` |
 | 88 (TCP+UDP) | The Kerberos KDC | `krb5.kdcPort` | `KRB5_KDC_PORT` |
 | 8888 | The Kerberos-protected test service | `krb5.servicePort` | `KRB5_SERVICE_PORT` |
 | 389 | The LDAP directory | `ldap.port` | `LDAP_PORT` |
 | 636 | The same directory over TLS (LDAPS) | `ldap.tlsPort` | `LDAPS_PORT` |
-| 8443 | TLS, asking for a client certificate | `tls.port` | `STS_TLS_PORT` |
-| 9443 | Mutual TLS, requiring one | `tls.mutualPort` | `STS_MTLS_PORT` |
 | 8092 | The SPIFFE Workload API over gRPC | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
 | 8181 | The SPIRE Server API over gRPC | `spiffe.serverPort` | `STS_SPIFFE_SERVER_PORT` |
 | — | The Workload API's **Unix socket**, at `/tmp/spire-agent/public/api.sock` | `spiffe.workloadSocket` | `STS_SPIFFE_WORKLOAD_SOCKET` |
@@ -75,12 +78,23 @@ is not" is the ordinary outcome and one flag could only report one of them:
 - `GET /admin/ldap/service` — `listening` / `listenError`, and a `tls` object with its own pair
   (an admin console page since 2026-09-01, so it needs a session; `GET
   /admin-api/ldap/service` is the same object and is not gated)
-- `GET /tls` — the same for 8443 and 9443
 - `GET /spiffe` — all four SPIFFE sockets, separately
 - `GET /krb5/principals` — the KDC
 
 So a page answering 200 is not evidence that the listener behind it came up. Read
 the flag.
+
+**Two TLS ports left this table on 2026-09-16.** 8443 (`tls.port`) asked for a
+client certificate and never required one; 9443 (`tls.mutualPort`) required one
+at the handshake. Both listeners and both settings were deleted, and neither
+setting has a replacement — a deployment that still sets one gets an "unknown
+setting" warning at startup. The main port already asked for a client
+certificate and required none, so that half moved nowhere; `GET /tls/sign-in`
+signs the holder of a verified one in. **Nothing requires a certificate at the
+handshake any more**, deliberately: the port that would have to do it carries
+every other protocol, so a certificate that does not verify is refused where it
+is USED — at the token endpoint under RFC 8705, at `/xacml`, at `/scim/v2` and
+at `/tls/sign-in`.
 
 ## Running two copies
 
@@ -88,14 +102,17 @@ Everything is in memory and nothing is shared, so a second instance is just a
 second process — but every default port collides. Give the second one its own:
 
 ```bash
-CONFIG_FILE=./env/local.js \
-  STS_PORT=8091 LDAP_PORT=3891 LDAPS_PORT=6391 \
-  KRB5_KDC_PORT=8891 KRB5_SERVICE_PORT=8891 \
-  STS_TLS_PORT=8493 STS_MTLS_PORT=9493 \
-  STS_SPIFFE_WORKLOAD_PORT=8093 STS_SPIFFE_SERVER_PORT=8182 \
-  STS_SPIFFE_WORKLOAD_SOCKET=/tmp/spire-agent-2/public/api.sock \
-  node server.js
+docker run --rm -p 8091:8091 \
+  -e CONFIG_FILE=./env/local.js \
+  -e STS_PORT=8091 -e LDAP_PORT=3891 -e LDAPS_PORT=6391 \
+  -e KRB5_KDC_PORT=8891 -e KRB5_SERVICE_PORT=8891 \
+  -e STS_SPIFFE_WORKLOAD_PORT=8093 -e STS_SPIFFE_SERVER_PORT=8182 \
+  -e STS_SPIFFE_WORKLOAD_SOCKET=/tmp/spire-agent-2/public/api.sock \
+  iya-sts
 ```
+
+In separate containers the default ports no longer collide inside them; the
+different values matter for what you publish with `-p`.
 
 The SPIFFE Unix socket is the one thing this service puts on a filesystem, and
 two instances sharing a path is the one collision that is not a bind error: the
@@ -137,8 +154,8 @@ curl --cacert /tmp/sts.pem https://localhost:8081/healthcheck
 export NODE_EXTRA_CA_CERTS=/tmp/sts.pem      # for a node client
 ```
 
-It is the same certificate 8443, 9443 and LDAPS 636 serve, so that is one trust
-decision for the whole service rather than four.
+It is the same certificate LDAPS 636 and the embedded debugger's listener
+serve, so that is one trust decision for the whole service rather than three.
 
 The second one is **behind the console gate**, which is unconditional: with no
 session it answers a 302 to the sign-in screen, which is why the `-L` is there

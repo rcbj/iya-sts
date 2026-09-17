@@ -48,7 +48,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -82,10 +82,12 @@ function check(what, fn) {
 }
 
 // ---------------------------------------------------------------------------
-// THE JOB'S OWN RFC 6238 IMPLEMENTATION, because enrolling an authenticator is
-// the ACT that issues a set and there is no other way to reach it. It is the
+// THE JOB'S OWN RFC 6238 IMPLEMENTATION, because the recovery screen is
+// reached from the one-time code screen, and only a person with an enrolled
+// authenticator is sent there (enrolling no longer issues a set — section 1
+// asserts that). It is the
 // same thirty lines `sts_portal_totp.js` carries and is deliberately not
-// `require`d from `common/totp.js` — see that file's header for the argument.
+// `require`d from `common/totp.ts` — see that file's header for the argument.
 //
 // **IT IS NOT CHECKED AGAINST THE RFC VECTORS HERE**, and that is the one
 // difference from the job next door. There, the generator IS the subject: the
@@ -328,9 +330,6 @@ function codesShownOn(text) {
   return out;
 }
 
-// How many are left, as the status card prints it: "7 of 10 recovery codes
-// are unused." Read as a NUMBER rather than as the presence of a word, because
-// claim 5's whole assertion is that it went down by exactly one.
 // One person's row out of whatever shape GET /admin-api/mfa answers with.
 // Written as a search rather than an index because that endpoint is a roster
 // and this job is about one name in it.
@@ -344,6 +343,9 @@ function mfaRowFor(body, who) {
   })[0] || null;
 }
 
+// How many are left, as the status card prints it: "7 of your 10 recovery
+// codes are unused." Read as a NUMBER rather than as the presence of a word,
+// because claim 5's whole assertion is that it went down by exactly one.
 function remainingShownOn(text) {
   log.debug("Entering remainingShownOn().");
   const m = String(text).match(/(\d+) of your (\d+) recovery codes are unused/);
@@ -401,8 +403,7 @@ async function signIn(door, who, onSecondFactor) {
 }
 
 // Enrol an authenticator app through the portal, exactly as a person does it.
-// Returns the whole POST response, because the CODES ARE ON IT and that is
-// claim 1.
+// Returns the whole POST response, because claim 1 is that NO codes are on it.
 async function enrolAuthenticator(b) {
   log.debug("Entering enrolAuthenticator().");
   let page = await b.go("GET", "/portal/mfa");
@@ -418,19 +419,6 @@ async function enrolAuthenticator(b) {
   return { secret: secret, response: confirmed };
 }
 
-// ===========================================================================
-// 1. A SET IS ISSUED BY THE ENROLMENT, WITH NOBODY HAVING ASKED.
-//
-// **THE ASSERTION IS THAT THE CODES ARE ON THE RESPONSE TO THE ENROLMENT.**
-// Not that they exist afterwards — that would pass on a service that issued
-// them quietly and never showed anybody, which is the same as not issuing
-// them: a recovery list nobody has seen is not a way back.
-//
-// It is also the assertion that pins the RENDER: this one branch answers 200
-// with the page rather than redirecting, because a 303 cannot carry a list of
-// credentials and putting them in a query string would write them into a
-// browser history entry and every proxy log on the way. A future tidy-up that
-// made every branch redirect consistently would break exactly this.
 // ===========================================================================
 // 1. ENROLLING ISSUES NOTHING, AND THE PAGE SAYS SO (rewritten 2026-09-11).
 //
@@ -773,12 +761,13 @@ async function aCodeSignsThemIn(state) {
 }
 
 // ===========================================================================
-// 6. AN OPERATOR CAN CLEAR A SET, AND CLEARING RE-ARMS THE ISSUE.
+// 6. AN OPERATOR CAN CLEAR A SET, AND THE PERSON CAN THEN MAKE A NEW ONE.
 //
-// The second half is the one worth driving: clearing is the ONLY route to a
-// second set, so a clear that worked and an enrolment that then issued nothing
-// would leave the account with a second factor and no way back — exactly the
-// state this whole mechanism exists to prevent, reached through the mechanism.
+// The second half is the one worth driving: a clear that worked and left no
+// way to a new set would leave the account with a second factor and no way
+// back — exactly the state this whole mechanism exists to prevent, reached
+// through the mechanism. (Until 2026-09-11 clearing re-armed an automatic
+// issue on the next enrolment; generating on request replaced that.)
 // ===========================================================================
 async function anOperatorCanClearIt(state) {
   log.debug("Entering anOperatorCanClearIt().");
@@ -852,7 +841,7 @@ async function anOperatorCanClearIt(state) {
 
   // The audit log, read ONE ACTION AT A TIME (2026-09-14). It was one fetch
   // of the newest 200 rows for all three questions, and in `dispatch` mode the
-  // rows written between this person's confirm (section 3) and here — every
+  // rows written between this person's confirm (section 2) and here — every
   // request, every Shared Signals push, from several processes — pushed the
   // confirm off that page: "no portal.mfa.backup-codes.confirmed row" about a
   // row that was there. Narrowing by action is the question actually asked.

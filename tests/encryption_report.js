@@ -8,9 +8,10 @@
 // `/admin/encryption` is a page and this is not a test of a page. It is a test
 // of the two things behind it that nothing else in this repository can check:
 //
-//   * **THE TABLE AND THE CALL SITES AGREE.** The page describes six classes
-//     of sealed data, each named by a LABEL, and the labels are passed by call
-//     sites in four different modules. A class described here and never sealed
+//   * **THE TABLE AND THE CALL SITES AGREE.** The page describes each class
+//     of sealed data by a LABEL (`admin-ui/encryption_admin.ts`'s
+//     `DATA_CLASSES`), and the labels are passed by call sites in several
+//     different modules. A class described here and never sealed
 //     is a row about something that does not happen; a label passed by a call
 //     site with no row is a class of data the page silently does not mention.
 //     **Neither is an error anywhere** — the page renders perfectly in both

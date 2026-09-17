@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: audit.js
@@ -15,14 +16,16 @@
 //
 // It is a LIBRARY, like admin_stats.js and dpop.js — it registers no route, so
 // its position in the require order does not matter and it cannot be the reason
-// a route is missing. `admin.js` renders it at /admin/audit and `admin_api.js`
-// serves it at /admin-api/audit; this file holds the events and none of the
+// a route is missing. `admin-core/admin_views.ts` builds /admin/audit and
+// `GET /admin-api/audit` from it; this file holds the events and none of the
 // HTML.
 //
-// **It requires helpers.js and config.js and NOTHING ELSE in this repository,
-// and that is load-bearing rather than tidy.** It is called from app.js's call
-// log, from admin_stats.js's recordAuthentication(), from authn.js's session
-// store and from every LDAP handler — which is most of the service. Anything
+// **It requires helpers.js, config.js, realms.js, the error-code table and the
+// replication fan-in, and NOTHING ELSE in this repository — none of them
+// requires it back — and that is load-bearing rather than tidy.** It is called
+// from app.js's call log, from admin_stats.js's recordAuthentication(), from
+// authn.js's session store and from every LDAP handler — which is most of the
+// service. Anything
 // this file required, all of those would require transitively, and the cycles
 // rule 2 of the architecture exists to avoid would be one careless import away.
 // In particular it must NOT require admin_stats.js: that module requires THIS
@@ -32,11 +35,12 @@
 // ---------------------------------------------------------------------------
 // FIVE THINGS ARE WORTH KNOWING BEFORE READING FURTHER.
 //
-// **It is in memory and dies with the process**, like the counters, the
-// sessions and the signing key. An audit log that outlived the key that signed
-// the tokens it describes would be worse than none, and there is no compliance
-// story here to serve: this service authenticates nobody. The page says so
-// rather than leaving a reader to discover it at the next restart.
+// **Outside product mode on postgres it is in memory and dies with the
+// process**, like the counters, the sessions and the signing key: an audit log
+// that outlived the key that signed the tokens it describes would be worse
+// than none. Where minted state persists — product mode on a postgres store — the ring is
+// written down with it, beside the key that now survives a restart too
+// (persistence/CLAUDE.md, and the declaration of `events` below).
 //
 // **No credential is ever recorded.** Not a password, not a bearer token, not
 // an assertion, not a request or response body. An event carries the FACTS of
@@ -120,7 +124,7 @@ function protocolCallsRecorded() {
 // category or an action cannot exist in the log and be unfilterable, nor be
 // offered as a filter and never occur.
 //
-// The categories are the six layers this service has anything to say about.
+// The categories are the layers this service has anything to say about.
 // They are deliberately not "protocols" — a sign-in over WS-Federation and one
 // over OIDC are both `authentication`, because what an auditor asks is "who got
 // in", not "through which endpoint" (that is on the row).
@@ -351,10 +355,10 @@ const ACTIONS = [
     label: 'A hosted surface renewed its tokens within the same session' },
 
   // THE TWO THE PROTOCOL-INDEPENDENT LOGOUT WRITES, and they are `session`
-  // rather than a seventh category because that is what they are ABOUT — even
-  // though a global logout also revokes tokens, discards codes, drops directory
-  // connections and stamps a Kerberos principal. A category per family would be
-  // six categories for one act.
+  // rather than a category of their own because that is what they are ABOUT —
+  // even though a global logout also revokes tokens, discards codes, drops
+  // directory connections and stamps a Kerberos principal. A category per
+  // family would be six categories for one act.
   //
   // They are ONE ROW PER ACT and not one per thing ended, which is rule 3c's
   // no-double-counting read the other way: every session ended writes its own
@@ -418,9 +422,9 @@ const ACTIONS = [
   //
   // A row here is about what one PERSON allowed one APPLICATION to ask for, and
   // the three rows above it are the only other place in this log where an
-  // application is the subject rather than the channel. A tenth category would
-  // have been one more filter to read and would have separated "webapp1 was
-  // created" from "alice let webapp1 read her profile", which are the two
+  // application is the subject rather than the channel. A category of its own
+  // would have been one more filter to read and would have separated "webapp1
+  // was created" from "alice let webapp1 read her profile", which are the two
   // halves of the same question somebody arrives at this page with.
   //
   // The GLOBAL half — `oauthGlobalConsent` on an application's entry — writes
@@ -447,7 +451,7 @@ const ACTIONS = [
   // for both, because there is one store behind the two pages. Both are
   // recorded and they answer
   // different questions: `admin.change` says somebody was at that page at that
-  // moment, this says what the four claim sets now contain. The second matters
+  // moment, this says what the five claim sets now contain. The second matters
   // more than it looks — a custom claim reaches every access token, ID Token
   // and SAML assertion issued from then on, so "when did this token start
   // carrying that?" is a question the HTTP row cannot answer and this one can.
@@ -641,7 +645,7 @@ const ACTIONS = [
   { action: 'xacml.access.refused', category: 'authorization',
     label: 'The access PEP refused a request to a gated surface' },
   // AND TWO MORE OF THE SAME KIND. `xacml.pep.register` has been written by
-  // `xacml/xacml.js` since phase five and had no row here either, so every
+  // `xacml/xacml.ts` since phase five and had no row here either, so every
   // remote PEP registration landed in `protocol` — the exact failure the
   // paragraph above describes, one endpoint along, and it survived the change
   // that fixed the other two because nothing reads these strings.
@@ -991,10 +995,11 @@ function record(event) {
 // ---------------------------------------------------------------------------
 // THE LOG LINE FOR A ROW THAT CARRIES AN ERROR CODE.
 //
-// The audit ring is in memory, capped, and per process; the service log is
-// what a container's operator reads and what outlives a restart. So every row
-// naming a failure writes ONE line there too, with the code at the front. It is
-// written here rather than at each failure site so that the two records cannot
+// The audit ring is capped and per process, and held in memory only unless
+// minted state persists (product mode on postgres); the service log is what a
+// container's operator reads and what outlives a restart everywhere. So every
+// row naming a failure writes ONE line there too, with the code at the front.
+// It is written here rather than at each failure site so that the two records cannot
 // disagree about which code a failure had — and so that a site marking a code
 // does not also have to remember to log it.
 //
@@ -1060,7 +1065,7 @@ function audit(event) {
 // ---------------------------------------------------------------------------
 // THE HTTP FUNNEL.
 //
-// One call from app.js's call log covers three of the six categories — the
+// One call from app.js's call log covers three of the categories — the
 // console, the management API and every protocol endpoint — because that
 // middleware is already the single place every answered request passes through.
 // Three recording sites spread over forty route handlers would be three that
@@ -1177,9 +1182,10 @@ function isQuietProbe(req, res, path) {
 }
 
 // Called once per answered request, from app.js's call log, beside
-// stats.recordCall(). `req` is still live at that point — the response has been
-// flushed, but the request object has not gone anywhere — which is what lets
-// the actor be resolved here rather than being threaded through.
+// stats.recordCall() — when the answer is handed to `res.end()` (or, for a
+// response that bypassed it, on `finish`). `req` is still live at that point,
+// which is what lets the actor be resolved here rather than being threaded
+// through.
 function recordHttp(req, res, detail) {
   log.debug("Entering recordHttp(). " + req.method + " " + req.originalUrl);
   const info = detail || {};

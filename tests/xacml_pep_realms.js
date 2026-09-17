@@ -25,8 +25,9 @@ const log = require('bunyan').createLogger({ name: 'xacml_pep_realms',
 // produces. `tests/vendored/sts_xacml_remote_pep.js` drives the `xacml-pep/`
 // container against a THROWAWAY REALM (`XACML_PEP_REALM`, `pep-e2e` by
 // default), so a registration made by that job has never been in the default
-// realm and never will be — and somebody who ran `./local-run-tests.sh` and
-// then opened the monitor page was told nothing had registered, which was true
+// realm and never will be — and somebody who ran `./local-run-tests.sh` (a
+// launcher that left its stack up, removed 2026-09-16) and then opened the
+// monitor page was told nothing had registered, which was true
 // of the realm they were reading and false of the process they were reading it
 // in.
 //
@@ -46,8 +47,11 @@ const log = require('bunyan').createLogger({ name: 'xacml_pep_realms',
 // something else. This drives the registry directly and asserts both halves in
 // milliseconds.
 //
-// It also covers the state that job cannot leave behind: it removes its realm
-// at teardown, so what this file asserts exists only while it is running.
+// It also covers what that job does not drive at all: a realm REMOVED, and the
+// row going with it. That job used to remove its realm at teardown; it leaves
+// it standing since 2026-09-06 (tests/CLAUDE.md, *No job removes a realm*), so
+// after a green suite the row is still there and the default realm's pages
+// name the realm holding it.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -150,10 +154,12 @@ module.exports = {
     // -------------------------------------------------------------------
     // AND REMOVING THE REALM TAKES THE ROW WITH IT.
     //
-    // This is what a COMPLETED `sts_xacml_remote_pep.js` run leaves behind,
-    // and it is why "none anywhere" is the honest answer after a green suite
-    // even while a PEP container is still running and still polling: the
-    // register that held the row went away with the realm.
+    // This was what a COMPLETED `sts_xacml_remote_pep.js` run left behind
+    // until 2026-09-06, when the suite stopped removing the realms it creates.
+    // Removing a realm by hand is still how the row goes, and then "none
+    // anywhere" is the honest answer even while a PEP container is still
+    // running and still polling: the register that held the row went away
+    // with the realm.
     // -------------------------------------------------------------------
     realms.remove(REALM);
     t.equal(peps.elsewhere().length, 0,

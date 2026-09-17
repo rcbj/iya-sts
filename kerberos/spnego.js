@@ -1,20 +1,23 @@
+// @ts-check
 'use strict';
 //
 // File: spnego.js
 //
 // NOTE ON THE NAME. The RFC 4178 codec beside this file is krb5_spnego.js and
 // is VENDORED — a byte-identical copy of common/krb5/krb5_spnego.js in the
-// parent project, kept honest by tests/krb5_codec_sync.js. This file is the
-// mock's own, so it is named for the protocol like wsfed.js and wstrust.js
-// rather than for the codec. Do not merge the two: one is somebody else's file.
+// parent project, kept honest by that project's tests/krb5_codec_sync.js.
+// This file is the mock's own, so it is named for the protocol like wsfed.js
+// and wstrust.js rather than for the codec. Do not merge the two: one is
+// somebody else's file.
 //
 // ---------------------------------------------------------------------------
 // A SPNEGO-protected web page: Kerberos over HTTP, RFC 4559 and RFC 4178.
 //
-// krb5_service.js said this would come — "an HTTP service wrapping the same
-// token in a `Negotiate` header is SPNEGO, which is the next phase; the
-// acceptor logic here is written as its own function so that phase adds a
-// transport and no protocol code". This is that phase, and the promise held:
+// krb5_service.js's header said, when it was written, that this would come —
+// "an HTTP service wrapping the same token in a `Negotiate` header is SPNEGO,
+// which is the next phase; the acceptor logic here is written as its own
+// function so that phase adds a transport and no protocol code". This is that
+// phase, and the promise held:
 // every Kerberos check still happens in krb5_service.js's accept(), and what is
 // here is the negotiation around it and the HTTP that carries it.
 //
@@ -106,10 +109,11 @@ const SUPPORTED_MECHS = exchange.SUPPORTED_MECHS;
 
 // ---------------------------------------------------------------------------
 // The HTML the two pages share. A local copy of wsfed.js's page() rather than a
-// require of it: server.js's require order IS the route order and the modules
-// deliberately do not reach sideways into each other (see CLAUDE.md rule 2), so
-// a shared page helper would belong in helpers.js and moving it there means
-// touching five protocols for one new page.
+// require of it: the require order in common/protocol_stack.js IS the route
+// order and the modules deliberately do not reach sideways into each other
+// (the root CLAUDE.md, rule 1), so a shared page helper would belong in
+// helpers.js and moving it there means touching five protocols for one new
+// page.
 // ---------------------------------------------------------------------------
 function page(title, inner) {
   log.debug('Entering page().');
@@ -160,11 +164,21 @@ function checksTable(checks) {
 // is behind, and what a client has to do — which is the part a real intranet
 // site never tells you and the part that is always wrong.
 // ---------------------------------------------------------------------------
-const SPN = exchange.SPN;
+// A FUNCTION AND NOT A CONSTANT SINCE 2026-09-15. `exchange.SPN` became a
+// getter for the AMBIENT realm when `krb5.servicePrincipal` became a setting a
+// trust realm may carry, and reading it once here froze the DEFAULT realm's SPN
+// into every page this file draws — so `/realm/acme/spnego` advertised
+// `HTTP/web.example.com@ACME.EXAMPLE.COM`, a principal that exists in no realm,
+// and a client that believed it asked for a ticket nobody can issue.
+function spn() {
+  log.debug("Entering spn().");
+  log.debug("Leaving spn().");
+  return exchange.SPN;
+}
 
 app.get('/spnego', function (req, res) {
   log.debug('Entering GET /spnego.');
-  const principal = SPN + '@' + principals.REALM;
+  const principal = spn() + '@' + principals.REALM;
   if (String(req.query.format || '').toLowerCase() === 'json') {
     log.debug('Leaving GET /spnego. JSON.');
     return res.status(200).json({
@@ -333,7 +347,7 @@ function detailFor(verdict) {
         'the client is expected to know the rest already.</p><p>What the ' +
         'client has to work out for itself, with no help from this exchange: ' +
         'that the service principal name is <code>' +
-        xmlEscape(SPN) + '</code>, which realm that is in, and where that ' +
+        xmlEscape(spn()) + '</code>, which realm that is in, and where that ' +
         'realm&rsquo;s KDC is.</p>';
       break;
     case 'wrong-scheme':
@@ -440,7 +454,7 @@ function acceptedPage(verdict) {
   const inner = '<h1>' + HEADINGS.accepted[1] + '</h1>' +
     '<div class="ok">Authenticated as <strong>' +
     xmlEscape(verdict.client || 'unknown') + '</strong> to <code>' +
-    xmlEscape(SPN) + '</code>.</div>' +
+    xmlEscape(spn()) + '</code>.</div>' +
     '<p>This is the protected content. Getting here took a Kerberos AP-REQ ' +
     'inside an RFC 4121 GSS token inside an RFC 4178 negotiation inside an ' +
     'RFC 4559 HTTP header &mdash; four layers, of which HTTP shows you one.' +
@@ -539,7 +553,13 @@ app.get('/spnego/protected', function (req, res) {
 });
 
 module.exports = {
-  SPN: SPN,
+  // A getter since 2026-09-15, for `spn()`'s reason above: the SPN belongs to
+  // the AMBIENT realm.
+  get SPN() {
+    log.debug("Entering SPN().");
+    log.debug("Leaving SPN().");
+    return spn();
+  },
   SUPPORTED_MECHS: SUPPORTED_MECHS,
   // THE SHELL AND THE CHECK TABLE, for `spnego_authn.js` and for nothing else.
   //

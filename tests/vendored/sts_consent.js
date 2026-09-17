@@ -38,9 +38,9 @@
 // `oauth2.consentRequired` is process-wide and a stray override on a shared
 // application would make some LATER job stop being asked and never say why.
 // The APPLICATION ENTRIES and the PEOPLE are left, like every other job here:
-// this service has no way to delete a person, `ou=users` is append-only by
-// design, and an application entry with a run id in its name collides with
-// nothing.
+// no console control or `/admin-api` operation deletes a person (only a SCIM
+// or LDAP delete does, and this job drives neither), and an application entry
+// with a run id in its name collides with nothing.
 //
 // It does NOT touch `oauth2.consentRequired`. Turning it off would be the one
 // change here that silently disarms every other job in the run.
@@ -58,7 +58,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -97,8 +97,8 @@ var CLIENT_SECRET = "consent-client-secret-" + String(Date.now()).slice(-8);
 var MAIL_DOMAIN = "consent-job.test";
 
 // A suffix per run, so that two runs against one long-lived mock cannot see
-// each other's applications, overrides or people. The registry is append-only
-// in practice and the directory entirely so — see the header.
+// each other's applications, overrides or people. Neither the registry nor
+// the directory is cleaned up after this job — see the header.
 var RUN = String(Date.now()).slice(-8);
 var CLIENT = "consent-client-" + RUN;
 var OTHER_CLIENT = "consent-other-client-" + RUN;
@@ -321,9 +321,9 @@ async function theFirstSignInIsAsked() {
 
   // THE PAGE CARRIES NO SCRIPT, which is the whole reason it needs no CSP
   // relaxation and the reason this job can drive it with fetch. A `<script`
-  // here would be a fifth scripted page in a service whose default is
-  // `script-src 'none'`, and CLAUDE.md asks for that argument to be MADE rather
-  // than inherited.
+  // here would be one more scripted page in a service whose default is
+  // `script-src 'none'` (the root CLAUDE.md lists seven), and that file asks
+  // for the argument to be MADE rather than inherited.
   assert.ok(shown.page.indexOf("<script") < 0,
     "the consent screen must carry no script: it is two buttons in a form, " +
     "and a page that needed one would be a fifth exception to this service's " +
@@ -829,7 +829,9 @@ program
       "refuses a replay and somebody else's session, that Deny records " +
       "nothing — and that a global consent on an application's entry stops " +
       "everybody being asked without writing anything about anybody.")
-  // Accepted and ignored: run-report.js passes --url to every job.
+  // Accepted and ignored: the parent project's run-report.js passes --url to
+  // every job it runs (this repository's hands the URL over in the
+  // environment instead).
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

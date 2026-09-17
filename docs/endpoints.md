@@ -67,11 +67,14 @@ things here are exactly that:
 Those are described by hand in the page's own table. If you add one, describe it
 there or it goes unlisted with nothing failing.
 
-The TLS listeners on 8443 and 9443 are a milder version of the same thing: they
-speak HTTP, so they look as though they belong on the plain listener, but
-`/admin/sts-metadata` walks the *plain* listener's router and cannot see them. Their
-rows there are the plain-HTTP views only, and the listeners are described in the
-text.
+**The TLS family used to be a milder version of the same thing and no longer
+is.** It had two listeners of its own, 8443 and 9443, which spoke HTTP and so
+looked as though they belonged on the main listener, while `/admin/sts-metadata`
+— walking that listener's router — could not see them; their rows there were the
+plain-HTTP views only and the listeners were described in the text. Both were
+deleted on 2026-09-16. Everything that family answers is now a route on the
+router the page walks: `/tls`, `/tls/sign-in`, `/tls/server-certificate`,
+`/tls/forwarded` and the two truststore controls.
 
 ## The other things the service publishes about itself
 
@@ -90,8 +93,8 @@ them can drift from what the service does:
 | `GET /admin/ldap/service` | The directory's state, both listeners separately, and the fact that it is schemaless |
 | `GET /federation` | Every configured federation relationship in both directions, and the URL to give each partner |
 | `GET /admin/ldap/federations` | The federation register as the directory holds it, with its schema — and the one container here where an `ldapmodify` is a security change |
-| `GET /tls` | Both TLS listeners, and what a verified client certificate does and does not mean |
-| `GET /admin/tls/trust` | Every client-certificate trust anchor, with where each came from (`tls.trustAnchorsFile` or added at runtime), and the add and remove controls. An admin console page; `GET /admin-api/tls/trust` and `POST /admin-api/tls/trust/{add,remove}` are its management-API twins. Nothing on it is persisted and there is no clear |
+| `GET /tls` | The certificate the main port presents, the client certificate it asks for, and what a verified one does and does not mean (`GET /tls/sign-in` turns one into a session) |
+| `GET /admin/tls/trust` | Every client-certificate trust anchor, with where each came from (`tls.trustAnchorsFile` or added at runtime), and the add and remove controls. An admin console page; `GET /admin-api/tls/trust` and `POST /admin-api/tls/trust/{add,remove}` are its management-API twins. An anchor added at runtime is persisted in the default realm's `ou=trustAnchors`; one from the file comes back at every start |
 | `GET /scim` | The SCIM authentication schemes that are switched on |
 | `GET /krb5/principals` | The principal database, passwords included in development mode for the reason that page gives; in product mode the passwords are withheld and the page says why. A directory person keyed from their own password is listed with `directoryKeys: true` and never with a key |
 | `GET /admin/kerberos/principals` | Who the KDC holds a STORED long-term key for: directory people whose keys were derived from their own password (product mode), and service principals created with a random key — with create, rotate, delete and clear controls. A create or a rotate shows an MIT keytab ONCE — a rotate's carries the previous kvno too. Each row lists the PREVIOUS key versions still accepted for tickets issued under them (kvno, enctypes, expiry; `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`), with a Drop previous versions control that ends that window at once. An admin console page; `GET /admin-api/kerberos/principals` and `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,clear-person-keys,drop-previous-service-keys,drop-previous-person-keys}` are its twins, and only the create and rotate replies carry key material |

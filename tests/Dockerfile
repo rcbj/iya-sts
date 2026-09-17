@@ -20,10 +20,10 @@
 #
 # Three of the four kinds of job in this image reach outside that directory:
 #
-#   * the ten IN-PROCESS jobs (tests/*.js) require the service's own modules —
+#   * the IN-PROCESS jobs (tests/*.js) require the service's own modules —
 #     common/crypto.js, common/realms.js, the two map renderers, the Kerberos
 #     codecs — because asserting a module contract is what they are for;
-#   * five of the thirteen VENDORED protocol jobs load service modules too, and
+#   * several of the VENDORED protocol jobs load service modules too, and
 #     find them through MOCK_STS_DIR, which run-report.js sets to the
 #     repository root;
 #   * `npm install` at the root needs package.json, package-lock.json, .npmrc
@@ -125,11 +125,12 @@ RUN node -v && npm -v
 #
 # THE VERSION IS NOT THE PARENT PROJECT'S, AND THAT IS DELIBERATE. That image
 # pins 121.0.6167.85, and its own comments explain what it works around there
-# (Web Crypto Ed25519 behind a flag). The one browser job here —
-# tests/vendored/sts_admin_console.js — reads status codes and headers through
-# WEBDRIVER BiDi (`network.responseCompleted`), because `default-src 'none'` on
-# the console is the thing under test and blocks a `fetch()` from the page. BiDi
-# network events are a recent Chrome, so this pins a current stable one instead.
+# (Web Crypto Ed25519 behind a flag). The browser jobs here drive this
+# service's console, and tests/vendored/sts_admin_console.js reads status codes
+# and headers through WEBDRIVER BiDi (`network.responseCompleted`), because
+# `default-src 'none'` on the console is the thing under test and blocks a
+# `fetch()` from the page. BiDi network events are a recent Chrome, so this
+# pins a current stable one instead.
 # The version and the driver version are the SAME string on purpose: a
 # chromedriver that does not match its browser fails at session creation with a
 # message about a version, which is at least the truth, and a mismatch of one
@@ -197,6 +198,28 @@ RUN if [ ! -f tests/tools/run-report.js ]; then \
       exit 1; \
     fi
 
+# ---------------------------------------------------------------------------
+# THE TYPESCRIPT, COMPILED IN THIS IMAGE AND KEPT BESIDE ITS OUTPUT (#50).
+#
+# The jobs require the service's modules by path from /usr/src/sts, so the
+# tree here is compiled in place — `build-typescript.sh` emits each `x.js`
+# beside its `x.ts` — exactly as the service image's `typescript` stage does.
+# Unlike that stage it does NOT strip the sources: this is a test harness, not
+# the shipped image, and `tests/typecheck.js` has to read them.
+#
+# **IT READS A PRISTINE COPY, /usr/src/sts-source**, taken before compiling.
+# In the compiled tree a `.ts` has a `.js` twin, which that test treats as a
+# compiled artifact where none may be (the host rule), and which would itself
+# be type-checked as a second copy of the module. The copy borrows this
+# tree's two `node_modules` by link, for the types.
+# ---------------------------------------------------------------------------
+COPY . /usr/src/sts-source/
+RUN ln -s /usr/src/sts/node_modules /usr/src/sts-source/node_modules \
+ && ln -s /usr/src/sts/tests/node_modules \
+          /usr/src/sts-source/tests/node_modules \
+ && STS_IN_IMAGE_BUILD=1 ./build-typescript.sh
+ENV STS_TYPECHECK_ROOT=/usr/src/sts-source
+
 # The report is written here and bind-mounted out by the compose file. Created
 # in the image so that a run with NO mount still writes somewhere real rather
 # than failing at the end of a passing suite.
@@ -221,7 +244,7 @@ ENV CONFIG_FILE=./env/local.js
 # and STS_SPKI_PIN (tests/tools/trust.js). Baking one in would be a truststore
 # that is wrong for every run after the one that built it.
 ENV STS_TEST_SERVICE_URL=https://sts:8081
-# The directory's own socket, for sts_directory_bulk_load_ldap.js. Both exist
+# The directory's own socket, for sts_directory_bulk_load_ldap.js. It exists
 # for the reason the line above does: a hand-run `docker run` on the same
 # network needs no environment, and a rename needs one edit. Nothing is
 # published anywhere in that stack — this container is on the bridge with the

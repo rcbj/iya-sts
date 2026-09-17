@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: xacml_xml.js
@@ -11,10 +12,11 @@
 // why that is the rule this directory is built on.
 //
 // This file reads with `@xmldom/xmldom`, which the api and this service
-// already depend on for SAML and WS-Federation, and it uses `xpath` only where
-// an `AttributeSelector` demands one — the policy grammar itself is walked by
-// element name, because an XPath per element would be slower and would hide
-// what is actually a very small tree walk.
+// already depend on for SAML and WS-Federation, and it uses no XPath at all —
+// the policy grammar is walked by element name, because an XPath per element
+// would be slower and would hide what is actually a very small tree walk. (An
+// `AttributeSelector` is read and carried, and the PDP refuses to evaluate
+// one: `xacml/CLAUDE.md`, *What is not here yet*.)
 //
 // ---------------------------------------------------------------------------
 // THE PARSER IS DELIBERATELY STRICT, AND SIX CONFORMANCE CASES DEPEND ON IT.
@@ -475,9 +477,9 @@ function readVariableDefinitions(node) {
 //
 // It holds an <XPathVersion>, and the specification (section 5.14) says that
 // element MUST be present when the policy contains an <AttributeSelector> or
-// an `xpathExpression` value. Nothing here READS it — this implementation's
-// selector evaluation is the one XPath engine it has, and it does not switch
-// dialects on a URI — but it is carried, because a policy that arrived
+// an `xpathExpression` value. Nothing here READS it — this implementation
+// evaluates no XPath, so there is no dialect to switch on a URI — but it is
+// carried, because a policy that arrived
 // schema-valid and left without it would leave through this service's own
 // writer, and two of the vendored conformance policies carry one.
 //
@@ -692,8 +694,9 @@ function parsePolicy(xml) {
     // STATIC VALIDATION IS PART OF LOADING, not a separate step a caller can
     // forget. XACML is statically typed and a policy that does not typecheck
     // is wrong for every request rather than for some — see
-    // `xacml_validate.js`, which the JSON and ALFA readers call at the same
-    // point so that all three refuse the same documents.
+    // `xacml_validate.js`. An ALFA import comes through here too (the console
+    // writes it out as XML and the store's write parses it), so both syntaxes
+    // refuse the same documents; the JSON Profile carries no policies.
     validate.validate(parsed);
     log.debug('Leaving parsePolicy(). A valid ' + name + '.');
     return parsed;
@@ -752,9 +755,9 @@ function readRequest(root) {
       category: requiredAttribute(node, 'Category'),
       id: attribute(node, 'id'),
       // The <Content> is kept as a DOM node rather than as text, because an
-      // AttributeSelector runs an XPath over it and re-parsing at every
-      // evaluation would be both slow and a second chance to disagree about
-      // namespaces.
+      // AttributeSelector would run an XPath over it (none is evaluated yet)
+      // and re-parsing at every evaluation would be both slow and a second
+      // chance to disagree about namespaces.
       content: content || null,
       attributes: childrenNamed(node, 'Attribute').map(function (each) {
         return {
@@ -845,8 +848,9 @@ function readResponseAssignments(parent, wrapper, item, idAttribute) {
 //
 // The reader's inverse, and the PAP is what needs it: the guided editor works
 // on the MODEL, so every structural change has to be serialized back into the
-// document `ou=policies` actually stores. `xacml_alfa.js` will need it too —
-// ALFA in, model, XML out is the whole of what an ALFA compiler is here.
+// document `ou=policies` actually stores. An ALFA import needs it too — ALFA
+// in, model, XML out is the whole of what an ALFA compiler is here
+// (`xacml_admin.js`'s `import-alfa`).
 //
 // TWO THINGS IT DELIBERATELY DOES NOT PRESERVE, and both are worth knowing
 // before pointing the editor at a hand-authored policy:

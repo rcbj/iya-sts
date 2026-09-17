@@ -50,6 +50,7 @@ delete process.env.CONFIG_FILE;
 
 const fs = require('fs');
 const path = require('path');
+const { isSourceFile } = require('./tools/source_file');
 const http = require('http');
 
 const errorCodes = require('../common/error_codes');
@@ -79,13 +80,21 @@ const ROOT = path.join(__dirname, '..');
 // XPEP subsystem). Its Dockerfile copies common/error_codes.js to the image
 // root, which tests/xacml_pep.js pins.
 //   xacml/conformance              the vendored OASIS suite's manifest
-//   env                            generated appconfig files
+//   env                            the appconfig files and the generated
+//                                  defaults.js
 //   debugger/embedded              the debugger project's BUILD OUTPUT, its
 //                                  node_modules included; gitignored, and its
 //                                  codes are that project's business
+//   protos                         SPIFFE's vendored protocol definitions
+//   .git, coverage                 not source
+//   .claude                        Claude Code's state, and its AGENT
+//                                  WORKTREES — a second checkout of this
+//                                  repository whose files are not this one's
+//                                  (2026-09-16; .dockerignore says the same)
 // ---------------------------------------------------------------------------
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
-                   'openbao', 'env', '.git', 'coverage', 'protos'];
+                   'openbao', 'env', '.git', 'coverage', 'protos',
+                   '.claude'];
 
 const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
                     'debugger/embedded'];
@@ -103,7 +112,9 @@ function sourceFiles() {
   const out = [];
   function walk(dir) {
     log.debug("Entering walk().");
-    fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const names = entries.map(function (e) { return e.name; });
+    entries.forEach(function (entry) {
       const full = path.join(dir, entry.name);
       const rel = path.relative(ROOT, full).split(path.sep).join('/');
       if (entry.isDirectory()) {
@@ -112,7 +123,8 @@ function sourceFiles() {
         walk(full);
         return;
       }
-      if (!/\.js$/.test(entry.name)) return;
+      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+      if (!isSourceFile(entry.name, names)) return;
       if (VENDORED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });
@@ -195,9 +207,9 @@ const FAILURE_PATTERNS = [
   // ===== SCEP patterns =====
   { re: /\bscepError\(\s*res\b/, before: 4, after: 2,
     what: 'the SCEP scepError(res, status, code, text) HTTP refusal ' +
-          '(scep/scep.js)' },
+          '(scep/scep.ts)' },
   { re: /\breturn failed\(\s*'STS-/, before: 1, after: 1,
-    what: 'a SCEP CertRep FAILURE built by failed() (scep/scep.js)' },
+    what: 'a SCEP CertRep FAILURE built by failed() (scep/scep.ts)' },
   // ----- KRB -------------------------------------------
   { re: /\berrorReply\(\s*[\w.]+\s*,/, before: 1, after: 3,
     what: 'a Kerberos KRB-ERROR built by errorReply()' },
@@ -216,7 +228,7 @@ const FAILURE_PATTERNS = [
     what: 'an OAuth error object handed to redirectBack()' },
   // ----- PKI -------------------------------------------
   { re: /\brefuse\(\s*res\s*,\s*[45]\d\d\b/, before: 4, after: 2,
-    what: 'pki/pki_service.js refuse(res, status, …) helper' },
+    what: 'pki/pki_service.ts refuse(res, status, …) helper' },
   // ----- PORTAL ----------------------------------------
   { re: /\bsend\(\s*res\s*,\s*[45]\d\d\b/, before: 4, after: 2,
     what: 'the portal\'s send(res, status, html) with a failure status' },

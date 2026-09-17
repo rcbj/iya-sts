@@ -5,19 +5,21 @@
 // ===========================================================================
 // ONE THROWAWAY COPY OF THIS SERVICE, STARTED AND STOPPED BY A TEST RUN.
 //
-// Nothing in `tests/` needs this — the whole point of that directory is that
-// it drives modules IN PROCESS and binds no port (see tests/CLAUDE.md). This
-// module exists for the report generator's OTHER half: the parent project's
-// jobs that drive this service over HTTP, which `tests/tools/run-report.js`
-// can run against the WORKING TREE rather than against the `sts/` gitlink the
+// Nothing in the in-process half of `tests/` needs this — the whole point of
+// that half is that it drives modules IN PROCESS and binds no port (see
+// tests/CLAUDE.md). This module exists for the report generator's OTHER half:
+// the protocol jobs under `tests/vendored/` (copies of the parent project's)
+// that drive this service over HTTP, which `tests/tools/run-report.js` runs
+// against the WORKING TREE rather than against the `sts/` gitlink the
 // parent's own suite is pinned to. Those need a listener, and somebody has to
 // own its lifetime.
 //
 // THREE THINGS HERE ARE NOT INCIDENTAL, and each is a mistake this repository
 // has already made once:
 //
-//  1. **NINE PORTS, NOT ONE.** `STS_PORT` alone leaves the KDC, both TLS
-//     listeners, LDAP, LDAPS and SPIFFE's two gRPC sockets on their defaults,
+//  1. **EIGHT PORTS, NOT ONE.** `STS_PORT` alone leaves the KDC, the Kerberos
+//     test service, the plain-HTTP revocation listener, LDAP, LDAPS and
+//     SPIFFE's two gRPC sockets on their defaults,
 //     and a sibling stack is usually already holding them. A run that took
 //     8081 from somebody's local stack would be a test suite that breaks the
 //     machine it runs on.
@@ -40,17 +42,17 @@
 // ---------------------------------------------------------------------------
 // THIS IS NO LONGER THE ORDINARY WAY THAT SERVICE IS STARTED, SINCE 2026-08-28.
 //
-// `./local-run-tests.sh` brings up a CONTAINER from the repository's own
-// docker-compose.yml and hands run-report.js its URL, so that the thing under
-// test is the IMAGE rather than this machine's node_modules — its header
-// argues that at length and it is not repeated here. This module is what
-// `--no-docker` uses, what a machine with no docker falls back to, and what a
-// COVERAGE run uses of necessity: V8 writes its data from inside the process
-// being measured, into a directory that process can write, so an instrumented
-// service has to be one this runner started.
+// A launcher brings up a CONTAINER and hands run-report.js its URL, so that
+// the thing under test is the IMAGE rather than this machine's node_modules —
+// ./docker-run-tests.sh does, and ./local-run-tests.sh did (from
+// docker-compose.yml) until it was removed on 2026-09-16. This module is what
+// a bare run-report.js uses, what `./run-coverage.sh --no-docker` uses, and
+// what every COVERAGE run uses of necessity: V8 writes its data from inside
+// the process being measured, into a directory that process can write, so an
+// instrumented service has to be one this runner started.
 //
-// So the three numbered decisions above are still live — a coverage run and a
-// dockerless run both take every one of them — and the lifetime rule is
+// So the three numbered decisions above are still live — every coverage run
+// takes every one of them — and the lifetime rule is
 // unchanged in both directions: this module's caller stops what this module
 // started, and never touches a service it was merely handed.
 // ===========================================================================
@@ -74,23 +76,31 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const log = bunyan.createLogger({ name: 'service',
                                   level: process.env.LOG_LEVEL || 'info' });
 
-// The ten listeners, in the order the offsets are handed out. The NAME is the
+// The eight listeners, in the order the offsets are handed out. The NAME is the
 // environment variable this service reads for it — README.md's *Configuration*
 // table is the authority for these spellings, and a misspelt one is SILENT: it
 // is ignored and the listener takes its default port, which is the shared one.
+//
+// **THIS LIST IS POSITIONAL AND TWO ENTRIES WERE REMOVED FROM THE MIDDLE OF IT
+// ON 2026-09-16.** `STS_TLS_PORT` and `STS_MTLS_PORT` sat at offsets 1 and 2,
+// and the listeners they named — 8443 and 9443 — were deleted; a client
+// certificate is presented to the main port now. Every offset below them moved
+// down by two, which is safe ONLY because `instance.ports` is read by NAME and
+// never by arithmetic. A caller that had written `base + 5` for the directory
+// would have started dialling SPIFFE silently, which is exactly what the block
+// at `start()` says the named map exists to prevent.
 const PORT_VARS = [
   'STS_PORT',
-  'STS_TLS_PORT',
-  'STS_MTLS_PORT',
   'KRB5_KDC_PORT',
   'KRB5_SERVICE_PORT',
   'LDAP_PORT',
   'LDAPS_PORT',
   'STS_SPIFFE_WORKLOAD_PORT',
   'STS_SPIFFE_SERVER_PORT',
-  // The plain-HTTP revocation listener (2026-09-13). Last, so no offset above
-  // moved — `instance.ports` is read by NAME, and appending keeps a port that
-  // somebody noted from an earlier run where it was.
+  // The plain-HTTP revocation listener (2026-09-13). Last, and it was appended
+  // here so that no offset above it moved — which was still true until the two
+  // removals above, and is the reason a port somebody noted from an earlier
+  // run may not be where they left it.
   'PKI_HTTP_PORT'
 ];
 
@@ -130,10 +140,11 @@ function udpFree(port) {
 }
 
 // ---------------------------------------------------------------------------
-// A block of nine consecutive ports that are ALL free, or null after enough
-// tries. Consecutive rather than nine independent ones so that a person
-// reading `ss` while a run is going can see at a glance which ports belong to
-// it — and so the log line that reports them is one range rather than a list.
+// A block of `PORT_VARS.length` consecutive ports that are ALL free, or null
+// after enough tries. Consecutive rather than that many independent ones so
+// that a person reading `ss` while a run is going can see at a glance which
+// ports belong to it — and so the log line that reports them is one range
+// rather than a list.
 // ---------------------------------------------------------------------------
 async function findPortBlock(preferredBase, log) {
   log.debug('Entering findPortBlock().');
@@ -141,8 +152,8 @@ async function findPortBlock(preferredBase, log) {
   if (preferredBase) {
     bases.push(Number(preferredBase));
   }
-  // A spread of candidates well above the service's own defaults (8081, 88,
-  // 389, 636, 8443, 9443, 8092, 8181) so a plain local stack is never touched.
+  // A spread of candidates well above the service's own defaults (8081, 8082,
+  // 88, 8888, 389, 636, 8092, 8181) so a plain local stack is never touched.
   for (let i = 0; i < 40; i++) {
     bases.push(18100 + Math.floor(Math.random() * 400) * 10);
   }
@@ -171,20 +182,21 @@ async function findPortBlock(preferredBase, log) {
 }
 
 // ---------------------------------------------------------------------------
-// The environment one throwaway instance runs under. Everything this service
-// binds is moved, both Unix sockets are turned OFF, and the log level is the
-// caller's choice — `debug` is this service's default and is what a failing
-// job is read from, but it is also about half of its CPU, so a run that is
-// only collecting coverage will usually want less.
+// The environment one throwaway instance runs under. Every port PORT_VARS
+// names is moved — the embedded debugger's `STS_DEBUGGER_PORT` (8444) is not
+// among them, and a failure to bind it is recorded rather than fatal — both
+// Unix sockets are turned OFF, and the log level is the caller's choice:
+// `debug` is what a failing job is read from, but it is also about half of
+// the service's CPU, so a run that is only collecting coverage will usually
+// want less. Every appconfig file in env/ has said `info` since 2026-09-12.
 //
 // THE LEVEL TAKES TWO OPTIONS AND NOT ONE, which is easy to get wrong: opts.
-// logLevel reaches the loggers config.js registers, and the six VENDORED
+// logLevel reaches the loggers config.js registers, and the eight VENDORED
 // modules under common/vendored/ each build their own from
 // `require(process.env.CONFIG_FILE).logLevel` at load and never see it. So a
-// caller that wants a quiet service passes opts.configFile as well —
-// ./env/test.js is ./env/local.js with `logLevel: "info"` and nothing else
-// different. Left empty, the fallback below is the `debug` file and those
-// modules write every canonicalization of every signed document.
+// caller that wants those loud or quiet passes opts.configFile as well. Left
+// empty, the fallback below is ./env/local.js, whose level is `info` — and
+// ./env/test.js has been identical to it since the same day.
 // ---------------------------------------------------------------------------
 function environmentFor(base, opts) {
   log.debug('Entering environmentFor(). base=' + base);
@@ -200,17 +212,16 @@ function environmentFor(base, opts) {
   // FILE (2026-08-30) — and the difference is not tidiness.
   //
   // start() below has to build a URL, and a URL has a SCHEME in it. If this
-  // were left to `global.https` in whichever file `opts.configFile` names,
-  // this module would be guessing what that file says: a caller pointing at
-  // an appconfig file of their own would get a service on https and a URL
-  // saying http, which reaches every one of the thirteen protocol jobs as a
-  // closed socket. Setting it makes the environment variable — which wins
-  // over every appconfig file — the single statement, and schemeFor() below
-  // reads back exactly what was set.
+  // were left to `global.https` in whichever file `opts.configFile` names, this
+  // module would be guessing what that file says: a caller pointing at an
+  // appconfig file of their own would get a service on https and a URL saying
+  // http, which reaches every protocol job as a closed socket. Setting it makes
+  // the environment variable — which wins over every appconfig file — the
+  // single statement, and schemeFor() below reads back exactly what was set.
   //
   // The DEFAULT is on, matching env/local.js, env/test.js and
   // env/docker-tests.js, and a caller's own STS_HTTPS still wins so that
-  // `STS_HTTPS=false ./local-run-tests.sh --no-docker` is a plain-port run.
+  // `STS_HTTPS=false ./run-coverage.sh --no-docker` is a plain-port run.
   // ---------------------------------------------------------------------
   env.STS_HTTPS = String(process.env.STS_HTTPS === undefined
     ? 'true'
@@ -305,7 +316,7 @@ function probe(url) {
 
 // ---------------------------------------------------------------------------
 // Start it, and do not return until it ANSWERS. `up` is a request that got a
-// response, not a process that was spawned: this service binds ten listeners
+// response, not a process that was spawned: this service binds eight listeners
 // and reads its store before the first of them, so "the child exists" and "the
 // service is ready" are seconds and several failure modes apart.
 // ---------------------------------------------------------------------------
@@ -348,9 +359,10 @@ async function start(opts) {
                       opts.logFile);
     }
     // `fetch()` until 2026-08-30, and it could not survive this service
-    // serving TLS: the certificate is self-signed and regenerated on every
-    // start, so the first request would fail verification for the whole
-    // timeout and the service would be reported as never having answered.
+    // serving TLS: the certificate's anchor is regenerated on every start in
+    // development mode, so the first request would fail verification for the
+    // whole timeout and the service would be reported as never having
+    // answered.
     // The question here is whether the port answers, not whether it is
     // trustworthy — the JOBS get a real anchor, from tests/tools/trust.js.
     /* eslint-disable no-await-in-loop */
@@ -362,8 +374,11 @@ async function start(opts) {
       // THE PORTS, BY THE NAME THE SERVICE READS THEM UNDER, and not just the
       // base (2026-09-06). A caller that needed the directory's socket was
       // otherwise obliged to do `base + 5` — index arithmetic over PORT_VARS,
-      // in another file, silently wrong the moment a listener is added to that
-      // list in the middle. `tests/vendored/sts_directory_bulk_load_ldap.js`
+      // in another file, silently wrong the moment a listener is added to or
+      // removed from the middle of that list. **Two were removed from the
+      // middle of it on 2026-09-16**, which moved the directory from `base +
+      // 5` to `base + 3` and cost nothing.
+      // `tests/vendored/sts_directory_bulk_load_ldap.js`
       // is the caller that needed it and run-report.js is what hands it over.
       const ports = {};
       PORT_VARS.forEach(function (name, i) { ports[name] = base + i; });

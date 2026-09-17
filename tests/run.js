@@ -6,11 +6,12 @@
 // THE RUNNER. `npm test`.
 //
 // It DISCOVERS rather than holding a list, and that is the whole design. The
-// argument against a second test suite in this repository (CLAUDE.md, "Tests")
-// is that a second suite means a second place to forget — a list in a runner, a
-// line in a Dockerfile, a paragraph in a map. So there is no list: a test here
-// is any .js file in this directory that is not this file or `harness.js`, and
-// adding one is dropping a file in. Nothing else to update, nothing to forget.
+// argument against a second test suite in this repository (tests/CLAUDE.md,
+// "Adding one") is that a second suite means a second place to forget — a list
+// in a runner, a line in a Dockerfile, a paragraph in a map. So there is no
+// list: a test here is any .js file in this directory that is not this file or
+// `harness.js`, and adding one is dropping a file in. Nothing else to update,
+// nothing to forget.
 //
 // A test module exports:
 //
@@ -45,6 +46,10 @@
 // arguments and behaves exactly as it did.
 // ===========================================================================
 
+// Refused on a tree whose TypeScript is not compiled — see
+// `common/compiled_tree.js`. The in-process suite runs in an image
+// (`./docker-npm-test.sh`) since #50.
+require('../common/compiled_tree').refuseUncompiledTree('npm test');
 const fs = require('fs');
 const path = require('path');
 const bunyan = require('bunyan');
@@ -81,7 +86,7 @@ function testFiles(patterns) {
 
 // ---------------------------------------------------------------------------
 // The arguments. Hand-parsed because this directory takes no dependency to run
-// — see CLAUDE.md — and three flags do not justify the first one.
+// — see tests/CLAUDE.md — and three flags do not justify the first one.
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
   log.debug('Entering parseArgs().');

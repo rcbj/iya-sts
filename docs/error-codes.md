@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2657** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2682** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 46
+* [Service core (`STS-CORE`)](#sts-core) — 47
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 59
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
@@ -61,34 +61,34 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 176
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 394
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 177
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 408
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 60
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 74
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 120
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 128
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 70
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 76
-* [TLS listeners (`STS-TLS`)](#sts-tls) — 32
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 51
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 167
-* [Management API (`STS-API`)](#sts-api) — 69
+* [Management API (`STS-API`)](#sts-api) — 71
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 92
-* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 25
+* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
 
 **HTTP front door.** Every HTTP request passes through here before it reaches a protocol: the security headers, the CORS allowlist, the body parsers, the validation guard, the rate limiter, and the call-log funnel that records the answer. The three generic codes below are what that funnel records for a failed response nothing more specific claimed.
 
-Raised from: common/app.js, common/cors.js, common/validation.js, common/websecurity.js.
+Raised from: common/app.js, common/cors.js, common/validation.js, common/websecurity.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -115,7 +115,7 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 
 **PROXY protocol.** The HAProxy PROXY protocol v2 header read at the front of every TCP connection when global.proxyProtocol is v2: who may send one (global.trustedProxies), the header itself, and the startup refusal when nobody is trusted.
 
-Raised from: common/proxy_protocol.js, server.js.
+Raised from: common/proxy_protocol.ts, server.js.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -133,7 +133,7 @@ Raised from: common/proxy_protocol.js, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.js, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.js, home/.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -168,7 +168,7 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 | `STS-CORE-0029` | The Kerberos KDC's TCP/UDP listeners could not start (often port 88 is privileged or taken); the rest of the service runs. | — |
 | `STS-CORE-0030` | The embedded LDAP directory's listener could not start; the rest of the service runs. | — |
 | `STS-CORE-0031` | The SPIFFE gRPC listeners could not start; the rest of the service runs. | — |
-| `STS-CORE-0032` | The 8443/9443 TLS endpoints could not start; the rest of the service runs. | — |
+| `STS-CORE-0032` *(retired)* | The 8443/9443 TLS endpoints could not start. Retired 2026-09-16: both listeners were deleted and this module binds nothing, so there is no bind here to fail | — |
 | `STS-CORE-0033` | The last flush at shutdown failed, so the process exited non-zero and a change made just before it may not have been written down. | — |
 | `STS-CORE-0034` | The BBS key pair could not be shared with the request workers; each generates its own and a did:web document may name a key its siblings did not sign with. | — |
 | `STS-CORE-0035` | The service refused to start because its signing key material (or the key-encryption key that opens it) could not be read. | — |
@@ -183,12 +183,13 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 | `STS-CORE-0090` | setSubjectResolver() was given an object without both subjectFor() and nameFor(), so no person in this process is issued a subject. | none — logged |
 | `STS-CORE-0091` | The subject resolver threw, and the person was given no subject (or a subject was treated as naming nobody). | none — logged |
 | `STS-CORE-0092` | A realm's key set could not be generated off the event loop; the first read of it generates it on the loop instead. | none — logged |
+| `STS-CORE-0093` | The service or its in-process suite was started from a tree whose TypeScript sources are not compiled, which only an image build does (#50). | none — the process exits before listening |
 
 ## STS-WORKER
 
 **Worker pools.** The child processes post-quantum signing runs in, and the request workers the whole protocol stack can be dispatched to.
 
-Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.js, common/service_state.js.
+Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.ts, common/service_state.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -409,7 +410,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 
 **Certificate authority.** The Root, Intermediate and Issuing CAs, certificate authoring, the CRL and OCSP responders, and the revocation check a presented certificate is held to.
 
-Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, common/revocation_status.js, pki/, admin-ui/pki_admin.js.
+Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, common/revocation_status.js, pki/, admin-ui/pki_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -530,7 +531,7 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 | `STS-PKI-0115` | An application's signing key pair was issued and one of its attributes could not be written; the private key is lost. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0116` | An application key-pair removal found nothing to take off for that profile. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0117` | A PKI console or API action named an action that does not exist. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0118` | A presented certificate chain was refused because a certificate in it is REVOKED — on this service's own register, or on the verified CRL of a foreign issuer (common/revocation_status.js). | Per door: HTTP 403 on 9443; no session and no recorded authentication on 8443; invalid_client at the token endpoint (tls_client_auth, and an x5c assertion as invalid_client or invalid_grant); HTTP 403 access_denied at /xacml; the SCIM client-certificate scheme not accepted (401 if nothing else authenticates); gRPC UNAUTHENTICATED at the SPIRE Server API |
+| `STS-PKI-0118` | A presented certificate chain was refused because a certificate in it is REVOKED — on this service's own register, or on the verified CRL of a foreign issuer (common/revocation_status.js). | Per door: no session at GET /tls/sign-in (HTTP 200 with signedIn false) and no recorded authentication for the sighting on the main port; invalid_client at the token endpoint (tls_client_auth, and an x5c assertion as invalid_client or invalid_grant); HTTP 403 access_denied at /xacml; the SCIM client-certificate scheme not accepted (401 if nothing else authenticates); gRPC UNAUTHENTICATED at the SPIRE Server API |
 | `STS-PKI-0119` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because its revocation status could not be established — a foreign CRL could not be fetched, did not verify, was stale, or no issuer certificate was available to verify one. | The same refusals as STS-PKI-0118, per door |
 | `STS-PKI-0120` | The CRL named by a presented certificate's cRLDistributionPoints could not be fetched: a network failure, a timeout, a non-2xx status, a redirect or a body over pki.revocationMaxCrlBytes. | — |
 | `STS-PKI-0121` | A fetched CRL could not be used: it did not parse, named another issuer, failed its signature, carried an unsupported critical extension or was past its nextUpdate — or a presented chain could not be walked at all. | — |
@@ -591,7 +592,7 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 
 **Certificate enrollment core.** Who may be issued a certificate for which directory entry, what a certificate issued over ACME, EST or SCEP contains, the PKCS#10 proof of possession, the enrolled certificates and credentials kept on a person or application entry, and their revocation.
 
-Raised from: common/cert_enrollment.js, common/enrollment_monitor.js.
+Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -821,7 +822,7 @@ Raised from: scep/.
 
 **Sign-in, second factors and sessions.** The sign-in screen, WebAuthn, TOTP and recovery codes, password verification, the sign-on session, and the OpenID Connect relying party the console and the portal sign in through.
 
-Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.js, common/password_policy.js, common/oidc_rp.js.
+Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.ts, common/password_policy.ts, common/oidc_rp.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -861,7 +862,7 @@ Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.
 | `STS-AUTHN-0034` | WebAuthn registration failed: the authenticator data carries no attested credential data (AT flag clear). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0035` | WebAuthn assertion failed: the signature counter did not advance past the stored value, which is the signature of a cloned authenticator. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0036` | WebAuthn assertion failed: the signature over authenticatorData and the clientDataJSON hash does not verify against the enrolled public key. | HTTP 200 page naming the failed check |
-| `STS-AUTHN-0037` | A WebAuthn ceremony failed a check this service has no specific code for; the check-name table in authn/webauthn_policy.js is behind the verifier. | HTTP 200 page naming the failed check |
+| `STS-AUTHN-0037` | A WebAuthn ceremony failed a check this service has no specific code for; the check-name table in authn/webauthn_policy.ts is behind the verifier. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0038` | A security key's signature counter could not be recorded after a successful assertion; the sign-in stands and the replay defence has nothing new to check next time. | — |
 | `STS-AUTHN-0039` | The one-time code form POST failed input validation. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0040` | Too many one-time code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 200 one-time code page, redrawn with the reason |
@@ -1001,6 +1002,7 @@ Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.
 | `STS-AUTHN-0192` | Whether another process had already reported a session's end could not be asked, so it was reported here and a receiver may be told twice. | none — logged |
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
+| `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
 
 ## STS-OAUTH
 
@@ -1285,6 +1287,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0294` | The introspection endpoint failed with an unexpected error outside every refusal it makes. | server_error (HTTP 500) |
 | `STS-OAUTH-0295` | A client authenticating at the introspection endpoint declares a token_endpoint_auth_method the selected authorization server does not list in introspection_endpoint_auth_methods_supported. | invalid_client (HTTP 400 for a JWT request, 401 for JSON) |
 | `STS-OAUTH-0296` | A resource server's registered (or default) RFC 9701 introspection response algorithm is not one the selected authorization server advertises in its introspection_*_values_supported members. | invalid_client (HTTP 400) |
+| `STS-OAUTH-0297` | In OAuth 2.1 mode, a grant a client makes in its own name (authorization_code, refresh_token, client_credentials, token exchange) named no client_id at all. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0298` | In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant arrived with no client, so it was answered with an access token and NO refresh token (recorded, not refused). | none — the token response is issued without refresh_token |
+| `STS-OAUTH-0299` | In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant named a client that is not registered or declared here. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0300` | A software statement (RFC 7591 section 2.3) presented at registration is not a string holding a compact JWS — it is missing its three segments, or it is a JWE. | invalid_software_statement (HTTP 400) |
 | `STS-OAUTH-0301` | A software statement's JOSE header or claims are not JSON objects. | invalid_software_statement (HTTP 400) |
 | `STS-OAUTH-0302` | A software statement says alg "none" (RFC 7591 section 2.3 requires it to be signed or MACed). | invalid_software_statement (HTTP 400) |
@@ -1404,6 +1409,17 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0518` | In RFC 9700 mode, a refresh token could not be redeemed because the claim store could not be asked; refused, and left unspent (fail closed). | server_error (HTTP 500) |
 | `STS-OAUTH-0519` | A DPoP proof was refused because another request carrying the same jti claimed it first, on this node or another (RFC 9449 section 11.1). | invalid_dpop_proof (HTTP 400 / 401) |
 | `STS-OAUTH-0520` | A DPoP proof was refused because the claim store could not be asked whether its jti had been used (fail closed). | invalid_dpop_proof (HTTP 400 / 401) |
+| `STS-OAUTH-0521` | A token request that would issue a refresh token carried no DPoP proof, and oauth2.refreshTokenRequireDpop is on. | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0522` | A token request that would issue a refresh token was made over a connection with no verified client certificate, and oauth2.refreshTokenRequireMtls is on. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0523` | A refresh token carrying no cnf.jkt was presented while oauth2.refreshTokenRequireDpop is on; it is refused rather than bound to the key presenting it. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0524` | A refresh grant carried no DPoP proof while oauth2.refreshTokenRequireDpop is on. | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0525` | A refresh token carrying no cnf x5t#S256 was presented while oauth2.refreshTokenRequireMtls is on, by a client RFC 8705 section 7.1 does not cover. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0526` | A refresh grant was made over a connection with no verified client certificate while oauth2.refreshTokenRequireMtls is on. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0527` | A setting requires mutual TLS, but the port the request arrived on is not bound as HTTPS and cannot ask for a client certificate (global.https). | invalid_request (HTTP 400 / 401) |
+| `STS-OAUTH-0528` | An access token carrying no cnf.jkt was presented at a resource while oauth2.accessTokenRequireDpop is on. | invalid_token (HTTP 401) |
+| `STS-OAUTH-0529` | A DPoP-bound access token was presented with no proof while oauth2.accessTokenRequireDpop is on. | invalid_token (HTTP 401) |
+| `STS-OAUTH-0530` | An access token carrying no cnf x5t#S256 was presented at a resource while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
+| `STS-OAUTH-0531` | A certificate-bound access token was presented at a resource over a connection carrying no matching certificate, while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
 
 ## STS-SAML
 
@@ -1736,6 +1752,14 @@ Raised from: kerberos/.
 | `STS-KRB-0118` | A KDC request was answered before this node caught up with the other nodes' committed changes, so a sign-out committed elsewhere in the last moment may not be honoured by it. | none — logged; the request is answered |
 | `STS-KRB-0119` | A SPNEGO request-mic continuation was refused because another process of this service had already completed that negotiation. | RFC 4178 section 4.2.2, a reject NegTokenResp; HTTP 401 |
 | `STS-KRB-0120` | A SPNEGO request-mic continuation could not be proved unspent because the store that records completed negotiations could not be asked; it was refused (fail closed). | RFC 4178 section 4.2.2, a reject NegTokenResp; HTTP 401 |
+| `STS-KRB-0121` | A TGS-REQ named a realm this KDC does not serve. Until 2026-09-15 such a request was answered as the default realm. | KDC_ERR_WRONG_REALM (68) |
+| `STS-KRB-0122` | A KDC request sent to a trust realm's own /realm/<id>/KdcProxy named a Kerberos realm that realm does not serve (another realm's name, or one whose Kerberos is off). | KDC_ERR_WRONG_REALM (68) |
+| `STS-KRB-0123` | Kerberos was turned on for a trust realm that has no krb5.realm of its own. | none (a refused administrative change) |
+| `STS-KRB-0124` | A trust realm was given a krb5.realm another realm already answers to (another realm's, the default realm's, or krb5.trustedRealm), compared without regard to case. | none (a refused administrative change) |
+| `STS-KRB-0125` | A trust realm's krb5.realm was changed or cleared while its Kerberos was on. | none (a refused administrative change) |
+| `STS-KRB-0126` | The acceptor was presented a ticket for a Kerberos realm the trust realm it was reached in does not serve. | KRB_AP_ERR_NOT_US (35); over SPNEGO, HTTP 401 |
+| `STS-KRB-0127` | Two trust realms answer to one Kerberos realm name (a restored or replicated realm the registry did not re-judge), so the KDC routes that name to the first and not the second. | none (logged when the router finds it) |
+| `STS-KRB-0128` | A Kerberos key act — creating, rotating, deleting or clearing a stored key — was asked of a trust realm that has no KDC, so there is no principal for the key to belong to. | HTTP 400 { ok: false, errors } / 303 with error= |
 
 ## STS-LDAP
 
@@ -1982,10 +2006,11 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0074` | The SPIFFE listeners could not be reconciled after a trust realm changed. | — |
 | `STS-SPIFFE-0075` | A join token at AttestAgent could not be proved unspent because the cluster store could not be asked, so the attestation was refused. | gRPC UNAVAILABLE |
 | `STS-SPIFFE-0076` | A realm's SPIFFE JWT authority or self-signed X.509 authority could not be established once for the cluster, so none was made. | the SPIFFE call fails as when no authority could be built |
+| `STS-SPIFFE-0077` | An agent asked for an SVID from a registration entry that is not beneath it (BatchNewX509SVID, NewJWTSVID). | gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID) |
 
 ## STS-TLS
 
-**TLS listeners.** The 8443 and 9443 listeners, the trust store, and the server certificate three other sockets share.
+**TLS and client certificates.** The client-certificate truststore, the sign-in a verified one starts, and the server certificate the main port and LDAPS 636 share. The 8443 and 9443 listeners it was named for were deleted on 2026-09-16.
 
 Raised from: tls/.
 
@@ -2011,17 +2036,17 @@ Raised from: tls/.
 | `STS-TLS-0018` | Recording a verified client certificate as an authentication threw; the connection was unaffected. | — |
 | `STS-TLS-0019` | The service did not start: tls.trustAnchorsFile could not be read. | — |
 | `STS-TLS-0020` | The service did not start: tls.trustAnchorsFile holds no PEM certificate. | — |
-| `STS-TLS-0021` | The required-client-certificate listener refused a handshake, usually a client certificate missing or not verifying against the truststore. | TLS handshake failure |
-| `STS-TLS-0022` | A TLS handshake failed on the optional-client-certificate listener (a version, cipher or non-TLS mismatch). | TLS handshake failure |
+| `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version, cipher or certificate mismatch, or a non-TLS client. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
+| `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
 | `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
 | `STS-TLS-0024` | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. | HTTP 403 |
-| `STS-TLS-0025` | A TLS listener could not bind its port. | — |
+| `STS-TLS-0025` *(retired)* | A TLS listener could not bind its port. Retired 2026-09-16: this module owns no listener to bind | — |
 | `STS-TLS-0026` | The TLS listener certificate does not chain to this service's Root and re-issuing it produced the same certificate. | — |
 | `STS-TLS-0027` | The runtime trust anchor store was installed without one of its list, write and remove functions, and was refused whole; runtime anchors are not persisted. | — |
 | `STS-TLS-0028` | A runtime trust anchor is in force but could not be written to ou=trustAnchors, so it will not survive a restart. | — |
 | `STS-TLS-0029` | A runtime trust anchor was removed from every listener but could not be removed from ou=trustAnchors, so it will come back on a restart. | — |
 | `STS-TLS-0030` | The stored trust anchors could not be read; the truststore was left as it was. | — |
-| `STS-TLS-0031` | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity (not from a TLS client or enrollment Issuing CA, no clientAuth, or no single urn:sts:person:/application: name). | HTTP 403 with the connection report |
+| `STS-TLS-0031` *(retired)* | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity. Retired 2026-09-16 with that listener: the same certificate is now refused where it is USED — no session at GET /tls/sign-in, no client authentication at the token endpoint — rather than at a socket | HTTP 403 with the connection report |
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
 
 ## STS-VC
@@ -2469,7 +2494,7 @@ Raised from: gnap/.
 
 **XACML and access policy.** The PDP, the policy repository, the embedded PEPs that decide this service's own access and issuance, the PIP over HTTP, and the remote-PEP endpoints.
 
-Raised from: xacml/, common/access_gate.js, common/issuance_gate.js, common/roles.js.
+Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/roles.js.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -2522,7 +2547,7 @@ Raised from: xacml/, common/access_gate.js, common/issuance_gate.js, common/role
 | `STS-XACML-0047` | The access policy named by xacml.accessPolicy is disabled, so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0048` | The access policy named by xacml.accessPolicy does not load, so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0049` | The built-in access-control policy could not be built from its template (a defect), so access to every gated surface is ALLOWED without a policy decision. | — |
-| `STS-XACML-0050` | common/access_gate.js was given a decider that is not a function; every access decision is allowed. | — |
+| `STS-XACML-0050` | common/access_gate.ts was given a decider that is not a function; every access decision is allowed. | — |
 | `STS-XACML-0051` | The access gate's decider threw; access was ALLOWED because a throw is a defect rather than a decision. | — |
 | `STS-XACML-0052` | The issuance gate's decider threw; issuance was ALLOWED because a throw is a defect rather than a decision. | — |
 | `STS-XACML-0053` | The role register threw while resolving a party's roles; only the built-in roles were used. | — |
@@ -2781,14 +2806,14 @@ Raised from: mgmt-api/.
 | `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
 | `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member or a wrong type). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
-| `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.js fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
+| `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
 | `STS-API-0012` | The database report could not be built (the probe run rejected). | HTTP 500 { ok: false, errors } |
 | `STS-API-0013` | The secret-store report could not be built (the probe run rejected). | HTTP 500 { ok: false, errors } |
 | `STS-API-0014` | A key export request named an action other than export. | HTTP 400 { ok: false, errors } |
 | `STS-API-0015` | A key export was refused (an unknown key, an unsupported format, or a missing PKCS#12 password) and the refusal carried no more specific code. | HTTP 400 { ok: false, errors } |
 | `STS-API-0016` | A key export threw while the keystore file was being built. | HTTP 400 { ok: false, errors } |
 | `STS-API-0017` | The TLS truststore reader is not installed in this process, so the truststore could not be reported. | HTTP 503 |
-| `STS-API-0018` | The Shared Signals action rejected instead of resolving a refusal, which is a defect in ssf/ssf.js. | HTTP 500 { ok: false, errors } |
+| `STS-API-0018` | The Shared Signals action rejected instead of resolving a refusal, which is a defect in ssf/ssf.ts. | HTTP 500 { ok: false, errors } |
 | `STS-API-0019` | The CAEP action rejected instead of resolving a refusal. | HTTP 500 { ok: false, errors } |
 | `STS-API-0020` | The RISC action rejected instead of resolving a refusal. | HTTP 500 { ok: false, errors } |
 | `STS-API-0021` | The PKI action rejected (certificate authority or key generation threw). | HTTP 500 { ok: false, errors } |
@@ -2840,6 +2865,8 @@ Raised from: mgmt-api/.
 | `STS-API-0111` | A trust realm's own access token was presented at /admin-api by a client other than that realm's sts-management-api. | HTTP 403 forbidden |
 | `STS-API-0112` | A trust realm's own token or administrator reached a service-wide /admin-api operation, or another realm's. | HTTP 403 forbidden |
 | `STS-API-0113` | A users or groups create that had claimed its name across nodes threw before it could answer; the claim was given back. | HTTP 500 |
+| `STS-API-0120` | A DPoP-bound access token (cnf.jkt) was presented at /admin-api as a Bearer token. | invalid_token (HTTP 401) |
+| `STS-API-0121` | A DPoP proof presented at /admin-api did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 
 ## STS-PORTAL
 
@@ -2922,7 +2949,7 @@ Raised from: logout/.
 
 **Registries.** The application registry, consent, delegated permissions, the delegation register, the statistics and the claim configuration.
 
-Raised from: common/applications.js, common/consent.js, common/app_permissions.js, common/delegation.js, common/admin_stats.js, common/audit.js, common/claim_attributes.js, common/group_claims.js, common/user_graph.js, common/credential_graph.js, common/inetorgperson.js.
+Raised from: common/applications.js, common/consent.ts, common/app_permissions.ts, common/delegation.js, common/admin_stats.js, common/audit.js, common/claim_attributes.ts, common/group_claims.ts, common/user_graph.ts, common/credential_graph.ts, common/inetorgperson.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -3023,7 +3050,7 @@ Raised from: common/applications.js, common/consent.js, common/app_permissions.j
 
 **Protocol debugger.** The embedded identity protocol debugger: its listener, its sign-in, the access token its api requires, the permission that token carries, and the api process it forwards to.
 
-Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.js.
+Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -3052,6 +3079,8 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.js.
 | `STS-DBG-0023` | The /admin/debugger page or GET /admin-api/debugger could not build its report. | HTTP 500 page or JSON |
 | `STS-DBG-0024` | The debugger permission was refused because neither console role group has a member: the empty-roster rule that opens the console to everybody does not open the debugger. | none at issuance (the scope is left off); HTTP 403 at the debugger |
 | `STS-DBG-0030` | A certificate-bound access token (RFC 8705 cnf x5t#S256) was presented to the debugger on a connection without that certificate. | invalid_token (HTTP 401) |
+| `STS-DBG-0031` | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
+| `STS-DBG-0032` | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 
 ## Adding a code
 

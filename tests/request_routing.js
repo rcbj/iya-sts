@@ -187,13 +187,10 @@ function checkTheRoutingPolicy(t) {
 }
 
 // ---------------------------------------------------------------------------
-// THE REALM SEGMENT IS NOT PART OF THE DECISION, which is what keeps the
-// dispatch list from being the first thing in this service that has to name
-// every realm.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// `*` IS HOW "EVERY PROTOCOL RUNS IN THE POOL" IS SAID, and `/tls` is the one
-// thing it does not reach.
+// `*` IS HOW "EVERY PROTOCOL RUNS IN THE POOL" IS SAID, and what it does not
+// reach is `request_pool.js`'s NEVER_DISPATCHED: `/tls`, asserted below, and
+// the pages that report what only the front process holds — the truststore
+// and the embedded debugger's status.
 // ---------------------------------------------------------------------------
 function checkDispatchEverything(t) {
   log.debug("Entering checkDispatchEverything().");
@@ -329,6 +326,11 @@ function checkDispatchEverything(t) {
   log.debug("Leaving checkDispatchEverything().");
 }
 
+// ---------------------------------------------------------------------------
+// THE REALM SEGMENT IS NOT PART OF THE DECISION, which is what keeps the
+// dispatch list from being the first thing in this service that has to name
+// every realm.
+// ---------------------------------------------------------------------------
 function checkTheRealmIsTransparent(t) {
   log.debug("Entering checkTheRealmIsTransparent().");
   t.log.info('=== a realm prefix does not change the routing ===');
@@ -725,7 +727,7 @@ function checkTheSurfacePool(t) {
     log.debug("Leaving read().");
     return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
   };
-  const workerSource = read('common/request_worker.js');
+  const workerSource = read('common/request_worker.ts');
   const found = /const PROTOCOL_WORKER_HEADER = '([^']+)'/.exec(workerSource);
   t.check(!!found && found[1] === pool.PROTOCOL_WORKER_HEADER,
           'the worker spells the hint header as the pool does',
@@ -733,13 +735,23 @@ function checkTheSurfacePool(t) {
           (found && found[1]));
   t.check(/req\.stsProtocolWorker\s*=/.test(workerSource) &&
           /delete req\.headers\[PROTOCOL_WORKER_HEADER\]/.test(workerSource),
-          'and puts it on the request and strips it', 'request_worker.js');
-  const rpSource = read('common/oidc_rp.js');
+          'and puts it on the request and strips it', 'request_worker.ts');
+  const rpSource = read('common/oidc_rp.ts');
   t.check(/STS_REQUEST_WORKER_POOL === 'surfaces'/.test(rpSource) &&
           /options\.from && options\.from\.stsProtocolWorker/.test(rpSource),
           'oidc_rp.js pins the back channel to the hinted worker in a ' +
           'surface worker', 'oidc_rp.js');
-  const calls = rpSource.match(/await backChannel\(\{[\s\S]*?\}\);/g) || [];
+  // BOTH SHAPES SINCE #34 (2026-09-15). The two token requests go through
+  // `tokenRequestWithProof()`, which adds the DPoP proof and hands everything
+  // else — `from` included — to `backChannel()`. Counting only the direct
+  // calls would have quietly dropped the two that matter most here: the code
+  // redemption and the renewal are the hops this whole check exists about.
+  // Since #50 both are methods, so a call may read `await self.backChannel(`.
+  const calls = (rpSource.match(
+    /await (?:\w+\.)?backChannel\(\{[\s\S]*?\}\);/g) || [])
+    .concat(rpSource.match(
+      /await (?:\w+\.)?tokenRequestWithProof\([^,]+, \{[\s\S]*?\}\);/g) ||
+      []);
   t.check(calls.length >= 4 && calls.every(function (one) {
     return /from: req/.test(one);
   }), 'and every one of its ' + calls.length + ' back-channel calls passes ' +

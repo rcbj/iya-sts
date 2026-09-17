@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE CAEP SESSION REGISTER AND ITS STATE MACHINE, DRIVEN IN PROCESS.
 //
-// `ssf/caep.js` is what the eight CAEP event types are ABOUT: a session, the
+// `ssf/caep.ts` is what the eight CAEP event types are ABOUT: a session, the
 // state CAEP believes it is in, and how many events of which type have been
 // sent concerning it. It has no DOM, no socket and no route, which is what
 // makes it drivable here.
@@ -35,10 +35,10 @@
 //     purpose and hoping the gap landed where it was wanted.
 //
 //   * **THE COUNTERS AGAINST THE RING.** `counts` never forgets and `events`
-//     keeps the last twenty-five, and the defect worth catching is the two
-//     being conflated — a page that answered "how many" from the ring would
-//     say three where there were nine. Reaching that over HTTP means sending
-//     twenty-six events.
+//     keeps the last `caep.eventsPerSession` (twenty-five by default), and
+//     the defect worth catching is the two being conflated — a page that
+//     answered "how many" from the ring would say three where there were
+//     nine. Reaching that over HTTP means sending twenty-six events.
 //
 //   * **THE REGISTER OUTLIVING THE SESSION.** A row saying `revoked` for a
 //     session the service no longer holds is the whole point of the page, and
@@ -79,7 +79,7 @@ function signIn(id, username) {
       acr: 'urn:example:silver', amr: ['pwd'] } };
 }
 
-// What `ssf.js`'s transmit() hands back to the register once the SET exists.
+// What `ssf.ts`'s transmit() hands back to the register once the SET exists.
 function transmitted(row, uri, payload, streamId) {
   log.debug("Entering transmitted().");
   caep.noteTransmitted({ stream_id: streamId || 'st-1' }, {

@@ -5,20 +5,21 @@ browser-side explorer.
 
 | File | What it is |
 |---|---|
-| `admin_api.js` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.js`; every one that READS calls a view on `../admin-ui/admin.js`, which is where the JSON half of a console page is computed. **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
-| `admin_api_spec.js` | The OpenAPI document, GENERATED from that table. |
-| `admin_api_docs.js` | The docs page, and the route that serves the explorer. |
-| `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.js` and served verbatim. Its own header says so at length. |
+| `admin_api.ts` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.ts`; every one that READS calls a view in `../admin-core/admin_views.ts`, bar the four console-structure functions still on `../admin-ui/admin.ts` (table below). **It said "every one calls a function in `../admin-ui/admin.ts`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
+| `admin_api_spec.ts` | The OpenAPI document, GENERATED from that table. |
+| `admin_api_docs.ts` | The explorer's stylesheet, its script (read off disk) and the body `admin-ui/api_explorer.ts` draws inside the console. It registers no route; it served `/admin-api/docs` until 2026-09-09. |
+| `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.ts` and served verbatim. Its own header says so at length. |
 
-`admin_api_docs.js` reads its sibling with `path.join(__dirname,
+`admin_api_docs.ts` reads its sibling with `path.join(__dirname,
 'admin_api_explorer.js')`, which is why the two moved together and why nothing
 about that line had to change.
 
-7. **`admin_api.js` must stay after `admin.js`, and the rule it carries is about
+7. **`admin_api.ts` must stay after `admin.js`, and the rule it carries is about
    the FUTURE rather than about load order.** The plain dependency first: it
-   requires that module for the four action functions and the per-page JSON
-   views, so it must come after it. Nothing else about its position matters — it
-   registers no wildcard and collides with no path.
+   requires that module for the four console-structure functions listed under
+   *THE DECISIONS MOVED OUT OF THE CONSOLE* below, so it must come after it.
+   Nothing else about its position matters — it registers no wildcard and
+   collides with no path.
 
    **`/admin/delegation` is the second page here with no form on it and it is
    the case that shows what the rule actually asks for.** It arrived with `GET
@@ -49,13 +50,14 @@ about that line had to change.
      console's form posts to — `tokenAction`, `usersAction`, `claimsAction`,
      `vcAction`, `vpConfigAction` — with `action` taken from the URL instead of from a hidden
      input, and every GET calls the same JSON view the page's `?format=json`
-     answers. Those views are now functions in `admin.js` (`consoleJson`,
-     `metricsJson`, `tokensView`, `usersView`, `groupsView`, `claimsJson`,
-     `samlAttributesJson`, `vcJson`, `vpConfigJson`) for exactly this reason:
-     they used to be built
+     answers. Those views became functions (`metricsJson`, `tokensView`,
+     `claimsJson`, `samlAttributesJson`, `vcJson`, `vpConfigJson` and the
+     rest — in `admin.js` first, in `admin-core/admin_views.ts` since
+     2026-09-12, and the actions in `admin-core/admin_actions.ts`) for exactly
+     this reason: they used to be built
      inline in the route handlers, which was fine while there was one caller. So
      adding an action to a console switch is most of adding it here, and what
-     remains is one row of `admin_api.js`'s table.
+     remains is one row of `admin_api.ts`'s table.
 
      **TWO RESOURCES CAN SHARE ONE ACTION FUNCTION, and the claim sets are the
      case.** `/admin-api/claims/:action` and `/admin-api/saml-attributes/:action`
@@ -70,7 +72,7 @@ about that line had to change.
      The parity check that reads the refusal sentence off each resource sees the
      same seven action names from both, which is the property that makes them
      one behaviour rather than two.
-   * **The OpenAPI document is GENERATED from that table** (`admin_api_spec.js`),
+   * **The OpenAPI document is GENERATED from that table** (`admin_api_spec.ts`),
      so an operation cannot exist and be undocumented, nor be documented and not
      exist. Do not write a spec file beside the code — that is the thing that is
      wrong within a month.
@@ -83,18 +85,19 @@ about that line had to change.
      that do. Add an action to a switch and that sentence grows; the test then
      fails until the API has an operation for it.
 
-   One consequence for the console side: `usersView()` and `groupsView()` build
-   the HTML as well as the JSON, and `/admin-api` throws the markup away. That is
-   what `/admin/users?format=json` has always done, it is a string concatenation
-   on a mock, and the alternative — a second set of builders for the same data —
-   is the thing this whole arrangement exists to prevent.
+   One consequence for the console side USED to be that `usersView()` and
+   `groupsView()` built the HTML as well as the JSON and `/admin-api` threw the
+   markup away. Since 2026-09-12 this API calls `adminViews.usersJson()` and
+   `adminViews.groupsJson()`, which build no markup; `admin-core/admin_views.ts`
+   (the header of `usersJson()`) records how the page and the resource were
+   kept from disagreeing when the two came apart.
 
 
 
 ## THE DECISIONS MOVED OUT OF THE CONSOLE ON 2026-09-12, AND THIS FILE SAID THEY WERE THERE
 
 Every operation here that CHANGES something used to call a function on
-`admin-ui/admin.js`. They call `admin-core/admin_actions.js` now, and this file
+`admin-ui/admin.ts`. They call `admin-core/admin_actions.ts` now, and this file
 requires both modules for two different reasons.
 
 **What was wrong with the old arrangement was not the enforcement, it was the
@@ -109,7 +112,7 @@ the thirty-one touched `req`, `res` or markup: each took a parsed body and an
 actor and returned `{ ok, errors, … }`. `admin-core/CLAUDE.md` argues the
 split, including why `respondToAction()` and `listField()` stayed behind.
 
-**THE READ HALF FOLLOWED THE SAME DAY**, into `admin-core/admin_views.js`:
+**THE READ HALF FOLLOWED THE SAME DAY**, into `admin-core/admin_views.ts`:
 thirty-eight functions that answer a question and build no markup. Forty-four
 call sites here were repointed at it.
 
@@ -161,9 +164,10 @@ same day and needed nothing here at all**, for the same reason — `/admin/scim`
 `/admin/audit`, `/admin/delegation` and the rest already had their GETs.
 
 **The eight rows are GENERATED from a table** (`PROTOCOL_SETTINGS_OPERATIONS` in
-`admin_api.js`) for the reason `claimSetActions(family)` is: the operations
+`admin_api.ts`, thirteen rows since TOTP, WebAuthn, recovery codes, persistence
+and the cluster joined it) for the reason `claimSetActions(family)` is: the operations
 differ only in prose, and eight hand-written rows would be seven copies plus the
-one somebody edited. `admin_api_spec.js` reads the array and cannot tell the
+one somebody edited. `admin_api_spec.ts` reads the array and cannot tell the
 difference. They share one response schema, `PageSettings`, which is also what
 the `settings` member of `/admin-api/saml2`, `/admin-api/saml11`,
 `/admin-api/scim` and the rest now carries — one shape a caller learns once.
@@ -212,7 +216,7 @@ left out of it reads as a control that reaches nothing. `/admin-api/xacml/{actio
 has named three since it was written; this is the second resource to need it.
 
 **IT ALSO CLOSED AN OPERATION THIS SERVICE HAD BEEN DOCUMENTING AND NOT
-SERVING.** `common/credentials.js` names `POST /admin-api/users/set-password`
+SERVING.** `common/credentials.ts` names `POST /admin-api/users/set-password`
 twice — in the sentence a refused sign-in gets, and in the banner the
 product-mode bootstrap prints telling an operator to change the generated
 password — and no such operation existed. Somebody following either instruction
@@ -252,7 +256,8 @@ this file's document and in the console's markup and kept in step by hand.
 **`createApplication`'s `fields` MEMBER IS WHERE THAT LIST IS SPENT.** A create
 takes the per-protocol identifiers and the redirect URIs as an object keyed by
 attribute name — the console's form posts one flat `field.<attribute>` per box
-and `applicationFieldsFrom()` in `admin.js` folds both spellings into the same
+and `applicationFieldsFrom()` in `admin-core/admin_actions.ts` folds both
+spellings into the same
 object, which is `listField()`'s arrangement for the checkbox column one field
 up. A derived attribute is REFUSED by name rather than written, and so is a
 single-valued one given several values.
@@ -287,11 +292,12 @@ event, delete a stream, clear what has been received — each calling the same
 function the console's own form posts to, with `action` taken from the URL. The
 ordinary shape.
 
-**THE POST AWAITS, AND IT IS THE ONLY ONE IN THIS FILE THAT DOES.** Transmitting
+**THE POST AWAITS, AND IT WAS THE FIRST IN THIS FILE THAT DID** (PKI, XACML,
+CAEP, RISC and the database and secret-store reports have since). Transmitting
 a Security Event Token signs a JWS — possibly ML-DSA or SLH-DSA on the worker
 pool — and then POSTs it to somebody else's endpoint. `sendJson()` is called
 from the `then`, and a rejection is answered as a 500 naming the message rather
-than becoming an unhandled rejection: `ssf/ssf.js`'s action function resolves a
+than becoming an unhandled rejection: `ssf/ssf.ts`'s action function resolves a
 refusal rather than throwing one, so a rejection there is a bug in this
 repository and not something a request can cause.
 
@@ -299,7 +305,7 @@ repository and not something a request can cause.
 GAP.** A stream carries a **delivery endpoint this service will DIAL**, and the
 one place that URL may come from is a receiver that authenticated at
 `POST /ssf/stream` and asked. An operation here that could mint one would be a
-second door onto the outbound request `ssf/ssf_http.js` spends its header
+second door onto the outbound request `ssf/ssf_http.ts` spends its header
 bounding — **and it would be the door with the WEAKER credential**, since this
 API takes a token that anybody holding the client secret can mint and the
 console takes a person's own sign-in. (It read "and it would be the UNGATED
@@ -340,7 +346,7 @@ read a credential that belongs to somebody else's service out of this process.
 
 ### The narrow door: `/admin-api/token-lifetimes`
 
-Two operations that set four settings `POST /config/set-many` can already set,
+Two operations that set six settings `POST /config/set-many` can already set,
 and they are worth reading as a worked example of what rule 7 does and does not
 ask for.
 
@@ -348,7 +354,7 @@ ask for.
 `/admin/token-lifetimes` grew a form, so the form's two actions got two
 operations, in the same change. What is worth arguing is that this is not a
 second STORE and therefore not the mistake rule 5 exists for — the handler calls
-`admin.tokenLifetimesAction`, which writes through `config.setOverride()`, the
+`adminActions.tokenLifetimesAction`, which writes through `config.setOverride()`, the
 same function against the same override map `POST /config/set` uses. Two doors
 onto one thing, the way `/admin/rbac`, `POST /admin-api/rbac/grant`, an
 `ldapmodify` and a SCIM PATCH are four doors onto one membership.
@@ -358,7 +364,7 @@ onto one thing, the way `/admin/rbac`, `POST /admin-api/rbac/grant`, an
 a form posts fields the resource never declared, so an unknown name is ordinary
 there. It is wrong for a caller that means to set a lifetime: a misspelt
 `oauth2.accessTokenTtlsS` succeeds, changes nothing, and reports success. This
-operation refuses anything outside its four BY NAME. **The general door must not
+operation refuses anything outside its six BY NAME. **The general door must not
 be narrowed to match** — that would break every form posting a section, which is
 the case it exists for.
 
@@ -385,7 +391,8 @@ paragraph above said "three" with them. On a resource whose whole claim is that
 it refuses anything outside its own list BY NAME, that is the worst place for a
 second copy to go stale: a caller reading the document is refused for following
 it, and a caller reading the refusal finds settings the document never mentioned.
-`admin.js` exports `tokenLifetimeKeys()` and `samlAssertionKeys()` — the same
+`admin-core/admin_actions.ts` exports `tokenLifetimeKeys()` and
+`samlAssertionKeys()` — the same
 arrays the refusals are built from — and `narrowDoorProperties()` here turns
 either into `properties`, taking each type from `config.js`'s own row. A row
 added to either table adds the property. **A fourth narrow door must do the
@@ -412,10 +419,10 @@ browser could not open, and the console linked to it and got a 401.
 
 It is behind the console's session and its two roles now, and the calls it makes
 carry a token minted for the reader with exactly the scopes those roles grant.
-`admin-ui/CLAUDE.md` argues the page; `admin-ui/api_explorer.js` builds it, at
+`admin-ui/CLAUDE.md` argues the page; `admin-ui/api_explorer.ts` builds it, at
 19a, after this module — it needs the route table below to build its document.
 
-**TWO FILES DID NOT MOVE AND ARE STILL HERE**: `admin_api_docs.js` and
+**TWO FILES DID NOT MOVE AND ARE STILL HERE**: `admin_api_docs.ts` and
 `admin_api_explorer.js`. The stylesheet, the browser script and the
 realm-prefix argument belong to THIS API's document rather than to the
 console's shell, and the console requires them. The first grew a
@@ -439,12 +446,13 @@ operation that cannot be driven needs somewhere to say why.
 The section below is the argument for the script itself, which is unchanged by
 the move and is why the page is still the only scripted one in either surface.
 
-## The explorer's script is the one relaxation of `script-src 'none'`
+## The explorer's script relaxes `script-src 'none'`, as each scripted page does
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. The API explorer needs a script, so it is the one page that
-relaxes that header — on two routes, in exactly two clauses (`script-src 'self'`
+than merely unlikely. The API explorer needs a script, so it is one of the seven
+pages the root `CLAUDE.md` lists that relax that header — on two routes, in
+exactly two clauses (`script-src 'self'`
 and an added `connect-src 'self'`), with `default-src 'none'` and everything else
 untouched.
 
@@ -457,9 +465,9 @@ It is also **this repository's own explorer rather than Swagger UI**, and that w
 weighed rather than skipped: `swagger-ui-dist` is 11.7 MB unpacked with an
 install-time telemetry dependency, in a service whose package.json is deliberately
 short and whose image is built in containers that may have no network beyond the
-registry. What it would have bought is a familiar look for an API with no
-authentication, no OAuth flows and no polymorphic bodies. `admin_api_explorer.js`
-is ~250 lines, has no dependency, and does the same three things — read the
+registry. What it would have bought is a familiar look for an API with — as this
+API was when that was weighed — no authentication, no OAuth flows and no
+polymorphic bodies. `admin_api_explorer.js` is ~450 lines, has no dependency, and does the same three things — read the
 document, fill a form, show the response — plus the equivalent `curl` line, which
 is what an operator of a mock actually copies.
 
@@ -485,11 +493,11 @@ turnstile.
 **WHAT IT IS NOW.** Every call into `/admin-api` presents an OAuth 2.0 access
 token this service issued, audienced to this API, carrying `admin:read` for a
 read and `admin:write` for anything that changes state. One middleware on the
-base path, so the 232 operations are covered by construction rather than by
-232 remembered checks. The scopes become the built-in `ADMIN_READ` and
+base path, so every operation is covered by construction rather than by one
+remembered check per operation. The scopes become the built-in `ADMIN_READ` and
 `ADMIN_WRITE` roles and the XACML `access-control` document asks for the one
 the action needs — so what this surface demands is stated where every other
-access decision in this service is stated, and `admin_api.js` decides the
+access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
@@ -577,10 +585,55 @@ be reached at all.
 
 ---
 
+## THE GATE READS `DPoP` TOO, AND HAD BEEN HONOURING ONE CONSTRAINT OUT OF TWO (#34, 2026-09-15)
+
+Three changes to the one middleware, and the first two are fixes rather than
+policy.
+
+**`presentedTokenOf()` replaced `bearerOf()`, and reads both schemes.** The gate
+tested `/^bearer\s+/i` and nothing else, so a DPoP-bound token presented the way
+RFC 9449 says to present it — `Authorization: DPoP <token>` — counted as no
+token at all and got *this API requires an access token*, which is the least
+useful thing it could say to a client doing the stricter thing. The scheme comes
+back beside the value because the refusal below needs to tell "a bound token
+sent as Bearer" from "a token that did not verify". `bearerOf()` is kept as a
+one-line wrapper over it, though nothing in this directory calls it now.
+
+**`cnf.jkt` is checked now, in every mode.** The certificate binding
+(`cnf["x5t#S256"]`, `STS-API-0110`) was added here on 2026-09-13 and the DPoP
+one beside it was never written, so a token whose whole point is that holding it
+is not enough was accepted here as a bearer token. **This gate verifies its own
+token instead of going through `dpop.presentedAccessToken()`, which is where
+every other resource server in this service refuses that** — so it has to ask
+for itself, and the same hole existed one door along at the debugger
+(`debugger/CLAUDE.md`). A bound token sent as Bearer is `STS-API-0120`; a proof
+that fails is the proof's own code, or `STS-API-0121` where it reported none,
+with `use_dpop_nonce` and a fresh `DPoP-Nonce` where that is what it needed.
+**It is not one of the settings below**: it runs whatever they say, because it
+is about honouring a constraint the TOKEN already carries.
+
+**And `oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` are
+honoured here**, through the same `senderConstraints.accessTokenRefusal()` every
+other surface asks — one function, so an operator who turns one on cannot find
+that one door out of nine kept its own opinion. The refusal carries its own code
+(one of `STS-OAUTH-0527..0531`) and the `WWW-Authenticate` names `DPoP` or
+`Bearer` according to which setting is on, with the scope this method wants.
+Both are off by default and neither compliance mode implies one;
+`oauth-oidc/CLAUDE.md` rule 3ao argues the five.
+
+**`/admin/api-explorer` STOPS WORKING while `oauth2.accessTokenRequireDpop` is
+on**, and that is stated rather than worked around: the explorer's script sends
+a plain `Bearer` header and has no key to prove. An operator wanting both runs
+the API with `curl` and a proof, or leaves the setting off in the realm the
+console is reached in. Making the explorer mint and prove a DPoP key in the
+browser would be a second implementation of RFC 9449 in a page that exists to
+show what an operation returns.
+
 ## `/admin-api/logout` — four operations, and one that differs from its console form
 
 The sign-out resource mirrors `/admin/logout` and calls the same two functions
-in `admin.js`, which call `logout/logout.js`. Rule 7 as usual: the API decides
+the console does (`adminViews.logoutJson()` and `adminActions.logoutAction()`),
+which call `logout/logout.ts`. Rule 7 as usual: the API decides
 nothing the console does not.
 
 **One thing about it is worth stating because it is the only place three doors
@@ -611,8 +664,7 @@ being asked.
 `/realm/acme/admin-api/config` is `acme`'s, and a `set` posted there sets it on
 `acme` alone. That is not a special case anybody wrote here — it falls out of the
 same path-prefix middleware in `app.js` that makes `/oauth2/token` realm-scoped,
-so **every one of the ninety-odd operations already works per realm** and none of
-them was edited.
+so **every operation already works per realm** and none of them was edited.
 
 The five under `/admin-api/realms` manage the REGISTRY, which is process-wide:
 there is one list of realms, so `GET /admin-api/realms` answers the same list
@@ -622,7 +674,7 @@ caller would be left talking to a prefix that had stopped existing.
 
 Rule 7 is unchanged and was the reason those five exist: `/admin/realms` is a
 console page with five actions, so it has five operations, driven through the
-SAME `admin.realmsAction()` the form posts to.
+SAME `adminActions.realmsAction()` the form posts to.
 
 **AND THAT SHARED FUNCTION IS WHERE `createRealm` LOST ITS `overrides` FOR
 MONTHS.** The operation documents the field, gives it an example
@@ -644,8 +696,9 @@ that would have caught this had it covered request bodies as well: a documented
 request property that changes nothing is the same class of defect as a
 documented response property that is never sent.
 
-**`/admin-api/docs` is the one page in this service that needed a change**, and
-the reason is worth keeping. `app.js` rewrites root-relative links in HTML to
+**The explorer (`/admin-api/docs` then, `/admin/api-explorer` since 2026-09-09)
+is the one page in this service that needed a change**, and the reason is worth
+keeping. `app.js` rewrites root-relative links in HTML to
 carry the realm prefix; the explorer builds its request URLs in JavaScript from
 the OpenAPI document's `path` members, and a script is not markup. So the prefix
 is handed to it as `data-realm-prefix` on the root element and it prepends it.
@@ -656,19 +709,20 @@ changed the wrong service.
 ## `GET /admin-api/crypto` MIRRORS A PAGE THIS FILE CANNOT REQUIRE
 
 Added 2026-08-30 beside the crypto report at `/admin/crypto-metadata`. The
-operation calls `admin.cryptoView(req)` and computes nothing of its own, which
+operation calls `adminViews.cryptoView(req)` and computes nothing of its own, which
 is rule 7 read strictly: the page and the operation must not be able to disagree
 about what this service's cryptography is, and the way to make that impossible
 is for there to be one function.
 
 **The reason it goes through the console rather than through a require is the
-route order.** `admin-ui/crypto_metadata.js` is required at 20a — after
+route order.** `admin-ui/crypto_metadata.ts` is required at 20a — after
 `tls/tls_server`, whose certificate it reports — and this module is required at
-19. A require in the obvious direction would drag that page's route and
-`tls_server`'s three ahead of every route in this file and ahead of ldap, scim
-and spiffe. So that module fills `admin.setCryptoReporter()` at its own require
+19. A require in the obvious direction would drag `tls_server`'s routes — a
+JavaScript module still registers when required (the root file's rule 1) —
+ahead of every route in this file and ahead of ldap, scim and spiffe; before
+#50's R1 it would have dragged that page's own route as well. So that module fills `admin.setCryptoReporter()` at its own require
 time and this one reads it, exactly as `/admin-api/logout` reaches
-`logout/logout.js` through `admin.logoutView()`. Rule 3e's test in the root
+`logout/logout.ts` through the logout-reader slot (`adminViews.logoutJson()`). Rule 3e's test in the root
 `CLAUDE.md` answers yes in both directions.
 
 **It answers 503 and not 404 when the reporter was never installed**, and the
@@ -752,7 +806,7 @@ that tab and rule 7's parity check reads a `NAV` path. Three things decided it:
 * **ONE OPERATION ANSWERS BOTH SHAPES**, `?application=` deciding which, because
   they are the same question at two scales and the console draws them with one
   function. Two operations would have been two places to disagree about what a
-  group is. `admin.permissionGroupsView()` is that function, and this handler
+  group is. `adminViews.permissionGroupsView()` is that function, and this handler
   and `/admin/delegation/cluster?format=json` both go through it.
 
 An application the register has never heard of answers **200 with `group:
@@ -783,7 +837,7 @@ a page of that console gets an operation here in the same change — and the
 parity check in `tests/vendored/admin_api.js` is what would have noticed if they
 had not.
 
-**They reach their views through `admin.directoryPageJson()`, which is
+**They reach their views through `adminViews.directoryPageJson()`, over
 `admin.js`'s NINTH SLOT filled by `ldap/ldap_server.js`.** This module is
 required at #19 and that one at #21, so a plain require would drag every route
 registered there ahead of this API's own; and `admin.js` cannot require it
@@ -811,7 +865,7 @@ sentence survived the gate by pointing at a property that was never the point:
 what a test cannot do is drive a browser, and minting a token is not driving a
 browser.
 
-**Their response schemas are deliberately shallow**, and `admin_api_spec.js`
+**Their response schemas are deliberately shallow**, and `admin_api_spec.ts`
 says why beside them: what they return is DIRECTORY ENTRIES, and this directory
 is schemaless on purpose, so an `attributes` member written out property by
 property would be a document making a promise the store does not keep. The names
@@ -855,7 +909,7 @@ be. What found this was `tests/vendored/sts_directory_bulk_load_api.js`: a job
 named "through the management API" that could not be written, because two of its
 three sections would have had to reach for SCIM.
 
-**The pattern is `/groups/:action` and the switch is in `admin.groupsAction()`**,
+**The pattern is `/groups/:action` and the switch is in `adminActions.groupsAction()`**,
 exactly as `/users/:action`'s is in `usersAction()` — two doors onto one action
 must not be two readings of what was sent. That function reaches
 `ldap_server.js`'s `createGroup()` and `addGroupMember()` through **`admin.js`'s
@@ -962,7 +1016,7 @@ URL, and rule 7's parity check reads the console's own list.
 
 ## `/admin-api/sessions` IS NOT A SHAPE OF `/admin-api/logout` (2026-09-04)
 
-Both read `logout/logout.js`, and they answer two different questions:
+Both read `logout/logout.ts`, and they answer two different questions:
 
 * `GET /admin-api/logout?user=` is *what is alice still signed into* — keyed on
   one identity, reaching all ten families, including the seven whose rows are
@@ -1029,7 +1083,7 @@ will then say so.
 
 `GET /admin-api/roles/preview` is the one worth reading the code for. **It is
 the SAME call the nine issuance sites make** — `common/issuance_gate.check()`,
-through `xacml/xacml_role_pep.js`, against the policy `xacml.issuancePolicy`
+through `xacml/xacml_role_pep.ts`, against the policy `xacml.issuancePolicy`
 names — so a preview that agreed with the enforcement only by coincidence is
 impossible. That is the only reason it is worth having, and it is why the
 answer arrives through `admin.js`'s ELEVENTH SLOT rather than through anything
@@ -1065,7 +1119,7 @@ different route, and the way back if a policy edit locks something out.
 ## THE POLICY SITS ABOVE THE ROLES, AND ONLY WHERE THIS API IS GATED AT ALL (2026-09-06)
 
 The product-mode middleware asks the two console roles and then, for a caller
-that holds one, asks `common/access_gate.js`. Three things about that.
+that holds one, asks `common/access_gate.ts`. Three things about that.
 
 **IT IS THE LAYER ABOVE AND NOT A REPLACEMENT.** `admin.gateStateFor()` is still
 the one answer to *who may administer this service* — asking it rather than
@@ -1106,8 +1160,8 @@ Rule 7 says a console control owes an operation. **It says nothing about an
 operation whose page moved**, and deleting a working one to tidy a table would
 be a regression dressed as consistency — the same argument `GET
 /admin-api/users/new` is kept on, one section up. So this stays, `mirrors`
-points at the page that absorbed it, and `admin.mfaView()` answers OUT OF THAT
-VIEW rather than scanning the credential store a second time: two scans would be
+points at the page that absorbed it, and `adminViews.mfaRosterJson()` answers
+OUT OF THAT VIEW rather than scanning the credential store a second time: two scans would be
 two answers to how many people hold a second factor, agreeing until the day they
 did not.
 
@@ -1179,7 +1233,7 @@ and asserts a read-only token is refused the write.
 rotate-service,delete-service,clear-person-keys}`, mirroring
 `/admin/kerberos/principals` through `adminViews.kerberosPrincipalsJson()` and
 `adminActions.kerberosPrincipalsAction()`, which require
-`kerberos/krb5_person_keys.js` in the ordinary direction — it registers no route,
+`kerberos/krb5_person_keys.ts` in the ordinary direction — it registers no route,
 so neither a cycle nor a route move is possible and no slot was added (and no
 forwarded collaborator, so `tests/admin_actions_layer.js` did not change).
 
@@ -1190,8 +1244,11 @@ Four things a caller is told, and the descriptions tell them:
   key back afterwards, the GET included. A lost keytab is a rotation, not a read.
 * **NEITHER LIST CARRIES A KEY** — people and services are enctypes, kvno, salt
   and when, which is the public half (`stsKrb5KeyInfo`, `krb5ServiceKeyInfo`).
-* **IT IS THE DEFAULT TRUST REALM'S**, under every prefix, and every reply says
-  `trustRealm: "default"`: the KDC's sockets and `krb5.realm` are the process's.
+* **IT IS THE REALM THE CALL IS IN (2026-09-15)**, and every reply says which as
+  `trustRealm`. It read *IT IS THE DEFAULT TRUST REALM'S, under every prefix* while
+  the KDC was the process's; each trust realm whose `krb5.enabled` is on now has a
+  Kerberos realm and a principal database of its own, and a realm with none answers
+  with empty lists and says so.
 * **`clear-person-keys` for somebody with no keys is `ok` with `cleared: false`**
   rather than a refusal, because the state asked for is the state that holds.
 * **SIX ACTIONS SINCE LATER THE SAME DAY**: `drop-previous-service-keys` (`spn`)
@@ -1213,16 +1270,16 @@ back after every write.
 
 `GET /admin-api/pki` and `POST /admin-api/pki/{build,issue,revoke,clear}`,
 mirroring `/admin/pki`. Rule 7 exactly: every control on that page has an
-operation and both go through the SAME functions in `admin-ui/pki_admin.js`, so
+operation and both go through the SAME functions in `admin-ui/pki_admin.ts`, so
 this API decides nothing that console does not.
 
 **THE MODULE IS A PLAIN REQUIRE AND NEEDS NO SLOT**, which is the one thing
 about this resource worth knowing. It sits at **18a** in
-`common/protocol_stack.js` — after `admin-ui/admin` and BEFORE this file — so by
+`common/protocol_stack.ts` — after `admin-ui/admin` and BEFORE this file — so by
 the time this require runs it is a cache hit and registers nothing; and it
 requires only `admin.js` and `common/pki.js`, which is a LIBRARY (rule 3), so
 there is no route it could move and no cycle it could close.
-`admin-ui/crypto_metadata.js` is the contrast: it is at 20a because it reads an
+`admin-ui/crypto_metadata.ts` is the contrast: it is at 20a because it reads an
 algorithm table out of `tls/tls_server.js` at 20, so it needed the seventh slot.
 Rule 3e says a slot is what you pay for a require that would close a cycle or
 move a route, and this one would do neither.
@@ -1273,7 +1330,7 @@ NOT get.
 
 | Operation | What it is |
 |---|---|
-| `GET /admin-api/backup-codes` | the four `backupCodes.*` settings, with the MECHANISM in `status`, read from `common/backup_codes.js` |
+| `GET /admin-api/backup-codes` | the four `backupCodes.*` settings, with the MECHANISM in `status`, read from `common/backup_codes.ts` |
 | `POST /admin-api/users/clear-backup-codes` | deletes a person's set, which re-arms the automatic issue |
 
 **THERE IS NO OPERATION THAT ISSUES A SET AND THERE WILL NOT BE**, for the same
@@ -1359,14 +1416,16 @@ holds the PKCS#12 (base64), the encrypted PEM key and the chain, all under
 through the handler's existing `refresh-metadata` branch. The revoke looks among
 THIS application's certificates only. Codes `STS-ADMIN-0720..0723`,
 `STS-PKI-0180..0181`. **`/admin-api` also checks RFC 8705's `cnf["x5t#S256"]`
-since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an.
+since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an. **The
+DPoP half of that check was missing until #34 (2026-09-15)**: see *THE GATE
+READS `DPoP` TOO* above.
 
 ## `issue-software-statement` (2026-09-13)
 
 `POST /admin-api/applications/issue-software-statement` mirrors the *Issue a
 statement* control in the Software statements section of an application's
 console page (rule 7, same change). It calls `applicationsAction()`, which calls
-`oauth-oidc/software_statement.js`'s `issue()`; the reply carries the statement,
+`oauth-oidc/software_statement.ts`'s `issue()`; the reply carries the statement,
 which is not a secret. **The issuer comes from the ROUTE'S context** — both
 doors add `base: baseUrlOf(req)` beside `authorizationServers` — and never from
 the body, because a registration must match the issuer at the address it
@@ -1382,7 +1441,7 @@ One operation, two shapes, `?certificate=` deciding which — the arrangement
 `/permissions/groups` argues. Without it: every certificate this realm holds,
 one row per certificate with every place it appears, paged and filterable by
 `q`. With it: that certificate's every field and its trust chain, from
-`admin-core/certificate_views.js`, the same function the dialog on `/admin/pki`
+`admin-core/certificate_views.ts`, the same function the dialog on `/admin/pki`
 and `/admin/crypto-metadata` is drawn from. **No POST**: the dialog is a view
 and has no control.
 
@@ -1401,7 +1460,7 @@ door of a certificate a throwaway realm holds.
 rows carry `pqc` — `null` for a classical key, otherwise `{ kind, algorithm,
 label, family, standard }` with `kind` one of `pq`, `composite`, `kem` or
 `hybrid` — which is the answer the post-quantum icon on `/admin/keys` and
-`/admin/pki` is drawn from (`common/pqc_support.js`). It is in `KeyList`'s
+`/admin/pki` is drawn from (`common/pqc_support.ts`). It is in `KeyList`'s
 schema. No operation was added: the icon is a view of data both resources
 already carried. `sts_admin_api_operations.js`'s
 `theKeyListMarksPostQuantumKeys()` asserts every signing-key row's kind.
@@ -1450,7 +1509,7 @@ mirrors the **Issue certificate** control on `/admin/xacml/peps` through the
 same `pepAction()` — rule 7 in the ordinary way. Three things about it:
 
 * **`/xacml/:action` SETTLES A PROMISE NOW.** This action answers one and the
-  other XACML actions answer a result, so `admin-core/admin_actions.js`'s
+  other XACML actions answer a result, so `admin-core/admin_actions.ts`'s
   `xacmlAction()` converts either and the handler here `Promise.resolve()`s it,
   turning a rejection into a 500 naming the message. It is the third action
   handler here that awaits, after `/ssf/:action` and `/pki/:action`.
@@ -1469,11 +1528,11 @@ same `pepAction()` — rule 7 in the ordinary way. Three things about it:
 Every Protocols console page lists its realm's endpoints, and rule 7 asks the
 operation mirroring it to answer the same. **No handler changed.** The
 registration loop wraps a GET whose `mirrors` is exactly `GET /admin/<page>`
-for a page in `admin-core/protocol_endpoints.js`'s table, putting the rows on
+for a page in `admin-core/protocol_endpoints.ts`'s table, putting the rows on
 `res.locals`; `sendJson()` adds them as `protocolEndpoints` to a 200 whose body
 is a plain object. A `mirrors` naming two pages is a mirror of neither and gets
 nothing — the one whose `mirrors` reads `GET /admin/pki and GET
-/admin/crypto-metadata` is the case. `admin_api_spec.js`'s `operationOf()` says so in those operations'
+/admin/crypto-metadata` is the case. `admin_api_spec.ts`'s `operationOf()` says so in those operations'
 descriptions from the same test (37 of them), rather than in each response
 schema: every one is an `openObject`, and the member is added outside the view
 every schema describes.

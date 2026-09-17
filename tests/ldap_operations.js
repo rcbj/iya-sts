@@ -19,10 +19,10 @@
 // WHY THE CLAIM NEEDS A TEST OF ITS OWN RATHER THAN AN END-TO-END JOB.
 //
 // The claim is not "the directory works" — `sts_directory_bulk_load_ldap.js`
-// drives five thousand entries over a real socket in three stacks and is the
-// only job in either suite that touches TCP 389 at all. The claim here is
-// narrower and nothing over the wire can see it: **an operation run through
-// the codec produces the same answer as the same handler called directly.**
+// drives five thousand entries over a real socket in three stacks, and
+// `sts_global_logout.js` binds there too. The claim here is narrower and
+// nothing over the wire can see it: **an operation run through the codec
+// produces the same answer as the same handler called directly.**
 //
 // A job driving 389 cannot tell those apart, because in both cases it is
 // talking to a socket that answers correctly. The way this breaks is the way
@@ -483,8 +483,8 @@ function checkTheOperationTableAgrees(t) {
   // WORKER (2026-09-12).
   //
   // `registerWorkerOperations()` returns early unless `STS_REQUEST_WORKER` is
-  // set, because requiring `common/request_worker.js` pulls
-  // `common/service_state.js` in at module scope and a front process would be
+  // set, because requiring `common/request_worker.ts` pulls
+  // `common/service_state.ts` in at module scope and a front process would be
   // filling a table nothing there ever reads. `spiffe_grpc.js` carries the
   // argument and the test it cost.
   //
@@ -726,7 +726,8 @@ function checkTheBindTouchesTheSocket(t, done) {
 // **NOTHING ROUTINE REACHES THIS BRANCH.** `ldap.sizeLimit` is 500 and the
 // seeded directory holds about thirty entries, so the only thing in either
 // suite that gets there is `sts_directory_bulk_load_ldap.js` — over a socket,
-// in a stack, with operations off. The section asks the client's `sizeLimit`
+// in a stack, and dispatched only in the `dispatch` mode, whose
+// `workers.dispatch` is `*`. The section asks the client's `sizeLimit`
 // instead, which `maxSearchResults()` honours when it is the smaller of the
 // two, so the branch is reachable against a seeded directory.
 // ---------------------------------------------------------------------------

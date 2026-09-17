@@ -1,10 +1,12 @@
 #
-# tests/tools/compose.sh — how this repository's two launchers talk to docker.
+# tests/tools/compose.sh — how this repository's launchers talk to docker.
 #
-# SOURCED, never run: it defines four functions and sets nothing. Both
-# ./local-run-tests.sh (which brings up ONE service and drives it from this
-# machine) and ./docker-run-tests.sh (which brings up the service AND the tests
-# container and drives nothing itself) need exactly the same four answers —
+# SOURCED, never run: it defines four functions and sets nothing.
+# ./docker-run-tests.sh (which brings up the service AND the tests container
+# and drives nothing itself) and ./run-coverage.sh (which runs the tests
+# container alone) are its callers now; ./local-run-tests.sh (which brought up
+# ONE service and drove it from this machine) was the other until it was
+# removed on 2026-09-16. They needed exactly the same four answers —
 # which compose command is on this machine, how to hand it the variables a
 # compose file substitutes, how to stop waiting on one that has wedged, and
 # which addresses on this machine are free for the stack to take — so they are
@@ -14,8 +16,8 @@
 # does: tools/ is NOT tests. run.js's discovery rule walks tests/*.js and would
 # otherwise have to be told to skip a file, and it is a `.sh` besides.
 #
-# THE CONTRACT WITH A CALLER, because these two read and write globals rather
-# than taking arguments:
+# THE CONTRACT WITH A CALLER, because these functions read and write globals
+# rather than taking arguments:
 #
 #   DOCKER_SUDO    set by resolveCompose(); "" or "yes".
 #   COMPOSE_CMD    set by resolveCompose(); "docker compose" or
@@ -25,7 +27,7 @@
 #                  below tolerate that under `set -u`.
 #
 # A caller that forgets to call resolveCompose() first gets an empty
-# COMPOSE_CMD and a shell error naming nothing, so both launchers call it once
+# COMPOSE_CMD and a shell error naming nothing, so every launcher calls it once
 # and check its return value.
 #
 
@@ -124,10 +126,10 @@ docker_compose()
 #
 # THE VARIABLES GO THROUGH `env` HERE RATHER THAN AS BARE `NAME=value` WORDS.
 # `timeout NAME=value docker compose ...` asks the kernel to execute a program
-# called `NAME=value`, which is the same trap this file's header describes
-# about `env docker_compose`, one layer along. `sudo timeout ... env ...` is
-# correct for the sudo path too: sudo empties the environment and `env` fills
-# it back with exactly what the compose file substitutes.
+# called `NAME=value`, which is the same trap `docker_compose()` avoids by
+# putting `env` in front of those words, one layer along. `sudo timeout ...
+# env ...` is correct for the sudo path too: sudo empties the environment and
+# `env` fills it back with exactly what the compose file substitutes.
 #
 # **AND COMPOSE IS KEPT OFF THE TERMINAL (2026-09-14), OR `up` FROM A TERMINAL
 # NEVER STARTS.** `timeout` runs its command in a process group of its own, so
@@ -169,12 +171,14 @@ docker_compose_bounded()
 
 # ---------------------------------------------------------------------------
 # A /24 NOBODY ELSE ON THIS MACHINE IS USING (2026-09-12), and it is here for
-# the same reason the three functions above are: both launchers need it and
-# neither may answer it differently.
+# the same reason the three functions above are: it was written for two
+# launchers that must not answer it differently, and a second caller of it
+# would be in the same position.
 #
 # **NAMING A PROJECT MUST ISOLATE THE WHOLE RUN, AND ON 2026-09-12 IT STOPPED
-# DOING SO AGAIN.** ./local-run-tests.sh's own header is the record of that
-# lesson learnt once at the container names; the SUBNET arrived the same day a
+# DOING SO AGAIN.** ./local-run-tests.sh's own header (removed 2026-09-16; in
+# git history) was the record of that lesson learnt once at the container
+# names; the SUBNET arrived the same day a
 # realm's SPIFFE listeners needed addresses of their own, went into
 # docker-compose.yml as a literal `172.29.0.0/24`, and was not added to the
 # list of things a project name scopes. A network is machine-wide exactly as a
@@ -189,9 +193,9 @@ docker_compose_bounded()
 # THE FIRST CANDIDATE IS THE COMPOSE FILE'S OWN DEFAULT, so a plain run on an
 # idle machine takes exactly the addresses it always took and nothing about
 # this is visible; the scan only moves a SECOND run out of the way. The base
-# is the caller's because the two launchers deliberately sit in different /16s
-# — 172.29 here and 172.30 for the containerized one — so that a run of each
-# does not need the scan at all.
+# is the caller's because the two launchers deliberately sat in different /16s
+# — 172.29 for ./local-run-tests.sh (removed 2026-09-16) and 172.30 for the
+# containerized one — so that a run of each did not need the scan at all.
 #
 # WHAT COUNTS AS USED IS BOTH ANSWERS DOCKER ITSELF CHECKS: every existing
 # docker network's configured subnet, and every route in this machine's own

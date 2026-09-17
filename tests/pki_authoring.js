@@ -14,7 +14,7 @@
 // by driving a running service:
 //
 //   * **THE FORM AGAINST THE PAGE.** The field table is declared in
-//     `common/pki_authoring.js` and DRAWN in `admin-ui/pki_admin.js`, and the
+//     `common/pki_authoring.ts` and DRAWN in `admin-ui/pki_admin.ts`, and the
 //     two going out of step is the failure this arrangement is most likely to
 //     produce — a field parsed and never drawn falls to its default on every
 //     round trip, and one drawn and never parsed is a control that does
@@ -48,8 +48,9 @@ const authoring = require('../common/pki_authoring');
 const pki = require('../common/pki');
 const x509 = require('../common/vendored/x509');
 // The page. Requiring it registers `/admin/pki` and starts nothing (see the
-// four-modules rule in the root CLAUDE.md), so an in-process test may require
-// it and no port is bound.
+// root CLAUDE.md's
+// *Socket owners start their listeners from `listen()`*), so an
+// in-process test may require it and no port is bound.
 const pkiAdmin = require('../admin-ui/pki_admin');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -121,7 +122,7 @@ async function run(t) {
           String(authoring.FIELD_NAMES.length));
 
   // The three vocabularies are READ FROM THE ENCODER rather than written out,
-  // which is `crypto_metadata.js`'s rule applied to a form: a checkbox for a
+  // which is `crypto_metadata.ts`'s rule applied to a form: a checkbox for a
   // bit the encoder does not have cannot exist, and a bit it gains appears
   // here the day it is added.
   x509.KEY_USAGE_BITS.forEach(function (bit) {

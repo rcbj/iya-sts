@@ -9,7 +9,7 @@
 // Every certificate here is obtained the way a device obtains one: GetCACaps,
 // GetCACert, and a PKIOperation carrying a CMS SignedData signed by the device
 // and a CMS EnvelopedData encrypted to the RA — built by `scep_client.js`,
-// which shares no code with `scep/` or `common/cert_enrollment.js`. A CertRep
+// which shares no code with `scep/` or `common/cert_enrollment.ts`. A CertRep
 // is read back, its RA signature verified, its envelope opened with the
 // device's key, and the certificate inside it checked with node's own X509
 // verifier up to the realm Intermediate and the service Root.
@@ -35,15 +35,14 @@
 //     the first refused there, and an ordinary enrollment accepted, because
 //     SCEP is message-secured and is not refused over any transport.
 //
-// `local: true`, on tests/CLAUDE.md's second question: SCEP exists in this
-// repository and nowhere else. Both realms are left standing.
+// `local: true` because SCEP exists in this repository and nowhere else, so
+// there is no copy anywhere to sync from. Both realms are left standing.
 //
 // **NO ADMINISTRATOR IS ADDED TO THE DEFAULT REALM'S ROSTER**, although the
-// brief for enrollment jobs suggests one: a SCEP principal is the entry the
-// challenge names, never the person redeeming it, so there is nothing an
-// administrator does over SCEP that `/admin-api` did not already do by making
-// the challenge — and a member put in `admin-write` closes the console's
-// empty-roster door for every job that runs after this one.
+// EST job adds one: a SCEP principal is the entry the challenge names, never
+// the person redeeming it, so there is nothing an administrator does over SCEP
+// that `/admin-api` did not already do by making the challenge — and a member
+// put in `admin-write` is a change to the roster every later job shares.
 // ===========================================================================
 
 const assert = require("assert");
@@ -59,7 +58,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }

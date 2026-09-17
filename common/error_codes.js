@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: error_codes.js
@@ -37,7 +38,7 @@
 //    wire would be this service inventing a member no specification has, in
 //    front of the client whose error handling it exists to exercise. So
 //    `mark()` writes to the RESPONSE OBJECT, which the call-log funnel reads
-//    after the bytes have gone, and never to anything that is serialised.
+//    as the answer is handed over, and never to anything that is serialised.
 //
 // 2. **THE SPEC ERROR IS UNCHANGED AND IS DOCUMENTED BESIDE THE CODE.** Where a
 //    condition is reported to the client in a specification's vocabulary, the
@@ -62,8 +63,8 @@
 //
 // It requires NOTHING from this repository — not `helpers.js`, not `config.js`,
 // not even a logger — so it can be required from `config.js` and `crypto.js`,
-// which are themselves leaves, and from `audit.js`, which may require
-// `helpers.js` and `config.js` and nothing else. A registry of failures that
+// which are themselves leaves, and from `audit.js` and `realms.js`, which most
+// of the service requires. A registry of failures that
 // could close a require cycle would be a registry that caused one. `fs` and
 // `path` are required only inside the command-line half at the foot.
 //
@@ -125,7 +126,7 @@ const CODE_IN_TEXT = /STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}/g;
 const SUBSYSTEMS = [
   { id: 'HTTP', label: 'HTTP front door',
     where: 'common/app.js, common/cors.js, common/validation.js, ' +
-           'common/websecurity.js',
+           'common/websecurity.ts',
     what: 'Every HTTP request passes through here before it reaches a ' +
           'protocol: the security headers, the CORS allowlist, the body ' +
           'parsers, the validation guard, the rate limiter, and the call-log ' +
@@ -136,20 +137,20 @@ const SUBSYSTEMS = [
   // subsystem of its own rather than HTTP's — a refusal here happens before
   // any listener's protocol has read a byte, on every TCP listener at once.
   { id: 'PROXY', label: 'PROXY protocol',
-    where: 'common/proxy_protocol.js, server.js',
+    where: 'common/proxy_protocol.ts, server.js',
     what: 'The HAProxy PROXY protocol v2 header read at the front of every ' +
           'TCP connection when global.proxyProtocol is v2: who may send one ' +
           '(global.trustedProxies), the header itself, and the startup ' +
           'refusal when nobody is trusted.' },
   { id: 'CORE', label: 'Service core',
-    where: 'server.js, common/protocol_stack.js, common/config.js, ' +
+    where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
-           'common/mode.js, common/version.js, sts_metadata.js, home/',
+           'common/mode.js, common/version.js, sts_metadata.ts, home/',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
     where: 'common/worker_pool.js, common/worker.js, common/request_pool.js, ' +
-           'common/request_worker.js, common/service_state.js',
+           'common/request_worker.ts, common/service_state.ts',
     what: 'The child processes post-quantum signing runs in, and the request ' +
           'workers the whole protocol stack can be dispatched to.' },
   { id: 'STORE', label: 'Persistence and coordination',
@@ -170,9 +171,9 @@ const SUBSYSTEMS = [
           'keys that survive a restart; the key-encryption key and the ' +
           'database password read from a secret store.' },
   { id: 'PKI', label: 'Certificate authority',
-    where: 'common/pki.js, common/pki_authoring.js, ' +
+    where: 'common/pki.js, common/pki_authoring.ts, ' +
            'common/pki_revocation.js, common/revocation_status.js, pki/, ' +
-           'admin-ui/pki_admin.js',
+           'admin-ui/pki_admin.ts',
     what: 'The Root, Intermediate and Issuing CAs, certificate authoring, ' +
           'the CRL and OCSP responders, and the revocation check a presented ' +
           'certificate is held to.' },
@@ -182,7 +183,7 @@ const SUBSYSTEMS = [
   // the protocol a failing client spoke, and `STS-ENROLL-*` is the half none of
   // them owns — who may have a certificate for whom, and what goes in it.
   { id: 'ENROLL', label: 'Certificate enrollment core',
-    where: 'common/cert_enrollment.js, common/enrollment_monitor.js',
+    where: 'common/cert_enrollment.ts, common/enrollment_monitor.ts',
     what: 'Who may be issued a certificate for which directory entry, what ' +
           'a certificate issued over ACME, EST or SCEP contains, the PKCS#10 ' +
           'proof of possession, the enrolled certificates and credentials ' +
@@ -205,9 +206,9 @@ const SUBSYSTEMS = [
           'GetNextCACert and PKIOperation, the CMS envelope, the RA ' +
           'certificate, challenge passwords, and its console pages.' },
   { id: 'AUTHN', label: 'Sign-in, second factors and sessions',
-    where: 'authn/, common/credentials.js, common/totp.js, ' +
-           'common/backup_codes.js, common/password_policy.js, ' +
-           'common/oidc_rp.js',
+    where: 'authn/, common/credentials.ts, common/totp.ts, ' +
+           'common/backup_codes.ts, common/password_policy.ts, ' +
+           'common/oidc_rp.ts',
     what: 'The sign-in screen, WebAuthn, TOTP and recovery codes, password ' +
           'verification, the sign-on session, and the OpenID Connect relying ' +
           'party the console and the portal sign in through.' },
@@ -245,10 +246,12 @@ const SUBSYSTEMS = [
   { id: 'SPIFFE', label: 'SPIFFE',
     where: 'spiffe/',
     what: 'The bundle endpoint, the Workload API and the SPIRE Server API.' },
-  { id: 'TLS', label: 'TLS listeners',
+  { id: 'TLS', label: 'TLS and client certificates',
     where: 'tls/',
-    what: 'The 8443 and 9443 listeners, the trust store, and the server ' +
-          'certificate three other sockets share.' },
+    what: 'The client-certificate truststore, the sign-in a verified one ' +
+          'starts, and the server certificate the main port and LDAPS 636 ' +
+          'share. The 8443 and 9443 listeners it was named for were deleted ' +
+          'on 2026-09-16.' },
   { id: 'VC', label: 'OpenID4VCI, OpenID4VP and DID',
     where: 'oid4vc/',
     what: 'The credential issuer, the verifier, credential offers and DID ' +
@@ -268,7 +271,7 @@ const SUBSYSTEMS = [
           'push finish outbound request; the console pages; and CAEP ' +
           'emission for grants.' },
   { id: 'XACML', label: 'XACML and access policy',
-    where: 'xacml/, common/access_gate.js, common/issuance_gate.js, ' +
+    where: 'xacml/, common/access_gate.ts, common/issuance_gate.js, ' +
            'common/roles.js',
     what: 'The PDP, the policy repository, the embedded PEPs that decide ' +
           'this service\'s own access and issuance, the PIP over HTTP, and ' +
@@ -303,17 +306,17 @@ const SUBSYSTEMS = [
     where: 'logout/',
     what: 'The protocol-independent sign-out and the session inventory.' },
   { id: 'REG', label: 'Registries',
-    where: 'common/applications.js, common/consent.js, ' +
-           'common/app_permissions.js, common/delegation.js, ' +
+    where: 'common/applications.js, common/consent.ts, ' +
+           'common/app_permissions.ts, common/delegation.js, ' +
            'common/admin_stats.js, common/audit.js, ' +
-           'common/claim_attributes.js, common/group_claims.js, ' +
-           'common/user_graph.js, common/credential_graph.js, ' +
-           'common/inetorgperson.js',
+           'common/claim_attributes.ts, common/group_claims.ts, ' +
+           'common/user_graph.ts, common/credential_graph.ts, ' +
+           'common/inetorgperson.ts',
     what: 'The application registry, consent, delegated permissions, the ' +
           'delegation register, the statistics and the claim configuration.' },
   { id: 'DBG', label: 'Protocol debugger',
     where: 'debugger/, and the debugger scope rule in ' +
-           'oauth-oidc/oauth2.js',
+           'oauth-oidc/oauth2.ts',
     what: 'The embedded identity protocol debugger: its listener, its ' +
           'sign-in, the access token its api requires, the permission that ' +
           'token carries, and the api process it forwards to.' }
@@ -609,9 +612,10 @@ const CODES = [
       'service runs.',
     spec: '' },
   { code: 'STS-CORE-0032',
-    summary: 'The 8443/9443 TLS endpoints could not start; the rest of the ' +
-      'service runs.',
-    spec: '' },
+    summary: 'The 8443/9443 TLS endpoints could not start. Retired ' +
+      '2026-09-16: both listeners were deleted and this module binds nothing, ' +
+      'so there is no bind here to fail',
+    spec: '', retired: true },
   { code: 'STS-CORE-0033',
     summary: 'The last flush at shutdown failed, so the process exited ' +
       'non-zero and a change made just before it may not have been ' +
@@ -671,6 +675,11 @@ const CODES = [
     summary: 'A realm\'s key set could not be generated off the event loop; ' +
       'the first read of it generates it on the loop instead.',
     spec: 'none — logged' },
+  { code: 'STS-CORE-0093',
+    summary: 'The service or its in-process suite was started from a tree ' +
+      'whose TypeScript sources are not compiled, which only an image ' +
+      'build does (#50).',
+    spec: 'none — the process exits before listening' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -2017,8 +2026,9 @@ const CODES = [
     summary: 'A presented certificate chain was refused because a ' +
       'certificate in it is REVOKED — on this service\'s own register, or ' +
       'on the verified CRL of a foreign issuer (common/revocation_status.js).',
-    spec: 'Per door: HTTP 403 on 9443; no session and no recorded ' +
-      'authentication on 8443; invalid_client at the token endpoint ' +
+    spec: 'Per door: no session at GET /tls/sign-in (HTTP 200 with ' +
+      'signedIn false) and no recorded authentication for the sighting on ' +
+      'the main port; invalid_client at the token endpoint ' +
       '(tls_client_auth, and an x5c assertion as invalid_client or ' +
       'invalid_grant); HTTP 403 access_denied at /xacml; the SCIM ' +
       'client-certificate scheme not accepted (401 if nothing else ' +
@@ -3085,7 +3095,7 @@ const CODES = [
   { code: 'STS-AUTHN-0037',
     summary: 'A WebAuthn ceremony failed a check this service has no ' +
       'specific code for; the check-name table in ' +
-      'authn/webauthn_policy.js is behind the verifier.',
+      'authn/webauthn_policy.ts is behind the verifier.',
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0038',
     summary: 'A security key\'s signature counter could not be recorded ' +
@@ -3673,6 +3683,11 @@ const CODES = [
       'decides whether its credential id is already registered elsewhere ' +
       'could not be asked.',
     spec: 'none — fail closed' },
+  { code: 'STS-AUTHN-0195',
+    summary: 'A recovery-code set written before 2026-09-11 (codes, not ' +
+      'hashes) could not be sealed under the key-encryption key when it was ' +
+      'rewritten, so the change was not stored.',
+    spec: 'none — the spend that asked is refused (STS-AUTHN-0093)' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -4836,6 +4851,23 @@ const CODES = [
       'authorization server advertises in its introspection_*_values_' +
       'supported members.',
     spec: 'invalid_client (HTTP 400)' },
+  // THE UNKNOWN CLIENT AT THE TOKEN ENDPOINT (#34, 2026-09-15). OAuth 2.1
+  // section 4.3.1's rotation is bookkeeping about a chain belonging to a
+  // client, so a mode that rotates has to know whose chain it is.
+  { code: 'STS-OAUTH-0297',
+    summary: 'In OAuth 2.1 mode, a grant a client makes in its own name ' +
+      '(authorization_code, refresh_token, client_credentials, token ' +
+      'exchange) named no client_id at all.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0298',
+    summary: 'In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant ' +
+      'arrived with no client, so it was answered with an access token and ' +
+      'NO refresh token (recorded, not refused).',
+    spec: 'none — the token response is issued without refresh_token' },
+  { code: 'STS-OAUTH-0299',
+    summary: 'In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant ' +
+      'named a client that is not registered or declared here.',
+    spec: 'invalid_client (HTTP 401)' },
   // SOFTWARE STATEMENTS (RFC 7591 section 2.3), 2026-09-13. After the OAuth 2.1
   // block reserved at 0270..0299.
   { code: 'STS-OAUTH-0300',
@@ -5060,7 +5092,7 @@ const CODES = [
       'while resolving a request object.',
     spec: 'server_error (HTTP 500)' },
   // PUSHED AUTHORIZATION REQUESTS (RFC 9126), 2026-09-13. Block 0400..0449;
-  // oauth-oidc/par.js and the PAR endpoint in oauth-oidc/oauth2.js.
+  // oauth-oidc/par.ts and the PAR endpoint in oauth-oidc/oauth2.ts.
   { code: 'STS-OAUTH-0400',
     summary: 'A pushed authorization request arrived while ' +
       'oauth2.pushedAuthorizationRequests is off.',
@@ -5270,7 +5302,7 @@ const CODES = [
       'method did not authenticate by certificate and no more specific ' +
       'reason was recorded; refused in every mode.',
     spec: 'invalid_client (HTTP 401)' },
-  // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.js`
+  // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.ts`
   // decides; the authorization endpoint, `dpop.presentedAccessToken()` and the
   // stand-in resource answer. Block reserved at 0500..0529.
   { code: 'STS-OAUTH-0500',
@@ -5379,6 +5411,59 @@ const CODES = [
     summary: 'A DPoP proof was refused because the claim store could not be ' +
       'asked whether its jti had been used (fail closed).',
     spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
+  // SENDER CONSTRAINTS ASKED FOR BY CONFIGURATION (#34, 2026-09-15). Neither
+  // OAuth 2.1 nor RFC 9700 requires DPoP or mutual TLS; these eleven are the
+  // refusals an operator turns on when they want more than either document
+  // asks for, and each names the setting that caused it.
+  { code: 'STS-OAUTH-0521',
+    summary: 'A token request that would issue a refresh token carried no ' +
+      'DPoP proof, and oauth2.refreshTokenRequireDpop is on.',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0522',
+    summary: 'A token request that would issue a refresh token was made over ' +
+      'a connection with no verified client certificate, and ' +
+      'oauth2.refreshTokenRequireMtls is on.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0523',
+    summary: 'A refresh token carrying no cnf.jkt was presented while ' +
+      'oauth2.refreshTokenRequireDpop is on; it is refused rather than bound ' +
+      'to the key presenting it.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0524',
+    summary: 'A refresh grant carried no DPoP proof while ' +
+      'oauth2.refreshTokenRequireDpop is on.',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0525',
+    summary: 'A refresh token carrying no cnf x5t#S256 was presented while ' +
+      'oauth2.refreshTokenRequireMtls is on, by a client RFC 8705 section ' +
+      '7.1 does not cover.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0526',
+    summary: 'A refresh grant was made over a connection with no verified ' +
+      'client certificate while oauth2.refreshTokenRequireMtls is on.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0527',
+    summary: 'A setting requires mutual TLS, but the port the request ' +
+      'arrived on is not bound as HTTPS and cannot ask for a client ' +
+      'certificate (global.https).',
+    spec: 'invalid_request (HTTP 400 / 401)' },
+  { code: 'STS-OAUTH-0528',
+    summary: 'An access token carrying no cnf.jkt was presented at a ' +
+      'resource while oauth2.accessTokenRequireDpop is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0529',
+    summary: 'A DPoP-bound access token was presented with no proof while ' +
+      'oauth2.accessTokenRequireDpop is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0530',
+    summary: 'An access token carrying no cnf x5t#S256 was presented at a ' +
+      'resource while oauth2.accessTokenRequireMtls is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0531',
+    summary: 'A certificate-bound access token was presented at a resource ' +
+      'over a connection carrying no matching certificate, while ' +
+      'oauth2.accessTokenRequireMtls is on.',
+    spec: 'invalid_token (HTTP 401)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -6614,6 +6699,43 @@ const CODES = [
       'because the store that records completed negotiations could not be ' +
       'asked; it was refused (fail closed).',
     spec: 'RFC 4178 section 4.2.2, a reject NegTokenResp; HTTP 401' },
+  { code: 'STS-KRB-0121',
+    summary: 'A TGS-REQ named a realm this KDC does not serve. Until ' +
+      '2026-09-15 such a request was answered as the default realm.',
+    spec: 'KDC_ERR_WRONG_REALM (68)' },
+  { code: 'STS-KRB-0122',
+    summary: 'A KDC request sent to a trust realm\'s own ' +
+      '/realm/<id>/KdcProxy named a Kerberos realm that realm does not ' +
+      'serve (another ' +
+      'realm\'s name, or one whose Kerberos is off).',
+    spec: 'KDC_ERR_WRONG_REALM (68)' },
+  { code: 'STS-KRB-0123',
+    summary: 'Kerberos was turned on for a trust realm that has no ' +
+      'krb5.realm of its own.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0124',
+    summary: 'A trust realm was given a krb5.realm another realm already ' +
+      'answers to (another realm\'s, the default realm\'s, or ' +
+      'krb5.trustedRealm), compared without regard to case.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0125',
+    summary: 'A trust realm\'s krb5.realm was changed or cleared while its ' +
+      'Kerberos was on.',
+    spec: 'none (a refused administrative change)' },
+  { code: 'STS-KRB-0126',
+    summary: 'The acceptor was presented a ticket for a Kerberos realm the ' +
+      'trust realm it was reached in does not serve.',
+    spec: 'KRB_AP_ERR_NOT_US (35); over SPNEGO, HTTP 401' },
+  { code: 'STS-KRB-0127',
+    summary: 'Two trust realms answer to one Kerberos realm name (a restored ' +
+      'or replicated realm the registry did not re-judge), so the KDC routes ' +
+      'that name to the first and not the second.',
+    spec: 'none (logged when the router finds it)' },
+  { code: 'STS-KRB-0128',
+    summary: 'A Kerberos key act — creating, rotating, deleting or clearing a ' +
+      'stored key — was asked of a trust realm that has no KDC, so there is ' +
+      'no principal for the key to belong to.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -7501,6 +7623,10 @@ const CODES = [
     summary: 'A realm\'s SPIFFE JWT authority or self-signed X.509 authority ' +
       'could not be established once for the cluster, so none was made.',
     spec: 'the SPIFFE call fails as when no authority could be built' },
+  { code: 'STS-SPIFFE-0077',
+    summary: 'An agent asked for an SVID from a registration entry that is ' +
+      'not beneath it (BatchNewX509SVID, NewJWTSVID).',
+    spec: 'gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID)' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -7582,14 +7708,17 @@ const CODES = [
       'certificate.',
     spec: '' },
   { code: 'STS-TLS-0021',
-    summary: 'The required-client-certificate listener refused a handshake, ' +
-      'usually a client certificate missing or not verifying against ' +
-      'the truststore.',
+    summary: 'A TLS handshake failed on a listener this module watches — ' +
+      'a version, cipher or certificate mismatch, or a non-TLS client. It ' +
+      'named the required-client-certificate listener until 2026-09-16, when ' +
+      'that listener was deleted; it is now the main port, where a client ' +
+      'certificate is asked for and never required',
     spec: 'TLS handshake failure' },
   { code: 'STS-TLS-0022',
     summary: 'A TLS handshake failed on the optional-client-certificate ' +
-      'listener (a version, cipher or non-TLS mismatch).',
-    spec: 'TLS handshake failure' },
+      'listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the ' +
+      'one code for a failed handshake now',
+    spec: 'TLS handshake failure', retired: true },
   { code: 'STS-TLS-0023',
     summary: 'A /tls or /tls/forwarded request carried a format parameter ' +
       'other than json or html.',
@@ -7600,8 +7729,9 @@ const CODES = [
       'reach the port.',
     spec: 'HTTP 403' },
   { code: 'STS-TLS-0025',
-    summary: 'A TLS listener could not bind its port.',
-    spec: '' },
+    summary: 'A TLS listener could not bind its port. Retired 2026-09-16: ' +
+      'this module owns no listener to bind',
+    spec: '', retired: true },
   { code: 'STS-TLS-0026',
     summary: 'The TLS listener certificate does not chain to this service\'s ' +
       'Root and re-issuing it produced the same certificate.',
@@ -7626,10 +7756,11 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0031',
     summary: 'The required-client-certificate listener refused a verified ' +
-      'certificate this service issued that is not a TLS client identity ' +
-      '(not from a TLS client or enrollment Issuing CA, no clientAuth, or no ' +
-      'single urn:sts:person:/application: name).',
-    spec: 'HTTP 403 with the connection report' },
+      'certificate this service issued that is not a TLS client identity. ' +
+      'Retired 2026-09-16 with that listener: the same certificate is now ' +
+      'refused where it is USED — no session at GET /tls/sign-in, no client ' +
+      'authentication at the token endpoint — rather than at a socket',
+    spec: 'HTTP 403 with the connection report', retired: true },
   { code: 'STS-TLS-0032',
     summary: 'The file named by tls.certificateFile holds self-signed ' +
       'certificates, none of which signs the chain the listener presents, ' +
@@ -9695,7 +9826,7 @@ const CODES = [
       'ALLOWED without a policy decision.',
     spec: '' },
   { code: 'STS-XACML-0050',
-    summary: 'common/access_gate.js was given a decider that is not a ' +
+    summary: 'common/access_gate.ts was given a decider that is not a ' +
       'function; every access decision is allowed.',
     spec: '' },
   { code: 'STS-XACML-0051',
@@ -10674,7 +10805,7 @@ const CODES = [
       'so that operation runs unvalidated.',
     spec: '' },
   { code: 'STS-API-0011',
-    summary: 'The crypto reporter slot that admin-ui/crypto_metadata.js ' +
+    summary: 'The crypto reporter slot that admin-ui/crypto_metadata.ts ' +
       'fills was not installed, so the crypto report, the key list or ' +
       'a key export could not be answered.',
     spec: 'HTTP 503 { ok: false, errors }' },
@@ -10703,7 +10834,7 @@ const CODES = [
     spec: 'HTTP 503' },
   { code: 'STS-API-0018',
     summary: 'The Shared Signals action rejected instead of resolving a ' +
-      'refusal, which is a defect in ssf/ssf.js.',
+      'refusal, which is a defect in ssf/ssf.ts.',
     spec: 'HTTP 500 { ok: false, errors }' },
   { code: 'STS-API-0019',
     summary: 'The CAEP action rejected instead of resolving a refusal.',
@@ -10950,6 +11081,16 @@ const CODES = [
     summary: 'A users or groups create that had claimed its name across ' +
       'nodes threw before it could answer; the claim was given back.',
     spec: 'HTTP 500' },
+  // THE SAME HOLE ONE CONSTRAINT ALONG (#34, 2026-09-15): this gate checked
+  // the certificate binding and never the DPoP one.
+  { code: 'STS-API-0120',
+    summary: 'A DPoP-bound access token (cnf.jkt) was presented at ' +
+      '/admin-api as a Bearer token.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-API-0121',
+    summary: 'A DPoP proof presented at /admin-api did not verify, and the ' +
+      'proof check reported no code of its own.',
+    spec: 'invalid_dpop_proof (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -11705,7 +11846,16 @@ const CODES = [
   { code: 'STS-DBG-0030',
     summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
       'presented to the debugger on a connection without that certificate.',
-    spec: 'invalid_token (HTTP 401)' }
+    spec: 'invalid_token (HTTP 401)' },
+  // #34 (2026-09-15), the DPoP half of the row above.
+  { code: 'STS-DBG-0031',
+    summary: 'A DPoP-bound access token (cnf.jkt) was presented to the ' +
+      'debugger as a Bearer token.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-DBG-0032',
+    summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
+      'proof check reported no code of its own.',
+    spec: 'invalid_dpop_proof (HTTP 401)' }
   // ===== END ===============================================================
 ];
 
@@ -11767,13 +11917,14 @@ function describe(code) {
 //
 // or as a statement of its own on the line before. Nothing about the response
 // changes — no header, no body — which is rule 1. `common/app.js`'s call log
-// reads it back from `finish`, after the bytes have gone, and puts it on the
-// audit row.
+// reads it back when the answer is handed to `res.end()` (or on `finish` for a
+// response that bypassed it), and puts it on the audit row.
 //
-// **A SYMBOL AND NOT `res.locals`.** Three listeners here write responses that
-// are not Express's (`tls/tls_server.js` has a handler of its own), and a
-// property under a Symbol cannot be serialised by `res.json(res.locals)` or
-// collide with a template variable. It is not enumerable for the same reason.
+// **A SYMBOL AND NOT `res.locals`.** Not every response here was always
+// Express's (`tls/tls_server.js` had a handler of its own until its listeners
+// were deleted on 2026-09-16), and a property under a Symbol cannot be
+// serialised by `res.json(res.locals)` or collide with a template variable. It
+// is not enumerable for the same reason.
 //
 // **THE LAST MARK WINS.** A shared helper that marks a general condition can
 // be overridden by a caller that knows the specific one, simply by marking

@@ -106,10 +106,10 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      # `enablement: true` — create the Pages site if this repository has none,
-      # rather than failing with a 404 that names the REST endpoint. See the
-      # header comment: the by-hand alternative was the arrangement here for four
-      # runs and all four failed.
+      # `enablement: true` — ask to create the Pages site if this repository has
+      # none. See the header comment: with this repository's GITHUB_TOKEN that
+      # request is refused, the site was created once by hand, and the flag is
+      # kept for forks whose runner has the rights this token lacks.
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5

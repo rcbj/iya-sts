@@ -53,7 +53,7 @@ codec (a byte-identical copy of the parent project's `common/krb5/krb5_spnego.js
 kept honest by `tests/krb5_codec_sync.js` there), and `spnego.js` is this repo's own.
 Do not merge the two — one of them is somebody else's file.
 
-**`spnego_authn.js` must stay after `spnego.js` AND after `authn/authn.js` in the
+**`spnego_authn.ts` must stay after `spnego.js` AND after `authn/authn.ts` in the
 require order.** It draws with `spnego.js`'s page shell and negotiates through
 `spnego_exchange.js`; and it calls `authn.startSession()`, which is why the
 endpoint is HERE and not in `authn/` — a require the other way would drag the
@@ -71,7 +71,7 @@ endpoint. It is now the last of four layers, and each adds exactly one thing.
 | `krb5_service.js` | the AP-REQ. Every Kerberos check, over any transport. | `/krb5/service` |
 | `spnego_exchange.js` | RFC 4178 and the RFC 4559 header. No Kerberos code, no HTML, no session. **A LIBRARY** — rule 3, so its position is not a position. | nothing |
 | `spnego.js` | a page that explains what happened. | `/spnego`, `/spnego/protected` |
-| `spnego_authn.js` | **a session, and the identity that goes in it.** | `/authn/spnego` |
+| `spnego_authn.ts` | **a session, and the identity that goes in it.** | `/authn/spnego` |
 
 **The split was forced by the second door and it is not tidiness.**
 `/spnego/protected` documents a handshake; `/authn/spnego` performs the same
@@ -90,7 +90,7 @@ is the part the PROTOCOL specifies and two spellings of it would be two
 acceptors. Both doors are renderers over it. A branch added to `spnego.js` that
 DECIDES something rather than describing it belongs one file over.
 
-### `spnego_authn.js`: the one sign-in here that checks a real credential
+### `spnego_authn.ts`: the one sign-in here that checks a real credential
 
 Everywhere else in this service the username typed IS the identity. Kerberos
 cannot work that way — the password there is the key — so this door verifies a
@@ -101,14 +101,14 @@ account policy is not**, and those are two different sentences.
 
 Five things about it are load-bearing:
 
-* **IT NEEDS NO INVERTED HOOK, and rule 3e's list is six slots long so a
-  seventh is the obvious move.** `authn.js` has to know two things about this
-  door: the PATH, which is in the `/authn/*` space that module already owns, so
-  it declares the constant and this file imports it; and whether the door is
-  open, which is `krb5.spnegoAuthentication` and is read from `config.js` by
-  both. Rule 3e's test is whether a require would close a cycle or move a
-  route — here nothing has to point anywhere.
-* **The require goes ONE WAY**: this file requires `authn/authn.js` for
+* **IT NEEDS NO INVERTED HOOK, and rule 3e's inventory already holds many
+  slots, so one more is the obvious move.** `authn.js` has to know two things
+  about this door: the PATH, which is in the `/authn/*` space that module
+  already owns, so it declares the constant and this file imports it; and
+  whether the door is open, which is `krb5.spnegoAuthentication` and is read
+  from `config.js` by both. Rule 3e's test is whether a require would close a
+  cycle or move a route — here nothing has to point anywhere.
+* **The require goes ONE WAY**: this file requires `authn/authn.ts` for
   `startSession()`, `pendingFor()` and `completeAuthentication()`, and that
   module requires nothing in this directory and must not. `authn.js` is #8,
   ahead of `oauth2.js` which reads the session it owns; a require in the other
@@ -291,10 +291,12 @@ polices delegation at all** — WS-Trust puts no authorization on `OnBehalfOf` o
 Two halves, and they live where their stores do:
 
 * **`krb5_kdc.js` records the ACTS**, through `../common/delegation.js` (rule
-  3l). `resolveS4u()` can refuse ELEVEN ways and every one of them goes through
+  3l). `resolveS4u()` can refuse TWELVE ways (the twelfth — evidence sealed
+  under a key version neither current nor kept, `STS-KRB-0115` — arrived on
+  2026-09-12) and every one of them goes through
   **`refuseS4u()`**, which attaches the `intent` built at the top of that
   function to the error it is already returning; `handleTgsReq()` then records at
-  the ONE place it handles `s4u.error`. That is what keeps eleven refusal sites
+  the ONE place it handles `s4u.error`. That is what keeps twelve refusal sites
   to one recording site — the same arrangement `recordAuthentication()` has for
   the sixteen families. **The reason on the row is the error's own `e-text`**,
   not a second sentence written for the console: that text is what the client is
@@ -308,10 +310,11 @@ Two halves, and they live where their stores do:
   intermediary on that row means and is the definition of unconstrained
   delegation.
 * **`krb5_principals.js` publishes the POLICY**, as `delegationPolicy()`. It
-  owns the two attributes, so it is where what they MEAN is decided; `admin.js`
-  requires it and renders the answer. It reports the pairs from both
-  `msDS-AllowedToDelegateTo` (front end) and
-  `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) in ONE list with a field
+  owns the two attributes, so it is where what they MEAN is decided;
+  `../admin-core/admin_views.ts` requires it and the console renders the
+  answer. It reports the pairs from both `msDS-AllowedToDelegateTo` (front end)
+  and `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) in ONE list with a
+  field
   saying which account carries the permission — the messages and the KDC options
   are identical and that is the whole difference — plus the account flags that
   STOP delegation (`NOT_DELEGATED`) or enable protocol transition
@@ -341,6 +344,14 @@ and `tests/Dockerfile` copies the transitive closure of what those two require
 into its image. The 2026-08-23 reorganisation broke both, because they named flat
 paths (`sts/krb5_kdc.js`); **both were repaired over there on 2026-08-28** and
 this paragraph described the breakage as open until then.
+
+**THE 2026-09-15 REALM ROUTING ADDED NO FILE TO THAT CLOSURE**, which is the
+thing to check whenever this directory grows a require. `krb5_kdc.js` gained
+`require('../common/realms')` — already in the closure through
+`krb5_principals.js`, which has required it since the store was declared there —
+and `krb5_principals.js` gained nothing at all: the context, the router and the
+three refusals are functions in files those four jobs already load. So the
+`sts/` COPY set is exactly what it was.
 
 **Those four callers still pass BARE filenames, and that is correct — do not add
 directories to them.** `mockStsModule()` was fixed by making the RESOLVER search
@@ -381,14 +392,14 @@ are believed, so the commit that bumps the `sts/` pin across it needs `COPY
 sts/common/client_address.js ./sts/common/`. It requires only `net`, bunyan and
 `config`, which is already in the closure. `spnego_exchange.js`'s new requires
 of `cluster/cluster_claims.js` and `cluster/cluster_capabilities.js` add nothing:
-`krb5_service.js` already requires both. `common/websecurity.js` now requires
+`krb5_service.js` already requires both. `common/websecurity.ts` now requires
 `cluster/cluster_counters.js`, which is owed only if websecurity is in the
 parent's set (it is reached from `authn.js`, not from the three Kerberos
 modules).
 
 **AND NOT OWED FOR THE PROXY PROTOCOL (2026-09-14, #46), ON PURPOSE.** The
 KDC's TCP listener takes a PROXY protocol v2 header when `global.proxyProtocol`
-is `v2`, and `common/proxy_protocol.js` is installed on it from `server.js`
+is `v2`, and `common/proxy_protocol.ts` is installed on it from `server.js`
 (`proxyProtocol.install(kdcListeners.tcp, …)` right after `krb5.listen()`)
 rather than from `krb5_kdc.js`, so the closure gains nothing. That is not a race:
 `listen()` returns before any `connection` event can be delivered. `startTcp()`
@@ -470,8 +481,8 @@ wrong:**
   rather than implying a completeness it has not got.
 
 `logout.kerberosSignOut` turns the whole thing off, and then this KDC behaves
-exactly as it did before the feature existed — the same switchability every
-refusal in this service has, for the reason RFC 9700 mode's have it.
+exactly as it did before the feature existed — the same switchability most
+refusals in this service have, for the reason RFC 9700 mode's have it.
 
 `signOut()` **creates nothing**: a name nobody has authenticated as has no
 principal here, and stamping one into existence would put an account in the
@@ -515,7 +526,7 @@ rather than burying it.
 **A REAL-GSSAPI JOB IS NOW POSSIBLE AND IS NOT WRITTEN.** It was impossible
 until 2026-08-27 for a reason nothing had noticed: this KDC advertised no
 PA-ENC-TIMESTAMP, so no MIT-derived client could get a ticket from it at all —
-see *The KDC advertises PA-ENC-TIMESTAMP* in `kerberos/CLAUDE.md`. With that
+see *The KDC advertises PA-ENC-TIMESTAMP* above. With that
 fixed, `kinit`, `kvno` and `curl --negotiate` complete against this service end
 to end, and a browser with a ccache and an allow-list entry would too. Such a
 job needs `krb5-user` in the parent's `tests/Dockerfile` and a per-run
@@ -529,15 +540,96 @@ that exactly ONE authentication is recorded per sign-in rather than a ticket
 acceptance beside a session start.
 
 
+## A KDC PER TRUST REALM, ON THE SHARED PORT 88 (2026-09-15, issue #33)
+
+**The Kerberos realm name inside the request is the discriminator**, and that is
+the whole design. Kerberos has realms of its own, every AS-REQ and TGS-REQ names
+one, and until this date this service threw that away: one KDC, one principal
+database, one `krb5.realm` for the process, pinned to the default trust realm.
+
+**Where the choice is made.** `krb5_kdc.js`'s `routeOf()`, in `handleMessage()` —
+the one function both sockets and `/KdcProxy` reach — picks the trust realm and
+`realms.run()` answers inside it. Everything downstream then follows without
+being told which realm it is in: the settings each handler reads, the database it
+looks names up in, and the statistics, audit rows, delegation acts and issuance
+gate it records. **Routing at each handler instead would be two places to forget,
+and what is forgotten is silent — an answer from the wrong realm's database is a
+ticket, not an error.**
+
+**Two doors, two rules.** The sockets and a bare `/KdcProxy` route by NAME, which
+is what a client configures (`kdc = …` per realm in `krb5.conf`). A realm's own
+`/realm/<id>/KdcProxy` is PINNED to that realm and refuses another realm's name
+with `KDC_ERR_WRONG_REALM` (`STS-KRB-0122`): the prefix is an address somebody
+chose, so answering a different realm's request on it would make the prefix a
+decoration. `krb5_service.js`'s `accept()` follows the same two rules for an
+AP-REQ (step 2a), refusing with `STS-KRB-0126`.
+
+**EVERY NAME IN A REALM'S DATABASE FOLLOWS THAT REALM'S OWN DOMAIN.** The realm
+name is the context's, the domain is its lower-cased form, the fixtures and the
+auto-service hosts are built from that domain, and `krb5.serviceDomains` derives
+from it — so a realm called `CORP.BANK.EXAMPLE` holds `alice@CORP.BANK.EXAMPLE`
+salted `CORP.BANK.EXAMPLEalice` and `HTTP/web.corp.bank.example`, with nothing
+named after `example.com`. **The acceptor's SPN was the last thing that did not
+follow it** (fixed the same day): `krb5.servicePrincipal` ships as
+`HTTP/web.example.com`, and a realm that sets none inherited that literal — one
+account in another domain entirely, and the name SPNEGO advertises for clients
+to derive. `servicePrincipalFor()` derives `HTTP/web.<domain>` where the
+service's value is the shipped default, and leaves a value an operator SET —
+on the realm or service-wide — exactly as it stands.
+
+**What a realm's context holds, and when it is built.** `krb5_principals.js`
+keeps one CONTEXT per trust realm — the realm name, the domain, the SIDs, the
+etypes, the kvno, the passwords, the service account, `SEEDS_DEMO`, and the set
+of keys its settings configured. The default realm's is built at require time
+from the process's values and never rebuilt; another realm's is built when its
+Kerberos is turned on and rebuilt when a `BUILT_FROM` setting changes on it. **A
+context is put in the map BEFORE its database is built**, because building
+registers principals and `register()` asks `current()` for the defaults.
+
+**The exported constants became getters.** `principals.REALM`, `KDC_ETYPES`,
+`KVNO`, `USER_PASSWORD`, `SERVICE_DOMAINS`, `AUTO_SERVICE_PASSWORD`,
+`DOMAIN_SID` and `seedsDemoPrincipals` answer for the AMBIENT realm, which
+outside any realm is the default one — so every caller in six directories reads
+the same property and gets the right realm's answer, and the parent project's
+in-process jobs see exactly what they saw before.
+
+**The three stores are per realm** (`realms.map()`, which grew the `reconcile`
+hook `sharedMap()` had): `krb5.principals`, `krb5.replayCache` and
+`spnego.pending`. The last of those fixed a bug rather than only satisfying a
+rule — its key is `door|id` with the realm prefix already stripped, so a
+negotiation begun under one realm's prefix could be continued under another's.
+
+**Three refusals hold the routing together**, and they are in `realms.js` rather
+than here because they are about a realm's OVERRIDES and must be made before
+anything is built: Kerberos on with no `krb5.realm` of its own
+(`STS-KRB-0123`), a name another realm answers to (`STS-KRB-0124`, compared
+without regard to case, including the default realm's and `krb5.trustedRealm`),
+and a rename or clear while it is on (`STS-KRB-0125`, because every key in that
+realm's database is salted with the name).
+
+**What is still the PROCESS's**, and each for a reason that has not changed: the
+two sockets (`krb5.kdcPort`, `krb5.servicePort`), and the development-mode second
+realm and its trust (`krb5.trustedRealm` and its three settings). **Trust realms
+do not trust each other's Kerberos** — rcbj's decision — so a realm's KDC holds
+no `krbtgt/<other realm>` and a service in another realm's domain is unknown
+there rather than a referral.
+
+**What has no test yet:** a person keyed in a non-default realm signing in over
+SPNEGO end to end (the acceptor's realm routing is asserted in
+`tests/kerberos_realm_routing.js` only through the KDC), and two nodes of a
+cluster answering for the same non-default realm.
+
 ## PRODUCT MODE, AND THE LITERALS AN AUDIT FOUND IN THIS DIRECTORY (2026-09-12)
 
-**The principal database is built at REQUIRE TIME in the mode the PROCESS starts
-in, and that is captured once as `SEEDS_DEMO`.** `global.mode` is runtime and per
-trust realm, but this KDC answers in no realm and its long-term keys are material
-derived at startup — the kind `common/CLAUDE.md` says must never be marked
-runtime — so switching the mode later adds and removes no principal. `realmsServed()`
-and `realmForService()` read the same captured value, so the database and the realms
-it answers for cannot disagree.
+**The DEFAULT realm's principal database is built at REQUIRE TIME in the mode the
+PROCESS starts in, and that is captured once as `ctx.SEEDS_DEMO`.** Its long-term keys
+are material derived at startup — the kind `common/CLAUDE.md` says must never be marked
+runtime — so switching the process's mode later adds and removes no principal there.
+**Another trust realm's is built when its Kerberos is TURNED ON (2026-09-15), in THAT
+realm's mode**, and rebuilt when a setting it was built from changes on that realm —
+`global.mode` among them, because a realm's settings are exactly what may change under a
+running process. `realmsServed()` and `realmForService()` read the same captured value as
+the database they belong to, so the two cannot disagree.
 
 **What product mode (`mode.seedsDemoData()` false) does NOT create**: every entry in
 `DEFINITIONS` below `krbtgt` — alice, bob and the five misconfigured users, the
@@ -676,15 +768,15 @@ only after the fixture asked about an account sitting on its own slot.
 
 ## STORED LONG-TERM KEYS: A PERSON'S FROM THEIR PASSWORD, A SERVICE'S AT RANDOM (2026-09-12)
 
-Two NEW files and neither is vendored: **`krb5_person_keys.js`** (the register — derive,
-store, read for the KDC, service principals, the lists) and **`krb5_keytab.js`** (an MIT
+Two NEW files and neither is vendored: **`krb5_person_keys.ts`** (the register — derive,
+store, read for the KDC, service principals, the lists) and **`krb5_keytab.ts`** (an MIT
 keytab 0x502 writer and reader; this repository had no keytab code before, reader or
 writer, so there was nothing to reuse and the test carries an independent reader). The
 directory's count above is sixteen files now.
 
 **THE PROBLEM WAS STRUCTURAL.** A person's password is a scrypt hash on their entry, and
 RFC 3961 string-to-key needs the plaintext. So the keys are derived at the two moments
-`common/credentials.js` holds one — a password SET, and a password VERIFIED — and stored,
+`common/credentials.ts` holds one — a password SET, and a password VERIFIED — and stored,
 SEALED, on the person's own entry: `stsKrb5Keys` (one value: name, realm, kvno, salt, a
 stamp of the password hash, and every enctype's key) and `stsKrb5KeyInfo` (the public
 half). Six things about it are decisions:
@@ -706,10 +798,15 @@ half). Six things about it are decisions:
   stamp beside the keys, so a value copied to another entry names the wrong person and one
   kept past a password change carries the wrong stamp. While keys persist a CLEAR value is
   refused, so an `ldapmodify` cannot plant a key of its choosing.
-* **THE TRUST REALM IS THE DEFAULT ONE.** The KDC's sockets and `krb5.realm` are the
-  process's; the directory slot `ldap_server.js` fills is pinned to the default realm, and a
-  password set in another realm derives nothing — keys nothing reads are password-equivalent
-  material for nobody. This is NOT per-realm Kerberos, and `realmSupport()` still says so.
+* **THE TRUST REALM IS THE AMBIENT ONE (2026-09-15).** This read *THE TRUST REALM IS THE
+  DEFAULT ONE … the directory slot `ldap_server.js` fills is pinned to the default realm, and
+  a password set in another realm derives nothing. This is NOT per-realm Kerberos*. It is
+  now: the slot's six hooks lost their `inDefaultRealm()` wrapper, the observer's gate is
+  `principals.enabledIn()` rather than `realms.isDefault()`, and a password set in a realm
+  whose Kerberos is ON derives keys onto that person's entry in that realm's own subtree,
+  salted with that realm's Kerberos realm. A realm with no KDC still derives nothing, for
+  the same reason as before: keys nothing reads are password-equivalent material for
+  nobody.
 * **NOTHING IS SHOWN.** Both key attributes are withheld from the directory dump and from an
   LDAP search (ciphertext included), from `applications.view()`, from `/admin-api` and from
   the audit log. A service key leaves this service ONCE, as the keytab the create or rotate
@@ -723,12 +820,12 @@ half). Six things about it are decisions:
   lookup, and `krbtgt/*` is never asked.
 
 **THE SLOTS, AND RULE 3e.** `krb5_principals.js` offers `setKeySource()` and this module
-fills it; `common/credentials.js` offers `setPasswordObserver()` and this module fills it;
+fills it; `common/credentials.ts` offers `setPasswordObserver()` and this module fills it;
 this module offers `setDirectory()` and `ldap/ldap_server.js` fills it. A require from the
 principal database to the register would close a cycle (the register requires it) and move
 every `/ldap` route (the register reads the directory) — and, the reason that is particular to
-this directory, **it would put `common/credentials.js`, `common/keystore.js` and the
-directory into the parent project's COPY set**. A require from `common/credentials.js` would
+this directory, **it would put `common/credentials.ts`, `common/keystore.js` and the
+directory into the parent project's COPY set**. A require from `common/credentials.ts` would
 be `common/` reaching into `kerberos/`, the layering inversion `common/CLAUDE.md` exists to
 prevent.
 

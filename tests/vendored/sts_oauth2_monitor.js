@@ -39,11 +39,15 @@
 //      API refused to a caller holding nothing.
 //
 // **WHAT IT DOES NOT ASSERT, AND WHY.** A session holding Admin READ and not
-// Admin Write being refused the Withdraw button: producing one means putting a
-// member in the DEFAULT realm's role roster, which closes the console's
-// empty-roster door for every other job in the run — `sts_pki_workbench.js`
-// records the same gap for the same reason. The gate that refuses it is one
-// middleware for every console POST and is asserted by `sts_admin_console.js`.
+// Admin Write being refused the Withdraw button: when this was written,
+// producing one meant a member in the DEFAULT realm's role roster, which closed
+// the console's empty-roster door for every other job in the run —
+// `sts_pki_workbench.js` records the same gap. That reason has since expired
+// (the window is closed by the bootstrap administrator's first sign-in, not by
+// a grant, and grants nothing to a person already holding a role —
+// `admin-ui/admin_rbac.ts`, 2026-09-13), but the section has not been written.
+// The gate that refuses it is one middleware for every console POST and is
+// asserted by `sts_admin_console.js`.
 // And a SPENT request_uri, which needs a whole browser sign-in; `tests/par.js`
 // spends one in process and the state filter is asserted here on its other
 // two words.
@@ -68,7 +72,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }

@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE EMBEDDED DEBUGGER'S GATE, DRIVEN OVER HTTP IN PROCESS (2026-09-13).
 //
-// `debugger/debugger_server.js` builds an express app of its own, which the
+// `debugger/debugger_server.ts` builds an express app of its own, which the
 // service binds on `debugger.port`. This file binds the same app on an
 // ephemeral port and asks it the questions the gate exists to answer:
 //

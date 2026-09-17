@@ -11,7 +11,7 @@ themselves did not change; the paths did.
 
 ```
 server.js            the shell: requires the modules and listens
-sts_metadata.js      reads the router to list what everything else registered
+sts_metadata.ts      reads the router to list what everything else registered
 
 common/              config, helpers, the express app, the counters, the audit
                      log, the application registry, the claim catalogues
@@ -32,7 +32,8 @@ ssf/                 Shared Signals: the transmitter, the RFC 9493 subject
                      grammar, the RFC 8417 envelope, the streams, the gate,
                      and the second outbound request in this repository
 spiffe/              six libraries, one server module, the vendored protos
-tls/                 the 8443 and 9443 listeners
+tls/                 the certificate the sockets share, the client
+                     truststore, and GET /tls/sign-in
 oid4vc/              OpenID4VCI, OpenID4VP, DID Core
 admin-ui/            the console at /admin
 mgmt-api/            /admin-api and its generated OpenAPI document
@@ -48,11 +49,14 @@ Those are the maintainer-facing documents; this site is the user-facing one.
 
 ## Four things about the layout that are load-bearing
 
-**The require order in `server.js` is the route order.** Every module calls
-`app.get(...)` at its top level rather than exporting a `register()`, so express
-applies middleware only to routes added after it and the order of the requires in
-`server.js` decides everything. There is a table of the ordering constraints in
-the root `CLAUDE.md`; each one is a real dependency rather than a preference.
+**The order in `common/protocol_stack.ts` is the route order.** A module written
+in TypeScript exports `registerRoutes(app)` and registers nothing when it is
+required; that file — the composition root, loaded by `server.js` — calls each
+one in turn, and requires the modules still written in JavaScript, which register
+their routes at that require. Express applies middleware only to routes added
+after it, so that one sequence decides which handler wins. There is a table of
+the ordering constraints in the root `CLAUDE.md`; each one is a real dependency
+rather than a preference.
 
 **`common/vendored/` is not to be edited.** Those files are byte-identical copies
 of files in the [OAuth2/OIDC Debugger](https://idptools.com), and two of that
@@ -75,7 +79,7 @@ first by `server.js`, `common/config.js` and `common/helpers.js`.
 
 ## Adding an endpoint
 
-Costs one entry in `sts_metadata.js`. That page reads the endpoint list off the
+Costs one entry in `sts_metadata.ts`. That page reads the endpoint list off the
 live router so it cannot go stale by omission, but it reports two kinds of drift
 and the parent project's test fails on both: a route registered and undescribed,
 and a description whose path is not registered (what a rename produces).

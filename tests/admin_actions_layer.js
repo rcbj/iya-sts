@@ -7,13 +7,13 @@
 // STOPS BEING ONE.
 //
 // Until 2026-09-12 every decision both admin surfaces make lived in
-// `admin-ui/admin.js`, and `mgmt-api/admin_api.js` reached them by requiring
+// `admin-ui/admin.ts`, and `mgmt-api/admin_api.ts` reached them by requiring
 // the console module and calling its functions. Rule 7 was satisfied — a page
 // and its operation could not disagree, because they were the same call — and
 // the price was that the surface a machine drives sat downstream of the
 // surface a person reads.
 //
-// The thirty-one actions moved to `admin-core/admin_actions.js`. **It was a
+// The thirty-one actions moved to `admin-core/admin_actions.ts`. **It was a
 // MOVE and not a rewrite**, which was affordable for one reason: not one of
 // those functions had ever touched `req`, `res` or markup. They took a parsed
 // body and an actor and returned a result object. The work was in finding
@@ -35,7 +35,7 @@
 //      that would rot most quietly: adding one `admin.somethingAction()` call
 //      back would restore the old direction for one operation and nothing
 //      would fail.
-//   4. **The seven forwarded collaborators are written in exactly one place
+//   4. **The forwarded collaborators are written in exactly one place
 //      each.** The console still owns those slots — every filler in the tree
 //      and every rule 3e sentence in CLAUDE.md names it — and forwards what it
 //      was handed. One statement with two destinations is one answer; a second
@@ -45,7 +45,7 @@
 // `teardown_bounds.js`'s shape and `admin_api_token_wiring.js`'s before it. The
 // one thing this cannot check is whether the actions still WORK, and nothing
 // here pretends to: that is `tests/vendored/sts_admin_api_operations.js`
-// driving all 273 operations and `sts_admin_console.js` driving the pages.
+// driving every operation and `sts_admin_console.js` driving the pages.
 // **Both of those matter more than this file** — the first run of the moved
 // layer failed in one of them with `numberWord is not defined`, on the single
 // refusal path that used a helper the move had not carried across.
@@ -53,6 +53,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isSourceFile } = require('./tools/source_file');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -65,9 +66,9 @@ const ROOT = path.join(__dirname, '..');
 // `admin_actions.js` changes state, `admin_views.js` answers a question. Both
 // are held to the same three refusals below, because the reason for each is
 // about being required by two surfaces rather than about writing or reading.
-const LAYERS = ['admin-core/admin_actions.js', 'admin-core/admin_views.js'];
-const CONSOLE_MODULE = 'admin-ui/admin.js';
-const API_MODULE = 'mgmt-api/admin_api.js';
+const LAYERS = ['admin-core/admin_actions.ts', 'admin-core/admin_views.ts'];
+const CONSOLE_MODULE = 'admin-ui/admin.ts';
+const API_MODULE = 'mgmt-api/admin_api.ts';
 
 // What the console forwards into each half. Named here rather than derived,
 // because the point of the check is that the list does not quietly shrink.
@@ -79,15 +80,15 @@ const API_MODULE = 'mgmt-api/admin_api.js';
 //
 // `truststore` (2026-09-12) is in both for the same reason: the actions add and
 // remove through it and the view lists through it. It is the one collaborator
-// here that `common/protocol_stack.js` rather than its owning module hands to
+// here that `common/protocol_stack.ts` rather than its owning module hands to
 // the console, which changes nothing this file checks — the forward and the
 // single writer are the console's and the layer's either way.
 const FORWARDED = {
-  'admin-core/admin_actions.js': ['logoutReader', 'directoryWriter',
+  'admin-core/admin_actions.ts': ['logoutReader', 'directoryWriter',
     'groupWriter',
     'signalsReporter', 'caepReporter', 'riscReporter', 'xacmlPages',
     'truststore'],
-  'admin-core/admin_views.js': ['cryptoReporter', 'xacmlPages',
+  'admin-core/admin_views.ts': ['cryptoReporter', 'xacmlPages',
     'directoryPages',
     'scimReader', 'rolePreviewer', 'configSettingsJson', 'truststore']
 };
@@ -213,13 +214,13 @@ function checkTheHalvesDependOneWay(t) {
   log.debug("Entering checkTheHalvesDependOneWay().");
   t.log.info('=== the two halves depend one way ===');
   t.check(/require\('\.\/admin_actions'\)/.test(read(
-      'admin-core/admin_views.js')),
-          'admin_views.js requires admin_actions.js for the shared tables',
+      'admin-core/admin_views.ts')),
+          'admin_views.ts requires admin_actions.ts for the shared tables',
           'one table with two readers is what stops a page offering a ' +
           'control its action does not have');
   t.check(!/require\([^)]*admin_views/.test(read(
-      'admin-core/admin_actions.js')),
-          'and admin_actions.js does not require admin_views.js',
+      'admin-core/admin_actions.ts')),
+          'and admin_actions.ts does not require admin_views.ts',
           'an action that consulted a view would depend on how its result is ' +
           'going to be displayed, which is the coupling this whole directory ' +
           'exists to remove');
@@ -235,7 +236,7 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
   const api = codeOf(read(API_MODULE));
 
   t.check(/require\('\.\.\/admin-core\/admin_actions'\)/.test(read(API_MODULE)),
-          'mgmt-api/admin_api.js requires the action layer',
+          'mgmt-api/admin_api.ts requires the action layer',
           'without this the operations would be calling the console module ' +
           'for their decisions, which is the arrangement the move replaced');
 
@@ -255,7 +256,11 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
   // And the console must not have re-exported them, which would publish a
   // second route to the same function.
   const consoleSrc = read(CONSOLE_MODULE);
-  const exportsAt = consoleSrc.indexOf('\nmodule.exports = {');
+  // Since #50 the console builds its exports as `consoleExports` and hands
+  // that to `export =`. Not found is a failure, not an empty list.
+  const exportsAt = consoleSrc.search(
+    /\n(?:module\.exports|export|const consoleExports) = \{/);
+  t.check(exportsAt >= 0, 'the console\'s exports object is found');
   const exported = consoleSrc.slice(exportsAt);
   const reExported = (exported.match(/^\s{2}([A-Za-z0-9_$]+Action):/gm) || [])
     .map(function (l) { return l.trim().replace(':', ''); })
@@ -273,7 +278,7 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 }
 
 // ---------------------------------------------------------------------------
-// (4) THE SEVEN FORWARDS. One statement, two destinations, one writer.
+// (4) THE FORWARDS (`FORWARDED` above). One statement, one writer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // AND THE FOUR THAT STAY. This is the finish line, written down.
@@ -352,7 +357,9 @@ function checkOneForward(t, layer, name) {
             'the console pushes, and a forward that went missing would leave ' +
             'the actions believing a whole subsystem was absent');
 
-    t.check(new RegExp('function ' + setter + '\\(').test(layerCode),
+    // A method of the layer's class since #50, a function before it.
+    t.check(new RegExp('(?:function |^\\s+)' + setter + '\\(', 'm')
+              .test(layerCode),
             'and the layer takes it through ' + setter + '()',
             'a collaborator the layer cannot be given is one the actions ' +
             'that need it can never use');
@@ -394,44 +401,54 @@ function checkNothingRequiresItEarly(t) {
   // rather than a directory that quietly grew. Every file here sits at 18 or
   // later in the require order: the console, the page it draws for the
   // management API's explorer, and the management API itself.
-  const allowed = ['admin-ui/admin.js', 'admin-ui/api_explorer.js',
-                   'mgmt-api/admin_api.js', 'ldap/ldap_server.js',
+  const allowed = ['admin-ui/admin.ts', 'admin-ui/api_explorer.ts',
+                   'mgmt-api/admin_api.ts', 'ldap/ldap_server.js',
                    // GNAP's view/action layer (2026-09-12), for `adminViews`'
                    // paging only. It is loaded at 23d, from
-                   // `gnap/gnap_admin.js` and lazily from the management API,
+                   // `gnap/gnap_admin.ts` and lazily from the management API,
                    // so the require is a cache hit — the same position
                    // ldap_server.js argues.
-                   'gnap/gnap_console.js',
+                   'gnap/gnap_console.ts',
                    // Certificate enrollment's three view/action layers
                    // (2026-09-13), loaded at 23e-g from each family's
                    // `_admin.js` and lazily from the management API.
-                   'acme/acme_console.js', 'est/est_console.js',
-                   'scep/scep_console.js',
+                   'acme/acme_console.ts', 'est/est_console.ts',
+                   'scep/scep_console.ts',
                    // The OAuth 2.0 / OIDC monitoring page's view/action
                    // layer (2026-09-13), for `adminViews`' paging and the
                    // console actor only. Loaded at 18f from
-                   // `oauth2_monitor_admin.js` and lazily from the management
+                   // `oauth2_monitor_admin.ts` and lazily from the management
                    // API, so the require is a cache hit and moves no route.
-                   'oauth-oidc/oauth2_monitor_console.js',
+                   'oauth-oidc/oauth2_monitor_console.ts',
                    // The PKI page (2026-09-13), for `adminViews`' paging
                    // only — its Applications and People tables. It is
                    // required at 18a, immediately after the console, so the
                    // require is a cache hit and moves no route.
-                   'admin-ui/pki_admin.js',
+                   'admin-ui/pki_admin.ts',
+                   // The composition root (#50, R2), which builds every
+                   // converted module's instance — these two layers
+                   // included — after the require step that loaded them,
+                   // so its requires are cache hits and move no route.
+                   'common/protocol_stack.ts',
                    'tests/admin_actions_layer.js'];
   const offenders = [];
   function walk(dir) {
     log.debug("Entering walk().");
-    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
-      .forEach(function (entry) {
+    const entries = fs.readdirSync(path.join(ROOT, dir),
+                                   { withFileTypes: true });
+    const names = entries.map(function (e) { return e.name; });
+    entries.forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs', 'tests'].indexOf(
-            entry.name) >= 0) { return; }
+        // `.claude` holds agent worktrees: a second checkout of this
+        // repository, whose files are not this one's (2026-09-16).
+        if (['node_modules', '.git', '.claude', 'node-ldapjs',
+             'tests'].indexOf(entry.name) >= 0) { return; }
         walk(rel);
         return;
       }
-      if (!/\.js$/.test(entry.name)) { return; }
+      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+      if (!isSourceFile(entry.name, names)) { return; }
       if (allowed.indexOf(rel) >= 0) { return; }
       if (/admin-core\//.test(rel)) { return; }
       const src = read(rel);
@@ -457,7 +474,7 @@ function checkNothingRequiresItEarly(t) {
 // each found by a different HTTP job, each a `ReferenceError` on one code
 // path: `numberWord`, `signJwt`, `baseUrlOf`, `stsKeysFor` and `sessions`.
 //
-// All five came from the same place. `admin-ui/admin.js` pulls fourteen names
+// All five came from the same place. `admin-ui/admin.ts` pulls fourteen names
 // into scope through DESTRUCTURED requires — `const { log, xmlEscape,
 // baseUrlOf, … } = require('../common/helpers')` and one more from `authn` —
 // and both of those are spread over comment-interleaved lines. A function that
@@ -479,10 +496,17 @@ function checkEveryNameResolves(t) {
   adminSrc.split('\n').forEach(function (l) {
     let m = /^(?:async )?function ([A-Za-z0-9_$]+)\(/.exec(l);
     if (m) { inAdmin.add(m[1]); return; }
-    m = /^(?:const|let|var) ([A-Za-z0-9_$]+)/.exec(l);
+    // Since #50 the console is a TypeScript class: its requires are
+    // `import x = require(...)` and its functions are methods of the class.
+    m = /^(?:const|let|var|import) ([A-Za-z0-9_$]+)/.exec(l);
+    if (m) { inAdmin.add(m[1]); return; }
+    m = /^  (?:async )?([A-Za-z0-9_$]+)\(/.exec(l);
     if (m) { inAdmin.add(m[1]); }
   });
-  const destructure = /const \{([\s\S]*?)\} = require\('([^']+)'\)/g;
+  // `const { … } = require('…')`, or since #50 `const { … } = helpers;` on
+  // the line after `import helpers = require('…')`.
+  const destructure =
+    /const \{([\s\S]*?)\} = (?:require\('([^']+)'\)|[A-Za-z0-9_$]+;)/g;
   let d;
   while ((d = destructure.exec(adminSrc)) !== null) {
     d[1].replace(/\/\/[^\n]*/g, '').split(',').forEach(function (n) {
@@ -507,7 +531,14 @@ function checkEveryNameResolves(t) {
     src.split('\n').forEach(function (l) {
       let m = /^(?:async )?function ([A-Za-z0-9_$]+)\(/.exec(l);
       if (m) { moduleScope.add(m[1]); return; }
-      m = /^(?:const|let|var) ([A-Za-z0-9_$]+)/.exec(l);
+      // Since #50 the layer is a TypeScript module: its requires are
+      // `import x = require(...)` and it declares a class and its types.
+      m = /^(?:const|let|var|import|class|interface|type) ([A-Za-z0-9_$]+)/
+        .exec(l);
+      if (m) { moduleScope.add(m[1]); return; }
+      // A method's own name is on its header, and it is reached as `this.`.
+      m = /^  (?:private |public |static )*(?:async )?([A-Za-z0-9_$]+)\(/
+        .exec(l);
       if (m) { moduleScope.add(m[1]); }
     });
     const own = /const \{([\s\S]*?)\} = require\('([^']+)'\)/g;
@@ -517,16 +548,29 @@ function checkEveryNameResolves(t) {
         if (n.trim()) { moduleScope.add(n.trim()); }
       });
     }
-    // Each top-level function body, with the names it binds for itself.
+    // Each top-level function body, with the names it binds for itself —
+    // and, since #50, each method of the layer's class, whose parameters
+    // are not written after `function`, so they are read off its header.
     const srcLines = src.split('\n');
     const scopes = [];
+    const METHOD = /^  (?:private |public |static )*(?:async )?[A-Za-z0-9_$]+\(/;
     for (let i = 0; i < srcLines.length; i += 1) {
-      if (!/^(?:async )?function [A-Za-z0-9_$]+\(/.test(
-          srcLines[i])) { continue; }
+      const isFunction = /^(?:async )?function [A-Za-z0-9_$]+\(/.test(
+        srcLines[i]);
+      const isMethod = METHOD.test(srcLines[i]);
+      if (!isFunction && !isMethod) { continue; }
+      const closing = isFunction ? '}' : '  }';
       let j = i;
-      while (j < srcLines.length && srcLines[j] !== '}') { j += 1; }
+      while (j < srcLines.length && srcLines[j] !== closing) { j += 1; }
       const body = codeOf(srcLines.slice(i, j + 1).join('\n'));
       const bound = new Set();
+      if (isMethod) {
+        const header = /^\s*[^(]*\(([^)]*)\)/.exec(body);
+        (header ? header[1].split(',') : []).forEach(function (a) {
+          const name = a.trim().replace(/[?]?\s*(?::.*|=.*)?$/, '');
+          if (name) { bound.add(name); }
+        });
+      }
       (body.match(/(?:const|let|var)\s+([A-Za-z0-9_$]+)/g) || [])
         .forEach(function (d) { bound.add(d.split(/\s+/)[1]); });
       (body.match(/(?:const|let|var)\s*\{([^}]*)\}/g) || []).forEach(
@@ -571,7 +615,7 @@ function checkEveryNameResolves(t) {
 // ---------------------------------------------------------------------------
 // AND NOTHING ANYWHERE REACHES A MOVED FUNCTION THROUGH THE CONSOLE MODULE.
 //
-// The management API was repointed deliberately; `admin-ui/api_explorer.js`
+// The management API was repointed deliberately; `admin-ui/api_explorer.ts`
 // was not, and it called `admin.gateStateFor()` — which stopped existing the
 // moment the console stopped re-exporting it. Nothing failed at load: it threw
 // a TypeError when somebody opened the page, which is how it was found.
@@ -581,23 +625,31 @@ function checkNobodyReachesThroughTheConsole(t) {
   t.log.info('=== nothing reaches a moved function through admin.* ===');
   const moved = new Set();
   LAYERS.forEach(function (layer) {
-    Object.keys(require(path.join(ROOT, layer))).forEach(function (n) {
+    // By the extensionless path: the layer is TypeScript since #50, and
+    // what node loads is the `.js` compiled beside it.
+    const layerExports = require(path.join(ROOT, layer.replace(/\.ts$/, '')));
+    Object.keys(layerExports).forEach(function (n) {
       if (!/^set/.test(n)) { moved.add(n); }
     });
   });
   const offenders = [];
   function walk(dir) {
     log.debug("Entering walk().");
-    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
-      .forEach(function (entry) {
+    const entries = fs.readdirSync(path.join(ROOT, dir),
+                                   { withFileTypes: true });
+    const names = entries.map(function (e) { return e.name; });
+    entries.forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs'].indexOf(
+        // `.claude`: see the first walk above.
+        if (['node_modules', '.git', '.claude', 'node-ldapjs'].indexOf(
             entry.name) >= 0) { return; }
         walk(rel);
         return;
       }
-      if (!/\.js$/.test(entry.name) || /^admin-core\//.test(rel)) { return; }
+      if (!isSourceFile(entry.name, names) || /^admin-core\//.test(rel)) {
+        return;
+      }
       read(rel).split('\n').forEach(function (l, i) {
         if (/^\s*(\/\/|\*)/.test(l)) { return; }
         (l.match(/\badmin\.([A-Za-z0-9_$]+)\s*\(/g) || []).forEach(

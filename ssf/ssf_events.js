@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ssf_events.js
@@ -25,8 +26,9 @@
 //                    being told IN BAND rather than having to poll the status
 //                    endpoint.
 //
-// **THIS FILE IS DELIBERATELY THE WHOLE OF THE VOCABULARY**, and as of
-// 2026-09-03 it carries TWO of the three: SSF's two rows and CAEP's eight.
+// **THIS FILE IS DELIBERATELY THE WHOLE OF THE VOCABULARY**, and it carries all
+// three: SSF's two rows, CAEP's eight (2026-09-03) and RISC's fourteen
+// (2026-09-04).
 // The promise this header made while it had two rows in it was that adding a
 // vocabulary would be rows in `EVENTS` below and nothing else, and that is
 // what happened — the SET envelope, the subject grammar, the queues, the
@@ -34,8 +36,8 @@
 // names an event type. Two things outside this file did change, and neither is
 // vocabulary: `caep.js` holds the SESSION REGISTER, which is what a CAEP event
 // is ABOUT, and `transmit()` gained the refusal for an event whose row says it
-// must carry a subject. RISC's account-lifecycle events are the third part and
-// only its prefix is here.
+// must carry a subject. RISC, the third, cost this file's machinery nothing
+// (see its section below); `risc.js` is its register.
 //
 // ---------------------------------------------------------------------------
 // WHAT A SET IS, AND THE THREE THINGS IMPLEMENTATIONS GET WRONG.
@@ -64,8 +66,9 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route. It requires `helpers.js`
 // (for the logger and for `signJwtAs`, which is where every algorithm this
-// service can sign with already lives), `config.js` and `ssf_subjects.js`, and
-// nothing else here — so it cannot join a cycle.
+// service can sign with already lives), `config.js`, `common/crypto.js` (see
+// below) and `ssf_subjects.js`, and nothing else here — so it cannot join a
+// cycle.
 //
 // **THE SIGNATURE GOES THROUGH `helpers.signJwtAs()` AND NOT THROUGH A SIGNER
 // OF ITS OWN**, which is what gives this family every algorithm the rest of
@@ -82,11 +85,12 @@ const nodeCrypto = require('crypto');
 const { log, signJwtAs, signJwtAsAsync, randomId, nowSec, allSigningKeys,
   STS, kidNamesKey } = require('../common/helpers');
 const config = require('../common/config');
-// THE ONE PLACE THIS SERVICE VERIFIES A SIGNATURE (2026-09-10). `verifySet()`
-// below is what reads a SET back, and it goes through `common/crypto.js` like
-// every other verification here. That module is a LEAF (rule 3r) — it requires
-// npm packages, the vendored `xmldsig.js` and `config`, none of which requires
-// this file — so this stays a library that cannot join a cycle.
+// THE ONE PLACE THIS SERVICE VERIFIES A SIGNATURE, `common/crypto.js`
+// (2026-09-10). `verifySet()` below is what reads a SET back, and it goes
+// through that module like every other verification here. It is a LEAF (rule
+// 3r) — it requires npm packages, the vendored `xmldsig.js`, `config` and a
+// few leaves of its own, none of which requires this file — so this stays a
+// library that cannot join a cycle.
 const stsCrypto = require('../common/crypto');
 const subjects = require('./ssf_subjects');
 
@@ -124,7 +128,7 @@ const SET_MEDIA_TYPE = 'secevent+jwt';
 //              have one — they say the subject MUST be an email address or a
 //              phone number, because the identifier IS the message — and it
 //              is a property of the ROW rather than a branch naming an event
-//              type, which is what keeps `checkSubjectFormat()` below from
+//              type, which is what keeps `subjectAdvice()` below from
 //              being the vocabulary leaking out of this table.
 //   deprecated the event type that replaces this one, where its own
 //              specification deprecates it. One row has it: RISC's
@@ -887,7 +891,7 @@ const RISC_EVENTS = [
               'credential-change**, so the two lists are the same list ' +
               'rather than two alike ones — which is why there is one ' +
               'CREDENTIAL_TYPES here and not a copy per vocabulary.' }
-    ].concat(RISC_COMMON_MEMBERS),
+    ].concat(/** @type {any} */ (RISC_COMMON_MEMBERS)),
     required: ['credential_type'],
     what: 'A credential belonging to this account was FOUND compromised — ' +
           'seen in a breach corpus, or reported. THE ONLY ONE OF THE ' +
@@ -1049,7 +1053,8 @@ const RISC_EVENTS = [
 // THE THREE VOCABULARIES IN ONE TABLE. SSF's own first, because they are about
 // the pipe every one of the others travels on; then CAEP's eight about a
 // SESSION, then RISC's fourteen about an ACCOUNT.
-const EVENTS = SSF_EVENTS.concat(CAEP_EVENTS).concat(RISC_EVENTS);
+const EVENTS = /** @type {any[]} */ (SSF_EVENTS).concat(CAEP_EVENTS)
+  .concat(RISC_EVENTS);
 
 const CAEP_EVENT_URIS = CAEP_EVENTS.map(function (row) {
   return row.uri;

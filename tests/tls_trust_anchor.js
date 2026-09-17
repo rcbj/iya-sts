@@ -10,11 +10,11 @@
 // Root, three callers in this repository broke at once and none of them said
 // so in words that named the change:
 //
-//   * `common/oidc_rp.js`'s back channel, which is how `/admin` and `/portal`
+//   * `common/oidc_rp.ts`'s back channel, which is how `/admin` and `/portal`
 //     redeem an authorization code. The console reported it as **Signing in
 //     did not complete**, and underneath it was `unable to get local issuer
 //     certificate`.
-//   * `ssf/ssf_http.js`'s loopback push to this service's own two receivers.
+//   * `ssf/ssf_http.ts`'s loopback push to this service's own two receivers.
 //   * `tests/tools/trust.js`, which fetches `/tls/server-certificate` and
 //     hands it to every node-driven job as `NODE_EXTRA_CA_CERTS` — so the
 //     protocol half of the suite could not open a connection at all.
@@ -252,9 +252,9 @@ async function run(t) {
   t.log.info('=== the loopback pins read trustAnchorPem ===');
   const fs = require('fs');
   const path = require('path');
-  [['common/oidc_rp.js',
+  [['common/oidc_rp.ts',
     'the back channel /admin and /portal redeem a code on'],
-   ['ssf/ssf_http.js', 'the loopback push to this service\'s own receivers']
+   ['ssf/ssf_http.ts', 'the loopback push to this service\'s own receivers']
   ].forEach(function (pair) {
     const src = fs.readFileSync(path.join(__dirname, '..', pair[0]), 'utf8');
     // The comments in both files name `certPem` while explaining why they

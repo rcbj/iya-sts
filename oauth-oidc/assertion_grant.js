@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: assertion_grant.js
@@ -123,11 +124,14 @@
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route, so its position in the require
-// order is not a position. It requires `helpers.js`, `config.js`,
-// `applications.js`, `common/crypto.js`, `common/pki.js` and
-// `common/used_assertions.js` — none of which requires it back — and it is required by `oauth2.js` (9) and
-// by `client_auth.js`, which takes its key reading and its JWE unwrap from
-// here rather than keeping a second copy of either.
+// order is not a position. It requires only `common/` libraries —
+// `helpers.js`, `config.js`, `applications.js`, `crypto.js`, `pki.js`,
+// `revocation_status.js`, `person_assertions.js`, `used_assertions.js` and
+// `error_codes.js` — none of which requires it back. It is required by
+// `oauth2.js` (9), by `request_object.js` and `software_statement.js` (for
+// `keysForParty()` and `keyFromChain()`), and by `client_auth.js`, which takes
+// its key reading and its JWE unwrap from here rather than keeping a second
+// copy of either.
 //
 // **THE DEPENDENCY RUNS ONE WAY AND MUST**: `client_auth.js` requires THIS,
 // never the reverse. Section 2.2 needs the assertion FORMAT and this file owns
@@ -1331,10 +1335,11 @@ module.exports = {
   // For client_auth.js, which takes both from here rather than keeping a
   // second copy of either. See the header on why the require runs this way.
   keysFrom: keysFrom,
-  // For `software_statement.js` (2026-09-13), which verifies a statement from
-  // a declared application against the SAME keys an assertion from it is
-  // verified against — a second reader of `oauthJwks` and `oauthAssertionJwks`
-  // would be a second answer to "which of this party's keys may sign".
+  // For `software_statement.js` and `request_object.js` (2026-09-13), which
+  // verify a statement or a request object from a party against the SAME keys
+  // an assertion from it is verified against — a second reader of `oauthJwks`
+  // and `oauthAssertionJwks` would be a second answer to "which of this party's
+  // keys may sign".
   keysForParty: keysForParty,
   unwrapAssertion: unwrapAssertion,
   // The certificate-chain path, for section 2.2 as well. A client that was

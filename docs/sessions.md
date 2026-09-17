@@ -13,7 +13,7 @@ page and endpoint named below is a view of it rather than a separate model.
 
 | | What it is | Where it lives | When it ends |
 |---|---|---|---|
-| **Browser sign-on session** | the cookie every browser protocol here shares | a map in `authn/authn.js`, in memory | absolute expiry, or a sign-out |
+| **Browser sign-on session** | the cookie every browser protocol here shares | a map in `authn/authn.ts`, in memory | absolute expiry, or a sign-out |
 | **Kerberos TGT** | the ticket-granting ticket *is* the Kerberos session | nowhere — a blob in somebody's cache | its own `endtime`, sealed in by the KDC |
 | **LDAP connection** | the Bind is a state of the connection (RFC 4511 §4.2) | the socket | Unbind, a re-Bind, or the socket closing |
 
@@ -88,7 +88,7 @@ at the same instant as one nobody has touched — set
 last used, whichever limit comes first. The idle timeout is checked whenever a
 session is read, so it applies to sessions that already exist, and a request to
 the admin console or the user portal counts as use of the sign-on session behind
-it. Until 2026-09-12 both were constants in `authn/authn.js` and neither could
+it. Until 2026-09-12 both were constants in `authn/authn.ts` and neither could
 be changed.
 
 **An expiry ends the session properly**, and until 2026-09-04 it did not: the

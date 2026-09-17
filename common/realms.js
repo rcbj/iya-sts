@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: realms.js
@@ -58,11 +59,15 @@
 // ---------------------------------------------------------------------------
 // WHAT A REALM DOES **NOT** GET ITS OWN OF, and why saying so matters.
 //
-// The four sockets that are not HTTP have no path to put a realm segment in:
-// Kerberos' UDP/TCP 88, the directory's 389 and 636, the two TLS listeners and
-// SPIFFE's four. Those are shared, and each family that can be realm-aware on
-// them is realm-aware by a DIFFERENT discriminator — the Kerberos realm name
-// inside the request, the base DN a search names, the trust domain in an SVID.
+// The sockets that are not HTTP have no path to put a realm segment in:
+// Kerberos' UDP/TCP 88, the directory's 389 and 636, and SPIFFE's gRPC
+// sockets. Nor can the certificate the main port presents carry a realm: it
+// is a property of the socket rather than of the realm a request names on it,
+// and it is shared. Each family that can be realm-aware on those sockets is
+// realm-aware by a DIFFERENT discriminator — the Kerberos realm name inside
+// the request, the base DN a search names, and for SPIFFE the ADDRESS a
+// realm's own sockets are bound on (the process's four stay the default
+// realm's).
 // `kerberos/CLAUDE.md`, `ldap/CLAUDE.md` and `spiffe/CLAUDE.md` carry those;
 // the index of which family is realm-aware how is in `realmSupport()` at the
 // foot of this file, so that a reader can ask this service rather than guess.
@@ -71,7 +76,8 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const bunyan = require('bunyan');
 // config.js is required in the ORDINARY direction and it is safe: that module
-// requires only bunyan and config_file.js, so it cannot reach back here. The
+// requires only bunyan and two leaves (config_file.js, error_codes.js), so it
+// cannot reach back here. The
 // dependency the other way — config.js needing to know a realm's overrides — is
 // an INVERTED HOOK filled at the foot of this file, which is rule 3e's shape
 // and passes rule 3e's test: a require in that direction would close a cycle.
@@ -511,10 +517,13 @@ function validateId(id) {
 // mock. What a derivation buried in a getter would give instead is six values
 // that cannot be seen and cannot be changed.
 //
-// `krb5.realm` is NOT here and cannot be: it is not runtime-settable, because
-// the principal database is built from it when the process starts. That is the
-// reason Kerberos over UDP/TCP 88 is `partial` in realmSupport() rather than
-// `full`, and it is the first thing to fix if that changes.
+// `krb5.realm` IS NOT HERE, and since 2026-09-15 that is a decision rather than
+// a limit. Until then it could not be: the principal database was built from it
+// once, when the process started, which is why Kerberos was `none` in
+// realmSupport(). A realm now builds a principal database of its own when its
+// Kerberos is turned on, so `krb5.realm` is `realmRuntime` — and rcbj chose
+// that the operator NAMES a realm's Kerberos realm rather than this inventing
+// `ACME.EXAMPLE.COM`. See SEEDED_FOR_REALM below, which turns it off.
 // ---------------------------------------------------------------------------
 const NAMED_BY_REALM = [
   { key: 'saml2.entityId', join: ':' },
@@ -601,8 +610,22 @@ const NAMED_BY_REALM = [
 // the realm signs them — so inheriting the list granted nothing, but it
 // published administrators on `/realm/<id>/spiffe` who are not administrators
 // of anything in it. `keepEmpty` is what lets an empty value be seeded at all.
+//
+// **`krb5.enabled` IS SEEDED OFF FOR THE SPIFFE REASON (2026-09-15).** A
+// realm's Kerberos is a KDC of its own on the shared port 88, routed on the
+// realm name in each request, and what it issues is a ticket another service
+// will believe — so it is not the automatic consequence of creating a realm
+// either. Unlike SPIFFE's trust domain the realm NAME is not seeded: rcbj's
+// decision was that the operator names it, and turning Kerberos on is refused
+// until the realm carries a `krb5.realm` of its own that no other realm has.
+// See `kerberosOverrideProblem()` below.
 // ---------------------------------------------------------------------------
 const SEEDED_FOR_REALM = [
+  { key: 'krb5.enabled', value: function () {
+    log.debug("Entering value().");
+    log.debug("Leaving value().");
+    return false;
+  } },
   { key: 'spiffe.enabled', value: function () {
     log.debug("Entering value().");
     log.debug("Leaving value().");
@@ -704,6 +727,16 @@ function create(spec) {
     return errorCodes.mark({ ok: false, errors: overrideErrors },
                            errorCodes.codeOf(overrideErrors));
   }
+  // Not for a realm the store or another process hands back — see
+  // kerberosOverrideProblem() for why a restore is never refused for this.
+  if (!(spec && spec.restored)) {
+    const kerberos = refusedForKerberos(id, Object.assign(seededNames(id),
+      (spec || {}).overrides || {}), {});
+    if (kerberos) {
+      log.debug("Leaving create(). Refused for its Kerberos settings.");
+      return kerberos;
+    }
+  }
   const realm = {
     id: id,
     name: String((spec || {}).name || id).trim() || id,
@@ -751,6 +784,15 @@ function update(id, changes) {
       log.debug("Leaving update(). Refused for its overrides.");
       return errorCodes.mark({ ok: false, errors: overrideErrors },
                              errorCodes.codeOf(overrideErrors));
+    }
+    // A REPLICATED update is not asked, for a restore's reason: the process
+    // that made the change already was, and refusing it here would leave two
+    // processes holding different overrides for one realm.
+    const kerberos = spec.replicated ? null :
+      refusedForKerberos(realm.id, spec.overrides, realm.overrides);
+    if (kerberos) {
+      log.debug("Leaving update(). Refused for its Kerberos settings.");
+      return kerberos;
     }
     realm.overrides = Object.assign({}, spec.overrides);
   }
@@ -818,13 +860,16 @@ function checkRealmOverride(key, raw) {
       '/admin-api/config/set.';
   }
   log.debug("Leaving checkRealmOverride().");
-  // `true` is the `forRealm` argument, and it is what admits the one setting
-  // that is restart-only for the PROCESS and legitimate on a realm:
-  // `oauth2.rfc9700`. See the `realmRuntime` paragraph at the top of config.js
-  // — a realm binds no socket, so the reason that flag is restart-only (it
-  // derives `global.https`, and a listener's scheme is settled when it is
-  // bound) is not a reason a realm cannot carry it. Everything else that is
-  // restart-only is still refused here, in the same sentence as before.
+  // `true` is the `forRealm` argument, and it is what admits the settings
+  // that are restart-only for the PROCESS and legitimate on a realm — the
+  // `realmRuntime` rows: `oauth2.rfc9700` (the first), `oauth2.oauth21`, and
+  // the SPIFFE and Kerberos rows a realm's own sockets and principal database
+  // are built from. See the `realmRuntime` paragraph at the top of config.js:
+  // for `oauth2.rfc9700`, a realm binds no socket, so the reason that flag is
+  // restart-only (it derives `global.https`, and a listener's scheme is
+  // settled when it is bound) is not a reason a realm cannot carry it.
+  // Everything else that is restart-only is still refused here, in the same
+  // sentence as before.
   return config.checkOverride(key, raw, true);
 }
 
@@ -864,6 +909,13 @@ function setOverride(id, key, raw) {
     return errorCodes.mark({ ok: false, errors: [problem] },
                            checkRealmOverrideCode(key, raw));
   }
+  const after = Object.assign({}, realm.overrides);
+  after[key] = raw;
+  const kerberos = refusedForKerberos(realm.id, after, realm.overrides);
+  if (kerberos) {
+    log.debug("Leaving setOverride(). Refused for its Kerberos settings.");
+    return kerberos;
+  }
   realm.overrides[key] = raw;
   log.info('realms: "' + realm.id + '" sets ' + key + '.');
   changed(realm.id, 'set-override');
@@ -887,6 +939,13 @@ function clearOverride(id, key) {
         'on realm "' +
       realm.id + '"; it already comes from what the whole service is ' +
       'configured with.'] }, 'STS-CORE-0016');
+  }
+  const after = Object.assign({}, realm.overrides);
+  delete after[key];
+  const kerberos = refusedForKerberos(realm.id, after, realm.overrides);
+  if (kerberos) {
+    log.debug("Leaving clearOverride(). Refused for its Kerberos settings.");
+    return kerberos;
   }
   delete realm.overrides[key];
   log.info('realms: "' + realm.id + '" no longer sets ' + key + '.');
@@ -916,6 +975,136 @@ function checkOverrides(overrides) {
   });
   log.debug("Leaving checkOverrides().");
   return errors;
+}
+
+// ---------------------------------------------------------------------------
+// A REALM'S KERBEROS, AND THE THREE RULES A KEY-AT-A-TIME CHECK CANNOT MAKE
+// (2026-09-15).
+//
+// Port 88 is one socket for every realm, and the KDC chooses the realm a
+// request is for by the Kerberos realm NAME inside it. So three things about a
+// realm's
+// overrides are wrong together that are each fine alone, and
+// checkRealmOverride() — which sees one key and no realm — cannot see any of
+// them:
+//
+//   1. **KERBEROS ON WITH NO NAME OF ITS OWN** (STS-KRB-0123). The realm would
+//      inherit the process's `krb5.realm`, and two realms answering to one name
+//      is a request the KDC cannot route. rcbj's decision was that the operator
+//      names it, so nothing is seeded and turning it on without one is refused.
+//   2. **A NAME ANOTHER REALM ALREADY ANSWERS TO** (STS-KRB-0124) — another
+//      realm's own `krb5.realm`, the default realm's, or `krb5.trustedRealm`,
+//      which the default realm answers for in development. Compared without
+//      regard to case: Kerberos names are case-sensitive on the wire, and two
+//      realms that differ only in case are two realms a person cannot tell
+//      apart in a krb5.conf.
+//   3. **A RENAME, OR A CLEAR, WHILE IT IS ON** (STS-KRB-0125). Every key in
+//      that realm's database is salted with the name, so a rename under a
+//      running KDC would leave every person's stored keys naming a realm the
+//      KDC no longer answers as. Turn it off, rename, turn it on.
+//
+// **THEY ARE ASKED IN THE ORDER 3, 1, 2**, which is not the order they are
+// written in above: CLEARING the name of a realm whose Kerberos is on satisfies
+// rule 1 as well (it is then on with no name), and the sentence somebody needs
+// for that change is the one about keys being salted rather than the one about
+// turning Kerberos on.
+//
+// Asked with the overrides a write WOULD leave (`after`) beside the ones it
+// found (`before`), by every door that writes a realm's overrides. A realm
+// RESTORED from the store is not asked: refusing to restore a realm because the
+// process's own `krb5.realm` changed across a restart would lose the realm, and
+// the KDC's router reports a collision it finds instead (krb5_principals.js).
+// ---------------------------------------------------------------------------
+function ownKerberosName(overrides) {
+  log.debug("Entering ownKerberosName().");
+  const raw = overrides && overrides['krb5.realm'];
+  log.debug("Leaving ownKerberosName().");
+  return raw === undefined || raw === null ? '' : String(raw).trim();
+}
+
+function ownKerberosEnabled(overrides) {
+  log.debug("Entering ownKerberosEnabled().");
+  if (!overrides ||
+      !Object.prototype.hasOwnProperty.call(overrides, 'krb5.enabled')) {
+    log.debug("Leaving ownKerberosEnabled(). Not set on the realm.");
+    return false;
+  }
+  const parsed = config.parseAs('krb5.enabled', overrides['krb5.enabled']);
+  log.debug("Leaving ownKerberosEnabled().");
+  return !!(parsed.ok && parsed.value === true);
+}
+
+function kerberosOverrideProblem(id, after, before) {
+  log.debug("Entering kerberosOverrideProblem(). id=" + id);
+  const name = ownKerberosName(after);
+  const enabled = ownKerberosEnabled(after);
+  if (ownKerberosEnabled(before) && enabled &&
+      name !== ownKerberosName(before)) {
+    log.debug("Leaving kerberosOverrideProblem(). Renamed while on.");
+    return { code: 'STS-KRB-0125',
+             message: 'krb5.realm cannot be changed on realm "' + id + '" ' +
+               'while its Kerberos is on: every key in that realm\'s ' +
+               'principal database is salted with the name, so the people ' +
+               'and services in it would hold keys for a realm the KDC no ' +
+               'longer answers as. Turn krb5.enabled off, change the name, ' +
+               'and turn it on again.' };
+  }
+  if (enabled && !name) {
+    log.debug("Leaving kerberosOverrideProblem(). On with no name.");
+    return { code: 'STS-KRB-0123',
+             message: 'Kerberos cannot be turned on for realm "' + id + '" ' +
+               'until it has a krb5.realm of its own. Port 88 is shared by ' +
+               'every realm and a request is routed by the Kerberos realm ' +
+               'name inside it, so a realm that inherited the service\'s ' +
+               'name would be a second realm answering to it. Set krb5.realm ' +
+               'on ' +
+               'this realm first (in the same change is fine).' };
+  }
+  if (name && name !== ownKerberosName(before)) {
+    const wanted = name.toUpperCase();
+    const taken = [];
+    const processName = String(run(DEFAULT_REALM, function () {
+      return config.value('krb5.realm');
+    }) || '');
+    if (processName.toUpperCase() === wanted) {
+      taken.push('the default realm, whose Kerberos realm is ' + processName);
+    }
+    const trusted = String(run(DEFAULT_REALM, function () {
+      return config.value('krb5.trustedRealm');
+    }) || '');
+    if (trusted.toUpperCase() === wanted) {
+      taken.push('krb5.trustedRealm, the second realm the default realm ' +
+                 'answers for in development mode');
+    }
+    realms.forEach(function (other) {
+      if (other.id !== id &&
+          ownKerberosName(other.overrides).toUpperCase() === wanted) {
+        taken.push('realm "' + other.id + '"');
+      }
+    });
+    if (taken.length) {
+      log.debug("Leaving kerberosOverrideProblem(). Name taken.");
+      return { code: 'STS-KRB-0124',
+               message: 'krb5.realm "' + name + '" cannot be given to realm "' +
+                 id + '": ' + taken.join(' and ') + ' already answers to ' +
+                 'that name (compared without regard to case). The KDC on ' +
+                 'port 88 routes a request by that name, so two realms ' +
+                 'holding it could not both be reached.' };
+    }
+  }
+  log.debug("Leaving kerberosOverrideProblem().");
+  return null;
+}
+
+// The same, as the `{ ok:false, errors }` answer every door here returns, or
+// null when there is nothing to refuse.
+function refusedForKerberos(id, after, before) {
+  log.debug("Entering refusedForKerberos().");
+  const problem = kerberosOverrideProblem(id, after, before);
+  log.debug("Leaving refusedForKerberos().");
+  return problem
+    ? errorCodes.mark({ ok: false, errors: [problem.message] }, problem.code)
+    : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1401,9 +1590,23 @@ function keyed(factory) {
 
 // A Map, per realm. Every member of the Map interface is delegated, including
 // the iterator — `for (const [k, v] of store)` is a shape this codebase uses.
+//
+// The JSDoc (#50) says what a caller holds: a Map, plus `realmMap()`. The
+// facade is built as a plain object with the iterator attached afterwards,
+// which the checker cannot see as a Map, so the return is cast.
+/**
+ * @param {any} [options]
+ * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any> }}
+ */
 function map(options) {
   log.debug("Entering map().");
   const per = keyed(function () { return new Map(); });
+  // `reconcile`, for a per-realm store partly built from code — see the
+  // contract above sharedMap(). The two accessors below ask it exactly as
+  // sharedMap()'s do, through the same two functions, with the realm the row
+  // belongs to as a last argument a shared store has no use for.
+  const reconcile = (options && options.reconcile) || {};
+  const handleName = String((options && options.persist) || '(undeclared)');
   const handle = declareHandle(options, 'map', {
     // Every key in the realm's own partition. `per.of(id)` rather than `per()`
     // so that a flush does not have to be inside the realm to read it — which
@@ -1433,7 +1636,9 @@ function map(options) {
         log.debug("Leaving restore(). The realm was removed here.");
         return;
       }
-      per.of(partitionId(realmId)).set(k, v);
+      const target = per.of(partitionId(realmId));
+      reconciledRestore(handleName, reconcile, target, k, v,
+                        partitionId(realmId));
       log.debug("Leaving restore().");
     },
     // WHAT A REPLICATED DELETE REACHES. It is a fourth accessor rather than a
@@ -1442,7 +1647,8 @@ function map(options) {
     // would answer `has(k) === true` for a key another process deleted.
     remove: function (realmId, k) {
       log.debug("Entering remove().");
-      per.of(partitionId(realmId)).delete(k);
+      reconciledRemove(handleName, reconcile, per.of(partitionId(realmId)), k,
+                       partitionId(realmId));
       log.debug("Leaving remove().");
     }
   });
@@ -1605,7 +1811,7 @@ function map(options) {
   };
   facade[Symbol.iterator] = function () { return per()[Symbol.iterator](); };
   log.debug("Leaving map().");
-  return facade;
+  return /** @type {any} */ (facade);
 }
 
 // An Array, per realm. A Proxy rather than a facade because an array is used by
@@ -1626,8 +1832,10 @@ function arr(options) {
   // ONE ROW FOR THE WHOLE ARRAY, under the empty key. An array's key is its
   // POSITION, and a `splice` renumbers every row after it — so a row per index
   // would need the flush to work out which positions moved, which is the diff
-  // this design exists to avoid. The two arrays here are an audit ring and the
-  // issued register, and both are read whole by everything that reads them.
+  // this design exists to avoid. The arrays declared persisted — the audit ring
+  // and the issued register were the first two — are read whole by everything
+  // that reads them. (The audit ring is segmented since 2026-09-14; see
+  // segmentedArr() below.)
   const handle = declareHandle(options, 'arr', {
     dump: function (realmId) {
       log.debug("Entering dump().");
@@ -1685,7 +1893,7 @@ function arr(options) {
       // been, because wrapping `map` or `slice` would cost every reader a
       // closure for nothing.
       // ---------------------------------------------------------------
-      if (!handle || MUTATORS.indexOf(prop) < 0) {
+      if (!handle || MUTATORS.indexOf(/** @type {string} */ (prop)) < 0) {
         log.debug("Leaving get().");
         return v.bind(real);
       }
@@ -1695,8 +1903,8 @@ function arr(options) {
         // WHOLE-STORE, not per index. `splice` and `sort` move rows the
         // caller never names, and an array's KEY is its position — so any
         // mutation potentially renumbers every row after it. The flush
-        // rewrites the list, which for the two arrays here (an audit ring
-        // and the issued register) is what it would have had to do anyway.
+        // rewrites the list, which for a ring or a register read whole is
+        // what it would have had to do anyway.
         noteWrite(handle, null);
         return out;
       };
@@ -1950,7 +2158,7 @@ function segmentedArr(options, per, size) {
         log.debug("Leaving get().");
         return v;
       }
-      if (!handle || MUTATORS.indexOf(prop) < 0) {
+      if (!handle || MUTATORS.indexOf(/** @type {string} */ (prop)) < 0) {
         log.debug("Leaving get().");
         return v.bind(real);
       }
@@ -2016,6 +2224,15 @@ function segmentedArr(options, per, size) {
 // seq: 0 }))` and spelling the reads `nums.seq` moves the counter into the
 // partition with the thing it counts — `nums.seq++` works through the proxy
 // exactly as it did through the binding.
+//
+// The JSDoc is for the type checker (#50): the proxy answers with the shape
+// the factory builds, so a reader of `nums.seq` is checked against it.
+/**
+ * @template T
+ * @param {(realm?: any) => T} [factory]
+ * @param {any} [options]
+ * @returns {T}
+ */
 function obj(factory, options) {
   log.debug("Entering obj().");
   const per = keyed(factory || function () { return {}; });
@@ -2063,7 +2280,7 @@ function obj(factory, options) {
     }
   });
   log.debug("Leaving obj().");
-  return new Proxy({}, {
+  return /** @type {T} */ (new Proxy({}, {
     get: function (target, prop) {
       log.debug("Entering get().");
       const real = per();
@@ -2110,27 +2327,30 @@ function obj(factory, options) {
       log.debug("Leaving defineProperty().");
       return true;
     }
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
 // A STORE THAT IS DELIBERATELY NOT PER REALM, DECLARED IN THE FILE ABOUT
 // REALMS — which needs its argument made rather than assumed.
 //
-// Kerberos, SPIFFE's four sockets and the rate limiter's buckets are shared
-// across every realm, because a socket has no path to put a realm segment in
-// and — unlike the directory — no name inside the protocol to put one in
-// either. `CLAUDE.md` lists them as the three things a realm does not get.
-// They are still MINTED state, so product mode has to write them down, and
-// they need somewhere to be declared.
+// The rate limiter's buckets and the LDAP cluster connection mirror are shared
+// across every realm, because what they hold is about a SOCKET or an ADDRESS
+// rather than about a realm. Kerberos was on this list until 2026-09-15 — its
+// three stores are per realm now that each trust realm has a KDC of its own —
+// and SPIFFE's sockets left it on 2026-09-12. They are still MINTED state, so
+// product mode has to write them down, and they need somewhere to be
+// declared.
 //
-// It is HERE, and not in `persistence_minted.js`, for one reason:
+// A shared store is declared HERE, and not in `persistence_minted.js`, for one
+// reason:
 // `declaredHandles` above is the ONE list of persistable stores, and
 // `tests/realm_isolation.js` reads it to check that a store which ought to be
 // per realm has not quietly been left process-wide. A second list somewhere
 // else would be exactly the thing that test exists to catch, hidden from the
 // test that catches it. So a shared store says so, in the same place, in one
-// word: `realms.sharedMap({ persist: 'krb5.principals', scope: 'shared' })`.
+// word: `realms.sharedMap({ persist: 'security.rateLimitBuckets',
+// scope: 'shared' })`.
 //
 // It is a plain `Map` with no partitioning at all — every member is the real
 // Map's, and only the three mutators are wrapped — so a caller cannot tell it
@@ -2171,11 +2391,64 @@ function obj(factory, options) {
 // evaluate it replaces it. Logged, with a code, because it is a defect in the
 // reconciler rather than anything about the row.
 //
-// ONE CALLER TODAY (`kerberos/krb5_principals.js`), and it is on `sharedMap()`
-// alone because that is the only shape with a store built partly from code. A
-// `realms.map()` that needs it would add the same two lines to its accessors;
-// adding them speculatively would be a hook nothing tests.
+// **ONE CALLER TODAY, AND SINCE 2026-09-15 IT IS A PER-REALM STORE.**
+// `kerberos/krb5_principals.js` was on `sharedMap()` while the KDC was the
+// process's; when each trust realm got a principal database of its own it moved
+// to `realms.map()`, which is what this paragraph said would "add the same two
+// lines to its accessors". Both shapes now call the two functions below, so the
+// rule is written once. A per-realm reconciler is also told WHICH realm's
+// partition the row is for — a store built from settings is built from that
+// realm's settings — as a fourth argument (`restore`) and a third (`remove`);
+// a shared store passes the empty string.
 // ---------------------------------------------------------------------------
+function reconciledRestore(handleName, reconcile, target, k, v, realmId) {
+  log.debug("Entering reconciledRestore().");
+  if (typeof reconcile.restore !== 'function') {
+    target.set(k, v);
+    log.debug("Leaving reconciledRestore(). No reconciler.");
+    return;
+  }
+  let admitted;
+  try {
+    admitted = reconcile.restore(k, v, target.get(k), realmId, target);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-CORE-0042') +
+              'realms: "' + handleName + '" could not reconcile a stored ' +
+              'row under "' + k + '", so it was NOT applied and what ' +
+              'this process held is unchanged: ' + e.message);
+    log.debug("Leaving reconciledRestore(). The reconciler threw.");
+    return;
+  }
+  if (admitted !== undefined) {
+    target.set(k, admitted);
+  }
+  log.debug("Leaving reconciledRestore().");
+}
+
+function reconciledRemove(handleName, reconcile, target, k, realmId) {
+  log.debug("Entering reconciledRemove().");
+  if (typeof reconcile.remove !== 'function') {
+    target.delete(k);
+    log.debug("Leaving reconciledRemove(). No reconciler.");
+    return;
+  }
+  let allowed = false;
+  try {
+    allowed = reconcile.remove(k, target.get(k), realmId) !== false;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-CORE-0042') +
+              'realms: "' + handleName + '" could not reconcile a stored ' +
+              'removal of "' + k + '", so it was NOT applied and what ' +
+              'this process held is unchanged: ' + e.message);
+    log.debug("Leaving reconciledRemove(). The reconciler threw.");
+    return;
+  }
+  if (allowed) {
+    target.delete(k);
+  }
+  log.debug("Leaving reconciledRemove().");
+}
+
 function sharedMap(options) {
   log.debug("Entering sharedMap().");
   const real = new Map();
@@ -2198,48 +2471,12 @@ function sharedMap(options) {
     },
     restore: function (realmId, k, v) {
       log.debug("Entering restore().");
-      if (typeof reconcile.restore !== 'function') {
-        real.set(k, v);
-        log.debug("Leaving restore().");
-        return;
-      }
-      let admitted;
-      try {
-        admitted = reconcile.restore(k, v, real.get(k));
-      } catch (e) {
-        log.error(errorCodes.tag('STS-CORE-0042') +
-                  'realms: "' + handleName + '" could not reconcile a stored ' +
-                  'row under "' + k + '", so it was NOT applied and what ' +
-                  'this process held is unchanged: ' + e.message);
-        log.debug("Leaving restore().");
-        return;
-      }
-      if (admitted !== undefined) {
-        real.set(k, admitted);
-      }
+      reconciledRestore(handleName, reconcile, real, k, v, '');
       log.debug("Leaving restore().");
     },
     remove: function (realmId, k) {
       log.debug("Entering remove().");
-      if (typeof reconcile.remove !== 'function') {
-        real.delete(k);
-        log.debug("Leaving remove().");
-        return;
-      }
-      let allowed = false;
-      try {
-        allowed = reconcile.remove(k, real.get(k)) !== false;
-      } catch (e) {
-        log.error(errorCodes.tag('STS-CORE-0042') +
-                  'realms: "' + handleName + '" could not reconcile a stored ' +
-                  'removal of "' + k + '", so it was NOT applied and what ' +
-                  'this process held is unchanged: ' + e.message);
-        log.debug("Leaving remove().");
-        return;
-      }
-      if (allowed) {
-        real.delete(k);
-      }
+      reconciledRemove(handleName, reconcile, real, k, '');
       log.debug("Leaving remove().");
     }
   });
@@ -2378,9 +2615,10 @@ function realmSupport() {
             'because the directory is: a client registered under one realm ' +
             'lives in that realm\'s ou=applications and is unknown to every ' +
             'other. This line said the opposite until then. RFC 9700 MODE IS ' +
-            'PER REALM TOO — `oauth2.rfc9700` is the one setting here that ' +
-            'is restart-only for the process and settable on a realm, ' +
-            'because a realm binds no socket — so one process can answer ' +
+            'PER REALM TOO — `oauth2.rfc9700`, and `oauth2.oauth21` which ' +
+            'implies it, are restart-only for the process and settable on a ' +
+            'realm, because a realm binds no socket — so one process can ' +
+            'answer ' +
             'permissively at /oauth2/authorize and enforce the BCP at a ' +
             'realm\'s. What a realm cannot bring with it is a SCHEME: the ' +
             'main port is https or it is not, for every realm at once, and ' +
@@ -2392,9 +2630,10 @@ function realmSupport() {
             'is shared only in the sense that this service checks no ' +
             'password anywhere — the PERSON is an entry in the realm\'s own ' +
             'directory. The admin console is the ONE reader that crosses ' +
-            'this line, and it crosses it in exactly one direction: it ' +
-            'accepts the DEFAULT realm\'s session and no other. The row ' +
-            'below says why.' },
+            'this line: it signs a person in through the realm it is ' +
+            'reached in, and keeps its OWN session in the DEFAULT realm, ' +
+            'so that one console session can be found from every realm. The ' +
+            'row below says whom that session may administer.' },
     { family: 'SAML 2.0 / SAML 1.1', state: 'full', by: 'path',
       note: 'Its own entityID and providerID (seeded distinct when the realm ' +
             'is created), its own signing key, request state, artifacts and ' +
@@ -2474,21 +2713,31 @@ function realmSupport() {
             'socket with nowhere else to put one; a modifyDN that would ' +
             'cross a realm is refused with LDAP_AFFECTS_MULTIPLE_DSAS (71), ' +
             'two realms here being two directories.' },
-    { family: 'Kerberos v5', state: 'none', by: 'shared',
-      note: 'One KDC, one principal database and one Kerberos realm name for ' +
-            'the whole process — over raw UDP/TCP 88 AND over MS-KKDCP, ' +
-            'whose /KdcProxy is reachable under a realm prefix but reaches ' +
-            'the same KDC behind it. Kerberos ALREADY HAS a realm and it is ' +
-            'the natural discriminator: give each trust realm a krb5.realm ' +
-            'of its own, dispatch a request on the realm name it carries, ' +
-            'and the shared port serves both. What stands in the way is that ' +
-            'krb5.realm is not runtime-settable — the principal database and ' +
-            'its long-term keys are built from it when the process starts — ' +
-            'so that database has to become per realm and lazily built ' +
-            'first.' },
-    { family: 'TLS (8443 / 9443)', state: 'none', by: 'shared',
-      note: 'Their whole content is what the server saw of the connection, ' +
-            'which is a property of the socket and not of a realm.' },
+    { family: 'Kerberos v5', state: 'full', by: 'name',
+      note: 'A KDC per trust realm on the SHARED port 88, told apart by the ' +
+            'Kerberos realm name inside every request — the discriminator ' +
+            'the protocol already carries. A realm is created with ' +
+            'krb5.enabled OFF; set a krb5.realm of its own (no two realms ' +
+            'may answer to one name) and turn it on, and that realm builds a ' +
+            'principal database, long-term keys and a krbtgt of its own, ' +
+            'from its own settings. Its people are the people in its own ' +
+            'directory subtree. Raw UDP/TCP 88 and a bare /KdcProxy route by ' +
+            'the name; a realm\'s own /realm/<id>/KdcProxy is pinned to that ' +
+            'realm and refuses another realm\'s name with ' +
+            'KDC_ERR_WRONG_REALM. What is still the PROCESS\'s: the two ' +
+            'sockets, and the development-mode trust with krb5.trustedRealm ' +
+            '— trust realms do not trust each other\'s Kerberos. Before ' +
+            '2026-09-15 there was one KDC, one principal database and one ' +
+            'realm name for the whole process.' },
+    { family: 'TLS certificate', state: 'none', by: 'shared',
+      note: 'ONE CERTIFICATE FOR THE PROCESS, presented by the main port, ' +
+            'by LDAPS 636 and by the embedded debugger\'s listener. What a ' +
+            'socket presents is a property of the socket and not of a realm, ' +
+            'and the first two carry every realm. This row read ' +
+            '`TLS (8443 / 9443)` until 2026-09-16, ' +
+            'when those two listeners were deleted: what a client ' +
+            'certificate is worth is decided where it is USED, and that is ' +
+            'in the realm the request arrived in.' },
     { family: 'SPIFFE', state: 'full', by: 'socket',
       note: 'A TRUST DOMAIN, AN AUTHORITY, A REGISTRY AND A PAIR OF gRPC ' +
             'SOCKETS PER REALM since 2026-09-12 — this row read `none` until ' +

@@ -18,7 +18,8 @@
 // are not `app`:
 //
 //   * the two TLS listeners, which have a handler of their own in
-//     `tls/tls_server.js` rather than going through express;
+//     `tls/tls_server.js` rather than going through express — **DELETED ON
+//     2026-09-16**, see below;
 //   * the directory, on 389 and 636;
 //   * the KDC, on TCP and UDP 88;
 //   * SPIFFE's two gRPC surfaces.
@@ -26,15 +27,27 @@
 // Everything minted on those is written by the front process, and no worker was
 // ever marked stale for it.
 //
+// **ONE OF THE FIVE FAMILIES IS GONE, AND THE FILE IS UNCHANGED BECAUSE THE
+// DECISION IT ASSERTS NEVER WAS ABOUT ANY OF THEM.** The 8443 and 9443
+// listeners were deleted on 2026-09-16 and the certificate sign-in became `GET
+// /tls/sign-in` on the main port. That path IS `app`, but it is still answered
+// by the front process — `/tls` is in `request_pool.js`'s `NEVER_DISPATCHED`,
+// because what it reads is the connection — so the session it mints is still
+// a front-process write, beside the directory's, the KDC's and SPIFFE's. What
+// is asserted below is `noteLocalWrites()`'s comparison of two integers, which
+// is deliberately testable apart from whoever calls it.
+//
 // ---------------------------------------------------------------------------
 // THE FAILURE IT PRODUCED, WHICH IS WHY THIS FILE IS NOT ABOUT AN ABSTRACTION.
 //
-// A verified client certificate on 9443 starts a sign-on session (2026-09-05).
-// In `dispatch` mode the session is minted in the front process and `/logout`
-// is answered by a WORKER, whose own copy of the session store had never heard
-// of it — so a global sign-out reported that it had ended everything and left a
-// live way in. `sts_global_logout` caught it as "8 were live and 1 still are",
-// naming a client certificate on the required-client-certificate listener.
+// A verified client certificate on 9443 started a sign-on session (2026-09-05;
+// at `GET /tls/sign-in` on the main port since 2026-09-16, still answered by
+// the front process). In `dispatch` mode the session is minted in the front
+// process and `/logout` is answered by a WORKER, whose own copy of the session
+// store had never heard of it — so a global sign-out reported that it had
+// ended everything and left a live way in. `sts_global_logout` caught it as "8
+// were live and 1 still are", naming a client certificate on the
+// required-client-certificate listener (9443, since deleted).
 //
 // **IT IS INTERMITTENT BY CONSTRUCTION, WHICH IS THE ARGUMENT FOR TESTING IT
 // HERE.** The worker does get there in the end — the replication poll is five
@@ -91,7 +104,7 @@ function generation() {
 // 1. THE FIRST SAMPLE BUMPS NOTHING.
 //
 // This process writes plenty on the way up — it seeds a directory, a realm
-// registry and three of its own applications — and all of it is in the store
+// registry and its own internal applications — and all of it is in the store
 // before a worker is forked. A bump for that would send every worker through a
 // barrier on its first request to fetch what it was born holding.
 // ---------------------------------------------------------------------------

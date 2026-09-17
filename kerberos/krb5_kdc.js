@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: krb5_kdc.js
@@ -21,7 +22,8 @@
 //    design is that it reads the live Express router and so cannot go stale —
 //    and a protocol family it cannot see is the one way it can. The port-88
 //    listener therefore needs an explicit entry there; the drift test in
-//    tests/sts_metadata.js has to tolerate an entry with no route behind it.
+//    tests/vendored/sts_metadata.js has to tolerate an entry with no route
+//    behind it.
 //  * **Port 88 is privileged.** In the container this process is root and binds
 //    it directly. A host run is not root, so `KRB5_KDC_PORT` exists — and if it
 //    is changed, the api's `krb5AllowedPorts` has to allow the new one or the
@@ -59,10 +61,13 @@
 // ---------------------------------------------------------------------------
 // TWO REALMS, and one shared key between them.
 //
-// This KDC answers for EXAMPLE.COM **and** PARTNER.COM, which a real one never
-// does — the simplification hides finding the other realm's KDC (DNS and SRV
-// records) and none of the protocol. What it buys is that the whole cross-realm
-// referral can be walked without a second container.
+// The DEFAULT trust realm's KDC, in development mode, answers for EXAMPLE.COM
+// **and** PARTNER.COM, which a real one never does — the simplification hides
+// finding the other realm's KDC (DNS and SRV records) and none of the
+// protocol. What it buys is that the whole cross-realm referral can be walked
+// without a second container. Any other trust realm's KDC answers for its own
+// Kerberos realm alone and holds no trust (see WHICH TRUST REALM below, and
+// kerberos/CLAUDE.md).
 //
 // A trust is not a setting: it is one principal,
 // krbtgt/PARTNER.COM@EXAMPLE.COM, whose key both KDCs hold. Ask this KDC for a
@@ -133,11 +138,11 @@ const applications = require('../common/applications');
 // delegation, which is why the refusals are recorded here as carefully as the
 // successes. A library like the two above: it registers no route.
 const delegation = require('../common/delegation');
-// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, both of
-// which this module already has. See `common/issuance_gate.js`; an unfilled
-// decider answers "allowed", so the parent project's in-process Kerberos jobs
-// — which load this file and never the XACML family — behave exactly as they
-// did.
+// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
+// `error_codes`, all of which this module already has. See
+// `common/issuance_gate.js`; an unfilled decider answers "allowed", so the
+// parent project's in-process Kerberos jobs — which load this file and never
+// the XACML family — behave exactly as they did.
 //
 // **IT ADDS ONE LINE TO THE PARENT PROJECT'S `sts/` COPY SET**, which is the
 // standing obligation CLAUDE.md's last section describes: the closure of what
@@ -165,7 +170,33 @@ const principals = require('./krb5_principals.js');
 const kpac = require('./krb5_pac.js');
 
 const KDC_PORT = config.value('krb5.kdcPort');
-const REALM = principals.REALM;
+// The realms library, for the one thing this file does with it: entering the
+// trust realm a request is FOR before answering it (see routeOf()). A LEAF that
+// registers no route, already in the parent project's copy set through
+// `common/app.js` and `krb5_principals.js`.
+const realms = require('../common/realms');
+
+// THE KERBEROS REALM THIS KDC IS ANSWERING AS, which since 2026-09-15 is a
+// function of the AMBIENT TRUST REALM rather than a constant read at require
+// time: `principals.REALM` answers for the realm the request was routed into.
+// Outside any realm — an early refusal, a log line at startup — that is the
+// default realm's, exactly what the constant held.
+// **AND IT FALLS BACK TO THE DEFAULT REALM'S NAME.** A trust realm whose
+// Kerberos is off has no Kerberos realm name at all, and a KRB-ERROR built
+// inside one — the refusal for a request on that realm's own /KdcProxy — would
+// otherwise carry an empty `realm` and an `sname` of `krbtgt/`. A client reads
+// that field to decide where to go next, so it is answered with the name of the
+// KDC that does exist.
+function ourRealm() {
+  log.debug("Entering ourRealm().");
+  const here = principals.REALM;
+  if (here) {
+    log.debug("Leaving ourRealm().");
+    return here;
+  }
+  log.debug("Leaving ourRealm(). This realm has no KDC; the default realm's.");
+  return principals.nameOf(realms.DEFAULT_ID);
+}
 
 // Active Directory's default tolerance, and the reason KRB_AP_ERR_SKEW is one
 // of the most common Kerberos failures in the field. Functions rather than
@@ -338,7 +369,7 @@ async function buildPacFor(client, opts) {
   log.debug('Entering buildPacFor(). client=' + client.name.join('/'));
   const options = opts || {};
   const identity = client.pac;
-  const clientRealm = options.clientRealm || client.realm || REALM;
+  const clientRealm = options.clientRealm || client.realm || ourRealm();
   const serverKey = options.serverKey;
   const kdcKey = options.kdcKey;
 
@@ -440,7 +471,8 @@ async function buildPacFor(client, opts) {
 // a successful TGS-REP contains the ticket it asked for will hand a
 // ticket-granting ticket to a web server, and the web server will report that
 // the ticket does not decrypt — a message about a ticket, for a problem about a
-// realm. See readTgsRep() in krb5_client.js, which reports it explicitly.
+// realm. See readTgsRep() in the parent project's krb5_client.js, which
+// reports it explicitly.
 //
 // Three details that are real and easy to miss:
 //
@@ -652,8 +684,8 @@ async function resolveS4u(ctx) {
   //
   // Built HERE — the first line at which the request is known to be an S4U one
   // at all — and carried onto every refusal below through refuseS4u(), so that
-  // the eleven ways this function can say no produce eleven ROWS rather than
-  // eleven log lines. A refused delegation is the row people actually come to
+  // the twelve ways this function can say no produce twelve ROWS rather than
+  // twelve log lines. A refused delegation is the row people actually come to
   // that page for: it names the two accounts, the two attributes, and which of
   // them was missing, at the moment the KDC decided.
   //
@@ -1084,8 +1116,8 @@ async function resolveS4u(ctx) {
 }
 
 // [MS-SFU] section 2.2.1's S4UByteArray. Duplicated deliberately from the
-// client's copy — the two ends have to agree, and tests/krb5_codec_sync.js
-// compares them.
+// client's copy — the two ends have to agree, and the parent project's
+// tests/krb5_codec_sync.js compares them.
 function s4uByteArray(userName, userRealm, authPackage) {
   log.debug("Entering s4uByteArray().");
   const parts = [Uint8Array.from([
@@ -1110,7 +1142,7 @@ function s4uByteArray(userName, userRealm, authPackage) {
 //
 // It returns the same `{ error }` shape resolveS4u() already returned, with the
 // intent alongside — handleTgsReq() records it at the ONE place it handles
-// `s4u.error`, so eleven refusal sites are still one recording site.
+// `s4u.error`, so twelve refusal sites are still one recording site.
 function refuseS4u(intent, code, options) {
   log.debug("Entering refuseS4u().");
   const opts = options || {};
@@ -1152,8 +1184,8 @@ function errorReply(code, options) {
     errorCode: code,
     crealm: opts.crealm || null,
     cname: opts.cname || null,
-    realm: opts.realm || REALM,
-    sname: opts.sname || { type: 2, name: ['krbtgt', REALM] },
+    realm: opts.realm || ourRealm(),
+    sname: opts.sname || { type: 2, name: ['krbtgt', ourRealm()] },
     eText: opts.eText || null,
     eData: opts.eData || null
   });
@@ -1167,9 +1199,9 @@ function errorReply(code, options) {
           actor: opts.cname && opts.cname.name
             ? opts.cname.name.join('/') +
               (opts.crealm ? '@' + opts.crealm : '') : '',
-          target: ((opts.sname && opts.sname.name) || ['krbtgt', REALM]).join(
-              '/') +
-                  '@' + (opts.realm || REALM)
+          target: ((opts.sname && opts.sname.name) ||
+                   ['krbtgt', ourRealm()]).join('/') +
+                  '@' + (opts.realm || ourRealm())
         }
       });
     } catch (e) {
@@ -1348,9 +1380,11 @@ async function handleAsReq(request) {
   log.debug('Entering handleAsReq().');
   const body = request.reqBody;
 
-  // Either realm this process answers for. KDC_ERR_WRONG_REALM for anything
-  // else, which is a distinct and useful refusal: it means the client asked the
-  // wrong KDC rather than that the account does not exist.
+  // A Kerberos realm the AMBIENT trust realm's KDC answers for — two in the
+  // default realm in development, one otherwise (realmsServed()).
+  // KDC_ERR_WRONG_REALM for anything else, which is a distinct and useful
+  // refusal: it means the client asked the wrong KDC rather than that the
+  // account does not exist.
   if (principals.realmsServed().indexOf(body.realm) === -1) {
     log.info('krb5: wrong realm ' + JSON.stringify(body.realm) + '; this KDC ' +
         'serves ' +
@@ -1362,7 +1396,7 @@ async function handleAsReq(request) {
       // yet, and could not — the request named a realm we do not serve, so
       // there is no answering realm to speak of. A KRB-ERROR's `realm` is the
       // sender's identity.
-      realm: REALM, sname: body.sname,
+      realm: ourRealm(), sname: body.sname,
       eText: 'this KDC serves ' + principals.realmsServed().join(' and ') +
           ', ' +
           'not ' + body.realm
@@ -1372,7 +1406,7 @@ async function handleAsReq(request) {
   if (!body.cname) {
     log.debug("Leaving handleAsReq().");
     return errorReply(6, { errorCode: 'STS-KRB-0019',
-      realm: REALM, sname: body.sname,
+      realm: ourRealm(), sname: body.sname,
       eText: 'no client name in the request' });
   }
 
@@ -1732,6 +1766,27 @@ async function handleTgsReq(request) {
   log.debug('Entering handleTgsReq().');
   const body = request.reqBody;
 
+  // **A NAME THIS REALM DOES NOT SERVE IS REFUSED** (2026-09-15), and it is the
+  // first thing asked — before the ticket is even looked for, as the AS
+  // exchange has always done. Until then an unserved realm in a TGS-REQ fell
+  // back silently to this KDC's own realm and answered as that, so a request
+  // for another trust realm's Kerberos realm, or for one nobody serves, got a
+  // ticket out of the wrong database rather than the error RFC 4120 has for
+  // exactly this.
+  if (principals.realmsServed().indexOf(body.realm) === -1) {
+    log.info('krb5: wrong realm ' + JSON.stringify(body.realm) + ' in a ' +
+             'TGS-REQ; this KDC serves ' +
+             (principals.realmsServed().join(' and ') || 'no realm here'));
+    log.debug("Leaving handleTgsReq().");
+    return errorReply(68, {
+      errorCode: 'STS-KRB-0121',
+      realm: ourRealm(), sname: body.sname,
+      eText: 'this KDC serves ' +
+             (principals.realmsServed().join(' and ') || 'no realm here') +
+             ', not ' + body.realm
+    });
+  }
+
   const paTgs = (request.padata || []).filter(function (pa) {
     return pa.type === msgs.PA_TYPE.TGS_REQ;
   })[0];
@@ -1741,7 +1796,7 @@ async function handleTgsReq(request) {
     // but a structural one, and saying which is useful.
     return errorReply(25, {
       errorCode: 'STS-KRB-0026',
-      realm: REALM, sname: body.sname,
+      realm: ourRealm(), sname: body.sname,
       eText: 'a TGS-REQ must carry the TGT in a PA-TGS-REQ; this request ' +
              'carries none'
     });
@@ -1752,16 +1807,15 @@ async function handleTgsReq(request) {
     apReq = msgs.readApReq(paTgs.value);
   } catch (e) {
     log.debug("Leaving handleTgsReq().");
-    return errorReply(60, { realm: REALM, sname: body.sname,
+    return errorReply(60, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0027',
       eText: 'the PA-TGS-REQ does not contain a readable AP-REQ: ' +
              e.message });
   }
 
   // 1. The ticket, under the krbtgt key. A ticket for anything else presented
-  //    here
-  // is a different error, and worth distinguishing: it means the client asked
-  // the wrong server. Looked up in the TICKET'S OWN REALM, not in ours. A
+  // here is a different error, and worth distinguishing: it means the client
+  // asked the wrong server. Looked up in the TICKET'S OWN REALM, not in ours. A
   // cross-realm ticket-granting ticket is named krbtgt/OUR-REALM but was ISSUED
   // BY the other realm, so its `realm` field says EXAMPLE.COM while we are
   // answering as PARTNER.COM — and the key that opens it is the trust key held
@@ -1773,7 +1827,7 @@ async function handleTgsReq(request) {
                                         apReq.ticket.realm);
   if (!ticketService) {
     log.debug("Leaving handleTgsReq().");
-    return errorReply(7, { realm: REALM, sname: apReq.ticket.sname,
+    return errorReply(7, { realm: ourRealm(), sname: apReq.ticket.sname,
       errorCode: 'STS-KRB-0028',
       eText: 'the ticket presented is for ' +
              apReq.ticket.sname.name.join('/') +
@@ -1795,7 +1849,7 @@ async function handleTgsReq(request) {
   } catch (e) {
     log.info('krb5: the presented ticket will not decrypt: ' + e.message);
     log.debug("Leaving handleTgsReq().");
-    return errorReply(31, { realm: REALM, sname: body.sname,
+    return errorReply(31, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0029',
       eText: 'the ticket does not decrypt with this KDC\'s key for ' +
              apReq.ticket.sname.name.join('/') });
@@ -1804,7 +1858,7 @@ async function handleTgsReq(request) {
     log.info('krb5: refusing a TGS-REQ: ' + badKeyVersion + '. ' +
         'KRB_AP_ERR_BADKEYVER.');
     log.debug("Leaving handleTgsReq().");
-    return errorReply(44, { realm: REALM, sname: body.sname,
+    return errorReply(44, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0115',
       eText: badKeyVersion });
   }
@@ -1819,7 +1873,7 @@ async function handleTgsReq(request) {
   } catch (e) {
     log.info('krb5: the TGS-REQ Authenticator will not decrypt: ' + e.message);
     log.debug("Leaving handleTgsReq().");
-    return errorReply(31, { realm: REALM, sname: body.sname,
+    return errorReply(31, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0030',
       eText: 'the Authenticator does not decrypt with the ticket\'s session ' +
              'key at key usage 7' });
@@ -1833,7 +1887,7 @@ async function handleTgsReq(request) {
              authenticator.cname.name.join('/') +
              ' but the ticket names ' + ticketPart.cname.name.join('/'));
     log.debug("Leaving handleTgsReq().");
-    return errorReply(36, { realm: REALM, sname: body.sname,
+    return errorReply(36, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0031',
       eText: 'the Authenticator and the ticket name different clients' });
   }
@@ -1844,7 +1898,7 @@ async function handleTgsReq(request) {
     log.debug("Leaving handleTgsReq().");
     return errorReply(32, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0032',
-      realm: REALM, sname: body.sname,
+      realm: ourRealm(), sname: body.sname,
       eText: 'the ticket expired at ' + ticketPart.endtime.toISOString() });
   }
   if (ticketPart.starttime &&
@@ -1852,7 +1906,8 @@ async function handleTgsReq(request) {
                                       clockSkewSeconds() * 1000)) {
     log.debug("Leaving handleTgsReq().");
     return errorReply(33, { errorCode: 'STS-KRB-0033',
-      realm: REALM, sname: body.sname, eText: 'the ticket is not yet valid' });
+      realm: ourRealm(), sname: body.sname,
+      eText: 'the ticket is not yet valid' });
   }
 
   // ---------------------------------------------------------------------
@@ -1883,9 +1938,10 @@ async function handleTgsReq(request) {
   // does not carry one — so a ticket obtained for somebody through S4U2Self is
   // tested against the person it names, which is the account that signed out.
   //
-  // And it is BEHIND A SETTING that defaults on. Every refusal in this service
-  // is switchable for the reason RFC 9700 mode is: a client is exercised by
-  // both answers, and a refusal that cannot be turned off removes a test case.
+  // And it is BEHIND A SETTING that defaults on (`logout.kerberosSignOut`).
+  // Like most refusals in this service it is switchable for the reason RFC
+  // 9700 mode is: a client is exercised by both answers, and a refusal that
+  // cannot be turned off removes a test case.
   // ---------------------------------------------------------------------
   if (config.value('logout.kerberosSignOut')) {
     const signedOut = principals.signedOutAt(ticketPart.cname.name,
@@ -1903,7 +1959,7 @@ async function handleTgsReq(request) {
       log.debug("Leaving handleTgsReq().");
       return errorReply(20, {
         errorCode: 'STS-KRB-0034',
-        crealm: ticketPart.crealm, cname: ticketPart.cname, realm: REALM,
+        crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ourRealm(),
         sname: body.sname,
         eText: 'the ticket was authenticated at ' +
                ticketPart.authtime.toISOString() +
@@ -1920,18 +1976,17 @@ async function handleTgsReq(request) {
     log.debug("Leaving handleTgsReq().");
     return errorReply(37, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0035',
-      realm: REALM, sname: body.sname,
+      realm: ourRealm(), sname: body.sname,
       eText: 'the Authenticator\'s clock is ' + Math.round(authSkew) + ' ' +
           'seconds out' });
   }
 
   // 3. The checksum, over the body's ORIGINAL bytes. body.raw is kept by the
-  //    reader
-  // for exactly this: a re-encoding could differ and the checksum would then
-  // cover something else, which is indistinguishable from tampering.
+  // reader for exactly this: a re-encoding could differ and the checksum would
+  // then cover something else, which is indistinguishable from tampering.
   if (!authenticator.cksum) {
     log.debug("Leaving handleTgsReq().");
-    return errorReply(50, { realm: REALM, sname: body.sname,
+    return errorReply(50, { realm: ourRealm(), sname: body.sname,
       errorCode: 'STS-KRB-0036',
       eText: 'the TGS-REQ Authenticator carries no checksum over the request ' +
              'body' });
@@ -1950,19 +2005,19 @@ async function handleTgsReq(request) {
     log.debug("Leaving handleTgsReq().");
     return errorReply(50, { crealm: ticketPart.crealm, cname: ticketPart.cname,
       errorCode: 'STS-KRB-0037',
-      realm: REALM, sname: body.sname,
+      realm: ourRealm(), sname: body.sname,
       eText: 'the Authenticator\'s checksum does not match the request body ' +
              '(checksum type ' +
              authenticator.cksum.type + ', key usage 6)' });
   }
 
   // Which realm this request is being answered AS. It comes from the request
-  // body, not from a constant, because this process serves both realms: a
-  // TGS-REQ whose realm is PARTNER.COM is one the trusted realm's KDC is being
-  // asked to answer, and every principal lookup and every field of the reply
-  // below has to follow that.
-  const answeringRealm = principals.realmsServed().indexOf(body.realm) !== -1
-    ? body.realm : REALM;
+  // body, not from a constant, because this trust realm may serve two Kerberos
+  // realms: a TGS-REQ whose realm is PARTNER.COM is one the trusted realm's KDC
+  // is being asked to answer, and every principal lookup and every field of the
+  // reply below has to follow that. A name this realm does not serve was
+  // refused at the top of this function.
+  const answeringRealm = body.realm;
 
   // Now the request itself. `let`, not `const`: findOrCreateService() below may
   // fill it in for a host this mock is willing to be, which is the whole of the
@@ -2020,11 +2075,6 @@ async function handleTgsReq(request) {
     }
     service = created;
   }
-  // Looked up by name rather than reused from the presented ticket's sname:
-  // three of the PAC's four signatures are made with the KRBTGT key
-  // specifically, and while the ticket presented here is normally a TGT, saying
-  // so explicitly is what keeps this correct once cross-realm referrals arrive
-  // and the presented ticket is somebody else's krbtgt.
   // ---------------------------------------------------------------------------
   // THE ROLE GATE, asked once the service principal is known and before
   // anything is signed.
@@ -2070,6 +2120,11 @@ async function handleTgsReq(request) {
       eText: kerberosRoleAnswer.why });
   }
 
+  // The krbtgt of the ANSWERING realm, looked up by name rather than reused
+  // from the presented ticket's sname: three of the PAC's four signatures are
+  // made with the KRBTGT key specifically, and while the ticket presented here
+  // is normally this realm's own TGT, after a cross-realm referral it is the
+  // inter-realm krbtgt, whose key is the trust's and not this realm's.
   const krbtgt = principals.find(['krbtgt', answeringRealm], answeringRealm);
   if (!krbtgt) {
     log.error(errorCodes.tag('STS-KRB-0022') + 'krb5: there is no krbtgt ' +
@@ -2095,20 +2150,6 @@ async function handleTgsReq(request) {
   }
   const profile = kcrypto.etypeById(etype);
 
-  // ---------------------------------------------------------------------------
-  // A RENEWAL. The RENEW option means "give me the same ticket again, later"
-  // rather than "issue me a new one", and three rules make it that rather than
-  // a fresh authentication:
-  //
-  //   * the presented ticket must be flagged RENEWABLE and carry a renew-till;
-  //   * the new endtime is capped at renew-till, which does NOT move — that cap
-  //     is the whole point of a renewable ticket, since otherwise it would be
-  //     immortal;
-  //   * **authtime is preserved.** A renewed ticket must not look freshly
-  //     authenticated: a service reading authtime to decide how recently the
-  //     user proved themselves would otherwise be told a lie that grows more
-  //     wrong with every renewal.
-  // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   // FORWARDED — UNCONSTRAINED delegation, and the one the KDC cannot police
   // afterwards.
@@ -2220,6 +2261,20 @@ async function handleTgsReq(request) {
     }));
   }
 
+  // ---------------------------------------------------------------------------
+  // A RENEWAL. The RENEW option means "give me the same ticket again, later"
+  // rather than "issue me a new one", and three rules make it that rather than
+  // a fresh authentication:
+  //
+  //   * the presented ticket must be flagged RENEWABLE and carry a renew-till;
+  //   * the new endtime is capped at renew-till, which does NOT move — that cap
+  //     is the whole point of a renewable ticket, since otherwise it would be
+  //     immortal;
+  //   * **authtime is preserved.** A renewed ticket must not look freshly
+  //     authenticated: a service reading authtime to decide how recently the
+  //     user proved themselves would otherwise be told a lie that grows more
+  //     wrong with every renewal.
+  // ---------------------------------------------------------------------------
   const wantsRenew = (body.kdcOptions || []).indexOf(
       msgs.KDC_OPTION.RENEW) !== -1;
   if (wantsRenew) {
@@ -2280,11 +2335,11 @@ async function handleTgsReq(request) {
     request: request, body: body, ticketPart: ticketPart, service: service,
     answeringRealm: answeringRealm, sessionKey: sessionKey, apReq: apReq
   });
-  // THE ONE PLACE AN S4U REFUSAL IS RECORDED. resolveS4u() can say no eleven
+  // THE ONE PLACE AN S4U REFUSAL IS RECORDED. resolveS4u() can say no twelve
   // ways and every one of them comes back through here carrying its intent, so
-  // the delegation register has one recording site rather than eleven — the
+  // the delegation register has one recording site rather than twelve — the
   // same arrangement recordAuthentication() has for the sixteen families, and
-  // for the same reason: eleven call sites means a twelfth that is not.
+  // for the same reason: twelve call sites means a thirteenth that is not.
   //
   // An `intent` is absent only for a refusal raised before the request was
   // known to be an S4U one at all, which today is none of them.
@@ -2582,13 +2637,14 @@ async function handleTgsReq(request) {
   // presented nothing, a service asked on their behalf — and recording that as
   // if they had signed in would be the one place this console could libel
   // somebody. So the requester is named in the note and the method says which
-  // of the three this was. THE SERVICE. A TGS-REP is a ticket FOR a named
-  // service principal, which is Kerberos's application identity — the only one
-  // in this service that this process may have created on demand
-  // (KRB5_SERVICE_DOMAINS). It is recorded here rather than at the AS exchange
-  // because an AS-REQ names no service but the krbtgt: a TGT is a ticket for
-  // the KDC itself, and filing that as an application would put this service in
-  // its own registry.
+  // of the three this was.
+  //
+  // THE SERVICE. A TGS-REP is a ticket FOR a named service principal, which
+  // is Kerberos's application identity — the only one in this service that
+  // this process may have created on demand (KRB5_SERVICE_DOMAINS). It is
+  // recorded here rather than at the AS exchange because an AS-REQ names no
+  // service but the krbtgt: a TGT is a ticket for the KDC itself, and filing
+  // that as an application would put this service in its own registry.
   applications.seen({
     identifier: body.sname.name.join('/') + '@' + answeringRealm,
     kind: 'kerberos-service',
@@ -2697,26 +2753,100 @@ async function catchUpWithCluster() {
   return answer;
 }
 
+// ---------------------------------------------------------------------------
+// WHICH TRUST REALM A REQUEST IS FOR (2026-09-15), AND WHY IT IS ONE STEP HERE.
+//
+// Port 88 is one socket for every trust realm — a raw socket has no path to put
+// a realm segment in — and the Kerberos realm NAME inside every AS-REQ and
+// TGS-REQ is the discriminator the protocol already carries. So the realm is
+// chosen once, here, in the one function every door reaches (both sockets and
+// MS-KKDCP), and the request is answered INSIDE that realm: `realms.run()` puts
+// it in scope for the settings every handler reads, the principal database it
+// looks names up in, and the statistics, audit rows and delegation acts it
+// records. Routing at each handler instead would be two places to forget, and
+// the thing forgotten would be silent — an answer from the wrong realm's
+// database is a ticket, not an error.
+//
+// TWO DOORS, TWO RULES:
+//
+//   * **A REALM-PREFIXED `/realm/<id>/KdcProxy`** is PINNED to that realm: the
+//     name in the request must be one that realm serves, and anything else is
+//     KDC_ERR_WRONG_REALM (STS-KRB-0122). The prefix is an address somebody
+//     chose, so answering a different realm's request on it would make the
+//     prefix a decoration.
+//   * **THE SOCKETS AND THE UNPREFIXED `/KdcProxy`** route by NAME, which is
+//     what a Kerberos client configures (`kdc = …` per realm in krb5.conf) and
+//     what makes one port serve every realm.
+//
+// A name no realm answers to is left to the handlers, which refuse it with the
+// sentence they always did — KDC_ERR_WRONG_REALM naming the realms the DEFAULT
+// realm serves. That is deliberate: this is an unauthenticated socket, and
+// listing every trust realm's Kerberos name on it would publish the realms of a
+// service whose realms are otherwise told apart by a path somebody has to know.
+// ---------------------------------------------------------------------------
+function routeOf(request, options) {
+  log.debug("Entering routeOf().");
+  const asked = String(((request || {}).reqBody || {}).realm || '');
+  const pinned = (options && options.realm) || null;
+  if (pinned) {
+    if (principals.servedIn(pinned.id).indexOf(asked) === -1) {
+      log.info('krb5: a request on realm "' + pinned.id + '"\'s own KdcProxy ' +
+               'named ' + JSON.stringify(asked) + ', which that realm does ' +
+               'not serve.');
+      log.debug("Leaving routeOf(). The prefix does not serve it.");
+      return { realm: pinned, refusal: { errorCode: 'STS-KRB-0122',
+        eText: 'this address serves ' +
+               (principals.servedIn(pinned.id).join(' and ') ||
+                'no Kerberos realm') + ', not ' + asked } };
+    }
+    log.debug("Leaving routeOf(). Pinned by the path.");
+    return { realm: pinned, refusal: null };
+  }
+  const routed = principals.trustRealmFor(asked);
+  log.debug("Leaving routeOf(). " +
+            (routed ? routed.id : 'no realm answers to that name'));
+  return { realm: routed || realms.DEFAULT_REALM, refusal: null };
+}
+
 // The dispatcher. Anything that is not a request this KDC serves gets an error
 // rather than silence: a client waiting for a reply that never comes learns
 // nothing, and "I do not do that yet" is information.
-async function handleMessage(bytes) {
+//
+// `options.realm` is the trust realm a realm-prefixed /KdcProxy arrived under —
+// see routeOf(). The sockets pass none.
+async function handleMessage(bytes, options) {
   log.debug('Entering handleMessage(). bytes=' + bytes.length);
   let identified = null;
   try {
     identified = msgs.identify(bytes);
     if (!identified) throw new Error('no [APPLICATION n] tag');
-    if (identified.applicationNumber === msgs.APPLICATION.AS_REQ) {
+    if (identified.applicationNumber === msgs.APPLICATION.AS_REQ ||
+        identified.applicationNumber === msgs.APPLICATION.TGS_REQ) {
+      const isAs = identified.applicationNumber === msgs.APPLICATION.AS_REQ;
       const request = msgs.readKdcReq(bytes);
-      await catchUpWithCluster();
+      const route = routeOf(request, options);
       log.debug("Leaving handleMessage().");
-      return await handleAsReq(request);
-    }
-    if (identified.applicationNumber === msgs.APPLICATION.TGS_REQ) {
-      const request = msgs.readKdcReq(bytes);
-      await catchUpWithCluster();
-      log.debug("Leaving handleMessage().");
-      return await handleTgsReq(request);
+      return await realms.run(route.realm, async function () {
+        log.debug("Entering an answer in realm " + route.realm.id + ".");
+        // THE CLUSTER BARRIER IS RUN INSIDE THE ROUTED REALM (2026-09-15).
+        // It reads `logout.kerberosSignOut`, which is a setting a realm
+        // carries — run before the route it would have read the DEFAULT
+        // realm's value for every request on the socket, so a realm that
+        // turned sign-out stamps on would have skipped the barrier its own
+        // setting asks for, and STS-KRB-0118 would not even have been logged.
+        await catchUpWithCluster();
+        if (route.refusal) {
+          log.debug("Leaving the answer. Refused by the route.");
+          // error-code: none — the code is the route's own, chosen in routeOf()
+          return errorReply(68, {
+            errorCode: route.refusal.errorCode,
+            realm: ourRealm(), sname: request.reqBody.sname,
+            eText: route.refusal.eText
+          });
+        }
+        log.debug("Leaving the answer.");
+        return isAs ? handleAsReq(request) : handleTgsReq(request);
+      });
     }
     log.info('krb5: received ' + identified.name + ', which is not a request ' +
                                                    'a KDC answers');
@@ -2741,7 +2871,7 @@ function startTcp(port) {
   const server = net.createServer(function (socket) {
     let buffer = Buffer.alloc(0);
     // THE CLIENT'S ADDRESS, read off the socket — which, with
-    // global.proxyProtocol on, `common/proxy_protocol.js` (installed from
+    // global.proxyProtocol on, `common/proxy_protocol.ts` (installed from
     // server.js, so this file gains no require) has already set to the
     // address in the PROXY header rather than the load balancer's.
     const peer = (socket.remoteAddress || '?') + ':' +
@@ -2802,7 +2932,7 @@ function startTcp(port) {
       });
     });
   });
-  server.on('error', function (err) {
+  server.on('error', /** @param {any} err */ function (err) {
     log.error(errorCodes.tag('STS-KRB-0052') +
       'krb5: the TCP listener on port ' + port + ' failed: ' + err.message +
       (err.code === 'EACCES'
@@ -2814,8 +2944,9 @@ function startTcp(port) {
   server.listen(port, listenHost(), function () {
     // The BOUND port, not the requested one: asked for 0 the OS picks, and
     // logging the request would print "listening on TCP 0".
-    log.info('krb5: KDC listening on TCP ' + server.address().port + ' for ' +
-        'realm ' + REALM);
+    log.info('krb5: KDC listening on TCP ' +
+             (/** @type {any} */ (server.address())).port + ' for ' +
+        'realm ' + ourRealm());
   });
   log.debug('Leaving startTcp().');
   return server;
@@ -2857,7 +2988,7 @@ function startUdp(port) {
   });
   socket.bind(port, listenHost(), function () {
     log.info('krb5: KDC listening on UDP ' + socket.address().port + ' for ' +
-        'realm ' + REALM);
+        'realm ' + ourRealm());
   });
   log.debug('Leaving startUdp().');
   return socket;
@@ -2903,7 +3034,11 @@ app.post('/KdcProxy', function (req, res) {
   const declared =
       (framed[0] << 24 | framed[1] << 16 | framed[2] << 8 | framed[3]) >>> 0;
   const message = framed.subarray(4, 4 + declared);
-  handleMessage(message).then(function (reply) {
+  // `req.realm` is set by app.js's first middleware ONLY for a path that
+  // carried a realm prefix, which is exactly the distinction routeOf() needs:
+  // /realm/acme/KdcProxy is pinned to acme, and a bare /KdcProxy routes by the
+  // realm name in the request like the sockets do.
+  handleMessage(message, { realm: req.realm || null }).then(function (reply) {
     const replyFramed = new Uint8Array(4 + reply.length);
     replyFramed[0] = (reply.length >>> 24) & 255;
     replyFramed[1] = (reply.length >>> 16) & 255;
@@ -2934,14 +3069,15 @@ app.post('/KdcProxy', function (req, res) {
 });
 
 // A non-spec convenience so a test (and a curious human) can see what this KDC
-// knows without decrypting anything. It publishes NO keys and no SERVICE
-// passwords — only the principals, their supported etypes and their salts,
-// which is exactly what a client can already learn from PA-ETYPE-INFO2.
+// knows without decrypting anything. It publishes NO keys and no CONFIGURED
+// account's password — only the principals, their supported etypes and their
+// salts, which is exactly what a client can already learn from PA-ETYPE-INFO2.
 //
-// The one exception is `accountPolicy` below: the password every USER account
-// shares. That one is not a secret to keep — it is the same for everybody, the
-// README states it, and it is the only fact about this KDC a client cannot
-// learn from the protocol.
+// The exceptions are in `accountPolicy` below, and only in development: the
+// password every USER account shares, and the one every service created on
+// demand shares. Neither is a secret to keep there — each is the same for
+// everybody, the README states it, and it is a fact about this KDC a client
+// cannot learn from the protocol. Product mode withholds both (see below).
 app.get('/krb5/principals', function (req, res) {
   log.debug('Entering GET /krb5/principals.');
   const list = principals.all().map(function (p) {
@@ -2981,10 +3117,11 @@ app.get('/krb5/principals', function (req, res) {
   // replaced by a sentence saying they are withheld and why, rather than
   // omitted — a field that silently vanished would read as a bug.
   // -------------------------------------------------------------------------
-  // BOTH answers must allow it: the database was built in the PROCESS's mode
-  // (`seedsDemoPrincipals`), and this request may be in a realm whose own mode
-  // is product. Asking only the ambient realm would let a development realm
-  // inside a product process publish the process's passwords.
+  // BOTH answers must allow it: the realm's database was built in the mode
+  // captured when it was built (`seedsDemoPrincipals` — the PROCESS's mode for
+  // the default realm, see krb5_principals.js's SEEDS_DEMO), and the realm's
+  // mode may have been read differently since. Asking only one of them would
+  // let a development answer publish passwords a product database holds.
   const published = principals.seedsDemoPrincipals && mode.opensTestControls();
   const withheld = 'withheld: this service is in product mode, where a ' +
     'password on an unauthenticated page is a long-term key anybody can use. ' +
@@ -2992,7 +3129,7 @@ app.get('/krb5/principals', function (req, res) {
   const service = principals.serviceAccount();
   log.debug('Leaving GET /krb5/principals. ' + list.length + ' principals.');
   res.status(200).json({
-    realm: REALM,
+    realm: ourRealm(),
     kdcPort: KDC_PORT,
     clockSkewSeconds: clockSkewSeconds(),
     clockOffsetSeconds: clockOffsetSeconds(),
@@ -3070,8 +3207,9 @@ app.get('/krb5/principals', function (req, res) {
 // KRB_ERR_RESPONSE_TOO_BIG sends the retry to the same place. Binding TCP and
 // UDP independently with port 0 gives two DIFFERENT ephemeral ports, so the UDP
 // listener silently becomes unreachable at the address anything else was told
-// about. (Found by tests/krb5_as_exchange.js, whose UDP case timed out against
-// a KDC that was listening perfectly well on a port nobody knew.)
+// about. (Found by the parent project's tests/krb5_as_exchange.js, whose UDP
+// case timed out against a KDC that was listening perfectly well on a port
+// nobody knew.)
 //
 // So TCP binds first and UDP follows it onto whatever port it actually got.
 // `whenReady` resolves once both are up, for a caller that needs to know.
@@ -3083,7 +3221,8 @@ function listen(port) {
   result.whenReady = new Promise(function (resolve, reject) {
     function bindUdp() {
       log.debug("Entering bindUdp().");
-      const bound = tcp.address() ? tcp.address().port : requested;
+      const bound = tcp.address()
+        ? (/** @type {any} */ (tcp.address())).port : requested;
       result.port = bound;
       result.udp = startUdp(bound);
       result.udp.once('listening', function () { resolve(result); });
@@ -3102,6 +3241,12 @@ module.exports = {
   listen: listen,
   handleMessage: handleMessage,
   KDC_PORT: KDC_PORT,
-  REALM: REALM,
+  // The Kerberos realm of the AMBIENT trust realm — a getter since 2026-09-15,
+  // for `krb5_principals.js`'s reason.
+  get REALM() {
+    log.debug("Entering REALM().");
+    log.debug("Leaving REALM().");
+    return ourRealm();
+  },
   clockSkewSeconds: clockSkewSeconds
 };

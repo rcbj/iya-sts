@@ -5,7 +5,8 @@
 // ===========================================================================
 // THE SCHEMA IS WRITTEN DOWN TWICE ON PURPOSE, AND THIS IS WHAT PAYS FOR IT.
 //
-// Since 2026-09-06 the five tables and one index exist in two places:
+// Since 2026-09-06 the tables and indexes (five and one that day; more now)
+// exist in two places:
 //
 //   * `persistence/persistence_postgres.js`, which creates what is MISSING so
 //     that `node server.js` against an empty local database still works; and

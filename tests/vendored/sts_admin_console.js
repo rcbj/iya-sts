@@ -7,9 +7,9 @@
 //
 // The console is the one surface in that service that can CHANGE what every
 // protocol endpoint does — a claim added here appears in every token, a setting
-// changed here changes what a flow refuses. `tests/admin_api.js` and
-// `tests/sts_admin_api_operations.js` drive the JSON door beside it, which is
-// not the same thing: the API's whole design is that it decides nothing the
+// changed here changes what a flow refuses. `admin_api.js` and
+// `sts_admin_api_operations.js` next door drive the JSON door beside it, which
+// is not the same thing: the API's whole design is that it decides nothing the
 // console does not, so a defect in the PAGE — a form posting the wrong action,
 // a control that renders and reaches nothing, a field the handler stopped
 // reading — is invisible from over there by construction.
@@ -20,7 +20,7 @@
 // FOUR PLACES, AND THEY ARE THE REASON THIS IS NOW A SELENIUM JOB.
 //
 // The old argument was: the console is `script-src 'none'` with not one line of
-// JavaScript on any of its thirty-eight pages, so every control is a `<form>`
+// JavaScript on any of its pages, so every control is a `<form>`
 // and every button is a submit — and pressing a button IS posting the form's
 // own fields to the form's own action, which a node client can do exactly as
 // well. Every clause of that is still true. What it missed:
@@ -98,10 +98,13 @@
 //     redirect to an HTML screen is not an answer a program can read; a POST
 //     with no session is NEVER redirected, because a 303 makes it a GET and the
 //     fields vanish — and here that POST is a REAL browser form submission with
-//     the cookie jar emptied under it; and `/admin-api` next door is not gated
-//     at all, which is deliberate and is the way back in.
-//   * **EVERY PAGE IS DRAWN, IN THE SHELL, UNDER THE POLICY.** All
-//     thirty-eight, walked from the service's own list, each with the nav, its
+//     the cookie jar emptied under it; and `/admin-api` next door answers a
+//     browser with no session 401 rather than a redirect — it takes an access
+//     token, not a console session, and is the way back in (with a token, or
+//     with `adminApi.authRequired` off).
+//   * **EVERY PAGE IS DRAWN, IN THE SHELL, UNDER THE POLICY.** All of them
+//     (thirty-eight when this was written), walked from the service's own
+//     list, each with the nav, its
 //     own breadcrumb, a 200 the browser saw, and a Content-Security-Policy that
 //     still says `script-src 'none'`, `frame-ancestors 'none'` (which has no
 //     fallback from `default-src` and is therefore the clause a page loses by
@@ -142,7 +145,7 @@
 //
 // ---------------------------------------------------------------------------
 // IT WORKS IN A TRUST REALM IT CREATES AND LEAVES BEHIND, for the reason
-// tests/sts_admin_api_operations.js does: this is a test that writes to the
+// sts_admin_api_operations.js does: this is a test that writes to the
 // thing every other job reads, the mock never restarts between jobs, and a
 // realm is a whole logical copy of the service, so everything this file writes
 // is inside one and reaches nothing else.
@@ -157,17 +160,20 @@
 // theRealmIsLeftBehind().
 //
 // The console reached under a realm prefix is the same console — `/realm/<id>/
-// admin/...` — and the gate is the exception that proves it: the two roles are
-// groups in the DEFAULT realm and the gate accepts the DEFAULT realm's session
-// and no other, so one sign-in reaches every realm's console. That is asserted
-// here rather than assumed.
+// admin/...` — and the gate is the exception that proves it: this job signs in
+// through the DEFAULT realm, whose roster is the SERVICE roster, and a service
+// administrator's session reaches every realm's console. (A realm has an
+// administrator roster of its own since #32, confined to that realm;
+// `sts_realm_administrators.js` drives that half.) That is asserted here
+// rather than assumed.
 //
 // THE ONE THING IT READS OTHER THAN THROUGH THE BROWSER is `/admin-api`, and
 // only ever to CHECK — never to make a change the console is supposed to make.
 // A write made in the browser and read back through the browser can still be
 // two halves of one misunderstanding; reading it through the other door is what
-// makes it evidence. `/admin-api` is ungated by design, so this needs no
-// credential and takes none.
+// makes it evidence. The access token `/admin-api` takes is attached by the
+// runner's preload (`tools/attach-admin-token.js`), so this file carries none
+// of its own.
 //
 // Needs the STS mock and a Chrome. No Keycloak, no client, no other service.
 // ---------------------------------------------------------------------------
@@ -186,7 +192,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, the arrangement tests/wait_for.js has.
+  // load, the arrangement wait_for.js (beside this file) has.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -204,9 +210,9 @@ var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
 
-// The name this file signs into the console AS. It is a name and not a
-// credential — the mock checks no password anywhere — and it is distinctive so
-// that a row in /admin/audit says which test made it.
+// The name this file signs into the console AS. The account is created with
+// a password before it signs in (see the block below), and the name is
+// distinctive so that a row in /admin/audit says which test made it.
 const CONSOLE_USER = "console-test-" + names.runStamp();
 
 // The throwaway realm, and the console prefix that reaches it.
@@ -422,7 +428,7 @@ async function go(driver, url) {
   // /admin/tokens signed out and the page walk reads it signed in — so a
   // lookup by URL alone can hand back the EARLIER visit. Whether it does is a
   // race: the BiDi event for the new response arrives either side of
-  // driver.get() resolving, so the bug appears as one page in thirty-eight
+  // driver.get() resolving, so the bug appears as one page in the walk
   // reporting the status it had in a previous section, intermittently.
   const from = mark();
   await driver.get(url);
@@ -823,9 +829,10 @@ function outcomeOf(url, which) {
 }
 
 // ---------------------------------------------------------------------------
-// SIGNING IN. The mock checks no password anywhere — the screen is a name and a
-// button — so this is a name being typed, and the assertion is that the console
-// opens afterwards rather than that anything was verified.
+// SIGNING IN. The screen takes a name and a password; the account is created
+// with CONSOLE_PASSWORD first (see ensurePerson()) and that password is typed,
+// so the sign-in would hold in a mode that checks it. The assertion is that the
+// console opens afterwards.
 // ---------------------------------------------------------------------------
 async function signIn(driver, username) {
   log.debug("Entering signIn(). username=" + username);
@@ -928,8 +935,9 @@ async function keepAPicture(driver, what) {
 // Four behaviours, each of which is a different client's path through it, and
 // each of which has been wrong at some point in some console somewhere:
 //
-//   * a browser GET is REDIRECTED to the sign-in screen, carrying the id of the
-//     request waiting there so the person lands back where they were going;
+//   * a browser GET is REDIRECTED — into an authorization request since
+//     2026-09-06, which ends at the sign-in screen — so the person lands back
+//     where they were going;
 //   * a `?format=json` read is REFUSED 401 rather than redirected, because a
 //     302 to an HTML screen is not an answer a program can read — it looks like
 //     success and parses as garbage;
@@ -1320,9 +1328,10 @@ async function noPageNestsAForm(driver, pages) {
 // ---------------------------------------------------------------------------
 // EVERY LINK THE CONSOLE DRAWS, REALLY VISITED.
 //
-// This is the section that makes the console's ELEVEN routes with no nav row
-// covered by construction rather than by a list somebody has to remember to
-// extend: the three delegation drill-downs, all THREE server-rendered pictures
+// This is the section that makes the console's routes with no nav row covered
+// by construction rather than by a list somebody has to remember to extend:
+// the delegation drill-downs (`/admin/delegation/cluster` among them), all
+// THREE server-rendered pictures
 // (/admin/delegation/allowed joined them on 2026-09-01, reached from the
 // configured half of /admin/delegation), /admin/tokens/credential,
 // /admin/tokens/set (2026-09-05, reached from any row of the tokens table
@@ -1337,11 +1346,11 @@ async function noPageNestsAForm(driver, pages) {
 //
 //   * ANOTHER ORIGIN. Seventy-odd specification links — RFCs, OASIS, W3C. This
 //     suite does not depend on somebody else's web server being up, and
-//     tests/sts_metadata.js already owns the question of whether a claimed
+//     sts_metadata.js already owns the question of whether a claimed
 //     specification is real.
 //   * SAME-ORIGIN, OUTSIDE /admin. Eighty protocol endpoints — /oauth2/jwks,
 //     /saml2/metadata, /scim/v2/Users and the rest. They are not this console;
-//     tests/sts_metadata.js walks them, and several would mint or consume
+//     sts_metadata.js walks them, and several would mint or consume
 //     something if visited.
 //   * THE SIGN-OUT DOORS. `/logout` and `/oauth2/logout` end the session this
 //     run is holding. A crawl that signs itself out halfway through reports the
@@ -1891,7 +1900,7 @@ function valuesOfBoxes(page, prefix) {
 // says which console control each of its operations mirrors, which is the
 // service's own account of which console paths take a POST; and each handler's
 // own refusal names the actions it knows, which is the same sentence
-// tests/admin_api.js reads for the parity check. A list in this file would go
+// admin_api.js reads for the parity check. A list in this file would go
 // stale exactly when a route was renamed — the moment it most needed to fail.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -1909,8 +1918,8 @@ function valuesOfBoxes(page, prefix) {
 // indistinguishable from something somebody forgot.
 //
 // It is deliberately keyed on the TARGET and not on the page: the one row is a
-// form in the console's SHELL, so it is on all thirty-eight pages, and a row
-// per page would be thirty-eight lines saying one thing.
+// form in the console's SHELL, so it is on every page, and a row per page
+// would be one line per page saying one thing.
 // ---------------------------------------------------------------------------
 const NOT_A_CONSOLE_CONTROL = {
   "/admin/signout":
@@ -2066,7 +2075,7 @@ async function postRoutesOfTheConsole() {
   log.debug("Entering postRoutesOfTheConsole().");
   // The API's index names, for each operation, the console control it MIRRORS.
   // That is the service's own account of which console paths take a POST, and
-  // it is the same source the parity check in tests/admin_api.js reads — so a
+  // it is the same source the parity check in admin_api.js reads — so a
   // route renamed on one side shows up here rather than in a list in this file
   // that would have been renamed along with it.
   const index = await apiJson("/admin-api");
@@ -2095,7 +2104,7 @@ async function postRoutesOfTheConsole() {
 // console control it MIRRORS — so this is the service's own account of which
 // console paths take a POST, rather than a list in this file that would go
 // stale exactly when a route was renamed. The action names come from each
-// handler's own refusal, which is the same sentence tests/admin_api.js reads.
+// handler's own refusal, which is the same sentence admin_api.js reads.
 async function actionsByConsolePath() {
   log.debug("Entering actionsByConsolePath().");
   const index = await apiJson("/admin-api");
@@ -2158,7 +2167,7 @@ async function actionsKnownAt(apiPath) {
 // THE THROWAWAY REALM, CREATED ON THE CONSOLE'S OWN FORM.
 //
 // Everything that WRITES below happens inside it, for the reason
-// tests/sts_admin_api_operations.js works that way: this job changes the thing
+// sts_admin_api_operations.js works that way: this job changes the thing
 // every other job reads, the mock never restarts between jobs, and a realm is
 // a whole logical copy of the service, so nothing it writes reaches anything
 // else. Creating it on the form rather than through the API is the point — it
@@ -2208,7 +2217,9 @@ async function theRealmIsCreatedOnTheForm(driver) {
 
   // And the console under its prefix is reachable with the DEFAULT realm's
   // session — the one place in this service where a session crosses a realm,
-  // and deliberate: a role is permission to change what every realm does.
+  // and deliberate: a role on the default realm's roster (the SERVICE roster)
+  // is permission to change what every realm does. A realm's own
+  // administrators, since #32, are confined to their realm.
   const inRealm = await open(driver, realm("/admin"));
   check("the realm's console opens on the default realm's session",
         function () {
@@ -3098,7 +3109,7 @@ async function introspectActive(token) {
 // holding it, `text` means the page says it somewhere (a row in a list), and
 // `api` names a JSON door to find it behind.
 //
-// Everything happens under the realm prefix, so all of it goes away with the
+// Everything happens under the realm prefix, so all of it stays inside the
 // realm.
 // ---------------------------------------------------------------------------
 function writeForms(stamp) {
@@ -3298,9 +3309,8 @@ async function theHandlersNothingEverPressed(driver) {
   log.debug("Entering theHandlersNothingEverPressed().");
   log.info("=== The handlers nothing ever pressed ===");
 
-  // NOT /admin/rbac. Its grant closes the console against this run's own
-  // session — while neither role group has a member anybody who signs in
-  // holds both — so it is driven last, with the enforcement it makes
+  // NOT /admin/rbac. Its section switches this run's session to a read-only
+  // reader and back, so it is driven last, with the enforcement it makes
   // possible, in theRolesArePressedAndEnforced().
   await theLogoutPageEndsWhatItLists(driver);
   await theAssertionSettingsPageSaves(driver);
@@ -3321,8 +3331,10 @@ async function theHandlersNothingEverPressed(driver) {
 // /admin/kerberos/principals: A SERVICE PRINCIPAL CREATED ON THE FORM, ITS
 // KEYTAB SHOWN ONCE, AND ITS KEY DELETED BY ITS OWN ROW BUTTON (2026-09-12).
 //
-// **THE KDC IS THE PROCESS'S, NOT THE THROWAWAY REALM'S**, so this is the
-// second write in this file the realm does not contain, and it follows the
+// **THE KDC IT PRESSES IS THE DEFAULT REALM'S, NOT THE THROWAWAY REALM'S**
+// (the page is read at the root; since #33 each trust realm has a KDC of its
+// own, and the throwaway realm has none), so this is the second write in this
+// file the realm does not contain, and it follows the
 // truststore's three rules for the same reason: an SPN carrying this run's
 // stamp, the only Delete pressed is the one on that SPN's row, and a `finally`
 // deletes it through the API if anything above failed with it still there.
@@ -3486,7 +3498,8 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
 // (2026-09-12).
 //
 // **THE TRUSTSTORE IS THE PROCESS'S, NOT THE THROWAWAY REALM'S**, so this is
-// the one write in this file that the realm does not contain — every later
+// one of the two writes in this file that the realm does not contain (the
+// Kerberos service principal above is the other) — every later
 // job's client certificates, the remote PEP's among them, are judged against
 // the same array. Three rules follow and each is why this is a section of its
 // own rather than a row in writeForms():
@@ -3616,7 +3629,7 @@ async function theTruststorePageAddsAndRemoves(driver) {
 // THE PAGE**, deliberately. `/admin/applications` already has its own coverage
 // above; what has never been pressed is these five, and making their operands
 // the cheap way keeps this function about them. Everything is in the realm, so
-// it all goes away with the realm.
+// none of it reaches anything else.
 //
 // **AND THE READ-BACK IS OFF THE PAGE THAT DREW THE CONTROL**, not off the
 // API — which is this file's whole reason for existing. A handler that answers
@@ -4585,9 +4598,9 @@ async function theSpiffePageRotatesAndFederates(driver) {
   //    IT NEEDS A BUNDLE, and that is the point of driving it: the textarea is
   //    the only control on this console that has to be JSON, so a form that
   //    posted it as a string, or dropped it, is refused here and nowhere else.
-  //    The endpoint URL is RECORDED AND NEVER FETCHED — this service dials
-  //    nothing that did not come off a federation relationship entry — so a
-  //    domain that does not exist is the honest thing to set.
+  //    The endpoint URL is RECORDED AND NEVER FETCHED — a foreign SPIFFE
+  //    bundle is pushed in, never pulled (spiffe/CLAUDE.md) — so a domain
+  //    that does not exist is the honest thing to set.
   const domain = "console-" + names.runStamp().slice(0, 8) + ".example";
   await open(driver, realm("/admin/spiffe"));
   const federate = await formIndexPosting(driver, "federation-set");
@@ -4672,9 +4685,10 @@ function settingRow(config, key) {
 // The last crumb is never a link, which is the rule that stops a trail teaching
 // a reader that its crumbs do nothing.
 //
-// THE FOUR CONSOLE PAGES WITH NO NAV ROW ARE DRIVEN HERE BY NAME as well as
-// being reached by the crawl: /admin/delegation's three drill-downs and
-// /admin/tokens/credential. The crawl proves they answer; this proves they are
+// THE CONSOLE PAGES WITH NO NAV ROW ARE DRIVEN HERE BY NAME as well as being
+// reached by the crawl: /admin/delegation's drill-downs and second views, the
+// two token drill-downs, and the two `new` pages — the `orphans` list below.
+// The crawl proves they answer; this proves they are
 // drawn in the shell with a trail that leads back, which is the part a status
 // code cannot show.
 // ---------------------------------------------------------------------------
@@ -4761,7 +4775,7 @@ async function theDrillDownsCarryTheirTrail(driver, created) {
     });
   }
 
-  // The six pages with no nav row of their own. `/admin/delegation/cluster` is
+  // The pages with no nav row of their own. `/admin/delegation/cluster` is
   // the newest and it is a drill-down of a drill-down — it is reached from a
   // search on /admin/delegation/allowed, which is itself reached from
   // /admin/delegation — so it is the page where the trail is doing the most
@@ -4994,7 +5008,7 @@ async function theRealmSwitcherSwitches(driver) {
 }
 
 // ---------------------------------------------------------------------------
-// THE TWO PICTURES, WHICH ARE DRAWN ON THE SERVER.
+// THE PICTURES, WHICH ARE DRAWN ON THE SERVER.
 //
 // `/admin/delegation/map`, `/admin/delegation/allowed` and
 // `/admin/federation/map` are the console's three drawings, and every one of
@@ -5293,7 +5307,7 @@ async function pressAndBeRefused(driver, path, fields, values, expect, what) {
 // the LAST one server.js loads — so it is the one page here drawn by something
 // other than admin.js, through the shell that file exports. What is checked is
 // that it is still part of this console, rather than what it lists, which
-// tests/sts_metadata.js owns.
+// sts_metadata.js owns.
 // ---------------------------------------------------------------------------
 async function theMetadataPageIsStillInTheConsole(driver) {
   log.debug("Entering theMetadataPageIsStillInTheConsole().");
@@ -5468,7 +5482,7 @@ function anIntegerSettingWithAProtocolPage(config) {
 // for the process. A realm binds no socket, so the reason does not reach it and
 // a realm MAY carry it: one process answers permissively at /oauth2/authorize
 // and enforces the BCP at /realm/rfc9700/oauth2/authorize. config.js marks that
-// with `realmRuntime`, and it is the only row that carries it.
+// with `realmRuntime`, and it was the first row to carry it.
 //
 // The console believes the marker: inside a realm it draws the control ENABLED,
 // and at the root it draws it DISABLED with the reason in its title. What is
@@ -5582,7 +5596,7 @@ function controlNamed(page, name) {
 //
 // This is as far as anything driving the service from outside can follow a
 // configuration change: the store's own counters. What is IN the file cannot be
-// asked over HTTP at all, and that is asserted in mock-sts's own
+// asked over HTTP at all, and that is asserted in this repository's
 // tests/appconfig_persistence.js, in process, where the bytes can be read back.
 //
 // `persistence.mode=memory` is the default and what the containerized stack
@@ -5663,21 +5677,24 @@ async function settleStore(previous) {
 // ---------------------------------------------------------------------------
 // THE TWO ROLES: GRANTED AND REVOKED ON THE PAGE, AND THEN ENFORCED.
 //
-// THIS RUNS LAST, AND THE ORDER IS A DEPENDENCY RATHER THAN A PREFERENCE.
-// While NEITHER role group has a member, anybody who signs in holds both —
-// this service has no password anywhere to bootstrap an administrator with. So
-// the first grant CLOSES the roster against everybody who is not on it,
-// including this run's own session, and every section above needs the console
-// open.
+// THIS RUNS LAST. It is pressed at the ROOT, on the default realm's roster —
+// the SERVICE roster. While that roster's window is open (the bootstrap
+// administrator has not yet signed in to the console; admin-ui/admin_rbac.ts)
+// a person holding NO role is given both, and a person holding a role is held
+// to the roles they hold — which is what makes a reader granted only `read`
+// an enforcement this section can observe. (Until 2026-09-13 the first grant
+// closed the roster for everybody, and this ordering was a hard dependency.)
+// It still goes last because it switches this run's session to that reader
+// and back, and every section above needs the writer.
 //
-// That is also why the old file never pressed this page: it granted through the
-// ungated API, at the very end, and the console's own grant and revoke — the
+// The old file never pressed this page: it granted through the then-ungated
+// API, at the very end, and the console's own grant and revoke — the
 // two controls that decide who may use this console at all — were the least
 // tested in the service.
 //
-// The roster is emptied again in a `finally`, because a grant left behind locks
-// every later job out of the console, and the roster is the DEFAULT REALM's
-// whichever realm it was written from.
+// The roster is put back in a `finally`, because a grant left behind stays on
+// the SERVICE roster for every later job — the page is read at the root, so
+// the roster is the default realm's (a realm has its own since #32).
 // ---------------------------------------------------------------------------
 // Who holds what, off the roster's own `grants` array.
 //
@@ -5700,9 +5717,9 @@ async function theRolesArePressedAndEnforced(driver, created) {
   let reader = created.person;
 
   try {
-    // 1. GRANT TO OURSELVES FIRST, on the typed form. The moment anybody holds
-    //    a role the roster is closed, so this has to be the grant that keeps
-    //    this run inside the console.
+    // 1. GRANT TO OURSELVES FIRST, on the typed form, so this run holds
+    //    `write` on the roster itself rather than through the open window —
+    //    the session keeps working whatever the window does next.
     await open(driver, root("/admin/rbac"));
     const forms = await driver.executeScript(`
       const out = { finder: -1, typed: -1, select: false };
@@ -5765,11 +5782,12 @@ async function theRolesArePressedAndEnforced(driver, created) {
     //    wired to the other one's value with nothing looking wrong.
     //
     //    THE PICKER OFFERS THE DEFAULT REALM'S DIRECTORY, and that is correct
-    //    rather than a limitation: the roster is the default realm's whichever
-    //    realm the console is reached in, so offering this realm's people
-    //    would be offering names the roster cannot hold. The person this run
-    //    created lives in the THROWAWAY REALM and is deliberately not among
-    //    them, so the reader is chosen from what the picker really offers.
+    //    rather than a limitation: this page is read at the root, where the
+    //    roster is the default realm's, so offering the throwaway realm's
+    //    people would be offering names this roster cannot hold. The person
+    //    this run created lives in the THROWAWAY REALM and is deliberately
+    //    not among them, so the reader is chosen from what the picker really
+    //    offers.
     reader = await somebodyThePickerOffers(driver, CONSOLE_USER);
     await grantOnThePicker(driver, reader, "read");
 
@@ -5832,7 +5850,7 @@ const PICKER_HITS_SCRIPT = `
 // (2026-09-13).** Since `admin` is seeded into both role groups at startup it
 // is the first name the picker offers, and the caller SIGNS IN as whoever this
 // returns — and that account's first console sign-in closes the open console
-// for every later job in the run (`admin-ui/admin_rbac.js`'s
+// for every later job in the run (`admin-ui/admin_rbac.ts`'s
 // noteConsoleSignIn()). A holder of a role is left out as well, because the
 // grant below asserts the reader then holds `read` and nothing else.
 async function somebodyThePickerOffers(driver, notThisOne) {
@@ -5939,10 +5957,12 @@ async function grantOnThePicker(driver, person, role) {
 // ---------------------------------------------------------------------------
 // EMPTYING THE ROSTER AGAIN, WHICH IS NOT OPTIONAL.
 //
-// While neither role group has a member, anybody who signs in holds both. So a
-// grant left behind by this job does not merely leave state around: it LOCKS
-// EVERY LATER JOB OUT of the console, in a way whose symptom is a redirect to
-// a sign-in screen that will never help.
+// A grant left behind by this job stays on the SERVICE roster. It locked every
+// later job out of the console while the first grant closed the roster; since
+// 2026-09-13 the bootstrap administrator's first console sign-in does that
+// instead, but a leftover grant is still a person holding a role nobody meant
+// to give, and a reader left holding only `read` is refused every write by
+// any later job that signs in as them.
 //
 // It is done on the PAGE first, because that is the control under test, and
 // through the API if the page cannot — a teardown that fails because the thing
@@ -6199,9 +6219,8 @@ async function test() {
       await theConsoleRefusesWhatItShould(driver);
       await aSettingChangedOnItsProtocolPage(driver);
       await theBrowserConsoleIsClean(driver);
-      // LAST, and the order is a dependency: the first grant closes the
-      // console against this run's own session, and every section above
-      // needs it open.
+      // LAST: it switches this run's session to a read-only reader and
+      // back, and every section above needs the writer.
       await theRolesArePressedAndEnforced(driver, created);
       // AND THE SIGN OUT BUTTON, WHICH MUST BE THE LAST THING: pressing it
       // closes this console against this run's own session, so nothing that

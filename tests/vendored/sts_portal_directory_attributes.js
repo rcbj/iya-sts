@@ -54,7 +54,7 @@ const nodeCrypto = require("crypto");
 
 // ---------------------------------------------------------------------------
 // THIRTY LINES OF RFC 4226 OVER RFC 6238, carried rather than required from
-// `common/totp.js` — `sts_dpop.js`'s rule, and `sts_portal_totp.js` is where
+// `common/totp.ts` — `sts_dpop.js`'s rule, and `sts_portal_totp.js` is where
 // the same lines are checked against the specification's own vectors.
 //
 // **IT IS HERE FOR A FIXTURE RATHER THAN FOR A CLAIM**, which is the only
@@ -106,7 +106,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -200,11 +200,6 @@ function browser(name) {
   return self;
 }
 
-// THE SCIM CALLER IS A PERSON THIS JOB CREATES, and its Basic credential is
-// that person's username and password (2026-09-12). Product mode verifies a
-// SCIM Basic credential against the named person's own `userPassword`, so a
-// made-up name with a word nothing checks is a credential only development
-// accepts. The account is made on first use, by `ensurePerson()` below.
 // A BARE `/portal` DRAWS THE REALM CHOOSER once a service has trust realms
 // (2026-09-14, #32), and the suite nearly always has some. The chooser's own
 // `?realm=default` is what a script names to skip it, so the door this file
@@ -212,6 +207,11 @@ function browser(name) {
 // itself.
 const PORTAL_DOOR = "/portal?realm=default";
 
+// THE SCIM CALLER IS A PERSON THIS JOB CREATES, and its Basic credential is
+// that person's username and password (2026-09-12). Product mode verifies a
+// SCIM Basic credential against the named person's own `userPassword`, so a
+// made-up name with a word nothing checks is a credential only development
+// accepts. The account is made on first use, by `ensurePerson()` below.
 const SCIM_CALLER = usernameFor("dir-scim-caller");
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
@@ -418,9 +418,10 @@ async function itDrawsTheDirectory() {
   log.debug("Entering itDrawsTheDirectory().");
   log.info("=== 1/2. the entry, and every standard attribute ===");
 
-  // SIGN IN FIRST, so the entry exists: a person gets one the first time they
-  // authenticate. That ordering is the feature rather than an accident of the
-  // fixture — the page is about somebody this service has met.
+  // SIGN IN FIRST. The entry itself is made by `ensurePerson()` inside
+  // `signIn()` — since 2026-09-14 a session needs an entry to be the subject
+  // of, so nobody signs in without one — and the page is about somebody this
+  // service has met.
   const b = await signIn(OWNER);
   const before = await b.go("GET", "/portal");
   check("the Overview draws the directory section", function () {
@@ -609,10 +610,10 @@ async function theRefusalsHold(b) {
 // 5. THE ASSERTION THAT PINS THE DESIGN.
 //
 // **CLAIMS 1 TO 4 ALL PASS AGAINST A PAGE THAT DUMPS THE ENTRY.** This one
-// does not, and it is the whole reason `common/inetorgperson.js` is a fixed
-// list rather than an iteration: this service writes four `sts`-prefixed
-// CREDENTIALS onto the same object the schema attributes live on, and one of
-// them — the TOTP shared secret — can be read back and used.
+// does not, and it is the whole reason `common/inetorgperson.ts` is a fixed
+// list rather than an iteration: this service writes `sts`-prefixed
+// CREDENTIALS onto the same object the schema attributes live on, and some of
+// them — the TOTP shared secret above all — can be read back and used.
 //
 // So: enrol an authenticator, then require that the secret is nowhere in the
 // HTML, and that none of the four attribute names is either.
@@ -704,9 +705,10 @@ async function theCredentialsAreNotOnIt(b) {
     ["stsTotpCredential", "stsBackupCodes", "stsWebauthnCredential",
      "stsActivationToken", "stsActivationExpires",
      // The RFC 7523 signing key pair a person may hold (2026-09-11). The
-     // private half is the third attribute in this directory that can be read
-     // back and USED, so it belongs on this list beside the authenticator's
-     // secret and the recovery codes — and the public five belong on it too,
+     // private half is an attribute in this directory that can be read back
+     // and USED, so it belongs on this list beside the authenticator's
+     // secret (the recovery codes are hashes since 2026-09-11, and stay on
+     // the list by name) — and the public five belong on it too,
      // because the page draws a FIXED LIST and an attribute arriving on it by
      // accident is the defect this section exists to catch, whatever that
      // attribute happens to hold.
@@ -732,7 +734,7 @@ async function theCredentialsAreNotOnIt(b) {
 // ===========================================================================
 // 6. ONE PERSON CANNOT READ ANOTHER'S ENTRY.
 //
-// The rule at the top of `portal/portal.js`: no route here takes an identity
+// The rule at the top of `portal/portal.ts`: no route here takes an identity
 // from the request. This is the newest reader of the directory in that file
 // and therefore the newest place that rule could have been broken — a
 // `username` honoured here would be every attribute of anybody's account, to

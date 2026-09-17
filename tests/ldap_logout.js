@@ -17,7 +17,7 @@
 // THE BUG THIS FILE EXISTS FOR, WHICH WAS GREEN IN TWO MODES OF THREE.
 //
 // A worker's `liveConnections` is permanently empty, so `boundConnections()`
-// answered "there are none". The sign-out driver in ../logout/logout.js ends
+// answered "there are none". The sign-out driver in ../logout/logout.ts ends
 // what `collect()` finds, an empty list is nothing to end and nothing to
 // report, and a global logout therefore reported that it had ended everything
 // while a bound LDAP connection went on being signed in. It cost a whole mode
@@ -30,16 +30,17 @@
 // over 389 and asserts the socket closes; when that fails, the two candidates
 // are "the worker never saw the connection" and "the worker saw it and could
 // not close it", and the job cannot tell them apart because both look like a
-// socket that is still open. The four sections below are those halves, plus
-// the two ways the mechanism is allowed to fail, asserted separately and with
-// no port, no container and no fork.
+// socket that is still open. The first two sections below are those halves,
+// the third is the two ways the mechanism is allowed to fail, and the last two
+// are the header and the timing that join the halves — each asserted
+// separately and with no port, no container and no fork.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS ASSERTED, AND WHAT DELIBERATELY IS NOT.
 //
 // This file drives the CONTRACT between three modules: `ldap/ldap_server.js`,
 // which owns the list and the sockets; `common/request_pool.js`, which holds
-// them in the front process; and `common/request_worker.js`, which holds
+// them in the front process; and `common/request_worker.ts`, which holds
 // neither and answers the request anyway. What it does not do is bind 389 or
 // fork a worker — the first is `sts_global_logout`'s job over a real socket in
 // three stacks, and the second would make this file a stack rather than a test.
@@ -126,7 +127,7 @@ function checkTheMirrorIsRead(t) {
       t.check(seen.some(function (c) { return c.key === 'alice'; }) &&
               seen.some(function (c) { return c.key === 'bob'; }),
               'and carries the identity key each connection is bound as',
-              'the key is what ../logout/logout.js filters on, so a row ' +
+              'the key is what ../logout/logout.ts filters on, so a row ' +
               'without one is a row no sign-out can ever match: ' +
               JSON.stringify(seen.map(function (c) { return c.key; })));
       const one = seen[0];
@@ -329,7 +330,7 @@ function checkTheHeaderAgrees(t) {
 // the handler chain has run**, in node-ldapjs/lib/server.js at the point where
 // it finds no handler left. A snapshot taken inside the handler therefore
 // carries an empty DN, `consoleKeyFor()` derives no key from it, and
-// `logout.js`'s ldap family filters on exactly that key — so the worker's
+// `logout.ts`'s ldap family filters on exactly that key — so the worker's
 // mirror filled up with rows belonging to nobody and the sign-out found
 // nothing to end. The mechanism was in place, every part of it worked, and the
 // bug it was written to fix was still there.

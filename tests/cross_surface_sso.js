@@ -17,7 +17,7 @@
 // authorization endpoint able to see the other's session: two sign-ins, in both
 // directions, for one person in one browser.
 //
-// The fix is in `common/oidc_rp.js`: a surface has TWO realms now. The FLOW
+// The fix is in `common/oidc_rp.ts`: a surface has TWO realms now. The FLOW
 // runs in the ambient realm for both — which is the whole of the single
 // sign-on — and the console's SESSION still lives in the default realm's
 // partition, which is what keeps one console session readable from every realm

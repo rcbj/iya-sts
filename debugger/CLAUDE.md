@@ -7,10 +7,10 @@ behind an access token only a console administrator is issued.
 
 | File | What it is |
 |---|---|
-| `debugger_server.js` | The listener's own express app: security headers, the sign-in callback, the landing paths, THE GATE, the forwarder to `/api`, the static site. A socket owner — bound from `server.js`'s `listen()`. |
-| `debugger_api_process.js` | The api as a forked child on a unix socket: the environment it is given, the allow-list, start, restart with backoff, give up, stop. |
-| `debugger_access.js` | Who may use it: `narrowScope()` at issuance and `isAdministrator()` at the gate. A library (rule 3). |
-| `debugger_admin.js` | `/admin/debugger`, and the view `GET /admin-api/debugger` answers (rule 7). |
+| `debugger_server.ts` | The listener's own express app: security headers, the sign-in callback, the landing paths, THE GATE, the forwarder to `/api`, the static site. A socket owner — bound from `server.js`'s `listen()`. |
+| `debugger_api_process.ts` | The api as a forked child on a unix socket: the environment it is given, the allow-list, start, restart with backoff, give up, stop. |
+| `debugger_access.ts` | Who may use it: `narrowScope()` at issuance and `isAdministrator()` at the gate. A library (rule 3). |
+| `debugger_admin.ts` | `/admin/debugger`, and the view `GET /admin-api/debugger` answers (rule 7). |
 | `embedded/` | **Not source.** The debugger project's embedded build output, gitignored and dockerignored — see *Where the built tree comes from*. |
 
 ## The eight decisions, and they were rcbj's
@@ -105,6 +105,70 @@ administrator's session or token), adds `X-Forwarded-Proto`/`-Host`/`-Prefix:
 naming the child's configured origin to the one this request arrived at — so a
 SAML landing redirects to the host the browser is using.
 
+## The listener ASKS for a client certificate, and the gate reads both schemes (#34, 2026-09-15)
+
+Four changes, and only the third is one of #34's settings.
+
+**The listener asks for a client certificate and requires none.**
+`https.createServer()` gets `requestCert: true` with `rejectUnauthorized:
+false` over `tlsServer.clientTruststoreOptions()` — exactly the posture the main
+port takes (and 8443 took, until it was deleted on 2026-09-16 for being a second
+socket with it), so the handshake succeeds either way and what a certificate
+is worth is decided per request against the truststore. It was added because
+`oauth2.accessTokenRequireMtls` covers this listener, and **a listener that
+never asks makes a certificate-bound token impossible to present here rather
+than merely unusual** — which would have been an exemption dressed up as a
+refusal. `trustClientCertificatesOn()` was already registered for the leaf
+`build-root` replaces; it now keeps the ANCHORS current too.
+
+**A DPoP-bound token presented as a Bearer token is refused, in every mode.**
+The gate had been given RFC 8705's `cnf["x5t#S256"]` check (`STS-DBG-0030`) and
+never RFC 9449's, so a token carrying `cnf.jkt` — a token whose whole point is
+that holding it is not enough — was accepted here as a bearer token. It is
+`STS-DBG-0031` now, and a proof that fails with no code of its own is
+`STS-DBG-0032`. This is not one of the settings: it is about honouring a
+constraint the TOKEN already carries, so it runs whatever they say. **The same
+hole `/admin-api` carried, closed the same way** — `mgmt-api/CLAUDE.md`, and
+`oauth-oidc/CLAUDE.md` 3ao.
+
+**`presentedTokenOf()` reads `Bearer` AND `DPoP`.** `bearerOf()` matched
+`Bearer` alone, so a client doing the stricter thing was told it had presented
+no token at all, which is the least useful answer available. `bearerOf()` is
+kept as a wrapper over it; the scheme is carried beside the token because
+refusing a BOUND token sent as Bearer is a different refusal from a token that
+does not verify.
+
+**`oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` are
+honoured here**, through the same `senderConstraints.accessTokenRefusal()` every
+other surface asks, so an operator who turns one on cannot find that one door
+out of nine kept its own opinion. The refusal's own code (one of
+`STS-OAUTH-0527..0531`) is carried on the verdict and marked by `refuse()`.
+
+**`dpop.proofClaims()` runs on this app**, registered below `inDefaultRealm`
+(the reservation is per realm and this listener's realm is the default one) and
+above the gate (which is what verifies the proof). It is the same middleware
+`oauth2.js` registers on the main app: the proof's `jti` is reserved on arrival
+and given back unless the proof was accepted, so a proof replayed against a
+second node is refused there too.
+
+**The session path is deliberately exempt from all of it.**
+`verifyAccessToken()` takes `presented`, true only when the token came in on
+THIS request's
+`Authorization` header; the relying party's own session holds an access token
+that nobody sent, and **a token nobody sent cannot prove possession of anything
+on a request it was not part of**. Requiring it to would turn the two settings
+into "the debugger's sign-in stops working", which is not what either of them
+says. The session's token is still verified in `/admin-api`'s order, and
+`isAdministrator()` is still asked again.
+
+**And the debugger client is CONFIGURED, not exempted.** `sts-debugger-ui` is
+not on `sender_constraints.js`'s `MTLS_EXEMPT_CLIENTS` — that list is the two
+hosted surfaces, which redeem over a loopback call from this process to itself —
+and because #34's own sixth decision was that the embedded debugger is an
+ordinary client of this authorization server: an operator who makes a realm
+strict is expected to make its client match rather than to discover a hole
+shaped like a debugger.
+
 ## Why the permission's base is a URN
 
 `applications.js` joins a resource's `oauthPermissionBaseUri` and a name into the
@@ -112,18 +176,19 @@ scope a client asks for, and that base becomes the token's `aud`. An ADDRESS
 base would make the permission depend on the host name the debugger was reached
 by — `localhost` and `127.0.0.1` would be two permissions and one would match
 nothing. `urn:sts:debugger-api:` is the same everywhere. It is written out in
-THREE files — `debugger_access.js`, `common/applications.js`'s seed and
-`common/oidc_rp.js`'s surface — because the latter two are libraries every module
+THREE files — `debugger_access.ts`, `common/applications.js`'s seed and
+`common/oidc_rp.ts`'s surface — because the latter two are libraries every module
 reads and must not require a feature directory; `tests/debugger_access.js`
 compares them.
 
-## Who may hold it — `debugger_access.js`
+## Who may hold it — `debugger_access.ts`
 
 **Administrator means a MEMBER of what the console means**: `admin_rbac.rolesOf()`
 in the DEFAULT realm, either role — **and the empty-roster rule is NOT honoured**
-(rcbj, 2026-09-13, reversing the first version, which matched the console). While
-neither group has a member `admin.openWhenEmpty` gives everybody who signs in both
-roles, so that the first grant can be made on the console; the debugger needs no
+(rcbj, 2026-09-13, reversing the first version, which matched the console).
+`admin.openWhenEmpty` gives everybody who signs in both roles until the bootstrap
+administrator first signs in (or, with none seeded, while neither group has a
+member), so that the first grant can be made on the console; the debugger needs no
 such bootstrap, so a role held only because nobody holds one is refused with
 `STS-DBG-0024` and the debugger stays shut until somebody really is in a group.
 That check runs BEFORE the role test, which everybody would otherwise pass. The
@@ -167,10 +232,10 @@ the session was minted in a worker and arrives by replication; see *Not done*.
 The api trusts this service's main port through `NODE_EXTRA_CA_CERTS`, which node
 reads once at start — so `build-root` on `/admin/pki` left a running child trusting
 a Root that is gone, and every call it made to this service failed. Nothing inside
-the child can be told, so `debugger_server.js`'s `checkAnchor()` compares, at most
+the child can be told, so `debugger_server.ts`'s `checkAnchor()` compares, at most
 every five seconds and only on a forwarded call, the anchor `tls_server.js`
 publishes now with the one the child was started with, and
-`debugger_api_process.js`'s `updateAnchor()` writes the new PEM and replaces the
+`debugger_api_process.ts`'s `updateAnchor()` writes the new PEM and replaces the
 child. **A replacement is a hand-over, not a failure**: it is not counted toward
 `debugger.restartLimit`, the successor is forked at once, and the child is
 not-ready from the moment it is told to exit, so the call that noticed gets the

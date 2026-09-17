@@ -234,8 +234,9 @@ function run(t) {
   t.equal(assertion.ok, true,
           'and the key it enrolled then ASSERTS successfully');
 
-  // THE NEGATIVE, which carries the weight for tests/sts_dpop.js's reason: a
-  // verifier that accepts everything passes every positive check ever written.
+  // THE NEGATIVE, which carries the weight for tests/vendored/sts_dpop.js's
+  // reason: a verifier that accepts everything passes every positive check ever
+  // written.
   const wrong = makeAuthenticator();
   const wrongChallenge = nodeCrypto.randomBytes(32).toString('base64url');
   const forged = wrong.assert(wrongChallenge);

@@ -21,9 +21,9 @@
 // ---------------------------------------------------------------------------
 // WHY THIS IS IN PROCESS, WHICH IS THIS DIRECTORY'S ONE RULE.
 //
-// Every claim here is about a SOCKET THIS SERVICE BINDS, and no stack
-// publishes a realm's — `docker-compose.yml` publishes 8092 and 8181 for the
-// default realm and nothing else, on the argument `tests/CLAUDE.md` makes
+// Every claim here is about a SOCKET THIS SERVICE BINDS, and no stack publishes
+// a realm's — `docker-compose.yml` publishes no SPIFFE port at all, not even
+// the default realm's 8092 and 8181, on the argument `tests/CLAUDE.md` makes
 // about the directory's own port. So the choice is between binding them here,
 // in the process the assertions are already in, and inventing a stack whose
 // whole content is a second realm.

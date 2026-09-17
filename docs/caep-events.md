@@ -28,9 +28,9 @@ The short version:
 | `session-established` | **yes** — every sign-in, through every protocol that starts a session |
 | `session-presented` | **yes** — single sign-on, in four browser SSO profiles |
 | `session-revoked` | **yes** — every sign-out, and every expiry |
-| `token-claims-change` | no — by hand only |
-| `credential-change` | no — by hand only |
-| `assurance-level-change` | no — by hand only |
+| `token-claims-change` | only for a modified [GNAP](gnap.md) grant; otherwise by hand |
+| `credential-change` | **yes** — an administrator changing a person's credentials, or a password reset link spent (since 2026-09-13) |
+| `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr` (since 2026-09-14) |
 | `device-compliance-change` | no — by hand only |
 | `risk-level-change` | no — by hand only |
 
@@ -129,7 +129,7 @@ Two of them are worth knowing before you read the rest of this page:
 
 ---
 
-# The three this service emits by itself
+# The three session events this service emits by itself
 
 ## `session-established`
 
@@ -302,14 +302,18 @@ GNAP access token — hears only about people who approved a grant to it; see
 
 ---
 
-# The five nobody here can cause
+# The five you can emit by hand
 
-Five of the eight describe things this service has no way of observing. **No
-device reports compliance to it, no risk engine talks to it, no credential
-lifecycle is wired into it and nothing recomputes assurance behind a live
-session.** They are therefore emitted **by hand**, and that is a feature rather
-than a gap: they are exactly the events a receiver is hardest to test against,
-because in a real deployment they arrive from systems you do not control.
+These five began as the ones this service had no way of observing, and all
+five can be emitted **by hand**. Three have since gained an automatic trigger
+as well — `credential-change` when an administrator changes a person's
+credentials or a reset link is spent, `assurance-level-change` when a
+re-authentication moves a session's `acr`, and `token-claims-change` for a
+modified GNAP grant (see the table at the top). **No device reports compliance
+to this service and no risk engine talks to it**, so the other two are by hand
+only. That is a feature rather than a gap: they are exactly the events a
+receiver is hardest to test against, because in a real deployment they arrive
+from systems you do not control.
 
 Two doors, one function behind them, so a form and a script produce the same
 bytes:

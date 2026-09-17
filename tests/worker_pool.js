@@ -16,7 +16,7 @@
 // file is one section per way:
 //
 //   A. IT COMPUTES SOMETHING ELSE.       The bytes a worker produces must be
-//      the bytes this process would have produced. Nine of the eleven
+//      the bytes this process would have produced. Eight of the eleven
 //      algorithms sign DETERMINISTICALLY, so for those it is literal byte
 //      equality; the three composite ECDSA ones cannot be — node's ECDSA is
 //      randomized, and two signatures over one message differ by design — so
@@ -158,7 +158,7 @@ module.exports = {
                   here.length + ' bytes');
         }
         // Each side verifies what the other made. For the randomized three
-        // this is the whole assertion; for the other eight it is the check
+        // this is the whole assertion; for the other seven it is the check
         // that byte equality was not two identical wrong answers.
         t.check(await pqJose.verifyAsync(alg, pair.pub, MESSAGE, here),
                 alg + ': a worker verifies what this process signed');

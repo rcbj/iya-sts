@@ -12,9 +12,9 @@
 // identical from the outside to one that was never reached, and every test that
 // drives a WELL-FORMED request still passes.
 //
-// So this file is almost entirely negatives — the shape `tests/sts_dpop.js`
-// argues for. An identity provider that accepts a good request looks finished
-// and can be worth nothing.
+// So this file is almost entirely negatives — the shape
+// `tests/vendored/sts_dpop.js` argues for. An identity provider that accepts a
+// good request looks finished and can be worth nothing.
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
@@ -531,8 +531,9 @@ async function run(t_) {
   // service: one unauthenticated POST with a 531 KB body froze the whole
   // process for 2956ms, and `/healthcheck` — 1-2ms idle — waited 2753ms behind
   // it. The body limit is 5mb, so ten times that payload is half a minute of a
-  // service answering nobody, on the thread that owns the KDC, the directory,
-  // both TLS listeners and all four SPIFFE sockets.
+  // service answering nobody, on the thread that owns the KDC, the directory
+  // and all four SPIFFE sockets (and, when this was measured, both TLS
+  // listeners, deleted on 2026-09-16).
   // -----------------------------------------------------------------------
   t_.log.info('=== inflate() ===');
 

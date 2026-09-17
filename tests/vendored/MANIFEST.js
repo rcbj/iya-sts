@@ -45,19 +45,20 @@ const log = require('bunyan').createLogger({ name: 'MANIFEST',
 // stack and its host stack, and are what its CI drives. A fix made HERE would
 // be overwritten by the next sync and would never reach the stack that
 // actually gates that project. **Edit the parent's copy, then re-sync** —
-// `./local-run-tests.sh --vendor-sync` does the copy and
-// `--vendor-check` reports what differs.
+// `node tests/tools/vendor-check.js --sync` does the copy and
+// `node tests/tools/vendor-check.js` reports what differs.
 //
-// THE EXCEPTION IS THE SIX JOBS MARKED `local: true` BELOW — this service's
-// own `/admin` console and `/admin-api`. Those are NOT copies of anything: the
-// parent deleted its own on 2026-08-28 and they are edited here and only here.
-// The rule above applies to every other file in this directory.
+// THE EXCEPTION IS EVERY JOB MARKED `local: true` BELOW — most of them drive
+// this service's own `/admin` console and `/admin-api`, and the note above
+// JOBS says why each of the others is local. Those are NOT copies of anything:
+// the parent deleted the first of them on 2026-08-28, and they are edited here
+// and only here. The rule above applies to every other file in this directory.
 //
 // What vendoring buys is that this repository's suite RUNS with no parent
 // checkout beside it. Before 2026-08-28 a machine with only this repository on
 // it ran ten in-process files and reported the other thirteen jobs as absent;
-// now it runs all twenty-seven. The drift check is the part that needs both
-// checkouts, and it is therefore a TOOL rather than a job — see
+// since then it runs every job it has. The drift check is the part that needs
+// both checkouts, and it is therefore a TOOL rather than a job — see
 // `tools/vendor-check.js` for why that distinction is deliberate.
 // ===========================================================================
 
@@ -66,8 +67,8 @@ const log = require('bunyan').createLogger({ name: 'MANIFEST',
 //
 // `tests/` is the obvious half: the jobs and the helpers they share.
 //
-// `client/src/` is the DEBUGGER'S OWN WALLET AND CRYPTO CODE, and five of the
-// fifteen jobs load it deliberately. That is not an accident of layout — it
+// `client/src/` is the DEBUGGER'S OWN WALLET AND CRYPTO CODE, and several of
+// the copied jobs load it deliberately. That is not an accident of layout — it
 // is the POINT of those tests. `vc_did.js` checks that a credential this
 // service issued verifies under the wallet's DID resolver;
 // `sts_jws_verification.js` checks a signature against the debugger's PQC
@@ -109,17 +110,18 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // `sts_xacml_remote_pep.js`, and the ordinary way it gets its container is that
 // the LAUNCHER brought one up:
 //
-//   * `./local-run-tests.sh` adds `--profile xacml` to the project it already
-//     starts the service in and publishes the PEP on a free host port;
+//   * `./local-run-tests.sh` added `--profile xacml` to the project it already
+//     started the service in and published the PEP on a free host port, until
+//     it was removed on 2026-09-16;
 //   * `./docker-run-tests.sh` declares an `xacml-pep` service in
 //     `docker-compose-run-tests.yml`, on the bridge the tests container shares
 //     with the service.
 //
-// Both then export `XACML_PEP_URL`, `XACML_PEP_NAME` and `XACML_PEP_REALM`, and
-// the job drives that container over HTTP and shells out to nothing. **THAT IS
-// WHY THE LAUNCHER OWNS IT**: the containerized runner is a container with no
-// docker in it, deliberately, so a job that started its own could never run in
-// the stack that gates this repository.
+// Each exports (or exported) `XACML_PEP_URL`, `XACML_PEP_NAME` and
+// `XACML_PEP_REALM`, and the job drives that container over HTTP and shells
+// out to nothing. **THAT IS WHY THE LAUNCHER OWNS IT**: the containerized
+// runner is a container with no docker in it, deliberately, so a job that
+// started its own could never run in the stack that gates this repository.
 //
 // The flag matters only when NEITHER launcher is involved — a bare
 // `node tests/tools/run-report.js`, or a coverage run, both of which drive a
@@ -138,9 +140,11 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // `local: true` means THIS REPOSITORY OWNS THE FILE and there is no copy of it
 // over there to compare against. THE LIST BELOW IS THE AUTHORITY ON HOW MANY
 // THERE ARE — this paragraph used to open by counting them and the count went
-// stale twice, which is exactly the drift a manifest exists to stop. They are
-// the jobs that drive this service's OWN `/admin` console and its `/admin-api`:
-// `sts_metadata.js`, `admin_api.js`, `sts_admin_api_operations.js`,
+// stale twice, which is exactly the drift a manifest exists to stop — and the
+// list of names that replaced the count went stale the same way, so the entries
+// below, with the comment above each later one, are the list. Most of them
+// drive this service's OWN `/admin` console and its `/admin-api`; the first
+// were `sts_metadata.js`, `admin_api.js`, `sts_admin_api_operations.js`,
 // `sts_admin_console.js`, `sts_delegated_permissions_example.js`,
 // `sts_consent.js`, `sts_global_logout.js`, `sts_portal_sessions.js`,
 // `sts_portal_totp.js`, `sts_second_factor_pages.js`,
@@ -154,31 +158,29 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // list it probes, the other checks its coverage against `sts_metadata.js`'s
 // own PROTOCOLS table — so a copy over there would read the pinned `sts/`
 // gitlink and check a service that is not the one running. Each argues it in
-// its own header. The rest are the console jobs — the later ones of which
-// are covered by the argument below for the same reason: one builds an example
+// its own header. The rest are the console jobs — the later ones of which are
+// covered by the argument below for the same reason: one builds an example
 // THROUGH `/admin-api` for somebody to read on `/admin`, and another grants a
 // GLOBAL CONSENT through `/admin-api/consent` and then watches a sign-in stop
-// being
-// asked, which is a console control with a protocol consequence and could not
-// be asserted at all from a repository holding only one half of it. THE THREE
-// XACML JOBS ARE HERE FOR THAT SAME REASON AND IT IS THE STRONGEST CASE OF
-// ALL: a PDP with an empty repository answers NotApplicable to everything, so
-// there is no question worth asking `/xacml/pdp` until a policy exists, and the
-// only way to put one there over HTTP is `/admin-api/xacml`. Every assertion in
-// any of the three therefore spans a console door and a protocol door — a
-// template
-// built on `/admin-api` deciding at `/xacml/pdp`, a policy disabled on the
-// console disappearing from what a remote PEP pulls, a rule built by pressing
-// buttons on `/admin/xacml/editor` changing what `/xacml/protected` allows —
-// and a test with the two halves in two repositories could not make one of
-// them. **`sts_xacml_remote_pep.js` IS THE THIRD AND IS ALSO THE ONLY JOB HERE
-// THAT STARTS A SECOND PROCESS OF ITS OWN**: it runs `xacml-pep/pep.js` — the
-// real container's program, not a stand-in — registers it, deploys policy
-// through `/admin-api/xacml` and asserts that what that separate process
-// ALLOWS changes with it. So it answers YES to the console question above AND
-// NO to CLAUDE.md's second one ("can it be asserted by driving the running
-// service over HTTP?"), which is the case reserved for this repository, and
-// both answers put it here.
+// being asked, which is a console control with a protocol consequence and could
+// not be asserted at all from a repository holding only one half of it. THE
+// THREE XACML JOBS ARE HERE FOR THAT SAME REASON AND IT IS THE STRONGEST CASE
+// OF ALL: a PDP with an empty repository answers NotApplicable to everything,
+// so there is no question worth asking `/xacml/pdp` until a policy exists, and
+// the only way to put one there over HTTP is `/admin-api/xacml`. Every
+// assertion in any of the three therefore spans a console door and a protocol
+// door — a template built on `/admin-api` deciding at `/xacml/pdp`, a policy
+// disabled on the console disappearing from what a remote PEP pulls, a rule
+// built by pressing buttons on `/admin/xacml/editor` changing what
+// `/xacml/protected` allows — and a test with the two halves in two
+// repositories could not make one of them. **`sts_xacml_remote_pep.js` IS THE
+// THIRD AND IS ALSO THE ONLY JOB HERE THAT STARTS A SECOND PROCESS OF ITS
+// OWN**: it runs `xacml-pep/pep.js` — the real container's program, not a
+// stand-in — registers it, deploys policy through `/admin-api/xacml` and
+// asserts that what that separate process ALLOWS changes with it. So it answers
+// YES to the console question above AND NO to CLAUDE.md's second one ("can it
+// be asserted by driving the running service over HTTP?"), which is the case
+// reserved for this repository, and both answers put it here.
 // Read the paragraph below as though it said all of them: they build
 // something THROUGH `/admin-api` for somebody to read on `/admin`, so the tree
 // that changes those doors is the tree that should go red when it stops
@@ -313,23 +315,6 @@ const JOBS = [
   // service with no stack behind it, and runs the database half alone where
   // the keystore is off — saying which it is doing either way.
   { file: 'sts_secret_store.js',         browser: false, local: true },
-  // THE TWO SECOND-FACTOR MECHANISM PAGES AND THE ROSTER THAT ABSORBED
-  // /admin/mfa (2026-09-10). `local: true` on sts_portal_totp.js's argument
-  // one step further along: every assertion in it is about this service's own
-  // console or its /admin-api, and the tree that MOVES a control is the tree
-  // that should go red when the control lands nowhere.
-  //
-  // It is NOT covered by tests/webauthn_policy.js beside it and the split is
-  // the usual one: that file asserts what the settings module DECIDES — none
-  // of which is reachable over HTTP — and this one asserts that any of it
-  // reaches a page, an operation and a button. A settings group whose page was
-  // renamed and now has none is invisible in process and obvious in a request.
-  //
-  // AFTER sts_portal_totp.js on purpose: that job enrols an authenticator and
-  // clears it, and this one asserts a clear REFUSES for somebody holding
-  // nothing. Running before it would be asserting against a person this job
-  // created, which is what it does; running after leaves that unchanged and
-  // keeps the two clears in the order a reader of the report expects.
   // RFC 7521 / RFC 7523 (2026-09-10). `local: true` on the THIRD argument
   // `tests/CLAUDE.md` gives and at its plainest: every assertion spans an
   // AUTHORING door and a PROTOCOL door. A signing key pair does not exist
@@ -429,6 +414,23 @@ const JOBS = [
   // still asserts the no-database sentence on the way past, which is the half
   // that IS true of a memory-mode service.
   { file: 'sts_database_metrics.js',     browser: false, local: true },
+  // THE TWO SECOND-FACTOR MECHANISM PAGES AND THE ROSTER THAT ABSORBED
+  // /admin/mfa (2026-09-10). `local: true` on sts_portal_totp.js's argument
+  // one step further along: every assertion in it is about this service's own
+  // console or its /admin-api, and the tree that MOVES a control is the tree
+  // that should go red when the control lands nowhere.
+  //
+  // It is NOT covered by tests/webauthn_policy.js beside it and the split is
+  // the usual one: that file asserts what the settings module DECIDES — none
+  // of which is reachable over HTTP — and this one asserts that any of it
+  // reaches a page, an operation and a button. A settings group whose page was
+  // renamed and now has none is invisible in process and obvious in a request.
+  //
+  // AFTER sts_portal_totp.js on purpose: that job enrols an authenticator and
+  // clears it, and this one asserts a clear REFUSES for somebody holding
+  // nothing. Running before it would be asserting against a person this job
+  // created, which is what it does; running after leaves that unchanged and
+  // keeps the two clears in the order a reader of the report expects.
   { file: 'sts_second_factor_pages.js',  browser: false, local: true },
   // A REAL WEBAUTHN CEREMONY AGAINST THE SIGN-IN SCREEN (2026-09-10), and the
   // job that proves the two credential stores became one. `local: true` for
@@ -547,10 +549,11 @@ const JOBS = [
   // through and reported as a hang rather than as the measurement it is.
   //
   // **THE LDAP ONE NEEDS THE DIRECTORY'S OWN SOCKET**, which
-  // `docker-compose.yml` deliberately does not publish. Both launchers arrange
+  // `docker-compose.yml` deliberately does not publish. The launchers arrange
   // it and hand the job `STS_LDAP_URL` — `./docker-run-tests.sh` by putting
-  // the runner on the bridge with the service, `./local-run-tests.sh` by
-  // layering `tests/docker-compose-ldap.yml` with a free host port. It is NOT
+  // the runner on the bridge with the service, and `./local-run-tests.sh`
+  // (removed 2026-09-16) by layering `tests/docker-compose-ldap.yml` with a
+  // free host port. It is NOT
   // marked `docker: true`: that flag is for a job needing a DAEMON, and this
   // one needs a port. Run by hand with neither, it FAILS naming the variable
   // rather than reporting green having driven nothing.
@@ -580,7 +583,7 @@ const JOBS = [
 // THE HELPERS, and `env/local.js`. None of these is a job; every one of them is
 // reached by a `require` from at least one job above, which is the whole reason
 // it is here. The set was computed as the transitive local-require closure of
-// the seventeen jobs, not chosen — so a job that grows a new
+// the copied jobs, not chosen — so a job that grows a new
 // `require('./x.js')` over there arrives here as a MISSING MODULE at load time,
 // which is a failed job with a name in it rather than a silent gap.
 // ---------------------------------------------------------------------------
@@ -596,18 +599,6 @@ const HELPERS = [
   'env/local.js'
 ];
 
-// ---------------------------------------------------------------------------
-// THE WALLET AND CRYPTO MODULES, from client/src/. The first seven are named
-// by a job; the last six are their transitive requires, computed rather than
-// chosen — so a module that grows a new `require('./x.js')` over there arrives
-// here as MODULE_NOT_FOUND at load, which is a failed job with a name in it.
-//
-// The modules the jobs reach in THIS repository — `bbs2023.js` in
-// common/vendored/, `client_auth.js` in oauth-oidc/ — are NOT vendored and
-// must not be: they are the code under test. `run-report.js` points
-// MOCK_STS_DIR at the repository root so `module_paths.js` finds them where
-// they actually live.
-// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE HELPERS THAT ARE OURS (2026-09-06). Same idea as a job's `local: true`
 // and it needed a list of its own for the same reason: `HELPERS` above is
@@ -627,11 +618,13 @@ const LOCAL_HELPERS = [
   'bulk_load.js',
   // A SAML 2.0 assertion and an XML Signature, built by this suite's own code
   // — `sts_saml2_bearer_grant.js` signs with it, and so does the in-process
-  // `tests/saml_assertion_grant.js`, which is the only require from `tests/`
-  // into this directory and is argued at the top of that file. There is ONE
-  // independent XML Signature implementation here on purpose: a second copy
-  // would be a second place for exclusive canonicalization to be wrong, which
-  // is the one thing a wrong copy would hide.
+  // `tests/saml_assertion_grant.js`, which was the first require from `tests/`
+  // into this directory and argues it at the top of that file (several
+  // in-process files have followed it, here and to the enrollment and GNAP
+  // clients below). There is ONE independent XML Signature implementation here
+  // on purpose: a second copy would be a second place for exclusive
+  // canonicalization to be wrong, which is the one thing a wrong copy would
+  // hide.
   'saml_xmldsig.js',
   // GNAP's independent client instance (RFC 9421 signatures, RFC 9530 digests,
   // detached and attached JWS, the interaction hash) and the resource-owner
@@ -652,6 +645,18 @@ const LOCAL_HELPERS = [
   'scep_client.js'
 ];
 
+// ---------------------------------------------------------------------------
+// THE WALLET AND CRYPTO MODULES, from client/src/. The first seven are named
+// by a job; the last six are their transitive requires, computed rather than
+// chosen — so a module that grows a new `require('./x.js')` over there arrives
+// here as MODULE_NOT_FOUND at load, which is a failed job with a name in it.
+//
+// The modules the jobs reach in THIS repository — `bbs2023.js` in
+// common/vendored/, `client_auth.js` in oauth-oidc/ — are NOT vendored and
+// must not be: they are the code under test. `run-report.js` points
+// MOCK_STS_DIR at the repository root so `module_paths.js` finds them where
+// they actually live.
+// ---------------------------------------------------------------------------
 const CLIENT_MODULES = [
   // named directly by a job
   'did.js',

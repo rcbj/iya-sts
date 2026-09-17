@@ -3,13 +3,13 @@
 **A REMOTE XACML POLICY ENFORCEMENT POINT. PHASE FIVE, AND THE ONLY DIRECTORY
 IN THIS REPOSITORY THAT IS NOT PART OF THE MOCK.**
 
-Everything else here is required by `server.js` and runs in the identity
-service's process. This is a **second container**: five files, three npm
-packages, no express, no config table, no directory, and no key it generates —
-the two pairs it can hold, its client certificate and (since 2026-09-13) its
-HTTPS listener's, are both handed to it. It
-holds its own copy of the XACML engine, PULLS the policy repository from the
-mock's PDP and decides locally.
+Everything else here is required by `server.js` (through
+`common/protocol_stack.ts`) and runs in the identity service's process. This is
+a **second container**: five files, two npm packages, no express, no config
+table, no directory, and no key it generates — the two pairs it can hold, its
+client certificate and (since 2026-09-13) its HTTPS listener's, are both handed
+to it. It holds its own copy of the XACML engine, PULLS the policy repository
+from the mock's PDP and decides locally.
 
 ```
 docker compose --profile xacml up --build
@@ -36,7 +36,7 @@ live under `tests/`, with everything else:
 | Test | What it holds this directory to |
 |---|---|
 | `tests/xacml_pep.js` | **The SHAPE.** The engine loads against the shim with none of the mock's modules in `require.cache`; the Dockerfile's COPY set is exactly `engine.js`'s `MODULES` **and every `.js` at the top of this directory has a COPY line** (guarded in one direction only until 2026-09-06, which is how `pip.js` could have been added and left out of the image); the two `enforce()` implementations agree over seven decisions under both biases; and **`pip.js`'s WALK is driven on one document holding a designator in five places** — a target, a condition, a variable definition, an obligation assignment and a policy reached by `PolicyIdReference` — because a designator the walk misses is an empty bag, an empty bag is a legal answer, and nothing else anywhere would report it. In process, as a child, **making no HTTP request at all** — `sync.js` is not loaded by it. |
-| `tests/vendored/sts_xacml_remote_pep.js` | **THE DEPLOYMENT.** This container, on the mock's own docker network, in **both** launchers' stacks — `--profile xacml` under `./local-run-tests.sh`, a service of its own in `docker-compose-run-tests.yml` under `./docker-run-tests.sh`. It registers on a LATER attempt (its realm does not exist when it starts), pulls, decides out here, converges BY POLLING on a policy deployed at the PAP with the nudge undeliverable, stops enforcing a disabled policy, empties to the bias, recovers, **is dialled at `/notify` by the PDP across the bridge**, reports its counters onto the PDP's console, believes nothing in a hostile nudge body, and goes on deciding correctly when the PDP is taken away. **AND SINCE 2026-09-06 IT DRIVES `pip.js` END TO END**: `carol` asked for with the request asserting NOTHING, permitted because the designator was resolved against her entry in the mock's embedded directory, with the PDP reaching the same answer — the inversion of what that section used to hold. **It is the only thing anywhere that loads `sync.js` or makes a real PIP query, and the only thing that runs what this Dockerfile produces.** |
+| `tests/vendored/sts_xacml_remote_pep.js` | **THE DEPLOYMENT.** This container, on the mock's own docker network, in the suite's stack — a service of its own in `docker-compose-run-tests.yml` under `./docker-run-tests.sh` (and `--profile xacml` under `./local-run-tests.sh` until that launcher was removed on 2026-09-16). It registers on a LATER attempt (its realm does not exist when it starts), pulls, decides out here, converges BY POLLING on a policy deployed at the PAP with the nudge undeliverable, stops enforcing a disabled policy, empties to the bias, recovers, **is dialled at `/notify` by the PDP across the bridge**, reports its counters onto the PDP's console, believes nothing in a hostile nudge body, and goes on deciding correctly when the PDP is taken away. **AND SINCE 2026-09-06 IT DRIVES `pip.js` END TO END**: `carol` asked for with the request asserting NOTHING, permitted because the designator was resolved against her entry in the mock's embedded directory, with the PDP reaching the same answer — the inversion of what that section used to hold. **It is the only thing anywhere that loads `sync.js` or makes a real PIP query, and the only thing that runs what this Dockerfile produces.** |
 
 The split is worth keeping straight when either is edited: the first can never
 see a bug in the register/pull/heartbeat client, and the second can never see
@@ -71,7 +71,7 @@ name, and the nudge arriving over a bridge — none of which a host run touches.
 
 ## Why this exists at all, which is not obvious
 
-The mock already has a PEP: `/xacml/protected`, in `xacml/xacml.js`. It builds
+The mock already has a PEP: `/xacml/protected`, in `xacml/xacml.ts`. It builds
 a request, asks the PDP, applies the bias and the obligation rule, and answers
 200 or 403. It is a correct implementation of section 7.2 and it demonstrates
 almost nothing about a distributed deployment, because it **shares a process
@@ -170,7 +170,7 @@ Three ways to get seven modules into a second container, and two are wrong:
 **The seven are named individually rather than `COPY xacml/ ./xacml/`**, which
 looks like the fragile choice and is the safe one: a whole-directory copy would
 put `xacml.js`, `xacml_admin.js` and `xacml_pep_registry.js` in the image, every
-one of which requires `common/app.js`, `admin-ui/admin.js` or `common/config.js`
+one of which requires `common/app.js`, `admin-ui/admin.ts` or `common/config.js`
 — sitting there unloadable, waiting for a stack trace about express in a
 container that has no express.
 
@@ -274,7 +274,8 @@ request was denied by a policy that was working perfectly.
 `xacml.js`'s `enforce()` is fifty lines and is not in the copy list. It is the
 PEP's own decision — the bias and the obligation rule — and a PEP that imported
 the PDP's would be demonstrating that two processes agree because they are one
-program. That is the thing `tests/sts_dpop.js` refuses to do when it writes its
+program. That is the thing `tests/vendored/sts_dpop.js` refuses to do when it
+writes its
 own DPoP client rather than importing the wallet's.
 
 Written out, this PEP can run a DIFFERENT bias from the mock's embedded one, and
@@ -378,7 +379,8 @@ authorization services.
 That is a real trade and both surfaces say so rather than hiding it: a policy
 change made during an outage is **not enforced here** until the next successful
 pull. **`sts_xacml_remote_pep.js` section 9 is the first thing to check it**: it
-removes the realm out from under a running container and asserts that it goes on
+turns `xacml.remotePeps` off in its realm under a running container (see the
+next paragraph) and asserts that it goes on
 deciding CORRECTLY IN BOTH DIRECTIONS — still permitting what the last pulled
 policy permits, still refusing what it refuses — while reporting `lastPullOk:
 false` and saying it is KEEPING what it has. Both halves matter and a mutant
@@ -411,7 +413,7 @@ console.
 | `PEP_NAME` | `pep-1` | **Ignored when a client certificate is presented** — the PDP names the row from the certificate. |
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | The client certificate. Without it the PDP refuses the registration unless `xacml.pepRequireCertificate` is off. Enforcement is unaffected either way. |
 | `PEP_TLS_CA` | — | An anchor for the PDP's certificate. |
-| `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, which regenerates its key on every start and signs it itself — so there is nothing to verify against. Logged on every start, for `federation_http.js`'s reason. |
+| `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, whose listener certificate is issued by a service Root that development mode regenerates on every start — so there is no fixed anchor to verify against (`tls/CLAUDE.md`). Logged on every start, for `federation_http.ts`'s reason. |
 | `PEP_NOTIFY_URL` | — | Where the PDP should nudge. |
 | `PEP_BIAS` | `deny-biased` | This PEP's own. |
 | `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with no `PEP_TLS_CERT`, since that endpoint requires a verified certificate holding `REMOTE_PEPS`. On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. |
@@ -421,7 +423,7 @@ console.
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | **PATHS, re-read on an interval** — the listener's pair, issued by the PDP's realm. Unlike `PEP_TLS_CERT`, which is read once, because this pair normally does not exist when the container starts. See *The HTTPS listener*. |
 | `PEP_HTTPS_PORT` | `9443` | |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. |
-| `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
+| `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | |
 
 **The compose service ships with no certificate**, so out of the box it
 registers unauthenticated and the mock refuses it — which is the honest default
@@ -591,7 +593,7 @@ private CA — and WHEN it can exist.
 **IT IS ISSUED BY THE REALM THE PEP REGISTERED TO**, from that realm's
 `pep-tls` Issuing CA (`common/pki.js`, argued in `common/CLAUDE.md`), through
 `POST /admin-api/xacml/issue-pep-certificate` or the control on
-`/admin/xacml/peps` (`xacml/xacml_pep_tls.js`). The PEP's row in `ou=peps` is
+`/admin/xacml/peps` (`xacml/xacml_pep_tls.ts`). The PEP's row in `ou=peps` is
 what decides the realm and what supplies the default names, so an unregistered
 PEP is refused. The private key is in that one reply and nowhere else.
 
@@ -627,7 +629,7 @@ can report a new mtime for identical bytes, and a copy can keep an old one.
   hierarchy for an outbound request, and trusting the service Root there would
   accept ANY leaf this service issued under a matching name — so it would also
   need the chain checked for the `pep-tls` Issuing CA. That is a change to
-  `xacml/xacml_pep_http.js`'s verification, argued there if it is made, not a
+  `xacml/xacml_pep_http.ts`'s verification, argued there if it is made, not a
   consequence of this listener existing.
 * **Nothing reports the served certificate back to the PDP.** The row on
   `/admin/xacml/peps` shows what the realm ISSUED; `GET /` here shows what is

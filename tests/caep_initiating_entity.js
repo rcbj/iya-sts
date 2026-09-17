@@ -13,7 +13,7 @@
 //
 // This service had the branch and could not reach it. `dropSession()` decides
 // the value by testing the `via` it is given for `admin` or `console`, and
-// EVERY door went through `logout.js`'s session family, which passed one
+// EVERY door went through `logout.ts`'s session family, which passed one
 // hard-coded string: `the protocol-independent logout`. So a support desk
 // ending somebody's session from /admin/logout, the Revoke button on
 // /admin/sessions and the management API all emitted an event saying the
@@ -33,14 +33,15 @@
 // Seeing this over HTTP means agreeing a stream, driving a sign-out through
 // each of four doors and reading the SET off the far end — which is a protocol
 // test and belongs in the parent project's suite. What is asserted here is the
-// CONTRACT BETWEEN THREE MODULES that the value rests on: `logout.js` carries
-// the caller's own words, `authn.js` turns them into an entity, and `caep.js`
+// CONTRACT BETWEEN THREE MODULES that the value rests on: `logout.ts` carries
+// the caller's own words, `authn.js` turns them into an entity, and `caep.ts`
 // honours an entity the notice states outright. Every one of those is a
 // function call with no port, and the defect above lived precisely in the
 // seam between them — each module was correct on its own.
 //
-// The EXPIRY half additionally cannot be driven over HTTP at all: the session
-// lifetime is an hour, and nothing anywhere can shorten it from outside.
+// The EXPIRY half is impractical over HTTP: the session lifetime
+// (`authn.sessionLifetimeS`) is an hour by default and a minute at the least,
+// and here the session's `expires` is simply set in the past.
 // ===========================================================================
 
 // Deleted rather than set, for the reason config_realm_layer.js gives: nothing
@@ -81,7 +82,7 @@ function signIn(username, via) {
                             username, ['pwd'], '1', via || 'OAuth 2.0 / OIDC');
 }
 
-// The entity `caep.js` would put on the event for one notice. Asked of THAT
+// The entity `caep.ts` would put on the event for one notice. Asked of THAT
 // module rather than recomputed here, because the mapping is the thing under
 // test: a copy of the rule in this file would pass while the service was
 // wrong.

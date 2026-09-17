@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: roles.js
@@ -21,7 +22,7 @@
 //   * It is ENFORCED. An application entry names the roles it REQUIRES, and
 //     nothing is issued for that application to somebody who holds none of
 //     them — a decision made by the XACML PDP through the embedded PEP in
-//     `xacml/xacml_role_pep.js`, never by an `if` in an issuance site.
+//     `xacml/xacml_role_pep.ts`, never by an `if` in an issuance site.
 //
 // THOSE ARE TWO DIFFERENT RELATIONS AND THIS FILE KEEPS THEM APART, because
 // collapsing them is the mistake that makes the whole feature unreadable:
@@ -38,11 +39,11 @@
 // between what somebody IS and what somebody ASKS OF OTHERS.
 //
 // ---------------------------------------------------------------------------
-// SIX ROLES ARE BUILT IN, COMPUTED, AND IN NO CONTAINER.
+// SIX ROLES ARE BUILT IN, COMPUTED, AND IN NO CONTAINER — TEN BY NOW.
 //
 // They cannot be created, edited or deleted, they have no members to list, and
 // every one of them is answered from the CONTEXT of the request being decided
-// rather than from a store:
+// rather than from a store. The six this file was written with:
 //
 //   EVERYBODY                        anybody at all, authenticated or not.
 //   ALL_AUTHENTICATED_USERS          a person with a live session here.
@@ -62,6 +63,10 @@
 // decision, the audit log records it, and turning enforcement on for an
 // application is narrowing a list rather than switching on a subsystem that
 // has never run.
+//
+// The other four — ADMIN_READ and ADMIN_WRITE (read off an access token's
+// scopes), REMOTE_PEPS and XACML_USER (held through a named group) — are
+// argued at their rows in `BUILT_IN` below.
 //
 // The pairs are deliberately NOT complementary by accident — they are
 // complementary on purpose, and both halves exist because "everyone who did
@@ -83,9 +88,9 @@
 //
 // The DIRECTORY arrives through a slot pointing the other way, exactly as
 // `group_claims.js`, `applications.js` and `xacml_store.js` do it: only
-// `ldap/ldap_server.js` can answer what is in `ou=roles`, and it is the last
-// module `server.js` requires, so a require reaching it from here would drag
-// every `/ldap` route to the front of the router.
+// `ldap/ldap_server.js` can answer what is in `ou=roles`, and it is required
+// at 21 in `common/protocol_stack.ts`, so a require reaching it from here
+// would drag every `/ldap` route to the front of the router.
 // ---------------------------------------------------------------------------
 
 const { log } = require('./helpers');
@@ -137,8 +142,9 @@ const SCHEMA = {
 };
 
 // ---------------------------------------------------------------------------
-// THE BUILT-IN ROLES. SIX WHEN THIS TABLE WAS WRITTEN, SEVEN SINCE 2026-09-06
-// AND EIGHT SINCE THE XACML SURFACE WAS CLOSED.
+// THE BUILT-IN ROLES. SIX WHEN THIS TABLE WAS WRITTEN, SEVEN SINCE 2026-09-06,
+// EIGHT SINCE THE XACML SURFACE WAS CLOSED, AND TEN SINCE THE MANAGEMENT
+// API'S TWO (2026-09-09).
 //
 // A table rather than six constants, because three things have to agree about
 // them — the console's menus, the resolver below, and the refusal that stops
@@ -599,7 +605,9 @@ function remove(name) {
 //   { kind: 'user' | 'application',
 //     name: the username or the application's client id / handle,
 //     authenticated: whether this party proved anything,
-//     groups: the group names a person is in (a user only) }
+//     groups: the group names a person is in (a user only),
+//     scopes: an access token's scopes, where there is one — ADMIN_READ and
+//             ADMIN_WRITE are read off them }
 //
 // THE GROUPS ARE PASSED IN RATHER THAN LOOKED UP HERE where the caller already
 // has them, and looked up through the directory slot where it does not. Both,
@@ -800,8 +808,8 @@ function rolesInClaims(claims) {
     return [];
   }
   // THREE SHAPES ARE ACCEPTED because three are what real identity providers
-  // send: an array, a single string, and a space-separated string (which is
-  // what a `scope`-shaped claim looks like and what several products emit).
+  // send: an array, a single string, and a space- or comma-separated string
+  // (a `scope`-shaped claim, and what several products emit).
   // Reading only the first would silently find nothing in the other two, and
   // finding nothing looks exactly like holding no roles.
   const values = Array.isArray(raw) ? raw

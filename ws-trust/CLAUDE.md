@@ -1,16 +1,17 @@
 # ws-trust/
 
-WS-Trust 1.0 through 1.4, at `/wstrust`. One file.
+WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
+`/sts/cert`). One file.
 
 **ONE PARSER ANSWERS ALL FOUR VERSIONS**, and that is not a simplification. The
 trust namespace alone has four versions in use, so `firstByLocal()` and
 `textByLocal()` in `../common/helpers.js` match on LOCAL NAME WITH THE NAMESPACE
 IGNORED. That is what lets one `RST` parser serve WS-Trust 1.0–1.4 instead of
 four, and it is why those two functions are in `common/` rather than here — the
-other two readers are `../ws-federation/wsfed.js`'s `wreq` and the `wresult` the
+other two readers are `../ws-federation/wsfed.ts`'s `wreq` and the `wresult` the
 mock relying party is POSTed.
 
-It asks `../saml/saml2.js` for the assertion it puts in an `RSTR`; it records the
+It asks `../saml/saml2.ts` for the assertion it puts in an `RSTR`; it records the
 `AppliesTo` as a relying party through `../common/applications.js`, and a
 `AppliesTo` handed a SAML 2.0 assertion is BOTH a WS-Trust relying party AND that
 assertion's service provider, so `seen()` is passed a LIST rather than called
@@ -147,17 +148,17 @@ what to present:**
 
 `tests/saml_family_hardcoded.js` section E pins all of it in process.
 
-## There is no test for this in either repository
+## What is tested, and what is not
 
 The parent project has `tests/wstrust.js` and
 `tests/wstrust_schema_validate.js`, which drive the DEBUGGER's client side
-against this endpoint. Nothing tested this module on its own until `tests/saml_family_hardcoded.js`
-(2026-09-12), which holds the product-mode refusals above; the negatives below
-are where the value is: `Validate` and `Cancel` answering above the
-`authenticate()` call, a document carrying both a UsernameToken and an
-`OnBehalfOf`, a `Renew` with no security header. Every one of those is drivable
-over HTTP, so by the root `CLAUDE.md`'s rule they belong in the PARENT project's
-suite.
+against this endpoint. Nothing tested this module on its own until
+`tests/saml_family_hardcoded.js` (2026-09-12), which holds the product-mode
+refusals above. Still untested, and where the value is: `Validate` and
+`Cancel` answering above the `authenticate()` call, a document carrying both a
+UsernameToken and an `OnBehalfOf`, a `Renew` with no security header. Every one
+of those is drivable over HTTP, so by the root `CLAUDE.md`'s rule they belong
+in the PARENT project's suite.
 
 ## A JWT'S `sub` IS A SUBJECT, AND THERE IS NONE WITHOUT AN ENTRY (2026-09-14)
 

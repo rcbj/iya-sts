@@ -32,7 +32,8 @@
 //
 //   * The parent project's `sts/` gitlink is pinned at a commit from before
 //     this repository was reorganised, so a guard written over there today
-//     does not run against this code at all. See the root CLAUDE.md.
+//     does not run against this code at all. tests/CLAUDE.md says the same of
+//     the jobs this repository owns.
 //   * What is actually being guarded is a MODULE CONTRACT — "a store that
 //     holds per-realm state is declared `realms.map()` and not `new Map()`" —
 //     and the assertions below are about that declaration rather than about
@@ -421,7 +422,7 @@ function checkScimCounters(t) {
 // ---------------------------------------------------------------------------
 // 5b. THE CAEP AND RISC REGISTERS (2026-09-12).
 //
-// Both were `new Map()` beside `ssf_streams.js`'s streams, which have been per
+// Both were `new Map()` beside `ssf_streams.ts`'s streams, which have been per
 // realm since the day SSF arrived — so a stream agreed in `acme` counted its
 // events against a session row every realm's console listed, and deleting
 // `alice` in `acme` put a `purged` row on the DEFAULT realm's
@@ -488,7 +489,7 @@ function checkSignalRegisters(t) {
 // ---------------------------------------------------------------------------
 // 5c. THE STORES WHOSE MODULES CANNOT BE LOADED IN THIS PROCESS (2026-09-12).
 //
-// `oid4vc/vc_offers.js` registers the offer pages and `spiffe/spiffe_auth.js`
+// `oid4vc/vc_offers.ts` registers the offer pages and `spiffe/spiffe_auth.ts`
 // requires `tls/tls_server.js`, which registers `/tls*` — and `run.js` runs
 // every file in ONE process, where a route registered here moves what a later
 // file sees of the router. So they are asserted in a CHILD PROCESS, which is
@@ -662,7 +663,7 @@ function checkChildStores(t) {
     log.debug("Leaving read().");
     return fs.readFileSync(path.join(root, rel), 'utf8');
   };
-  const scim = read('scim/scim_auth.js');
+  const scim = read('scim/scim_auth.ts');
   ['digestNonces', 'hobaChallenges', 'hobaSeen'].forEach(function (name) {
     t.check(new RegExp('^const ' + name + ' = realms\\.map\\(', 'm').test(
         scim) &&
@@ -681,8 +682,49 @@ function checkChildStores(t) {
 }
 
 // ---------------------------------------------------------------------------
-// 5c. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.js`, the approver
-// index in `gnap/gnap_signals.js` and the counters in `gnap/gnap_monitor.js`.
+// 5b-ii. KERBEROS'S THREE STORES (2026-09-15).
+//
+// They were `realms.sharedMap({ scope: 'shared' })` — declared shared ON
+// PURPOSE, and this file's own rule was satisfied by the word: the KDC answered
+// in no realm, so its principal database, the acceptor's replay cache and the
+// SPNEGO negotiations it held were the process's. Each trust realm now has a
+// KDC of its own, told apart by the Kerberos realm name, so all three are
+// `realms.map()` and the DECLARATION is what says so.
+//
+// The declaration is what is checked, for the reason this file checks scim's
+// and federation's that way: `handleFor()` reports the scope a store was
+// declared with, and a store declared shared cannot be made per realm by any
+// amount of care at its call sites. The BEHAVIOUR — a realm's principals are
+// its own, a realm removed takes them with it — is
+// `tests/kerberos_realm_routing.js`, which drives the KDC.
+// ---------------------------------------------------------------------------
+function checkKerberosStores(t) {
+  log.debug("Entering checkKerberosStores().");
+  t.log.info('the Kerberos stores');
+  // Required for their declarations rather than their behaviour, which is why
+  // the two socket owners are loaded here and never started.
+  require('../kerberos/krb5_principals.js');
+  require('../kerberos/krb5_service.js');
+  require('../kerberos/spnego_exchange.js');
+  [['krb5.principals', 'the principal database'],
+   ['krb5.replayCache', 'the acceptor\'s replay cache'],
+   ['spnego.pending', 'the unfinished SPNEGO negotiations']].forEach(
+      function (pair) {
+    const handle = realms.handleFor(pair[0]);
+    t.check(!!handle, pair[0] + ' is a declared store');
+    if (handle) {
+      t.equal(handle.scope, 'realm',
+              pair[1] + ' (' + pair[0] + ') is declared PER REALM — it was ' +
+              'scope: \'shared\' until each trust realm had a KDC of its own',
+              String(handle.scope));
+    }
+  });
+  log.debug("Leaving checkKerberosStores().");
+}
+
+// ---------------------------------------------------------------------------
+// 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
+// index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
 // `tests/vendored/sts_gnap_core.js` asserts the over-HTTP half — a token from
 // one realm refused by another realm's resource server, a continuation token
@@ -697,6 +739,7 @@ function checkGnapStores(t) {
   t.log.info('the GNAP stores');
   const fs = require('fs');
   const path = require('path');
+  const { sourceFilesIn } = require('./tools/source_file');
   const store = require('../gnap/gnap_store');
   const monitor = require('../gnap/gnap_monitor');
   const signals = require('../gnap/gnap_signals');
@@ -743,8 +786,8 @@ function checkGnapStores(t) {
   });
 
   const dir = path.join(__dirname, '..', 'gnap');
-  fs.readdirSync(dir)
-    .filter(function (f) { return /\.js$/.test(f); })
+  // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+  sourceFilesIn(fs.readdirSync(dir))
     .forEach(function (file) {
     const src = fs.readFileSync(path.join(dir, file), 'utf8');
     t.check(!/^(const|let|var)\s+\w+\s*=\s*new (Map|Set)\(/m.test(src),
@@ -797,6 +840,7 @@ function run(t) {
   checkPurge(t);
   checkScimCounters(t);
   checkSignalRegisters(t);
+  checkKerberosStores(t);
   checkGnapStores(t);
   checkChildStores(t);
   checkDefaultUnchanged(t);

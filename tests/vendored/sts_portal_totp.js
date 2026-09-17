@@ -25,18 +25,19 @@
 // THE CODE IS COMPUTED BY AN IMPLEMENTATION WRITTEN FOR THIS FILE, AND THAT IS
 // THE WHOLE VALUE OF THE JOB.
 //
-// `tests/totp.js` asserts `common/totp.js` against RFC 4226's and RFC 6238's
+// `tests/totp.js` asserts `common/totp.ts` against RFC 4226's and RFC 6238's
 // own published vectors, so the SERVICE's arithmetic is known to be right. What
 // that cannot show is that a THIRD PARTY holding the secret this service handed
 // out can produce a code this service accepts — which is the only thing an
 // authenticator app ever does, and the only claim a person cares about.
 //
 // So the thirty lines below are deliberately not `require`d from
-// `common/totp.js`. They are the same shape a client author would write, and
+// `common/totp.ts`. They are the same shape a client author would write, and
 // they are checked against RFC 6238's Appendix B before they are trusted (see
 // `theGeneratorIsRight()`) — because a test-side generator that agreed with a
 // broken service would be worse than no test at all. It is the arrangement
-// `tests/webauthn_cross_impl.js` describes: two implementations written apart,
+// the parent project's `tests/webauthn_cross_impl.js` describes: two
+// implementations written apart,
 // each checked against the specification, then checked against each other.
 //
 // ---------------------------------------------------------------------------
@@ -64,7 +65,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -529,19 +530,15 @@ async function enrolling() {
         "only thing an authenticator app ever does, and the claim tests/" +
         "totp.js cannot make", function () {
     // **THE 200 IS AS RIGHT AS THE 303 AND THIS ASSERTION TOOK BOTH ON
-    // 2026-09-10**, when a first enrolment started issuing RECOVERY CODES.
-    // Every other branch of this endpoint redirects, deliberately: a rendered
-    // response to a POST is one the browser offers to re-submit. The branch
-    // that issues a set cannot, because a 303 cannot carry a list of
-    // credentials and putting them in a query string would write them into a
-    // browser history entry and every proxy log on the way — so that one
-    // moment, the only one at which this service knows the person is
-    // watching, answers with the page.
+    // 2026-09-10**, when a first enrolment started issuing RECOVERY CODES and
+    // answered with the page, because a 303 cannot carry a list of
+    // credentials. Since 2026-09-11 an enrolment issues no codes (a set is
+    // generated on request instead), and both answers are still accepted.
     //
     // What is asserted here is that the confirmation SUCCEEDED, which both
     // answers say. `tests/vendored/sts_portal_backup_codes.js` is where the
-    // 200 itself is pinned, because over there it is the subject rather than
-    // an incidental.
+    // recovery codes' own render is pinned, including that an enrolment
+    // shows none.
     assert.ok(r.status === 303 || r.status === 302 || r.status === 200,
       "the confirmation answered " + r.status + " " +
       String(r.text).slice(0, 300));

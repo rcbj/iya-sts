@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: xacml_functions.js
@@ -45,7 +46,7 @@
 // policy that should have been Indeterminate returns Permit.
 //
 // ---------------------------------------------------------------------------
-// FIVE FUNCTIONS MUST NOT HAVE THEIR ARGUMENTS EVALUATED UP FRONT.
+// TEN FUNCTIONS MUST NOT HAVE THEIR ARGUMENTS EVALUATED UP FRONT.
 //
 // `and`, `or` and `n-of` SHORT-CIRCUIT — the specification says so in as many
 // words, and it matters for more than speed: an argument that would be
@@ -428,7 +429,7 @@ generic('set-equals', typesWith('equal'), function (row, uri) {
 });
 
 // ---------------------------------------------------------------------------
-// LOGICAL FUNCTIONS. Three of the five lazy ones.
+// LOGICAL FUNCTIONS. Three of the ten lazy ones.
 // ---------------------------------------------------------------------------
 
 // Evaluate one argument expression and insist it is a single boolean.

@@ -14,7 +14,8 @@ const log = require('bunyan').createLogger({ name: 'xacml_monitor',
 //
 // The page reports how many authorization decisions this service is making and
 // how many are refusals. Both halves of that sentence are easy to get subtly
-// wrong in a way nothing shows, and each of the four sections below pins one:
+// wrong in a way nothing shows, and the first four sections below pin one
+// each (the fifth holds the counters per trust realm):
 //
 //   1. **A DECISION IS NOT AN ENFORCEMENT.** XACML has four decisions and a PEP
 //      has two outcomes; what maps between them is the PEP's BIAS, so a

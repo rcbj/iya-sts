@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: jose_kid.js

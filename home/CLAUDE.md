@@ -4,7 +4,7 @@ The front door. One module, two routes, one image:
 
 | File | What it is |
 |---|---|
-| `home.js` | `GET /` — the page — and `GET /logo.png`, the only image this service serves. |
+| `home.ts` | `GET /` — the page — and `GET /logo.png`, the only image this service serves. |
 | `assets/debugger-logo.png` | That image. A DERIVATIVE of the parent project's artwork, not a copy of it — see below. |
 
 It is a directory of its own rather than a route in `common/`, and the entry
@@ -15,8 +15,10 @@ package root, where there are exactly two modules and both earn it.
 ## Its place in the require order (6a)
 
 No constraint. Two EXACT paths (`/` and `/logo.png`) and nothing but the app
-behind them; first among the route modules so that the page a person meets
-first heads the list on `/admin/sts-metadata`.
+behind them; first among the route modules — the first `register()` call in
+`common/protocol_stack.ts`, since #50's R1 moved registration out of the
+require — so that the page a person meets first heads the list on
+`/admin/sts-metadata`.
 
 ## What this page is for, and the one rule it must keep
 
@@ -66,7 +68,7 @@ were to know the path already or to be handed an activation link — so the one
 surface in this service built for a PERSON rather than for an operator or a
 client was the one surface with nothing on the front door pointing at it. Its
 row lists none of the portal's pages, for the endpoint rule one section up:
-`portal/portal.js`'s `NAV` is the page list and `sts_metadata.js` reports it,
+`portal/portal.ts`'s `NAV` is the page list and `sts_metadata.ts` reports it,
 so a set of highlights here would be a second copy that goes stale the first
 time a page is added there.
 
@@ -109,10 +111,11 @@ at it, so saying who you are is the entire question.
 
 * **It is a route, not `express.static()`.** One file does not need a static
   middleware, and a middleware mounted at the root would sit in front of every
-  route registered after this module for the rest of the process's life — rule 1
-  in the root `CLAUDE.md`.
+  route registered after this module's for the rest of the process's life — rule
+  1 in the root `CLAUDE.md`. (This module's routes are registered first among
+  the route modules, by `common/protocol_stack.ts`, since #50's R1.)
 * **It is read once, at require time**, and a failure to read it is RECORDED
-  rather than thrown, for the reason the four socket-owning modules start their
+  rather than thrown, for the reason the socket-owning modules start their
   listeners from `listen()`: a `require` that throws takes the whole service
   down, and a missing decoration is the least important thing that could go
   wrong here. With no image the page is drawn without one and the route answers
@@ -147,5 +150,5 @@ it has no behaviour. Its one `<style>` block is covered by the
 `style-src 'unsafe-inline'` several pages here already rely on, and the image is
 same-origin, which `img-src 'self' data:` already allows. A page that fetched a
 font from a CDN would need the policy widened for a decoration — so it does not.
-Four pages here have a script on them and each had to argue for it separately;
-this is not a fifth.
+Seven pages here have a script on them and each had to argue for it
+separately (the root `CLAUDE.md` lists them); this is not an eighth.

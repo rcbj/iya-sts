@@ -31,21 +31,30 @@ locals {
   pep_image_tag      = var.pep_image_tag != "" ? var.pep_image_tag : "pep-${var.image_tag}"
   reports_bucket     = "${var.name}-test-reports-${local.account_id}"
 
-  public_base_url = "https://${aws_lb.main.dns_name}"
+  # The name clients use: `public_hostname` when set (dns.tf), otherwise the
+  # load balancer's own DNS name.
+  public_host     = var.public_hostname != "" ? var.public_hostname : aws_lb.main.dns_name
+  public_base_url = "https://${local.public_host}"
   container_port  = 8081
 
   # EVERY PORT THE LOAD BALANCER PUBLISHES, and the node port behind it. The
-  # main port is 443 outside and 8081 inside; the other three are the same
+  # main port is 443 outside and 8081 inside; the other two are the same
   # number on both sides, because a job dials the number the service writes
   # into what it publishes (a certificate's CRL address, a directory URL).
-  #   mtls  9443  the mutual-TLS listener (sts_global_logout's certificate sign-in)
   #   ldap  389   the embedded directory (the LDAP bulk load, sts_global_logout,
   #               the ldap:// CRL addresses)
   #   pki   8082  the plain-HTTP CRL/OCSP/caIssuers listener
-  # Four target groups per ECS service; the limit is five.
+  #
+  # `mtls` (9443, the mutual-TLS listener) WAS THE FOURTH UNTIL 2026-09-16,
+  # when that listener and the permissive one beside it were deleted from the
+  # service. It cost a target group and an NLB listener, and what it carried —
+  # a certificate sign-in — is `GET /tls/sign-in` on the main port now, which
+  # asks every connection for a client certificate and requires none. Removing
+  # the row is the whole change: `nlb.tf`, `security.tf`, `ecs.tf` and
+  # `outputs.tf` all iterate this map.
+  # Three target groups per ECS service; the limit is five.
   published_ports = {
     https = { listener = 443, container = 8081 }
-    mtls  = { listener = 9443, container = 9443 }
     ldap  = { listener = 389, container = 389 }
     pki   = { listener = 8082, container = 8082 }
   }

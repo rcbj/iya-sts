@@ -6,7 +6,7 @@
 // EVERY FAILED ATTEMPT A RATE-LIMIT BUCKET COUNTS IS WRITTEN DOWN, SO EVERY
 // REQUEST WORKER COUNTS THE SAME CALLER THE SAME WAY (2026-09-14).
 //
-// `common/websecurity.js`'s buckets are `realms.sharedMap()`, which journals a
+// `common/websecurity.ts`'s buckets are `realms.sharedMap()`, which journals a
 // `set()` and a `delete()`. `attempt()` set a bucket on its first failure and
 // then did `row.count += 1` on the row it held — so only the FIRST failure ever
 // reached the journal. In one process that is invisible. In the request-worker

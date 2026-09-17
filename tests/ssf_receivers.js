@@ -5,7 +5,7 @@
 // ===========================================================================
 // THIS SERVICE'S OWN TWO SURFACES AS SHARED SIGNALS RECEIVERS, IN PROCESS.
 //
-// `ssf/ssf_receivers.js` is what makes the admin console and the user portal
+// `ssf/ssf_receivers.ts` is what makes the admin console and the user portal
 // receivers rather than pages that read this service's own notes: a stream
 // each, a receive endpoint each, and an inbox each. Most of that belongs over
 // HTTP and is not here — that a sign-in really does put a Security Event Token

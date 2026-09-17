@@ -7,7 +7,7 @@
 // A PERSON TO BE ASKED ABOUT SOMETHING THEY HAVE ALREADY AGREED TO — OR NOT
 // ASKED ABOUT SOMETHING THEY HAVE NOT.
 //
-// `common/consent.js` decides both, out of two attributes that live in
+// `common/consent.ts` decides both, out of two attributes that live in
 // different containers and mean different things: `oauthConsent` on a PERSON is
 // what they answered, and `oauthGlobalConsent` on an APPLICATION is an operator
 // saying nobody should be asked. Every assertion below is about the boundary
@@ -175,7 +175,7 @@ function run(t) {
   // backing, and they were the first files to require `ldap/ldap_server.js`,
   // whose require-time `setDirectory()` repaired the damage on its way past.
   // The moment any earlier file required that module — which
-  // `caep_initiating_entity.js` does, through `logout/logout.js` — node's
+  // `caep_initiating_entity.js` does, through `logout/logout.ts` — node's
   // module cache meant it was not required again, the repair never happened,
   // and two tests failed inside `applications.js` naming a function this stub
   // does not have. **A test that leaves process-wide state behind is a test

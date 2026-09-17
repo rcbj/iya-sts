@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: cluster/cluster_claims.js
@@ -42,7 +43,7 @@
 //
 // A LIBRARY (rule 3). It requires `persistence.js` LAZILY, inside the calls,
 // because the modules that spend single-use values include leaves such as
-// `oauth-oidc/dpop.js` that must not join a require cycle by requiring it.
+// `oauth-oidc/dpop.ts` that must not join a require cycle by requiring it.
 // ===========================================================================
 
 const bunyan = require('bunyan');
@@ -132,6 +133,10 @@ function maybePurge(theStore) {
 // Resolves to `{ ok: true, handle }`, `{ ok: false, reason: 'used', existing }`
 // or `{ ok: false, reason: 'store', why }`. It never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').ClaimResult>}
+ */
 function claim(opts) {
   log.debug("Entering claim().");
   const o = opts || {};

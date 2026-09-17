@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: person_assertions.js
@@ -52,7 +53,7 @@
 // invented about a person already carries — `stsTotpCredential`,
 // `stsBackupCodes`, `stsActivationToken` — and what tells them apart from the
 // inetOrgPerson schema beside them, which is somebody else's and is listed in
-// `common/inetorgperson.js`.
+// `common/inetorgperson.ts`.
 //
 //   stsAssertionIssuer            the `iss` this person's assertions carry.
 //                                 Multi-valued. Absent means their own
@@ -70,6 +71,9 @@
 //                                 can show it without parsing JSON.
 //   stsAssertionExpiresAt         the leaf's notAfter, as a GeneralizedTime.
 //   stsAssertionPrivateKey        the private half. **SEALED** — see below.
+//   stsAssertionKeySource         where the key pair came from (2026-09-13):
+//                                 issued here, or a certificate uploaded in
+//                                 its place — see the RFC 7522 block below.
 //
 // ---------------------------------------------------------------------------
 // THE PRIVATE HALF IS SEALED, AND IT IS HANDED OVER ONCE.
@@ -126,7 +130,7 @@
 // would close a cycle through this module's own caller.
 //
 // It is a LIBRARY in rule 3's sense: it registers no route, and it requires
-// `config.js`, `keystore.js` and `realms.js` — none of which requires it
+// `helpers.js`, `keystore.js` and `error_codes.js` — none of which requires it
 // back.
 // ===========================================================================
 
@@ -137,9 +141,9 @@ const keystore = require('./keystore');
 // sends the response; it is never part of anything serialised.
 const errorCodes = require('./error_codes');
 
-// The declaration, and the six the issue writes. A LIST rather than six
+// The declaration, and the seven the issue writes. A LIST rather than seven
 // constants, because the console's *take the key pair off* control clears
-// exactly this set and a seventh attribute added to the issue and not to the
+// exactly this set and an eighth attribute added to the issue and not to the
 // list would be one that survived being taken off.
 const ISSUER_ATTRIBUTE = 'stsAssertionIssuer';
 

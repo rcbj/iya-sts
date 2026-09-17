@@ -6,12 +6,12 @@
 // costs this test two things and is worth knowing before either surprises you:
 //
 //   * **It is behind the console gate**, which is unconditional.
-//     A browser with no session is redirected to the sign-in screen and a
+//     A browser with no session is sent into the authorization code flow and a
 //     caller asking for `?format=json` is refused `401 login_required` — a
 //     redirect to an HTML login screen is not an answer a program can read. So
-//     this file signs in the way tests/admin_api.js does, and for the same
-//     reason: the point of the checks below is the comparison, so the answer is
-//     to walk through the door rather than to stop reading the page.
+//     this file signs in the way tests/vendored/admin_api.js does, and for the
+//     same reason: the point of the checks below is the comparison, so the
+//     answer is to walk through the door rather than to stop reading the page.
 //   * **The page is drawn by the console's shell**, so the document now carries
 //     a sidebar, a breadcrumb and a gate banner around the tables. That is
 //     asserted rather than tolerated — theConsoleChromeIsThere() below —
@@ -58,27 +58,26 @@ var issuerBase = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/,
     "");
 
 // The name this file signs into the console AS. A name and not a credential:
-// this mock checks no password anywhere. It is distinctive so that a row in
-// /admin/audit or an entry in the directory says which test made it.
+// in development mode, which is how the suite runs, no password is checked. It
+// is distinctive so that a row in /admin/audit or an entry in the directory
+// says which test made it.
 const CONSOLE_USER = "sts-metadata-test";
 
 // ---------------------------------------------------------------------------
-// A browser sign-on session for the console, in the three steps a browser
-// takes. Lifted from tests/admin_api.js, which needed it first and explains it
-// at length; the short version is: ask for a page without ?format=json and
-// without following the redirect, POST the `authn` id in that Location to
-// /authn/login with any username, and send the cookie it sets.
+// A browser sign-on session for the console. It was three fetches, lifted from
+// tests/vendored/admin_api.js; it is `console_signin.js`'s walk now (below).
 //
-// The role comes from `admin.openWhenEmpty`, on by default: while neither role
-// group has a member, whoever signs in holds both. If some earlier job has
-// granted a role to somebody else the roster is enforced and this user holds
-// nothing — so the caller checks the read it makes rather than assuming, and
-// the assertion says which of the two states it met.
+// The role comes from the bootstrap window (`admin-ui/admin_rbac.ts`,
+// `rolesOf()`): until the seeded bootstrap administrator first signs in to the
+// console, whoever signs in holds both roles, while `admin.openWhenEmpty` is on
+// (the default). Once that account has signed in the roster is enforced and
+// this user holds nothing unless granted — so the caller checks the read it
+// makes rather than assuming, and the assertion says which state it met.
 //
-// A gate that has been turned OFF is a legitimate state (the setting is
-// switchable on purpose) and is reported rather than silently treated as a
-// pass: no redirect means no session is needed and everything below works as it
-// did before the page moved.
+// A gate that answers without a redirect is reported by `console_signin.js`
+// rather than treated as a pass. That was a legitimate state while
+// `admin.authRequired` existed; the setting was removed on 2026-09-06 and the
+// gate cannot be turned off, so today it means something is wrong.
 // ---------------------------------------------------------------------------
 // **THE WALK ITSELF IS IN `console_signin.js` SINCE 2026-09-06.** The console
 // became a relying party of this service's own authorization server on that
@@ -251,26 +250,24 @@ function theConsoleChromeIsThere(page) {
 // THE PROTOCOL LIST AT THE TOP, WHICH IS THE ONE PART OF THIS PAGE THAT IS NOT
 // DERIVED — AND SO THE ONE PART THAT CAN LIE.
 //
-// A family reaches the endpoint tables only if it is HTTP, and Kerberos, LDAP,
-// PKI and SPIFFE live mostly on raw sockets. So the list is hand-written, and
+// A family reaches the endpoint tables only if it is HTTP, and Kerberos, LDAP
+// and SPIFFE live mostly on raw sockets. So the list is hand-written, and
 // the page reports three kinds of drift about it that this checks are empty: a
 // card naming an endpoint group with no rows, a card citing a specification
 // that does not exist, and — the direction nothing else catches — a group of
-// endpoints no card claims, which is what a fifteenth protocol family added
+// endpoints no card claims, which is what a new protocol family added
 // without a card looks like.
 //
-// The list itself moves on the MOCK's schedule rather than on this file's, the
-// way the sts/ COPY closure in tests/Dockerfile does. **Federation** was the
-// fourteenth and arrived with the submodule bump of 2026-08-25: both ends of a
-// federation relationship, in five protocols, and it sits SECOND because that
-// is where the mock's own PROTOCOLS table puts it. **Shared Signals** is the
-// FIFTEENTH and sits THIRD for the same reason — it arrived with the SSF
-// transmitter and this list was one release behind it, which is exactly the
-// drift this assertion is for and is the reason it is written as a list here
-// rather than read off the page. Adding a name is the whole of the fix — the
-// assertion is deepStrictEqual and so covers the order too, which is
-// deliberate: the page draws the cards in this order and a list that only
-// checked membership would let them be shuffled silently.
+// The list moves with the root `sts_metadata.js`'s PROTOCOLS table, and the
+// order here is that table's. **Federation** arrived as the fourteenth on
+// 2026-08-25 (both ends of a federation relationship, in five protocols) and
+// **Shared Signals** as the fifteenth, with the SSF transmitter — when this
+// list was one release behind it, which is exactly the drift this assertion is
+// for and is the reason it is written as a list here rather than read off the
+// page. Adding a name is the whole of the fix — the assertion is
+// deepStrictEqual and so covers the order too, which is deliberate: the page
+// draws the cards in this order and a list that only checked membership would
+// let them be shuffled silently.
 // ---------------------------------------------------------------------------
 function theProtocolListIsHonest(doc, page) {
   log.debug("Entering theProtocolListIsHonest().");
@@ -290,11 +287,13 @@ function theProtocolListIsHonest(doc, page) {
                     "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",
                     // THE NINETEENTH (2026-09-10): the certificate authority
                     // each trust realm holds, whose surface is /admin/pki.
-                    // **It is not the "PKI / X.509" card three names down** —
-                    // that one is the TLS group, the two listeners' view of
-                    // what a handshake proved. Two cards, two endpoint
-                    // groups, similar names: this list is deepStrictEqual so
-                    // reading one as the other fails here rather than passing
+                    // **It is not the "PKI / X.509" card further down** —
+                    // that one is the TLS group: what a handshake on the main
+                    // port proved, and GET /tls/sign-in (the 8443 and 9443
+                    // listeners it described were deleted on 2026-09-16).
+                    // Two cards, two endpoint groups, similar names: this
+                    // list is deepStrictEqual so reading one as the other
+                    // fails here rather than passing
                     // for the wrong reason.
                     "PKI",
                     // CERTIFICATE ENROLLMENT (2026-09-13), carded beside the
@@ -348,9 +347,10 @@ function theProtocolListIsHonest(doc, page) {
     // than a name in a list here, so the reason travels with the thing it
     // excuses and a second one has to be declared deliberately.
     //
-    // There is exactly one today: the User Portal, which is an application
-    // rather than a protocol and has a card only because this page refuses to
-    // report an endpoint group no card claims.
+    // There are two today: the User Portal, which is an application rather
+    // than a protocol and has a card only because this page refuses to report
+    // an endpoint group no card claims; and Recovery codes, a credential
+    // mechanism nobody wrote a specification for (see the list above).
     assert.ok(Array.isArray(p.specs) && (p.specs.length || p.notAProtocol),
       p.name + " should name the specifications it implements, or declare " +
       "`notAProtocol` to say why it names none.");
@@ -359,8 +359,9 @@ function theProtocolListIsHonest(doc, page) {
                 ", which the page does not define.");
     });
     if (p.endpoints) withEndpoints++;
-    // The two families with no route of their own must say where they are
-    // instead, or the card reads as "this is not implemented".
+    // A family with no endpoint group must say where it is instead, or the
+    // card reads as "this is not implemented". Every card names a group today;
+    // the check stays for the next one that does not.
     if (!p.groups.length) {
       assert.ok(p.sockets && p.sockets.length > 10, p.name +
         " has no endpoint group, so the card must say where the protocol " +
@@ -702,7 +703,9 @@ program
   .name("sts_metadata")
   .description("Verify GET /admin/sts-metadata lists exactly the endpoints " +
       "the STS registers, and the specs it implements.")
-  // Accepted and ignored: run-report.js passes --url to every job.
+  // Accepted and ignored: the parent project's run-report.js passes --url to
+  // every job it runs (this repository's hands the URL over in the
+  // environment instead).
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

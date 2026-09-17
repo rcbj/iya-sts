@@ -5,7 +5,7 @@
 // ===========================================================================
 // RFC 9701 — THE JWT RESPONSE FOR OAUTH TOKEN INTROSPECTION (2026-09-13).
 //
-// `oauth-oidc/introspection_jwt.js` argues the design. What is held here:
+// `oauth-oidc/introspection_jwt.ts` argues the design. What is held here:
 //
 //   1. THE LIBRARY: the Accept reading (a JWT only where the media type is
 //      NAMED, with q-values and wildcards read the way RFC 9110 says), section

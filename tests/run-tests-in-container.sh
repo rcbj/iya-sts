@@ -6,9 +6,9 @@
 # ../docker-compose-run-tests.yml, where the service under test answers at its
 # compose DNS name (https://sts:8081) and this container has a Chrome of its own.
 # Do NOT run it from a host shell: there is no `sts` name there, the report would
-# be written into the working tree by whatever user ran it, and the browser job
-# would drive the machine's own Chrome — which is ./local-run-tests.sh's job and
-# is a different (deliberately different) run.
+# be written into the working tree by whatever user ran it, and the browser jobs
+# would drive the machine's own Chrome — which was ./local-run-tests.sh's job,
+# a deliberately different run, until that launcher was removed (2026-09-16).
 #
 # It is this repository's answer to ../id-proto-debugger/tests/run-tests-in-container.sh
 # and is very much shorter, for the reason its launcher is: that script has to
@@ -17,8 +17,8 @@
 # nothing has to be provisioned at all — this service accepts any entityID, any
 # client and any username on first sight, which is what it is for.
 #
-# WHAT IT RUNS IS THE WHOLE SUITE: the ten in-process jobs AND the thirteen
-# vendored protocol jobs, the Selenium admin-console job among them. That is
+# WHAT IT RUNS IS THE WHOLE SUITE: the in-process jobs AND the vendored
+# protocol jobs, the Selenium console jobs among them. That is
 # run-report.js's own default; nothing is selected here, so a job added to
 # either half arrives in this container with nothing edited.
 #
@@ -40,7 +40,7 @@ cd "$(dirname "$(realpath "$0")")/.." || exit 1
 # https since 2026-08-30: the service's main port is TLS on every stack in this
 # repository (env/*.js carry `global.https: true`, and STS_HTTPS is set on the
 # `sts` service in both compose files). `sts` and not an address, because that
-# name is one of the certificate's SANs — see common/crypto.js.
+# name is one of the certificate's SANs — `tls.hostnames` in common/config.js.
 STS_URL="${STS_TEST_SERVICE_URL:-https://sts:8081}"
 # Trailing slashes off: every job appends an absolute path to this, and
 # `https://sts:8081/` + `/oauth2/token` is a 404 whose message names a path that
@@ -60,9 +60,10 @@ STS_URL="${STS_URL%/}"
 # whole diagnosis.
 #
 # node rather than curl, because this suite already requires node and requires
-# curl nowhere; `rejectUnauthorized: false` because this service regenerates a
-# self-signed certificate on every start, so nothing can have an anchor for it —
-# the question here is whether the port answers, not whether it is trusted.
+# curl nowhere; `rejectUnauthorized: false` because this service regenerates
+# its certificate and the Root above it on every start in development mode, so
+# nothing can have an anchor for it yet — the question here is whether the port
+# answers, not whether it is trusted.
 probe()
 {
   node -e '
@@ -130,16 +131,17 @@ waitForTheService()
 # compose does, when this process exits and docker-run-tests.sh's
 # --abort-on-container-exit fires.
 #
-# A CHROME IS PRESENT, so the browser job runs. It is the admin console's only
-# coverage, and leaving it out would be a green run that says nothing about the
-# one surface here that can change what every protocol endpoint does. Pass
-# --no-browser as an argument to this script to leave it out anyway.
+# A CHROME IS PRESENT, so the browser jobs run. They are the console's only
+# coverage in a browser, and leaving them out would be a green run that says
+# nothing about how the one surface here that can change what every protocol
+# endpoint does is drawn. Pass --no-browser as an argument to this script to
+# leave them out anyway.
 # ---------------------------------------------------------------------------
 runTheSuite()
 {
   echo "Running the whole suite against ${STS_URL}."
   # WHERE THE REPORT GOES. The mode matrix runs this container once per mode
-  # and hands a directory per mode, so three runs do not overwrite each other;
+  # and hands a directory per mode, so the runs do not overwrite each other;
   # unset, run-report.js's own default applies and a hand-run is unchanged.
   node tests/tools/run-report.js "--service-url=${STS_URL}" \
     ${STS_TEST_REPORT_DIR:+"--report-dir=${STS_TEST_REPORT_DIR}"} "$@"

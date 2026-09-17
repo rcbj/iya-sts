@@ -17,18 +17,71 @@ cannot reproduce the behaviour it is trying to detect. Where this service *can*
 be told to be strict, it can, and [what is not checked](what-is-not-checked.md)
 says exactly where the line is.
 
+## Index of pages
+
+Every page on this site, grouped by what a reader is looking for.
+
+**Using it**
+
+- [Getting started](getting-started.md) — running it, the ports, the container
+- [Architecture](architecture.md) — the diagram, layer by layer: the leader process and its listeners, the dispatcher and worker pools, the subsystems and hosted surfaces, the session every artifact is projected from, and the stores underneath
+- [Configuration](configuration.md) — every setting, and which can change at runtime
+- [Endpoints](endpoints.md) — how to find out, rather than a list that goes stale
+- [Trust realms](trust-realms.md) — several logical identity services in one process, told apart by a path segment: what each one separates, and what every realm shares
+- [What is not checked](what-is-not-checked.md) — the permissive posture, its three exceptions, and the one feature that inverts it
+- [Error codes](error-codes.md) — every way this service can fail or refuse, by subsystem: the `STS-…` code recorded on the audit row and in the log, and what the client is told instead (a code is never sent to a client)
+
+**Sessions and signals**
+
+- [Sessions](sessions.md) — what a session IS here: the browser sign-on session every protocol shares, the Kerberos TGT, the LDAP connection, the five things that are not sessions, and the six places one is visible
+- [Signing out](signing-out.md) — `/logout`: one list of everything you are still signed into, across every family, and what cannot be ended
+- [CAEP events](caep-events.md) — the eight Continuous Access Evaluation Profile events: which activities in this service emit each one, which five nobody here can cause and how to send those by hand, and the three gates every event passes on its way to a receiver
+- [Signals received](signals-received.md) — the admin console and the user portal are registered Shared Signals receivers of this service's own transmitter: why the delivery is a real HTTP push rather than a function call, the five reasons an inbox is empty, and what a person is shown about themselves and never about anybody else
+
+**Assertions at the token endpoint**
+
+- [JWT assertions](jwt-assertions.md) — RFC 7521 and RFC 7523: a signed JWT instead of a client secret, and instead of an authorization code — two uses of one format, and why they are not the same feature
+- [SAML 2.0 assertions](saml-assertions.md) — RFC 7521 and RFC 7522: the same framework's other profile, a separate implementation, and a separate key pair per application that cannot sign for the JWT one
+
+**Authorization**
+
+- [GNAP](gnap.md) — an RFC 9635 authorization server per trust realm, with RFC 9767's resource server connections: a grant that starts from a key and is negotiated rather than redirected
+- [Remote PEP](remote-pep.md) — the second container: a remote XACML Policy Enforcement Point that pulls this service's policy repository and decides in its own process, with a worked authorization decision for an application
+
+**Certificates**
+
+- [PKI](pki.md) — the certificate authority at `/admin/pki`: one Root for the service, an Intermediate per trust realm, an Issuing CA per use case, and every key pair this service generates as a leaf of it
+- [ACME](acme.md) — an RFC 8555 server per trust realm: accounts bound for life to one person or application by an External Account Binding key, identifiers authorized from the directory with no challenge dialling out, the nine certificate profiles, revocation and RFC 9773 renewal information, with certbot and acme.sh examples
+- [EST](est.md) — an RFC 7030 server per trust realm: a PKCS#10 request from an authenticated device, person or application, answered from the realm's EST Issuing CA and kept on the directory entry it names
+- [SCEP](scep.md) — an RFC 8894 server per trust realm: a device with a single-use challenge password, a signed and encrypted request, and a certificate from the realm's SCEP Issuing CA
+
+**Operating it**
+
+- [Persistence](persistence.md) — what survives a restart and what never can: three modes, and the reason nothing this service mints is ever written down
+- [Encryption at rest](encryption-at-rest.md) — the two different questions behind that phrase: what this service seals before a value reaches a store (and why there is ONE key for every trust realm rather than one each), and what encrypts everything else — LUKS, ZFS, cloud disks, the forks that have TDE, and why column-level encryption leaves plaintext in the WAL
+- [Caches](caches.md) — everything this service remembers instead of working out or fetching again, and every replay store that makes a one-time value work once: what each holds, how long, the setting that bounds it, and the windows in which an answer can be out of date
+- [A cluster in AWS](aws-cluster.md) — three active-active nodes on ECS Fargate across three availability zones behind a Network Load Balancer, RDS PostgreSQL 18 with a read replica, the key and database password in Secrets Manager: the Terraform, what it costs, and the workflow that brings one up, runs the suite and tears it down
+
+**For contributors**
+
+- [Repository layout](layout.md) — where the code is
+- [Parent project migration](parent-project-migration.md) — what the OAuth2/OIDC Debugger, of which this repository is a submodule, needs when its `sts/` pin is bumped: the paths it reaches in by, and the COPY set that has to follow every new require
+
 ## Start here
 
 ```bash
 git clone --recursive https://github.com/rcbj/iya-sts.git
 cd iya-sts
-npm install
-CONFIG_FILE=./env/local.js node server.js
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts
 ```
+
+It runs from an image: part of the service is TypeScript, compiled while the
+image is built, and a checkout does not run on its own.
 
 **https, and your browser will warn you once.** Every appconfig file here sets
 `global.https`, so the main port is TLS on the same self-signed certificate the
-8443, 9443 and LDAPS 636 listeners use — one pair, regenerated on every start,
+LDAPS 636 listener uses — one pair, regenerated on every start,
 so nothing can have trusted it in advance. Accept it, or fetch it with
 `curl -k https://localhost:8081/tls/server-certificate`; `STS_HTTPS=false` runs
 the plain port this used to be.
@@ -56,23 +109,11 @@ what to do when 389 or 88 will not bind.
 
 ## Architecture
 
-[![iya-sts architecture: the leader process and its listeners, the request dispatcher and three worker pools, the protocol subsystems and hosted surfaces, the shared services, and the embedded directory and key material above their stores](mock-sts.jpeg)](mock-sts.jpeg)
-
-One leader process owns every listener — HTTPS, LDAP and LDAPS, the Kerberos
-KDC, the SPIFFE gRPC sockets and the Workload API's domain sockets. Behind it the
-request dispatcher hands work to three worker pools: one for the expensive
-cryptography, one for the admin console and the user portal, and one for the
-protocols themselves. The protocol subsystems and the hosted surfaces share one
-layer of tokens, assertions, tickets and DIDs, one session model, and the audit,
-logging, crypto, metadata, configuration and monitoring services. The embedded
-LDAP directory — people, groups, applications and roles — is written to the
-persistence store, and where keys persist (product mode) they are sealed under a
-key-encryption key read from a secret store. Select the diagram for full size.
-
-Only the crypto pool runs by default, and it forks nothing until the first
-post-quantum signature or password hash. The admin and request pools are off
-until `workers.surfaceCount` and `workers.requestCount` are set; with them off,
-the leader process answers every request itself.
+One leader process owns every listener, and a request dispatcher hands work
+from it to three worker pools. The protocol subsystems and hosted surfaces
+share one session model and one set of services, over an embedded directory
+and key material sealed in their stores. [Architecture](architecture.md) has
+the diagram and a walk through each layer.
 
 ## What it speaks
 
@@ -98,7 +139,7 @@ the leader process answers every request itself.
 | SPNEGO (RFC 4559/4178) | `/spnego` |
 | LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 |
 | SCIM 2.0 provisioning | `/scim/v2` |
-| TLS and mutual TLS reporting | 8443 and 9443 |
+| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls`, `/tls/sign-in` |
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` |
 | OpenID4VP 1.0 — a Verifier | `/oid4vp/verifier` |
@@ -145,23 +186,3 @@ mock. A relationship must be configured, is created disabled, and refuses an
 assertion that does not verify against the certificate configured on it. **Past
 that gate everything is as permissive as the rest**: any username in a verified
 assertion is accepted. See [what is not checked](what-is-not-checked.md).
-
-## Pages
-
-- [Getting started](getting-started.md) — running it, the ports, the container
-- [Configuration](configuration.md) — every setting, and which can change at runtime
-- [Endpoints](endpoints.md) — how to find out, rather than a list that goes stale
-- [Trust realms](trust-realms.md) — several logical identity services in one process, told apart by a path segment: what each one separates, and what every realm shares
-- [Signing out](signing-out.md) — `/logout`: one list of everything you are still signed into, across every family, and what cannot be ended
-- [Sessions](sessions.md) — what a session IS here: the browser sign-on session every protocol shares, the Kerberos TGT, the LDAP connection, the five things that are not sessions, and the six places one is visible
-- [CAEP events](caep-events.md) — the eight Continuous Access Evaluation Profile events: which activities in this service emit each one, which five nobody here can cause and how to send those by hand, and the three gates every event passes on its way to a receiver
-- [Signals received](signals-received.md) — the admin console and the user portal are registered Shared Signals receivers of this service's own transmitter: why the delivery is a real HTTP push rather than a function call, the five reasons an inbox is empty, and what a person is shown about themselves and never about anybody else
-- [Persistence](persistence.md) — what survives a restart and what never can: three modes, and the reason nothing this service mints is ever written down
-- [Encryption at rest](encryption-at-rest.md) — the two different questions behind that phrase: what this service seals before a value reaches a store (and why there is ONE key for every trust realm rather than one each), and what encrypts everything else — LUKS, ZFS, cloud disks, the forks that have TDE, and why column-level encryption leaves plaintext in the WAL
-- [Caches](caches.md) — everything this service remembers instead of working out or fetching again, and every replay store that makes a one-time value work once: what each holds, how long, the setting that bounds it, and the windows in which an answer can be out of date
-- [ACME](acme.md) — an RFC 8555 server per trust realm: accounts bound for life to one person or application by an External Account Binding key, identifiers authorized from the directory with no challenge dialling out, the nine certificate profiles, revocation and RFC 9773 renewal information, with certbot and acme.sh examples
-- [A cluster in AWS](aws-cluster.md) — three active-active nodes on ECS Fargate across three availability zones behind a Network Load Balancer, RDS PostgreSQL 18 with a read replica, the key and database password in Secrets Manager: the Terraform, what it costs, and the workflow that brings one up, runs the suite and tears it down
-- [Remote PEP](remote-pep.md) — the second container: a remote XACML Policy Enforcement Point that pulls this service's policy repository and decides in its own process, with a worked authorization decision for an application
-- [What is not checked](what-is-not-checked.md) — the permissive posture, its three exceptions, and the one feature that inverts it
-- [Error codes](error-codes.md) — every way this service can fail or refuse, by subsystem: the `STS-…` code recorded on the audit row and in the log, and what the client is told instead (a code is never sent to a client)
-- [Repository layout](layout.md) — where the code is, for contributors

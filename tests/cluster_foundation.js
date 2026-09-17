@@ -33,6 +33,7 @@ delete process.env.CONFIG_FILE;
 
 const fs = require('fs');
 const path = require('path');
+const { isSourceFile } = require('./tools/source_file');
 const realms = require('../common/realms');
 const replication = require('../persistence/persistence_replication');
 const cluster = require('../cluster/cluster');
@@ -563,7 +564,9 @@ function capabilityTable(t) {
   // says — a capability declared from somewhere else is a claim nobody checked.
   const wrong = [];
   function walk(dir) {
-    fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const names = entries.map(function (e) { return e.name; });
+    entries.forEach(function (entry) {
       if (entry.name === 'node_modules' || entry.name === 'node-ldapjs' ||
           entry.name === 'tests' || entry.name.charAt(0) === '.') {
         return;
@@ -573,7 +576,8 @@ function capabilityTable(t) {
         walk(full);
         return;
       }
-      if (!/\.js$/.test(entry.name)) {
+      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+      if (!isSourceFile(entry.name, names)) {
         return;
       }
       const text = fs.readFileSync(full, 'utf8');

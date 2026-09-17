@@ -181,8 +181,14 @@ function run(t) {
   const saml11 = require('../saml/saml11');
   const wstrust = require('../ws-trust/wstrust');
   const saml2sso = require('../saml/saml2_sso');
-  require('../saml/saml11_sso');
+  const saml11sso = require('../saml/saml11_sso');
   const wsfed = require('../ws-federation/wsfed');
+  // The three families whose handlers this file looks up. Loading a module
+  // registers nothing since #50's R1 (`common/protocol_stack.ts` does), so
+  // they are registered here, in the composition root's order.
+  saml2sso.registerRoutes(app);
+  saml11sso.registerRoutes(app);
+  wsfed.registerRoutes(app);
   const federation = require('../federation/federation');
   const fedSp = require('../federation/federation_sp');
   const spMetadata = require('../saml/sp_metadata');

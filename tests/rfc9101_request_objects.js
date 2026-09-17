@@ -7,7 +7,7 @@
 // SECTION 6's REQUEST OBJECT, EVERY FEATURE, POSITIVE AND NEGATIVE
 // (2026-09-13).
 //
-// `oauth-oidc/request_object.js` argues the design. What is held here:
+// `oauth-oidc/request_object.ts` argues the design. What is held here:
 //
 //   1. THE LIBRARY: the `typ` rules (section 10.8, and the required-type
 //      setting), the OpenID Connect section 6.2 fragment digest, the section
@@ -910,7 +910,7 @@ function childMain() {
     note(refusedWith(r, 'invalid_request_object', /decrypts request objects/),
          '3bv. a profile listing only ECDH-ES refuses RSA-OAEP-256',
          r.text.slice(0, 160));
-    const parPresent = fs.existsSync(ROOT + '/oauth-oidc/par.js');
+    const parPresent = fs.existsSync(ROOT + '/oauth-oidc/par.ts');
     r = await authorize({ client_id: 'r91',
       request_uri: 'urn:ietf:params:oauth:request_uri:not-a-real-one' });
     note(r.status === 400 && !/not one client/.test(r.text) &&

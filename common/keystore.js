@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: keystore.js
@@ -57,7 +58,9 @@
 //
 // A realm created at RUNTIME is the one case that does not fit, and it is
 // handled honestly rather than by blocking: its keys are generated on the spot
-// (which is synchronous) and WRITTEN asynchronously afterwards. So a realm made
+// (off the event loop where `helpers.prepareKeySet()` got there first, since
+// 2026-09-14, and synchronously otherwise) and WRITTEN asynchronously
+// afterwards. So a realm made
 // at 11:00 has the same keys at 11:05, and if the process dies between the two
 // it has new ones — which is the same window `persistence.js`'s write delay
 // already has for everything else it stores.
@@ -65,23 +68,28 @@
 // ---------------------------------------------------------------------------
 // WHAT IS STORED, AND WHAT IS DELIBERATELY NOT.
 //
-// The RSA key and certificate, and the eight EC/Ed keys `makeStsKeys()` builds
+// The RSA key and certificate, and the six EC/Ed keys `makeStsKeys()` builds
 // beside it — the material every `kid` this service publishes is derived from.
+// And, since they joined the set, the eleven post-quantum keys (2026-09-07,
+// written down since 2026-09-12 — see `serialise()`), the OpenID4VCI
+// request-encryption key, the refresh-token encryption keys and the RFC 9101
+// request object encryption keys.
 //
-// **NOT the post-quantum keys**, and that is a decision rather than an
-// oversight: there are eleven per realm, they are generated on the worker pool
-// precisely because generating them is expensive, and they are reachable
-// through `pq_jose.js`'s own cache. Persisting them is the obvious next
-// increment and it is a bigger one than it looks — see `NOT_YET` in
-// `common/mode.js`.
+// **This section used to say NOT the post-quantum keys**, as a decision: they
+// are generated on the worker pool because generating them is expensive, and
+// were reachable only through the process's own cache. The blob carries them
+// now; `common/CLAUDE.md` (*AND THE POST-QUANTUM HALF WAS WRITTEN AND NEVER
+// READ BACK*) records what that took.
 //
-// **NOT the TLS server certificate and NOT the SPIFFE authorities.** Both are
-// held by their own modules, both are shared across realms, and both would need
-// their own row in the store. Same reason, same list.
+// **NOT the TLS server certificate and NOT the SPIFFE JWT authority.** Both are
+// held by their own modules and are shared across realms. The SPIFFE X.509
+// authority was on this list until 2026-09-11; it is `pki.js`'s SPIFFE Issuing
+// CA now and lives in the `pki:` rows below.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto`,
-// `mode` and `secrets`, none of which requires it back — so it is a LEAF and
-// `helpers.js` may require it.
+// `mode`, `realms`, `secrets`, `error_codes`, `pki_merge` and
+// `cluster/cluster_capabilities`, none of which requires it back — so it is a
+// LEAF and `helpers.js` may require it.
 // ---------------------------------------------------------------------------
 
 // A LOGGER OF ITS OWN RATHER THAN helpers.js's, AND IT HAS TO BE.
@@ -299,8 +307,10 @@ function purgeFor(realmId) {
   return true;
 }
 
-// Every realm at once. `/admin/keys` offers it as a button and `reset()` calls
-// it, so that a test doing what a restart does leaves nothing decrypted behind.
+// Every realm at once. `reset()` calls it, so that a test doing what a restart
+// does leaves nothing decrypted behind, and the residency tests call it
+// directly. (`/admin/keys` deliberately offers no Purge button —
+// `common/CLAUDE.md` says why.)
 function purgeAll() {
   log.debug('Entering purgeAll().');
   let dropped = 0;
@@ -538,7 +548,7 @@ function serialise(keys) {
       : null,
     // **THE REFRESH-TOKEN ENCRYPTION KEYS (2026-09-12)** — the realm's own RSA
     // pair, EC pair and symmetric secret that
-    // `oauth-oidc/refresh_token_crypto.js` encrypts every refresh token to.
+    // `oauth-oidc/refresh_token_crypto.ts` encrypts every refresh token to.
     // Written down and shared exactly as the request-encryption key above is,
     // and for its reason: a refresh token outlives the process that minted it
     // in product mode, and a request worker that encrypted to a key another
@@ -715,18 +725,6 @@ async function start() {
 }
 
 // ---------------------------------------------------------------------------
-// THE STORED MATERIAL FOR A REALM, DECRYPTED, OR NULL.
-//
-// Synchronous — see the header; it is reached through a property read and
-// cannot await. Every call ARMS THE PURGE, which is what makes `timed` an idle
-// timeout: the clock restarts on use rather than on decrypt.
-//
-// A caller must not hold what this returns across a turn of the event loop. The
-// two that matter — `helpers.js`'s key set and `privateMaterialFor()` below —
-// both copy the PUBLIC half out and re-ask for the private half every time,
-// which is the whole arrangement.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // SHARED KEY MATERIAL: ONE SET OF SIGNING KEYS ACROSS THE FRONT PROCESS AND
 // EVERY REQUEST WORKER (2026-09-07).
 //
@@ -748,8 +746,9 @@ async function start() {
 // and turned every product-mode gate into a lie.
 //
 // **FIRST GENERATOR WINS, AND THE PARENT ARBITRATES.** A realm created at
-// runtime is generated by whichever process's realm watcher reaches it first
-// (see helpers.js's warmPqKeys()); that process publishes, the parent records
+// runtime is generated by whichever process first has a request that needs
+// its keys (no watcher generates them since 2026-08-30 — see the block below
+// helpers.js's warmPqKeys()); that process publishes, the parent records
 // it if the realm is new and broadcasts, and a process that generated a second
 // set for the same realm is told to adopt the first and throws its own away.
 // The window in which two processes hold different keys for one realm is the
@@ -762,7 +761,7 @@ let publisher = null;
 let adoptListener = null;
 
 // Filled by whoever owns the IPC channel — request_pool.js in the front process
-// and request_worker.js in a worker. Unset in a service with no pool, where
+// and request_worker.ts in a worker. Unset in a service with no pool, where
 // every one of these functions is inert and nothing calls them twice.
 function setKeyPublisher(fn) {
   log.debug("Entering setKeyPublisher().");
@@ -1092,7 +1091,6 @@ function requestObjectKeysHeldFor(realmId) {
                                       nodeCrypto);
 }
 
-// Every realm this process holds keys for, for the fork-time seed.
 // The raw blob a realm is held under, for request_pool.js's enrichment test.
 // `sharedFor()` deserialises; this is the stored form, which is what has to be
 // compared and rebroadcast.
@@ -1102,6 +1100,7 @@ function sharedBlobFor(realmId) {
   return shared.get(String(realmId || '')) || null;
 }
 
+// Every realm this process holds keys for, for the fork-time seed.
 function sharedAll() {
   log.debug("Entering sharedAll().");
   const out = [];
@@ -1110,6 +1109,18 @@ function sharedAll() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE STORED MATERIAL FOR A REALM, DECRYPTED, OR NULL.
+//
+// Synchronous — see the header; it is reached through a property read and
+// cannot await. Every call ARMS THE PURGE, which is what makes `timed` an idle
+// timeout: the clock restarts on use rather than on decrypt.
+//
+// A caller must not hold what this returns across a turn of the event loop. The
+// two that matter — `helpers.js`'s key set and `privateMaterialFor()` below —
+// both copy the PUBLIC half out and re-ask for the private half every time,
+// which is the whole arrangement.
+// ---------------------------------------------------------------------------
 function storedFor(realmId) {
   log.debug("Entering storedFor().");
   if (!persists()) {
@@ -1518,39 +1529,6 @@ function report() {
   };
 }
 
-// FORGET EVERYTHING HELD IN MEMORY, so a test can do what a restart does
-// without being a restart. It clears the loaded material and the KEK; the
-// STORE is not cleared, because a caller that wanted that would be testing
-// `setStore()` rather than a restart.
-//
-// It is exported for `tests/keystore.js` and for nothing else. That is a real
-// cost — an export that exists for a test is a seam somebody can misuse — and
-// it is paid because the alternative is a test that launches two processes and
-// therefore cannot run in the in-process suite at all.
-// ---------------------------------------------------------------------------
-// SEALING SOMETHING THAT IS NOT A SIGNING KEY (2026-09-06).
-//
-// Product mode writes down what this process MINTS — sessions, tokens,
-// authorization codes, SAML artifact handles, Kerberos long-term keys — and
-// every one of those is bearer-equivalent: a database dump holding them in the
-// clear is a set of live sessions and usable codes. So each row is sealed, and
-// it is sealed WITH THE KEY THAT IS ALREADY HERE rather than with a second one
-// of `persistence_minted.js`'s own.
-//
-// **THE KEK IS PRIVATE TO THIS FILE AND THAT IS THE WHOLE ARGUMENT FOR THESE
-// TWO FUNCTIONS EXISTING.** `secrets.readKek()` is called in exactly one place
-// (`start()`, below) and the bytes are held in exactly one binding. A second
-// module reading `common/secrets.js` for itself would be a second answer to
-// "where does the key come from" and a second thing to get wrong when a
-// deployment moves from a mounted file to Vault — and it would double the
-// number of places a KEK is in memory for no gain at all. So callers hand this
-// file text and get ciphertext, and the key never leaves.
-//
-// They answer NULL rather than throwing when there is no KEK, because both
-// callers are on paths that must not fail the request that reached them: a
-// flush that cannot seal logs and retries, and a restore that cannot open
-// reports and drops the row. `sealed()` is how a caller asks before it starts.
-// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE EPHEMERAL KEY-ENCRYPTION KEY: THE THIRD PIECE OF GENERATED MATERIAL THAT
 // HAS TO BE THE SAME IN EVERY PROCESS (2026-09-07).
@@ -1638,6 +1616,31 @@ function ephemeralKek() {
   return ephemeral ? kek : null;
 }
 
+// ---------------------------------------------------------------------------
+// SEALING SOMETHING THAT IS NOT A SIGNING KEY (2026-09-06) — `sealed()`,
+// `seal()` and `open()` below.
+//
+// Product mode writes down what this process MINTS — sessions, tokens,
+// authorization codes, SAML artifact handles, Kerberos long-term keys — and
+// every one of those is bearer-equivalent: a database dump holding them in the
+// clear is a set of live sessions and usable codes. So each row is sealed, and
+// it is sealed WITH THE KEY THAT IS ALREADY HERE rather than with a second one
+// of `persistence_minted.js`'s own.
+//
+// **THE KEK IS PRIVATE TO THIS FILE AND THAT IS THE WHOLE ARGUMENT FOR THESE
+// FUNCTIONS EXISTING.** `secrets.readKek()` is called in exactly one place
+// (`start()`, above) and the bytes are held in exactly one binding. A second
+// module reading `common/secrets.js` for itself would be a second answer to
+// "where does the key come from" and a second thing to get wrong when a
+// deployment moves from a mounted file to Vault — and it would double the
+// number of places a KEK is in memory for no gain at all. So callers hand this
+// file text and get ciphertext, and the key never leaves.
+//
+// They answer NULL rather than throwing when there is no KEK, because both
+// callers are on paths that must not fail the request that reached them: a
+// flush that cannot seal logs and retries, and a restore that cannot open
+// reports and drops the row. `sealed()` is how a caller asks before it starts.
+// ---------------------------------------------------------------------------
 function sealed() {
   log.debug("Entering sealed().");
   log.debug("Leaving sealed().");
@@ -1749,7 +1752,7 @@ const pkiHeld = new Map();       // realm id -> the hierarchy, in the clear
 let pkiPublisher = null;
 
 // Filled by whoever owns the IPC channel — `request_pool.js` in the front
-// process and `request_worker.js` in a worker — exactly as `setKeyPublisher()`
+// process and `request_worker.ts` in a worker — exactly as `setKeyPublisher()`
 // is, and unset in a service with no pool, where it is inert.
 //
 // **A SECOND CHANNEL RATHER THAN MORE MEMBERS ON THE FIRST**, and the test is
@@ -1884,7 +1887,7 @@ function attachPki(realmId, chain) {
 // — every other node is already signing with the winner — so refusing strands
 // the same tokens for ever instead of for a window. The window is the round
 // trip of the first write: a cold start closes it by settling BEFORE anything
-// is served (`common/service_state.js`), and a realm created at runtime keeps
+// is served (`common/service_state.ts`), and a realm created at runtime keeps
 // the one this service already had inside a container, from generation to the
 // commit that says who won. There are no retained keys to fall back on: this
 // service publishes one key per realm per algorithm (`rotate()` says so, and
@@ -2443,6 +2446,16 @@ function refreshPki(scopeId) {
   });
 }
 
+// FORGET EVERYTHING HELD IN MEMORY, so a test can do what a restart does
+// without being a restart. It clears the loaded material and the KEK; the
+// STORE is not cleared, because a caller that wanted that would be testing
+// `setStore()` rather than a restart.
+//
+// It is exported for the tests (`tests/keystore.js` and its neighbours) and
+// for nothing else. That is a real cost — an export that exists for a test is
+// a seam somebody can misuse — and it is paid because the alternative is a
+// test that launches two processes and therefore cannot run in the in-process
+// suite at all.
 function reset() {
   log.debug("Entering reset().");
   shared.clear();
@@ -2464,7 +2477,8 @@ function reset() {
 }
 
 module.exports = {
-  // The shared-key channel. See the block above storedFor().
+  // The shared-key channel. See the SHARED KEY MATERIAL block above
+  // sharedFor().
   setKeyPublisher: setKeyPublisher,
   useEphemeralKek: useEphemeralKek,
   hasEphemeralKek: hasEphemeralKek,
@@ -2524,5 +2538,5 @@ module.exports = {
 // signing keys one set for the cluster — the first-writer-wins write, the
 // adoption of a row another node wrote, rotation reaching every node — is
 // this file, and a cold start settles through it before anything is served
-// (`common/service_state.js`).
+// (`common/service_state.ts`).
 capabilities.provide('keys.agreement');

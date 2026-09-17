@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ssf_subjects.js
@@ -34,19 +35,19 @@
 // against the other OVER THE WIRE. That is the only arrangement in which a
 // disagreement surfaces as a failure rather than as agreement.
 //
-// It is the opposite decision from `common/krb5`, which IS vendored, and the
-// difference is worth stating: a Kerberos codec is bytes with one legal
-// encoding, so two implementations is two chances to be wrong about the same
-// bytes with nothing to gain. A subject identifier is JSON, where the
-// interesting defect is a READING — an accepted extra member, a missing
-// required one, a format name spelt from memory — and two readings is exactly
-// what makes that visible.
+// It is the opposite decision from the Kerberos codec modules in `kerberos/`,
+// which ARE vendored, and the difference is worth stating: a Kerberos codec is
+// bytes with one legal encoding, so two implementations is two chances to be
+// wrong about the same bytes with nothing to gain. A subject identifier is
+// JSON, where the interesting defect is a READING — an accepted extra member,
+// a missing required one, a format name spelt from memory — and two readings
+// is exactly what makes that visible.
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route, so its position in the
 // route order is not a position. It requires `helpers.js` for the logger and
-// NOTHING ELSE in this repository, so it cannot join a cycle and a test can
-// drive it with plain objects.
+// `mode.js` (a leaf, below) and NOTHING ELSE in this repository, so it cannot
+// join a cycle and a test can drive it with plain objects.
 // ---------------------------------------------------------------------------
 
 const { log, subjectForName } = require('../common/helpers');
@@ -618,13 +619,14 @@ function subjectForUser(userid, format, issuer, facts) {
       log.debug('Leaving subjectForUser(). phone_number.');
       return { format: 'phone_number', phone_number: phone };
     }
-    // A stream that asked for this format gets the issuer/subject pair and the
-    // caller says so — see ssf.js's defaultSubjectNote().
+    // A stream that asked for this format gets the issuer/subject pair
+    // instead; the subject's own `format` member says which was sent.
     log.debug('Leaving subjectForUser(). No number; issuer_subject_id.');
     return fallback;
   }
   if (chosen === 'aliases') {
     const mail = realOrInventedMail(name, known);
+    /** @type {any[]} */
     const identifiers = [
       { format: 'issuer_subject_id', iss: String(issuer || ''),
         sub: issuerSubject }

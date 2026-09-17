@@ -6,7 +6,7 @@
 // THE WEBAUTHN SETTINGS, AND THE FOUR THINGS THAT GO WRONG QUIETLY
 // (2026-09-10).
 //
-// `authn/webauthn_policy.js` turned thirteen literals in a string into
+// `authn/webauthn_policy.ts` turned thirteen literals in a string into
 // settings. Twelve of them are values passed to a browser, and a browser is not
 // something a test can hold — so what this file asserts is not *does the
 // ceremony work* (that needs an authenticator, and
@@ -312,10 +312,12 @@ function run(t) {
   // same key. The signature fails for the right outcome and the wrong reason.
   //
   // The shape that reaches the branch is ONE PERSON, TWO KEYS — and **no door
-  // in this service can currently build it**: the sign-in screen's checkbox is
-  // the only enrolment there is, and it is reserved for people who hold no
-  // second factor yet. So it is built here, through the credential layer, and
-  // asserted against the rule directly.
+  // in this service could build it when this section was written**: the
+  // sign-in screen's checkbox was the only enrolment there was, and it is
+  // reserved for people who hold no second factor yet. `/portal/keys` enrols a
+  // second key now (`tests/vendored/sts_portal_backup_keys.js`), and the shape
+  // is still built here, through the credential layer, so the rule is asserted
+  // directly rather than through a door.
   const twoKeys = 'webauthn-two-keys-probe';
   ldap.createUser(twoKeys, {});
   credentials.setPassword(twoKeys, 'anything');

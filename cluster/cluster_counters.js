@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: cluster/cluster_counters.js
@@ -138,6 +139,10 @@ function verdictOf(wanted, answer) {
 // `{ ok: false, reason: 'behind', highest }` or
 // `{ ok: false, reason: 'store', why }`. It never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').AdvanceResult>}
+ */
 function advance(opts) {
   log.debug("Entering advance().");
   const o = opts || {};
@@ -199,7 +204,7 @@ function advance(opts) {
 // — the number the caller decides on, and the same number whichever node
 // asked.
 //
-// **THERE IS NO MEMORY FALLBACK HERE, DELIBERATELY.** `common/websecurity.js`
+// **THERE IS NO MEMORY FALLBACK HERE, DELIBERATELY.** `common/websecurity.ts`
 // already has one — its own buckets, exactly as they were — and it asks
 // `sharesWindows()` before it asks anything else, so a store that cannot share
 // leaves the limiter byte-for-byte what it was. A second in-memory window in
@@ -284,6 +289,10 @@ function windowFailure(what, scope, e) {
 // realm (websecurity.js says why). Resolves `{ ok: true, count, remainingMs }`
 // or `{ ok: false, reason: 'store' | 'unshared', why }`. Never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').WindowResult>}
+ */
 function countInWindow(opts) {
   log.debug("Entering countInWindow().");
   const args = windowArgs(opts);
@@ -308,6 +317,10 @@ function countInWindow(opts) {
 }
 
 // The count of a window, counting nothing.
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').WindowResult>}
+ */
 function peekWindow(opts) {
   log.debug("Entering peekWindow().");
   const args = windowArgs(opts);

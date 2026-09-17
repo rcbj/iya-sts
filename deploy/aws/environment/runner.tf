@@ -16,8 +16,8 @@
 # gateway (network.tf).
 #
 # THREE CONTAINERS SHARING A NETWORK NAMESPACE AND ONE TASK VOLUME, which is
-# the shape ./docker-run-tests.sh gives the same jobs with three compose
-# services and a bind mount:
+# the shape ./docker-run-tests.sh gives the same jobs with a one-shot
+# `docker run` (the credential), two compose services and a bind mount:
 #
 #   pep-credential  mints the remote PEP's client certificate and posts its
 #                   Root to the service's truststore (tests/tools/pep-credential.js),
@@ -159,7 +159,11 @@ resource "aws_ecs_task_definition" "suite" {
         { name = "STS_TEST_CLUSTER_NODES", value = tostring(var.node_count) },
         { name = "STS_LDAP_URL", value = "ldap://${aws_lb.main.dns_name}:${local.published_ports.ldap.listener}" },
         { name = "STS_LDAP_PORT", value = tostring(local.published_ports.ldap.listener) },
-        { name = "STS_MTLS_PORT", value = tostring(local.published_ports.mtls.listener) },
+        # `STS_MTLS_PORT` was here until 2026-09-16 and named the service's own
+        # 9443 listener, which was deleted with 8443. A certificate sign-in is
+        # GET /tls/sign-in on the main port now, which the suite already has
+        # from STS_SUITE_SERVICE_URL. The XACML PEP's own 9443 below is a
+        # DIFFERENT port, in a different container, and is untouched.
         { name = "XACML_PEP_URL", value = "http://localhost:9090" },
         { name = "XACML_PEP_HTTPS_URL", value = "https://localhost:9443" },
         { name = "XACML_PEP_SERVER_CERT_DIR", value = "/shared/pep/server" },

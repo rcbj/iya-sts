@@ -3,6 +3,16 @@ output "service_url" {
   value       = local.public_base_url
 }
 
+output "public_hostname" {
+  description = "The CNAME clients use, when public_hostname is set; empty otherwise."
+  value       = var.public_hostname
+}
+
+output "public_certificate_arn" {
+  description = "The ACM certificate the 443 listener presents, when public_hostname is set."
+  value       = local.public_name ? aws_acm_certificate.public[0].arn : ""
+}
+
 output "nlb_dns_name" {
   description = "The load balancer's DNS name, also the first TLS hostname on every node."
   value       = aws_lb.main.dns_name

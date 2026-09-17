@@ -14,18 +14,20 @@
 // **THIS FILE HAS THE OPPOSITE PROBLEM.** Nobody ever wrote a specification
 // for a recovery code. There are no vectors, no external answer, and every
 // property below is one this service chose. A test that only re-stated those
-// choices would be a second copy of `common/backup_codes.js` written in
+// choices would be a second copy of `common/backup_codes.ts` written in
 // assertions — it would pass for ever and would catch nothing.
 //
 // So what is asserted here is deliberately not "does it do what the code
 // says". It is the four claims the FEATURE makes, each of which is a claim a
 // person is relying on and each of which is breakable by an innocent edit:
 //
-//   1. **A SET IS ISSUED BY AN ACT AND NOT BY A REQUEST** — enrolling a
-//      second factor creates one, and nothing else anywhere does.
-//   2. **ONCE.** Not once per enrolment. This is the assertion that protects
-//      somebody holding a printed list: re-enrolling must not silently
-//      replace it.
+//   1. **A SET IS GENERATED WHEN THE PERSON ASKS, AND STORED ONLY WHEN THEY
+//      CONFIRM** — enrolling a second factor ADVISES a set and issues none.
+//      (Until 2026-09-11 enrolling issued one; the section says why that
+//      reversed.)
+//   2. **WHAT IS STORED IS A HASH**, so nothing can show a code again — and a
+//      second set REPLACES the first, which is the sharp edge the page warns
+//      about. (Until 2026-09-11 a set was issued ONCE and sealed.)
 //   3. **A CODE IS SPENT** — each works exactly once, and a replay is refused
 //      BY NAME rather than as a wrong code.
 //   4. **A SET IS NEVER A WAY IN AND NEVER THE FACTOR DEMANDED.** Holding
@@ -36,12 +38,11 @@
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, WHICH IS THE QUESTION `tests/CLAUDE.md` ASKS FIRST.
 //
-// Claims 2 and 3 need to reach INSIDE the credential store. "Issued once"
-// means asserting that a second enrolment did not rewrite an attribute, and
-// the codes themselves — which is what would have been rewritten — are never
-// on the wire: no endpoint in this service returns somebody's recovery codes
-// except the person's own `/portal/mfa`, and the third claim's interesting
-// case is a directory write that FAILS, which no HTTP request can ask for.
+// Claims 2 and 3 need to reach INSIDE the credential store. "A hash is
+// stored" means reading the bytes on the entry, and the codes themselves are
+// never on the wire after the one page that shows a new set at
+// `/portal/mfa`; the third claim's interesting case is a directory write
+// that FAILS, which no HTTP request can ask for.
 //
 // The over-HTTP half is `tests/vendored/sts_portal_backup_codes.js`, which
 // drives the portal and the sign-in door with a code it reads off the page.
@@ -55,7 +56,7 @@
 //
 // `verifyBackupCode()` REFUSES a code that verified when the spend will not
 // write — the opposite of what `verifyTotp()` does with its counter, and
-// argued at length in `common/credentials.js`: a one-time code that cannot be
+// argued at length in `common/credentials.ts`: a one-time code that cannot be
 // counted is replayable for ninety seconds, and a recovery code that cannot be
 // marked spent works for ever. **Nothing here reaches that branch**, and the
 // reason is worth stating so that the next person does not waste the hour:
@@ -69,9 +70,9 @@
 //     deliberately not exported by `ldap/ldap_server.js`, and
 //     `credentials.js` deliberately offers no getter. Leaving a broken store
 //     behind would break every later file in this process, which run in one.
-//   * The remaining route — sealing with no key-encryption key — needs
-//     `STS_KEYS_SOURCE` set before `common/config.js` is first required, and
-//     by the time this file runs another test file has already required it.
+//   * The route that used to remain — sealing with no key-encryption key —
+//     disappeared on 2026-09-11: a set of hashes is stored unsealed, so
+//     `writeBackupCodesRecord()` has no sealing step left to fail.
 //
 // Exporting a hook table from `ldap/ldap_server.js` purely so that this branch
 // could be reached was considered and refused: production API whose only
@@ -466,19 +467,12 @@ function run(t) {
 
   t.log.info('=== a set this process cannot read is UNUSABLE, never absent ' +
              '===');
-  // The distinction that stops a second set being written over one somebody is
-  // holding on paper. It is asserted through `backupCodeStatus()` on a person
-  // who holds a NORMAL set, and then on the two states that are reachable —
-  // because the unreadable state itself is produced by a rotated
-  // key-encryption key, which this process cannot arrange for the reason the
-  // header gives about `STS_KEYS_SOURCE`.
-  //
-  // What IS checked here is the half that a future edit could break without
-  // any key rotation: that `ensureBackupCodes()` refuses to issue over ANY
-  // existing record, including one with every code spent. A set nobody can use
-  // and a set nobody can read are the same case as far as that function is
-  // concerned, and it is the one that matters — reissuing over a spent set
-  // would be a person's printed list going dead at a moment nothing announced.
+  // The unreadable state itself is a LEGACY SEALED set under a rotated
+  // key-encryption key, which this process cannot arrange — a hashed set
+  // (every set since 2026-09-11) is not sealed and has nothing to fail to
+  // open. What IS checked here is the reachable neighbour: a set with every
+  // code spent is still PRESENT, reported by its counts, and replaced only
+  // when the person generates a new one.
   const erin = somebody();
   const erinCodes = enrolAndTakeCodes(erin);
   erinCodes.forEach(function (code) {
@@ -567,9 +561,100 @@ function run(t) {
             'including the replay refusal');
     t.check(credentials.mechanismsFor(frank).backupCodes.present,
             'and the console counts it like any other set');
+    // #70: the spend REWROTE the set, and until then it came back labelled
+    // `hashed` while holding codes.
+    t.check(credentials.backupCodeStatus(frank).legacy,
+            'and after the spend rewrote it, it is still reported as a ' +
+            'LEGACY set of codes rather than relabelled as hashes');
   } else {
     t.log.warn('this directory would not take a hand-written record, so the ' +
                'legacy-set path is not covered by this run.');
+  }
+
+  t.log.info('=== a LEGACY set stays SEALED where the key persists ===');
+
+  // **#70.** A set an older build sealed in product mode holds CODES. Every
+  // spend rewrites it, and the writer used to write every set in the clear —
+  // so the first spend published the remaining working codes on the entry.
+  // Product mode cannot be turned on in this process, so the two keystore
+  // answers that decide it are stood in for, and put back in `finally`:
+  // `persists()` says the key outlives the process, and `seal()`/`open()`
+  // are a marked round trip, so the bytes on the entry show which happened.
+  const keystore = require('../common/keystore');
+  const grace = somebody();
+  enrolAuthenticator(grace);
+  const sealedCodes = backupCodes.generate({ count: 3, length: 10 });
+  const MARK = 'test-sealed:';
+  const realPersists = keystore.persists;
+  const realSeal = keystore.seal;
+  const realOpen = keystore.open;
+  try {
+    keystore.persists = function () {
+      return true;
+    };
+    keystore.seal = function (text) {
+      return MARK + Buffer.from(String(text)).toString('base64');
+    };
+    keystore.open = function (text) {
+      const value = String(text || '');
+      return value.indexOf(MARK) === 0
+        ? Buffer.from(value.slice(MARK.length), 'base64').toString()
+        : null;
+    };
+    const sealedRecord = JSON.stringify({
+      version: 1, total: 3, remaining: 3,
+      generatedAt: Date.now(), lastUsedAt: 0, sealed: true,
+      vault: keystore.seal(JSON.stringify(sealedCodes.map(function (code) {
+        return { code: code, usedAt: 0 };
+      })))
+    });
+    const graceView = ldap.objectFor(grace);
+    const graceEntry = (graceView && graceView.entry) || null;
+    const graceAttrs = graceEntry ?
+      Object.assign({}, graceEntry.attributes || graceEntry) : null;
+    let graceWrote = false;
+    if (graceAttrs) {
+      graceAttrs.stsBackupCodes = sealedRecord;
+      graceWrote = !!(ldap.writePerson(graceView.dn, graceAttrs) || {}).ok;
+    }
+    t.check(graceWrote, 'a sealed version 1 record can be put on an entry');
+    if (graceWrote) {
+      const spent = credentials.verifyBackupCode(grace, sealedCodes[0]);
+      t.check(spent.ok, 'a code from a SEALED legacy set verifies');
+      const after = ldap.objectFor(grace);
+      const afterRaw = String(((after && after.entry &&
+        (after.entry.attributes || after.entry)) || {}).stsBackupCodes || '');
+      let afterRecord = {};
+      try {
+        afterRecord = JSON.parse(afterRaw);
+      } catch (e) {
+        log.debug('Caught in run(): ' + ((e && e.message) || e));
+      }
+      t.check(afterRecord.sealed === true &&
+              String(afterRecord.vault || '').indexOf(MARK) === 0,
+              'AND THE REWRITE IS SEALED AGAIN — the spend did not put the ' +
+              'set in the clear', afterRecord.sealed);
+      t.check(!sealedCodes.some(function (code) {
+        return afterRaw.indexOf(code) >= 0;
+      }), 'so not one of the remaining codes appears on the entry');
+      t.check(afterRecord.hashed === false,
+              'and the record does not claim to hold hashes');
+      t.check(!credentials.verifyBackupCode(grace, sealedCodes[0]).ok &&
+              credentials.verifyBackupCode(grace, sealedCodes[1]).ok,
+              'and it still works: the spent code is refused and the next ' +
+              'one verifies through the resealed vault');
+    }
+    keystore.seal = function () {
+      return null;
+    };
+    const refused = credentials.verifyBackupCode(grace, sealedCodes[2]);
+    t.check(!refused.ok && refused.reason === 'store',
+            'and a legacy set that CANNOT be sealed is not rewritten in the ' +
+            'clear: the spend is refused instead', refused.reason);
+  } finally {
+    keystore.persists = realPersists;
+    keystore.seal = realSeal;
+    keystore.open = realOpen;
   }
 
   t.log.info('=== the asynchronous door refuses in the SAME ORDER ===');

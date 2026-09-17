@@ -72,9 +72,10 @@ function checkTheNameRules(t) {
 
   withRealm(t, 'dgw-names', function () {
     // NOT `developers`, WHICH IS SEEDED IN EVERY REALM. The first version of
-    // this file used it and failed, which is the seed doing its job: every
-    // realm gets `cn=developers` and `cn=directory-admins` at creation, so a
-    // test that picks either is asserting against a group it did not make.
+    // this file used it and failed, which is the seed doing its job: in
+    // development mode (`mode.seedsDemoData()`) every realm gets
+    // `cn=developers` and `cn=directory-admins` at creation, so a test that
+    // picks either is asserting against a group it did not make.
     const made = dir.createGroup('dgw-developers', { origin: 'test' });
     t.equal(made.ok, true, 'an ordinary name is accepted');
     t.check(String(made.dn).indexOf('cn=dgw-developers,ou=groups') === 0,
@@ -144,7 +145,7 @@ function checkTheEmptyGroup(t) {
 //
 // The person's OWN entry wherever it is. A grant that wrote the `uid=` form
 // beside an entry created under some other RDN would dangle next to the person
-// it was meant to name — which is the bug `admin_rbac.js`'s `memberValueFor()`
+// it was meant to name — which is the bug `admin_rbac.ts`'s `memberValueFor()`
 // exists to avoid, and this is the same rule at a second door.
 // ---------------------------------------------------------------------------
 function checkWhereTheValuePoints(t) {
@@ -194,7 +195,7 @@ function checkWhereTheValuePoints(t) {
 // ---------------------------------------------------------------------------
 // 4. IDEMPOTENCE, AND THE THINGS IT MUST NOT DO.
 //
-// `admin_rbac.js`'s `grant()` rule: adding somebody already in the group is
+// `admin_rbac.ts`'s `grant()` rule: adding somebody already in the group is
 // the state the caller wanted, so it answers ok with `changed: false`. A 400
 // would make a script that adds on every run fail on its second one — and the
 // bulk-load jobs are exactly such a script.
@@ -250,7 +251,7 @@ function checkIdempotenceAndRefusals(t) {
 //
 // `memberOf` is maintained by nothing here — it is not even a standard
 // attribute — so a value written there is one no other door in this service can
-// take away, which is why `admin_rbac.js` REFUSES a revoke of a membership held
+// take away, which is why `admin_rbac.ts` REFUSES a revoke of a membership held
 // that way. And `entryDN` is SYNTHESISED by `entryObject()` rather than stored,
 // so writing a read object straight back would turn it into a real attribute:
 // the one thing every door onto this directory is told never to do.

@@ -50,6 +50,7 @@ delete process.env.CONFIG_FILE;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { isSourceFile } = require('./tools/source_file');
 const childProcess = require('child_process');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -65,22 +66,27 @@ const ROOT = path.join(__dirname, '..');
 // parameter and decides nothing — and so is everything this repository may not
 // edit or that is not the service.
 // ---------------------------------------------------------------------------
+// `.claude` holds agent worktrees: a second checkout of this repository,
+// whose files are not this one's (2026-09-16).
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
-                   'vendored', 'coverage'];
+                   '.claude', 'vendored', 'coverage'];
 const SKIP_FILES = ['common/crypto.js'];
 
 const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
 
 function jsFilesUnder(dir, out) {
   log.debug("Entering jsFilesUnder().");
-  fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const names = entries.map(function (e) { return e.name; });
+  entries.forEach(function (entry) {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.indexOf(entry.name) < 0) {
         jsFilesUnder(path.join(dir, entry.name), out);
       }
       return;
     }
-    if (/\.js$/.test(entry.name)) {
+    // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+    if (isSourceFile(entry.name, names)) {
       out.push(path.join(dir, entry.name));
     }
   });
@@ -608,7 +614,7 @@ function run(t) {
   t.equal(ids.length, new Set(ids).size, 'the use-case ids are unique');
   let admin = null;
   try {
-    admin = fs.readFileSync(path.join(ROOT, 'admin-ui', 'admin.js'), 'utf8');
+    admin = fs.readFileSync(path.join(ROOT, 'admin-ui', 'admin.ts'), 'utf8');
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     admin = '';
