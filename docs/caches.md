@@ -32,6 +32,33 @@ its protocol in the admin console or through `POST /admin-api/config/set`.
 Nothing on this page is cleared by an admin console button. A restart empties
 everything that is not persisted.
 
+## Watching them
+
+**Monitoring → Caches** (`/admin/caches`) lists every cache and replay store
+below as the running process holds it:
+- its current size against its maximum;
+- how many entries are still valid, and how many have expired but not yet been
+  evicted;
+- its hit ratio since the process started.
+
+Open one to see its entries, soonest deadline first, each with how long it is
+still valid. The same figures are at `GET /admin-api/caches`, and
+`GET /admin-api/caches?cache=<name>&page=<n>` returns one store's entries. Both
+show keys only, never cached values.
+
+Three things to know when reading it:
+- **The figures belong to the process that answered.** With request workers or
+  a cluster, each process has its own caches, and the page shows its `pid`.
+- **A hit means different things for the two kinds of store.** For a cache, it
+  is a lookup answered from the cache. For a replay store, it is a value found
+  already held, and each store says which that is: a second use refused, or a
+  nonce honoured.
+- **The Kerberos authenticator store is listed but not counted.** Its lookup is
+  in a file shared with the parent project.
+
+The page is for service administrators; a realm's own administrators cannot
+open it.
+
 ---
 
 ## Certificates and revocation

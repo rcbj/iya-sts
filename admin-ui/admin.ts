@@ -2358,6 +2358,22 @@ const SECTIONS = [
                'no control</strong>: no reveal, no rotate, no test-read. A ' +
                'probe refused with 403 is usually the read-only policy ' +
                'working and is drawn as a row saying so.' },
+      // THE CACHES (#74, 2026-09-17), after the secret store and before the
+      // audit log: one more page whose subject is the process itself, and
+      // the last of them that is state rather than history. Drawn by
+      // `admin-ui/caches_admin.ts` out of `common/cache_registry.js`.
+      { path: '/admin/caches', label: 'Caches',
+        blurb: 'Every cache this service holds in memory &mdash; CRLs and ' +
+               'OCSP answers, signed metadata, fetched request objects, ' +
+               'parsed policies, the directory\'s indexes, decrypted and ' +
+               'derived keys &mdash; with its size against its bound, how ' +
+               'many entries are still valid and how many have expired but ' +
+               'not yet been evicted, and the hit ratio since the process ' +
+               'started. Open one to see its entries, each with how long it ' +
+               'is still valid. <strong>Keys only, never values</strong>, ' +
+               'and no control: a cache is emptied by the settings that ' +
+               'bound it, not by a button. The figures are the answering ' +
+               'process\'s own.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +

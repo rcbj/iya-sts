@@ -214,6 +214,7 @@ import validation = require('../common/validation');
 // The registry of error codes, a leaf. Every refusal below is MARKED on the
 // response before it is sent, and a code is never written into one.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 // EVERY REFRESH TOKEN IS ENCRYPTED TO ITS REALM (2026-09-12). A LIBRARY that
 // registers no route — refreshToken() seals through it, and everything below
 // that reads a refresh token opens through it first.
@@ -479,6 +480,45 @@ const MAX_SIGNED_METADATA = 64;
 // the claims, serialised -> { signed, until }
 const signedMetadataCache = realms.map();
 
+// Described to `/admin/caches` (#74, rule 3ap). The key shown is the
+// algorithm, header choice, kid format and issuer — the claims half of the
+// real key is a whole metadata document.
+const signedMetadataCount = cacheRegistry.register({
+  name: 'oauth2.signed-metadata',
+  title: 'Signed authorization server metadata',
+  description: 'RFC 8414 signed_metadata JWTs, reused while the metadata ' +
+    'and signing settings they were built from are unchanged, so a busy ' +
+    'discovery endpoint does not sign on every fetch.',
+  owner: 'oauth-oidc/oauth2.ts',
+  scope: 'realm',
+  settings: ['oauth2.signedMetadataCacheS',
+             'oauth2.maxSignedMetadataEntries'],
+  maxEntries: function (): number {
+    return Number(config.value('oauth2.maxSignedMetadataEntries')) ||
+      MAX_SIGNED_METADATA;
+  },
+  lifetime: function (): string {
+    return 'oauth2.signedMetadataCacheS (' +
+      config.value('oauth2.signedMetadataCacheS') + ' s) after signing, ' +
+      'per realm; the oldest goes first when full.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmRows(
+      realms.list().map(function (r: { id: string }): string {
+        return r.id;
+      }),
+      function (id: string): Map<unknown, unknown> {
+        return signedMetadataCache.realmMap(id);
+      },
+      function (held: Json, key: unknown): Json {
+        const parts = String(key).split(' ');
+        return { key: parts.slice(0, 3).join(' ') + ' ' +
+                   String(held.issuer || ''),
+                 validUntil: held.until };
+      });
+  }
+});
+
 // THE DEFAULT OF `oauth2.authorizationCodeTtlS` (2026-09-12), kept under its
 // old name because four places below explain themselves in terms of it.
 // `authCodeTtlMs()` is the live value and what every reader uses; a code
@@ -538,6 +578,38 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes',
 // this behaves as the plain Map it replaced. See common/realms.js.
 // code -> the token set it was redeemed for
 const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes' });
+
+// Described to `/admin/caches` (#74, rule 3ap). The key is an authorization
+// code and the value holds the tokens it produced, so a row is the code's
+// digest, the client and when the record is dropped — nothing else.
+const redeemedCodesCount = cacheRegistry.register({
+  name: 'oauth2.redeemed-codes',
+  title: 'Redeemed authorization codes',
+  description: 'Each authorization code already exchanged at the token ' +
+    'endpoint, so a second exchange is recognised as a replay (RFC 9700 ' +
+    'section 4.5, RFC 6749 section 4.1.2).',
+  owner: 'oauth-oidc/oauth2.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a code already redeemed, presented again',
+  settings: ['oauth2.authorizationCodeTtlS'],
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'One code lifetime after the code would have expired. No size ' +
+      'limit.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, redeemedCodes,
+      function (done: Json, code: unknown): Json {
+        return { key: cacheRegistry.digestKey(code) + ' for ' +
+                   String((done && done.client_id) || '?'),
+                 validUntil: Number(done && done.forget) || null };
+      });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // THE ROLE GATE, ASKED ONCE PER KIND OF THING A TOKEN RESPONSE CARRIES.
@@ -1978,6 +2050,7 @@ class OAuth2Server {
     const now = Date.now();
     const held = signedMetadataCache.get(key);
     if (held && held.until > now) {
+      signedMetadataCount.hit();
       // Logged, because a reader of this log comparing two fetches has to be
       // able to tell a document that was signed again from one that was not —
       // they are byte-identical and nothing else would say which happened.
@@ -1986,6 +2059,7 @@ class OAuth2Server {
                 "s ago and is reused.");
       return held.signed;
     }
+    signedMetadataCount.miss();
     logArtifact('RFC 8414 signed_metadata', 'before signing', claims);
     try {
       const signed = self.signPublishedDocument(claims, meta.issuer, 3600,
@@ -1999,6 +2073,7 @@ class OAuth2Server {
         signedMetadataCache.delete(signedMetadataCache.keys().next().value);
       }
       signedMetadataCache.set(key, { signed: signed, at: now,
+                                     issuer: meta.issuer,
                                      until: now + self.signedMetadataTtlMs() });
       log.debug("Leaving OAuth2Server.signedMetadata().");
       return signed;
@@ -7337,6 +7412,11 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.replayOrRefuseRedemption().");
     self.forgetStaleRedemptions();
     const done = redeemedCodes.get(code);
+    if (done) {
+      redeemedCodesCount.hit();
+    } else {
+      redeemedCodesCount.miss();
+    }
     if (!done) {
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). This " +
                 "server has no record " +

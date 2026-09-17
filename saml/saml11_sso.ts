@@ -204,6 +204,7 @@ import config = require('../common/config');
 // The error-code registry, a leaf: every refusal below is marked with its code
 // on the response object, never in anything the relying party is sent.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 // THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
 // `error_codes`, so a require from 10b moves no route and closes no cycle. See
 // `common/issuance_gate.js`; an unfilled decider answers "allowed".
@@ -377,6 +378,36 @@ const ARTIFACT_CLAIM_SKEW_MS = 60 * 1000;
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const assertionsById = realms.map({ persist: 'saml11_sso.assertionsById' });
+
+// Described to `/admin/caches` (#74, rule 3ap), in `docs/caches.md`'s other
+// protocols. A register of issued assertions more than a cache — an entry
+// cannot be rebuilt — and listed because that document lists it. A hit is an
+// AssertionIDReference answered.
+const assertionsCount = cacheRegistry.register({
+  name: 'saml11.assertions',
+  title: 'SAML 1.1 assertions',
+  description: 'Issued SAML 1.1 assertions, kept so an attribute authority ' +
+    'request naming one by AssertionIDReference can be answered.',
+  owner: 'saml/saml11_sso.ts',
+  scope: 'realm',
+  persisted: true,
+  hitMeaning: 'an AssertionIDReference answered',
+  settings: ['saml11.assertionCacheMax'],
+  maxEntries: function (): number | null {
+    return Number(config.value('saml11.assertionCacheMax')) || null;
+  },
+  lifetime: function (): string {
+    return 'No expiry: the oldest is dropped past ' +
+      'saml11.assertionCacheMax.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, assertionsById,
+      function (xml: unknown, id: unknown): object {
+        return { key: String(id), validUntil: null,
+                 basis: 'until pushed out' };
+      });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // THE REGISTRY.
@@ -2008,6 +2039,11 @@ class Saml11Sso {
     if (referenceEl) {
       const wanted = (referenceEl.textContent || '').trim();
       const assertion = assertionsById.get(wanted);
+      if (assertion) {
+        assertionsCount.hit();
+      } else {
+        assertionsCount.miss();
+      }
       if (!assertion) {
         log.debug("Leaving Saml11Sso.respond(). No such AssertionID.");
         errorCodes.mark(res, 'STS-SAML-0038');

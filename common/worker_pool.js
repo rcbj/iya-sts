@@ -77,6 +77,8 @@ const worker = require('./worker');
 // A LEAF with no requires — the failure codes in the log lines below. See
 // common/error_codes.js.
 const errorCodes = require('./error_codes');
+// A LEAF too: the affinity map below, described to `/admin/caches` (#74).
+const cacheRegistry = require('./cache_registry');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -115,6 +117,37 @@ let workers = [];
 // session id -> pid. Insertion-ordered, which is what makes the cap a
 // least-recently-ADDED eviction without a second structure.
 const affinity = new Map();
+
+// Described to `/admin/caches` (#74, rule 3ap). The key is a session, so it
+// is shown digested; a row is valid while its worker is still in the pool.
+const affinityCount = cacheRegistry.register({
+  name: 'workers.crypto-affinity',
+  title: 'Crypto worker affinity',
+  description: 'Which post-quantum crypto worker last handled a session, so ' +
+    'its next job goes to the same one. Losing an entry costs only a ' +
+    're-route.',
+  owner: 'common/worker_pool.js',
+  scope: 'process',
+  maxEntries: function () {
+    return AFFINITY_MAX;
+  },
+  lifetime: function () {
+    return 'No expiry: forgotten when its worker exits; the oldest goes ' +
+      'first when full.';
+  },
+  entries: function () {
+    const out = [];
+    affinity.forEach(function (pid, key) {
+      out.push({ key: cacheRegistry.digestKey(key) + ' → pid ' + pid,
+                 validUntil: null,
+                 valid: workers.some(function (one) {
+                   return one.pid === pid;
+                 }),
+                 basis: 'worker pool' });
+    });
+    return out;
+  }
+});
 
 let nextJobId = 1;
 let quickExits = 0;
@@ -406,9 +439,11 @@ function workerFor(session) {
     return one.pid === pid;
   })[0] : null;
   if (held) {
+    affinityCount.hit();
     log.debug('Leaving workerFor(). Held affinity to ' + held.pid + '.');
     return held;
   }
+  affinityCount.miss();
   const chosen = leastLoaded();
   if (chosen) {
     if (affinity.size >= AFFINITY_MAX) {

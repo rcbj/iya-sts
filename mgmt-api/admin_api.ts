@@ -199,6 +199,8 @@ import encryptionAdmin = require('../admin-ui/encryption_admin');
 // 18c, same ordinary-direction require and the same reason.
 import databaseAdmin = require('../admin-ui/database_admin');
 import secretsAdmin = require('../admin-ui/secrets_admin');
+// 18g (#74), the same ordinary-direction require and the same reason.
+import cachesAdmin = require('../admin-ui/caches_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -362,6 +364,7 @@ interface AdminApiDeps {
   encryptionAdmin: typeof encryptionAdmin;
   databaseAdmin: typeof databaseAdmin;
   secretsAdmin: typeof secretsAdmin;
+  cachesAdmin: typeof cachesAdmin;
   debuggerAdmin: typeof debuggerAdmin;
   config: typeof config;
   rbac: typeof rbac;
@@ -421,6 +424,7 @@ class AdminApi {
       encryptionAdmin: encryptionAdmin,
       databaseAdmin: databaseAdmin,
       secretsAdmin: secretsAdmin,
+      cachesAdmin: cachesAdmin,
       debuggerAdmin: debuggerAdmin,
       config: config,
       rbac: rbac,
@@ -1500,7 +1504,7 @@ class AdminApi {
   buildRoutes(): any[] {
     const { log, baseUrlOf, config, spec, adminViews, errorCodes,
             encryptionAdmin, databaseAdmin, secretsAdmin, debuggerAdmin,
-            parseBody, loadApiExplorer, admin, adminActions, rbac, helpers,
+            cachesAdmin, parseBody, loadApiExplorer, admin, adminActions, rbac, helpers,
             realms, stats, resourceMetadata, applications, loadGnapConsole, pki,
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOauth2MonitorApi } = this.deps;
@@ -1732,6 +1736,57 @@ class AdminApi {
           log.debug("Entering the management API encryption report endpoint.");
           self.sendJson(res, 200, encryptionAdmin.encryptionView());
           log.debug("Leaving the management API encryption report endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE CACHES (#74). `cachesAdmin.cachesView()` and nothing else — the
+      // function the page's `?format=json` answers — with the page's own
+      // parameters, so the list and one cache's paged entries are one
+      // operation, as `/admin/caches` and `/admin/caches?cache=` are one page.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/caches', tag: 'Service',
+        operationId: 'getCaches',
+        summary: 'Every cache this service holds, or one cache\'s entries',
+        description: 'Without `cache`: every cache registered with ' +
+                     '`common/cache_registry.js` — `name`, `title`, ' +
+                     '`description`, `owner`, `scope` (`process` or ' +
+                     '`realm`), `size` (entries held now), `valid`, ' +
+                     '`expired` (past their deadline, or built from ' +
+                     'something that has since changed, and not evicted ' +
+                     'yet), `maxEntries` (null when unbounded), ' +
+                     '`lifetime`, `settings`, `hits`, `misses` and ' +
+                     '`hitRatio` (null before any lookup) — plus `totals` ' +
+                     'and `notListed`, the in-memory values deliberately ' +
+                     'not registered.\n\nWith `cache`: that cache\'s ' +
+                     '`summary` and a page of its `entries`, soonest ' +
+                     'deadline first, each with `realm`, `key`, `valid`, ' +
+                     '`validUntil`, `remainingSeconds`, `basis` and ' +
+                     '`remaining`, walked with `page` and `per` and ' +
+                     'answered in `entriesPaging`. An unknown name answers ' +
+                     '200 with `found: false` and the names that exist.' +
+                     '\n\nKEYS ONLY: no cached value is in the reply, ' +
+                     'including for the caches that hold key material. ' +
+                     'THE FIGURES ARE THE ANSWERING PROCESS\'S (`pid`); a ' +
+                     'request worker or a cluster node holds its own. A ' +
+                     'service operation: a realm\'s own administrator is ' +
+                     'refused it.',
+        mirrors: 'GET /admin/caches',
+        parameters: [
+          { name: 'cache', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A cache `name`, to answer its entries rather ' +
+                         'than the list.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The list, or one cache.',
+        responseSchema: { type: 'object',
+          description: 'Always `generatedAt` and `pid`; then either ' +
+                       '`caches`, `totals` and `notListed`, or `cache`, ' +
+                       '`found` and — when found — `summary`, `entries` ' +
+                       'and `entriesPaging`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API caches endpoint.");
+          self.sendJson(res, 200, cachesAdmin.cachesView(req.query));
+          log.debug("Leaving the management API caches endpoint.");
         } },
 
       // ---------------------------------------------------------------------

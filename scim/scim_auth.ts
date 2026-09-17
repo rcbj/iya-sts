@@ -226,6 +226,7 @@ import directory = require('../ldap/ldap_server');
 // under the non-enumerable Symbol errorCodes.mark() uses; scim.ts marks the
 // response with it. See common/error_codes.js. A leaf.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 // For the one refusal here that is not a refusal of the REQUEST — a verified
 // client certificate the revocation policy will not accept as a credential —
 // which has no response of its own to be marked on. `audit.js` requires only
@@ -316,6 +317,147 @@ const digestCounts = realms.map();
 // is last writer wins.
 const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges' });
 const hobaSeen = realms.map();
+
+// ---------------------------------------------------------------------------
+// THE FOUR STORES ABOVE, DESCRIBED TO `/admin/caches` (#74, rule 3ap). Every
+// time here is milliseconds; a nonce or challenge is shown digested, because
+// until it expires it is still a thing a client may present.
+// ---------------------------------------------------------------------------
+function scimSeconds(key: string): number {
+  helpers.log.debug("Entering scimSeconds().");
+  helpers.log.debug("Leaving scimSeconds().");
+  return Number(config.value(key)) || 0;
+}
+
+const digestNoncesCount = cacheRegistry.register({
+  name: 'scim.digest-nonces',
+  title: 'SCIM Digest nonces',
+  description: 'The HTTP Digest challenges /scim/v2 has handed out ' +
+    '(RFC 7616), so a response names one this service issued.',
+  owner: 'scim/scim_auth.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a nonce this service issued, so the response was checked',
+  settings: ['scim.maxDigestNonces', 'scim.digestNonceSeconds'],
+  maxEntries: function (): number | null {
+    return scimSeconds('scim.maxDigestNonces') || null;
+  },
+  lifetime: function (): string {
+    return 'scim.digestNonceSeconds (' +
+      scimSeconds('scim.digestNonceSeconds') + ' s) after it was issued, ' +
+      'then oldest first past the limit.';
+  },
+  entries: function (): unknown[] {
+    const ttl = scimSeconds('scim.digestNonceSeconds') * 1000;
+    return cacheRegistry.realmMapRows(realms, digestNonces,
+      function (record: any, nonce: unknown): object {
+        return { key: cacheRegistry.digestKey(nonce),
+                 validUntil: Number(record && record.at) + ttl };
+      });
+  }
+});
+
+const digestCountsCount = cacheRegistry.register({
+  name: 'scim.digest-nonce-counts',
+  title: 'SCIM Digest nonce counts',
+  description: 'The nonce-count (nc) values already accepted under each ' +
+    'Digest nonce, so one response cannot be sent twice.',
+  owner: 'scim/scim_auth.ts',
+  scope: 'realm',
+  kind: 'replay',
+  hitMeaning: 'a nonce count already used, so the request was refused',
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'Forgotten with its nonce. Not persisted: the claim a spend ' +
+      'makes is what decides a replay across nodes.';
+  },
+  entries: function (): unknown[] {
+    const ttl = scimSeconds('scim.digestNonceSeconds') * 1000;
+    const out: unknown[] = [];
+    realms.list().forEach(function (r: { id: string }): void {
+      const nonces = digestNonces.realmMap(r.id);
+      digestCounts.realmMap(r.id).forEach(function (counts: Set<string>,
+                                                    nonce: string): void {
+        const record = nonces.get(nonce);
+        out.push({ realm: r.id,
+                   key: cacheRegistry.digestKey(nonce) + ' — ' +
+                     counts.size + ' count(s)',
+                   validUntil: record ? Number(record.at) + ttl : null,
+                   valid: !!record,
+                   basis: record ? 'time' : 'its nonce' });
+      });
+    });
+    return out;
+  }
+});
+
+const hobaChallengesCount = cacheRegistry.register({
+  name: 'scim.hoba-challenges',
+  title: 'SCIM HOBA challenges',
+  description: 'The HOBA challenges /scim/v2 has handed out (RFC 7486), so ' +
+    'a signature names one this service issued.',
+  owner: 'scim/scim_auth.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a challenge this service issued, so the signature was checked',
+  settings: ['scim.maxHobaChallenges', 'scim.hobaMaxAgeSeconds'],
+  maxEntries: function (): number | null {
+    return scimSeconds('scim.maxHobaChallenges') || null;
+  },
+  lifetime: function (): string {
+    return 'scim.hobaMaxAgeSeconds (' +
+      scimSeconds('scim.hobaMaxAgeSeconds') + ' s) after it was issued, ' +
+      'then oldest first past the limit.';
+  },
+  entries: function (): unknown[] {
+    const ttl = scimSeconds('scim.hobaMaxAgeSeconds') * 1000;
+    return cacheRegistry.realmMapRows(realms, hobaChallenges,
+      function (issuedAt: unknown, challenge: unknown): object {
+        return { key: cacheRegistry.digestKey(challenge),
+                 validUntil: Number(issuedAt) + ttl };
+      });
+  }
+});
+
+const hobaSeenCount = cacheRegistry.register({
+  name: 'scim.hoba-signatures',
+  title: 'SCIM HOBA signatures',
+  description: 'Each (kid, challenge, nonce) a HOBA signature arrived with, ' +
+    'so a copied credential is refused.',
+  owner: 'scim/scim_auth.ts',
+  scope: 'realm',
+  kind: 'replay',
+  hitMeaning: 'a signature already seen, so the request was refused',
+  settings: ['scim.maxHobaSeen'],
+  maxEntries: function (): number | null {
+    return scimSeconds('scim.maxHobaSeen') || null;
+  },
+  lifetime: function (): string {
+    return 'Until its challenge expires; past the limit, the oldest go ' +
+      'with their challenge.';
+  },
+  entries: function (): unknown[] {
+    const ttl = scimSeconds('scim.hobaMaxAgeSeconds') * 1000;
+    const out: unknown[] = [];
+    realms.list().forEach(function (r: { id: string }): void {
+      const challenges = hobaChallenges.realmMap(r.id);
+      hobaSeen.realmMap(r.id).forEach(function (challenge: string,
+                                                triple: string): void {
+        const issuedAt = challenges.get(challenge);
+        out.push({ realm: r.id, key: cacheRegistry.digestKey(triple),
+                   validUntil: issuedAt === undefined
+                     ? null : Number(issuedAt) + ttl,
+                   valid: issuedAt !== undefined,
+                   basis: issuedAt === undefined ? 'its challenge' : 'time' });
+      });
+    });
+    return out;
+  }
+});
 
 // A decision: an accepted credential (`ok: true`) or a refusal value.
 type Decision = Record<string, any>;
@@ -1237,6 +1379,11 @@ class ScimAuth {
     const { log, digestCounts } = this.deps;
     log.debug("Entering ScimAuth.countsOf().");
     let counts = digestCounts.get(nonce);
+    if (counts) {
+      digestCountsCount.hit();
+    } else {
+      digestCountsCount.miss();
+    }
     if (!counts) {
       counts = new Set();
       digestCounts.set(nonce, counts);
@@ -1399,6 +1546,11 @@ class ScimAuth {
     }
 
     const record = digestNonces.get(String(params.nonce));
+    if (record) {
+      digestNoncesCount.hit();
+    } else {
+      digestNoncesCount.miss();
+    }
     if (!record) {
       log.debug("Leaving ScimAuth.attemptDigest(). The nonce is not one this " +
                 "server " +
@@ -1781,6 +1933,11 @@ class ScimAuth {
 
     const issuedAt = hobaChallenges.get(challenge);
     if (issuedAt === undefined) {
+      hobaChallengesCount.miss();
+    } else {
+      hobaChallengesCount.hit();
+    }
+    if (issuedAt === undefined) {
       log.debug("Leaving ScimAuth.attemptHoba(). The challenge is not one " +
                 "this server " +
                 "issued.");
@@ -1807,7 +1964,13 @@ class ScimAuth {
     // clients. A repeated (kid, challenge, nonce) is a copied credential, which
     // is a different thing and is what a nonce is for.
     const triple = kid + '.' + challenge + '.' + nonce;
-    if (hobaSeen.has(triple)) {
+    const seenBefore = hobaSeen.has(triple);
+    if (seenBefore) {
+      hobaSeenCount.hit();
+    } else {
+      hobaSeenCount.miss();
+    }
+    if (seenBefore) {
       log.debug("Leaving ScimAuth.attemptHoba(). That signature has been " +
                 "seen before.");
       return this.coded('STS-SCIM-0052', this.unauthenticated(req,

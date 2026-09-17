@@ -218,6 +218,8 @@ const realms = require('../common/realms');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. See common/error_codes.js.
 const errorCodes = require('../common/error_codes');
+// A LEAF: the two shadows below, described to `/admin/caches` (#74).
+const cacheRegistry = require('../common/cache_registry');
 // THE CLUSTER GATE (2026-09-14, #46). A LIBRARY that is handed the open driver;
 // it requires config, the capability table and the error codes, and nothing
 // that requires this module back. See cluster/cluster.js.
@@ -320,6 +322,40 @@ const shadow = new Map();
 // ---------------------------------------------------------------------------
 // realm id -> JSON of { name, description, overrides }
 const realmShadow = new Map();
+
+// Described to `/admin/caches` (#74, rule 3ap): one row per directory entry
+// and per realm record this process last wrote. A hit is an entry found
+// unchanged, so not written again; a miss is one written.
+const shadowCount = cacheRegistry.register({
+  name: 'persistence.write-shadow',
+  title: 'Unchanged-write shadow',
+  description: 'The last copy of each directory entry and realm record this ' +
+    'process wrote to the persistence store, so a flush writes only what ' +
+    'changed.',
+  owner: 'persistence/persistence.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    return 'No expiry: refreshed at each flush, one entry per directory ' +
+      'entry and realm written. Empty in memory mode.';
+  },
+  entries: function () {
+    const out = [];
+    shadow.forEach(function (rows, realmId) {
+      rows.forEach(function (json, key) {
+        out.push({ realm: realmId, key: key, validUntil: null,
+                   basis: 'until the next write' });
+      });
+    });
+    realmShadow.forEach(function (json, realmId) {
+      out.push({ realm: realmId, key: 'realm record', validUntil: null,
+                 basis: 'until the next write' });
+    });
+    return out;
+  }
+});
 // key -> raw value, or null before a restore primed it
 let appconfigShadow = null;
 // The realms removed in THIS process and not yet written down.
@@ -722,7 +758,10 @@ function diff(live, wanted, removals) {
           return;
         }
         const json = JSON.stringify(entry);
-        if (was.get(key) !== json) {
+        if (was.get(key) === json) {
+          shadowCount.hit();
+        } else {
+          shadowCount.miss();
           // `base` IS WHAT THIS PROCESS BASED THE WRITE ON — the shadow's
           // copy, or null when it believed the DN held nothing. The postgres
           // driver merges the live entry with the row as it is now against
@@ -737,7 +776,10 @@ function diff(live, wanted, removals) {
     }
     rows.forEach(function (entry, key) {
       const json = JSON.stringify(entry);
-      if (was.get(key) !== json) {
+      if (was.get(key) === json) {
+        shadowCount.hit();
+      } else {
+        shadowCount.miss();
         upserts.push({ realm: realmId, key: key, entry: entry, json: json,
                        base: was.has(key) ? was.get(key) : null });
         touched[realmId] = true;
@@ -921,7 +963,10 @@ function realmsDelta(removals) {
       ? JSON.parse(realmShadow.get(row.id)) : null;
     const change = realmChangeOf(row, was);
     if (change) {
+      shadowCount.miss();
       upserts.push(change);
+    } else {
+      shadowCount.hit();
     }
   });
   const removed = (removals || []).filter(function (id) {

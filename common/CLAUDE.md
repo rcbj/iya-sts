@@ -7283,3 +7283,65 @@ else — so either give the listener a direct connection or session mode; the
 poll (`persistence.pollInterval`) still converges without it, at up to that
 interval's latency. Every commit NOTIFYs every process of every container.
 
+
+## 3ap. `cache_registry.js`: EVERY CACHE AND REPLAY STORE SAYS WHAT IT IS (#74, 2026-09-17)
+
+`/admin/caches` lists every in-memory cache and replay store this service
+holds, with its size, valid and expired entries, bound and hit ratio, and one
+store's entries on a drill-down. The list is not written down anywhere in the
+console. **Each owner registers its store once, beside its declaration**, with
+a descriptor. The page asks the registry when it is drawn. A store added
+tomorrow therefore appears the day it registers, and nothing has to remember
+to add a row.
+
+What `docs/caches.md` lists is what is registered, in its two kinds:
+- **`cache`**: something that could be rebuilt (a fetch, a parse, the
+  directory, the key store).
+- **`replay`**: a store that makes a one-time value work once.
+
+`tests/cache_registry.js` holds the owners to the document's list by name, so a
+store dropped from the page fails there.
+
+Five decisions:
+
+- **A LEAF, AND JAVASCRIPT.**
+  - `helpers.js`, `keystore.js`, `realms.js`-backed stores,
+    `revocation_status.js` and `krb5_principals.js` are in the parent
+    project's Kerberos COPY closure and are loaded there by plain node, so the
+    registry cannot be TypeScript.
+  - It requires only `config` (for its logger) and `error_codes`, so it can
+    close no cycle.
+  - **It is OWED as one COPY line** in the parent's `tests/Dockerfile`
+    (`kerberos/CLAUDE.md`).
+- **A ROW IS FIVE MEMBERS AND NOTHING ELSE.**
+  - `rowsOf()` copies `realm`, `key`, `validUntil`, `valid` and `basis` out of
+    whatever `entries()` returns. A descriptor that handed back a decrypted key
+    still could not put it on the page.
+  - The key-material stores go further and put no key in the row: the realm
+    and a kid or an etype only.
+  - **`helpers.js`'s descriptor reads `kid` and nothing else**, because
+    `pqKeys` and the private halves of a stored key set are GETTERS that
+    decrypt in product mode.
+- **COUNTED AT THE ONE LOOKUP.**
+  - `counter(name)` is `{ hit(), miss() }`, two integers per store, cumulative
+    per process. It is called where the owner already decides "held or not",
+    and on no other path.
+  - `realms.keyed(factory, onLookup)` grew its optional second argument for
+    the one cache whose lookup is a property read (`helpers.js`'s STS proxy).
+  - **A lookup in a locked file is not counted** (`counted: false`). That is
+    the Kerberos authenticator store in `krb5_service.js`. The page says "not
+    counted" rather than showing a ratio of nothing.
+- **VALID IS THE OWNER'S CALL.**
+  - A row with a deadline is valid until it passes.
+  - A row bound to a version (the directory's indexes, the SSF answers, a
+    file's mtime, SPIFFE's stored authority list) is valid while that version
+    is current. The owner decides this, **inside the row's own realm**
+    (`realms.run()`), because the versions and container DNs are ambient.
+  - "Expired" therefore means "held, and no longer what a lookup would use".
+- **A THROWING DESCRIPTOR COSTS ITS ROWS, NOT THE PAGE** (`STS-CORE-0095`). An
+  incomplete one is refused whole when it registers (`STS-CORE-0094`), for
+  rule 3e's reason.
+
+The figures are the answering process's own. With request workers or a
+cluster, each process has its own caches, and nothing here is coordinated,
+because a cache is exactly what a store is not.

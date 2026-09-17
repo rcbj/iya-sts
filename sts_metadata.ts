@@ -4923,6 +4923,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'single connection the page borrows. Empty with a sentence saying ' +
           'WHICH of three reasons unless persistence.mode is postgres. Add ' +
           '?format=json, or GET /admin-api/database.' },
+  { path: '/admin/caches', group: 'Admin',
+    name: 'Every cache this service holds, and one cache\'s entries',
+    specs: [],
+    what: 'NON-SPEC (#74). Filed under Monitoring. Every in-memory cache ' +
+          'registered with common/cache_registry.js by the module that owns ' +
+          'it — CRLs, OCSP answers and fetched issuer certificates, signed ' +
+          'authorization server metadata, fetched request objects, parsed ' +
+          'authorization_details types and XACML policies, the directory\'s ' +
+          'indexes, signing key sets, decrypted and derived keys, and ' +
+          'more — with its current size, how many entries are valid and how ' +
+          'many expired but not yet evicted, its bound, how its entries end ' +
+          'and its hit ratio since the process started. ?cache=<name> is ' +
+          'one cache\'s entries, paged, each with how long it is still ' +
+          'valid. Keys only, never values, and no control. A service page: ' +
+          'a realm administrator is refused it. The figures are the ' +
+          'answering process\'s. Add ?format=json, or GET /admin-api/caches.' },
   { path: '/admin/encryption', group: 'Admin',
     name: 'What is encrypted at rest, and how much of it has happened',
     specs: [],
@@ -5684,6 +5700,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'and `why` says which of three reasons. No connection string is in ' +
           'the reply and nothing here changes anything. Mirrors GET ' +
           '/admin/database.' },
+  { path: '/admin-api/caches', group: 'Management API',
+    name: 'Caches', specs: [],
+    what: 'NON-SPEC (#74). Everything /admin/caches draws, as JSON: every ' +
+          'registered cache with its size, valid and expired entries, bound, ' +
+          'lifetime, settings, hits, misses and hit ratio; with ?cache=, ' +
+          'that cache\'s summary and a page of its entries (page, per), ' +
+          'each with its realm, key and time left. An unknown name answers ' +
+          '200 with found: false. No cached value is in the reply. Mirrors ' +
+          'GET /admin/caches.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +

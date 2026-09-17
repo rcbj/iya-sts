@@ -54,6 +54,7 @@ import realms = require('../common/realms');
 // `spendNonceOnce()`. A LIBRARY that reaches `persistence.js` lazily.
 import claims = require('../cluster/cluster_claims');
 import InstanceSlot = require('../common/instance_slot');
+import cacheRegistry = require('../common/cache_registry');
 
 const accounts = realms.map({ persist: 'acme.accounts' });
 // thumbprint -> account id. An account IS its key (section 7.3.1), and a key
@@ -71,6 +72,34 @@ const usedNonces = realms.map({ persist: 'acme.usedNonces' });
 // the ones that have expired first; a nonce is only useful until it expires, so
 // what is dropped can never be presented again anyway.
 const MAX_USED_NONCES = 100000;
+
+// Described to `/admin/caches` (#74, rule 3ap). The value is the nonce's
+// expiry in seconds. The bound is soft: at it, only expired nonces go.
+const usedNoncesCount = cacheRegistry.register({
+  name: 'acme.nonces',
+  title: 'ACME nonces',
+  description: 'The Replay-Nonce values already presented to the ACME ' +
+    'server (RFC 8555 section 6.5), so each is accepted once.',
+  owner: 'acme/acme_store.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a nonce already spent, so the request was refused',
+  maxEntries: function (): number {
+    return MAX_USED_NONCES;
+  },
+  lifetime: function (): string {
+    return 'Until the nonce expires; expired ones are cleared when the ' +
+      'limit is reached.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, usedNonces,
+      function (expiresS: unknown, id: unknown): object {
+        return { key: cacheRegistry.digestKey(id),
+                 validUntil: Number(expiresS) * 1000 };
+      });
+  }
+});
 
 // Orders kept per account once they are finished. A client that loops on
 // newOrder must not grow a store without bound.
@@ -350,9 +379,11 @@ class AcmeStore {
     const { log } = this.deps;
     log.debug("Entering AcmeStore.spendNonce().");
     if (usedNonces.has(id)) {
+      usedNoncesCount.hit();
       log.debug("Leaving AcmeStore.spendNonce(). Already spent.");
       return false;
     }
+    usedNoncesCount.miss();
     if (usedNonces.size >= MAX_USED_NONCES) {
       const nowS = Math.floor(this.nowMs() / 1000);
       const expired = [];

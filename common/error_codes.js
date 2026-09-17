@@ -680,6 +680,14 @@ const CODES = [
       'whose TypeScript sources are not compiled, which only an image ' +
       'build does (#50).',
     spec: 'none — the process exits before listening' },
+  { code: 'STS-CORE-0094',
+    summary: 'A module registered a cache with the cache registry and left ' +
+      'out a member every descriptor must have (#74).',
+    spec: 'none — the module fails to load' },
+  { code: 'STS-CORE-0095',
+    summary: 'A registered cache threw while listing its entries for ' +
+      '/admin/caches, so the page shows it with no rows (#74).',
+    spec: 'none — logged; the page says the cache could not be listed' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -10173,8 +10181,8 @@ const CODES = [
     spec: 'HTTP 303 to the current realm' },
   { code: 'STS-ADMIN-0021',
     summary: 'A console drill-down named a record that does not exist: an ' +
-      'application, an authorization server profile, a trust realm or ' +
-      'a federation relationship.',
+      'application, an authorization server profile, a trust realm, ' +
+      'a federation relationship or a cache.',
     spec: 'HTTP 200 page saying there is no such record' },
   { code: 'STS-ADMIN-0022',
     summary: 'The realm switcher was given a return path that is not a ' +

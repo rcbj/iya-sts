@@ -169,6 +169,7 @@ const audit = require('./../common/audit');
 // change to the register carries its code on an audit row and not on its
 // result.
 const errorCodes = require('./../common/error_codes');
+const cacheRegistry = require('./../common/cache_registry');
 // ---------------------------------------------------------------------------
 // THE APPLICATIONS REGISTRY, AND WHY THIS MODULE MAY REQUIRE IT (rule 3o, read
 // the other way round).
@@ -1545,14 +1546,49 @@ function releaseIndexTtlMs() {
   return Number(config.value('federation.releaseIndexTtlMs'));
 }
 
+// Described to `/admin/caches` (#74, rule 3ap): one row per realm holding an
+// index, which is the whole cache for that realm.
+const releaseIndexCount = cacheRegistry.register({
+  name: 'federation.release-index',
+  title: 'Federation attribute-release index',
+  description: 'Which partner\'s release list applies to which ' +
+    'application, built from ou=federations so a token issue does not walk ' +
+    'the register. One index per realm.',
+  owner: 'federation/federation.js',
+  scope: 'realm',
+  settings: ['federation.releaseIndexTtlMs'],
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    return 'federation.releaseIndexTtlMs (' + releaseIndexTtlMs() +
+      ' ms) after it was built, or at once when a federation ' +
+      'relationship is written through this service.';
+  },
+  entries: function () {
+    const out = [];
+    releaseIndexes.existing().forEach(function (held, id) {
+      if (!held.index) {
+        return;
+      }
+      out.push({ realm: id,
+                 key: held.index.size + ' application(s) with a release list',
+                 validUntil: held.at + releaseIndexTtlMs() });
+    });
+    return out;
+  }
+});
+
 function releaseIndexNow() {
   log.debug('Entering releaseIndexNow().');
   const now = Date.now();
   const held = releaseIndexes();
   if (held.index && now - held.at < releaseIndexTtlMs()) {
+    releaseIndexCount.hit();
     log.debug('Leaving releaseIndexNow().');
     return held.index;
   }
+  releaseIndexCount.miss();
   const index = new Map();
   inRole('identity-provider').forEach(function (record) {
     if (!isEnabled(record)) return;

@@ -247,6 +247,7 @@ const audit = require('../common/audit');
 // Every refusal an LDAP handler answers, and every failure this module has on
 // its own, carries an STS-LDAP-* code — see common/error_codes.js. A leaf.
 const errorCodes = require('../common/error_codes');
+const cacheRegistry = require('../common/cache_registry');
 // The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY: installed on the
 // net.Server and tls.Server ldapjs built, in listen().
 const proxyProtocol = require('../common/proxy_protocol');
@@ -1173,6 +1174,16 @@ const usernameIndexes = realms.keyed(function () {
   return { index: null, version: -1, usersDn: '', builds: 0 };
 });
 
+// The registry counters of this file's four caches (#74, rule 3ap) — the
+// username index above, and the group index, the entryUUID index and the
+// subtree listings below. Declared HERE, ahead of all four, because seeding
+// the directory at load reaches them; `describeDirectoryCaches()` at the foot
+// of the file registers what they count.
+const usernameIndexCount = cacheRegistry.counter('ldap.username-index');
+const groupIndexCount = cacheRegistry.counter('ldap.group-index');
+const uuidIndexCount = cacheRegistry.counter('ldap.entryuuid-index');
+const listingCount = cacheRegistry.counter('ldap.subtree-listings');
+
 // Every name this entry answers to, lower-cased and without repeats: its `uid`
 // values and the value of its own RDN.
 //
@@ -1232,9 +1243,11 @@ function usernameIndexNow() {
   const container = normalizeDn(usersDn());
   if (cache.index && cache.version === directoryVersion &&
       cache.usersDn === container) {
+    usernameIndexCount.hit();
     log.debug("Leaving usernameIndexNow().");
     return cache.index;
   }
+  usernameIndexCount.miss();
   cache.index = buildUsernameIndex();
   cache.version = directoryVersion;
   cache.usersDn = container;
@@ -1406,9 +1419,11 @@ function entriesUnder(containerDn) {
   const version = subtreeVersion(containerDn);
   const hit = clock.listings.get(key);
   if (hit && hit.version === version) {
+    listingCount.hit();
     log.debug('Leaving entriesUnder(). ' + hit.rows.length + ' cached row(s).');
     return hit.rows;
   }
+  listingCount.miss();
   const rows = [];
   eachEntryInRealm(function (stored) {
     if (isUnder(stored.dn, containerDn) && normalizeDn(stored.dn) !== key) {
@@ -2492,6 +2507,7 @@ function entryByUuid(uuid) {
   };
   let found = lookup();
   if (!found && cache.version !== directoryVersion) {
+    uuidIndexCount.miss();
     const index = new Map();
     eachEntryInRealm(function (entry, key) {
       const value = entryUuidOf(entry);
@@ -2510,6 +2526,10 @@ function entryByUuid(uuid) {
     cache.index = index;
     cache.version = directoryVersion;
     found = lookup();
+  } else {
+    // Answered by the index as it stood — found, or current and saying
+    // nobody holds that UUID.
+    uuidIndexCount.hit();
   }
   log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
   return found;
@@ -6569,9 +6589,11 @@ function groupIndexNow() {
   const cache = groupIndexes();
   if (cache.index && cache.version === directoryVersion &&
       cache.size === entries.size) {
+    groupIndexCount.hit();
     log.debug("Leaving groupIndexNow().");
     return cache.index;
   }
+  groupIndexCount.miss();
   cache.index = buildGroupIndex();
   cache.version = directoryVersion;
   cache.size = entries.size;
@@ -15698,6 +15720,162 @@ function close() {
   tlsListening = false;
   log.debug('Leaving close().');
 }
+
+// ---------------------------------------------------------------------------
+// THE FOUR CACHES, DESCRIBED TO `/admin/caches` (#74, rule 3ap). Each index is
+// ONE row per realm — the whole index is the entry — and a listing is a row
+// per container. Whether a row is current is asked inside its own realm,
+// because the container DNs and the subtree clocks are ambient.
+// ---------------------------------------------------------------------------
+function inRealmOf(id, fn) {
+  log.debug("Entering inRealmOf().");
+  let answer = false;
+  try {
+    answer = realms.run(realms.get(id), fn);
+  } catch (e) {
+    log.debug("Caught in inRealmOf(): " + ((e && e.message) || e));
+    answer = false;
+  }
+  log.debug("Leaving inRealmOf().");
+  return answer;
+}
+
+function indexLifetime() {
+  log.debug("Entering indexLifetime().");
+  log.debug("Leaving indexLifetime().");
+  return 'Until the directory is written in a way the index cannot fold ' +
+    'in; the next lookup then rebuilds it. One index per realm.';
+}
+
+function unbounded() {
+  log.debug("Entering unbounded().");
+  log.debug("Leaving unbounded().");
+  return null;
+}
+
+function describeDirectoryCaches() {
+  log.debug("Entering describeDirectoryCaches().");
+  cacheRegistry.register({
+    name: 'ldap.username-index',
+    title: 'Directory username index',
+    description: 'Every name a person answers to (uid and RDN), to their ' +
+      'entry under ou=users, so a sign-in does not walk the directory.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: unbounded,
+    lifetime: indexLifetime,
+    entries: function () {
+      const out = [];
+      usernameIndexes.existing().forEach(function (cache, id) {
+        if (!cache.index) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: cache.index.size + ' name(s), built ' + cache.builds +
+            ' time(s)',
+          validUntil: null,
+          valid: inRealmOf(id, function () {
+            return cache.version === directoryVersion &&
+              cache.usersDn === normalizeDn(usersDn());
+          }),
+          basis: 'directory version'
+        });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.group-index',
+    title: 'Directory group index',
+    description: 'Group membership by member and by group DN, so the ' +
+      'groups claim and every role check do not walk ou=groups.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: unbounded,
+    lifetime: indexLifetime,
+    entries: function () {
+      const out = [];
+      groupIndexes.existing().forEach(function (cache, id) {
+        if (!cache.index) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: cache.index.byDn.size + ' group(s), built ' + cache.builds +
+            ' time(s)',
+          validUntil: null,
+          valid: inRealmOf(id, function () {
+            return cache.version === directoryVersion &&
+              cache.size === entries.size;
+          }),
+          basis: 'directory version'
+        });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.entryuuid-index',
+    title: 'Directory entryUUID index',
+    description: 'Each entry\'s entryUUID (and its aliases) to its DN, which ' +
+      'is how a subject identifier and a SCIM id find a person.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: unbounded,
+    lifetime: function () {
+      return 'Until the directory changes and a lookup misses; a hit on a ' +
+        'current entry does not wait for a rebuild. One index per realm.';
+    },
+    entries: function () {
+      const out = [];
+      uuidIndexes.existing().forEach(function (cache, id) {
+        if (!cache.index) {
+          return;
+        }
+        out.push({ realm: id, key: cache.index.size + ' UUID(s)',
+                   validUntil: null,
+                   valid: cache.version === directoryVersion,
+                   basis: 'directory version' });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.subtree-listings',
+    title: 'Directory container listings',
+    description: 'The entries under a container (applications, ' +
+      'federations, policies and the like), kept until something is ' +
+      'written under it.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: unbounded,
+    lifetime: function () {
+      return 'Until an entry under the container is added, removed or ' +
+        'written without naming where; one entry per container listed.';
+    },
+    entries: function () {
+      const out = [];
+      subtreeClocks.existing().forEach(function (clock, id) {
+        clock.listings.forEach(function (held, container) {
+          out.push({
+            realm: id,
+            key: container + ' (' + held.rows.length + ' entries)',
+            validUntil: null,
+            valid: inRealmOf(id, function () {
+              return held.version === subtreeVersion(container);
+            }),
+            basis: 'subtree version'
+          });
+        });
+      });
+      return out;
+    }
+  });
+  log.debug("Leaving describeDirectoryCaches().");
+}
+
+describeDirectoryCaches();
 
 module.exports = {
   listen: listen,

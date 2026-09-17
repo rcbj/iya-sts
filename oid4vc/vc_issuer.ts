@@ -78,6 +78,7 @@ import dpop = require('../oauth-oidc/dpop');
 // The error codes (common/error_codes.js). A LEAF that requires nothing; a code
 // is marked on the response object and never put in an error_description.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 // The register the admin console counts credentials in. The three builders
 // below sign with jsonwebtoken (or with BBS) directly rather than through
 // helpers.signJwt(), so they are not counted by the recorder that catches every
@@ -172,6 +173,34 @@ const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces' });
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
 // its exported name.
 const VCI_NONCE_TTL_MS = 5 * 60 * 1000;
+
+// Described to `/admin/caches` (#74, rule 3ap). The value IS the expiry, in
+// milliseconds.
+const vciNoncesCount = cacheRegistry.register({
+  name: 'oid4vci.nonces',
+  title: 'OID4VCI nonces',
+  description: 'The c_nonce values handed to wallets, so a credential ' +
+    'request\'s proof names one this issuer issued, and uses it once.',
+  owner: 'oid4vc/vc_issuer.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a nonce this issuer handed out, so the proof was checked',
+  settings: ['oid4vci.cNonceTtlS'],
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'oid4vci.cNonceTtlS after it was issued, or when it is used.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, vciNonces,
+      function (expires: unknown, nonce: unknown): object {
+        return { key: cacheRegistry.digestKey(nonce),
+                 validUntil: Number(expires) };
+      });
+  }
+});
 
 // THE CONTENT ENCRYPTION VALUES A DIRECTION ADVERTISES AND ACCEPTS: the
 // setting, intersected with what `common/crypto.js` implements here. A value
@@ -761,6 +790,11 @@ class VcIssuer {
                       ' seconds from now (oid4vci.proofIatWindowS).');
     }
     const expires = vciNonces.get(claims.nonce);
+    if (expires) {
+      vciNoncesCount.hit();
+    } else {
+      vciNoncesCount.miss();
+    }
     if (!expires) {
       throw new Error('the proof nonce is not one this issuer ' +
                       'handed out (or was already used).');

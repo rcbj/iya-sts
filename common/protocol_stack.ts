@@ -727,6 +727,20 @@ class ProtocolStack {
                'OAuth2MonitorAdmin');
     this.register(app, require('../oauth-oidc/oauth2_monitor_admin'),
                   'oauth-oidc/oauth2_monitor_admin');
+    // -------------------------------------------------------------------------
+    // 18g. THE CACHES PAGE (#74, 2026-09-17). `/admin/caches` — every cache
+    // `common/cache_registry.js` knows, and one cache's entries. 18a's
+    // placement and 18a's reason: the console's shell and libraries already
+    // loaded, and `mgmt-api/admin_api.ts` at 19 requires it in the ordinary
+    // direction. Every cache owner above has registered by this line, and one
+    // that registers later still appears, because the page asks the registry
+    // when it is drawn.
+    // -------------------------------------------------------------------------
+    require('../admin-ui/caches_admin');
+    this.build('admin-ui/caches_admin', require('../admin-ui/caches_admin'),
+               'CachesAdmin');
+    this.register(app, require('../admin-ui/caches_admin'),
+                  'admin-ui/caches_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

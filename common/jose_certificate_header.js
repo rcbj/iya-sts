@@ -138,6 +138,7 @@ const realms = require('./realms');
 // failure this module can see — a certificate on record that does not hold the
 // key it is filed under — is `tag()`ged onto its log line.
 const errorCodes = require('./error_codes');
+const cacheRegistry = require('./cache_registry');
 
 // A logger of its own, for `pki.js`'s reason: `helpers.js` requires this file.
 const log = bunyan.createLogger({
@@ -282,6 +283,47 @@ const matched = new Map();
 // endpoint logs it once rather than once per token. A Map for `remember()`.
 const warnedMismatch = new Map();
 
+// The two memos below, described to `/admin/caches` (#74, rule 3ap). Their
+// answers never change for a key, so a row is valid for as long as it is held.
+function memoRows(map) {
+  log.debug("Entering memoRows().");
+  const out = [];
+  map.forEach(function (answer, key) {
+    out.push({ key: key + ' → ' + (answer ? 'yes' : 'no'), validUntil: null,
+               basis: 'content-keyed' });
+  });
+  log.debug("Leaving memoRows().");
+  return out;
+}
+
+function memoLimit() {
+  log.debug("Entering memoLimit().");
+  log.debug("Leaving memoLimit().");
+  return MATCH_CACHE_LIMIT;
+}
+
+function memoLifetime() {
+  log.debug("Entering memoLifetime().");
+  log.debug("Leaving memoLifetime().");
+  return 'No expiry: keyed by the certificate thumbprint and the kid, ' +
+    'whose answer never changes. The oldest goes first when full.';
+}
+
+const matchedCount = cacheRegistry.register({
+  name: 'jose.x5c-key-match',
+  title: 'Certificate-to-signing-key matches',
+  description: 'Whether a certificate register row holds the signing key, ' +
+    'asked before an x5c or x5t#S256 header is put on a token. Keyed by ' +
+    'the row\'s thumbprint and the key\'s kid.',
+  owner: 'common/jose_certificate_header.js',
+  scope: 'process',
+  maxEntries: memoLimit,
+  lifetime: memoLifetime,
+  entries: function () {
+    return memoRows(matched);
+  }
+});
+
 function remember(map, key, value) {
   log.debug("Entering remember().");
   while (map.size >= MATCH_CACHE_LIMIT) {
@@ -301,9 +343,11 @@ function holdsKey(pki, record, signer) {
   log.debug("Entering holdsKey().");
   const cacheKey = record.thumbprint + ' ' + signer.kid;
   if (matched.has(cacheKey)) {
+    matchedCount.hit();
     log.debug("Leaving holdsKey(). Cached.");
     return matched.get(cacheKey);
   }
+  matchedCount.miss();
   const wanted = pki.thumbprintOf(signer.spkiPem());
   let held = String(record.subjectKeyFingerprint || '');
   if (!held) {
@@ -333,6 +377,21 @@ function holdsKey(pki, record, signer) {
 // ---------------------------------------------------------------------------
 const chains = new Map();
 
+const chainsCount = cacheRegistry.register({
+  name: 'jose.x5c-chain-under-root',
+  title: 'Certificate chains ending under the Root',
+  description: 'Whether a register row\'s stored chain ends under the ' +
+    'current service Root, which decides whether the Root is appended to ' +
+    'an x5c header. Keyed by the row\'s thumbprint and the Root\'s.',
+  owner: 'common/jose_certificate_header.js',
+  scope: 'process',
+  maxEntries: memoLimit,
+  lifetime: memoLifetime,
+  entries: function () {
+    return memoRows(chains);
+  }
+});
+
 function chainPemsOf(pki, record) {
   log.debug("Entering chainPemsOf().");
   const pems = [record.certificatePem].concat(record.chainPem || []);
@@ -343,7 +402,10 @@ function chainPemsOf(pki, record) {
     return pems;
   }
   const cacheKey = record.thumbprint + ' ' + pki.thumbprintOf(rootPem);
-  if (!chains.has(cacheKey)) {
+  if (chains.has(cacheKey)) {
+    chainsCount.hit();
+  } else {
+    chainsCount.miss();
     let underRoot = false;
     try {
       const last = new nodeCrypto.X509Certificate(pems[pems.length - 1]);
