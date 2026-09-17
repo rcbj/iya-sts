@@ -7872,7 +7872,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'oid4vp.signInTtlS.' },
   { path: '/authn/wallet/dc-api', group: 'Authentication',
     name: 'Wallet sign-in: the Digital Credentials API answer',
-    specs: ['oid4vp', 'dc-api', 'rfc7516'],
+    specs: ['oid4vp', 'dc-api', 'rfc7516', 'di-jcs'],
     effect: 'verifies the wallet\'s answer and signs the posting browser in',
     what: 'What the wait page\'s script posts: the DigitalCredential ' +
           'navigator.credentials.get() returned (OpenID4VP Appendix A.4), ' +
@@ -8541,7 +8541,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oid4vp/response', group: 'VC Presentation (OID4VP)',
     name: 'Response ' +
       'URI',
-    specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'di-bbs', 'rdf-c14n', 'vcdm'],
+    specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'di-bbs', 'rdf-c14n', 'vcdm',
+             'di-jcs'],
     what: 'Where the wallet POSTs the vp_token, and where it is really ' +
           'verified: issuer signature (post-quantum included), every ' +
           'Disclosure digest against _sd, the Key Binding JWT including ' +

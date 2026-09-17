@@ -113,7 +113,14 @@ class VcStatusAdmin {
       return errorCodes.mark({ ok: false, errors: [why] }, 'STS-VC-0082');
     };
     if (!Object.prototype.hasOwnProperty.call(ACTIONS, action)) {
-      return refuse('Name an action: suspend, reinstate or revoke.');
+      // `Unknown action "x". <phrase>: <list>.` — the shape every action
+      // resource answers and `tests/vendored/sts_admin_api_operations.js`
+      // reads, because that job checks each console action has an operation
+      // here BY reading the list back out of this sentence. "Name an
+      // action: …" named them and did not name the action asked for, so the
+      // sentence did not match and the check could not run.
+      return refuse('Unknown action "' + action + '". The three are: ' +
+                    Object.keys(ACTIONS).join(', ') + '.');
     }
     if (!/^\d+$/.test(idx)) {
       return refuse('Name a status-list index, as the list gives it.');
