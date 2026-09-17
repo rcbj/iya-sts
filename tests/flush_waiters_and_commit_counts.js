@@ -303,9 +303,12 @@ async function checkRowsCountAtCommit(t) {
 function checkTheWorkerComparesWithItsLastAnnouncement(t) {
   log.debug("Entering checkTheWorkerComparesWithItsLastAnnouncement().");
   t.log.info('=== a worker announces rows committed since it last did ===');
+  // The TypeScript source (#50): the compiled `.js` beside it in the tests
+  // image is a second copy of the same module, not the source.
   const source = fs.readFileSync(
-    path.join(__dirname, '..', 'common', 'request_worker.js'), 'utf8');
-  t.check(/const wrote = committedNow > announcedWritten;/.test(source),
+    path.join(__dirname, '..', 'common', 'request_worker.ts'), 'utf8');
+  t.check(/const wrote = committedNow > this\.announcedWritten;/
+            .test(source),
           '`wrote` compares the committed count with the last announced one',
           'sampled either side of one flush, a commit made by the scheduled ' +
           'flush this one waited behind was announced by nobody');

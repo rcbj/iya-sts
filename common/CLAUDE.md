@@ -50,7 +50,7 @@ UNGUARDED and would die with `MODULE_NOT_FOUND` naming a path nobody typed, and
 the eleven guarded readers would quietly fall back to `info`. So the variable is
 made absolute once, in place, before anything reads it. Five callers require it
 first and between them cover every way this service is loaded — `server.js`,
-`worker.js`, `request_worker.js`, `config.js` and `helpers.js` — and it is
+`worker.js`, `request_worker.ts`, `config.js` and `helpers.js` — and it is
 idempotent, so all of them calling costs nothing. Those counts are from
 2026-08-23; on 2026-09-16 nineteen modules read the file directly and sixteen of
 them are VENDORED (the `common/vendored/` modules and the Kerberos codec copies)
@@ -771,13 +771,13 @@ operation, `portal/portal`'s the portal pages then `/portal/certificates`.
 `registeredModules()` lists what was registered, in order.
 
 **The one instance is still built and loaded when the file is required**, which
-is what `server.js`, `request_worker.js` and the whole-stack tests rely on; that
+is what `server.js`, `request_worker.ts` and the whole-stack tests rely on; that
 is TRANSITIONAL until the composition root also constructs the modules (#50's
 R2). **A process that requires a single converted route module and not this
 file gets no routes from it** — it has to call that module's
 `registerRoutes(app)` itself.
 
-`server.js` loads that file and then binds the sockets. **`common/request_worker.js`
+`server.js` loads that file and then binds the sockets. **`common/request_worker.ts`
 loads the SAME file and binds none of them** — it is a child process that runs
 the service and answers HTTP on a unix socket the front process proxies to. A
 second copy of the require order would be a second answer to "which handler
@@ -796,13 +796,27 @@ predates this change by a fortnight, made for a different reason (binding can
 fail and a `require` that throws takes the process down), and is what makes a
 request worker possible at all.
 
-## `request_pool.js` and `request_worker.js`: THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER
+## `request_pool.js` and `request_worker.ts`: THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.** The
 family-specific halves — the directory's operations and its sockets, SPIFFE's
 gRPC seam, the TLS listener certificate and the truststore pin — are argued in
 `ldap/CLAUDE.md`, `spiffe/CLAUDE.md` and `tls/CLAUDE.md`, and are named here only
 where the pool-level rule needs them.
+
+**`request_worker.ts` is TypeScript since 2026-09-17 (#50) and is a PROCESS
+ENTRY POINT, not a module the composition root builds**: a `RequestWorker`
+class built ONCE at the bottom of the file — the worker's own object, as
+`server.js` is the front process's shell — with no `InstanceSlot` and no line
+in `protocol_stack.ts`, beside a `CommitAnnouncer` (the commit-announcement
+state `start()` used to keep in closures) and a static `WorkerWire`. Its
+exports are unchanged. **Nothing the root builds is loaded before the stack**:
+at load it requires `config_file`, `config` and `error_codes`, and `start()`
+requires `app`, `protocol_stack` and only then `service_state` — lazily,
+because loading it first made every worker fail in dispatch mode (2026-09-17),
+and the process-wide `deferToRoot()` that first fixed that broke the
+in-process suite, where several files require this module. `request_pool.js` forks `request_worker.js`, which is the COMPILED
+file and the only one in the image; a source-reading test reads the `.ts`.
 
 | | `common/worker_pool.js` | `common/request_pool.js` |
 |---|---|---|
@@ -850,7 +864,7 @@ comparing a dispatched answer with the same handler called directly.
 `ldap/CLAUDE.md` and `spiffe/CLAUDE.md` argue them.
 
 **AND ONE RULE CAME OUT OF THE SECOND FAMILY THAT THE FIRST DID NOT FIND: THE
-WORKER TABLE IS FILLED ONLY IN A WORKER.** Requiring `common/request_worker.js`
+WORKER TABLE IS FILLED ONLY IN A WORKER.** Requiring `common/request_worker.ts`
 pulls `common/service_state.ts` in at module scope — the store, the keys, the
 minted rows, coordination — so registering from the front process buys a table
 nothing there will ever read with a load of half the service's startup
@@ -1109,7 +1123,7 @@ The front process holds the binding the browser's session cookie has in the
 protocol pool, so on every request to a SURFACE worker it looks that worker up
 (`heldWorker()`, which binds nothing) and sends its pid in
 `x-sts-pool-protocol-worker`, stripped from what the client sent.
-`request_worker.js` puts it on `req.stsProtocolWorker`, every `backChannel()`
+`request_worker.ts` puts it on `req.stsProtocolWorker`, every `backChannel()`
 call passes `from: req`, and a worker forked with
 `STS_REQUEST_WORKER_POOL=surfaces` pins to that pid instead of its own. No hint
 means no pin: the request is routed by load, which is correct under the barrier.

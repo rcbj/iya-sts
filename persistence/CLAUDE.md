@@ -657,7 +657,7 @@ slow.
 
 **A flush READS a value when it takes the journal and WRITES it when its
 transaction commits.** `minted.flush()` had two callers that did not wait for
-each other — `persistence.js`'s scheduled flush and `request_worker.js`'s
+each other — `persistence.js`'s scheduled flush and `request_worker.ts`'s
 commit announcement (`flushMinted()`) — so two transactions from ONE process
 could be open at once, a key written between their journal takes was in both
 with two different values, and `ON CONFLICT DO UPDATE` kept whichever COMMITTED

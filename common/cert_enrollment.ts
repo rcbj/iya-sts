@@ -2807,7 +2807,7 @@ class CertEnrollment {
     log.debug("Entering CertEnrollment.transportRefusal(). family=" + family);
     // `req.protocol` rather than a header: express computes it from the socket,
     // and honours X-Forwarded-Proto only where a proxy is TRUSTED — the request
-    // worker trusts the front process (common/request_worker.js argues why),
+    // worker trusts the front process (common/request_worker.ts argues why),
     // which writes the header from its OWN `req.protocol`; the main listener
     // sets no `trust proxy` at all, so there it is the socket's scheme whatever
     // `global.trustProxy` says. A header read directly would let any client

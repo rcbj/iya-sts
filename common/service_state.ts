@@ -14,7 +14,7 @@
 // `server.js` until 2026-09-07 and moved here for the reason
 // `protocol_stack.ts` moved: it acquired a second reader.
 //
-// `server.js` runs it and then binds the sockets. `common/request_worker.js`
+// `server.js` runs it and then binds the sockets. `common/request_worker.ts`
 // runs it and binds none of them — and it MUST run it, which is the whole
 // reason this file exists. A worker that skipped these steps would come up with
 // an empty store, no signing keys, none of what this service minted, and — the
@@ -30,8 +30,9 @@
 // authority, the realm registry, `helpers`, the two cluster libraries and the
 // logger through its constructor, and `start()` runs the same chain in the
 // same order. The module still exports `start` from a TRANSITIONAL instance,
-// built from the real modules at the bottom, for `server.js` and
-// `common/request_worker.js`, which are not converted; it goes when the
+// built from the real modules at the bottom, for `server.js`, which is not
+// converted, and `common/request_worker.ts`, a process entry point that
+// requires it before any composition root has run; it goes when the
 // composition root exists. Requiring it still starts nothing.
 // ---------------------------------------------------------------------------
 

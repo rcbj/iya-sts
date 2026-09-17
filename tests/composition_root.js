@@ -21,11 +21,13 @@
 //      loads one module relies on.
 //   3. A second `installInstance()` is refused: two instances of one module
 //      would split its state.
-//   4. A REQUEST WORKER's load order holds claim 1 too. `request_worker.js`
-//      requires `service_state` — and through it converted modules — before
-//      it loads the stack, so it has to defer to the root first; on
-//      2026-09-17 it did not, and every worker failed to start in dispatch
-//      mode while this file, which only loaded the stack, stayed green.
+//   4. A REQUEST WORKER's load order holds claim 1 too. `request_worker.ts`
+//      used to require `service_state` — and through it converted modules —
+//      at load, before the stack; on 2026-09-17 every worker failed to start
+//      in dispatch mode that way while this file, which only loaded the
+//      stack, stayed green. It now requires `service_state` lazily, after
+//      the stack, so requiring it and then the stack must leave every
+//      instance the root's.
 //
 // IN A CHILD PROCESS for `spiffe_join_token.js`'s reason: loading the whole
 // stack builds a certificate authority and registers every route on the shared

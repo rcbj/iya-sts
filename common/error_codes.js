@@ -150,7 +150,7 @@ const SUBSYSTEMS = [
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
     where: 'common/worker_pool.js, common/worker.js, common/request_pool.js, ' +
-           'common/request_worker.js, common/service_state.ts',
+           'common/request_worker.ts, common/service_state.ts',
     what: 'The child processes post-quantum signing runs in, and the request ' +
           'workers the whole protocol stack can be dispatched to.' },
   { id: 'STORE', label: 'Persistence and coordination',

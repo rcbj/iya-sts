@@ -439,7 +439,7 @@ function checkTheMethodTableAgrees(t) {
 // 7. THE WORKER TABLE IS FILLED IN A WORKER AND NOWHERE ELSE.
 //
 // **THIS SECTION EXISTS BECAUSE THE FIRST VERSION REGISTERED UNCONDITIONALLY
-// AND COST `tests/spiffe_pki.js`.** Requiring `common/request_worker.js` pulls
+// AND COST `tests/spiffe_pki.js`.** Requiring `common/request_worker.ts` pulls
 // `common/service_state.ts` in at module scope — the store, the keys, the
 // minted rows, coordination — and `run.js` runs every file in ONE process, so
 // doing it at a new point in the load order changed what a later file saw of

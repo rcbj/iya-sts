@@ -189,7 +189,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 
 **Worker pools.** The child processes post-quantum signing runs in, and the request workers the whole protocol stack can be dispatched to.
 
-Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.js, common/service_state.ts.
+Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.ts, common/service_state.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|

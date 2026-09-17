@@ -364,7 +364,7 @@ side by side:
   middleware a route sits behind.
 
 **Both live in `common/protocol_stack.ts`**, which `server.js` loads before
-binding sockets and `common/request_worker.js` loads without binding any — one
+binding sockets and `common/request_worker.ts` loads without binding any — one
 copy, so the two processes cannot disagree about which handler wins. Each
 converted module is required and then registered on the next line, at the
 place its routes always had, so every row below holds for both orders; where a

@@ -761,7 +761,7 @@ let publisher = null;
 let adoptListener = null;
 
 // Filled by whoever owns the IPC channel — request_pool.js in the front process
-// and request_worker.js in a worker. Unset in a service with no pool, where
+// and request_worker.ts in a worker. Unset in a service with no pool, where
 // every one of these functions is inert and nothing calls them twice.
 function setKeyPublisher(fn) {
   log.debug("Entering setKeyPublisher().");
@@ -1752,7 +1752,7 @@ const pkiHeld = new Map();       // realm id -> the hierarchy, in the clear
 let pkiPublisher = null;
 
 // Filled by whoever owns the IPC channel — `request_pool.js` in the front
-// process and `request_worker.js` in a worker — exactly as `setKeyPublisher()`
+// process and `request_worker.ts` in a worker — exactly as `setKeyPublisher()`
 // is, and unset in a service with no pool, where it is inert.
 //
 // **A SECOND CHANNEL RATHER THAN MORE MEMBERS ON THE FIRST**, and the test is

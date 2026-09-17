@@ -1120,7 +1120,7 @@ function create(options) {
   // which is exactly right and costs nothing to arrange.
   // ---------------------------------------------------------------------
   // HOW MANY CHANGE ROWS THIS PROCESS HAS WRITTEN. A local counter and not a
-  // query: `common/request_worker.js` needs to know whether its flush actually
+  // query: `common/request_worker.ts` needs to know whether its flush actually
   // wrote anything, and asking the database that after every request is a round
   // trip for a question this process already knows the answer to.
   //

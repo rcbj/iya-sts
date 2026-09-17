@@ -568,7 +568,7 @@ function checkSource(t) {
     return fs.readFileSync(path.join(ROOT, rel), 'utf8');
   };
   const pool = read('common/request_pool.js');
-  const worker = read('common/request_worker.js');
+  const worker = read('common/request_worker.ts');
   const issuer = read('oid4vc/vc_issuer.ts');
   const code = function (text) {
     log.debug("Entering code().");

@@ -21,7 +21,7 @@
 // reason: it now has TWO readers.
 //
 // `server.js` is the front process — it loads this, then binds the sockets.
-// `common/request_worker.js` is a worker — it loads THIS SAME FILE and binds
+// `common/request_worker.ts` is a worker — it loads THIS SAME FILE and binds
 // none of them. **A second copy of the order would be a second answer to
 // "which handler wins",** and the two processes would disagree about it in
 // exactly the cases that are hardest to see: a route registered before a
@@ -55,7 +55,7 @@
 // ---------------------------------------------------------------------------
 // A CLASS, AS THE TYPESCRIPT CONVERSION ASKS (#50): `ProtocolStack.load(app)`
 // is the sequence. The one instance is built and loaded when this module is
-// required, which is what `server.js`, `common/request_worker.js` and the
+// required, which is what `server.js`, `common/request_worker.ts` and the
 // tests that load the whole stack rely on; that is TRANSITIONAL until the
 // composition root also constructs the modules (#50's R2).
 // ---------------------------------------------------------------------------

@@ -980,7 +980,7 @@ class SpiffeGrpc {
   // ---------------------------------------------------------------------------
   // THE WORKER SIDE OF THE SEAM.
   //
-  // `common/request_worker.js` offers `register(kind, fn)` and its header says
+  // `common/request_worker.ts` offers `register(kind, fn)` and its header says
   // the table is filled BY THE MODULE THAT OWNS THE OPERATION — so this is that
   // module doing it, as each method is wrapped, which is exactly when a route
   // module registers its routes (rule 1).
@@ -994,7 +994,7 @@ class SpiffeGrpc {
   //
   // `LOCAL_METHODS` is a plain Map and every process needs it: it is what a
   // worker runs AND what the front process falls back to. Requiring
-  // `common/request_worker.js` is a different matter — that module pulls in
+  // `common/request_worker.ts` is a different matter — that module pulls in
   // `common/service_state.ts` at module scope (the store, the keys, the minted
   // rows, coordination) and installs `process.on('message')` handlers. In a
   // process that is not a worker that is a table nothing will ever read, bought

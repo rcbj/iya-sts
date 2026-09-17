@@ -40,7 +40,7 @@
 //
 // This file drives the CONTRACT between three modules: `ldap/ldap_server.js`,
 // which owns the list and the sockets; `common/request_pool.js`, which holds
-// them in the front process; and `common/request_worker.js`, which holds
+// them in the front process; and `common/request_worker.ts`, which holds
 // neither and answers the request anyway. What it does not do is bind 389 or
 // fork a worker — the first is `sts_global_logout`'s job over a real socket in
 // three stacks, and the second would make this file a stack rather than a test.

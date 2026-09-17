@@ -727,7 +727,7 @@ function checkTheSurfacePool(t) {
     log.debug("Leaving read().");
     return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
   };
-  const workerSource = read('common/request_worker.js');
+  const workerSource = read('common/request_worker.ts');
   const found = /const PROTOCOL_WORKER_HEADER = '([^']+)'/.exec(workerSource);
   t.check(!!found && found[1] === pool.PROTOCOL_WORKER_HEADER,
           'the worker spells the hint header as the pool does',
@@ -735,7 +735,7 @@ function checkTheSurfacePool(t) {
           (found && found[1]));
   t.check(/req\.stsProtocolWorker\s*=/.test(workerSource) &&
           /delete req\.headers\[PROTOCOL_WORKER_HEADER\]/.test(workerSource),
-          'and puts it on the request and strips it', 'request_worker.js');
+          'and puts it on the request and strips it', 'request_worker.ts');
   const rpSource = read('common/oidc_rp.ts');
   t.check(/STS_REQUEST_WORKER_POOL === 'surfaces'/.test(rpSource) &&
           /options\.from && options\.from\.stsProtocolWorker/.test(rpSource),
