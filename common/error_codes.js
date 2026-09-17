@@ -145,7 +145,7 @@ const SUBSYSTEMS = [
   { id: 'CORE', label: 'Service core',
     where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
-           'common/mode.js, common/version.js, sts_metadata.js, home/',
+           'common/mode.js, common/version.js, sts_metadata.ts, home/',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
