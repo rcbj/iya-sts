@@ -105,24 +105,25 @@
 //     THE ORIGINAL ORDER** — the token renewal on `/portal` first, then every
 //     page and form target as this file has always registered them.
 //   * **THE MODULE STILL EXPORTS `BASE`, `ACTIVATE`, `setDirectory` AND
-//     `paths`**, from a TRANSITIONAL instance built at the bottom from the
-//     real modules. At load that instance only logs where the portal is; it
-//     registers NOTHING (#50, R1). The module exports a composite
+//     `paths`**, as FACADES forwarding to the instance the composition root
+//     builds (#50's R2); a process without the root builds a default at
+//     load. Loading the module only logs where the portal is; it registers
+//     NOTHING (#50, R1). The module exports a composite
 //     `registerRoutes(app)` instead, which `common/protocol_stack.ts` calls at
 //     the point in the route order where requiring this module used to
 //     register the routes: the portal's own routes, and then
 //     `portal/portal_certificates`, handed the pieces of a portal page — so
 //     `/portal/certificates` is still registered after every other page of
 //     the column. `ldap/ldap_server.js` still fills the slot through the
-//     exported `setDirectory`. The instance goes when the composition root
-//     also constructs the modules (#50's R2); `Portal` is exported beside it
-//     for that root.
+//     exported `setDirectory`, after the root has installed the instance.
+//     `Portal` is exported beside it for that root.
 //   * **THE VALIDATION SCHEMAS, THE STYLESHEET, `NAV` AND THE OTHER
 //     CONSTANTS STAY AT MODULE SCOPE**, declared where they always were.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import mode = require('../common/mode');
 import credentials = require('../common/credentials');
@@ -951,6 +952,44 @@ class Portal {
   constructor(private readonly deps: PortalDeps) {
     deps.log.debug("Entering Portal.constructor().");
     deps.log.debug("Leaving Portal.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): PortalDeps {
+    helpers.log.debug("Entering Portal.defaultDeps().");
+    helpers.log.debug("Leaving Portal.defaultDeps().");
+    return {
+      app: app,
+      helpers: helpers,
+      config: config,
+      mode: mode,
+      credentials: credentials,
+      webauthnPolicy: webauthnPolicy,
+      totp: totp,
+      backupCodes: backupCodes,
+      inetOrgPerson: inetOrgPerson,
+      pki: pki,
+      personAssertions: personAssertions,
+      tlsClient: tlsClient,
+      websecurity: websecurity,
+      authn: authn,
+      oidcRp: oidcRp,
+      realmChooser: realmChooser,
+      realms: realms,
+      accessGate: accessGate,
+      audit: audit,
+      errorCodes: errorCodes,
+      validation: validation,
+      stats: stats,
+      applications: applications,
+      gate: gate,
+      signals: signals,
+      accountSignals: accountSignals,
+      log: helpers.log,
+      parseBody: helpers.parseBody,
+      baseUrlOf: helpers.baseUrlOf
+    };
   }
 
   // The code a library already put on the result this portal is about to
@@ -5695,42 +5734,20 @@ class Portal {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules as the composition root will build one. At load it logs the line;
-// the routes and the certificates page are registered, in that order, by the
-// composite `registerRoutes(app)` exported below.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const portal = new Portal({
-  app: app,
-  helpers: helpers,
-  config: config,
-  mode: mode,
-  credentials: credentials,
-  webauthnPolicy: webauthnPolicy,
-  totp: totp,
-  backupCodes: backupCodes,
-  inetOrgPerson: inetOrgPerson,
-  pki: pki,
-  personAssertions: personAssertions,
-  tlsClient: tlsClient,
-  websecurity: websecurity,
-  authn: authn,
-  oidcRp: oidcRp,
-  realmChooser: realmChooser,
-  realms: realms,
-  accessGate: accessGate,
-  audit: audit,
-  errorCodes: errorCodes,
-  validation: validation,
-  stats: stats,
-  applications: applications,
-  gate: gate,
-  signals: signals,
-  accountSignals: accountSignals,
-  log: helpers.log,
-  parseBody: helpers.parseBody,
-  baseUrlOf: helpers.baseUrlOf
-});
+const slot = new InstanceSlot<Portal>(
+  'portal/portal',
+  () => new Portal(Portal.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -5759,19 +5776,20 @@ helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
 // ---------------------------------------------------------------------------
 const portalCertificates = require('./portal_certificates');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   registerRoutes: (target: any): void => {
-    portal.registerRoutes(target);
+    slot.get().registerRoutes(target);
     portalCertificates.register({
       app: target, BASE: BASE, log: helpers.log,
-      esc: portal.esc.bind(portal) as Portal['esc'],
-      shell: portal.shell.bind(portal) as Portal['shell'],
-      send: portal.send.bind(portal) as Portal['send'],
-      requireSignIn:
-        portal.requireSignIn.bind(portal) as Portal['requireSignIn'],
-      refuseShape:
-        portal.refuseShape.bind(portal) as Portal['refuseShape'],
-      innerCode: portal.innerCode.bind(portal) as Portal['innerCode'],
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
       baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
       validation: validation, websecurity: websecurity,
       accessGate: accessGate,
@@ -5779,11 +5797,13 @@ export = {
     });
   },
   Portal: Portal,
+  installInstance: (instance: Portal): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   BASE: Portal.BASE,
   ACTIVATE: Portal.ACTIVATE,
   // Filled by `ldap/ldap_server.js` at its require time — see the block above
   // it for why this is a slot rather than a require.
-  setDirectory: portal.setDirectory.bind(portal) as Portal['setDirectory'],
+  setDirectory: slot.forward('setDirectory'),
   // For sts_metadata.js and the tests.
-  paths: portal.paths.bind(portal) as Portal['paths']
+  paths: slot.forward('paths')
 };

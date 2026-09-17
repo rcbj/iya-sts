@@ -88,12 +88,15 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `FederationGraph` takes the logger, `realms` and the federation
-// register through its constructor, and the module still exports `STS_ID`,
-// `graph()` and `describe()` from a TRANSITIONAL instance for
-// `admin-ui/admin.ts` and the tests, which are not converted.
+// register through its constructor. Since #50's R2 the composition root
+// builds the instance; `graph()` and `describe()` are FACADES forwarding to
+// it (`STS_ID` is exported as it was), for `admin-ui/admin.ts` and the tests,
+// which are not converted, and a process without the root builds a default
+// at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./../common/helpers');
+import InstanceSlot = require('./../common/instance_slot');
 import realms = require('./../common/realms');
 import federation = require('./federation');
 
@@ -135,6 +138,18 @@ class FederationGraph {
   constructor(private readonly deps: FederationGraphDeps) {
     deps.log.debug("Entering FederationGraph.constructor().");
     deps.log.debug("Leaving FederationGraph.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): FederationGraphDeps {
+    helpers.log.debug("Entering FederationGraph.defaultDeps().");
+    helpers.log.debug("Leaving FederationGraph.defaultDeps().");
+    return {
+      log: helpers.log,
+      realms: realms,
+      federation: federation
+    };
   }
 
   private partyId(kind, name) {
@@ -584,21 +599,32 @@ class FederationGraph {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const federationGraph = new FederationGraph({
-  log: helpers.log,
-  realms: realms,
-  federation: federation
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<FederationGraph>(
+  'federation/federation_graph',
+  () => new FederationGraph(FederationGraph.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   FederationGraph: FederationGraph,
+  installInstance: (instance: FederationGraph): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   STS_ID: FederationGraph.STS_ID,
-  graph: federationGraph.graph.bind(federationGraph) as
-    FederationGraph['graph'],
+  graph: slot.forward('graph'),
   // Exported for the relationship drill-down on /admin/federation, which shows
   // ONE relationship and reads it through the same describe() the whole
   // picture uses rather than making a second reading of the same entry.
-  describe: federationGraph.describe.bind(federationGraph) as
-    FederationGraph['describe']
+  describe: slot.forward('describe')
 };

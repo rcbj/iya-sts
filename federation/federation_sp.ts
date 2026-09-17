@@ -128,12 +128,13 @@
 // each helper it used to destructure — through its constructor as
 // `FederationSpDeps`, and its four endpoints are registered by
 // `registerRoutes(app)`. node's `crypto` and `zlib`, `jsonwebtoken` and
-// xmldom are libraries and are used directly. The module still exports its
-// old names from a TRANSITIONAL instance, for the modules and tests that
-// require it by them. That instance registers NOTHING at load (#50, R1): the
-// module exports `registerRoutes(app)`, and `common/protocol_stack.ts` calls
-// it at the point in the route order where requiring this module used to
-// register the routes (rule 1).
+// xmldom are libraries and are used directly. Since #50's R2 the composition
+// root builds the instance; the module's old names are FACADES forwarding to
+// it, for the modules and tests that require it by them, and a process
+// without the root builds a default at load. Loading the module registers
+// NOTHING (#50, R1): the module exports `registerRoutes(app)`, and
+// `common/protocol_stack.ts` calls it at the point in the route order where
+// requiring this module used to register the routes (rule 1).
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -170,6 +171,7 @@ import realms = require('./../common/realms');
 // told one algorithm. See saml/document_settings.ts.
 import documentSettings = require('./../saml/document_settings');
 import helpers = require('./../common/helpers');
+import InstanceSlot = require('./../common/instance_slot');
 
 const { DOMParser } = xmldom;
 
@@ -314,6 +316,40 @@ class FederationSp {
   constructor(private readonly deps: FederationSpDeps) {
     deps.log.debug("Entering FederationSp.constructor().");
     deps.log.debug("Leaving FederationSp.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): FederationSpDeps {
+    helpers.log.debug("Entering FederationSp.defaultDeps().");
+    helpers.log.debug("Leaving FederationSp.defaultDeps().");
+    return {
+      config: config,
+      applications: applications,
+      authn: authn,
+      federation: federation,
+      fedMap: fedMap,
+      fedHttp: fedHttp,
+      errorCodes: errorCodes,
+      revocationStatus: revocationStatus,
+      audit: audit,
+      realms: realms,
+      documentSettings: documentSettings,
+      stsCrypto: stsCrypto,
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      STS: helpers.STS,
+      xmlEscape: helpers.xmlEscape,
+      firstByLocal: helpers.firstByLocal,
+      textByLocal: helpers.textByLocal,
+      iso: helpers.iso,
+      baseUrlOf: helpers.baseUrlOf,
+      jsonFromB64u: helpers.jsonFromB64u,
+      randomId: helpers.randomId,
+      parseBody: helpers.parseBody,
+      subjectForName: helpers.subjectForName,
+      hasSubjectResolver: helpers.hasSubjectResolver
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -2952,61 +2988,45 @@ class FederationSp {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules; this module's routes are registered by the composition root,
-// below.
-const federationSp = new FederationSp({
-  config: config,
-  applications: applications,
-  authn: authn,
-  federation: federation,
-  fedMap: fedMap,
-  fedHttp: fedHttp,
-  errorCodes: errorCodes,
-  revocationStatus: revocationStatus,
-  audit: audit,
-  realms: realms,
-  documentSettings: documentSettings,
-  stsCrypto: stsCrypto,
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  STS: helpers.STS,
-  xmlEscape: helpers.xmlEscape,
-  firstByLocal: helpers.firstByLocal,
-  textByLocal: helpers.textByLocal,
-  iso: helpers.iso,
-  baseUrlOf: helpers.baseUrlOf,
-  jsonFromB64u: helpers.jsonFromB64u,
-  randomId: helpers.randomId,
-  parseBody: helpers.parseBody,
-  subjectForName: helpers.subjectForName,
-  hasSubjectResolver: helpers.hasSubjectResolver
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<FederationSp>(
+  'federation/federation_sp',
+  () => new FederationSp(FederationSp.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => federationSp.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   FederationSp: FederationSp,
-  audienceCheck: federationSp.audienceCheck.bind(federationSp) as
-    FederationSp['audienceCheck'],
-  federatedAmr: federationSp.federatedAmr.bind(federationSp) as
-    FederationSp['federatedAmr'],
-  familyAlgorithms: federationSp.familyAlgorithms.bind(federationSp) as
-    FederationSp['familyAlgorithms'],
+  installInstance: (instance: FederationSp): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  audienceCheck: slot.forward('audienceCheck'),
+  federatedAmr: slot.forward('federatedAmr'),
+  familyAlgorithms: slot.forward('familyAlgorithms'),
   BASE_PATH: FederationSp.BASE_PATH,
   LOGIN_PATH: FederationSp.LOGIN_PATH,
   ACS_PATH: FederationSp.ACS_PATH,
   METADATA_PATH: FederationSp.METADATA_PATH,
-  ourEntityId: federationSp.ourEntityId.bind(federationSp) as
-    FederationSp['ourEntityId'],
-  acsUrl: federationSp.acsUrl.bind(federationSp) as FederationSp['acsUrl'],
-  certPemOf: federationSp.certPemOf.bind(federationSp) as
-    FederationSp['certPemOf'],
+  ourEntityId: slot.forward('ourEntityId'),
+  acsUrl: slot.forward('acsUrl'),
+  certPemOf: slot.forward('certPemOf'),
   // For tests/revocation_status.js: the check a configured signing certificate
   // or partner key gets once it has verified a response.
-  signerStillAccepted: federationSp.signerStillAccepted.bind(federationSp) as
-    FederationSp['signerStillAccepted']
+  signerStillAccepted: slot.forward('signerStillAccepted')
 };

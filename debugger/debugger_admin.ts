@@ -35,13 +35,14 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `DebuggerAdmin` takes the modules it uses through its constructor
-// (`DebuggerAdminDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `DebuggerAdmin` is exported beside them for the
-// composition root.
+// (`DebuggerAdminDeps`). Since #50's R2 the composition root builds the
+// instance; the module's old names are FACADES forwarding to it, for the
+// callers that are not converted, and a process without the root builds a
+// default at load.
+// `DebuggerAdmin` is exported beside them for that root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
-// exports from the transitional instance and `common/protocol_stack.ts`
+// exports as a facade and `common/protocol_stack.ts`
 // calls at 18e, the point in the route order where requiring this module
 // used to register them (#50, R1), so the order is unchanged. Requiring the
 // module registers nothing.
@@ -50,6 +51,7 @@
 import app = require('../common/app');
 import admin = require('../admin-ui/admin');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import errorCodes = require('../common/error_codes');
 
@@ -73,6 +75,21 @@ class DebuggerAdmin {
   constructor(private readonly deps: DebuggerAdminDeps) {
     deps.log.debug("Entering DebuggerAdmin.constructor().");
     deps.log.debug("Leaving DebuggerAdmin.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): DebuggerAdminDeps {
+    helpers.log.debug("Entering DebuggerAdmin.defaultDeps().");
+    helpers.log.debug("Leaving DebuggerAdmin.defaultDeps().");
+    return {
+      admin: admin,
+      log: log,
+      errorCodes: errorCodes,
+      loadDebuggerServer: function () {
+        return require('./debugger_server');
+      }
+    };
   }
 
   // The JSON the page and the operation both answer.
@@ -210,28 +227,34 @@ class DebuggerAdmin {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root builds the modules as well as
-// registering their routes (#50's R2).
-const debuggerAdmin = new DebuggerAdmin({
-  admin: admin,
-  log: log,
-  errorCodes: errorCodes,
-  loadDebuggerServer: function () {
-    return require('./debugger_server');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DebuggerAdmin>(
+  'debugger/debugger_admin',
+  () => new DebuggerAdmin(DebuggerAdmin.defaultDeps()),
+  null,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => debuggerAdmin.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   DebuggerAdmin: DebuggerAdmin,
+  installInstance: (instance: DebuggerAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts` — rule 7, one function behind both.
-  debuggerView: debuggerAdmin.debuggerView.bind(debuggerAdmin) as
-    DebuggerAdmin['debuggerView']
+  debuggerView: slot.forward('debuggerView')
 };

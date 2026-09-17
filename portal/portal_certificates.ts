@@ -46,15 +46,16 @@
 //     which is that page's second set of dependencies, handed over by the
 //     portal as before — and calls its `registerRoutes(app)`, which holds the
 //     GET and the POST in their old order.
-//   * **THE MODULE STILL EXPORTS `register` AND `REVOCATION_REASONS`**, from a
-//     TRANSITIONAL instance built from the real modules, for the portal. It
-//     goes when the composition root (`common/protocol_stack.ts`) also
-//     constructs the modules (#50's R2); `PortalCertificates` is exported
-//     beside it for that root.
+//   * **THE MODULE STILL EXPORTS `register` AND `REVOCATION_REASONS`**, for
+//     the portal: `register` is a FACADE forwarding to the instance the
+//     composition root (`common/protocol_stack.ts`) builds (#50's R2), and a
+//     process without the root builds a default at load.
+//     `PortalCertificates` is exported beside it for that root.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import core = require('../common/cert_enrollment');
 import monitor = require('../common/enrollment_monitor');
 
@@ -610,6 +611,19 @@ class PortalCertificates {
     deps.log.debug("Leaving PortalCertificates.constructor().");
   }
 
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): PortalCertificatesDeps {
+    helpers.log.debug("Entering PortalCertificates.defaultDeps().");
+    helpers.log.debug("Leaving PortalCertificates.defaultDeps().");
+    return {
+      log: helpers.log,
+      core: core,
+      monitor: monitor,
+      nodeCrypto: nodeCrypto
+    };
+  }
+
   // The portal's call, at the one point in its body where the route order is
   // right. Answers the page's path.
   register(context: PortalContext): { path: string } {
@@ -621,20 +635,29 @@ class PortalCertificates {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one. Its logger is the service's; a page
-// logs through the one the portal hands over in the context, as it always
-// did.
-const certificates = new PortalCertificates({
-  log: helpers.log,
-  core: core,
-  monitor: monitor,
-  nodeCrypto: nodeCrypto
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PortalCertificates>(
+  'portal/portal_certificates',
+  () => new PortalCertificates(PortalCertificates.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PortalCertificates: PortalCertificates,
-  register: certificates.register.bind(certificates) as
-    PortalCertificates['register'],
+  installInstance: (instance: PortalCertificates): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  register: slot.forward('register'),
   REVOCATION_REASONS: PortalCertificates.REVOCATION_REASONS
 };

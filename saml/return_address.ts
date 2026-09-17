@@ -52,11 +52,13 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `ReturnAddress` takes the logger, `mode` and `errorCodes` through its
-// constructor, and the module still exports `resolve()` from a TRANSITIONAL
-// instance for the unconverted modules that require it.
+// constructor. Since #50's R2 the composition root builds the instance;
+// `resolve()` is a FACADE forwarding to it, for the unconverted modules that
+// require it, and a process without the root builds a default at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import mode = require('../common/mode');
 import errorCodes = require('../common/error_codes');
 
@@ -89,6 +91,18 @@ class ReturnAddress {
   constructor(private readonly deps: ReturnAddressDeps) {
     deps.log.debug("Entering ReturnAddress.constructor().");
     deps.log.debug("Leaving ReturnAddress.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): ReturnAddressDeps {
+    helpers.log.debug("Entering ReturnAddress.defaultDeps().");
+    helpers.log.debug("Leaving ReturnAddress.defaultDeps().");
+    return {
+      log: helpers.log,
+      mode: mode,
+      errorCodes: errorCodes
+    };
   }
 
   // The sentence that tells an operator how to believe an observed address,
@@ -238,15 +252,27 @@ class ReturnAddress {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const returnAddress = new ReturnAddress({
-  log: helpers.log,
-  mode: mode,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ReturnAddress>(
+  'saml/return_address',
+  () => new ReturnAddress(ReturnAddress.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ReturnAddress: ReturnAddress,
-  resolve: returnAddress.resolve.bind(returnAddress) as
-    ReturnAddress['resolve']
+  installInstance: (instance: ReturnAddress): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  resolve: slot.forward('resolve')
 };

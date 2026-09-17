@@ -73,12 +73,14 @@
 // request store and the issuer's `isSelected()` through its constructor. The
 // catalogue, the formats and the store stay module-scope declarations, built
 // at load as before; the class is declared above the catalogue because
-// `titleFor()`, a static helper, is what builds it. The module still exports
-// every old name — `MAX_REQUESTED` still a getter — from a TRANSITIONAL
-// instance.
+// `titleFor()`, a static helper, is what builds it. Since #50's R2 the
+// composition root builds the instance; every old name is a FACADE forwarding
+// to it — `MAX_REQUESTED` still a getter — and a process without the root
+// builds a default at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // TRUST REALMS: the verifier's request below is per realm.
 import realms = require('../common/realms');
 import config = require('../common/config');
@@ -155,6 +157,19 @@ class VcVerifierConfig {
   constructor(private readonly deps: VcVerifierConfigDeps) {
     deps.log.debug("Entering VcVerifierConfig.constructor().");
     deps.log.debug("Leaving VcVerifierConfig.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): VcVerifierConfigDeps {
+    helpers.log.debug("Entering VcVerifierConfig.defaultDeps().");
+    helpers.log.debug("Leaving VcVerifierConfig.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      state: state,
+      isSelected: vcClaims.isSelected
+    };
   }
 
   // The claim name, titled, for a row several attributes make.
@@ -684,12 +699,12 @@ const FORMATS: FormatRow[] = [
     get identifier() {
       helpers.log.debug("Entering identifier().");
       helpers.log.debug("Leaving identifier().");
-      return verifierConfig.expectedVct();
+      return slot.get().expectedVct();
     },
     get identifierText() {
       helpers.log.debug("Entering identifierText().");
       helpers.log.debug("Leaving identifierText().");
-      return verifierConfig.expectedVct();
+      return slot.get().expectedVct();
     },
     selectiveDisclosure: 'per claim, by withholding Disclosures',
     holderBinding: 'Key Binding JWT signed by the credential\'s cnf key',
@@ -733,8 +748,9 @@ const FORMAT_IDS = FORMATS.map(function (format) { return format.id; });
 // `realms.obj(factory)` is a plain object per realm, so the reads and the
 // reassignments below work exactly as the two bindings they replaced did.
 const state = realms.obj(function () {
-  // The instance below is built at load, before any realm asks for this.
-  return { requested: verifierConfig.defaultRequested(),
+  // The instance is installed (or built as the default) before any realm
+  // asks for this.
+  return { requested: slot.get().defaultRequested(),
            format: 'dc+sd-jwt' };
 }, { persist: 'vc_verifier_config.state' });
 
@@ -744,16 +760,28 @@ const state = realms.obj(function () {
 // offering "present an SD-JWT VC" that asked for something else would be lying
 // in the one place a reader is most likely to trust it.
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const verifierConfig = new VcVerifierConfig({
-  log: helpers.log,
-  config: config,
-  state: state,
-  isSelected: vcClaims.isSelected
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<VcVerifierConfig>(
+  'oid4vc/vc_verifier_config',
+  () => new VcVerifierConfig(VcVerifierConfig.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   VcVerifierConfig: VcVerifierConfig,
+  installInstance: (instance: VcVerifierConfig): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   DCQL_ID: DCQL_ID,
   REQUESTABLE: REQUESTABLE,
   FORMATS: FORMATS,
@@ -761,44 +789,25 @@ export = {
   get MAX_REQUESTED() {
     helpers.log.debug("Entering MAX_REQUESTED().");
     helpers.log.debug("Leaving MAX_REQUESTED().");
-    return verifierConfig.maxRequested();
+    return slot.get().maxRequested();
   },
-  expectedVct: verifierConfig.expectedVct.bind(verifierConfig) as
-    VcVerifierConfig['expectedVct'],
-  defaultRequested: verifierConfig.defaultRequested.bind(verifierConfig) as
-    VcVerifierConfig['defaultRequested'],
-  rowFor: verifierConfig.rowFor.bind(verifierConfig) as
-    VcVerifierConfig['rowFor'],
-  carriedNow: verifierConfig.carriedNow.bind(verifierConfig) as
-    VcVerifierConfig['carriedNow'],
-  formatById: verifierConfig.formatById.bind(verifierConfig) as
-    VcVerifierConfig['formatById'],
-  formatOf: verifierConfig.formatOf.bind(verifierConfig) as
-    VcVerifierConfig['formatOf'],
-  defaultFormatId: verifierConfig.defaultFormatId.bind(verifierConfig) as
-    VcVerifierConfig['defaultFormatId'],
-  setDefaultFormat: verifierConfig.setDefaultFormat.bind(verifierConfig) as
-    VcVerifierConfig['setDefaultFormat'],
-  requestedClaims: verifierConfig.requestedClaims.bind(verifierConfig) as
-    VcVerifierConfig['requestedClaims'],
-  requestedRows: verifierConfig.requestedRows.bind(verifierConfig) as
-    VcVerifierConfig['requestedRows'],
-  isRequested: verifierConfig.isRequested.bind(verifierConfig) as
-    VcVerifierConfig['isRequested'],
-  setRequested: verifierConfig.setRequested.bind(verifierConfig) as
-    VcVerifierConfig['setRequested'],
-  addRequested: verifierConfig.addRequested.bind(verifierConfig) as
-    VcVerifierConfig['addRequested'],
-  removeRequested: verifierConfig.removeRequested.bind(verifierConfig) as
-    VcVerifierConfig['removeRequested'],
-  resetRequested: verifierConfig.resetRequested.bind(verifierConfig) as
-    VcVerifierConfig['resetRequested'],
-  dcqlClaims: verifierConfig.dcqlClaims.bind(verifierConfig) as
-    VcVerifierConfig['dcqlClaims'],
-  dcqlPathsFor: verifierConfig.dcqlPathsFor.bind(verifierConfig) as
-    VcVerifierConfig['dcqlPathsFor'],
-  dcqlQuery: verifierConfig.dcqlQuery.bind(verifierConfig) as
-    VcVerifierConfig['dcqlQuery'],
-  ldpOmitted: verifierConfig.ldpOmitted.bind(verifierConfig) as
-    VcVerifierConfig['ldpOmitted']
+  expectedVct: slot.forward('expectedVct'),
+  defaultRequested: slot.forward('defaultRequested'),
+  rowFor: slot.forward('rowFor'),
+  carriedNow: slot.forward('carriedNow'),
+  formatById: slot.forward('formatById'),
+  formatOf: slot.forward('formatOf'),
+  defaultFormatId: slot.forward('defaultFormatId'),
+  setDefaultFormat: slot.forward('setDefaultFormat'),
+  requestedClaims: slot.forward('requestedClaims'),
+  requestedRows: slot.forward('requestedRows'),
+  isRequested: slot.forward('isRequested'),
+  setRequested: slot.forward('setRequested'),
+  addRequested: slot.forward('addRequested'),
+  removeRequested: slot.forward('removeRequested'),
+  resetRequested: slot.forward('resetRequested'),
+  dcqlClaims: slot.forward('dcqlClaims'),
+  dcqlPathsFor: slot.forward('dcqlPathsFor'),
+  dcqlQuery: slot.forward('dcqlQuery'),
+  ldpOmitted: slot.forward('ldpOmitted')
 };

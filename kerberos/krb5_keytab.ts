@@ -56,12 +56,15 @@
 // shape: `Krb5Keytab` takes the logger through its constructor, the two
 // counted-string helpers and the reader's two cursor steps are private static
 // methods, and the module still exports `KEYTAB_VERSION`,
-// `NAME_TYPE_PRINCIPAL`, `writeKeytab` and `readKeytab` from a TRANSITIONAL
-// instance for `krb5_person_keys.ts` and the tests. It goes when the
-// composition root exists; `Krb5Keytab` is exported beside it for that root.
+// `NAME_TYPE_PRINCIPAL`, `writeKeytab` and `readKeytab` for
+// `krb5_person_keys.ts` and the tests — since #50's R2 the two functions are
+// FACADES forwarding to the instance the composition root builds, and a
+// process without the root builds a default at load. `Krb5Keytab` is
+// exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 
 interface Krb5KeytabDeps {
   log: { debug(message: string): void };
@@ -109,6 +112,14 @@ class Krb5Keytab {
   constructor(private readonly deps: Krb5KeytabDeps) {
     deps.log.debug("Entering Krb5Keytab.constructor().");
     deps.log.debug("Leaving Krb5Keytab.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): Krb5KeytabDeps {
+    helpers.log.debug("Entering Krb5Keytab.defaultDeps().");
+    helpers.log.debug("Leaving Krb5Keytab.defaultDeps().");
+    return { log: helpers.log };
   }
 
   private asBytes(value: unknown): Uint8Array {
@@ -298,14 +309,30 @@ class Krb5Keytab {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real logger, as
-// the composition root will build one.
-const keytab = new Krb5Keytab({ log: helpers.log });
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Krb5Keytab>(
+  'kerberos/krb5_keytab',
+  () => new Krb5Keytab(Krb5Keytab.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Krb5Keytab: Krb5Keytab,
+  installInstance: (instance: Krb5Keytab): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   KEYTAB_VERSION: Krb5Keytab.KEYTAB_VERSION,
   NAME_TYPE_PRINCIPAL: Krb5Keytab.NAME_TYPE_PRINCIPAL,
-  writeKeytab: keytab.writeKeytab.bind(keytab) as Krb5Keytab['writeKeytab'],
-  readKeytab: keytab.readKeytab.bind(keytab) as Krb5Keytab['readKeytab']
+  writeKeytab: slot.forward('writeKeytab'),
+  readKeytab: slot.forward('readKeytab')
 };

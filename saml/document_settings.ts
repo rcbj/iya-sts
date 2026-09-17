@@ -31,13 +31,15 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `DocumentSettings` takes `config`, the logger, `xmlEscape` and the
-// two URI tables through its constructor; the tables are its static members,
-// and the module still exports the old four names from a TRANSITIONAL instance
-// for the unconverted modules that require it.
+// two URI tables through its constructor; the tables are its static members.
+// Since #50's R2 the composition root builds the instance; the module's old
+// four names are FACADES forwarding to it, for the unconverted modules that
+// require it, and a process without the root builds a default at load.
 // ---------------------------------------------------------------------------
 
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 
 // What `signatureOptions()` answers.
@@ -79,6 +81,18 @@ class DocumentSettings {
   constructor(private readonly deps: DocumentSettingsDeps) {
     deps.log.debug("Entering DocumentSettings.constructor().");
     deps.log.debug("Leaving DocumentSettings.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): DocumentSettingsDeps {
+    helpers.log.debug("Entering DocumentSettings.defaultDeps().");
+    helpers.log.debug("Leaving DocumentSettings.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape
+    };
   }
 
   // The configured pair, as URIs. A value the table does not know falls back
@@ -154,19 +168,30 @@ class DocumentSettings {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const settings = new DocumentSettings({
-  config: config,
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DocumentSettings>(
+  'saml/document_settings',
+  () => new DocumentSettings(DocumentSettings.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   DocumentSettings: DocumentSettings,
+  installInstance: (instance: DocumentSettings): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SIGNATURE_ALGORITHMS: DocumentSettings.SIGNATURE_ALGORITHMS,
   CANONICALIZATIONS: DocumentSettings.CANONICALIZATIONS,
-  signatureOptions: settings.signatureOptions.bind(settings) as
-    DocumentSettings['signatureOptions'],
-  organizationElement: settings.organizationElement.bind(settings) as
-    DocumentSettings['organizationElement']
+  signatureOptions: slot.forward('signatureOptions'),
+  organizationElement: slot.forward('organizationElement')
 };

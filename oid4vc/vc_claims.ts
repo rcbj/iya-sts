@@ -75,16 +75,18 @@
 // shape: `VcClaims` takes the logger, the identity registry, the mode, the
 // error codes and the per-realm selection store through its constructor. The
 // catalogue and the store stay module-scope declarations (a store becomes per
-// realm at its declaration), and the directory slot is the instance's. The
-// module still exports every old name from a TRANSITIONAL instance —
-// `setDirectory` among them, the slot `ldap_server.js` fills at its require
-// time.
+// realm at its declaration), and the directory slot is the instance's. Since
+// #50's R2 the composition root builds the instance; every old name is a
+// FACADE forwarding to it — `setDirectory` among them, the slot
+// `ldap_server.js` fills at its require time, after the root has installed
+// the instance — and a process without the root builds a default at load.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
 // TRUST REALMS: the claim selection below is per realm.
 import realms = require('../common/realms');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // For ONE function: identityKeyOf(), which turns every spelling of a person
 // into the one local name this service files them under. It is the same
 // normalisation ldap_server.js uses to build `uid=<name>,ou=users` and that
@@ -424,6 +426,20 @@ class VcClaims {
   constructor(private readonly deps: VcClaimsDeps) {
     deps.log.debug("Entering VcClaims.constructor().");
     deps.log.debug("Leaving VcClaims.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): VcClaimsDeps {
+    helpers.log.debug("Entering VcClaims.defaultDeps().");
+    helpers.log.debug("Leaving VcClaims.defaultDeps().");
+    return {
+      log: helpers.log,
+      stats: stats,
+      mode: mode,
+      errorCodes: errorCodes,
+      state: state
+    };
   }
 
   // The rows, in catalogue order, for a caller that is going to draw them. A
@@ -1181,51 +1197,55 @@ class VcClaims {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const claims = new VcClaims({
-  log: helpers.log,
-  stats: stats,
-  mode: mode,
-  errorCodes: errorCodes,
-  state: state
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<VcClaims>(
+  'oid4vc/vc_claims',
+  () => new VcClaims(VcClaims.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   VcClaims: VcClaims,
+  installInstance: (instance: VcClaims): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   VC_ATTRIBUTES: VcClaims.VC_ATTRIBUTES,
   CANONICAL_NAMES: VcClaims.CANONICAL_NAMES,
   DEFAULT_SELECTION: VcClaims.DEFAULT_SELECTION,
-  selectedRows: claims.selectedRows.bind(claims) as VcClaims['selectedRows'],
-  selectedNames: claims.selectedNames.bind(claims) as VcClaims['selectedNames'],
-  isSelected: claims.isSelected.bind(claims) as VcClaims['isSelected'],
-  setSelection: claims.setSelection.bind(claims) as VcClaims['setSelection'],
-  resetSelection: claims.resetSelection.bind(claims) as
-    VcClaims['resetSelection'],
-  personaFor: claims.personaFor.bind(claims) as VcClaims['personaFor'],
+  selectedRows: slot.forward('selectedRows'),
+  selectedNames: slot.forward('selectedNames'),
+  isSelected: slot.forward('isSelected'),
+  setSelection: slot.forward('setSelection'),
+  resetSelection: slot.forward('resetSelection'),
+  personaFor: slot.forward('personaFor'),
   // The catalogue read as "what a person here has" — /admin/users/new draws
   // from this and ldap_server.js's createUser() checks against it, so the form
   // cannot offer a field the writer would drop. See PERSON_FIELDS above.
   PERSON_FIELDS: VcClaims.PERSON_FIELDS,
-  personFields: claims.personFields.bind(claims) as VcClaims['personFields'],
-  personField: claims.personField.bind(claims) as VcClaims['personField'],
-  generatedFor: claims.generatedFor.bind(claims) as VcClaims['generatedFor'],
+  personFields: slot.forward('personFields'),
+  personField: slot.forward('personField'),
+  generatedFor: slot.forward('generatedFor'),
   // Filled by ldap_server.js at its require time; see the note above it.
-  setDirectory: claims.setDirectory.bind(claims) as VcClaims['setDirectory'],
-  populateDirectory: claims.populateDirectory.bind(claims) as
-    VcClaims['populateDirectory'],
-  subjectClaimsFor: claims.subjectClaimsFor.bind(claims) as
-    VcClaims['subjectClaimsFor'],
-  metadataClaims: claims.metadataClaims.bind(claims) as
-    VcClaims['metadataClaims'],
-  ldpMetadataClaims: claims.ldpMetadataClaims.bind(claims) as
-    VcClaims['ldpMetadataClaims'],
-  advertisedClaims: claims.advertisedClaims.bind(claims) as
-    VcClaims['advertisedClaims'],
-  pathOfRow: claims.pathOfRow.bind(claims) as VcClaims['pathOfRow'],
-  pathKey: claims.pathKey.bind(claims) as VcClaims['pathKey'],
-  rowsForPaths: claims.rowsForPaths.bind(claims) as VcClaims['rowsForPaths'],
-  unknownPaths: claims.unknownPaths.bind(claims) as VcClaims['unknownPaths'],
-  ldpSubjectFrom: claims.ldpSubjectFrom.bind(claims) as
-    VcClaims['ldpSubjectFrom'],
-  ldpOmitted: claims.ldpOmitted.bind(claims) as VcClaims['ldpOmitted']
+  setDirectory: slot.forward('setDirectory'),
+  populateDirectory: slot.forward('populateDirectory'),
+  subjectClaimsFor: slot.forward('subjectClaimsFor'),
+  metadataClaims: slot.forward('metadataClaims'),
+  ldpMetadataClaims: slot.forward('ldpMetadataClaims'),
+  advertisedClaims: slot.forward('advertisedClaims'),
+  pathOfRow: slot.forward('pathOfRow'),
+  pathKey: slot.forward('pathKey'),
+  rowsForPaths: slot.forward('rowsForPaths'),
+  unknownPaths: slot.forward('unknownPaths'),
+  ldpSubjectFrom: slot.forward('ldpSubjectFrom'),
+  ldpOmitted: slot.forward('ldpOmitted')
 };

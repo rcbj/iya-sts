@@ -60,11 +60,13 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape: `DebuggerApiProcess` takes the modules it uses through its constructor
-// (`DebuggerApiProcessDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `DebuggerApiProcess` is exported beside them for the
-// composition root.
+// shape: `DebuggerApiProcess` takes the modules it uses through its
+// constructor (`DebuggerApiProcessDeps`). Since #50's R2 the composition root
+// builds the instance; the module's old names are FACADES forwarding to it,
+// for the callers that are not converted, and a process without the root
+// builds a default at load. The exit handler is installed by
+// `DebuggerApiProcess.wire()`, for whichever instance is installed.
+// `DebuggerApiProcess` is exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import childProcess = require('child_process');
@@ -74,6 +76,7 @@ import net = require('net');
 import os = require('os');
 import path = require('path');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import config = require('../common/config');
 import mode = require('../common/mode');
@@ -134,6 +137,45 @@ class DebuggerApiProcess {
   constructor(private readonly deps: DebuggerApiProcessDeps) {
     deps.log.debug("Entering DebuggerApiProcess.constructor().");
     deps.log.debug("Leaving DebuggerApiProcess.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): DebuggerApiProcessDeps {
+    helpers.log.debug("Entering DebuggerApiProcess.defaultDeps().");
+    helpers.log.debug("Leaving DebuggerApiProcess.defaultDeps().");
+    return {
+      childProcess: childProcess,
+      dns: dns,
+      fs: fs,
+      net: net,
+      os: os,
+      path: path,
+      log: log,
+      config: config,
+      mode: mode,
+      errorCodes: errorCodes
+    };
+  }
+
+  // What loading this module did with its instance before #50's R2, now
+  // done by the slot for whichever instance is installed: the exit handler.
+  static wire(instance: DebuggerApiProcess): void {
+    helpers.log.debug("Entering DebuggerApiProcess.wire().");
+    // A last resort for an exit that did not go through stop(): an orphaned
+    // api would hold a socket in a directory nothing will clean.
+    process.on('exit', function () {
+      if (child) {
+        try {
+          child.kill('SIGKILL');
+        } catch (e) {
+          // The process is exiting and there is nobody left to tell.
+          lastError = String((e && e.message) || e);
+        }
+      }
+      instance.removeSocketDir();
+    });
+    helpers.log.debug("Leaving DebuggerApiProcess.wire().");
   }
 
   directorySetting(key) {
@@ -680,57 +722,37 @@ class DebuggerApiProcess {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const debuggerApiProcess = new DebuggerApiProcess({
-  childProcess: childProcess,
-  dns: dns,
-  fs: fs,
-  net: net,
-  os: os,
-  path: path,
-  log: log,
-  config: config,
-  mode: mode,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DebuggerApiProcess>(
+  'debugger/debugger_api_process',
+  () => new DebuggerApiProcess(DebuggerApiProcess.defaultDeps()),
+  DebuggerApiProcess.wire,
+  helpers.log);
 
-// A last resort for an exit that did not go through stop(): an orphaned api
-// would hold a socket in a directory nothing will clean.
-process.on('exit', function () {
-  if (child) {
-    try {
-      child.kill('SIGKILL');
-    } catch (e) {
-      // The process is exiting and there is nobody left to tell.
-      lastError = String((e && e.message) || e);
-    }
-  }
-  debuggerApiProcess.removeSocketDir();
-});
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   DebuggerApiProcess: DebuggerApiProcess,
-  start: debuggerApiProcess.start.bind(debuggerApiProcess) as
-    DebuggerApiProcess['start'],
-  stop: debuggerApiProcess.stop.bind(debuggerApiProcess) as
-    DebuggerApiProcess['stop'],
-  ready: debuggerApiProcess.ready.bind(debuggerApiProcess) as
-    DebuggerApiProcess['ready'],
-  socketPath: debuggerApiProcess.socketPath.bind(debuggerApiProcess) as
-    DebuggerApiProcess['socketPath'],
-  status: debuggerApiProcess.status.bind(debuggerApiProcess) as
-    DebuggerApiProcess['status'],
-  updateAnchor: debuggerApiProcess.updateAnchor.bind(debuggerApiProcess) as
-    DebuggerApiProcess['updateAnchor'],
-  installedProblem:
-    debuggerApiProcess.installedProblem.bind(debuggerApiProcess) as
-      DebuggerApiProcess['installedProblem'],
+  installInstance: (instance: DebuggerApiProcess): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  start: slot.forward('start'),
+  stop: slot.forward('stop'),
+  ready: slot.forward('ready'),
+  socketPath: slot.forward('socketPath'),
+  status: slot.forward('status'),
+  updateAnchor: slot.forward('updateAnchor'),
+  installedProblem: slot.forward('installedProblem'),
   // For tests/debugger_api_process.js: the two pure pieces of the allow-list.
-  cidrOrNull: debuggerApiProcess.cidrOrNull.bind(debuggerApiProcess) as
-    DebuggerApiProcess['cidrOrNull'],
-  computeAllowedRanges:
-    debuggerApiProcess.computeAllowedRanges.bind(debuggerApiProcess) as
-      DebuggerApiProcess['computeAllowedRanges']
+  cidrOrNull: slot.forward('cidrOrNull'),
+  computeAllowedRanges: slot.forward('computeAllowedRanges')
 };

@@ -102,9 +102,11 @@
 // shape: `FederationHttp` takes the logger, `config`, the error-code table,
 // node's `http` and `https` and the User-Agent string through its
 // constructor, and the module still exports `DIALLABLE`, `fetchJson()` and
-// the four readers from a TRANSITIONAL instance for the unconverted modules
-// that require it (`federation_sp.ts`, `saml/sp_metadata.ts`,
-// `oauth-oidc/protected_resource_metadata.ts`).
+// the four readers — since #50's R2 as FACADES forwarding to the instance the
+// composition root builds — for the unconverted modules that require it
+// (`federation_sp.ts`, `saml/sp_metadata.ts`,
+// `oauth-oidc/protected_resource_metadata.ts`). A process without the root
+// builds a default at load.
 // ---------------------------------------------------------------------------
 
 import https = require('https');
@@ -112,6 +114,7 @@ import http = require('http');
 import url = require('url');
 import config = require('./../common/config');
 import helpers = require('./../common/helpers');
+import InstanceSlot = require('./../common/instance_slot');
 // THE ERROR CODES. Every way a request fails carries its code as `errorCode` on
 // the result, and `federation_sp.ts` marks the refusal page's response with it
 // — the result object itself is never sent to anybody. A leaf, so no cycle.
@@ -171,6 +174,21 @@ class FederationHttp {
   constructor(private readonly deps: FederationHttpDeps) {
     deps.log.debug("Entering FederationHttp.constructor().");
     deps.log.debug("Leaving FederationHttp.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): FederationHttpDeps {
+    helpers.log.debug("Entering FederationHttp.defaultDeps().");
+    helpers.log.debug("Leaving FederationHttp.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      errorCodes: errorCodes,
+      http: http,
+      https: https,
+      userAgent: USER_AGENT
+    };
   }
 
   // A partner that answers with more than this is not answering a protocol. A
@@ -490,26 +508,32 @@ class FederationHttp {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const fedHttp = new FederationHttp({
-  log: helpers.log,
-  config: config,
-  errorCodes: errorCodes,
-  http: http,
-  https: https,
-  userAgent: USER_AGENT
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<FederationHttp>(
+  'federation/federation_http',
+  () => new FederationHttp(FederationHttp.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   FederationHttp: FederationHttp,
+  installInstance: (instance: FederationHttp): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   DIALLABLE: FederationHttp.DIALLABLE,
-  maxBodyBytes: fedHttp.maxBodyBytes.bind(fedHttp) as
-    FederationHttp['maxBodyBytes'],
-  urlProblem: fedHttp.urlProblem.bind(fedHttp) as
-    FederationHttp['urlProblem'],
-  fetchJson: fedHttp.fetchJson.bind(fedHttp) as FederationHttp['fetchJson'],
-  outboundAllowed: fedHttp.outboundAllowed.bind(fedHttp) as
-    FederationHttp['outboundAllowed'],
-  allowInsecure: fedHttp.allowInsecure.bind(fedHttp) as
-    FederationHttp['allowInsecure']
+  maxBodyBytes: slot.forward('maxBodyBytes'),
+  urlProblem: slot.forward('urlProblem'),
+  fetchJson: slot.forward('fetchJson'),
+  outboundAllowed: slot.forward('outboundAllowed'),
+  allowInsecure: slot.forward('allowInsecure')
 };

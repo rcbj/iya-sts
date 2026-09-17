@@ -147,16 +147,19 @@
 //   * **THE DIRECTORY SLOT IS STATE OF THE INSTANCE**; the in-flight
 //     derivations stay a module-level `Map`, declared as it was.
 //   * **THE TWO SLOTS THIS FILE FILLS** are filled by `installSlots()`, which
-//     the TRANSITIONAL code at the bottom calls at load, where the original
-//     filled them — just before the exports. The module still exports every
-//     old name, bound to that one instance; it goes when the composition root
-//     exists, and `Krb5PersonKeys` is exported beside it for that root.
+//     `Krb5PersonKeys.wire()` calls when the instance is installed (#50, R2):
+//     the composition root builds the instance, and a process without the
+//     root builds a default, and wires it, at load, where the original filled
+//     them. The module still exports every old name, as a FACADE forwarding
+//     to that one instance; `Krb5PersonKeys` is exported beside them for that
+//     root.
 //   * **THE CODEC REQUIRES ARE EXTENSIONLESS NOW** (`./krb5_crypto`), which
 //     resolves to the same files.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import keystore = require('../common/keystore');
@@ -275,6 +278,36 @@ class Krb5PersonKeys {
   constructor(private readonly deps: Krb5PersonKeysDeps) {
     deps.log.debug("Entering Krb5PersonKeys.constructor().");
     deps.log.debug("Leaving Krb5PersonKeys.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): Krb5PersonKeysDeps {
+    helpers.log.debug("Entering Krb5PersonKeys.defaultDeps().");
+    helpers.log.debug("Leaving Krb5PersonKeys.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      realms: realms,
+      keystore: keystore,
+      credentials: credentials as CredentialStore,
+      applications: applications,
+      audit: audit,
+      errorCodes: errorCodes,
+      kcrypto: kcrypto,
+      prim: prim,
+      principals: principals as unknown as PrincipalDatabase,
+      keytab: keytab,
+      nodeCrypto: nodeCrypto
+    };
+  }
+
+  // What loading this module did with its instance before #50's R2, now
+  // done by the slot for whichever instance is installed: its two slot fills.
+  static wire(instance: Krb5PersonKeys): void {
+    helpers.log.debug("Entering Krb5PersonKeys.wire().");
+    instance.installSlots();
+    helpers.log.debug("Leaving Krb5PersonKeys.wire().");
   }
 
   setDirectory(hooks: DirectoryHooks | null): boolean {
@@ -1694,8 +1727,9 @@ class Krb5PersonKeys {
   }
 
   // -------------------------------------------------------------------------
-  // THE TWO SLOTS THIS FILE FILLS, AT REQUIRE TIME — called by the
-  // transitional code below, where the original filled them.
+  // THE TWO SLOTS THIS FILE FILLS — called by `wire()` when the instance is
+  // installed; standalone, that is at require time, where the original filled
+  // them.
   // -------------------------------------------------------------------------
   installSlots(): void {
     const { log, credentials, principals } = this.deps;
@@ -1721,29 +1755,27 @@ class Krb5PersonKeys {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and its two slots filled at load, as
-// the original filled them.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const personKeys = new Krb5PersonKeys({
-  log: helpers.log,
-  config: config,
-  realms: realms,
-  keystore: keystore,
-  credentials: credentials as CredentialStore,
-  applications: applications,
-  audit: audit,
-  errorCodes: errorCodes,
-  kcrypto: kcrypto,
-  prim: prim,
-  principals: principals as unknown as PrincipalDatabase,
-  keytab: keytab,
-  nodeCrypto: nodeCrypto
-});
-personKeys.installSlots();
+const slot = new InstanceSlot<Krb5PersonKeys>(
+  'kerberos/krb5_person_keys',
+  () => new Krb5PersonKeys(Krb5PersonKeys.defaultDeps()),
+  Krb5PersonKeys.wire,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Krb5PersonKeys: Krb5PersonKeys,
+  installInstance: (instance: Krb5PersonKeys): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SEAL_LABEL: Krb5PersonKeys.SEAL_LABEL,
   PERSON_KEYS_ATTRIBUTE: Krb5PersonKeys.PERSON_KEYS_ATTRIBUTE,
   PERSON_INFO_ATTRIBUTE: Krb5PersonKeys.PERSON_INFO_ATTRIBUTE,
@@ -1751,50 +1783,27 @@ export = {
   SERVICE_INFO_ATTRIBUTE: Krb5PersonKeys.SERVICE_INFO_ATTRIBUTE,
   ATTRIBUTES: Krb5PersonKeys.ATTRIBUTES,
   WITHHELD_ATTRIBUTES: Krb5PersonKeys.WITHHELD_ATTRIBUTES,
-  setDirectory: personKeys.setDirectory.bind(personKeys) as
-    Krb5PersonKeys['setDirectory'],
-  installed: personKeys.installed.bind(personKeys) as
-    Krb5PersonKeys['installed'],
-  currentDirectory: personKeys.currentDirectory.bind(personKeys) as
-    Krb5PersonKeys['currentDirectory'],
-  productKdc: personKeys.productKdc.bind(personKeys) as
-    Krb5PersonKeys['productKdc'],
-  personKeysEnabled: personKeys.personKeysEnabled.bind(personKeys) as
-    Krb5PersonKeys['personKeysEnabled'],
-  stampOf: personKeys.stampOf.bind(personKeys) as Krb5PersonKeys['stampOf'],
-  deriveKey: personKeys.deriveKey.bind(personKeys) as
-    Krb5PersonKeys['deriveKey'],
-  personKeys: personKeys.personKeys.bind(personKeys) as
-    Krb5PersonKeys['personKeys'],
-  serviceKeys: personKeys.serviceKeys.bind(personKeys) as
-    Krb5PersonKeys['serviceKeys'],
-  observePassword: personKeys.observePassword.bind(personKeys) as
-    Krb5PersonKeys['observePassword'],
-  idle: personKeys.idle.bind(personKeys) as Krb5PersonKeys['idle'],
-  normaliseSpn: personKeys.normaliseSpn.bind(personKeys) as
-    Krb5PersonKeys['normaliseSpn'],
-  createServicePrincipal: personKeys.createServicePrincipal.bind(personKeys) as
-    Krb5PersonKeys['createServicePrincipal'],
-  rotateServicePrincipal: personKeys.rotateServicePrincipal.bind(personKeys) as
-    Krb5PersonKeys['rotateServicePrincipal'],
-  deleteServicePrincipal: personKeys.deleteServicePrincipal.bind(personKeys) as
-    Krb5PersonKeys['deleteServicePrincipal'],
-  clearPersonKeys: personKeys.clearPersonKeys.bind(personKeys) as
-    Krb5PersonKeys['clearPersonKeys'],
-  dropPreviousPersonKeys:
-    personKeys.dropPreviousPersonKeys.bind(personKeys) as
-      Krb5PersonKeys['dropPreviousPersonKeys'],
-  dropPreviousServiceKeys:
-    personKeys.dropPreviousServiceKeys.bind(personKeys) as
-      Krb5PersonKeys['dropPreviousServiceKeys'],
-  retainedVersionsLimit: personKeys.retainedVersionsLimit.bind(personKeys) as
-    Krb5PersonKeys['retainedVersionsLimit'],
-  retainedTtlSeconds: personKeys.retainedTtlSeconds.bind(personKeys) as
-    Krb5PersonKeys['retainedTtlSeconds'],
-  listPeople: personKeys.listPeople.bind(personKeys) as
-    Krb5PersonKeys['listPeople'],
-  listServices: personKeys.listServices.bind(personKeys) as
-    Krb5PersonKeys['listServices'],
-  withheldValues: personKeys.withheldValues.bind(personKeys) as
-    Krb5PersonKeys['withheldValues']
+  setDirectory: slot.forward('setDirectory'),
+  installed: slot.forward('installed'),
+  currentDirectory: slot.forward('currentDirectory'),
+  productKdc: slot.forward('productKdc'),
+  personKeysEnabled: slot.forward('personKeysEnabled'),
+  stampOf: slot.forward('stampOf'),
+  deriveKey: slot.forward('deriveKey'),
+  personKeys: slot.forward('personKeys'),
+  serviceKeys: slot.forward('serviceKeys'),
+  observePassword: slot.forward('observePassword'),
+  idle: slot.forward('idle'),
+  normaliseSpn: slot.forward('normaliseSpn'),
+  createServicePrincipal: slot.forward('createServicePrincipal'),
+  rotateServicePrincipal: slot.forward('rotateServicePrincipal'),
+  deleteServicePrincipal: slot.forward('deleteServicePrincipal'),
+  clearPersonKeys: slot.forward('clearPersonKeys'),
+  dropPreviousPersonKeys: slot.forward('dropPreviousPersonKeys'),
+  dropPreviousServiceKeys: slot.forward('dropPreviousServiceKeys'),
+  retainedVersionsLimit: slot.forward('retainedVersionsLimit'),
+  retainedTtlSeconds: slot.forward('retainedTtlSeconds'),
+  listPeople: slot.forward('listPeople'),
+  listServices: slot.forward('listServices'),
+  withheldValues: slot.forward('withheldValues')
 };

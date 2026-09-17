@@ -120,10 +120,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpnegoAuthn` takes the modules it uses through its constructor
-// (`SpnegoAuthnDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpnegoAuthn` is exported beside them for the
-// composition root.
+// (`SpnegoAuthnDeps`). Since #50's R2 the composition root builds the
+// instance; the module's old names are FACADES forwarding to it, for the
+// callers that are not converted, and a process without the root builds a
+// default at load.
+// `SpnegoAuthn` is exported beside them for that root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, and not at load
 // (#50, R1): the module exports it, and `common/protocol_stack.ts` calls it at
@@ -133,6 +134,7 @@
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log, xmlEscape } = helpers;
 import config = require('../common/config');
 // THE SESSION. This is the dependency that decides where this file sits in the
@@ -187,6 +189,26 @@ class SpnegoAuthn {
   constructor(private readonly deps: SpnegoAuthnDeps) {
     deps.log.debug("Entering SpnegoAuthn.constructor().");
     deps.log.debug("Leaving SpnegoAuthn.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): SpnegoAuthnDeps {
+    helpers.log.debug("Entering SpnegoAuthn.defaultDeps().");
+    helpers.log.debug("Leaving SpnegoAuthn.defaultDeps().");
+    return {
+      log: log,
+      xmlEscape: xmlEscape,
+      config: config,
+      authn: authn,
+      principals: principals,
+      spnego: spnego,
+      exchange: exchange,
+      errorCodes: errorCodes,
+      page: page,
+      checksTable: checksTable,
+      SPNEGO_PATH: SPNEGO_PATH
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -626,23 +648,20 @@ class SpnegoAuthn {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root also constructs the modules
-// (#50's R2).
-const spnegoAuthn = new SpnegoAuthn({
-  log: log,
-  xmlEscape: xmlEscape,
-  config: config,
-  authn: authn,
-  principals: principals,
-  spnego: spnego,
-  exchange: exchange,
-  errorCodes: errorCodes,
-  page: page,
-  checksTable: checksTable,
-  SPNEGO_PATH: SPNEGO_PATH
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpnegoAuthn>(
+  'kerberos/spnego_authn',
+  () => new SpnegoAuthn(SpnegoAuthn.defaultDeps()),
+  null,
+  helpers.log);
 
 // What a browser that cannot do Negotiate is looking at, said once. It is on
 // the first challenge only: the later pages are refusals of a token that WAS
@@ -664,13 +683,16 @@ const BROWSER_NOTE =
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => spnegoAuthn.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   SpnegoAuthn: SpnegoAuthn,
+  installInstance: (instance: SpnegoAuthn): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SPNEGO_PATH: SPNEGO_PATH,
-  enabled: spnegoAuthn.enabled.bind(spnegoAuthn) as SpnegoAuthn['enabled'],
-  usernameFor: spnegoAuthn.usernameFor.bind(spnegoAuthn) as
-    SpnegoAuthn['usernameFor'],
-  factorsFor: spnegoAuthn.factorsFor.bind(spnegoAuthn) as
-    SpnegoAuthn['factorsFor']
+  enabled: slot.forward('enabled'),
+  usernameFor: slot.forward('usernameFor'),
+  factorsFor: slot.forward('factorsFor')
 };
