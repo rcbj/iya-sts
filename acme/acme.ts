@@ -50,10 +50,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `Acme` takes the modules it uses through its constructor
-// (`AcmeDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `Acme` is exported beside them for the
-// composition root.
+// (`AcmeDeps`). Since #50's R2 the composition root builds the instance
+// (`Acme.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `Acme` is
+// exported beside them for the composition root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -78,6 +79,7 @@ import store = require('./acme_store');
 // The atomic "once" a finalize is held to across nodes. A LIBRARY that reaches
 // `persistence.js` lazily; see the finalize handler.
 import claims = require('../cluster/cluster_claims');
+import InstanceSlot = require('../common/instance_slot');
 
 const FAMILY = 'acme';
 const PREFIX = '/enroll/acme';
@@ -148,6 +150,29 @@ class Acme {
   constructor(private readonly deps: AcmeDeps) {
     deps.log.debug("Entering Acme.constructor().");
     deps.log.debug("Leaving Acme.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): AcmeDeps {
+    log.debug("Entering Acme.defaultDeps().");
+    log.debug("Leaving Acme.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      helpers: helpers,
+      log: log,
+      config: config,
+      errorCodes: errorCodes,
+      stsCrypto: stsCrypto,
+      audit: audit,
+      realms: realms,
+      core: core,
+      monitor: monitor,
+      validation: validation,
+      jws: jws,
+      store: store,
+      claims: claims
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1920,25 +1945,20 @@ class Acme {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const acme = new Acme({
-  nodeCrypto: nodeCrypto,
-  helpers: helpers,
-  log: log,
-  config: config,
-  errorCodes: errorCodes,
-  stsCrypto: stsCrypto,
-  audit: audit,
-  realms: realms,
-  core: core,
-  monitor: monitor,
-  validation: validation,
-  jws: jws,
-  store: store,
-  claims: claims
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Acme>(
+  'acme/acme',
+  () => new Acme(Acme.defaultDeps()),
+  null,
+  log);
 
 // ---------------------------------------------------------------------------
 // A METHOD A RESOURCE DOES NOT ANSWER (section 6.3): 405 with `Allow`, as a
@@ -1984,15 +2004,20 @@ log.info('The ACME server is registered at ' + PREFIX + '/directory (RFC ' +
 // R1). Nothing depends on that order: they are /admin paths.
 require('./acme_admin');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => acme.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   Acme: Acme,
+  installInstance: (instance: Acme): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FAMILY: FAMILY,
   PREFIX: PREFIX,
   CHALLENGE_TYPE: CHALLENGE_TYPE,
   IDENTIFIER_TYPES: IDENTIFIER_TYPES,
   PROFILE_DESCRIPTIONS: PROFILE_DESCRIPTIONS,
-  urlsFor: acme.urlsFor.bind(acme) as Acme['urlsFor'],
-  csrNamesProblem: acme.csrNamesProblem.bind(acme) as Acme['csrNamesProblem'],
-  orderStatus: acme.orderStatus.bind(acme) as Acme['orderStatus']
+  urlsFor: slot.forward('urlsFor'),
+  csrNamesProblem: slot.forward('csrNamesProblem'),
+  orderStatus: slot.forward('orderStatus')
 };
