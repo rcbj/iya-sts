@@ -114,12 +114,22 @@ import revocationStatus = require('../common/revocation_status');
 // cannot move a route or make a cycle. See the call site in the response
 // endpoint for what it does and does NOT claim about the holder.
 import stats = require('../common/admin_stats');
+import cacheRegistry = require('../common/cache_registry');
 import vcConfigs = require('./vc_configs');
 // THE REGISTER OF CREDENTIALS THIS REALM ISSUED FOR A DIRECTORY ENTRY
 // (2026-09-17, #38), read by `signInOutcome()` to decide whom a presentation
 // made for a sign-in signs in. A LIBRARY (rule 3) requiring only `common/`
 // leaves: this require closes no cycle and moves no route.
 import vcIssued = require('./vc_issued');
+// THE STATUS LISTS (#38's follow-ups), consulted for every credential a
+// presentation carries, and THE HOLDER'S DATA INTEGRITY PROOF, which is what
+// binds an ldp_vc presentation to the key its credential names. Two
+// libraries over `common/`; neither requires this file.
+import vcStatus = require('./vc_status');
+import vcDataIntegrity = require('./vc_data_integrity');
+// THE KEY-ENCRYPTION KEY, for the one private key a transaction holds: the
+// Digital Credentials API response key (see dcApiRequest()).
+import keystore = require('../common/keystore');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 import validation = require('../common/validation');
@@ -158,6 +168,10 @@ interface VcVerifierDeps {
   nameForSubject: typeof helpers.nameForSubject;
   subjectForName: typeof helpers.subjectForName;
   vcIssued: typeof vcIssued;
+  vcStatus: typeof vcStatus;
+  vcDataIntegrity: typeof vcDataIntegrity;
+  keystore: typeof keystore;
+  allSigningKeysAsync: typeof helpers.allSigningKeysAsync;
   config: { value(key: string): any };
   mode: typeof mode;
   errorCodes: typeof errorCodes;
@@ -213,6 +227,48 @@ const ISSUER_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(function (alg) {
   return stsCrypto.JWS_ALGS[alg].family !== 'pq';
 });
 
+// ---------------------------------------------------------------------------
+// AND EVERY ASYMMETRIC ALGORITHM, POST-QUANTUM INCLUDED (#38's follow-ups),
+// for the checks that are asynchronous now: this realm's issuer may sign with
+// ML-DSA, SLH-DSA or a composite (`oid4vci.credentialSigningAlgorithm`), and a
+// holder may bind a credential to such a key, so the issuer signature, the
+// Key Binding JWT and the VP JWT are verified through `common/crypto.js`'s
+// asynchronous verifier, which hands a post-quantum check to the worker pool.
+// ISSUER_ALGS above is what a CONFIGURED trusted issuer certificate may sign
+// with — a certificate's key is a node KeyObject, and node has no ML-DSA
+// KeyObject this service could be handed.
+// ---------------------------------------------------------------------------
+const ALL_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.slice();
+
+// ---------------------------------------------------------------------------
+// A SIGN-IN'S CREDENTIAL QUERIES, ONE PER FORMAT (#38's follow-ups). The
+// SD-JWT query keeps the id the bar door has always used, so a wallet that
+// answers only `identity_credential` still answers it; the other two are
+// distinct, because the response is keyed by query id and the id is how the
+// Verifier knows which format arrived.
+// ---------------------------------------------------------------------------
+const SIGN_IN_QUERY_IDS = {
+  'dc+sd-jwt': 'identity_credential',
+  'jwt_vc_json': 'identity_credential_jwt_vc',
+  'ldp_vc': 'identity_credential_ldp_vc'
+};
+const SIGN_IN_FORMATS = Object.keys(SIGN_IN_QUERY_IDS);
+
+// THE DIGITAL CREDENTIALS API (#38's follow-ups). OpenID4VP 1.0 Appendix A.1:
+// the exchange protocol identifier for a signed request in JWS Compact
+// Serialization. An unsigned request (`openid4vp-v1-unsigned`) would carry no
+// client identifier and no `expected_origins`, and this door always signs.
+const DC_API_PROTOCOL = 'openid4vp-v1-signed';
+const DC_API_RESPONSE_MODES = ['dc_api.jwt', 'dc_api'];
+// The content encryption the response may use (Section 8.3): A128GCM is the
+// default a wallet assumes, the others are offered in
+// `encrypted_response_enc_values_supported`.
+const DC_API_ENC_VALUES = ['A128GCM', 'A256GCM'];
+
+// The N-Quads IRIs an ldp_vc's disclosed statements are read by.
+const CRED = 'https://www.w3.org/2018/credentials#';
+const STATUS_NS = 'https://www.w3.org/ns/credentials/status#';
+
 // The claims this Verifier asks for used to be here, read once from
 // OID4VP_CLAIMS at require time. They are now vpConfig's, read at the moment a
 // request is BUILT and then frozen onto that request — see buildVpRequest().
@@ -242,6 +298,46 @@ const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
 // partition and this behaves as the plain Map it replaced. See
 // common/realms.js.
 const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests' });
+
+// ---------------------------------------------------------------------------
+// DESCRIBED TO `/admin/caches` (rule 3ap, #38's follow-ups). A transaction is
+// a one-time value — answered once, finished once — so it is the replay kind
+// rather than a cache, and it is where a sign-in's Digital Credentials API
+// state lives: the signed request, the response mode and the sealed key its
+// answer is encrypted to. A row is the state alone; the transaction's own
+// value never leaves this store.
+// ---------------------------------------------------------------------------
+const vpTransactionsCount = cacheRegistry.register({
+  name: 'oid4vp.transactions',
+  title: 'OpenID4VP transactions',
+  description: 'Every presentation request this Verifier is waiting on — ' +
+    'the bar door\'s and a wallet sign-in\'s, the latter carrying the ' +
+    'Digital Credentials API request, its response mode and the key its ' +
+    'answer is encrypted to.',
+  owner: 'oid4vc/vc_verifier.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a wallet\'s answer found the request it was made for',
+  settings: ['oid4vp.presentationRequestTtlS', 'oid4vp.signInTtlS'],
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'oid4vp.presentationRequestTtlS, or oid4vp.signInTtlS for a ' +
+      'sign-in; swept when the next request is built.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, vpTransactions,
+      function (record: any, state: unknown): object {
+        return { key: cacheRegistry.digestKey(state),
+                 validUntil: Number((record && record.expires) || 0) || null,
+                 basis: record && record.signIn
+                   ? (record.signIn.completed ? 'finished' : 'sign-in')
+                   : 'time' };
+      });
+  }
+});
 
 // The Verifier's own web page — where a same-device presentation starts.
 // ---------------------------------------------------------------------------
@@ -307,6 +403,10 @@ class VcVerifier {
       nameForSubject: helpers.nameForSubject,
       subjectForName: helpers.subjectForName,
       vcIssued: vcIssued,
+      vcStatus: vcStatus,
+      vcDataIntegrity: vcDataIntegrity,
+      keystore: keystore,
+      allSigningKeysAsync: helpers.allSigningKeysAsync,
       config: config,
       mode: mode,
       errorCodes: errorCodes,
@@ -431,6 +531,66 @@ class VcVerifier {
     }
     log.debug("Leaving VcVerifier.verifyIssuerSignature(). Nothing verified " +
               "it.");
+    throw new Error(lastError);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SAME QUESTION FOR A POST-QUANTUM SIGNATURE (#38's follow-ups).
+  //
+  // `oid4vci.credentialSigningAlgorithm` may name ML-DSA, SLH-DSA or a
+  // composite, and a credential this realm signed that way must be accepted
+  // as this realm's. Its key is one of the realm's post-quantum keys (an AKP
+  // JWK, made in the worker pool, `helpers.allSigningKeysAsync()`), found by
+  // `alg` and `kid` as the curve keys are, and the check runs in the pool
+  // with the same claim rules — `exp`, `nbf`, the clock skew — as every other
+  // (`stsCrypto.verifyJwsAsync()`). A trusted issuer CERTIFICATE is not tried
+  // for these algorithms: its key would have to be a node KeyObject, and this
+  // service reads no ML-DSA certificate key into one.
+  //
+  // Every other algorithm goes to the synchronous verifier above unchanged.
+  // ---------------------------------------------------------------------------
+  private async verifyIssuerSignatureAsync(token: unknown) {
+    const { log, jsonFromB64u, kidNamesKey, stsCrypto,
+            allSigningKeysAsync } = this.deps;
+    log.debug("Entering VcVerifier.verifyIssuerSignatureAsync().");
+    let header: any = {};
+    try {
+      header = jsonFromB64u(String(token || '').split('.')[0]);
+    } catch (e) {
+      log.debug("Caught in VcVerifier.verifyIssuerSignatureAsync(): " +
+                ((e && e.message) || e));
+      header = {};
+    }
+    const alg = String(header.alg || '');
+    const spec = stsCrypto.JWS_ALGS[alg];
+    if (!spec || spec.family !== 'pq') {
+      log.debug("Leaving VcVerifier.verifyIssuerSignatureAsync(). Not " +
+                "post-quantum.");
+      return this.verifyIssuerSignature(token);
+    }
+    const keys = await allSigningKeysAsync();
+    const candidates = keys.filter(function (one) {
+      return !!one.publicJwk && one.alg === alg &&
+             (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid));
+    });
+    let lastError = 'this realm holds no ' + alg + ' key that can verify it';
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        const claims = await stsCrypto.verifyJwsAsync(String(token),
+          candidates[i].publicJwk, { algorithms: [alg] });
+        log.debug("Leaving VcVerifier.verifyIssuerSignatureAsync(). " +
+                  "Verified by this issuer's " + alg + " key.");
+        return { claims: claims, alg: alg,
+                 by: 'this issuer\'s ' + alg + ' key', certificatePem: '' };
+      } catch (e) {
+        // The next candidate may verify it; the last failure is the answer.
+        log.debug("Caught in VcVerifier.verifyIssuerSignatureAsync(): " +
+                  ((e && e.message) || e));
+        lastError = e.message;
+      }
+    }
+    log.debug("Leaving VcVerifier.verifyIssuerSignatureAsync(). Nothing " +
+              "verified it.");
     throw new Error(lastError);
   }
 
@@ -567,18 +727,22 @@ class VcVerifier {
   //                 JWKS.
   //
   // **AND A THIRD, FOR A SIGN-IN (2026-09-17, #38).** `opts.signIn` is what
-  // `vc_signin.ts` passes, and it changes four things about the request and
-  // nothing about how the answer is verified: it is always by reference (the
-  // wallet can check a signed request names this service), it always asks for
-  // THIS issuer's SD-JWT VC by its own `vct` whatever `oid4vp.expectedVct`
-  // says (only a credential this realm issued can sign anybody in, so asking
-  // for anybody else's would be asking for a refusal), it asks for the
-  // subject and nothing else (a sign-in needs to know who, and a DCQL query
-  // with no `claims` would ask for the whole credential), and it lives as long
-  // as `oid4vp.signInTtlS` says rather than as long as the bar door's
-  // requests. What the sign-in module needs to find the pending
-  // authentication again rides on the transaction as `signIn`, never in
-  // anything the wallet is shown.
+  // `vc_signin.ts` passes, and it changes these things about the request: it
+  // is always by reference (the wallet can check a signed request names this
+  // service); it asks for THIS issuer's credentials, in EVERY format a
+  // sign-in accepts (`oid4vp.signInFormats`), one credential query per format
+  // with a `credential_sets` saying any one of them will do
+  // (`signInDcqlQuery()`); each query asks for what identifies the
+  // credential and nothing more; and it lives as long as
+  // `oid4vp.signInTtlS` says. What the sign-in module needs to find the
+  // pending authentication again rides on the transaction as `signIn`, never
+  // in anything the wallet is shown.
+  //
+  // **AND A SECOND REQUEST FOR THE DIGITAL CREDENTIALS API** when
+  // `signIn.dcApiOrigin` is given (`dcApiRequest()`): the same nonce and the
+  // same query, `response_mode` `dc_api.jwt` (or `dc_api`), no response URI,
+  // and `expected_origins` naming this service's origin. One transaction, two
+  // ways in, answered once.
   buildVpRequest(req: any, opts: { byReference?: boolean; format?: string;
                                    signIn?: any }) {
     const { log, logArtifact, baseUrlOf, nowSec, randomId, signJwt, vpConfig,
@@ -598,6 +762,7 @@ class VcVerifier {
                      ('redirect_uri:' + responseUri);
     const ttlMs = signIn && signIn.ttlMs > 0 ? Number(signIn.ttlMs) :
                   this.vpTtlMs();
+    const formats = signIn ? this.signInFormats(signIn.formats) : [];
     const request = {
       client_id: clientId,
       response_type: 'vp_token',
@@ -605,7 +770,7 @@ class VcVerifier {
       response_uri: responseUri,
       nonce: nonce,
       state: state,
-      dcql_query: signIn ? this.signInDcqlQuery() :
+      dcql_query: signIn ? this.signInDcqlQuery(formats, base) :
                   this.vpDcqlQuery(opts.format),
       client_metadata: {
         client_name: signIn ? 'Sign-in with a wallet' :
@@ -613,17 +778,7 @@ class VcVerifier {
         // All three formats are advertised whichever one this request asks for:
         // this is what the Verifier CAN accept, not what it wants this time —
         // the DCQL query is what says that.
-        vp_formats_supported: {
-          // From the shared table, not written out: the KB-JWT is checked by
-          // stsCrypto.verifyCompactJws() against JWS_ASYMMETRIC_ALGS, and a
-          // narrower list here would tell a wallet its perfectly acceptable
-          // algorithm was unwelcome. The `sd-jwt_alg_values` are what the
-          // ISSUER may have signed the credential with, which is the same set.
-          'dc+sd-jwt': { 'sd-jwt_alg_values': stsCrypto.JWS_ASYMMETRIC_ALGS,
-                         'kb-jwt_alg_values': stsCrypto.JWS_ASYMMETRIC_ALGS },
-          'jwt_vc_json': { alg_values: stsCrypto.JWS_ASYMMETRIC_ALGS },
-          'ldp_vc': { cryptosuites: ['bbs-2023'] }
-        }
+        vp_formats_supported: this.vpFormatsSupported()
       }
     };
     const record: Record<string, any> = {
@@ -636,12 +791,12 @@ class VcVerifier {
       // flight, and a verifier that judged what came back against a list
       // changed after the request was sent would refuse a wallet for answering
       // the question it was actually asked.
-      requested: signIn ? ['sub'] : vpConfig.requestedClaims(),
+      requested: signIn ? [] : vpConfig.requestedClaims(),
       // Which format this Verifier asked for. The response is verified against
       // THIS, not against whatever shape happens to turn up, so a wallet that
       // answers a jwt_vc_json query with an SD-JWT is refused rather than
       // quietly accepted by the other code path.
-      format: signIn ? 'dc+sd-jwt' : vpConfig.formatOf(opts.format),
+      format: signIn ? formats[0] : vpConfig.formatOf(opts.format),
       // The `vct` a presented SD-JWT VC must carry, frozen for the same
       // reason as the claims. Only a sign-in pins it; the bar door reads
       // `oid4vp.expectedVct` when the answer arrives, as it always did.
@@ -654,9 +809,20 @@ class VcVerifier {
         bindingHash: String(signIn.bindingHash || ''),
         completePath: String(signIn.completePath || ''),
         crossDevice: !!signIn.crossDevice,
+        // query id -> format, and what each asks for; see signInDcqlQuery().
+        queries: formats.reduce(function (acc, f) {
+          acc[SIGN_IN_QUERY_IDS[f]] = f;
+          return acc;
+        }, {}),
+        // The identifiers this realm issues under, for an ldp_vc's disclosed
+        // `issuer`: the credential issuer URL, and its DID when any
+        // configuration names one.
+        issuers: [base].concat(signIn.issuerDids || []),
         responseCode: '',
         outcome: null,
-        completed: false
+        completed: false,
+        dcApi: null,
+        via: ''
       };
     }
     logArtifact('OID4VP Authorization Request', 'as built', request);
@@ -679,6 +845,10 @@ class VcVerifier {
                   record.requestObject);
       vpRequests.set(id, state);
     }
+    if (signIn && signIn.dcApiOrigin) {
+      record.signIn.dcApi = this.dcApiRequest(record, String(
+        signIn.dcApiOrigin), String(signIn.dcApiResponseMode || ''));
+    }
     vpTransactions.set(state, record);
     this.sweepVpTransactions();
     log.debug("Leaving VcVerifier.buildVpRequest(). state=" + state + ", " +
@@ -686,21 +856,184 @@ class VcVerifier {
     return record;
   }
 
-  // The DCQL query a sign-in asks with: this issuer's SD-JWT VC, and its
-  // subject. See buildVpRequest() for why each part is what it is.
-  signInDcqlQuery() {
+  // What this Verifier can accept, per format (OpenID4VP Appendix B). Every
+  // asymmetric algorithm the shared table has, post-quantum included, for the
+  // JOSE formats — the checks are asynchronous and hand a post-quantum one to
+  // the pool; for ldp_vc the Data Integrity proof type and the cryptosuites:
+  // bbs-2023 for the credential, and the holder suites a presentation's proof
+  // may use.
+  private vpFormatsSupported(): any {
+    const { log, vcDataIntegrity } = this.deps;
+    log.debug("Entering VcVerifier.vpFormatsSupported().");
+    log.debug("Leaving VcVerifier.vpFormatsSupported().");
+    return {
+      'dc+sd-jwt': { 'sd-jwt_alg_values': ALL_ALGS,
+                     'kb-jwt_alg_values': ALL_ALGS },
+      'jwt_vc_json': { alg_values: ALL_ALGS },
+      'ldp_vc': { proof_type_values: ['DataIntegrityProof'],
+                  cryptosuite_values: ['bbs-2023'].concat(
+                    vcDataIntegrity.SUPPORTED_CRYPTOSUITES) }
+    };
+  }
+
+  // The formats a sign-in asks in: `oid4vp.signInFormats`, in the order given
+  // (the order is the preference a wallet that answers only the first query
+  // it understands will follow), filtered to the ones a sign-in can verify.
+  signInFormats(asked?: unknown): string[] {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.signInFormats().");
+    const named = [].concat(asked || config.value('oid4vp.signInFormats') ||
+                            [])
+      .map(function (one) {
+        return String(one).trim().replace(/ /g, '+');
+      })
+      .filter(function (one, i, all) {
+        return SIGN_IN_FORMATS.indexOf(one) >= 0 && all.indexOf(one) === i;
+      });
+    log.debug("Leaving VcVerifier.signInFormats(). " + named.join(', '));
+    return named.length ? named : SIGN_IN_FORMATS.slice();
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGNED REQUEST FOR THE DIGITAL CREDENTIALS API (OpenID4VP 1.0
+  // Appendix A.3.2.1), and the key its response is encrypted to.
+  //
+  //   * `expected_origins` names this service's origin, and nothing else: a
+  //     wallet that is handed this request by a page on another origin
+  //     refuses it (A.2), which is what stops somebody copying it into a page
+  //     of their own.
+  //   * `response_mode` is `dc_api.jwt` by default — the response travels
+  //     through the page's script, and encrypting it to a key only this
+  //     transaction holds keeps the credential out of anything else on the
+  //     page (Section 14.5) — or `dc_api` where `oid4vp.signInDcApiResponseMode`
+  //     says so, for a wallet that cannot encrypt.
+  //   * The key is an ephemeral P-256 ECDH-ES key, one per transaction,
+  //     published in `client_metadata.jwks` with `alg` and a `kid` (Section
+  //     8.3). Its private half is kept on the transaction SEALED under the
+  //     key-encryption key where one exists (product mode) and lives exactly
+  //     as long as the transaction.
+  //   * No `response_uri`, `redirect_uri` or `state`: the response comes back
+  //     to the page that asked (A.2 lists what applies).
+  // ---------------------------------------------------------------------------
+  private dcApiRequest(record: any, origin: string, modeAsked: string): any {
+    const { log, logArtifact, nowSec, signJwt, keystore, randomId,
+            config } = this.deps;
+    log.debug("Entering VcVerifier.dcApiRequest(). origin=" + origin);
+    const configured = String(modeAsked ||
+      config.value('oid4vp.signInDcApiResponseMode') || 'dc_api.jwt');
+    const responseMode = DC_API_RESPONSE_MODES.indexOf(configured) >= 0 ?
+      configured : 'dc_api.jwt';
+    const clientMetadata: any = {
+      client_name: 'Sign-in with a wallet',
+      vp_formats_supported: this.vpFormatsSupported()
+    };
+    let encKey: any = null;
+    if (responseMode === 'dc_api.jwt') {
+      const pair = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+      const kid = 'dcapi-' + randomId(8);
+      const publicJwk = Object.assign(pair.publicKey.export({ format: 'jwk' }),
+        { use: 'enc', alg: 'ECDH-ES', kid: kid });
+      const privatePem = String(pair.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }));
+      const sealed = keystore.seal(privatePem, 'oid4vp dc_api response key');
+      encKey = { kid: kid, sealed: sealed || '',
+                 plain: sealed ? '' : privatePem };
+      clientMetadata.jwks = { keys: [publicJwk] };
+      clientMetadata.encrypted_response_enc_values_supported =
+        DC_API_ENC_VALUES;
+    }
+    const payload = {
+      iss: record.clientId,
+      aud: 'https://self-issued.me/v2',
+      iat: nowSec(),
+      exp: Math.floor(record.expires / 1000),
+      client_id: record.clientId,
+      response_type: 'vp_token',
+      response_mode: responseMode,
+      nonce: record.nonce,
+      dcql_query: record.request.dcql_query,
+      client_metadata: clientMetadata,
+      expected_origins: [origin]
+    };
+    logArtifact('OID4VP Request Object (Digital Credentials API)', 'as built',
+                payload);
+    const requestObject = signJwt(
+      Object.assign({ typ: 'oauth-authz-req+jwt' }, payload), null,
+      { certificateHeader: 'vp-request-object' });
+    log.debug("Leaving VcVerifier.dcApiRequest(). " + responseMode + ".");
+    return { origin: origin, protocol: DC_API_PROTOCOL,
+             responseMode: responseMode, request: requestObject,
+             encKey: encKey };
+  }
+
+  // What the page hands `navigator.credentials.get()`: one request, in the
+  // protocol this door signs.
+  dcApiRequestFor(record: any): any {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.dcApiRequestFor().");
+    const dc = record && record.signIn && record.signIn.dcApi;
+    log.debug("Leaving VcVerifier.dcApiRequestFor(). " + (dc ? "One." :
+                                                          "None."));
+    return dc ? { protocol: dc.protocol, data: { request: dc.request } }
+              : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DCQL QUERY A SIGN-IN ASKS WITH (OpenID4VP section 6): one credential
+  // query per format in `formats`, and a credential set saying any ONE of
+  // them answers it (section 6.2). Each asks for this issuer's credential by
+  // what identifies it — the `vct`, or the W3C type set — and for the claims
+  // a sign-in needs and no more:
+  //
+  //   dc+sd-jwt    `sub` (never a Disclosure, so this discloses nothing
+  //                else)
+  //   jwt_vc_json  `credentialSubject.id` — the format discloses the whole
+  //                credential regardless, and the wallet shows the person so
+  //                before anything is sent
+  //   ldp_vc       `credentialSubject.id` (the holder's did:jwk), `issuer`,
+  //                `validFrom` and `validUntil` — see verifyLdpVc() for why
+  //                each — and `credentialStatus`, which the status check
+  //                reads
+  //
+  // Holder binding is left at its default, REQUIRED, for all three.
+  // ---------------------------------------------------------------------------
+  signInDcqlQuery(formats?: string[], base?: string) {
     const { log, logArtifact } = this.deps;
     log.debug("Entering VcVerifier.signInDcqlQuery().");
-    const query = {
-      credentials: [{
-        id: VP_DCQL_ID,
-        format: 'dc+sd-jwt',
-        meta: { vct_values: [VCI_VCT] },
-        claims: [{ path: ['sub'] }]
-      }]
-    };
+    void base;
+    const wanted = formats && formats.length ? formats :
+                   this.signInFormats();
+    const credentials = wanted.map(function (format) {
+      const id = SIGN_IN_QUERY_IDS[format];
+      if (format === 'dc+sd-jwt') {
+        return { id: id, format: format,
+                 meta: { vct_values: [VCI_VCT] },
+                 claims: [{ path: ['sub'] }] };
+      }
+      if (format === 'jwt_vc_json') {
+        return { id: id, format: format,
+                 meta: { type_values: [VCI_JWT_TYPES] },
+                 claims: [{ path: ['credentialSubject', 'id'] }] };
+      }
+      return { id: id, format: format,
+               meta: { type_values: [VCI_JWT_TYPES] },
+               claims: [{ path: ['credentialSubject', 'id'] },
+                        { path: ['issuer'] },
+                        { path: ['validFrom'] },
+                        { path: ['validUntil'] },
+                        { path: ['credentialStatus'] }] };
+    });
+    const query: any = { credentials: credentials };
+    if (credentials.length > 1) {
+      query.credential_sets = [{
+        options: credentials.map(function (c) {
+          return [c.id];
+        }),
+        required: true
+      }];
+    }
     logArtifact('OID4VP DCQL query', 'as built for a sign-in', query);
-    log.debug("Leaving VcVerifier.signInDcqlQuery().");
+    log.debug("Leaving VcVerifier.signInDcqlQuery(). " + wanted.join(', '));
     return query;
   }
 
@@ -829,8 +1162,8 @@ class VcVerifier {
   //
   // The same questions as the other two formats, asked of a very different
   // artefact. There is no issuer signature to check on what arrives — a derived
-  // proof IS the signature, re-randomised — so "did the issuer sign this" and
-  // "is this the holder presenting it" collapse into one check.
+  // proof IS the signature, re-randomised — so "did the issuer sign this" is
+  // the derived proof's check.
   //
   // SHAPE NOTE, a stated simplification: a full bbs-2023 presentation
   // reconstructs a JSON-LD document from the disclosed statements. This mock is
@@ -839,12 +1172,44 @@ class VcVerifier {
   // verified against this service's BBS key over exactly those statements, with
   // this request's nonce as the presentation header — but another verifier
   // would expect a document.
-  private async verifyLdpVc(presentation: any, record: any) {
-    const { log, bbsKeyPair } = this.deps;
+  //
+  // ---------------------------------------------------------------------------
+  // **AND THE HOLDER (#38's follow-ups).** A derived proof is not a holder
+  // binding: bbs-2023 has no holder secret, so anybody holding the base
+  // credential can derive one, and it binds the request's nonce and nothing
+  // about who derived it or for whom. OpenID4VP B.1.3.2.5 says what does: a
+  // W3C VerifiablePresentation whose Data Integrity proof carries
+  // `challenge` = the nonce and `domain` = the Client Identifier (or
+  // `origin:<origin>` over the Digital Credentials API). So the presentation
+  // may arrive in either of two shapes:
+  //
+  //   * the bare envelope above — `{ cryptosuite, proof, disclosedStatements,
+  //     disclosedIndexes, proofOptions }` — which the bar door still accepts,
+  //     and whose query says `require_cryptographic_holder_binding: false`;
+  //   * `{ @context, type: [VerifiablePresentation], holder?,
+  //     verifiableCredential: [<that envelope>], proof: <Data Integrity> }`,
+  //     whose proof `vc_data_integrity.ts` verifies — over the whole
+  //     presentation, envelope included — and whose key must be the one the
+  //     disclosed `credentialSubject` statement names as a did:jwk.
+  //
+  // A sign-in (`ctx.requireHolderBinding`) accepts only the second, and also
+  // needs the credential's `issuer`, `validFrom` and `validUntil` statements
+  // disclosed: the issuer because this service's BBS key is one for every
+  // realm (so the derived proof alone does not say which realm issued it),
+  // and the window because it is what tells a presented credential apart
+  // from its siblings in the sign-in register (`vc_issued.ts`) and whether it
+  // is still valid.
+  // ---------------------------------------------------------------------------
+  private async verifyLdpVc(presentation: any, record: any, ctx?: any) {
+    const { log, bbsKeyPair, vcDataIntegrity, nowSec } = this.deps;
     log.debug("Entering VcVerifier.verifyLdpVc().");
+    const context = ctx || {};
+    const expectedAud = String(context.aud || record.clientId);
     const checks = [];
     const result: any = { ok: false, checks, claims: {}, disclosed: [], vct: '',
-                     sub: '', extraDisclosed: [] };
+                     sub: '', extraDisclosed: [], holderJwk: null,
+                     credentialStatus: [], validFrom: '', validUntil: '',
+                     issuer: '' };
 
     let payload;
     try {
@@ -860,10 +1225,21 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.verifyLdpVc().");
       return result;
     }
-    const proofBytes = payload.proof ?
-      bbs2023.b64uToBytes(payload.proof) : null;
-    const statements = [].concat(payload.disclosedStatements || []);
-    const indexes = [].concat(payload.disclosedIndexes || []);
+    const vp = payload && [].concat(payload.type || [])
+      .indexOf('VerifiablePresentation') >= 0 ? payload : null;
+    const envelope = vp ? [].concat(vp.verifiableCredential || [])[0]
+                        : payload;
+    if (vp && (!envelope || typeof envelope !== 'object')) {
+      this.vpCheck(checks, 'Format', false, 'the VerifiablePresentation ' +
+                   'carries no derived credential in verifiableCredential.');
+      log.debug("Leaving VcVerifier.verifyLdpVc(). An empty presentation.");
+      return result;
+    }
+    const proofBytes = envelope && typeof envelope.proof === 'string' ?
+      bbs2023.b64uToBytes(envelope.proof) : null;
+    const statements = [].concat((envelope && envelope.disclosedStatements) ||
+                                 []);
+    const indexes = [].concat((envelope && envelope.disclosedIndexes) || []);
     if (!proofBytes || !statements.length ||
         statements.length !== indexes.length) {
       this.vpCheck(checks, 'Format', false,
@@ -876,12 +1252,13 @@ class VcVerifier {
     }
     this.vpCheck(checks, 'Format', true,
       'a bbs-2023 derived proof disclosing ' + statements.length + ' ' +
-      'canonical statement(s).');
+      'canonical statement(s)' + (vp ? ', inside a VerifiablePresentation.' :
+                                       ', with no presentation around it.'));
 
     const keys = await bbsKeyPair();
     let header;
     try {
-      header = await bbs2023.headerFor(payload.proofOptions || {});
+      header = await bbs2023.headerFor(envelope.proofOptions || {});
     } catch (e) {
       log.debug("Caught in VcVerifier.verifyLdpVc(): " +
                 ((e && e.message) || e));
@@ -909,10 +1286,161 @@ class VcVerifier {
     result.disclosed = indexes.map((i) => {
       return 'statement ' + (i + 1);
     });
+
+    // What the disclosed statements say about the credential itself.
+    const read = this.ldpFacts(statements);
+    result.sub = read.subject;
+    result.issuer = read.issuer;
+    result.validFrom = read.validFrom;
+    result.validUntil = read.validUntil;
+    result.credentialStatus = read.credentialStatus;
+    const now = nowSec();
+    const from = Date.parse(read.validFrom) / 1000;
+    const until = Date.parse(read.validUntil) / 1000;
+    if (read.validFrom || read.validUntil || context.requireHolderBinding) {
+      this.vpCheck(checks, 'Validity window',
+        (!!read.validFrom || !context.requireHolderBinding) &&
+        (!!read.validUntil || !context.requireHolderBinding) &&
+        (!read.validFrom || from <= now + 60) &&
+        (!read.validUntil || until > now),
+        'validFrom ' + (read.validFrom || '(not disclosed)') + ', validUntil ' +
+        (read.validUntil || '(not disclosed)') + ', now ' + now + '.' +
+        (context.requireHolderBinding ? ' A sign-in asks for both.' : ''));
+    }
+    if (context.requireHolderBinding) {
+      const issuers = [].concat(context.issuers || []);
+      this.vpCheck(checks, 'Issuer', issuers.indexOf(read.issuer) >= 0,
+        'the disclosed issuer is "' + (read.issuer || '(not disclosed)') +
+        '"; this realm issues as ' + issuers.join(' or ') + '.');
+    }
+
+    // --- the holder --------------------------------------------------------
+    if (!vp) {
+      this.vpCheck(checks, 'Holder binding', !context.requireHolderBinding,
+        context.requireHolderBinding
+          ? 'a bare derived proof proves nothing about who presents it; ' +
+            'this request needs a VerifiablePresentation whose Data ' +
+            'Integrity proof is made with the key the credential names.'
+          : 'none asked for: this request said ' +
+            'require_cryptographic_holder_binding is false, and a bare ' +
+            'derived proof binds only the nonce.');
+    } else {
+      const verdict = await vcDataIntegrity.verifyProof(vp, {
+        expectedChallenge: record.nonce,
+        expectedDomain: expectedAud,
+        expectedPurpose: 'authentication',
+        maxAgeS: Number(this.vpKbMaxAgeS()) || undefined
+      });
+      verdict.checks.forEach((c) => {
+        this.vpCheck(checks, 'Holder proof — ' + c.name, c.ok, c.detail);
+      });
+      let named: any = null;
+      try {
+        named = read.subject ? vcDataIntegrity.jwkOfDidJwk(read.subject) : null;
+      } catch (e) {
+        log.debug("Caught in VcVerifier.verifyLdpVc(): " +
+                  ((e && e.message) || e));
+        named = null;
+      }
+      let same = false;
+      try {
+        same = !!named && !!verdict.jwk &&
+          this.deps.stsCrypto.jwkThumbprint(named, {}) ===
+          this.deps.stsCrypto.jwkThumbprint(verdict.jwk, {});
+      } catch (e) {
+        log.debug("Caught in VcVerifier.verifyLdpVc(): " +
+                  ((e && e.message) || e));
+        same = false;
+      }
+      this.vpCheck(checks, 'Holder binding', verdict.ok && same,
+        !read.subject
+          ? 'the credentialSubject statement was not disclosed, so nothing ' +
+            'says which key may present this credential.'
+          : same
+            ? 'the presentation is proved by ' + read.subject + ', the key ' +
+              'the credential names as its subject.'
+            : 'the presentation is proved by ' +
+              (verdict.controller || 'no key') + ', and the credential names ' +
+              read.subject + '.');
+      if (same) {
+        result.holderJwk = named;
+      }
+    }
     result.ok = checks.every((c) => { return c.ok; });
     log.debug("Leaving VcVerifier.verifyLdpVc(). " +
               (result.ok ? 'accepted' : 'REFUSED'));
     return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE FACTS AN ldp_vc's DISCLOSED STATEMENTS STATE ABOUT THE CREDENTIAL:
+  // its subject (a did:jwk), issuer, validity window and status entries.
+  // Canonical N-Quads, one statement per line; the credential itself is a
+  // blank node, and a `credentialStatus` entry is the node its `id` names.
+  // Nothing here is trusted until the derived proof over exactly these lines
+  // has verified, which the caller asks first.
+  // ---------------------------------------------------------------------------
+  private ldpFacts(statements: string[]): any {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.ldpFacts().");
+    const out: any = { subject: '', issuer: '', validFrom: '',
+                       validUntil: '', credentialStatus: [] };
+    const nodes: Record<string, any> = {};
+    const term = /^(<[^>]*>|_:\S+)\s+<([^>]*)>\s+(<[^>]*>|_:\S+|"(?:[^"\\]|\\.)*"(?:\^\^<[^>]*>|@[A-Za-z-]+)?)/;
+    const value = function (raw: string): string {
+      log.debug("Entering value().");
+      if (raw.charAt(0) === '<') {
+        log.debug("Leaving value(). An IRI.");
+        return raw.slice(1, -1);
+      }
+      if (raw.charAt(0) === '"') {
+        log.debug("Leaving value(). A literal.");
+        return JSON.parse(raw.slice(0, raw.lastIndexOf('"') + 1));
+      }
+      log.debug("Leaving value(). A blank node.");
+      return raw;
+    };
+    statements.forEach(function (line) {
+      const m = term.exec(String(line).trim());
+      if (!m) {
+        return;
+      }
+      const s = value(m[1]);
+      const p = m[2];
+      const o = value(m[3]);
+      if (p === CRED + 'credentialSubject' && /^did:jwk:/.test(o)) {
+        out.subject = o;
+      } else if (p === CRED + 'issuer') {
+        out.issuer = o;
+      } else if (p === CRED + 'validFrom') {
+        out.validFrom = o;
+      } else if (p === CRED + 'validUntil') {
+        out.validUntil = o;
+      } else if (p.indexOf(STATUS_NS) === 0 ||
+                 (p === 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' &&
+                  o === STATUS_NS + 'BitstringStatusListEntry')) {
+        const node = nodes[s] || (nodes[s] = { id: s });
+        if (p.indexOf(STATUS_NS) === 0) {
+          node[p.slice(STATUS_NS.length)] = o;
+        } else {
+          node.type = 'BitstringStatusListEntry';
+        }
+      }
+    });
+    Object.keys(nodes).forEach(function (id) {
+      const n = nodes[id];
+      if (n.type && n.statusListIndex !== undefined) {
+        out.credentialStatus.push({
+          id: n.id, type: 'BitstringStatusListEntry',
+          statusPurpose: n.statusPurpose,
+          statusListIndex: String(n.statusListIndex),
+          statusListCredential: n.statusListCredential });
+      }
+    });
+    log.debug("Leaving VcVerifier.ldpFacts(). subject=" +
+              (out.subject ? 'yes' : 'no') + ", status entries " +
+              out.credentialStatus.length + ".");
+    return out;
   }
 
   // A W3C Verifiable Presentation secured as a JWT, carrying a jwt_vc_json
@@ -939,12 +1467,24 @@ class VcVerifier {
   // the exact bytes presented because a presentation can be a SUBSET. A VP JWT
   // signs over the whole credential it embeds, so the commitment is the
   // signature.
-  private verifyVpJwt(presentation: any, record: any) {
+  //
+  // **FRESHNESS AND THE AUDIENCE FORM (#38's follow-ups).** The VP JWT's
+  // `iat` is held to `oid4vp.kbMaxAgeS`, as a Key Binding JWT's is — without
+  // it a VP made for this nonce could be kept and replayed for as long as the
+  // transaction lives, and a sign-in is exactly where that matters. `aud` is
+  // the Client Identifier, or `origin:<origin>` over the Digital Credentials
+  // API (OpenID4VP B.1.3.1.5), and may be a string or an array holding it
+  // (RFC 7519 section 4.1.3). The signature checks — the credential's and
+  // the presentation's — are asynchronous, so a post-quantum issuer or
+  // holder key is verified in the worker pool like any other.
+  private async verifyVpJwt(presentation: any, record: any, ctx?: any) {
     const { log, logArtifact, jsonFromB64u, nowSec, stsCrypto } = this.deps;
     log.debug("Entering VcVerifier.verifyVpJwt().");
+    const context = ctx || {};
+    const expectedAud = String(context.aud || record.clientId);
     // Named as the source check in tests/revocation_status.js reads it.
-    const verifyIssuerSignature =
-        this.verifyIssuerSignature.bind(this);
+    const verifyIssuerSignatureAsync =
+        this.verifyIssuerSignatureAsync.bind(this);
     logArtifact('OID4VP Verifiable Presentation (jwt_vc_json)', 'as received',
                 presentation);
     const checks = [];
@@ -1031,7 +1571,8 @@ class VcVerifier {
       // was reported to a person as a FAILED ISSUER SIGNATURE, which is the one
       // verdict on this page that reads like an attack rather than like a
       // clock.
-      result.issuerCertificatePem = verifyIssuerSignature(vcJwt).certificatePem;
+      result.issuerCertificatePem =
+        (await verifyIssuerSignatureAsync(vcJwt)).certificatePem;
       issuerSignatureOk = true;
     } catch (e) {
       log.debug("Caught in VcVerifier.verifyVpJwt(): " +
@@ -1063,6 +1604,10 @@ class VcVerifier {
 
     // --- holder binding: the VP JWT is signed by the key the credential names
     const cnfJwk = (vcPayload.cnf || {}).jwk;
+    // Kept for status, the register and a sign-in.
+    result.credentialJwt = vcJwt;
+    result.credentialClaims = vcPayload;
+    result.holderJwk = cnfJwk || null;
     if (!cnfJwk) {
       this.vpCheck(checks, 'Holder binding', false,
         'the credential carries no cnf.jwk, so nothing says which key may ' +
@@ -1078,8 +1623,8 @@ class VcVerifier {
         // Asymmetric only: the credential names the holder's key in `cnf.jwk`
         // and the presentation has to be signed by the matching private one. A
         // MAC there would mean the verifier held the holder's secret.
-        stsCrypto.verifyCompactJws(raw, cnfJwk,
-          { algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS });
+        await stsCrypto.verifyCompactJwsAsync(raw, cnfJwk,
+          { algorithms: ALL_ALGS });
         holderOk = true;
       } catch (e) {
         log.debug("Caught in VcVerifier.verifyVpJwt(): " +
@@ -1104,10 +1649,19 @@ class VcVerifier {
     this.vpCheck(checks, 'Nonce', vpPayload.nonce === record.nonce,
       'nonce is "' + (vpPayload.nonce || '—') + '"; this request used "' +
       record.nonce + '".');
-    this.vpCheck(checks, 'Audience',
-                 String(vpPayload.aud) === String(record.clientId),
-      'aud is "' + vpPayload.aud + '"; this Verifier is "' + record.clientId +
+    const auds = [].concat(vpPayload.aud === undefined ? [] :
+                           vpPayload.aud).map(String);
+    this.vpCheck(checks, 'Audience', auds.indexOf(expectedAud) >= 0,
+      'aud is "' + auds.join(', ') + '"; this Verifier is "' + expectedAud +
       '".');
+    this.vpCheck(checks, 'Freshness',
+      !!vpPayload.iat &&
+          Math.abs(now - Number(vpPayload.iat)) <= this.vpKbMaxAgeS() &&
+          (!vpPayload.exp || Number(vpPayload.exp) > now) &&
+          (!vpPayload.nbf || Number(vpPayload.nbf) <= now),
+      'iat is ' + (vpPayload.iat || 'absent') + (vpPayload.iat ? ' (' +
+      (now - Number(vpPayload.iat)) + 's ago)' : '') + '; at most ' +
+      this.vpKbMaxAgeS() + 's is accepted.');
 
     // --- what arrived --------------------------------------------------------
     // Everything in credentialSubject came, because this format cannot send
@@ -1120,7 +1674,7 @@ class VcVerifier {
     // What THIS request asked for, not what the console is configured to ask
     // for now: see buildVpRequest(), where the list is frozen onto the
     // transaction.
-    const requested = [].concat(record.requested || []);
+    const requested = [].concat(context.requested || record.requested || []);
     const missing = requested.filter((name) => {
       return present.indexOf(name) < 0;
     });
@@ -1154,13 +1708,20 @@ class VcVerifier {
     return result;
   }
 
-  verifyPresentation(presentation: any, record: any) {
+  //
+  // `ctx.aud` is the audience this answer must name (`origin:<origin>` over
+  // the Digital Credentials API), and `ctx.requested` the claims this query
+  // asked for. Asynchronous since #38's follow-ups, for verifyVpJwt()'s
+  // reason: a post-quantum issuer or holder key is checked in the pool.
+  async verifyPresentation(presentation: any, record: any, ctx?: any) {
     const { log, logArtifact, b64u, b64uDecode, jsonFromB64u, nowSec,
             errorCodes, vpConfig, stsCrypto } = this.deps;
     log.debug("Entering VcVerifier.verifyPresentation().");
+    const context = ctx || {};
+    const expectedAud = String(context.aud || record.clientId);
     // Named as the source check in tests/revocation_status.js reads it.
-    const verifyIssuerSignature =
-        this.verifyIssuerSignature.bind(this);
+    const verifyIssuerSignatureAsync =
+        this.verifyIssuerSignatureAsync.bind(this);
     logArtifact('OID4VP Verifiable Presentation', 'as received', presentation);
     const checks = [];
     const result: any = { ok: false, checks: checks, claims: {}, disclosed: [],
@@ -1199,14 +1760,16 @@ class VcVerifier {
     }
     result.vct = payload.vct || '';
     result.sub = payload.sub || '';
+    result.credentialJwt = issuerJwt;
+    result.credentialClaims = payload;
     this.vpCheck(checks, 'Media type (typ)',
       ['dc+sd-jwt', 'vc+sd-jwt'].indexOf(String(header.typ)) >= 0,
       'typ is "' + header.typ + '".');
     let issuerSignatureOk = false;
     try {
       // The fourth. Same change, same reason as the note above.
-      result.issuerCertificatePem = verifyIssuerSignature(
-          issuerJwt).certificatePem;
+      result.issuerCertificatePem =
+        (await verifyIssuerSignatureAsync(issuerJwt)).certificatePem;
       issuerSignatureOk = true;
     } catch (e) {
       log.debug("Caught in VcVerifier.verifyPresentation(): " +
@@ -1346,10 +1909,12 @@ class VcVerifier {
         : 'is "' + kbPayload.nonce + '", but this request\'s nonce is "' +
           record.nonce +
           '" — a presentation made for another request, or replayed.');
-    this.vpCheck(checks, 'KB-JWT audience', kbPayload.aud === record.clientId,
-      kbPayload.aud === record.clientId
-        ? 'is this Verifier\'s Client Identifier.'
-        : 'is "' + kbPayload.aud + '", not "' + record.clientId + '" — this ' +
+    this.vpCheck(checks, 'KB-JWT audience', kbPayload.aud === expectedAud,
+      kbPayload.aud === expectedAud
+        ? 'is ' + (context.aud ? 'this origin, as the Digital Credentials ' +
+                                 'API requires' :
+                                 'this Verifier\'s Client Identifier') + '.'
+        : 'is "' + kbPayload.aud + '", not "' + expectedAud + '" — this ' +
             'presentation was made for someone else.');
     this.vpCheck(checks, 'KB-JWT freshness',
       !!kbPayload.iat &&
@@ -1384,8 +1949,9 @@ class VcVerifier {
         'presentation could be bound to.');
     } else {
       try {
-        const holderKey = crypto.createPublicKey({ key: cnfJwk,
-                                                  format: 'jwk' });
+        // THE HOLDER'S KEY AS ITS JWK, not a node KeyObject: an AKP
+        // (post-quantum) key has no KeyObject here, and the shared verifier
+        // reads either.
         // NOT one of our tokens — the key is the HOLDER'S, so the algorithm
         // list is theirs and is named explicitly rather than taking the RS256
         // default. The clock allowance is still ours to grant, and it comes
@@ -1400,7 +1966,8 @@ class VcVerifier {
         // is every asymmetric non-post-quantum algorithm now — the post-quantum
         // ones have no JWK `cnf` a node KeyObject can be built from, and this
         // check is synchronous.
-        stsCrypto.verifyJws(kbJwt, holderKey, { algorithms: ISSUER_ALGS });
+        await stsCrypto.verifyCompactJwsAsync(kbJwt, cnfJwk,
+                                              { algorithms: ALL_ALGS });
         this.vpCheck(checks, 'KB-JWT signature', true,
           'verifies against the cnf key in the credential (' + cnfJwk.kty +
               ' ' +
@@ -1417,7 +1984,7 @@ class VcVerifier {
     // --- did we get what we asked for? ---------------------------------------
     // What THIS request asked for; see buildVpRequest() for why it is the
     // transaction's list and not the one the console holds at this moment.
-    const requested = [].concat(record.requested || []);
+    const requested = [].concat(context.requested || record.requested || []);
     const missing =
         requested.filter((name) => { return !(name in result.claims); });
     this.vpCheck(checks, 'Requested claims', missing.length === 0,
@@ -1525,7 +2092,7 @@ class VcVerifier {
   // never claimed, which is also why the mechanism is withheld from a request
   // that demanded two (`authn.ts`, `walletOptionHtml()`).
   // ---------------------------------------------------------------------------
-  signInOutcome(verified: any, presentation: unknown) {
+  signInOutcome(verified: any, answer?: any) {
     const { log, vcIssued, nameForSubject, subjectForName,
             stsCrypto } = this.deps;
     log.debug("Entering VcVerifier.signInOutcome().");
@@ -1534,7 +2101,16 @@ class VcVerifier {
       return { ok: false, errorCode: errorCode, reason: reason,
                username: '', subject: '' };
     };
-    if (!verified || !verified.ok) {
+    // A STATUS REFUSAL IS THE ONE FAILURE THAT GOES ON (#38's follow-ups).
+    // `statusCheck()` runs only after everything else verified, so a
+    // presentation that failed only there is one this door can still say
+    // something USEFUL about: where the register knows the credential was
+    // disowned — a global sign-out, an administrator's revocation, a
+    // suspension — the page should say THAT (STS-VC-0071) rather than
+    // "the list says INVALID", which is the same fact one layer down. So the
+    // register is read first and this is decided at the end.
+    const statusRefused = !!(verified && verified.statusRefused);
+    if (!statusRefused && (!verified || !verified.ok)) {
       return refuse('STS-VC-0061', 'The presentation did not verify, so it ' +
                     'signs nobody in. The checks above say which rule it ' +
                     'broke.');
@@ -1547,17 +2123,7 @@ class VcVerifier {
                     'it does not sign anybody in here: only a credential ' +
                     'this realm issued can say who a person here is.');
     }
-    const row = vcIssued.lookup(presentation);
-    if (!row) {
-      return refuse('STS-VC-0059', 'This realm has no record of issuing ' +
-                    'this credential to a person it authenticated. Only a ' +
-                    'credential this realm\'s issuer minted on an access ' +
-                    'token this realm issued and verified — for a person, ' +
-                    'and for credential issuance — may sign somebody in. ' +
-                    'A credential from another realm, one issued on a ' +
-                    'token this service did not issue, or one issued ' +
-                    'before a restart in development mode is not one.');
-    }
+    const format = String((answer && answer.format) || 'dc+sd-jwt');
     let presentedJkt = '';
     try {
       presentedJkt = verified.holderJwk ?
@@ -1567,11 +2133,63 @@ class VcVerifier {
                 ((e && e.message) || e));
       presentedJkt = '';
     }
-    if (String(verified.sub || '') !== row.subject ||
-        !presentedJkt || presentedJkt !== row.jkt) {
-      return refuse('STS-VC-0066', 'The credential does not match what this ' +
-                    'realm recorded when it issued it (its subject or the ' +
-                    'key it is bound to), so it signs nobody in.');
+    const notIssued = 'This realm has no record of issuing this credential ' +
+      'to a person it authenticated. Only a credential this realm\'s ' +
+      'issuer minted on an access token this realm issued and verified — ' +
+      'for a person, for credential issuance, and not disowned since — may ' +
+      'sign somebody in. A credential from another realm, one issued on a ' +
+      'token this service did not issue, or one issued before a restart in ' +
+      'development mode is not one.';
+    let row = null;
+    let candidates = [];
+    if (format === 'ldp_vc') {
+      // A DERIVED PROOF names no credential; the holder key and the disclosed
+      // validity window are what find it (vc_issued.ts's header).
+      const rows = presentedJkt ? vcIssued.lookupHolder(presentedJkt) : [];
+      if (!rows.length) {
+        return refuse('STS-VC-0059', notIssued);
+      }
+      const subjects = rows.map(function (r) {
+        return r.subject;
+      }).filter(function (one, i, all) {
+        return all.indexOf(one) === i;
+      });
+      if (subjects.length > 1) {
+        return refuse('STS-VC-0066', 'This wallet key was issued credentials ' +
+                      'for more than one person here, and an ldp_vc ' +
+                      'presentation does not say which credential it came ' +
+                      'from, so it signs nobody in.');
+      }
+      row = rows[0];
+      candidates = vcIssued.credentialsMatching(row, {
+        validFrom: verified.validFrom, validUntil: verified.validUntil });
+      if (!candidates.length) {
+        return refuse('STS-VC-0059', notIssued);
+      }
+    } else {
+      row = vcIssued.lookup(verified.credentialJwt);
+      if (!row) {
+        return refuse('STS-VC-0059', notIssued);
+      }
+      if (String(verified.sub || '') !== row.subject ||
+          !presentedJkt || presentedJkt !== row.jkt) {
+        return refuse('STS-VC-0066', 'The credential does not match what ' +
+                      'this realm recorded when it issued it (its subject or ' +
+                      'the key it is bound to), so it signs nobody in.');
+      }
+      candidates = [].concat(row.credentials || []);
+    }
+    const disowned = vcIssued.disownedReason(row, candidates);
+    if (disowned) {
+      return refuse('STS-VC-0071', 'This credential has been disowned: ' +
+                    disowned + '. It still verifies, and it signs nobody in ' +
+                    'here any more — its status list says so too. A ' +
+                    'credential issued to you after that will.');
+    }
+    if (statusRefused) {
+      return refuse('STS-VC-0072', 'The credential\'s status says it is ' +
+                    'no longer good (' + (verified.statusDetail || 'revoked ' +
+                    'or suspended') + '), so it signs nobody in.');
     }
     const username = nameForSubject(row.subject);
     if (!username || subjectForName(username) !== row.subject) {
@@ -1580,12 +2198,379 @@ class VcVerifier {
                     'name now belongs to a different entry — so the ' +
                     'credential signs nobody in.');
     }
+    const assurance = this.assuranceOf(row, candidates);
     log.debug("Leaving VcVerifier.signInOutcome(). " + username + ".");
     return { ok: true, errorCode: '', reason: '', username: username,
-             subject: row.subject, amr: ['pop'], acr: '1',
+             subject: row.subject, amr: assurance.amr, acr: assurance.acr,
+             format: format, keyStorage: assurance.keyStorage,
              holderKey: (verified.holderJwk.kty || '') +
                         (verified.holderJwk.crv ?
-                          ' ' + verified.holderJwk.crv : '') };
+                          ' ' + verified.holderJwk.crv :
+                          (verified.holderJwk.alg ?
+                            ' ' + verified.holderJwk.alg : '')) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A WALLET SIGN-IN CLAIMS (#38's follow-ups).
+  //
+  // By default one factor of unknown storage: `amr ["pop"]`, `acr "1"` —
+  // RFC 8176's `pop` is proof of possession of a key whose storage is not
+  // specified, which is exactly what a bare JWK says.
+  //
+  // A KEY ATTESTATION the issuer VERIFIED when the credential was issued
+  // (`vc_issuer.ts`'s `verifyKeyAttestation()`, recorded on the register row)
+  // says more, and only that is believed — nothing a presentation says about
+  // itself is:
+  //
+  //   * `key_storage` resisting at least "Moderate" attack potential
+  //     (ISO 18045 VAN.4, `iso_18045_moderate` or `iso_18045_high`) is a
+  //     hardware-grade key: `hwk` is added.
+  //   * and `user_authentication` at least "Moderate" as well means the key
+  //     cannot be used without the person authenticating to the wallet (a PIN
+  //     or a biometric) — possession and a second factor in one act, so
+  //     `mfa` is added and `acr` is `"mfa"`.
+  //
+  // Every credential the presentation could be (for an ldp_vc, each sibling
+  // with its validity window) must carry the attestation, or the weakest one
+  // decides.
+  // ---------------------------------------------------------------------------
+  private assuranceOf(row: any, candidates: any[]): any {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.assuranceOf().");
+    const rank = function (values: unknown): number {
+      log.debug("Entering rank().");
+      const scale = ['iso_18045_basic', 'iso_18045_enhanced-basic',
+                     'iso_18045_moderate', 'iso_18045_high'];
+      const best = [].concat(values || []).reduce(function (m, v) {
+        return Math.max(m, scale.indexOf(String(v)) + 1);
+      }, 0);
+      log.debug("Leaving rank(). " + best);
+      return best;
+    };
+    const list = [].concat(candidates || []);
+    const storage = list.length ? Math.min.apply(null, list.map(function (c) {
+      return rank(c.keyStorage);
+    })) : 0;
+    const userAuth = list.length ? Math.min.apply(null, list.map(function (c) {
+      return rank(c.userAuthentication);
+    })) : 0;
+    void row;
+    const hardware = storage >= 3;
+    const twoFactors = hardware && userAuth >= 3;
+    const names = ['', 'iso_18045_basic', 'iso_18045_enhanced-basic',
+                   'iso_18045_moderate', 'iso_18045_high'];
+    log.debug("Leaving VcVerifier.assuranceOf(). storage=" + storage +
+              ", user=" + userAuth);
+    return {
+      amr: ['pop'].concat(hardware ? ['hwk'] : [])
+                  .concat(twoFactors ? ['mfa'] : []),
+      acr: twoFactors ? 'mfa' : '1',
+      keyStorage: names[storage] || ''
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE ANSWER, VERIFIED: the vp_token read for the query it answers, the
+  // presentation checked in that query's format, the issuer certificate's
+  // revocation, and the credential's status. Shared by the direct_post
+  // endpoint and the Digital Credentials API door so the two cannot come to
+  // check different things. `ctx.aud` is the audience the answer must name.
+  //
+  // A sign-in's vp_token must answer EXACTLY ONE of its credential queries
+  // with exactly one presentation: the credential set offers each as a
+  // complete answer, and two would be two people's worth of evidence for one
+  // session.
+  // ---------------------------------------------------------------------------
+  async verifyAnswer(record: any, rawVpToken: unknown,
+                     ctx: any): Promise<any> {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcVerifier.verifyAnswer().");
+    const issuerCertificateRevocation =
+        this.issuerCertificateRevocation.bind(this);
+    let parsed: any = null;
+    try {
+      parsed = typeof rawVpToken === 'string' ? JSON.parse(rawVpToken) :
+               rawVpToken;
+    } catch (e) {
+      log.debug("Caught in VcVerifier.verifyAnswer(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-VC-0038') +
+                'the vp_token is not the JSON object OID4VP defines: ' +
+                e.message);
+      parsed = null;
+    }
+    const ids = record.signIn ? Object.keys(record.signIn.queries || {})
+                              : [VP_DCQL_ID];
+    const answered = parsed && typeof parsed === 'object' ?
+      ids.filter(function (id) {
+        return parsed[id] !== undefined;
+      }) : [];
+    const shape = (why: string): any => {
+      log.debug("Leaving VcVerifier.verifyAnswer(). " + why);
+      return { shapeOk: false, why: why };
+    };
+    if (!answered.length || (record.signIn && answered.length !== 1)) {
+      return shape('vp_token must be a JSON object keyed by ' +
+        (record.signIn ? 'exactly one of the DCQL credential query ids (' +
+                         ids.join(', ') + ')' :
+                         'the DCQL credential query id ("' + VP_DCQL_ID +
+                         '")') +
+        ', each value an array of presentations.');
+    }
+    const id = answered[0];
+    const list = Array.isArray(parsed[id]) ? parsed[id] :
+                 (typeof parsed[id] === 'string' ||
+                  (parsed[id] && typeof parsed[id] === 'object') ?
+                   [parsed[id]] : []);
+    if (!list.length || (record.signIn && list.length !== 1)) {
+      return shape('the vp_token for "' + id + '" must carry ' +
+                   (record.signIn ? 'exactly one presentation' :
+                                    'a presentation') + '.');
+    }
+    const format = record.signIn ? record.signIn.queries[id] : record.format;
+    const vctx = {
+      aud: ctx && ctx.aud,
+      requested: record.signIn ? [] : undefined,
+      requireHolderBinding: !!record.signIn,
+      issuers: record.signIn ? record.signIn.issuers : []
+    };
+    const presentation = list[0];
+    const verified = format === 'ldp_vc'
+      ? await this.verifyLdpVc(presentation, record, vctx)
+      : format === 'jwt_vc_json'
+        ? await this.verifyVpJwt(presentation, record, vctx)
+        : await this.verifyPresentation(presentation, record, vctx);
+    await issuerCertificateRevocation(verified);
+    await this.statusCheck(verified, format, !!record.signIn);
+    log.debug("Leaving VcVerifier.verifyAnswer(). ok=" + verified.ok + ".");
+    return { shapeOk: true, verified: verified, presentation: presentation,
+             format: format, id: id };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CREDENTIAL'S STATUS (vc_status.ts), asked once everything else
+  // verified (draft-ietf-oauth-status-list section 8.3: a token that failed
+  // its own checks is not looked up). A credential this realm signed is read
+  // from the realm's own lists; one a trusted issuer certificate verified has
+  // its list fetched and checked against that certificate's key. An ldp_vc
+  // whose presentation disclosed no status entry is let through here and
+  // nowhere else — the bar door asks for claims, not for the status — and a
+  // sign-in reads that credential's status from its register row instead.
+  // ---------------------------------------------------------------------------
+  private async statusCheck(verified: any, format: string,
+                            signIn: boolean): Promise<void> {
+    const { log, vcStatus } = this.deps;
+    log.debug("Entering VcVerifier.statusCheck().");
+    if (!verified || !verified.ok) {
+      log.debug("Leaving VcVerifier.statusCheck(). Not verified.");
+      return;
+    }
+    const own = !verified.issuerCertificatePem;
+    if (format === 'ldp_vc' && !(verified.credentialStatus || []).length) {
+      this.vpCheck(verified.checks, 'Credential status', true,
+        'no status entry was disclosed' + (signIn ?
+          '; the sign-in register holds this credential\'s status' : '') +
+        '.');
+      log.debug("Leaving VcVerifier.statusCheck(). Not disclosed.");
+      return;
+    }
+    let key: any = null;
+    if (!own) {
+      try {
+        key = new crypto.X509Certificate(verified.issuerCertificatePem)
+          .publicKey;
+      } catch (e) {
+        log.debug("Caught in VcVerifier.statusCheck(): " +
+                  ((e && e.message) || e));
+        key = null;
+      }
+    }
+    const answer = await vcStatus.checkPresented({
+      own: own, format: format,
+      claims: format === 'ldp_vc' ? {} : verified.credentialClaims,
+      credentialStatus: format === 'ldp_vc' ? verified.credentialStatus :
+                        undefined,
+      key: key, algs: ISSUER_ALGS
+    });
+    this.vpCheck(verified.checks, 'Credential status', answer.ok,
+                 answer.detail);
+    if (!answer.ok) {
+      verified.ok = false;
+      verified.statusRefused = true;
+      verified.statusDetail = answer.detail;
+    }
+    log.debug("Leaving VcVerifier.statusCheck(). " + answer.ok + ".");
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN ANSWER THROUGH THE DIGITAL CREDENTIALS API (OpenID4VP Appendix A.4),
+  // posted by the page that called `navigator.credentials.get()`.
+  //
+  //   `response`  the DigitalCredential the page received, as JSON:
+  //               `{ protocol, data }`, where `data` is `{ vp_token }`
+  //               (`dc_api`), `{ response: <JWE> }` (`dc_api.jwt`) or
+  //               `{ error }`
+  //   `origin`    this service's origin, which the answer's audience must
+  //               name as `origin:<origin>` (A.4)
+  //
+  // The caller has already established the browser (the binding cookie) and
+  // the page's own origin (the request's `Origin` header). This answers
+  // `{ ok, status, errorCode, why }` and writes the verdict and the sign-in
+  // outcome onto the transaction exactly as the direct_post endpoint does,
+  // answered once.
+  // ---------------------------------------------------------------------------
+  async answerDcApi(record: any, response: unknown, origin: string) {
+    const { log, stsCrypto, keystore, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.answerDcApi().");
+    const refuse = (status: number, errorCode: string, why: string) => {
+      log.debug("Leaving VcVerifier.answerDcApi(). " + errorCode);
+      return { ok: false, status: status, errorCode: errorCode, why: why };
+    };
+    const dc = record && record.signIn && record.signIn.dcApi;
+    if (!dc) {
+      return refuse(400, 'STS-VC-0083', 'this sign-in was not offered ' +
+                    'through the Digital Credentials API');
+    }
+    if (record.verdict) {
+      return refuse(400, 'STS-VC-0057', 'this sign-in has already been ' +
+                    'answered');
+    }
+    if (String(origin) !== dc.origin) {
+      return refuse(403, 'STS-VC-0074', 'the answer was posted for origin "' +
+                    origin + '", and the request named "' + dc.origin + '"');
+    }
+    let credential: any = null;
+    try {
+      credential = typeof response === 'string' ? JSON.parse(response) :
+                   response;
+    } catch (e) {
+      log.debug("Caught in VcVerifier.answerDcApi(): " +
+                ((e && e.message) || e));
+      credential = null;
+    }
+    if (!credential || typeof credential !== 'object' ||
+        credential.protocol !== dc.protocol || !credential.data ||
+        typeof credential.data !== 'object') {
+      return refuse(400, 'STS-VC-0073', 'the answer is not a ' + dc.protocol +
+                    ' DigitalCredential ({ protocol, data })');
+    }
+    let data = credential.data;
+    if (data.error) {
+      record.verdict = { ok: false, refused: true, error: String(data.error),
+                         errorDescription: String(data.error_description ||
+                                                  ''),
+                         checks: [], at: new Date().toISOString() };
+      record.signIn.outcome = {
+        ok: false, errorCode: 'STS-VC-0037', username: '', subject: '',
+        reason: 'The wallet declined to present a credential (' +
+                String(data.error) + '), so nobody was signed in.' };
+      record.signIn.via = 'dc_api';
+      vpTransactions.set(String(record.state), record);
+      log.debug("Leaving VcVerifier.answerDcApi(). The wallet refused.");
+      return { ok: true, status: 200, errorCode: 'STS-VC-0037', why: '' };
+    }
+    if (dc.responseMode === 'dc_api.jwt') {
+      if (typeof data.response !== 'string') {
+        return refuse(400, 'STS-VC-0073', 'this request asked for an ' +
+                      'encrypted response (dc_api.jwt), and the answer ' +
+                      'carries no `response`');
+      }
+      try {
+        const pem = dc.encKey.sealed ?
+          keystore.open(dc.encKey.sealed, 'oid4vp dc_api response key') :
+          dc.encKey.plain;
+        const opened = stsCrypto.decryptJweCompact(data.response, {
+          privateKey: crypto.createPrivateKey(String(pem || '')),
+          allowedAlg: ['ECDH-ES'],
+          allowedEnc: DC_API_ENC_VALUES,
+          expectedKid: dc.encKey.kid
+        });
+        data = JSON.parse(opened.plaintext);
+      } catch (e) {
+        log.debug("Caught in VcVerifier.answerDcApi(): " +
+                  ((e && e.message) || e));
+        return refuse(400, 'STS-VC-0073', 'the encrypted response could not ' +
+                      'be opened: ' + e.message);
+      }
+    } else if (data.response !== undefined) {
+      return refuse(400, 'STS-VC-0073', 'this request asked for an ' +
+                    'unencrypted response (dc_api), and the answer is ' +
+                    'encrypted');
+    }
+    // The audience A.4 requires. The origin is serialised without a trailing
+    // slash (HTML's serialisation, which is what a browser hands a wallet);
+    // the specification's own example has one, so both are read.
+    const withSlash = 'origin:' + dc.origin + '/';
+    const answer = await this.verifyAnswer(record, data.vp_token,
+      { aud: 'origin:' + dc.origin });
+    let result = answer;
+    if (answer.shapeOk && !answer.verified.ok &&
+        this.audienceWas(answer.verified, withSlash)) {
+      result = await this.verifyAnswer(record, data.vp_token,
+                                       { aud: withSlash });
+    }
+    const outcome = this.recordAnswer(record, result, 'dc_api');
+    log.debug("Leaving VcVerifier.answerDcApi(). " +
+              (outcome.ok ? "Signs in." : outcome.errorCode));
+    return { ok: true, status: 200, errorCode: outcome.errorCode, why: '' };
+  }
+
+  // Did a failed verification fail on its audience alone, naming this one?
+  private audienceWas(verified: any, aud: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.audienceWas().");
+    const failed = (verified.checks || []).filter(function (c) {
+      return !c.ok;
+    });
+    log.debug("Leaving VcVerifier.audienceWas().");
+    return failed.length > 0 && failed.every(function (c) {
+      return /audience|Domain/i.test(c.name) &&
+             String(c.detail).indexOf(aud) >= 0;
+    });
+  }
+
+  // Writes a verified answer onto a SIGN-IN transaction — the verdict, the
+  // sign-in outcome, and for the direct_post path the one-time
+  // response_code — through the store. Answers the outcome.
+  private recordAnswer(record: any, answer: any, via: string): any {
+    const { log, errorCodes, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.recordAnswer(). via=" + via);
+    if (!answer.shapeOk) {
+      record.verdict = {
+        ok: false, at: new Date().toISOString(),
+        checks: [{ name: 'vp_token', ok: false, detail: answer.why }]
+      };
+      record.signIn.outcome = this.signInOutcome(null, null);
+      record.signIn.via = via;
+      vpTransactions.set(String(record.state), record);
+      log.debug("Leaving VcVerifier.recordAnswer(). Malformed.");
+      return record.signIn.outcome;
+    }
+    const verified = answer.verified;
+    record.verdict = {
+      ok: verified.ok,
+      at: new Date().toISOString(),
+      checks: verified.checks,
+      claims: verified.claims,
+      disclosed: verified.disclosed,
+      extraDisclosed: verified.extraDisclosed || [],
+      requested: record.requested || [],
+      vct: verified.vct,
+      sub: verified.sub,
+      format: answer.format,
+      presentation: answer.presentation
+    };
+    const outcome = this.signInOutcome(verified, answer);
+    record.signIn.outcome = outcome;
+    record.signIn.via = via;
+    if (!outcome.ok && verified.ok) {
+      log.info(errorCodes.tag(outcome.errorCode) + 'oid4vp: a ' +
+               'presentation verified and signs nobody in: ' +
+               outcome.reason);
+    }
+    vpTransactions.set(String(record.state), record);
+    log.debug("Leaving VcVerifier.recordAnswer(). " + outcome.ok + ".");
+    return outcome;
   }
 
   // The transaction a state names, or null. An expired one is removed on the
@@ -1597,6 +2582,11 @@ class VcVerifier {
     log.debug("Entering VcVerifier.transactionFor().");
     const key = String(state || '');
     const record = key ? vpTransactions.get(key) : null;
+    if (record) {
+      vpTransactionsCount.hit();
+    } else {
+      vpTransactionsCount.miss();
+    }
     if (!record) {
       log.debug("Leaving VcVerifier.transactionFor(). None.");
       return null;
@@ -1675,9 +2665,6 @@ class VcVerifier {
             errorCodes, stats, vpConfig, vpTransactions,
             vpRequests } = this.deps;
     log.debug("Entering VcVerifier.registerRoutes().");
-    // The response endpoint is named as the test for it reads it.
-    const issuerCertificateRevocation =
-        this.issuerCertificateRevocation.bind(this);
     app.get('/oid4vp/verifier', (req, res) => {
       log.debug("Entering the verifier web page. format=" +
                 (req.query.format || 'dc+sd-jwt'));
@@ -1953,87 +2940,61 @@ class VcVerifier {
       }
 
       // vp_token is a JSON object keyed by the DCQL credential query id, each
-      // value an array of presentations (section 8.1).
-      let presentations = [];
-      let tokenShapeOk = true;
-      try {
-        const parsed = typeof body.vp_token === 'string' ?
-                       JSON.parse(body.vp_token) : body.vp_token;
-        const forQuery = parsed && parsed[VP_DCQL_ID];
-        if (Array.isArray(forQuery)) presentations = forQuery;
-        else if (typeof forQuery === 'string') presentations = [forQuery];
-        else tokenShapeOk = false;
-      } catch (e) {
-        log.debug("Caught in VcVerifier.registerRoutes(): " +
-                  ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-VC-0038') +
-                  'the vp_token is not the JSON object OID4VP defines: ' +
-                  e.message);
-        tokenShapeOk = false;
-      }
-      if (!tokenShapeOk || !presentations.length) {
-        record.verdict = {
-          ok: false, at: new Date().toISOString(),
-          checks: [{ name: 'vp_token', ok: false,
-                     detail: 'vp_token must be a JSON object keyed by the ' +
-                         'DCQL credential query id ("' +
-                             VP_DCQL_ID + '"), each value an array of ' +
-                                          'presentations.' }]
-        };
+      // value an array of presentations (section 8.1). Read, verified in the
+      // format its query asked for — so answering a jwt_vc_json query with an
+      // SD-JWT (or the reverse) is refused rather than silently handled by the
+      // other code path — and checked for revocation and status, by
+      // verifyAnswer(), which the Digital Credentials API door shares.
+      const answer = await this.verifyAnswer(record, body.vp_token,
+                                             { aud: record.clientId });
+      if (!answer.shapeOk) {
         if (record.signIn) {
-          record.signIn.outcome = this.signInOutcome(null, '');
+          this.recordAnswer(record, answer, 'direct_post');
+        } else {
+          record.verdict = {
+            ok: false, at: new Date().toISOString(),
+            checks: [{ name: 'vp_token', ok: false, detail: answer.why }]
+          };
+          vpTransactions.set(state, record);  // through the store, as above
         }
-        vpTransactions.set(state, record);  // through the store, as above
         errorCodes.mark(res, 'STS-VC-0038');
         res.status(400).type('application/json').send(JSON.stringify({
           error: 'invalid_request',
           error_description: 'vp_token is not the JSON object OID4VP ' +
-              'section 8.1 defines.'
+              'section 8.1 defines: ' + answer.why
         }));
         log.debug("Leaving the OID4VP response endpoint. Malformed vp_token.");
         return;
       }
-
-      // Verified against the format THIS request asked for, so answering a
-      // jwt_vc_json query with an SD-JWT (or the reverse) is refused rather
-      // than silently handled by the other code path.
-      const verified = record.format === 'ldp_vc'
-        ? await this.verifyLdpVc(presentations[0], record)
-        : record.format === 'jwt_vc_json'
-          ? this.verifyVpJwt(presentations[0], record)
-          : this.verifyPresentation(presentations[0], record);
-      await issuerCertificateRevocation(verified);
-      record.verdict = {
-        ok: verified.ok,
-        at: new Date().toISOString(),
-        checks: verified.checks,
-        claims: verified.claims,
-        disclosed: verified.disclosed,
-        extraDisclosed: verified.extraDisclosed || [],
-        requested: record.requested || [],
-        vct: verified.vct,
-        sub: verified.sub,
-        presentation: presentations[0]
-      };
+      const verified = answer.verified;
       // A SIGN-IN'S SECOND VERDICT (#38): whom, if anybody, this signs in.
       // The browser that started the sign-in reads it; a same-device wallet
       // is handed a one-time `response_code` to take that browser back with
       // (OID4VP section 8.2), and only its SHA-256 is kept.
       let responseCode = '';
       if (record.signIn) {
-        const outcome = this.signInOutcome(verified, presentations[0]);
-        record.signIn.outcome = outcome;
+        const outcome = this.recordAnswer(record, answer, 'direct_post');
         if (outcome.ok) {
           responseCode = this.deps.randomId(24);
           record.signIn.responseCodeHash = crypto.createHash('sha256')
             .update(responseCode, 'utf8').digest('base64url');
-        } else if (verified.ok) {
-          log.info(errorCodes.tag(outcome.errorCode) + 'oid4vp: a ' +
-                   'presentation verified and signs nobody in: ' +
-                   outcome.reason);
+          vpTransactions.set(state, record);  // through the store, as above
         }
+      } else {
+        record.verdict = {
+          ok: verified.ok,
+          at: new Date().toISOString(),
+          checks: verified.checks,
+          claims: verified.claims,
+          disclosed: verified.disclosed,
+          extraDisclosed: verified.extraDisclosed || [],
+          requested: record.requested || [],
+          vct: verified.vct,
+          sub: verified.sub,
+          presentation: answer.presentation
+        };
+        vpTransactions.set(state, record);  // through the store, as above
       }
-      vpTransactions.set(state, record);  // through the store, as above
       logArtifact('OID4VP verification result',
                   verified.ok ? 'accepted' : 'REFUSED', record.verdict);
 
@@ -2046,7 +3007,8 @@ class VcVerifier {
         // revocation is named for that, so an operator is sent to the
         // certificate rather than to the wallet.
         errorCodes.mark(res, (verified.revocationRefused && failed.length === 1)
-          ? 'STS-PKI-0129' : 'STS-VC-0041');
+          ? 'STS-PKI-0129' : verified.statusRefused ? 'STS-VC-0072' :
+          'STS-VC-0041');
         res.status(400).type('application/json').send(JSON.stringify({
           error: 'invalid_request',
           error_description: 'The presentation was refused: ' +
@@ -2235,6 +3197,10 @@ export = {
   vpRequestQuery: slot.forward('vpRequestQuery'),
   vpWalletFor: slot.forward('vpWalletFor'),
   signInOutcome: slot.forward('signInOutcome'),
+  signInFormats: slot.forward('signInFormats'),
+  verifyAnswer: slot.forward('verifyAnswer'),
+  answerDcApi: slot.forward('answerDcApi'),
+  dcApiRequestFor: slot.forward('dcApiRequestFor'),
   transactionFor: slot.forward('transactionFor'),
   saveTransaction: slot.forward('saveTransaction'),
   // For `logout/logout.ts`'s `wallet-signin` family.

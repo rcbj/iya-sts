@@ -1227,6 +1227,24 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7519',
     coverage: 'full: every token this service issues is an RS256 JWT that ' +
               'verifies against the published JWKS.' },
+  { id: 'rfc7516', name: 'RFC 7516 — JSON Web Encryption',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7516',
+    coverage: 'partial: compact serialization, RSA-OAEP, ECDH-ES and the ' +
+              'key-wrapping and direct algorithms common/crypto.js ' +
+              'implements; no JSON serialization, no compression.' },
+  { id: 'rfc8176', name: 'RFC 8176 — Authentication Method Reference ' +
+                          'Values',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8176',
+    coverage: 'partial: pwd, otp, hwk, pop and mfa are asserted, each where ' +
+              'the evidence says so, and no value is invented.' },
+  { id: 'rfc8392', name: 'RFC 8392 — CBOR Web Token',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8392',
+    coverage: 'partial: the Status List Token in CWT form is the one CWT ' +
+              'this service issues.' },
+  { id: 'rfc9052', name: 'RFC 9052 — CBOR Object Signing and Encryption',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9052',
+    coverage: 'partial: COSE_Sign1 with the JOSE algorithms this service ' +
+              'signs with and ML-DSA; no COSE encryption or MAC.' },
   { id: 'rfc7591', name: 'RFC 7591 — Dynamic Client Registration',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7591',
     coverage: 'full: registers a client, returns its credentials and a ' +
@@ -1826,20 +1844,32 @@ const SPECS: Spec[] = [
               'Offers (Appendix H.1/H.2/H.3), the pre-authorized code grant ' +
               'with tx_code, credential_identifiers, request and response ' +
               'encryption (section 10), and the Notification Endpoint ' +
-              '(section 11).' },
+              '(section 11). Key attestations (Appendix D) in a jwt ' +
+              'proof\'s header and as the attestation proof type, ' +
+              'verified against configured certificates; status lists for ' +
+              'every credential; credentials signed with post-quantum ' +
+              'algorithms. No wallet attestation (Appendix E).' },
   { id: 'oid4vp', name: 'OpenID for Verifiable Presentations 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-presentations-1_0.html',
     coverage: 'partial: Authorization Requests by value and as a signed ' +
               'Request Object by reference, response_mode=direct_post, a ' +
-              'DCQL query, and full verification of what comes back. Since ' +
-              '2026-09-17 a presentation can SIGN SOMEBODY IN at ' +
-              '/authn/wallet — same-device with the section 8.2 ' +
-              'response_code, cross-device by QR code — but only a ' +
-              'holder-bound SD-JWT VC this realm issued, and only as the ' +
-              'directory entry it was issued for; anything else verifies and ' +
-              'signs nobody in. No presentation_definition (DIF PE) — DCQL ' +
-              'only; no Digital Credentials API; no wallet attestation.' },
+              'DCQL query (credential_sets included), and full verification ' +
+              'of what comes back in all three formats — a Key Binding JWT, ' +
+              'a VP JWT with nonce, aud and iat, a VerifiablePresentation ' +
+              'with a Data Integrity proof (B.1.3.2.5) — and each ' +
+              'credential\'s status. Since 2026-09-17 a presentation can ' +
+              'SIGN SOMEBODY IN at /authn/wallet — through the Digital ' +
+              'Credentials API (Appendix A: openid4vp-v1-signed, ' +
+              'expected_origins, dc_api.jwt or dc_api, the origin: ' +
+              'audience), same-device with the section 8.2 response_code, ' +
+              'and by a plain QR code only where oid4vp.signInCrossDevice is ' +
+              'on — but only a holder-bound credential this realm issued, ' +
+              'in any of the three formats, and only as the directory entry ' +
+              'it was issued for; anything else verifies and signs nobody ' +
+              'in. No presentation_definition (DIF PE) — DCQL only; no ' +
+              'unsigned or multi-signed DC API request; no mso_mdoc; no ' +
+              'wallet attestation; no transaction_data.' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +
@@ -1858,6 +1888,39 @@ const SPECS: Spec[] = [
     where: 'W3C', url: 'https://www.w3.org/TR/vc-data-model-2.0/',
     coverage: 'partial: the VC-JWT encoding of VCDM 1.1 (jwt_vc_json) and ' +
               'VCDM 2.0 credentials with an embedded proof (ldp_vc).' },
+  { id: 'di-jcs', name: 'W3C Data Integrity — ecdsa-jcs-2019, ' +
+                        'eddsa-jcs-2022 and mldsa44-jcs-2024',
+    where: 'W3C', url: 'https://www.w3.org/TR/vc-di-ecdsa/',
+    coverage: 'partial: verification (and signing, for tests) of a ' +
+              'holder\'s proof on a VerifiablePresentation — P-256 and ' +
+              'P-384, Ed25519, and ML-DSA-44 from the Quantum-Resistant ' +
+              'Cryptosuites draft — with did:jwk and did:key verification ' +
+              'methods. No RDF-canonicalized suites, no proof chains.' },
+  { id: 'token-status-list',
+    name: 'Token Status List (draft-ietf-oauth-status-list-21)',
+    where: 'IETF',
+    url: 'https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/',
+    coverage: 'partial: a list per realm, two bits per credential (VALID, ' +
+              'INVALID, SUSPENDED), served as a Status List Token in JWT and ' +
+              'CWT form by Accept, with ttl and exp, an aggregation ' +
+              'endpoint, and the status claim in every SD-JWT VC and ' +
+              'jwt_vc_json credential; the Verifier resolves a trusted ' +
+              'foreign issuer\'s list and refuses when no statement can be ' +
+              'made. No historical resolution (501), no redirects followed, ' +
+              'no mdoc (none is issued).' },
+  { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
+    where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
+    coverage: 'partial: revocation and suspension lists per realm, served ' +
+              'as a BitstringStatusListCredential secured as a JWT, and a ' +
+              'BitstringStatusListEntry for each purpose in every ' +
+              'jwt_vc_json and ldp_vc credential; the Verifier reads them. ' +
+              'statusSize 1 only; no statusMessage.' },
+  { id: 'dc-api', name: 'W3C Digital Credentials API',
+    where: 'W3C', url: 'https://www.w3.org/TR/digital-credentials/',
+    coverage: 'partial: the wallet sign-in page calls ' +
+              'navigator.credentials.get({ digital }) with one signed ' +
+              'OpenID4VP request and posts the answer; nothing else here ' +
+              'uses it.' },
   { id: 'di-bbs', name: 'W3C Data Integrity — bbs-2023 cryptosuite',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-bbs/',
     coverage: 'full for base proofs and derived proofs over BLS12-381, ' +
@@ -4973,6 +5036,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'single connection the page borrows. Empty with a sentence saying ' +
           'WHICH of three reasons unless persistence.mode is postgres. Add ' +
           '?format=json, or GET /admin-api/database.' },
+  { path: '/admin/vc-status', group: 'Admin',
+    name: 'Credential status',
+    specs: ['token-status-list', 'bitstring-status-list'],
+    effect: 'suspends, reinstates or revokes one issued credential',
+    what: 'NON-SPEC. This realm\'s status lists: where each is served, the ' +
+          'list size and ttl, and every issued credential\'s index, format ' +
+          'and status — computed from what was set here, an administrator\'s ' +
+          'revocation on /admin/tokens and a global sign-out\'s disown — ' +
+          'with Suspend, Reinstate and Revoke. Add ?format=json.' },
   { path: '/admin/caches', group: 'Admin',
     name: 'Every cache this service holds, and one cache\'s entries',
     specs: [],
@@ -5389,9 +5461,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'the wallet it sends a holder to (which falls back to the OID4VCI ' +
           'one, since it is the same wallet in every arrangement this ' +
           'service is used in), the Key Binding JWT\'s maximum age, the ' +
-          'claims asked for by default, and the four that govern signing in ' +
-          'with a wallet at /authn/wallet (oid4vp.signIn, its lifetime, its ' +
-          'refresh and its QR code). The DCQL query itself is ' +
+          'claims asked for by default, the ones that govern signing in ' +
+          'with a wallet at /authn/wallet (oid4vp.signIn, its lifetime, the ' +
+          'QR page\'s refresh, the QR code, the formats and the Digital ' +
+          'Credentials API response mode), and how long a fetched status ' +
+          'list is kept. The DCQL query itself is ' +
           '/admin/vc-verifier-config. Add ?format=json.' },
   { path: '/admin/kerberos', group: 'Admin', name: 'Kerberos settings',
     specs: ['rfc4120', 'rfc3961', 'rfc4178', 'rfc4559', 'ms-kkdcp', 'ms-sfu'],
@@ -5753,6 +5827,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'and `why` says which of three reasons. No connection string is in ' +
           'the reply and nothing here changes anything. Mirrors GET ' +
           '/admin/database.' },
+  { path: '/admin-api/vc-status', group: 'Management API',
+    name: 'Credential status', specs: ['token-status-list', 'openapi'],
+    what: 'NON-SPEC. GET /admin/vc-status over JSON.' },
+  { path: '/admin-api/vc-status/:action', group: 'Management API',
+    name: 'Credential status actions', specs: ['openapi'],
+    what: 'NON-SPEC. suspend, reinstate and revoke, with { idx }: the ' +
+          'console\'s three buttons.' },
   { path: '/admin-api/caches', group: 'Management API',
     name: 'Caches', specs: [],
     what: 'NON-SPEC (#74). Everything /admin/caches draws, as JSON: every ' +
@@ -7697,37 +7778,75 @@ const ENDPOINTS: EndpointEntry[] = [
           'and it then answers 403 saying so rather than 404.' },
   { path: '/authn/wallet', group: 'Authentication',
     name: 'Sign in with a wallet',
-    specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'oidc'],
-    effect: 'builds an OpenID4VP request bound to the pending sign-in, sets ' +
-            'the browser-binding cookie and redirects to the wait page',
+    specs: ['oid4vp', 'dc-api', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'oidc'],
+    effect: 'builds an OpenID4VP request bound to the pending sign-in (or to ' +
+            'a second-factor step), sets the browser-binding cookie and ' +
+            'redirects to the wait page',
     what: 'A VERIFIED PRESENTATION AS A SIGN-IN (2026-09-17). Offered on ' +
           '/authn/login to every flow in progress, like the Kerberos ' +
-          'button: it takes ?authn= and NEVER a returnTo. The request is ' +
-          'always by reference (signed) and asks for this issuer\'s SD-JWT ' +
-          'VC and its subject only. Only a credential THIS REALM issued, on ' +
-          'an access token it verified, for a person — recorded at issuance, ' +
-          'because the credential endpoint accepts tokens it did not issue — ' +
-          'and presented with a Key Binding JWT against its cnf key signs ' +
-          'anybody in, and it signs in the directory entry it was issued ' +
-          'for. Withheld from a request demanding two factors: the session ' +
-          'claims amr ["pop"] and acr "1". oid4vp.signIn turns it off, and ' +
-          'it then answers 403 saying so.' },
+          'button: it takes ?authn= (or ?mfa=, a wallet as the second ' +
+          'factor after a password) and NEVER a returnTo. The request is ' +
+          'always signed, asks for this issuer\'s credential in every ' +
+          'format oid4vp.signInFormats names (a credential query each and ' +
+          'a credential set), and is offered through the Digital ' +
+          'Credentials API as well (openid4vp-v1-signed, expected_origins). ' +
+          'Only a credential THIS REALM issued, on an access token it ' +
+          'verified and nobody disowned, for a person, not disowned since, ' +
+          'with a status of VALID, and presented with a fresh holder proof ' +
+          'signs anybody in — as the directory entry it was issued for. ' +
+          'amr ["pop"] and acr "1", or hwk and acr "mfa" where a verified ' +
+          'key attestation says so; a request demanding two factors is ' +
+          'asked for a second after the wallet. appAuthnMechanism: wallet ' +
+          'sends an application\'s people straight here. oid4vp.signIn ' +
+          'turns it off, and it then answers 403 saying so.' },
   { path: '/authn/wallet/wait', group: 'Authentication',
     name: 'Wallet sign-in: wait, and finish',
-    specs: ['oid4vp', 'oidc'],
+    specs: ['oid4vp', 'dc-api', 'oidc'],
     effect: 'once the wallet has answered, establishes the browser session ' +
-            'and returns to whatever was interrupted',
-    what: 'The page the browser waits on: the same-device wallet link and a ' +
-          'server-drawn QR code (oid4vp.signInCrossDevice), reloaded by a ' +
-          '<meta> refresh every oid4vp.signInPollS seconds — NO SCRIPT. Once ' +
-          'the wallet has answered it either signs the browser in or says ' +
-          'why nobody was: the presentation did not verify, the credential ' +
-          'was a trusted foreign issuer\'s, this realm has no record of ' +
-          'issuing it to a person on a token it verified, or the entry is ' +
-          'gone. It finishes ONLY in the browser that started the sign-in ' +
-          '(a hashed binding cookie), ONLY with the right response_code ' +
-          'where one is carried (OpenID4VP section 8.2), and ONCE — across ' +
-          'a cluster too; the transaction lives oid4vp.signInTtlS.' },
+            '(or asks for a second factor) and returns to whatever was ' +
+            'interrupted',
+    what: 'The page the browser waits on: a Digital Credentials API button ' +
+          '— the one scripted exception on this path, /authn/wallet.js — ' +
+          'the same-device wallet link, and, only where ' +
+          'oid4vp.signInCrossDevice is on (off by default), a link to a ' +
+          'server-drawn QR code page (?qr=1) that polls with a <meta> ' +
+          'refresh. Once the wallet has answered it either signs the ' +
+          'browser in or says why nobody was: the presentation did not ' +
+          'verify, the credential was a trusted foreign issuer\'s, this ' +
+          'realm has no record of issuing it to a person on a token it ' +
+          'verified, it was disowned or its status is not VALID, or the ' +
+          'entry is gone. It finishes ONLY in the browser that started the ' +
+          'sign-in (a hashed binding cookie), ONLY with the right ' +
+          'response_code where one is carried (OpenID4VP section 8.2), and ' +
+          'ONCE — across a cluster too; the transaction lives ' +
+          'oid4vp.signInTtlS.' },
+  { path: '/authn/wallet/dc-api', group: 'Authentication',
+    name: 'Wallet sign-in: the Digital Credentials API answer',
+    specs: ['oid4vp', 'dc-api', 'rfc7516'],
+    effect: 'verifies the wallet\'s answer and signs the posting browser in',
+    what: 'What the wait page\'s script posts: the DigitalCredential ' +
+          'navigator.credentials.get() returned (OpenID4VP Appendix A.4), ' +
+          'decrypted where the request asked for dc_api.jwt, verified with ' +
+          'origin:<origin> as the audience, and answered once. Accepted only ' +
+          'from the browser that started the sign-in and from this ' +
+          'service\'s own origin (STS-VC-0074). An empty form — the ' +
+          'script did not run — is answered with the same-device link ' +
+          '(STS-VC-0081).' },
+  { path: '/authn/wallet.js', group: 'Authentication',
+    name: 'Wallet sign-in script',
+    specs: ['dc-api'],
+    what: 'NON-SPEC. The one static script the wait page loads under ' +
+          'script-src \'self\': it calls the Digital Credentials API with ' +
+          'the request on the page and submits the answer in a real form.' },
+  { path: '/authn/password-factor', group: 'Authentication',
+    name: 'Password as the second factor',
+    specs: ['oidc', 'rfc8176'],
+    effect: 'establishes the sign-on session once the password verifies',
+    what: 'After a wallet sign-in on a request that demands two factors, ' +
+          'for a person who holds no authenticator app or security key: ' +
+          'their password, checked as the sign-in screen checks one and ' +
+          'rate limited on the same bucket. The session records amr ' +
+          '["pop","pwd"] and acr "mfa". No script.' },
   { path: '/authn/webauthn', group: 'Authentication', name: 'WebAuthn ' +
       'security-key step',
     specs: ['oidc', 'webauthn'],
@@ -8250,9 +8369,31 @@ const ENDPOINTS: EndpointEntry[] = [
              'rfc7800', 'rfc7515',
              'rfc6750'],
     what: 'Mints dc+sd-jwt, jwt_vc_json or ldp_vc per the configuration ' +
-          'asked for. Verifies the wallet\'s proof, supports batch issuance, ' +
-          'and accepts an encrypted request and/or returns an encrypted ' +
-          'response.' },
+          'asked for, each carrying its status-list reference. Verifies the ' +
+          'wallet\'s proof — a jwt proof, with a key attestation in its ' +
+          'header where one is sent or required, or the attestation proof ' +
+          'type — supports batch issuance, and accepts an encrypted request ' +
+          'and/or returns an encrypted response.' },
+  { path: '/oid4vci/status-lists/1', group: 'VC Issuance (OID4VCI)',
+    name: 'Token Status List',
+    specs: ['token-status-list', 'rfc7519', 'rfc8392', 'rfc9052'],
+    what: 'This realm\'s Status List Token: application/statuslist+jwt, or ' +
+          'application/statuslist+cwt when Accept asks for it (a ' +
+          'COSE_Sign1, not CWT-tagged). Two bits per credential; ttl ' +
+          'oid4vci.statusListTtlS, exp oid4vci.statusListLifetimeS, signed ' +
+          'with the credential key. ?time= answers 501: no historical ' +
+          'lists are kept.' },
+  { path: '/oid4vci/status-lists', group: 'VC Issuance (OID4VCI)',
+    name: 'Status List Aggregation',
+    specs: ['token-status-list'],
+    what: 'The status_lists this realm publishes (section 9.3): one.' },
+  { path: '/oid4vci/status-lists/bitstring/:purpose',
+    group: 'VC Issuance (OID4VCI)',
+    name: 'Bitstring Status List credential',
+    specs: ['bitstring-status-list', 'vcdm', 'rfc7519'],
+    what: 'This realm\'s BitstringStatusListCredential for revocation or ' +
+          'suspension, as application/vc+jwt: a GZIP bitstring of 131,072 ' +
+          'entries, index 0 first, signed with the credential key.' },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +
@@ -8352,8 +8493,10 @@ const ENDPOINTS: EndpointEntry[] = [
       'URI',
     specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'di-bbs', 'rdf-c14n', 'vcdm'],
     what: 'Where the wallet POSTs the vp_token, and where it is really ' +
-          'verified: issuer signature, every Disclosure digest against _sd, ' +
-          'the Key Binding JWT including sd_hash, the validity window, and ' +
+          'verified: issuer signature (post-quantum included), every ' +
+          'Disclosure digest against _sd, the Key Binding JWT including ' +
+          'sd_hash — or the VP JWT, or the Data Integrity holder proof — ' +
+          'the validity window, the credential\'s status list, and ' +
           'whether the claims asked for arrived. For a transaction started ' +
           'at /authn/wallet it also decides WHOM the presentation signs in, ' +
           'answers once, and sends a same-device wallet back with a ' +
@@ -8993,13 +9136,18 @@ const PROTOCOLS: Protocol[] = [
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
              'Decentralized Identifiers'],
-    specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core'],
+    specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core',
+            'token-status-list', 'bitstring-status-list', 'dc-api',
+            'di-jcs'],
     what: 'Both sides of it: an issuer (three credential formats, Credential ' +
           'Offers, pre-authorized codes, deferred and batch issuance, ' +
-          'notifications) and a verifier that checks a presentation properly ' +
-          '— every disclosure digest, the key binding, and whether what was ' +
-          'asked for arrived — and, at /authn/wallet, signs in the holder of ' +
-          'a credential this realm issued (the Authentication group).' }
+          'notifications, status lists, key attestations) and a verifier ' +
+          'that checks a presentation properly — every disclosure digest, ' +
+          'the holder proof, the status, and whether what was asked for ' +
+          'arrived — and, at /authn/wallet, signs in the holder of a ' +
+          'credential this realm issued, in any of the three formats and ' +
+          'through the Digital Credentials API (the Authentication ' +
+          'group).' }
 ];
 // Groups of endpoints that are NOT a protocol family, and so are not expected
 // to be claimed by a row above. Four, and each is the service talking about

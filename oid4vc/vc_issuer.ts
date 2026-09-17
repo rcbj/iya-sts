@@ -99,11 +99,35 @@ import vcOffers = require('./vc_offers');
 // LIBRARY (rule 3) requiring only `common/` leaves, so this require closes no
 // cycle and moves no route. See `rememberIssued()` below.
 import vcIssued = require('./vc_issued');
+// THE STATUS LISTS (#38's follow-ups): every credential carries a reference
+// into them, and they sign with the key a credential is signed with. A
+// library and route module requiring only `common/` libraries, its codec and
+// the outbound fetcher, none of which requires this file.
+import vcStatus = require('./vc_status');
+// THE HOLDER'S DATA INTEGRITY PROOF (#38's follow-ups): the did:jwk an ldp_vc
+// names its holder by, and which key types a proof can be made with. A pure
+// library over `common/` leaves.
+import vcDataIntegrity = require('./vc_data_integrity');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" a c_nonce is spent
 // through — see spendProofNonces(). A LIBRARY that registers no route and
 // requires persistence lazily, so it moves no route and closes no cycle.
 import clusterClaims = require('../cluster/cluster_claims');
 import capabilities = require('../cluster/cluster_capabilities');
+
+// THE HOLDER KEYS AN ldp_vc MAY BE BOUND TO (#38's follow-ups): the JOSE
+// algorithms whose keys a Data Integrity cryptosuite `vc_data_integrity.ts`
+// verifies can prove at presentation — P-256 and P-384 (ecdsa-jcs-2019),
+// Ed25519 (eddsa-jcs-2022) and ML-DSA-44 (mldsa44-jcs-2024, the one
+// quantum-resistant JCS suite the W3C draft defines). A key of any other kind
+// would be bound to a credential it could never present.
+const LDP_HOLDER_ALGS = ['ES256', 'ES384', 'EdDSA', 'ML-DSA-44'];
+
+// THE ALGORITHMS A KEY ATTESTATION MAY BE SIGNED WITH: its signer is named by
+// a certificate, whose key this service reads into a node KeyObject — every
+// asymmetric algorithm but the post-quantum ones, which it cannot.
+const ATTESTATION_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(function (alg) {
+  return stsCrypto.JWS_ALGS[alg].family !== 'pq';
+});
 
 // The express application's route-adding surface, as `registerRoutes()`
 // uses it.
@@ -152,6 +176,8 @@ interface VcIssuerDeps {
   stsDid: typeof vcDid.stsDid;
   vcClaims: typeof vcClaims;
   vcIssued: typeof vcIssued;
+  vcStatus: typeof vcStatus;
+  vcDataIntegrity: typeof vcDataIntegrity;
   deferredIntervalS: typeof vcOffers.deferredIntervalS;
   deferredReadyMs: typeof vcOffers.deferredReadyMs;
   deferredAccessTokens: typeof vcOffers.deferredAccessTokens;
@@ -376,6 +402,8 @@ class VcIssuer {
       stsDid: vcDid.stsDid,
       vcClaims: vcClaims,
       vcIssued: vcIssued,
+      vcStatus: vcStatus,
+      vcDataIntegrity: vcDataIntegrity,
       deferredIntervalS: vcOffers.deferredIntervalS,
       deferredReadyMs: vcOffers.deferredReadyMs,
       deferredAccessTokens: vcOffers.deferredAccessTokens,
@@ -437,29 +465,33 @@ class VcIssuer {
   // THE ALGORITHM A JOSE CREDENTIAL IS SIGNED WITH, AND THE KEY THAT SIGNS IT.
   //
   // `oid4vci.credentialSigningAlgorithm` names one of the algorithms this realm
-  // holds a synchronous key for — the RSA key and the curve keys; no
-  // post-quantum algorithm, because the builders sign on the request thread —
-  // and `helpers.signingKeyFor()` is the one answer to which key that is. RS256
-  // takes the exact path it always took (`STS.privateKey`, `STS.kid`), so an
-  // untouched service signs as it did.
+  // holds a key for — the RSA key, the curve keys and, since #38's
+  // follow-ups, the post-quantum ones (ML-DSA, SLH-DSA and the composites) —
+  // and `vc_status.ts`'s `signerAsync()` is the one answer to which key that
+  // is: the status lists are signed with the same key as the credentials
+  // they describe, so a verifier resolves one key per issuer. It is
+  // asynchronous because a post-quantum key set is generated in the worker
+  // pool and a post-quantum signature is made there; RS256 takes the exact
+  // path it always took (`STS.privateKey`, `STS.kid`).
   //
   // `kid` is the INTERNAL name, which `certificateHeaderFor()` finds the key
   // by; `headerKid` is what the credential's header carries, which
   // `keys.kidFormat` decides (common/jose_kid.js).
-  private credentialSigner() {
-    const { log, STS, signingKeyFor, publishedKidFor, config } = this.deps;
-    log.debug("Entering VcIssuer.credentialSigner().");
-    const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
-                       'RS256');
-    if (alg === 'RS256') {
-      log.debug("Leaving VcIssuer.credentialSigner(). RS256.");
-      return { alg: 'RS256', key: STS.privateKey, kid: STS.kid,
-               headerKid: publishedKidFor(STS.kid) };
-    }
-    const signer = signingKeyFor(alg);
-    log.debug("Leaving VcIssuer.credentialSigner(). " + alg + ".");
-    return { alg: alg, key: signer.key, kid: signer.kid,
-             headerKid: publishedKidFor(signer.kid) };
+  private credentialSignerAsync() {
+    const { log, vcStatus } = this.deps;
+    log.debug("Entering VcIssuer.credentialSignerAsync().");
+    log.debug("Leaving VcIssuer.credentialSignerAsync().");
+    return vcStatus.signerAsync();
+  }
+
+  // The algorithm alone, for the metadata — which must not generate a key set
+  // to say which one it would use.
+  private credentialSigningAlg(): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcIssuer.credentialSigningAlg().");
+    log.debug("Leaving VcIssuer.credentialSigningAlg().");
+    return String(config.value('oid4vci.credentialSigningAlgorithm') ||
+                  'RS256');
   }
 
   private encValuesFrom(settingKey) {
@@ -536,11 +568,9 @@ class VcIssuer {
       scope: VCI_SCOPE,
       vct: VCI_VCT,
       cryptographic_binding_methods_supported: ['jwk'],
-      credential_signing_alg_values_supported: [this.credentialSigner().alg],
-      proof_types_supported: {
-        jwt: { proof_signing_alg_values_supported:
-                 stsCrypto.JWS_ASYMMETRIC_ALGS }
-      },
+      credential_signing_alg_values_supported: [this.credentialSigningAlg()],
+      proof_types_supported:
+        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
       display: [{
         name: 'Identity Credential',
         locale: 'en-US',
@@ -567,11 +597,9 @@ class VcIssuer {
       scope: VCI_JWT_SCOPE,
       credential_definition: { type: VCI_JWT_TYPES },
       cryptographic_binding_methods_supported: ['jwk'],
-      credential_signing_alg_values_supported: [this.credentialSigner().alg],
-      proof_types_supported: {
-        jwt: { proof_signing_alg_values_supported:
-                 stsCrypto.JWS_ASYMMETRIC_ALGS }
-      },
+      credential_signing_alg_values_supported: [this.credentialSigningAlg()],
+      proof_types_supported:
+        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
       display: [{
         name: 'Identity Credential (JWT VC, no selective disclosure)',
         locale: 'en-US',
@@ -590,12 +618,15 @@ class VcIssuer {
                      bbs2023.IDENTITY_CONTEXT_URL],
         type: VCI_JWT_TYPES
       },
-      cryptographic_binding_methods_supported: ['did:key'],
+      // `did:jwk` — what buildLdpVc() names the holder by, and what the
+      // holder's Data Integrity proof at sign-in is verified against. It said
+      // `did:key` while the credential carried a `did:jwk`.
+      cryptographic_binding_methods_supported: ['did:jwk'],
       credential_signing_alg_values_supported: ['bbs-2023'],
-      proof_types_supported: {
-        jwt: { proof_signing_alg_values_supported:
-                 stsCrypto.JWS_ASYMMETRIC_ALGS }
-      },
+      // Only the algorithms a Data Integrity cryptosuite exists for: a key of
+      // any other kind could be bound and never proved at presentation, so
+      // the credential would verify and never sign its holder in.
+      proof_types_supported: this.proofTypesSupported(LDP_HOLDER_ALGS),
       display: [{
         name: 'Identity Credential (ldp_vc, BBS selective disclosure)',
         locale: 'en-US', background_color: '#4a148c', text_color: '#FFFFFF'
@@ -738,6 +769,183 @@ class VcIssuer {
     log.debug("Leaving VcIssuer.sendJwtVcIssuerMetadata().");
   }
 
+  // ---------------------------------------------------------------------------
+  // KEY ATTESTATIONS (OpenID4VCI 1.0 Appendix D, #38's follow-ups).
+  //
+  // A wallet may say how its key is kept: a `key-attestation+jwt`, signed by
+  // its Wallet Provider or its key storage, naming the attested keys and the
+  // attack potential the key storage (`key_storage`) and the user
+  // authentication guarding it (`user_authentication`) resist, on ISO 18045's
+  // scale. This issuer takes one in both places the specification defines —
+  // the `key_attestation` header of a `jwt` proof (F.1), and the `attestation`
+  // proof type (F.3) — and believes it only when it verifies against a
+  // certificate in `oid4vci.keyAttestationTrustedCertificates`, either
+  // directly or as the issuer of the attestation's own `x5c` leaf. What it
+  // attests is RECORDED on the sign-in register (`vc_issued.ts`) with the
+  // credential issued for that key, and that is where a wallet sign-in's
+  // `amr` and `acr` come from (`vc_verifier.ts`'s `assuranceOf()`): nothing a
+  // presentation says about itself is believed.
+  //
+  // `oid4vci.keyAttestationRequired` makes one REQUIRED: the metadata says so
+  // (`key_attestations_required`) and a proof without one is refused. Off by
+  // default, where an attestation is still verified and recorded if sent.
+  // ---------------------------------------------------------------------------
+  private proofTypesSupported(algs: string[]): any {
+    const { log, config } = this.deps;
+    log.debug("Entering VcIssuer.proofTypesSupported().");
+    const jwt: any = { proof_signing_alg_values_supported: algs };
+    const attestation: any = { proof_signing_alg_values_supported:
+                                 ATTESTATION_ALGS };
+    if (config.value('oid4vci.keyAttestationRequired') === true) {
+      jwt.key_attestations_required = {};
+      attestation.key_attestations_required = {};
+    }
+    log.debug("Leaving VcIssuer.proofTypesSupported().");
+    return { jwt: jwt, attestation: attestation };
+  }
+
+  private attesterKeys(): any[] {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering VcIssuer.attesterKeys().");
+    const text = String(config.value(
+      'oid4vci.keyAttestationTrustedCertificates') || '');
+    const blocks = text.match(
+      /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+    const out: any[] = [];
+    blocks.forEach(function (pem, i) {
+      try {
+        out.push({ label: 'trusted key attester ' + (i + 1),
+                   cert: new crypto.X509Certificate(pem) });
+      } catch (e) {
+        log.debug("Caught in VcIssuer.attesterKeys(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-VC-0085') +
+                  'oid4vci.keyAttestationTrustedCertificates: certificate ' +
+                  (i + 1) + ' could not be read and is ignored: ' + e.message);
+      }
+    });
+    log.debug("Leaving VcIssuer.attesterKeys(). " + out.length + ".");
+    return out;
+  }
+
+  // Verifies one key attestation and answers what it attests. Throws with
+  // the reason. `opts.proofJwk` — the key a `jwt` proof was signed with, which
+  // must be one of the attested keys (Appendix D.1); `opts.expRequired` —
+  // true for that proof type, where `exp` is required.
+  verifyKeyAttestation(token: string, opts: { proofJwk?: any;
+                                               expRequired?: boolean }): any {
+    const { log, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
+    log.debug("Entering VcIssuer.verifyKeyAttestation().");
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3) {
+      throw new Error('the key attestation is not a three-part JWS.');
+    }
+    let header: any;
+    try {
+      header = jsonFromB64u(parts[0]);
+    } catch (e) {
+      log.debug("Caught in VcIssuer.verifyKeyAttestation(): " +
+                ((e && e.message) || e));
+      throw new Error('the key attestation header cannot be read.');
+    }
+    if (header.typ !== 'key-attestation+jwt') {
+      throw new Error('a key attestation\'s typ must be ' +
+                      'key-attestation+jwt, not "' + header.typ + '".');
+    }
+    if (ATTESTATION_ALGS.indexOf(header.alg) < 0) {
+      throw new Error('the key attestation is signed with "' + header.alg +
+                      '", and this issuer accepts ' +
+                      ATTESTATION_ALGS.join(', ') + '.');
+    }
+    const trusted = this.attesterKeys();
+    const candidates: any[] = trusted.map(function (t) {
+      return { label: t.label, key: t.cert.publicKey };
+    });
+    if (Array.isArray(header.x5c) && header.x5c.length) {
+      try {
+        const leaf = new crypto.X509Certificate(
+          Buffer.from(String(header.x5c[0]), 'base64'));
+        trusted.forEach(function (t) {
+          if (leaf.checkIssued(t.cert) && leaf.verify(t.cert.publicKey)) {
+            candidates.unshift({ label: 'a certificate ' + t.label +
+                                        ' issued', key: leaf.publicKey });
+          }
+        });
+      } catch (e) {
+        // An x5c that cannot be read names nobody; the trusted certificates
+        // themselves are still tried below.
+        log.debug("Caught in VcIssuer.verifyKeyAttestation(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    let claims: any = null;
+    let by = '';
+    let last = 'no certificate in oid4vci.keyAttestationTrustedCertificates ' +
+               'verifies it';
+    for (let i = 0; i < candidates.length && !claims; i++) {
+      try {
+        claims = stsCrypto.verifyJws(String(token), candidates[i].key,
+                                     { algorithms: [header.alg] });
+        by = candidates[i].label;
+      } catch (e) {
+        log.debug("Caught in VcIssuer.verifyKeyAttestation(): " +
+                  ((e && e.message) || e));
+        last = e.message;
+      }
+    }
+    if (!claims) {
+      throw new Error('the key attestation does not verify: ' + last);
+    }
+    if (!claims.iat) {
+      throw new Error('the key attestation carries no iat.');
+    }
+    if (opts.expRequired && !claims.exp) {
+      throw new Error('a key attestation in a jwt proof must carry exp ' +
+                      '(OpenID4VCI Appendix D.1).');
+    }
+    const keys = [].concat(claims.attested_keys || []).filter(function (k) {
+      return !!k && typeof k === 'object' && !k.d && !k.priv;
+    });
+    if (!keys.length) {
+      throw new Error('the key attestation attests no public key.');
+    }
+    if (opts.proofJwk) {
+      const wanted = stsCrypto.jwkThumbprint(opts.proofJwk, {});
+      const named = keys.some(function (k) {
+        try {
+          return stsCrypto.jwkThumbprint(k, {}) === wanted;
+        } catch (e) {
+          // A key with no thumbprint is not the proof's key.
+          log.debug("Caught in VcIssuer.verifyKeyAttestation(): " +
+                    ((e && e.message) || e));
+          return false;
+        }
+      });
+      if (!named) {
+        throw new Error('the proof is signed by a key its key attestation ' +
+                        'does not attest.');
+      }
+    } else {
+      // THE `attestation` PROOF TYPE: the attestation is the proof, so its
+      // nonce is the c_nonce (Appendix F.3).
+      const expires = vciNonces.get(claims.nonce);
+      if (!expires || expires < Date.now()) {
+        throw new Error('the key attestation\'s nonce is not a c_nonce this ' +
+                        'issuer handed out (or it was already used).');
+      }
+    }
+    const levels = function (v: unknown): string[] {
+      log.debug("Entering levels().");
+      log.debug("Leaving levels().");
+      return [].concat(v || []).map(String);
+    };
+    const out = { keys: keys, keyStorage: levels(claims.key_storage),
+                  userAuthentication: levels(claims.user_authentication),
+                  attester: by };
+    log.debug("Leaving VcIssuer.verifyKeyAttestation(). By " + by + ".");
+    return out;
+  }
+
   // --- the wallet's proof of possession --------------------------------------
   // A JWT proof (OID4VCI): typ openid4vci-proof+jwt, the holder's public key in
   // the header as a JWK, and claims binding it to this issuer and to a c_nonce
@@ -839,8 +1047,21 @@ class VcIssuer {
     }
     logArtifact('OID4VCI proof of possession', 'verified',
                 { header: header, payload: claims });
+    // A KEY ATTESTATION IN THE HEADER (Appendix F.1), verified and kept with
+    // the key; required where `oid4vci.keyAttestationRequired` says so.
+    let attestation = null;
+    if (header.key_attestation) {
+      attestation = this.verifyKeyAttestation(String(header.key_attestation),
+                                              { proofJwk: header.jwk,
+                                                expRequired: true });
+    } else if (this.deps.config.value('oid4vci.keyAttestationRequired') ===
+               true) {
+      throw new Error('this issuer requires a key attestation ' +
+                      '(key_attestations_required), and the proof carries ' +
+                      'none in its key_attestation header.');
+    }
     log.debug("Leaving VcIssuer.verifyProofJwt(). The proof is good.");
-    return header.jwk;
+    return { jwk: header.jwk, attestation: attestation };
   }
 
   // --- SD-JWT VC construction (RFC 9901) -------------------------------------
@@ -860,8 +1081,8 @@ class VcIssuer {
              digest: digest };
   }
 
-  private buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
-                       issuerDid) {
+  private async buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
+                             issuerDid, status) {
     const { log, logArtifact, b64u, certificateHeaderFor, crypto, stsCrypto,
             VCI_VCT } = this.deps;
     // An extension, not the spec: draft-ietf-oauth-sd-jwt-vc defines no
@@ -894,8 +1115,8 @@ class VcIssuer {
                                .concat([decoy])
                                .sort();
 
-    const signer = this.credentialSigner();
-    const payload = {
+    const signer = await this.credentialSignerAsync();
+    const payload: Record<string, any> = {
       iss: issuerId,
       nbf: now,
       exp: now + this.credentialLifetimeSeconds(),
@@ -905,6 +1126,11 @@ class VcIssuer {
       _sd_alg: 'sha-256',
       _sd: digests
     };
+    // THE STATUS REFERENCE (draft-ietf-oauth-status-list section 6.2), in the
+    // clear: a verifier has to find it without a Disclosure.
+    if (status && status.status) {
+      payload.status = status.status;
+    }
     logArtifact('SD-JWT VC', 'before signing',
                 { header: { alg: signer.alg, typ: 'dc+sd-jwt',
                             kid: signer.headerKid },
@@ -920,7 +1146,7 @@ class VcIssuer {
     // `oid4vci.credentialCertificateHeader` decides the `x5c` / `x5u` — and
     // SD-JWT VC section 3.5 names `x5c` as one of the ways a verifier may find
     // the issuer's key, which is the case this setting exists for.
-    const issuerJwt = stsCrypto.signJws(payload, signer.key, {
+    const issuerJwt = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
       header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
                                                  signer.kid),
@@ -954,8 +1180,8 @@ class VcIssuer {
   // binding is the same cnf.jwk this issuer puts in an SD-JWT VC, but what
   // proves possession at presentation time is a Verifiable Presentation JWT
   // signed with that key rather than a Key Binding JWT.
-  private buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer,
-                         issuerDid) {
+  private async buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer,
+                               issuerDid, status) {
     const { log, logArtifact, certificateHeaderFor, crypto, stsCrypto,
             VCI_JWT_TYPES, VC_CONTEXT } = this.deps;
     // As for ldp_vc, naming the issuer by DID is ordinary in a W3C credential
@@ -973,7 +1199,7 @@ class VcIssuer {
                   credentialIssuer: credentialIssuer });
     const now = Math.floor(Date.now() / 1000);
     const exp = now + this.credentialLifetimeSeconds();
-    const signer = this.credentialSigner();
+    const signer = await this.credentialSignerAsync();
     const subjectId = subjectClaims.sub || ('urn:uuid:' + crypto.randomUUID());
 
     // credentialSubject.id is the subject identifier; the rest of the claims
@@ -986,7 +1212,7 @@ class VcIssuer {
       }
     });
 
-    const vc = {
+    const vc: Record<string, any> = {
       '@context': [VC_CONTEXT],
       type: VCI_JWT_TYPES,
       issuer: issuerId,
@@ -994,7 +1220,14 @@ class VcIssuer {
       expirationDate: new Date(exp * 1000).toISOString(),
       credentialSubject: credentialSubject
     };
-    const payload = {
+    // BOTH STATUS MECHANISMS: the credential is a W3C one, so Bitstring
+    // Status List entries in `credentialStatus`, and a JWT, so the Token
+    // Status List claim too. vc_status.ts's header says why one index serves
+    // both.
+    if (status && status.credentialStatus) {
+      vc.credentialStatus = status.credentialStatus;
+    }
+    const payload: Record<string, any> = {
       iss: issuerId,
       sub: subjectId,
       nbf: now,
@@ -1003,12 +1236,15 @@ class VcIssuer {
       cnf: { jwk: holderJwk },
       vc: vc
     };
+    if (status && status.status) {
+      payload.status = status.status;
+    }
     logArtifact('jwt_vc_json credential', 'before signing',
                 { header: { alg: signer.alg, typ: 'JWT',
                             kid: signer.headerKid },
                   payload: payload });
 
-    const token = stsCrypto.signJws(payload, signer.key, {
+    const token = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
       header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
                                                  signer.kid),
@@ -1108,7 +1344,7 @@ class VcIssuer {
   // presentation time is the BBS derived proof itself rather than a separate
   // signature by the holder.
   private async buildLdpVc(subjectClaims, holderJwk, credentialIssuer,
-                            issuerDid) {
+                            issuerDid, status) {
     const { log, logArtifact, b64u, bbsKeyPair, bbs2023, VCI_JWT_TYPES
             } = this.deps;
     // VC Data Model 2.0 is DID-native, so naming the issuer by DID here is
@@ -1121,10 +1357,15 @@ class VcIssuer {
                                             : credentialIssuer + '/bbs/keys/1';
     const keys = await bbsKeyPair();
     const now = Math.floor(Date.now() / 1000);
-    const subjectId = 'did:jwk:' + b64u(Buffer.from(JSON.stringify({
-      crv: holderJwk.crv, kty: holderJwk.kty, x: holderJwk.x, y: holderJwk.y
-    })));
-    const unsecured = {
+    // THE HOLDER, as the did:jwk of the key the wallet proved at issuance —
+    // the one binding this format has, and what the holder's Data Integrity
+    // proof must verify against at presentation. Built by the library that
+    // verifies it, so the public members a key type needs (EC crv/x/y, OKP
+    // crv/x, RSA n/e, AKP alg/pub) are one list: this wrote EC's four for
+    // every key, so an Ed25519 or ML-DSA holder got a did:jwk naming no key.
+    void b64u;
+    const subjectId = this.deps.vcDataIntegrity.didJwkOf(holderJwk);
+    const unsecured: Record<string, any> = {
       '@context': ['https://www.w3.org/ns/credentials/v2',
                    bbs2023.IDENTITY_CONTEXT_URL],
       type: VCI_JWT_TYPES,
@@ -1135,6 +1376,9 @@ class VcIssuer {
       credentialSubject: Object.assign(
         { id: subjectId }, await this.ldpSubjectMembers(subjectClaims))
     };
+    if (status && status.credentialStatus) {
+      unsecured.credentialStatus = status.credentialStatus;
+    }
     logArtifact('ldp_vc credential', 'before signing', unsecured);
     const issued = await bbs2023.issue(unsecured, {
       verificationMethod: bbsVerificationMethod,
@@ -1159,7 +1403,9 @@ class VcIssuer {
               " canonical statement(s).");
     return { credential: issued.credential, disclosures: [],
              payload: issued.credential,
-             statements: issued.statements };
+             statements: issued.statements,
+             validFrom: unsecured.validFrom,
+             validUntil: unsecured.validUntil };
   }
 
   // Mint whichever format the requested configuration names.
@@ -1192,22 +1438,30 @@ class VcIssuer {
     return t.preferred_username || t.sub || 'mock-holder';
   }
 
+  // `person` is the subject a VERIFIED, undisowned access token named (see
+  // signInSubjectOf()), or ''. It files the credential under that person on
+  // the issued register, which an ldp_vc's own subject — a did:jwk — cannot.
   async buildCredentialFor(configId, subjectClaims, holderJwk,
                            credentialIssuer, issuerDid,
-                           holderName) {
-    const { log, stats, vciFormatOf } = this.deps;
+                           holderName, person?: string) {
+    const { log, stats, vciFormatOf, vcStatus } = this.deps;
     log.debug("Entering VcIssuer.buildCredentialFor(). configId=" + configId);
     const format = vciFormatOf(configId);
+    // THE STATUS-LIST INDEX FIRST (vc_status.ts), because the reference is
+    // signed into the credential.
+    const status = await vcStatus.allocate({
+      base: credentialIssuer, format: format, configId: configId,
+      expiresAt: Date.now() + this.credentialLifetimeSeconds() * 1000 });
     let built;
     if (format === 'ldp_vc') {
       built = await this.buildLdpVc(subjectClaims, holderJwk,
-                                    credentialIssuer, issuerDid);
+                                    credentialIssuer, issuerDid, status);
     } else if (format === 'jwt_vc_json') {
       built = await this.buildJwtVcJson(subjectClaims, holderJwk,
-                                        credentialIssuer, issuerDid);
+                                        credentialIssuer, issuerDid, status);
     } else {
       built = await this.buildSdJwtVc(subjectClaims, holderJwk,
-                                      credentialIssuer, issuerDid);
+                                      credentialIssuer, issuerDid, status);
     }
     // Counted here, at the one point all three formats meet. The expiry is read
     // from whichever member the format uses to state it — `exp` in the two JWT
@@ -1223,11 +1477,16 @@ class VcIssuer {
                      payload.credentialSubject.id) ||
                     subjectClaims.sub || '';
 
-    stats.recordCredential(format, {
+    const artifact = stats.recordCredential(format, {
       configId: configId,
       subject: subject,
+      person: person && person !== subject ? person : '',
       expiresAt: expiresAt
     });
+    vcStatus.attach(status.key, artifact && artifact.key);
+    built.artifactKey = (artifact && artifact.key) || '';
+    built.statusKey = status.key;
+    built.expiresAt = expiresAt;
     // The credential's subject identifier, when it is a DECENTRALIZED
     // IDENTIFIER, is a SECOND identity and gets its own record — and its own
     // directory entry.
@@ -1321,7 +1580,11 @@ class VcIssuer {
   }
 
   private rememberIssued(issued: any[], holderJwks: any[], configId: string,
-                         subject: string): void {
+                         subject: string, attestations?: any[]): void {
+    // ONE ROW PER CREDENTIAL FOR THE JOSE FORMATS, one row per holder key and
+    // person for ldp_vc — `vc_issued.ts` argues the two kinds. Each row
+    // carries the credential's issued-register handle and status-list entry,
+    // which are two of the three ways it is later disowned.
     const { log, vcIssued, vciFormatOf, errorCodes } = this.deps;
     log.debug("Entering VcIssuer.rememberIssued(). " + issued.length +
               " credential(s).");
@@ -1333,14 +1596,21 @@ class VcIssuer {
     const format = vciFormatOf(configId);
     issued.forEach(function (built, i) {
       try {
-        const payload = (built && built.payload) || {};
         vcIssued.record({
           credential: built && built.credential,
           format: format,
           configId: configId,
           subject: subject,
           holderJwk: holderJwks[i],
-          expiresAt: payload.exp ? Number(payload.exp) * 1000 : 0
+          expiresAt: Number(built && built.expiresAt) || 0,
+          artifactKey: (built && built.artifactKey) || '',
+          statusKey: (built && built.statusKey) || '',
+          validFrom: (built && built.validFrom) || '',
+          validUntil: (built && built.validUntil) || '',
+          keyStorage: (attestations && attestations[i] &&
+                       attestations[i].keyStorage) || [],
+          userAuthentication: (attestations && attestations[i] &&
+                               attestations[i].userAuthentication) || []
         });
       } catch (e) {
         log.debug("Caught in VcIssuer.rememberIssued(): " +
@@ -2147,16 +2417,25 @@ class VcIssuer {
       // wallets in the wild still send it. One credential comes back per proof
       // (section 8.3).
       let proofJwts = [];
+      // THE `attestation` PROOF TYPE (Appendix F.3, #38's follow-ups): a key
+      // attestation IS the proof, and a credential is issued for each key it
+      // attests.
+      let attestationProofs = [];
       if (body.proofs && Array.isArray(body.proofs.jwt) &&
           body.proofs.jwt.length) {
         proofJwts = body.proofs.jwt;
+      } else if (body.proofs && Array.isArray(body.proofs.attestation) &&
+                 body.proofs.attestation.length) {
+        attestationProofs = body.proofs.attestation.map(String);
       } else if (body.proof && body.proof.jwt) {
         proofJwts = [body.proof.jwt];
       }
-      if (!proofJwts.length) {
+      if (!proofJwts.length && !attestationProofs.length) {
         errorCodes.mark(res, 'STS-VC-0017');
         return vciError(res, 400, 'invalid_proof',
-                        'A JWT proof of possession is required (proofs.jwt).');
+                        'A proof is required: proofs.jwt (a proof of ' +
+                        'possession) or proofs.attestation (a key ' +
+                        'attestation).');
       }
       if (proofJwts.length > vciBatchSize()) {
         errorCodes.mark(res, 'STS-VC-0018');
@@ -2168,15 +2447,35 @@ class VcIssuer {
       }
 
       let holderJwks = [];
+      // What each holder key's attestation said, index for index, or null.
+      let attestations = [];
       try {
         // Promise.all, so a BATCH of proofs is verified across the pool at
         // once rather than one after another. A wallet may send up to
         // batch_credential_issuance.batch_size of them, and with post-quantum
         // proofs that is the difference between one wait and several.
-        holderJwks = await Promise.all(proofJwts.map((jwt) => {
+        const proven = await Promise.all(proofJwts.map((jwt) => {
           return this.verifyProofJwt(jwt,
                                      this.vciMetadata(req).credential_issuer);
         }));
+        holderJwks = proven.map(function (one) {
+          return one.jwk;
+        });
+        attestations = proven.map(function (one) {
+          return one.attestation;
+        });
+        attestationProofs.forEach((token) => {
+          const read = this.verifyKeyAttestation(token, {});
+          read.keys.forEach(function (key) {
+            holderJwks.push(key);
+            attestations.push(read);
+          });
+        });
+        if (holderJwks.length > vciBatchSize()) {
+          throw new Error('the key attestations attest ' + holderJwks.length +
+                          ' keys, and this issuer issues at most ' +
+                          vciBatchSize() + ' credentials per request.');
+        }
       } catch (e) {
         log.debug("Caught in the OID4VCI credential endpoint: " +
                   ((e && e.message) || e));
@@ -2189,13 +2488,32 @@ class VcIssuer {
       // use: spend it now that they have all been accepted, so replaying the
       // request is refused while a batch inside one request is not — on every
       // node against the store, since 2026-09-14 (see spendProofNonces()).
-      const nonceSpent = await this.spendProofNonces(proofJwts);
+      const nonceSpent = await this.spendProofNonces(
+        proofJwts.concat(attestationProofs));
       if (!nonceSpent.ok) {
         log.debug("Leaving the OID4VCI credential endpoint. The c_nonce was " +
                   "refused at its spend.");
         // STS-VC-0050 (spent elsewhere) or STS-VC-0051 (the store).
         errorCodes.mark(res, nonceSpent.errorCode);
         return vciError(res, 400, 'invalid_proof', nonceSpent.description);
+      }
+      // AN ldp_vc IS BOUND TO A KEY ITS HOLDER CAN PROVE AT PRESENTATION, and
+      // the only proof that format has is a Data Integrity one: a key no
+      // cryptosuite covers (RSA, secp256k1, Ed448, the composites) would get a
+      // credential that verifies and never signs its holder in. Refused as the
+      // metadata's proof_signing_alg_values_supported for it already says.
+      if (vciFormatOf(requestedConfigId) === 'ldp_vc') {
+        const unfit = holderJwks.filter((jwk) => {
+          return !this.deps.vcDataIntegrity.cryptosuiteForJwk(jwk);
+        });
+        if (unfit.length) {
+          errorCodes.mark(res, 'STS-VC-0080');
+          return vciError(res, 400, 'invalid_proof', 'An ldp_vc credential ' +
+            'is bound to a key its holder proves with a Data Integrity ' +
+            'cryptosuite, and none covers this key: ' +
+            this.deps.vcDataIntegrity.unsupportedReason(unfit[0]) +
+            ' Use a P-256, P-384, Ed25519 or ML-DSA-44 key.');
+        }
       }
       const holderJwk = holderJwks[0];
 
@@ -2216,6 +2534,7 @@ class VcIssuer {
           holderName: this.holderNameFrom(accessToken),
           holderJwk: holderJwk,
           holderJwks: holderJwks,
+          attestations: attestations,
           // WHOM these credentials may sign in (#38), decided NOW against
           // the token that made the request — see signInSubjectOf().
           signInSubject: this.signInSubjectOf(presented),
@@ -2249,14 +2568,27 @@ class VcIssuer {
       // One credential per key the wallet proved possession of.
       const claims = this.subjectClaimsFrom(accessToken, requestedConfigId);
       const issuerId = this.vciMetadata(req).credential_issuer;
-      const issued = await Promise.all(holderJwks.map((jwk) => {
-        return this.buildCredentialFor(requestedConfigId, claims, jwk,
-                                       issuerId,
-                                       issuerDidFor(requestedConfigId, req),
-                                       this.holderNameFrom(accessToken));
-      }));
+      const signInSubject = this.signInSubjectOf(presented);
+      let issued;
+      try {
+        issued = await Promise.all(holderJwks.map((jwk) => {
+          return this.buildCredentialFor(requestedConfigId, claims, jwk,
+                                         issuerId,
+                                         issuerDidFor(requestedConfigId, req),
+                                         this.holderNameFrom(accessToken),
+                                         signInSubject);
+        }));
+      } catch (e) {
+        log.debug("Caught in the OID4VCI credential endpoint: " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-VC-0079') + 'the credential could not ' +
+                  'be built: ' + e.message);
+        errorCodes.mark(res, 'STS-VC-0079');
+        return vciError(res, 500, 'server_error', 'The credential could not ' +
+                        'be built: ' + e.message);
+      }
       this.rememberIssued(issued, holderJwks, requestedConfigId,
-                          this.signInSubjectOf(presented));
+                          signInSubject, attestations);
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };
@@ -2331,14 +2663,27 @@ class VcIssuer {
       // The format the DEFERRED request asked for, not a fresh choice: see the
       // note where it was recorded.
       const deferredConfigId = record.configId || VCI_CONFIG_ID;
-      const issued = await Promise.all(holderKeys.map((jwk) => {
-        return this.buildCredentialFor(deferredConfigId, record.claims, jwk,
-                                       issuerId,
-                                       issuerDidFor(deferredConfigId, req),
-                                       record.holderName);
-      }));
+      let issued;
+      try {
+        issued = await Promise.all(holderKeys.map((jwk) => {
+          return this.buildCredentialFor(deferredConfigId, record.claims, jwk,
+                                         issuerId,
+                                         issuerDidFor(deferredConfigId, req),
+                                         record.holderName,
+                                         String(record.signInSubject || ''));
+        }));
+      } catch (e) {
+        log.debug("Caught in the OID4VCI deferred credential endpoint: " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-VC-0079') + 'the deferred credential ' +
+                  'could not be built: ' + e.message);
+        errorCodes.mark(res, 'STS-VC-0079');
+        return vciError(res, 500, 'server_error', 'The credential could not ' +
+                        'be built: ' + e.message);
+      }
       this.rememberIssued(issued, holderKeys, deferredConfigId,
-                          String(record.signInSubject || ''));
+                          String(record.signInSubject || ''),
+                          record.attestations || []);
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };
@@ -2521,6 +2866,7 @@ export = {
   // that has not yet caught up looks like.
   spendProofNonces: slot.forward('spendProofNonces'),
   buildCredentialFor: slot.forward('buildCredentialFor'),
+  verifyKeyAttestation: slot.forward('verifyKeyAttestation'),
   subjectClaimsFrom: slot.forward('subjectClaimsFrom'),
   vciNonces: vciNonces,
   VCI_NONCE_TTL_MS: VcIssuer.VCI_NONCE_TTL_MS,

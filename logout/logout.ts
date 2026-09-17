@@ -172,6 +172,9 @@ import vcOffers = require('../oid4vc/vc_offers');
 // The wallet sign-ins a wallet has answered and no browser has collected yet
 // (#38). A cache hit, like every require here — `vc_verifier` is at 11-14.
 import vcVerifier = require('../oid4vc/vc_verifier');
+// The wallet sign-in register (#38's follow-ups), for the credentials a
+// global sign-out DISOWNS. A library; a cache hit here.
+import vcIssued = require('../oid4vc/vc_issued');
 // The principal database, for the sign-out instant that stops an older
 // ticket-granting ticket at the KDC.
 import krb5Principals = require('../kerberos/krb5_principals');
@@ -908,6 +911,86 @@ class Logout {
         } },
 
       // -----------------------------------------------------------------------
+      // THE WALLET CREDENTIALS THAT CAN SIGN THIS PERSON IN (#38's follow-ups).
+      //
+      // A credential in a wallet is not a session, and nothing here can take
+      // it back — the `issued` family below lists it as issued and beyond
+      // recall. But THIS SERVICE is the only party a wallet signs in to with
+      // it, so here the mark is not only a statement: ending a row stops
+      // every credential on it signing anybody in at `/authn/wallet`
+      // (`vc_issued.ts`'s `disown()`), and sets each one's status-list bit so
+      // a verifier elsewhere learns it too.
+      //
+      // **A GLOBAL SIGN-OUT ENDS THEM; AN ORDINARY ONE DOES NOT.** This family
+      // is reached from `/logout`, `/admin/logout` and `/admin-api/logout`;
+      // the per-session sign-outs — `/oauth2/logout`, SAML Single Logout,
+      // `wsignout1.0`, the console's and the portal's Sign out — go through
+      // `authn.dropSession()` and never here, so a person who signs out of one
+      // application signs back in with the wallet they hold.
+      //
+      // `endOrder` 26: a credential, with the other credentials, and before
+      // the session, on which nothing here depends.
+      { id: 'wallet-credential', endOrder: 26,
+        label: 'Wallet credentials that can sign this person in',
+        protocol: 'OpenID4VP',
+        spec: 'draft-ietf-oauth-status-list (the bit a disown sets); ' +
+              'W3C Bitstring Status List',
+        what: 'Verifiable credentials this realm issued for this person, ' +
+              'which their wallet can present at /authn/wallet to sign in. ' +
+              'Ending one DISOWNS it: every credential issued to that ' +
+              'wallet key for this person up to now stops signing anybody ' +
+              'in here, and its status list entry is set INVALID so other ' +
+              'verifiers can learn it. The credential itself stays in the ' +
+              'wallet and still verifies; a credential issued after the ' +
+              'sign-out, on a fresh sign-in, signs in again.',
+        collect: (ctx) => {
+          log.debug("Entering wallet-credential.collect().");
+          const rows = [];
+          const seen = {};
+          this.walletRowsFor(ctx.key).forEach((row) => {
+            const handle = this.handleFor('wallet-credential|' + row.key);
+            if (seen[handle]) {
+              return;
+            }
+            seen[handle] = true;
+            rows.push(this.row('wallet-credential', 'wallet credential',
+                               handle, {
+              label: row.format + ' credential' +
+                     (row.credentials.length > 1 ?
+                       's (' + row.credentials.length + ')' : ''),
+              detail: 'bound to key ' + String(row.jkt).slice(0, 12) +
+                      '…, issued ' + new Date(row.issuedAt).toISOString(),
+              startedAt: row.issuedAt || 0,
+              expiresAt: row.expiresAt || 0,
+              secret: row.key,
+              why: 'ending this stops it signing anybody in at ' +
+                   '/authn/wallet and sets its status INVALID. The ' +
+                   'credential stays in the wallet.'
+            }));
+          });
+          log.debug("Leaving wallet-credential.collect(). " + rows.length +
+                    ".");
+          return rows;
+        },
+        terminate: (r, ctx) => {
+          log.debug("Entering wallet-credential.terminate().");
+          const match = this.walletRowsFor(ctx.key).filter((row) => {
+              return this.handleFor('wallet-credential|' + row.key) ===
+                r.handle;
+            })[0];
+          if (!match || !vcIssued.disown(match.key, ctx.by ||
+                                         'a global sign-out')) {
+            log.debug("Leaving wallet-credential.terminate(). Gone.");
+            return { ok: false, message: 'that wallet credential has already ' +
+                                         'been disowned or has expired' };
+          }
+          log.debug("Leaving wallet-credential.terminate().");
+          return { ok: true, message: 'a wallet credential was disowned: it ' +
+                                      'no longer signs anybody in here, and ' +
+                                      'its status is INVALID' };
+        } },
+
+      // -----------------------------------------------------------------------
       { id: 'ldap', endOrder: 23,
         label: 'Directory connections',
         protocol: 'LDAP',
@@ -1253,6 +1336,20 @@ class Logout {
   // argument `gateStateFor()` in admin.js makes about the console's banner and
   // its guard, which were written separately and disagreed within the hour.
   // ---------------------------------------------------------------------------
+  // The wallet credential rows one identity holds (#38's follow-ups): every
+  // live, undisowned row whose subject files under this key, by the
+  // normalisation `sessionsForKey()` uses.
+  private walletRowsFor(key: string): any[] {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.walletRowsFor().");
+    const rows = vcIssued.rowsForSubject(null).filter(function (row) {
+      return stats.holderKeyOf(helpers.nameForSubject(row.subject) || '',
+                               row.subject) === key;
+    });
+    log.debug("Leaving Logout.walletRowsFor(). " + rows.length + ".");
+    return rows;
+  }
+
   private contextFor(key?, issuer?, by?) {
     const { log } = this.deps;
     log.debug("Entering Logout.contextFor().");
@@ -1294,7 +1391,7 @@ class Logout {
   // half that would be wrong is the half somebody is about to press a button
   // on.
   //
-  // **THREE OF THE TEN FAMILIES HAVE A SESSION AND THE OTHER SEVEN DO NOT**,
+  // **THREE OF THE TWELVE FAMILIES HAVE A SESSION AND THE OTHER NINE DO NOT**,
   // and the distinction is not a simplification. A session is a state THIS
   // SERVICE holds that makes somebody currently authenticated; a token, an
   // assertion, an authorization code and an X509-SVID are things it has HANDED

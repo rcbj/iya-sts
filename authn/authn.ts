@@ -260,6 +260,21 @@ const SPNEGO_PATH = '/authn/spnego';
 // ---------------------------------------------------------------------------
 const WALLET_PATH = '/authn/wallet';
 const WALLET_WAIT_PATH = '/authn/wallet/wait';
+// And, since #38's follow-ups, the Digital Credentials API answer the wait
+// page's script posts, and that script. Declared here for the same reason.
+const WALLET_DCAPI_PATH = '/authn/wallet/dc-api';
+const WALLET_SCRIPT_PATH = '/authn/wallet.js';
+
+// ---------------------------------------------------------------------------
+// A PASSWORD AS THE SECOND FACTOR (#38's follow-ups). A wallet presentation is
+// one factor — something the person holds — and a request that demands two
+// may be answered by a wallet and then something the person knows. This is
+// that screen: one password field, checked by `credentials.verify()` exactly
+// as the sign-in screen checks one, rate limited on the same bucket, and
+// reached only with a pending second-factor step whose FIRST factor was not a
+// password. No script.
+// ---------------------------------------------------------------------------
+const PASSWORD_FACTOR_PATH = '/authn/password-factor';
 
 const SESSION_COOKIE = 'sts_session';
 
@@ -917,6 +932,12 @@ const TOTP_FORM = vz.object({
   // exactly the enrolled number of digits — so the shape check belongs where
   // the digit count is known and not in this schema.
   code: vz.string().max(32).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+const PASSWORD_FACTOR_FORM = vz.object({
+  mfa_id: vt.opt(vt.base64url),
+  password: vz.string().max(1024).optional(),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -3975,6 +3996,16 @@ class Authn {
                'that door will not sign anybody in. The sign-in screen is ' +
                'being shown instead.' };
     }
+    // THE SECOND ONE (#38's follow-ups): `wallet` while `oid4vp.signIn` is
+    // off is a door that is shut, reported for SPNEGO's reason.
+    if (declared === 'wallet' && !config.value('oid4vp.signIn')) {
+      log.debug("Leaving Authn.declaredMechanismFor(). The wallet is " +
+                "configured and off.");
+      return { mechanism: '', problem: 'The application "' + applicationId +
+               '" authenticates its users with a wallet, and oid4vp.signIn ' +
+               'is off on this service, so that door will not sign anybody ' +
+               'in. The sign-in screen is being shown instead.' };
+    }
     log.debug("Leaving Authn.declaredMechanismFor(). " + declared + ".");
     return { mechanism: declared, problem: '' };
   }
@@ -4337,6 +4368,10 @@ class Authn {
       // render time would quietly drop a demand a protocol module made minutes
       // ago.
       integrated: integrated,
+      // Set by a mechanism of `wallet` (#38's follow-ups). It does NOT lose to
+      // forceMfa: the wallet door asks for a second factor after the
+      // presentation when two were demanded.
+      walletDoor: chosen.mechanism === 'wallet',
       mechanism: chosen.mechanism,
       mechanismSource: chosen.source,
       mechanismVia: chosen.via,
@@ -4421,6 +4456,23 @@ class Authn {
                 ".");
       return SPNEGO_PATH + '?authn=' + encodeURIComponent(record.id);
     }
+    // ---------------------------------------------------------------------
+    // A WALLET: STRAIGHT TO THE WALLET DOOR (#38's follow-ups), the Kerberos
+    // branch's sibling and for its reasons — the record carries `returnTo`,
+    // and every page of that door links back to the screen.
+    // ---------------------------------------------------------------------
+    if (record.walletDoor) {
+      log.info('authn: "' + String(opts.application || '(none)') + '" ' +
+               'authenticates with a wallet' +
+               (chosen.source === 'relationship'
+                  ? ', because the identity-provider-side relationship "' +
+                    chosen.via + '" says so'
+                  : ', because its entry under ou=applications declares it') +
+               ', so this sign-in goes straight to ' + WALLET_PATH + '.');
+      log.debug("Leaving Authn.beginAuthentication(). " + record.id +
+                " goes to the wallet door.");
+      return WALLET_PATH + '?authn=' + encodeURIComponent(record.id);
+    }
     log.debug("Leaving Authn.beginAuthentication(). " + record.id +
               " will return to " +
               returnTo + ".");
@@ -4492,6 +4544,272 @@ class Authn {
   // person can still sign in — telling the calling protocol `access_denied`
   // would end a flow that has not failed.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // THE FIRST FACTOR A SECOND-FACTOR STEP FOLLOWS (#38's follow-ups). A step
+  // minted by the password screen carries none and means `pwd`, which is what
+  // every such step meant before a wallet could be a first factor; one minted
+  // after a wallet sign-in carries `['pop']` (or what that presentation
+  // claimed). Every second-factor door builds its `amr` from this, so a
+  // session never claims a password nobody typed.
+  // ---------------------------------------------------------------------------
+  private firstAmrOf(step: any): string[] {
+    const { log } = this.deps;
+    log.debug("Entering Authn.firstAmrOf().");
+    const first = step && Array.isArray(step.firstAmr) && step.firstAmr.length ?
+      step.firstAmr.map(String) : ['pwd'];
+    log.debug("Leaving Authn.firstAmrOf(). " + first.join(','));
+    return first;
+  }
+
+  // A pending second-factor step, read-only, for the wallet door: a wallet
+  // may BE the second factor after a password (`vc_signin.ts`). An expired
+  // step is dropped on the way past, as pendingFor() drops a record.
+  mfaStepFor(id: unknown): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.mfaStepFor().");
+    const step = pendingMfa.get(String(id || ''));
+    if (!step) {
+      log.debug("Leaving Authn.mfaStepFor(). None.");
+      return null;
+    }
+    if (step.expires < Date.now()) {
+      pendingMfa.delete(String(id));
+      log.debug("Leaving Authn.mfaStepFor(). Expired.");
+      return null;
+    }
+    log.debug("Leaving Authn.mfaStepFor(). Found.");
+    return step;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A WALLET AS THE SECOND FACTOR (#38's follow-ups): the step a password
+  // sign-in minted, finished by a verified presentation of a credential this
+  // realm issued to THE SAME PERSON. `outcome` is `vc_verifier.ts`'s
+  // `signInOutcome()`. Answers the session, or `{ refused, why }`.
+  //
+  // **THE SAME PERSON, BY SUBJECT.** A step names the person the password was
+  // typed for; a wallet presenting somebody else's credential is refused
+  // rather than signing either of them in — two factors from two people are
+  // not two factors.
+  // **NOT A WALLET TWICE.** A step whose first factor was a wallet is not
+  // finished by another presentation: one key proved twice is one factor.
+  // ---------------------------------------------------------------------------
+  finishWithWallet(req: any, res: any, mfaId: string, outcome: any): any {
+    const { log, userFor } = this.deps;
+    log.debug("Entering Authn.finishWithWallet().");
+    const step = this.mfaStepFor(mfaId);
+    if (!step) {
+      log.debug("Leaving Authn.finishWithWallet(). No step.");
+      return { refused: 'expired', why: 'This second-factor step has ' +
+               'expired. Start the request again from the application.' };
+    }
+    const first = this.firstAmrOf(step);
+    if (first.indexOf('pop') >= 0) {
+      log.debug("Leaving Authn.finishWithWallet(). A wallet twice.");
+      return { refused: 'same-factor', why: 'The first factor of this ' +
+               'sign-in was already a wallet, and one key proved twice is ' +
+               'one factor. Use your authenticator app, your security key or ' +
+               'your password.' };
+    }
+    const stepSub = String((userFor(step.username) || {}).sub || '');
+    if (outcome.username !== step.username ||
+        (stepSub && outcome.subject && stepSub !== outcome.subject)) {
+      log.debug("Leaving Authn.finishWithWallet(). A different person.");
+      return { refused: 'other-person', why: 'The credential your wallet ' +
+               'presented was issued to somebody other than the person whose ' +
+               'password was entered, so neither is signed in.' };
+    }
+    pendingMfa.delete(String(mfaId));
+    const amr = first.concat((outcome.amr || ['pop']).filter(function (one) {
+      return first.indexOf(one) < 0;
+    }));
+    const session = this.startSession(res, step.username, amr, 'mfa',
+      step.authn.protocol, {
+        request: req,
+        application: step.authn.application || '',
+        method: 'a password and a wallet (a verifiable presentation, ' +
+                'proof of possession of the key its credential is bound to)',
+        note: 'Two factors: the password typed at the sign-in screen, then a ' +
+              'verified presentation of a credential this realm issued to ' +
+              'the same person.',
+        summary: step.username + ' completed the second factor with a wallet'
+      });
+    if (!session) {
+      log.debug("Leaving Authn.finishWithWallet(). The policy refused.");
+      return { refused: 'policy', why: 'The issuance policy refused this ' +
+               'session.' };
+    }
+    this.returnToCaller(res, step.authn, null, null);
+    log.debug("Leaving Authn.finishWithWallet(). Signed in.");
+    return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SECOND FACTOR AFTER A WALLET (#38's follow-ups). Called by the wallet
+  // door once a presentation has verified and named a person, instead of
+  // starting a session, and it answers whether it took over the response:
+  //
+  //   * NO SECOND FACTOR IS NEEDED — the request did not demand two
+  //     (`record.forceMfa`), no requirement applies (`authn.mfaRequired`,
+  //     the account's own), the person holds no second factor they are
+  //     configured to be asked for (`mfaRequired`), or the presentation
+  //     already claimed two (`acr` `mfa`, from a key attestation) — and it
+  //     answers `{ handled: false }`: the door starts the session itself.
+  //   * ONE IS NEEDED, and the issuance policy is asked FIRST, as the
+  //     password screen asks it before its own second factor. The step is
+  //     minted with `firstAmr` — the wallet's `amr` — and the person's
+  //     configured factor is drawn: their security key, their authenticator
+  //     app, or, where they hold neither, their PASSWORD
+  //     (`PASSWORD_FACTOR_PATH`), which every person here can be asked for.
+  //     A requirement with nothing enrolled draws the enrolment step exactly
+  //     as the password screen does.
+  // ---------------------------------------------------------------------------
+  beginSecondFactorAfterWallet(req: any, res: any, record: any,
+                               username: string, outcome: any): any {
+    const { log, randomId, gate, credentials, crypto, config } = this.deps;
+    log.debug("Entering Authn.beginSecondFactorAfterWallet(). username=" +
+              username);
+    const enrolled = credentials.mechanismsFor(username);
+    const requirement = credentials.mfaRequirementFor(username);
+    const already = String(outcome.acr || '') === 'mfa';
+    const needed = !already && (!!record.forceMfa || requirement.required ||
+                                !!enrolled.mfaRequired);
+    if (!needed) {
+      log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Not needed.");
+      return { handled: false };
+    }
+    const roleAnswer = gate.check({
+      application: String(record.application || ''),
+      kind: gate.ISSUANCE.SESSION,
+      subject: { kind: 'user', name: username, authenticated: true },
+      claims: null
+    });
+    if (!roleAnswer.allowed) {
+      log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Refused.");
+      return { handled: false, refused: roleAnswer.why };
+    }
+    const base = this.deps.baseUrlOf(req);
+    const firstAmr = [].concat(outcome.amr || ['pop']).map(String);
+    pending.delete(record.id);
+    const configured = enrolled.secondFactor || '';
+    if (requirement.required && !configured) {
+      const offered = this.enrolmentOffered();
+      if (offered.totp || offered.webauthn) {
+        const setupId = randomId(24);
+        pendingMfa.set(setupId, {
+          authn: record, username: username,
+          challenge: crypto.randomBytes(32).toString('base64url'),
+          factor: 'enrol', alternate: '', backup: false, passwordless: false,
+          requiredBy: requirement.byUser ? 'account' : 'realm',
+          firstAmr: firstAmr,
+          expires: Date.now() + this.mfaStepTtlMs()
+        });
+        this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, username,
+                                                     offered, ''));
+        log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Enrolment.");
+        return { handled: true };
+      }
+    }
+    const factor = configured || 'password';
+    const mfaId = randomId(24);
+    pendingMfa.set(mfaId, {
+      authn: record, username: username,
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      factor: factor,
+      alternate: (factor === 'webauthn' && enrolled.totp) ? 'totp'
+        : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : ''),
+      backup: enrolled.backupCodes ? enrolled.backupCodes.remaining > 0 :
+              false,
+      passwordless: false,
+      firstAmr: firstAmr,
+      // A password is always offered after a wallet, beside whatever else the
+      // person holds: it is the factor everybody here has.
+      passwordAlternate: factor !== 'password',
+      expires: Date.now() + this.mfaStepTtlMs()
+    });
+    void config;
+    log.info('authn: "' + username + '" signed in with a wallet and a second ' +
+             'factor is needed (' + (record.forceMfa ? 'the request demands ' +
+             'two' : requirement.required ? 'required of them' :
+             'they hold one') + '); asking for ' + factor + '.');
+    if (factor === 'totp') {
+      this.sendTotpPage(res, this.totpPage(base, mfaId, username, '', ''));
+    } else if (factor === 'webauthn') {
+      this.sendWebauthnPage(res, this.webauthnPage(base, mfaId, username, ''));
+    } else {
+      this.sendPasswordFactorPage(res, this.passwordFactorPage(mfaId, username,
+                                                               ''));
+    }
+    log.debug("Leaving Authn.beginSecondFactorAfterWallet(). " + factor + ".");
+    return { handled: true };
+  }
+
+  // The password-as-second-factor page. No script.
+  private passwordFactorPage(mfaId: string, username: string,
+                             error: string): string {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering Authn.passwordFactorPage().");
+    const step = pendingMfa.get(mfaId);
+    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+      'charset="utf-8"><title>Your password — mock authentication ' +
+      'service</title><style>' + CARD_CSS + '</style></head><body><div ' +
+      'class="card"><h1>Your password</h1><p class="sub">Second factor for ' +
+      '<code>' + xmlEscape(username) + '</code>, after your wallet.</p>' +
+      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+      '<form method="post" action="' + PASSWORD_FACTOR_PATH + '">' +
+      '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
+      '<label for="password">Password</label><input type="password" ' +
+      'id="password" name="password" autocomplete="current-password" ' +
+      'autofocus>' +
+      '<button type="submit" id="password-factor-submit">Sign in</button>' +
+      '</form><div class="meta"><div>Your wallet has already presented a ' +
+      'credential this service issued to you. On success the session ' +
+      'records amr ' + xmlEscape(JSON.stringify(
+        this.firstAmrOf(step).concat(['pwd']))) + ' and acr "mfa".</div>' +
+      (step && step.alternate === 'totp'
+        ? '<div><a href="' + TOTP_PATH + '?mfa=' + encodeURIComponent(mfaId) +
+          '">Use a code from your authenticator app instead</a></div>'
+        : '') +
+      '</div></div></body></html>\n';
+    log.debug("Leaving Authn.passwordFactorPage().");
+    return html;
+  }
+
+  // No policy of its own: no script, so the service-wide `script-src 'none'`.
+  private sendPasswordFactorPage(res: any, html: string): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sendPasswordFactorPage().");
+    res.status(200).type('text/html').set('Cache-Control', 'no-store')
+      .send(html);
+    log.debug("Leaving Authn.sendPasswordFactorPage().");
+  }
+
+  // The links a second-factor page draws for the factors a wallet adds: the
+  // wallet itself after a password, and the password after a wallet.
+  private walletFactorLinksHtml(mfaId: string, step: any): string {
+    const { log, config } = this.deps;
+    log.debug("Entering Authn.walletFactorLinksHtml().");
+    if (!step) {
+      log.debug("Leaving Authn.walletFactorLinksHtml(). No step.");
+      return '';
+    }
+    const first = this.firstAmrOf(step);
+    let out = '';
+    if (first.indexOf('pop') < 0 && !step.passwordless &&
+        config.value('oid4vp.signIn')) {
+      out += '<div><a id="wallet-second-factor" href="' + WALLET_PATH +
+        '?mfa=' + encodeURIComponent(mfaId) + '">Use your wallet ' +
+        'instead</a></div>';
+    }
+    if (step.passwordAlternate) {
+      out += '<div><a id="password-second-factor" href="' +
+        PASSWORD_FACTOR_PATH + '?mfa=' + encodeURIComponent(mfaId) +
+        '">Use your password instead</a></div>';
+    }
+    log.debug("Leaving Authn.walletFactorLinksHtml().");
+    return out;
+  }
+
   completeAuthentication(res, record) {
     const { log } = this.deps;
     log.debug("Entering Authn.completeAuthentication(). id=" + record.id);
@@ -4719,11 +5037,12 @@ class Authn {
   // about the relying party. So it is offered to every application with
   // nothing registered, whenever `oid4vp.signIn` is on.
   //
-  // **WITHHELD UNDER `forceMfa`, AND SAID SO.** A presentation proves
-  // possession of one key — `amr ["pop"]`, `acr "1"` — and a request that
-  // demanded two factors must not be offered a way to be answered with one.
-  // The door refuses the same record too (`vc_signin.ts`), because a button
-  // is markup and the record is what decides.
+  // **OFFERED UNDER `forceMfa` TOO, SINCE #38's FOLLOW-UPS.** It was withheld
+  // there, because a presentation proves one key. A wallet is now a first
+  // factor that a second can follow (`beginSecondFactorAfterWallet()`), and
+  // a presentation whose key attestation says the key is guarded by user
+  // authentication claims two on its own — so the button says what will
+  // happen instead of disappearing.
   //
   // ONE SETTING, where Kerberos has two: Kerberos keeps a door for scripted
   // clients that holds no screen, and a wallet sign-in has no use outside a
@@ -4737,19 +5056,17 @@ class Authn {
       log.debug("Leaving Authn.walletOptionHtml(). Not offered.");
       return '';
     }
-    if (record.forceMfa) {
-      log.debug("Leaving Authn.walletOptionHtml(). Withheld: two factors " +
-                "were demanded.");
-      return '<div class="fed"><p id="wallet-withheld">Signing in with a ' +
-        'wallet is not offered for this request: it demands two factors, ' +
-        'and a presentation proves possession of one key.</p></div>';
-    }
     const html = '<div class="fed"><p>Or sign in with a wallet that holds ' +
       'a credential this service issued to you. Nothing is typed: your ' +
-      'wallet proves it holds the key the credential is bound to.</p>' +
+      'wallet proves it holds the key the credential is bound to.' +
+      (record.forceMfa
+        ? ' <span id="wallet-mfa-note">This request needs two factors, so ' +
+          'you will be asked for a second one afterwards unless your ' +
+          'wallet\'s key is attested to need your PIN or biometric.</span>'
+        : '') + '</p>' +
       '<a class="fedbtn" id="wallet-signin" href="' + WALLET_PATH +
       '?authn=' + encodeURIComponent(record.id) + '">Sign in with a wallet' +
-      '<span>OpenID4VP &middot; SD-JWT VC</span></a></div>';
+      '<span>OpenID4VP &middot; Digital Credentials API</span></a></div>';
     log.debug("Leaving Authn.walletOptionHtml(). Offered.");
     return html;
   }
@@ -5884,6 +6201,7 @@ class Authn {
         ? '<div><a href="' + TOTP_PATH + '?mfa=' + encodeURIComponent(mfaId) +
           '">Use a code from your authenticator app instead</a></div>'
         : '') +
+      this.walletFactorLinksHtml(mfaId, step) +
       // AND THE WAY OUT WHEN THE KEY IS NOT TO HAND AT ALL (2026-09-10), which
       // is the commonest reason somebody is stuck at this screen: the key is in
       // a drawer at home. Drawn only where the step says an unspent recovery
@@ -6176,7 +6494,8 @@ class Authn {
     // "mfa" because it is phishing-resistant would be the fake this profile
     // refuses everywhere else — a relying party that asked for two factors
     // would be told it got them.
-    const amr = step.passwordless ? ['hwk'] : ['pwd', 'hwk'];
+    const amr = step.passwordless ? ['hwk'] :
+                this.firstAmrOf(step).concat(['hwk']);
     const acr = step.passwordless ? '1' : 'mfa';
     // The single funnel, reached through startSession() as every sign-in at
     // these screens is. It is what puts the person on /admin/users and what
@@ -6300,6 +6619,7 @@ class Authn {
         ? '<div><a href="/authn/webauthn?mfa=' + encodeURIComponent(mfaId) +
           '">Use your security key instead</a></div>'
         : '') +
+      this.walletFactorLinksHtml(mfaId, step) +
       // THE WAY OUT (2026-09-10), drawn only where the step says this person
       // holds an unspent recovery code. It is LAST on purpose: the codes are a
       // finite, single-use resource issued once, and a link offered above the
@@ -6364,9 +6684,10 @@ class Authn {
     // honestly.
     //
     // There is no passwordless branch here and there cannot be: a one-time code
-    // is never a first factor (see common/totp.ts), so `pwd` is always in the
-    // list.
-    const amr = ['pwd', 'otp'];
+    // is never a first factor (see common/totp.ts), so the first factor's own
+    // `amr` is always in the list — `pwd`, or since #38's follow-ups `pop`
+    // for a wallet presentation (firstAmrOf()).
+    const amr = this.firstAmrOf(step).concat(['otp']);
     this.startSession(res, step.username, amr, 'mfa', step.authn.protocol,
                       { request: req });
     this.returnToCaller(res, step.authn, null, null);
@@ -6570,8 +6891,8 @@ class Authn {
     // checked. The audit row and `/admin/sessions` say which mechanism it was.
     //
     // There is no passwordless branch and there cannot be: a recovery code is
-    // never a first factor, so `pwd` is always in the list.
-    const amr = ['pwd', 'otp'];
+    // never a first factor, so the first factor's `amr` is always in the list.
+    const amr = this.firstAmrOf(step).concat(['otp']);
     this.startSession(res, step.username, amr, 'mfa', step.authn.protocol,
                       { request: req });
     this.returnToCaller(res, step.authn, null, null);
@@ -7371,7 +7692,8 @@ class Authn {
                'at sign-in; signing them in with two factors.');
       // Two factors really were presented: the password, and a code from the
       // app enrolled a moment ago. `otp` and `mfa`, as at `/authn/totp`.
-      this.startSession(res, step.username, ['pwd', 'otp'], 'mfa',
+      this.startSession(res, step.username,
+                        this.firstAmrOf(step).concat(['otp']), 'mfa',
                         step.authn.protocol,
                         { request: req });
       this.returnToCaller(res, step.authn, null, null);
@@ -7891,6 +8213,81 @@ class Authn {
     // **THE STEP IS SPENT ON SUCCESS AND ONLY ON SUCCESS.**
     // -------------------------------------------------------------------------
     // ASYNCHRONOUS SINCE 2026-09-14 (#46) for the rate limit's shared window.
+    // -------------------------------------------------------------------------
+    // GET|POST /authn/password-factor — a password after a wallet (#38's
+    // follow-ups). The GET only draws the page for a step that exists and
+    // whose first factor was not a password; the POST checks the password
+    // with `credentials.verify()`, rate limited on the sign-in bucket, and
+    // finishes the step.
+    // -------------------------------------------------------------------------
+    app.get(PASSWORD_FACTOR_PATH, (req, res) => {
+      log.debug('Entering the password-factor screen.');
+      const asked = validation.check(req, 'query', MFA_STEP_QUERY);
+      if (!asked.ok) {
+        errorCodes.mark(res, 'STS-AUTHN-0018');
+        return this.refuseInvalid(res, asked);
+      }
+      const mfaId = String(asked.value.mfa || '');
+      const step = this.mfaStepFor(mfaId);
+      if (!step || this.firstAmrOf(step).indexOf('pwd') >= 0) {
+        log.debug('Leaving the password-factor screen. No such step.');
+        errorCodes.mark(res, 'STS-AUTHN-0019');
+        return oauthError(res, 400, 'invalid_request',
+          'There is no sign-in waiting for a password as its second factor. ' +
+          'Start the request again from the application that sent you here.');
+      }
+      log.debug('Leaving the password-factor screen. Drawn.');
+      return this.sendPasswordFactorPage(res,
+        this.passwordFactorPage(mfaId, step.username, ''));
+    });
+
+    app.post(PASSWORD_FACTOR_PATH, async (req, res) => {
+      log.debug('Entering the password-factor endpoint.');
+      const posted = validation.checkParsed(parseBody(req), 'body',
+                                            PASSWORD_FACTOR_FORM);
+      if (!posted.ok) {
+        errorCodes.mark(res, 'STS-AUTHN-0020');
+        return this.refuseInvalid(res, posted);
+      }
+      const mfaId = String(posted.value.mfa_id || '');
+      const step = this.mfaStepFor(mfaId);
+      if (!step || this.firstAmrOf(step).indexOf('pwd') >= 0) {
+        log.debug('Leaving the password-factor endpoint. No such step.');
+        errorCodes.mark(res, 'STS-AUTHN-0019');
+        return oauthError(res, 400, 'invalid_request',
+          'This second-factor step has expired. Start the request again from ' +
+          'the application that sent you here.');
+      }
+      const allowed = await websecurity.attemptShared('sign-in', req,
+                                                      step.username);
+      if (!allowed.ok) {
+        log.debug('Leaving the password-factor endpoint. Rate limited.');
+        errorCodes.mark(res, 'STS-AUTHN-0008');
+        return this.sendPasswordFactorPage(res,
+          this.passwordFactorPage(mfaId, step.username, allowed.detail));
+      }
+      const credential = credentials.verify(step.username,
+        String(posted.value.password || ''),
+        { via: 'the password-factor screen' });
+      if (!credential.ok) {
+        log.info('authn: the password second factor for "' + step.username +
+                 '" was refused (' + credential.reason + ').');
+        errorCodes.mark(res, errorCodes.codeOf(credential) ||
+                             'STS-AUTHN-0196');
+        return this.sendPasswordFactorPage(res,
+          this.passwordFactorPage(mfaId, step.username,
+                                  'That password is not right.'));
+      }
+      await websecurity.succeededShared('sign-in', req, step.username);
+      pendingMfa.delete(mfaId);
+      const amr = this.firstAmrOf(step).concat(['pwd']);
+      this.startSession(res, step.username, amr, 'mfa', step.authn.protocol,
+                        { request: req });
+      this.returnToCaller(res, step.authn, null, null);
+      log.debug('Leaving the password-factor endpoint. Signed in.');
+      return undefined;
+    });
+
     app.post(TOTP_PATH, async (req, res) => {
       log.debug('Entering the one-time code endpoint.');
       const base = baseUrlOf(req);
@@ -8286,6 +8683,14 @@ export = {
   // `pendingFor` and `completeAuthentication` for the Kerberos door's reasons.
   WALLET_PATH: WALLET_PATH,
   WALLET_WAIT_PATH: WALLET_WAIT_PATH,
+  WALLET_DCAPI_PATH: WALLET_DCAPI_PATH,
+  WALLET_SCRIPT_PATH: WALLET_SCRIPT_PATH,
+  PASSWORD_FACTOR_PATH: PASSWORD_FACTOR_PATH,
+  // The wallet as a factor (#38's follow-ups): read a second-factor step,
+  // finish one with a presentation, and ask for a second factor after one.
+  mfaStepFor: slot.forward('mfaStepFor'),
+  finishWithWallet: slot.forward('finishWithWallet'),
+  beginSecondFactorAfterWallet: slot.forward('beginSecondFactorAfterWallet'),
   pendingFor: slot.forward('pendingFor'),
   completeAuthentication: slot.forward('completeAuthentication')
 };

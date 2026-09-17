@@ -11,11 +11,14 @@
 //
 //   1. the sign-in screen offers the wallet, and `oid4vp.signIn` off removes
 //      the button and closes the door (STS-VC-0052); a request demanding two
-//      factors is not offered it and is refused at the door (STS-VC-0054);
-//   2. the wait page carries no script, polls with a <meta> refresh, draws a
-//      QR code and the same-device link, and its CSP is the base policy;
-//      the request it hands a wallet is signed, asks for this issuer's
-//      SD-JWT VC and its subject only;
+//      factors IS offered it since #38's follow-ups, and says a second factor
+//      follows;
+//   2. the wait page carries ONE script — the Digital Credentials API
+//      button, whose form has a real submit button — its CSP names
+//      `script-src 'self'` and keeps `frame-ancestors`, the plain QR code is
+//      OFF by default in both modes and is a page of its own (`?qr=1`, no
+//      script, a <meta> refresh) when it is on; the request it hands a wallet
+//      is signed and asks for this issuer's credential in every format;
 //   3. a holder-bound credential this realm issued, presented with a good
 //      Key Binding JWT, starts a session for the entry it was issued for —
 //      amr ["pop"], acr "1", the entry's urn:uuid subject — completes the
@@ -32,7 +35,14 @@
 //      signed on an access token it did NOT verify (STS-VC-0059); a trusted
 //      foreign issuer's (STS-VC-0058); a deleted entry's (STS-VC-0060); and a
 //      person the issuance policy refuses (STS-VC-0064);
-//   7. the bar door at /oid4vp/verifier still signs nobody in.
+//   7. the bar door at /oid4vp/verifier still signs nobody in;
+//   8. a DISOWNED credential signs nobody in (STS-VC-0071): a global sign-out
+//      through `logout.terminate()` and through POST /logout, an
+//      administrator's revocation on the issued register, and a suspended
+//      status list entry — each undone where it can be undone, and a
+//      credential issued AFTER a sign-out signing in again;
+//   9. an ORDINARY session sign-out disowns nothing: the same credential
+//      signs in again straight afterwards.
 //
 // In a CHILD PROCESS for `admin_credential_controls.js`'s reason: it loads the
 // whole protocol stack and flips settings every other file in `run.js`'s one
@@ -311,7 +321,7 @@ function childMain() {
         requestObject = decode(ro.text);
       }
       return { started: started, waitPath: waitPath, waiting: waiting,
-               walletUrl: walletUrl, requestObject: requestObject,
+               walletUrl: walletUrl, requestObject: requestObject, who: who,
                state: new URL(waitPath, 'http://x').searchParams.get('state') };
     }
 
@@ -367,14 +377,17 @@ function childMain() {
     });
     const mfaId = pendingSignIn({ begin: { forceMfa: true } });
     r = await request(port, 'GET', '/authn/login?authn=' + mfaId);
-    note(r.text.indexOf('wallet-signin') < 0 &&
-         r.text.indexOf('wallet-withheld') >= 0,
-         '1d. a request demanding two factors is not offered the wallet, ' +
-         'and is told why');
+    note(r.text.indexOf('wallet-signin') >= 0 &&
+         r.text.indexOf('wallet-mfa-note') >= 0 &&
+         r.text.indexOf('wallet-withheld') < 0,
+         '1d. a request demanding two factors IS offered the wallet since ' +
+         '#38\'s follow-ups, and is told a second factor follows');
     r = await request(port, 'GET', '/authn/wallet?authn=' + mfaId,
                       { browser: browser() });
-    note(r.status === 403 && r.code === 'STS-VC-0054',
-         '1e. and the door refuses it, STS-VC-0054', r.status + ' ' + r.code);
+    note(r.status === 303,
+         '1e. and the door takes it: the second factor comes after the ' +
+         'presentation (tests/oid4vp_wallet_mfa.js drives it)',
+         r.status + ' ' + r.code);
     r = await request(port, 'GET', '/authn/wallet?authn=nothing-pending',
                       { browser: browser() });
     note(r.status === 400 && r.code === 'STS-VC-0053',
@@ -407,35 +420,86 @@ function childMain() {
     const bindingLine = s.started.setCookie.join(' ');
     note(/HttpOnly/.test(bindingLine) && /SameSite=Lax/.test(bindingLine),
          '2e. the binding cookie is HttpOnly and SameSite=Lax', bindingLine);
-    note(s.waiting.status === 200 &&
-         !/<script/i.test(s.waiting.text) &&
-         /<meta http-equiv="refresh" content="\d+;url=[^"]*\/authn\/wallet\/wait\?/
-           .test(s.waiting.text),
-         '2f. the wait page has no script and polls with a meta refresh',
-         s.waiting.text.slice(0, 300));
-    note(/id="wallet-qr"[^>]*src="data:image\/svg\+xml;base64,/
-           .test(s.waiting.text) && !!s.walletUrl,
-         '2g. it draws a server-rendered QR code and the same-device link');
-    note(s.waiting.headers['content-security-policy'] === screenCsp &&
+    const scripts = s.waiting.text.match(/<script[^>]*>/g) || [];
+    note(s.waiting.status === 200 && scripts.length === 1 &&
+         /<script src="\/authn\/wallet\.js"><\/script>/.test(s.waiting.text) &&
+         !/<meta http-equiv="refresh"/.test(s.waiting.text),
+         '2f. the wait page loads exactly ONE script, /authn/wallet.js, and ' +
+         'does not reload itself (a reload would close the wallet dialog)',
+         JSON.stringify(scripts));
+    note(/<form method="post"[^>]*id="wallet-dcapi-form"[^>]*action="\/authn\/wallet\/dc-api"/
+           .test(s.waiting.text) &&
+         /<button type="submit"[^>]*id="wallet-dcapi"/.test(s.waiting.text) &&
+         /id="wallet-noscript"/.test(s.waiting.text) && !!s.walletUrl,
+         '2f-ii. the button is a REAL submit button in a form posting to ' +
+         '/authn/wallet/dc-api, with a no-script sentence and the ' +
+         'same-device link beside it');
+    note(s.waiting.text.indexOf('wallet-qr-link') < 0 &&
+         s.waiting.text.indexOf('wallet-qr') < 0,
+         '2g. the plain QR code is OFF by default, so there is no link to ' +
+         'it and no code on the page');
+    const waitCsp = s.waiting.headers['content-security-policy'];
+    note(/script-src 'self'/.test(waitCsp) &&
+         !/script-src[^;]*unsafe-inline/.test(waitCsp) &&
+         /frame-ancestors 'none'/.test(waitCsp) &&
+         /base-uri 'none'/.test(waitCsp) &&
          /script-src 'none'/.test(screenCsp),
-         '2h. its CSP is the base policy, script-src \'none\' and all',
-         s.waiting.headers['content-security-policy']);
+         '2h. its CSP relaxes script-src to \'self\' and nothing else, and ' +
+         'keeps frame-ancestors and base-uri', waitCsp);
+    const scriptRes = await request(port, 'GET', '/authn/wallet.js');
+    note(scriptRes.status === 200 &&
+         /javascript/.test(String(scriptRes.headers['content-type'])) &&
+         scriptRes.text.indexOf('navigator.credentials.get') > 0 &&
+         scriptRes.text.indexOf('digital') > 0,
+         '2h-ii. and that one resource is served here, calling the Digital ' +
+         'Credentials API', scriptRes.status);
     const ro = s.requestObject || {};
-    const cq = ((ro.dcql_query || {}).credentials || [])[0] || {};
+    const queries = (ro.dcql_query || {}).credentials || [];
+    const cq = queries[0] || {};
+    const sets = (ro.dcql_query || {}).credential_sets || [];
     note(ro.client_id === aud && cq.format === 'dc+sd-jwt' &&
          JSON.stringify(cq.meta) === JSON.stringify(
            { vct_values: [vcConfigs.VCI_VCT] }) &&
          JSON.stringify(cq.claims) === JSON.stringify([{ path: ['sub'] }]),
          '2i. the signed request asks for this issuer\'s SD-JWT VC and its ' +
-         'subject only', JSON.stringify(ro.dcql_query));
+         'subject only', JSON.stringify(cq));
+    note(queries.length === 3 &&
+         queries.map(function (q) { return q.format; }).join(',') ===
+           'dc+sd-jwt,jwt_vc_json,ldp_vc' &&
+         sets.length === 1 && sets[0].required === true &&
+         JSON.stringify(sets[0].options) === JSON.stringify(
+           queries.map(function (q) { return [q.id]; })),
+         '2i-ii. and for the other two formats beside it, with a ' +
+         'credential_set saying any ONE of them answers',
+         JSON.stringify(ro.dcql_query));
+    // THE PLAIN QR CODE IS OFF BY DEFAULT IN BOTH MODES (#38's follow-ups).
     await realms.run(DEFAULT, function () {
-      config.setOverride('oid4vp.signInCrossDevice', 'false');
+      config.setOverride('global.mode', 'product');
     });
-    const noQr = await start(browser(), pendingSignIn());
-    note(noQr.waiting.status === 200 &&
-         noQr.waiting.text.indexOf('wallet-qr') < 0 && !!noQr.walletUrl,
-         '2j. with oid4vp.signInCrossDevice off there is no QR code, and the ' +
-         'same-device link stays');
+    const inProduct = await start(browser(), pendingSignIn());
+    note(inProduct.waiting.status === 200 &&
+         inProduct.waiting.text.indexOf('wallet-qr') < 0,
+         '2j. in product mode it is off too — the default is the same in ' +
+         'both modes, and no mode predicate decides it');
+    await realms.run(DEFAULT, function () {
+      config.clearOverride('global.mode');
+      config.setOverride('oid4vp.signInCrossDevice', 'true');
+    });
+    const withQr = await start(browser(), pendingSignIn());
+    note(withQr.waiting.status === 200 &&
+         /id="wallet-qr-link"/.test(withQr.waiting.text),
+         '2j-ii. oid4vp.signInCrossDevice on adds a link to the QR page');
+    const qrPage = await request(port, 'GET', withQr.waitPath + '&qr=1',
+                                 { browser: withQr.who });
+    note(qrPage.status === 200 &&
+         /id="wallet-qr"[^>]*src="data:image\/svg\+xml;base64,/
+           .test(qrPage.text) &&
+         !/<script/i.test(qrPage.text) &&
+         /<meta http-equiv="refresh" content="\d+;url=[^"]*\/authn\/wallet\/wait\?/
+           .test(qrPage.text) &&
+         qrPage.headers['content-security-policy'] === screenCsp,
+         '2j-iii. and that page has the server-drawn code, NO script, the ' +
+         '<meta> refresh and the base policy', qrPage.status);
     await realms.run(DEFAULT, function () {
       config.clearOverride('oid4vp.signInCrossDevice');
     });
@@ -792,9 +856,193 @@ function childMain() {
                   }, false, 'STS-VC-0061');
 
     // ====================================================================
+    // 8. A DISOWNED CREDENTIAL SIGNS NOBODY IN, AND 9. AN ORDINARY SIGN-OUT
+    //    DISOWNS NOTHING (#38's follow-ups)
+    // ====================================================================
+    const stats8 = require(ROOT + '/common/admin_stats');
+    const issuedRegister8 = issuedRegister;
+    const vcStatus = require(ROOT + '/oid4vc/vc_status');
+    const statusAdmin = require(ROOT + '/admin-ui/vc_status_admin');
+
+    // Signs the credential in, in a fresh browser, and answers the wait
+    // page's response: `{ ok, code, session }`.
+    async function signInWith(credential, holder, opts) {
+      const o = opts || {};
+      const who = browser();
+      const one = await start(who, pendingSignIn());
+      await respond(one, present(credential, holder, one.requestObject.nonce,
+                                 aud));
+      const page = await request(port, 'GET', one.waitPath, { browser: who });
+      const session = await realms.run(DEFAULT, function () {
+        const found = who.cookies.sts_session && authn.cookieSession(
+          { headers: { cookie: 'sts_session=' + who.cookies.sts_session } },
+          authn.SESSION_COOKIE);
+        return (found && found.session) || null;
+      });
+      if (session && !o.keep) {
+        await realms.run(DEFAULT, function () {
+          authn.endSessionById(session.id, 'the test, tidying up');
+        });
+      }
+      return { ok: page.status === 303, code: page.code, page: page,
+               session: session, who: who };
+    }
+
+    const d1 = holderKey();
+    const dCred = await issue('wsi-alice', d1);
+    const firstIn = await signInWith(dCred.credential, d1);
+    note(firstIn.ok && firstIn.session &&
+         firstIn.session.user.username === 'wsi-alice',
+         '8a. a fresh credential signs wsi-alice in (the baseline every ' +
+         'refusal below is measured against)',
+         firstIn.page.status + ' ' + firstIn.code);
+
+    // AN ORDINARY SESSION SIGN-OUT. Every per-session door — /oauth2/logout,
+    // SAML Single Logout, wsignout1.0, the console's and the portal's Sign
+    // out — ends a session through authn.dropSession(), which is what
+    // endSessionById() calls.
+    const keepIn = await signInWith(dCred.credential, d1, { keep: true });
+    await realms.run(DEFAULT, function () {
+      authn.endSessionById(keepIn.session.id, '/oauth2/logout');
+    });
+    const afterSignOut = await signInWith(dCred.credential, d1);
+    note(afterSignOut.ok,
+         '9a. an ordinary session sign-out disowns nothing: the same ' +
+         'credential signs in again straight afterwards',
+         afterSignOut.page.status + ' ' + afterSignOut.code);
+
+    // A GLOBAL SIGN-OUT, through the one function /logout, /admin/logout and
+    // /admin-api/logout all go through.
+    const aliceKey8 = await realms.run(DEFAULT, function () {
+      return stats8.holderKeyOf('wsi-alice', aliceSub);
+    });
+    const inventory8 = await realms.run(DEFAULT, function () {
+      return logout.inventoryFor(aliceKey8);
+    });
+    const walletCredentialRows = [].concat.apply([],
+      (inventory8.families || [])
+        .filter(function (f) { return f.id === 'wallet-credential'; })
+        .map(function (f) { return f.rows || []; }));
+    note(walletCredentialRows.length >= 1 &&
+         !JSON.stringify(walletCredentialRows).includes(dCred.credential),
+         '8b. /logout lists her wallet credentials as their own family, by ' +
+         'a handle and never the credential',
+         JSON.stringify(walletCredentialRows.map(function (r) {
+           return r.label;
+         })));
+    const statusRow = await realms.run(DEFAULT, function () {
+      return issuedRegister8.lookup(dCred.credential);
+    });
+    const statusKey = statusRow && statusRow.credentials[0].statusKey;
+    note(!!statusKey && await realms.run(DEFAULT, function () {
+      return vcStatus.statusOf(statusKey) === vcStatus.VALID;
+    }), '8c. the credential carries a status-list entry, and it is VALID',
+        statusKey);
+    await realms.run(DEFAULT, function () {
+      return logout.terminate(aliceKey8, walletCredentialRows.map(
+        function (row) { return row.id; }), { by: 'a global sign-out' });
+    });
+    const afterGlobal = await signInWith(dCred.credential, d1);
+    note(!afterGlobal.ok && afterGlobal.code === 'STS-VC-0071' &&
+         afterGlobal.page.text.indexOf('disowned') > 0,
+         '8d. after a global sign-out that credential VERIFIES and signs ' +
+         'nobody in, STS-VC-0071, and the page says why',
+         afterGlobal.page.status + ' ' + afterGlobal.code);
+    note(await realms.run(DEFAULT, function () {
+      return vcStatus.statusOf(statusKey) === vcStatus.INVALID;
+    }), '8e. and the disown set its status-list entry INVALID, so a verifier ' +
+        'elsewhere learns it');
+
+    // A CREDENTIAL ISSUED AFTERWARDS, on a fresh token, signs in again.
+    const d2 = holderKey();
+    const afterCred = await issue('wsi-alice', d2);
+    const freshIn = await signInWith(afterCred.credential, d2);
+    note(freshIn.ok,
+         '8f. a credential issued AFTER the sign-out signs her in again — a ' +
+         'disown reaches what was issued up to it and no further',
+         freshIn.page.status + ' ' + freshIn.code);
+
+    // AN ADMINISTRATOR'S REVOCATION on the issued register.
+    const freshRow = await realms.run(DEFAULT, function () {
+      return issuedRegister8.lookup(afterCred.credential);
+    });
+    const artifact = await realms.run(DEFAULT, function () {
+      return stats8.artifactByKey(freshRow.credentials[0].artifactKey);
+    });
+    await realms.run(DEFAULT, function () {
+      return stats8.revokeArtifact(artifact, 'the admin console');
+    });
+    const afterRevoke = await signInWith(afterCred.credential, d2);
+    note(!afterRevoke.ok && afterRevoke.code === 'STS-VC-0071',
+         '8g. an administrator revoking it on the issued register refuses it ' +
+         'too, STS-VC-0071', afterRevoke.page.status + ' ' +
+         afterRevoke.code);
+    note(await realms.run(DEFAULT, function () {
+      return vcStatus.statusOf(freshRow.credentials[0].statusKey) ===
+        vcStatus.INVALID;
+    }), '8h. and its status-list entry reads INVALID from that act alone');
+    await realms.run(DEFAULT, function () {
+      return stats8.restoreArtifact(stats8.artifactByKey(
+        freshRow.credentials[0].artifactKey));
+    });
+    const afterRestore = await signInWith(afterCred.credential, d2);
+    note(afterRestore.ok,
+         '8i. a restore (NON-SPEC) undoes it, in one place: the register ' +
+         'and the status list agree because neither keeps a second answer',
+         afterRestore.page.status + ' ' + afterRestore.code);
+
+    // A SUSPENDED STATUS LIST ENTRY, set from the console's own function.
+    const suspended = await realms.run(DEFAULT, function () {
+      return statusAdmin.statusAction(
+        { idx: freshRow.credentials[0].statusKey, action: 'suspend' },
+        'the admin console');
+    });
+    const whileSuspended = await signInWith(afterCred.credential, d2);
+    note(suspended.ok && !whileSuspended.ok &&
+         whileSuspended.code === 'STS-VC-0071',
+         '8j. suspending its status-list entry refuses it, STS-VC-0071',
+         JSON.stringify(suspended) + ' ' + whileSuspended.code);
+    const reinstated = await realms.run(DEFAULT, function () {
+      return statusAdmin.statusAction(
+        { idx: freshRow.credentials[0].statusKey, action: 'reinstate' },
+        'the admin console');
+    });
+    const afterReinstate = await signInWith(afterCred.credential, d2);
+    note(reinstated.ok && afterReinstate.ok,
+         '8k. reinstating it lets her in again, and a revoked entry cannot ' +
+         'be reinstated at all',
+         JSON.stringify(reinstated) + ' ' + afterReinstate.code);
+    const cannotReinstate = await realms.run(DEFAULT, function () {
+      return statusAdmin.statusAction({ idx: statusKey, action: 'reinstate' },
+                                      'the admin console');
+    });
+    note(!cannotReinstate.ok,
+         '8l. INVALID is final: the revoked entry above refuses to be ' +
+         'reinstated', JSON.stringify(cannotReinstate));
+
+    // AND THROUGH THE ENDPOINT, not only the function: POST /logout with the
+    // browser's own cookie, which selects nothing and therefore ends
+    // everything.
+    const g1 = holderKey();
+    const gCred = await issue('wsi-alice', g1);
+    const globalIn = await signInWith(gCred.credential, g1, { keep: true });
+    const posted = await request(port, 'POST', '/logout',
+                                 { browser: globalIn.who, form: {} });
+    const afterPost = await signInWith(gCred.credential, g1);
+    note(posted.status < 400 && !afterPost.ok &&
+         afterPost.code === 'STS-VC-0071',
+         '8m. POST /logout — a person signing themselves out of everything ' +
+         '— disowns them too', posted.status + ' ' + afterPost.code);
+
+    // ====================================================================
     // 7. THE BAR DOOR STILL SIGNS NOBODY IN
     // ====================================================================
     const barBrowser = browser();
+    // A CREDENTIAL OF ITS OWN: section 8 disowned wsi-alice's earlier ones,
+    // and a disowned credential is refused at this door too — which is the
+    // status check working.
+    const barKey = holderKey();
+    const barCred = await issue('wsi-alice', barKey);
     r = await request(port, 'GET', '/oid4vp/start?by=reference',
                       { browser: barBrowser });
     const barUrl = r.headers.location ? new URL(r.headers.location) : null;
@@ -819,7 +1067,7 @@ function childMain() {
       });
       r = await request(port, 'POST', '/oid4vp/response', {
         form: { state: barRo.state, vp_token: JSON.stringify({
-          [DCQL_ID]: [present(alice.credential, aliceKey, barRo.nonce,
+          [DCQL_ID]: [present(barCred.credential, barKey, barRo.nonce,
                               barRo.client_id)] }) } });
     }
     await realms.run(DEFAULT, function () {

@@ -2867,14 +2867,20 @@ const SCHEMA = {
       from: 'the console, the management API, or by hand',
       what: 'HOW THIS APPLICATION\'S USERS AUTHENTICATE, one value from the ' +
             'same closed list fedAuthnMechanism uses: password, ' +
-            'password-mfa, webauthn, spnego, federation.\n\nIt is the ' +
+            'password-mfa, webauthn, spnego, wallet, federation.\n\nIt is ' +
+            'the ' +
             'generalisation of appFederationRelationship beside it, and the ' +
             'value that could not be said before it existed is `spnego` — ' +
             'INTEGRATED AUTHENTICATION, where this application\'s people are ' +
             'sent to /authn/spnego and signed in on the Kerberos ticket ' +
             'their machine already holds, with no screen drawn and nothing ' +
             'typed. That is the one mechanism here resting on a credential ' +
-            'this service genuinely verifies.\n\n`federation` means the ' +
+            'this service genuinely verifies.\n\n`wallet` (2026-09-17) ' +
+            'sends them to /authn/wallet instead, where their wallet ' +
+            'presents a credential this realm issued them and they are ' +
+            'signed in as the entry it was issued for — asked for a second ' +
+            'factor afterwards where the request demands two.\n\n' +
+            '`federation` means the ' +
             'relationships named in appFederationRelationship, which is what ' +
             'naming one already implied, said out loud — so it changes ' +
             'nothing, and declaring it while naming NO usable relationship ' +
@@ -2885,8 +2891,9 @@ const SCHEMA = {
             'same as password: it falls through to appFederationRelationship ' +
             'and then to the screen, which is exactly what every application ' +
             'did before this attribute existed.\n\nA value this service ' +
-            'cannot honour — a mechanism it does not have, or `spnego` while ' +
-            'krb5.spnegoAuthentication is off — is REPORTED on the screen, ' +
+            'cannot honour — a mechanism it does not have, `spnego` while ' +
+            'krb5.spnegoAuthentication is off, or `wallet` while ' +
+            'oid4vp.signIn is off — is REPORTED on the screen, ' +
             'one line, rather than dropped. A configured mechanism that ' +
             'silently is not happening looks exactly like one that is.\n\nIt ' +
             'is WRITTEN BY NOBODY. No protocol presents it and no sighting ' +

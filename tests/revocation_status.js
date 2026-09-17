@@ -3201,9 +3201,21 @@ async function theRegisteredDoors(t) {
           'verifyForeignJwt() returns jwk');
   const vpSource = fs.readFileSync(path.join(ROOT, 'oid4vc', 'vc_verifier.ts'),
                                    'utf8');
-  t.check(/verifyPresentation\(presentations\[0\], record\);\s*await issuerCertificateRevocation\(verified\);\s*record\.verdict = \{/
+  // SINCE #38's FOLLOW-UPS the response endpoint reads its answer through
+  // `verifyAnswer()` — which the Digital Credentials API door shares — and
+  // that function is where the revocation of a configured trusted issuer
+  // certificate is asked, still BEFORE any verdict is recorded. The two
+  // verifiers report the certificate they used from an ASYNCHRONOUS
+  // `verifyIssuerSignatureAsync()`, which hands a post-quantum signature to
+  // the worker pool and falls through to the synchronous one for everything
+  // else.
+  t.check(/await issuerCertificateRevocation\(verified\);\s*await this\.statusCheck\(/
+            .test(vpSource) &&
+          /const answer = await this\.verifyAnswer\(record, body\.vp_token,/
             .test(vpSource) && /pem: pem,/.test(vpSource) &&
-          (vpSource.match(/result\.issuerCertificatePem = verifyIssuerSignature\(/g) || []).length === 2,
+          (vpSource.match(
+            /result\.issuerCertificatePem =\s*\(await verifyIssuerSignatureAsync\(/g)
+            || []).length === 2,
           'and the OID4VP response endpoint asks before it records a ' +
           'verdict, with the certificate both verifiers report having ' +
           'used', 'vc_verifier.ts');

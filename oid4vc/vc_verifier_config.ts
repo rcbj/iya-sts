@@ -552,6 +552,15 @@ class VcVerifierConfig {
         ? { vct_values: [format.identifier] }
         : { type_values: [format.identifier] }
     };
+    // A BARE bbs-2023 DERIVED PROOF BINDS NO HOLDER (#38's follow-ups), and
+    // the bar door still accepts one, so its ldp_vc query says so rather than
+    // leaving DCQL's default — holder binding REQUIRED — to promise something
+    // the door does not check. A wallet may still answer with a
+    // VerifiablePresentation and a Data Integrity proof, which is verified
+    // when it comes; a sign-in's query leaves the default and requires it.
+    if (wanted === 'ldp_vc') {
+      credential.require_cryptographic_holder_binding = false;
+    }
     const claims = this.dcqlClaims(wanted);
     // An EMPTY claims array is not the same request as no claims member at all,
     // and the difference is the reason this is an `if` rather than an
@@ -731,7 +740,10 @@ const FORMATS: FormatRow[] = [
     identifierText: VCI_JWT_TYPES.join(', '),
     selectiveDisclosure: 'per canonical statement, and unlinkable between ' +
                          'presentations',
-    holderBinding: 'the derived proof itself, bound to this request\'s nonce',
+    holderBinding: 'none from the derived proof, which binds this ' +
+                   'request\'s nonce only; a VerifiablePresentation with a ' +
+                   'Data Integrity proof (challenge and domain) by the ' +
+                   'did:jwk the credential names, which a sign-in requires',
     configs: [VCI_LDP_CONFIG_ID, VCI_LDP_DID_CONFIG_ID],
     what: 'Signed over canonicalized JSON-LD, so a claim can only be asked ' +
           'for by a term the vendored context defines — several claims below ' +
