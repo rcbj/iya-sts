@@ -90,12 +90,12 @@ files did not change; the paths did.
 | `debugger/` | **The embedded identity protocol debugger** (2026-09-13): the parent project's client and api served on a listener of their own (`debugger.port`), signed in to through this service's authorization server, the api a FORKED CHILD behind an access token only a console administrator is issued. `debugger/embedded/` is that project's build output, never source. `debugger/CLAUDE.md`. |
 | `postgres/` | Four files the database container runs, never this service: TLS setup, TLS enforcement, the schema and the least-privilege `sts_app` role. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site — how to USE this service. `docs/CLAUDE.md`. |
-| `types/`, `tsconfig.json`, `tsconfig.build.json`, `build-typescript.sh` | **THE TYPESCRIPT CONVERSION (#50, 2026-09-16)**: `types/` is declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, `server.js` and `sts_metadata.js`, all but the vendored copies — and `tests/typecheck.js` runs it and holds the list. `build-typescript.sh` compiles — inside an image build only — each `x.ts` to `x.js` beside it (`tsconfig.build.json`), and with `--strip` removes the sources for the service image. The decisions for the rest of the conversion are on issue #50. |
+| `types/`, `tsconfig.json`, `tsconfig.build.json`, `build-typescript.sh` | **THE TYPESCRIPT CONVERSION (#50, 2026-09-16)**: `types/` is declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, and `server.js`, all but the vendored copies, beside the `.ts` files (`sts_metadata.ts` at the root among them), which are always checked — and `tests/typecheck.js` runs it and holds the list. `build-typescript.sh` compiles — inside an image build only — each `x.ts` to `x.js` beside it (`tsconfig.build.json`), and with `--strip` removes the sources for the service image. The decisions for the rest of the conversion are on issue #50. |
 | `env/` | The appconfig files, each a layer over the generated `defaults.js`. `env/CLAUDE.md`. |
 
 At the package root there are exactly two modules, and both earn it:
 **`server.js`**, the shell that requires the others and listens, and
-**`sts_metadata.js`**, which reads the router to list what everything else
+**`sts_metadata.ts`**, which reads the router to list what everything else
 registered and is therefore required last.
 
 **Read the directory's own `CLAUDE.md` before changing anything in it.** They are
@@ -196,7 +196,7 @@ holds is the table above; what each module is for is that directory's
    `register()` at each module's top level. **The modules still written in
    JavaScript still register when they are required** — the parent project's
    locked Kerberos files (`krb5_kdc`, `krb5_service`, `spnego`),
-   `tls/tls_server.js`, `ldap/ldap_server.js` and `sts_metadata.js` — and
+   `tls/tls_server.js` and `ldap/ldap_server.js` — and
    `protocol_stack.ts` requires them at their old places, so the two kinds
    interleave exactly as they did (Express's layer list, 603 layers with their
    handlers, was compared before and after and is identical).
@@ -263,7 +263,7 @@ holds is the table above; what each module is for is that directory's
    | Offered by | Slots | Argued in |
    |---|---|---|
    | `admin-ui/admin.ts` | `setLogoutReader`, `setCryptoReporter`, `setSignalsReporter`, `setCaepReporter`, `setRiscReporter`, `setDirectoryPages`, `setDirectoryReader`, `setDirectoryWriter`, `setGroupReader`, `setGroupWriter`, `setScimReader`, `setSpiffeReader`, `setXacmlPages`, `setRolePreviewer`, `setTruststore` | `admin-ui/CLAUDE.md`, and the filler's own file |
-   | `admin-ui/crypto_metadata.ts` | `setProtocolFamilies`, filled by `sts_metadata.js` | `admin-ui/CLAUDE.md` |
+   | `admin-ui/crypto_metadata.ts` | `setProtocolFamilies`, filled by `sts_metadata.ts` | `admin-ui/CLAUDE.md` |
    | `portal/portal.ts` | `setDirectory`, filled by `ldap/ldap_server.js` | `portal/CLAUDE.md` |
    | `authn/authn.ts` | `setSessionObserver`, filled by `ssf/ssf.ts` | `authn/CLAUDE.md`, `ssf/CLAUDE.md` |
    | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver` | `common/CLAUDE.md` |
@@ -426,7 +426,7 @@ is and the named file says why.
 | 23e–g | `acme/acme`, `est/est`, `scep/scep` | **After `admin-ui/admin`** (18), whose shell each family's `_admin.ts` draws its two pages with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each requires its own `_admin.ts`, so each family is one require in `common/protocol_stack.ts`, followed by two `register()` calls (the family, then its `_admin`); `mgmt-api/admin_api.ts` spreads each `<family>_api.ts`, which registers no route and requires its view model lazily. No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
 | 23h | `debugger/debugger_server` | A socket owner: builds its OWN express app and registers nothing on this one. After `authn`, `oauth2`, `tls/tls_server` and the console, all of which it reads. | `debugger/CLAUDE.md` |
 | 23a | `logout/logout` | Second to last: it reads nine modules' stores. | `logout/CLAUDE.md` |
-| 24 | `sts_metadata` | JavaScript: registers `/admin/sts-metadata` at this require. **Last, for everybody.** It reads the router to list what everything else registered. | *Adding an endpoint*, below |
+| 24 | `sts_metadata` | TypeScript (#50): its `wire` step hands `PROTOCOLS` to the crypto page (20a), and its `register()` — `/admin/sts-metadata` — is the last one. **Last, for everybody.** It reads the router to list what everything else registered. | *Adding an endpoint*, below |
 
 ### Where the numbered rules live now
 
@@ -593,7 +593,7 @@ argue its own case.
 
 ---
 
-## Adding an endpoint costs one entry in `sts_metadata.js`
+## Adding an endpoint costs one entry in `sts_metadata.ts`
 
 `GET /admin/sts-metadata` reads the endpoint list **from the running Express router**, so
 it cannot go stale — but it reports two kinds of drift and this repository's own
@@ -614,7 +614,7 @@ routes do not exist, and the drift check below reports every description of
 them as a path that is not registered.
 
 **So adding a protocol family costs three things**: an entry in `ENDPOINTS`, a
-card in `sts_metadata.js`'s `PROTOCOLS`, and a row in
+card in `sts_metadata.ts`'s `PROTOCOLS`, and a row in
 `admin-ui/crypto_metadata.ts`'s `FAMILIES` — the second metadata page,
 `/admin/crypto-metadata`, checks its family list against `PROTOCOLS` in both
 directions. `tests/vendored/sts_metadata.js` fails on the first two and
@@ -637,7 +637,7 @@ was written for. A card still costs all three things above whether or not it is
 a protocol, because the rule the page enforces is *no endpoint group without a
 card*, and paying it here is cheaper than making the rule conditional.
 
-**Those drift checks are enforcement rather than documentation**: `sts_metadata.js`
+**Those drift checks are enforcement rather than documentation**: `sts_metadata.ts`
 is this repository's own job and a route registered and undescribed fails the
 suite here.
 

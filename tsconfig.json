@@ -12,7 +12,7 @@
     "typeRoots": ["./tests/node_modules/@types"]
   },
   "include": [
-    "server.js", "sts_metadata.js", "types/**/*.d.ts",
+    "server.js", "sts_metadata.ts", "types/**/*.d.ts",
     "acme/*.js", "acme/*.ts",
     "admin-core/*.js", "admin-core/*.ts",
     "admin-ui/*.js", "admin-ui/*.ts",

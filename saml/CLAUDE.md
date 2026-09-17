@@ -62,7 +62,7 @@ because the reason each existed is still worth a reader's attention:
 | `README.md` | the profile, its three bindings, and what is still absent |
 | the root `CLAUDE.md` | the non-goals table row is gone; the require-order table has 10a |
 | `../ws-federation/wsfed.ts` | its federation metadata still publishes no `IDPSSODescriptor`, which is now a fact about THAT document — the IDPSSODescriptor is at `/saml2/metadata` |
-| `../sts_metadata.js` | the `saml2` coverage note, and the protocol card that said NO ROUTE OF ITS OWN |
+| `../sts_metadata.ts` | the `saml2` coverage note, and the protocol card that said NO ROUTE OF ITS OWN |
 | `docs/` | the user-facing half |
 
 If any of them still reads as though this service has no browser SAML profile,

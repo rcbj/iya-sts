@@ -278,7 +278,7 @@ function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('=== one source for every surface ===');
   const drawers = ['home/home.ts', 'admin-ui/admin.ts', 'portal/portal.ts',
-                   'mgmt-api/admin_api.ts', 'sts_metadata.js'];
+                   'mgmt-api/admin_api.ts', 'sts_metadata.ts'];
   drawers.forEach(function (rel) {
     const src = codeOf(rel);
     t.check(/require\((['"])[^'"]*common\/version\1\)/.test(src),

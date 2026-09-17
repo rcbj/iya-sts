@@ -23,7 +23,7 @@ Twelve of the thirteen register nothing (rule 3), so their position in the
 route order is not a position. `ssf.ts` is required at **23b in
 `common/protocol_stack.ts`** — after `admin-ui/admin.ts`, whose slots
 (`setSignalsReporter`, `setCaepReporter`, `setRiscReporter`) it fills, and
-before `sts_metadata.js`, which is last for everybody.
+before `sts_metadata.ts`, which is last for everybody.
 
 ---
 
@@ -327,7 +327,7 @@ fourteen, that is the design going wrong.
   rows, two `LIST_PARAMS` rows and a `SETTING_HOMES` row.
 * `mgmt-api/admin_api.ts` — two GETs and a POST with three actions;
   `mgmt-api/admin_api_spec.ts` — the `Risc` schema.
-* `sts_metadata.js` — one `SPECS` entry and **six** `ENDPOINTS` rows, three
+* `sts_metadata.ts` — one `SPECS` entry and **six** `ENDPOINTS` rows, three
   admin and three management API — which is the count the CAEP block's own
   note warns about: a family's protocol endpoints are obvious and the CONSOLE
   and MANAGEMENT API rows it also costs are the ones a checklist forgets.
@@ -1172,11 +1172,11 @@ For the next person adding one, this family's full list:
 * `admin-ui/admin.ts` — the eighth slot, `/admin/ssf` and its action route, a
   `SECTIONS` row with its `blurb`, and a `SETTING_HOMES` row;
 * `admin-ui/crypto_metadata.ts` — a row in `FAMILIES`, whose `name` must match
-  the card in `sts_metadata.js`'s `PROTOCOLS` exactly, or the drift check
+  the card in `sts_metadata.ts`'s `PROTOCOLS` exactly, or the drift check
   reports it in both directions;
 * `mgmt-api/admin_api.ts` — a GET and a POST with four actions;
   `mgmt-api/admin_api_spec.ts` — the `Ssf` schema;
-* `sts_metadata.js` — five `SPECS` entries, **fourteen** `ENDPOINTS` rows and a
+* `sts_metadata.ts` — five `SPECS` entries, **fourteen** `ENDPOINTS` rows and a
   `PROTOCOLS` card. It was eleven until 2026-09-01, and the three that were
   missing are the ones that are not `/ssf/*` at all: `/admin/ssf`,
   `/admin-api/ssf` and `/admin-api/ssf/:action`. That is worth knowing because
@@ -1216,7 +1216,7 @@ purpose — the point of the section above is that this one is short.
   their blurbs, and a `SETTING_HOMES` row;
 * `mgmt-api/admin_api.ts` — a GET and a POST with three actions;
   `mgmt-api/admin_api_spec.ts` — the `Caep` schema;
-* `sts_metadata.js` — one `SPECS` entry and **four** `ENDPOINTS` rows, of
+* `sts_metadata.ts` — one `SPECS` entry and **four** `ENDPOINTS` rows, of
   which the two that are easy to forget are again the CONSOLE and MANAGEMENT
   API ones rather than the protocol's own;
 * `tests/caep_register.js` — the state machine and the register in process.

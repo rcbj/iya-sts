@@ -115,7 +115,7 @@
 // and this plainly can be — which would put it in the parent project's suite.
 // It is here on `sts_route_inputs.js`'s argument, which is the third one:
 // **section 6 reads THIS WORKING TREE'S source.** The family list it checks
-// coverage against is `sts_metadata.js`'s own `PROTOCOLS`, and the well-known
+// coverage against is `sts_metadata.ts`'s own `PROTOCOLS`, and the well-known
 // paths in section 7 are the ones this tree REGISTERS — so adding a
 // protocol family, or a well-known document to an existing one,
 // fails this job until somebody says here whether it publishes something a
@@ -308,7 +308,7 @@ function certificatePem(text, where) {
 // ---------------------------------------------------------------------------
 // THE DOCUMENTS.
 //
-// `family` is the name of a card in `sts_metadata.js`'s PROTOCOLS — checked in
+// `family` is the name of a card in `sts_metadata.ts`'s PROTOCOLS — checked in
 // both directions in section 6, so a row here cannot name a family this
 // service does not claim and a family cannot arrive without an answer to
 // "what does a stranger read first".
@@ -727,7 +727,7 @@ const DOCUMENTS = [
     } },
 
   // -- The service's own directory of realms -------------------------------
-  // NOT a protocol family (`sts_metadata.js` files it under `Service`), and it
+  // NOT a protocol family (`sts_metadata.ts` files it under `Service`), and it
   // is here because it is the document a client reads to discover the OTHER
   // documents' prefixes. `GET /realms` is ungated on purpose — common/CLAUDE.md
   // calls it "the ungated directory a client discovers
@@ -806,7 +806,7 @@ const CONTROLS = [
 
 // ---------------------------------------------------------------------------
 // The families that publish NOTHING a stranger can read, and why. Checked
-// against `sts_metadata.js`'s PROTOCOLS in section 6, so a new family
+// against `sts_metadata.ts`'s PROTOCOLS in section 6, so a new family
 // arrives here as a failure rather than as silence. The NINETEENTH did
 // exactly that on 2026-09-10 — PKI arrived with no row and this job went red
 // naming it, which is the whole of what the check is for.
@@ -1257,9 +1257,11 @@ async function thePerPartnerDocuments() {
 // ===========================================================================
 // 6. EVERY PROTOCOL FAMILY IS ACCOUNTED FOR.
 //
-// Read off THIS WORKING TREE — `sts_metadata.js`'s PROTOCOLS, the table that
-// draws the cards on /admin/sts-metadata and is handed to the crypto report at
-// require time. A family is either covered by a row in DOCUMENTS or named in
+// Read off THIS WORKING TREE — `sts_metadata.ts`'s PROTOCOLS, the table that
+// draws the cards on /admin/sts-metadata and is handed to the crypto report
+// when its instance is wired. The SOURCE is read, not the `.js` an image build
+// compiles beside it (#50), and the declaration may carry a type annotation.
+// A family is either covered by a row in DOCUMENTS or named in
 // NO_PUBLIC_METADATA with a reason. Both directions: a row here naming a
 // family this service does not claim fails too, which is what a rename
 // produces.
@@ -1268,10 +1270,10 @@ function everyFamilyIsAccountedFor() {
   log.debug("Entering everyFamilyIsAccountedFor().");
   log.info("=== every protocol family this service advertises ===");
 
-  const source = fs.readFileSync(path.join(ROOT, "sts_metadata.js"), "utf8");
-  const block = source.split("const PROTOCOLS = [")[1];
+  const source = fs.readFileSync(path.join(ROOT, "sts_metadata.ts"), "utf8");
+  const block = source.split(/const PROTOCOLS(?:: [A-Za-z]+\[\])? = \[/)[1];
   assert.ok(block,
-    "sts_metadata.js no longer contains `const PROTOCOLS = [`. That table is " +
+    "sts_metadata.ts no longer contains `const PROTOCOLS = [`. That table is " +
     "where this service says which protocol families it offers, and this " +
     "section is the drift check between it and the documents above. If it " +
     "moved, follow it — do not delete this section.");
@@ -1287,7 +1289,7 @@ function everyFamilyIsAccountedFor() {
   // matching finds SOME families and reports everything covered.
   assert.ok(families.length >= 15,
     "only " + families.length + " protocol families were read out of " +
-    "sts_metadata.js and this service advertises nineteen. That is an " +
+    "sts_metadata.ts and this service advertises nineteen. That is an " +
     "extractor that broke rather than a service that shrank — the table's " +
     "rows are `  { name: '...'` and something has changed their shape.");
 
@@ -1328,7 +1330,7 @@ function everyFamilyIsAccountedFor() {
   });
   check("no row names a family this service does not claim", function () {
     assert.deepStrictEqual(invented, [],
-      "these name a protocol family that is not in sts_metadata.js's " +
+      "these name a protocol family that is not in sts_metadata.ts's " +
       "PROTOCOLS: " + invented.join(", ") + ". That is what a rename " +
       "produces — the family is still there under another name and this file " +
       "goes on reporting it covered.");

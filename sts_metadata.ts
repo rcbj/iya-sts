@@ -1,7 +1,6 @@
-// @ts-check
 'use strict';
 //
-// File: sts_metadata.js
+// File: sts_metadata.ts
 //
 // ---------------------------------------------------------------------------
 // GET /admin/sts-metadata — what this mock is, protocol by protocol, endpoint
@@ -29,7 +28,8 @@
 //   * **REQUIRING `admin.js` FROM HERE MOVES NOTHING.** That is the question to
 //     ask of any require in this service, because require order was route
 //     order until #50's R1 (and still is for a JavaScript module, which this
-//     one is) — and this one is safe in both directions:
+//     one was until it became TypeScript) — and this one is safe in both
+//     directions:
 //     `common/protocol_stack.ts` requires the console long before it requires
 //     this file, so the require below is a cache hit that registers nothing;
 //     and in a process that somehow loaded this file first, the console's
@@ -40,8 +40,10 @@
 //     called the console's `registerRoutes(app)` — one more reason this file
 //     is required last, by `common/protocol_stack.ts`, after that call. There
 //     is no cycle: `admin.ts` does not require this module and must not — it
-//     would register this page's route (this file still registers at require)
-//     at the console's position, ahead of everything it is meant to list, and
+//     would build this module's instance and fill the crypto page's slot at
+//     the console's position, before that page has an instance to fill (and
+//     when this file still registered at require, it would have registered
+//     this page's route there, ahead of everything it is meant to list), and
 //     before R1 it would also have dragged the console's own routes behind
 //     the last module in server.js.
 //
@@ -84,20 +86,42 @@
 // than no list at all in a tool people use to learn those specs.
 // ---------------------------------------------------------------------------
 
-const app = require('./common/app');
-const { log, xmlEscape, baseUrlOf, PORT } = require('./common/helpers');
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, R1 and R2). `StsMetadata` takes the shared
+// app, the logger, the escaper, the base-URL reader, the port, `config`, the
+// console, the authorization-server registry, the crypto page and the version
+// module through its constructor; the build it reports is read once, when
+// the instance is built. The three tables — SPECS, ENDPOINTS and PROTOCOLS —
+// are DATA and stay at module level, exported as they always were: nothing
+// about them depends on an instance, and a test reads them as arrays.
+//
+//   * **R1: requiring this file registers nothing.** `registerRoutes(app)`
+//     adds `/admin/sts-metadata`, and `common/protocol_stack.ts` calls it
+//     LAST, where requiring this file used to register it — so the page is
+//     still the last route on the router and still behind the console's gate.
+//   * **R2: the composition root builds the instance.** Handing PROTOCOLS to
+//     the crypto page was the one piece of load-time work, and it is
+//     `StsMetadata.wire()` now, run once for whichever instance is installed
+//     — the root's, at the same point in the sequence, or a default one in a
+//     process that loads this module without the root. `registeredRoutes()`
+//     and `describeEndpoints()` are FACADES over that instance, for
+//     `admin-core/protocol_endpoints.ts` and the tests.
+// ---------------------------------------------------------------------------
+
+import app = require('./common/app');
+import helpers = require('./common/helpers');
 // The admin console, for its SHELL and nothing else: `page()` through
 // `respond()`, which is what puts this page in the same two columns, under the
 // same sidebar and behind the same banner as every other console page. See the
 // header for why requiring it here moves no route and makes no cycle. Nothing
 // about what this page SAYS comes from that module — it renders, and this file
 // still decides everything it renders.
-const admin = require('./admin-ui/admin');
-const config = require('./common/config');
+import admin = require('./admin-ui/admin');
+import config = require('./common/config');
 // The named authorization servers this process has served. They cannot be read
 // off the router — one route serves all of them — so they are listed by hand,
 // the same way the Kerberos and LDAP listeners are.
-const authorizationServers = require('./oauth-oidc/authorization_servers');
+import authorizationServers = require('./oauth-oidc/authorization_servers');
 // ---------------------------------------------------------------------------
 // THE CRYPTO PAGE, FOR ONE THING AND IN ONE DIRECTION: it reports on the same
 // identity services this page draws cards for, and two hand-kept lists of
@@ -117,15 +141,49 @@ const authorizationServers = require('./oauth-oidc/authorization_servers');
 // after the writer, and this is the only point in the process where that is
 // guaranteed.
 // ---------------------------------------------------------------------------
-const cryptoMetadata = require('./admin-ui/crypto_metadata');
+import cryptoMetadata = require('./admin-ui/crypto_metadata');
 // THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
 // from this repository, so requiring it from the module that must be required
 // LAST cannot move a route. This page is the one whose subject is what this
 // service IS, so which build of it you are reading belongs in the document as
 // well as in the console's footer — and a test that asserts an endpoint list is
 // a test that wants to say which build produced it. See common/version.js.
-const version = require('./common/version');
-const APP_VERSION = version.load();
+import version = require('./common/version');
+import InstanceSlot = require('./common/instance_slot');
+
+// One specification: what it is, who publishes it, where to read it, and how
+// far this service implements it. A few carry a `what` as well.
+interface Spec {
+  id: string;
+  name: string;
+  where: string;
+  url: string;
+  coverage: string;
+  what?: string;
+}
+
+// One described endpoint, keyed by its Express path. `effect` is set on the
+// few that DO something when followed, and `coverage` on the few whose row
+// says how far it goes.
+interface EndpointEntry {
+  path: string;
+  group: string;
+  name: string;
+  specs: string[];
+  what: string;
+  effect?: string;
+  coverage?: string;
+}
+
+// One protocol family's card. See the header above PROTOCOLS.
+interface Protocol {
+  name: string;
+  groups: string[];
+  specs: string[];
+  what: string;
+  sockets?: string;
+  notAProtocol?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // The specifications this service implements, and how far.
@@ -135,7 +193,7 @@ const APP_VERSION = version.load();
 // means the shape is right and the enforcement is deliberately absent, which is
 // what a test double is for.
 // ---------------------------------------------------------------------------
-const SPECS = [
+const SPECS: Spec[] = [
   // The one specification on this page that is not a protocol this service
   // speaks: it is the shape of the DOCUMENT that describes the management API.
   // It is listed because the drift check requires every referenced id to exist,
@@ -1872,7 +1930,7 @@ const SPECS = [
 // `group` orders the page. `specs` are ids from SPECS above; a typo there is
 // reported on the page rather than silently dropping the link.
 // ---------------------------------------------------------------------------
-const ENDPOINTS = [
+const ENDPOINTS: EndpointEntry[] = [
   // --- Kerberos ---
   //
   // Note what is NOT on this page and cannot be: the KDC's own listeners are
@@ -8456,8 +8514,10 @@ const ENDPOINTS = [
           'and remove-host-name.' },
 ];
 
-const SPEC_BY_ID = {};
-SPECS.forEach(function (s) { SPEC_BY_ID[s.id] = s; });
+const SPEC_BY_ID: Record<string, Spec> = {};
+SPECS.forEach(function (s) {
+  SPEC_BY_ID[s.id] = s;
+});
 
 // ---------------------------------------------------------------------------
 // THE THIRTEEN PROTOCOL FAMILIES, AND WHY THIS LIST EXISTS AT ALL ON A PAGE
@@ -8491,7 +8551,7 @@ SPECS.forEach(function (s) { SPEC_BY_ID[s.id] = s; });
 // `sockets` is the sentence the table cannot say for itself: where the protocol
 // actually lives when it does not live on the router.
 // ---------------------------------------------------------------------------
-const PROTOCOLS = [
+const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
@@ -8816,21 +8876,6 @@ const PROTOCOLS = [
           '— every disclosure digest, the key binding, and whether what was ' +
           'asked for arrived.' }
 ];
-
-// ---------------------------------------------------------------------------
-// HAND THE FAMILY LIST TO THE CRYPTO PAGE, at require time, so that its report
-// on "every identity service this mock advertises" is checked against the list
-// this page actually advertises rather than agreeing with it by hand. Both
-// directions of drift are then reported THERE, the way both directions of
-// endpoint drift are reported here. See the note above the require.
-//
-// It is done here, immediately below the table, rather than at the bottom of
-// the file: a second edit that has to be remembered is the thing this whole
-// arrangement exists to remove, and beside the data is where somebody adding a
-// fifteenth family will be looking.
-// ---------------------------------------------------------------------------
-cryptoMetadata.setProtocolFamilies(PROTOCOLS);
-
 // Groups of endpoints that are NOT a protocol family, and so are not expected
 // to be claimed by a row above. Four, and each is the service talking about
 // itself rather than speaking to somebody: liveness and the RFC 8414 documents
@@ -8839,150 +8884,6 @@ cryptoMetadata.setProtocolFamilies(PROTOCOLS);
 // (Undocumented) — that last one is already reported on its own.
 const NON_PROTOCOL_GROUPS = ['Service', 'Admin', 'Management API',
                              'Undocumented'];
-
-// A stable html id for a group heading, so the protocol list above can link
-// into the table below it. Derived from the group name rather than typed
-// beside it: a hand-kept id is one more thing to get out of step with the
-// heading it names.
-//
-// No entering/leaving pair, like `esc()`, `groupsOf()` and `specLinks()` beside
-// it: it is called once per group heading and once per protocol card while a
-// page is being built, and a trace of the page is what the callers already log.
-function groupAnchor(group) {
-  return 'group-' + String(group).toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-// The protocol list, joined to what is actually on the page: how many endpoint
-// rows each family has here, and the three kinds of drift a hand-written list
-// on a derived page can carry.
-function protocolReport(rows) {
-  log.debug("Entering protocolReport().");
-  const countBy = {};
-  rows.forEach(function (r) {
-    countBy[r.group] = (countBy[r.group] || 0) + 1;
-  });
-  const claimed = {};
-  const missingGroups = [];
-  const missingSpecs = [];
-  const list = PROTOCOLS.map(function (p) {
-    let endpoints = 0;
-    p.groups.forEach(function (group) {
-      claimed[group] = true;
-      if (!Object.prototype.hasOwnProperty.call(countBy, group)) {
-        missingGroups.push(p.name + ' -> ' + group);
-        return;
-      }
-      endpoints += countBy[group];
-    });
-    (p.specs || []).forEach(function (id) {
-      if (!SPEC_BY_ID[id]) {
-        missingSpecs.push(p.name + ' -> ' + id);
-      }
-    });
-    return { name: p.name, what: p.what, sockets: p.sockets || '',
-             groups: p.groups.slice(0), specs: (p.specs || []).slice(0),
-             // CARRIED INTO THE DOCUMENT rather than left on the table, so the
-             // drift test can see it. A card that names no specification has
-             // to say why, and the reason travels with the card — a list of
-             // exemptions kept in the test would be a second place to edit and
-             // the one that gets forgotten.
-             notAProtocol: !!p.notAProtocol,
-             endpoints: endpoints };
-  });
-  // The direction that catches a new protocol family arriving with no row in
-  // PROTOCOLS: a group of endpoints nobody claims and nothing excuses.
-  const unclaimed = Object.keys(countBy).filter(function (group) {
-    return !claimed[group] && NON_PROTOCOL_GROUPS.indexOf(group) === -1;
-  });
-  log.debug("Leaving protocolReport(). " + list.length + " protocol(s), " +
-            missingGroups.length + " missing group(s), " + unclaimed.length +
-            " unclaimed group(s).");
-  return { protocols: list, missingGroups: missingGroups,
-           missingSpecs: missingSpecs, unclaimedGroups: unclaimed };
-}
-
-// ---------------------------------------------------------------------------
-// The router's own list of what is registered, grouped by path so the three
-// methods on /oauth2/register/:client_id read as one endpoint.
-//
-// Express 4 keeps the routes on app._router.stack. It is a private member,
-// which is worth a word: the alternative is a list maintained by hand, and this
-// page exists precisely because that list cannot be trusted. If a future
-// Express moves it, the tests fail loudly (the page reports every described
-// path as stale) rather than quietly reporting nothing.
-// ---------------------------------------------------------------------------
-function registeredRoutes() {
-  log.debug("Entering registeredRoutes().");
-  const router = app._router || app.router;
-  const stack = (router && router.stack) || [];
-  const byPath = new Map();
-  stack.forEach(function (layer) {
-    if (!layer.route || !layer.route.path) return;
-    const path = String(layer.route.path);
-    const methods = Object.keys(layer.route.methods || {})
-      .filter(function (m) { return m !== '_all'; })
-      .map(function (m) { return m.toUpperCase(); });
-    if (!byPath.has(path)) byPath.set(path, new Set());
-    methods.forEach(function (m) { byPath.get(path).add(m); });
-  });
-  const out = [];
-  byPath.forEach(function (methods, path) {
-    out.push({ path: path, methods: Array.from(methods).sort() });
-  });
-  log.debug("Leaving registeredRoutes(). " + out.length + " path(s).");
-  return out;
-}
-
-// Join the router's paths to their descriptions, and report both kinds of
-// drift.
-function describeEndpoints() {
-  log.debug("Entering describeEndpoints().");
-  const described = new Map();
-  ENDPOINTS.forEach(function (e) { described.set(e.path, e); });
-
-  const rows = [];
-  const undocumented = [];
-  registeredRoutes().forEach(function (route) {
-    const entry = described.get(route.path);
-    if (entry) {
-      rows.push(Object.assign({}, entry,
-                              { methods: route.methods, documented: true }));
-      described.delete(route.path);
-      return;
-    }
-    undocumented.push(route.path);
-    rows.push({ path: route.path, methods: route.methods, group: 'Undocumented',
-                name: '(undocumented)', specs: [],
-                what: 'This route is registered but sts_metadata.js does not ' +
-                      'describe it.',
-                documented: false });
-  });
-  // Whatever is left was described and is not registered.
-  const stale = Array.from(described.keys());
-  // Any spec id that no entry references, and any reference to a spec that does
-  // not exist. Both are drift in the same table.
-  const referenced = new Set();
-  rows.forEach(function (r) {
-    (r.specs || []).forEach(function (id) { referenced.add(id); });
-  });
-  const unknownSpecs = Array.from(referenced)
-                            .filter(function (id) { return !SPEC_BY_ID[id]; });
-  // The hand-written half of the page, checked against the derived half. See
-  // the header above PROTOCOLS for the three kinds of drift this reports and
-  // why a list that cannot be derived still has to be checked.
-  const protocols = protocolReport(rows);
-  log.debug("Leaving describeEndpoints(). " + rows.length + " row(s), " +
-            undocumented.length +
-            " undocumented, " + stale.length + " stale, " +
-            protocols.protocols.length + " protocol(s).");
-  return { rows: rows, undocumented: undocumented, stale: stale,
-           unknownSpecs: unknownSpecs,
-           protocols: protocols.protocols,
-           unknownProtocolGroups: protocols.missingGroups,
-           unknownProtocolSpecs: protocols.missingSpecs,
-           unclaimedGroups: protocols.unclaimedGroups };
-}
 
 // 'Admin' sits last of the real groups, before 'Undocumented': it is the only
 // group that is not a protocol, and a reader looking for what this service
@@ -8999,491 +8900,827 @@ const GROUP_ORDER = ['Service', 'Authentication', 'WS-Trust', 'WS-Federation',
                          'Presentation (OID4VP)',
                      'Admin', 'Management API', 'Undocumented'];
 
-function groupsOf(rows) {
-  const seen = [];
-  GROUP_ORDER.forEach(function (g) {
-    if (rows.some(function (r) { return r.group === g; })) seen.push(g);
-  });
-  rows.forEach(function (r) {
-    if (seen.indexOf(r.group) === -1) seen.push(r.group);
-  });
-  return seen;
+// One row of the router's own list: a path and the methods it answers.
+interface RegisteredRoute {
+  path: string;
+  methods: string[];
 }
 
-function esc(v) { return xmlEscape(v == null ? '' : String(v)); }
-
-// ---------------------------------------------------------------------------
-// Whether a path can be turned into a link a reader can actually follow.
-//
-// The temptation is to link all of them, and it produces a page with 22 dead
-// links out of 41. A path is followable from a browser only if it answers a GET
-// and is a concrete URL:
-//
-//   * no GET — a link on POST /oauth2/token issues a GET, and the router has no
-//     GET for it, so the reader lands on Express's "Cannot GET /oauth2/token".
-//     That reads as a broken service rather than as a wrong link.
-//   * a parameter — "/oauth2/register/:client_id" is a route pattern. The
-//     literal string with the colon in it is not an address of anything.
-//   * a wildcard — same, and the concrete form of each of these is already
-//     listed as its own row (the well-known documents), so nothing is lost.
-//
-// So the ones that work become links and the rest say why not. The reason is
-// worth showing rather than hiding: "POST only" is the single most useful thing
-// to know about an endpoint you were about to click.
-function linkabilityOf(row) {
-  log.debug("Entering linkabilityOf().");
-  var methods = row.methods || [];
-  if (methods.indexOf('GET') === -1) {
-    log.debug("Leaving linkabilityOf().");
-    return { linkable: false, reason: methods.length === 1 ? methods[0] + ' ' +
-        'only'
-                                                           : 'no GET (' +
-                                                               methods.join(
-                                                                   ', ') +
-                                                               ')' };
-  }
-  if (row.path.indexOf(':') !== -1) {
-    var name = (/:([A-Za-z0-9_]+)/.exec(row.path) || [])[0] || 'a parameter';
-    log.debug("Leaving linkabilityOf().");
-    return { linkable: false, reason: 'takes ' + name };
-  }
-  if (row.path.indexOf('*') !== -1) {
-    log.debug("Leaving linkabilityOf().");
-    return { linkable: false, reason: 'wildcard' };
-  }
-  log.debug("Leaving linkabilityOf().");
-  return { linkable: true, reason: '' };
+// Everything a `StsMetadata` reads. The shared app is here because the page
+// is a walk of ITS router, whichever app `registerRoutes()` was handed.
+interface StsMetadataDeps {
+  app: typeof app;
+  log: typeof helpers.log;
+  // The console's HTML escaper, `helpers.xmlEscape`.
+  xmlEscape: typeof helpers.xmlEscape;
+  baseUrlOf: typeof helpers.baseUrlOf;
+  port: typeof helpers.PORT;
+  config: typeof config;
+  admin: typeof admin;
+  authorizationServers: typeof authorizationServers;
+  cryptoMetadata: typeof cryptoMetadata;
+  version: typeof version;
 }
 
-// The path column: a link where that is honest, the bare path where it is not.
-//
-// Links are root-relative, so they follow the host this page was reached at —
-// localhost:8081, sts:8081 on the compose network, or a published port —
-// without this document having to know which. They open in a new tab so the
-// index survives the click, which matters because most of these return a
-// document to read and compare against the row it came from.
-function pathCell(row) {
-  log.debug("Entering pathCell().");
-  var link = linkabilityOf(row);
-  if (!link.linkable) {
-    log.debug("Leaving pathCell().");
-    return '<code>' + esc(row.path) + '</code> <span class="why" title="This ' +
-           'path is listed because it is registered, but it cannot be ' +
-           'followed from a browser.">' +
-           esc(link.reason) + '</span>';
+class StsMetadata {
+  // THE BUILD THIS PAGE REPORTS, read once when the instance is built — at
+  // load, for a process without the root, which is when it was read before.
+  private readonly appVersion: ReturnType<typeof version.load>;
+
+  constructor(private readonly deps: StsMetadataDeps) {
+    deps.log.debug("Entering StsMetadata.constructor().");
+    this.appVersion = deps.version.load();
+    deps.log.debug("Leaving StsMetadata.constructor().");
   }
-  var title = 'GET ' + row.path + ' in a new tab' +
-              (row.effect ? ' — ' + row.effect : '');
-  log.debug("Leaving pathCell().");
-  return '<a href="' + esc(row.path) + '" target="_blank" rel="noopener ' +
-                                       'noreferrer" title="' +
-         esc(title) + '"><code>' + esc(row.path) + '</code></a>' +
-         (row.effect ?
-          ' <span class="eff" title="' + esc(row.effect) + '">&#8599;</span>' :
-          '');
-}
 
-function specLinks(ids) {
-  if (!ids || !ids.length) return '<span class="none">&mdash;</span>';
-  return ids.map(function (id) {
-    const spec = SPEC_BY_ID[id];
-    if (!spec) return '<span class="bad">unknown spec id "' + esc(id) +
-                      '"</span>';
-    return '<a href="#spec-' + esc(id) + '">' +
-           esc(spec.name.split(' — ')[0].split(' ' +
-        '(')[0]) + '</a>';
-  }).join(', ');
-}
+  // What the composition root passes: the real modules, as the load-time
+  // code used before R2 (#50).
+  static defaultDeps(): StsMetadataDeps {
+    helpers.log.debug("Entering StsMetadata.defaultDeps().");
+    helpers.log.debug("Leaving StsMetadata.defaultDeps().");
+    return {
+      app: app,
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      baseUrlOf: helpers.baseUrlOf,
+      port: helpers.PORT,
+      config: config,
+      admin: admin,
+      authorizationServers: authorizationServers,
+      cryptoMetadata: cryptoMetadata,
+      version: version
+    };
+  }
 
-// WHERE THIS PAGE'S DOCUMENT COMES FROM, SINCE IT IS NO LONGER FROM HERE.
-//
-// This function builds the BODY of a console page and nothing else — no
-// doctype, no head, no <style>. `admin.respond()` wraps what comes back in
-// `admin.page()`, which is the console's two columns, its sidebar, its
-// breadcrumb, its gate banner and the ONE stylesheet it has. Two consequences
-// worth stating because both were the temptation while writing this:
-//
-//   * **The classes used below live in admin.js.** `.lead`, `.m`, `.why`,
-//     `.eff`, `.bad`, `.none`, `.protos` and `a.btn` are that file's, marked
-//     there as this page's. A <style> block of this file's own would be markup
-//     inside <body>, which browsers accept and no validator does — and there
-//     would then be two stylesheets to keep in step.
-//   * **Still no script, and that is not this page's choice.** The
-//     Content-Security-Policy this service sets is `script-src 'none'`, so the
-//     download control below is an `<a download>` rather than anything that
-//     builds a blob.
-function renderInner(base, report) {
-  log.debug("Entering renderInner().");
-  const rows = report.rows;
-
-  let html = '<p class="lead">Every protocol this service speaks, every ' +
-    'endpoint it registers and every specification it implements. The ' +
-    'endpoint list is read from the running Express router on each request, ' +
-    'not from a list kept by hand, so it cannot claim an endpoint that is ' +
-    'not there or miss one that is. Issuer identifier <code>' + esc(base) +
-    '</code>; WS-Trust issuer <code>' + esc(config.value('wstrust.issuer')) +
-    '</code>.' +
-    // The build, in the lead paragraph rather than only in the console's
-    // footer, because this is the page somebody reads to answer "what does
-    // this service do" and the honest form of that answer names a release. The
-    // footer says it on every page; this is the one page where it is part of
-    // the subject rather than provenance in the margin.
-    ' This is <strong>mock-sts ' + esc(APP_VERSION.version) + '</strong>' +
-    (APP_VERSION.commit ? ', built from commit <code>' +
-     esc(APP_VERSION.commit) + '</code>' : '') +
-    (APP_VERSION.stamped ? '' : ' — computed at startup rather than stamped ' +
-     'into a build, so this process is a checkout rather than an artifact') +
-    '. It is listening on port ' + esc(PORT) +
-    // The scheme, said out loud, because the issuer above and every endpoint
-    // below are built from the URL this request arrived on — so they follow the
-    // socket by themselves, and a reader comparing this page against a
-    // configuration file needs to know which socket that was. It is also the
-    // one requirement RFC 9700 mode cannot settle with a check.
-    (config.value('global.https')
-      ? ' over <strong>HTTPS</strong> (global.https' +
-        (config.value('oauth2.rfc9700')
-          ? ', which RFC 9700 mode turns on — section 2.1 says an ' +
-            'authorization response must not be sent over an unencrypted ' +
-            'connection'
-          : '') +
-        '), with the same certificate LDAPS 636 serves, issued under this ' +
-        'service\'s own Root. It is regenerated on every start unless ' +
-        'tls.certificateFile supplies one, so fetch it from ' +
-        '<code>/tls/server-certificate</code> and trust it — without ' +
-        'verification the first time, since there is no plain port left to ' +
-        'fetch it from.'
-      : ' over plain HTTP.') + '</p>';
-
-  // ---------------------------------------------------------------------
-  // THE DOWNLOAD CONTROL, AT THE TOP BECAUSE IT IS ABOUT THE WHOLE PAGE.
+  // -------------------------------------------------------------------------
+  // HAND THE FAMILY LIST TO THE CRYPTO PAGE, at require time, so that its
+  // report on "every identity service this mock advertises" is checked against
+  // the list this page actually advertises rather than agreeing with it by
+  // hand. Both directions of drift are then reported THERE, the way both
+  // directions of endpoint drift are reported here. See the note above the
+  // require.
   //
-  // `download` on an anchor is the entire mechanism: the same URL the page
-  // documents, asked for as an attachment. It is not a form and not a button,
-  // for the reason in the header — nothing on this service may run a script,
-  // so anything cleverer would be a control that did nothing. It carries the
-  // session cookie because it is an ordinary same-origin GET, which is what
-  // makes it work now that this page is behind the console's gate.
-  // ---------------------------------------------------------------------
-  html += '<p><a class="btn" href="/admin/sts-metadata?format=json" ' +
-    'download="sts-metadata.json" title="The whole of this page as JSON: ' +
-    'every protocol, every endpoint, every specification, and the drift ' +
-    'report">Download all of this as JSON</a> <span class="why">' +
-    esc(rows.length) + ' endpoints, ' + esc(report.protocols.length) +
-    ' protocol families, ' + esc(SPECS.length) +
-    ' specifications</span></p>';
-
-  html += '<h2 id="protocols">Protocols this service speaks</h2>' +
-    '<p class="lead">Thirteen families. The count on each card is how many ' +
-    'rows that family has in the tables below, and it is not a measure of ' +
-    'how much of the protocol is here: <strong>four of these live mostly ' +
-    'on a raw socket and two register no route at all</strong>, and this ' +
-    'page is built by walking the Express router. Where that is the case ' +
-    'the card says where the protocol really is.</p>' +
-    '<div class="protos">' +
-    report.protocols.map(function (p) {
-      const target = p.groups.length ? '#' + groupAnchor(p.groups[0]) : '';
-      const title = target
-        ? '<a href="' + esc(target) + '">' + esc(p.name) + '</a>'
-        : '<span class="n">' + esc(p.name) + '</span>';
-      const specs = specLinks(p.specs);
-      return '<div class="proto">' + title +
-        '<div class="d">' + esc(p.what) + '</div>' +
-        (p.sockets ? '<div class="d"><em>' + esc(p.sockets) + '</em></div>'
-                   : '') +
-        '<div class="c">' +
-        (p.endpoints
-          ? esc(p.endpoints) + ' endpoint(s) below'
-          : 'no endpoint of its own') +
-        ' &middot; ' + specs + '</div></div>';
-    }).join('') + '</div>';
-
-  html += '<p class="lead"><strong>This is a test double.</strong> It signs ' +
-    'everything with a key generated fresh at each start, it never checks a ' +
-    'password, and it does not validate access tokens issued by a separate ' +
-    'authorization server. The <em>coverage</em> column below says where ' +
-    'each specification is implemented in full and where the shape is right ' +
-    'but the enforcement is deliberately absent.</p>';
-
-  // ---------------------------------------------------------------------
-  // THE NAMED AUTHORIZATION SERVERS, which this page cannot read off the
-  // router.
+  // It is done here, immediately below the table, rather than at the bottom of
+  // the file: a second edit that has to be remembered is the thing this whole
+  // arrangement exists to remove, and beside the data is where somebody adding
+  // a fifteenth family will be looking.
   //
-  // The same blind spot the Kerberos and LDAP listeners have, arrived at from
-  // the other direction: those are sockets the walk cannot see, and these are
-  // ONE route — `/:as/oauth2/…` — serving as many authorization servers as have
-  // been asked for. A reader counting rows would conclude there is one
-  // authorization server here, and there are as many as somebody has named.
-  //
-  // Only the ones that have actually been ACCESSED are listed, because the set
-  // is unbounded by construction: a name becomes an authorization server by
-  // being asked for, so listing "all of them" would mean listing every string.
-  // What is here is what this process has actually served.
-  // ---------------------------------------------------------------------
-  const namedServers = authorizationServers.list().filter(function (one) {
-    return one.id !== authorizationServers.DEFAULT_ID;
-  });
-  if (namedServers.length) {
-    html += '<h2>Authorization servers</h2>' +
-      '<p class="lead">This process publishes <strong>' +
-      (namedServers.length + 1) +
-      '</strong> authorization servers, and only the endpoint PATTERN is on ' +
-      'the list below — the walk that builds this page sees ' +
-      '<code>/:as/oauth2/…</code> as one route however many names have been ' +
-      'served through it. Each has its own metadata, its own capabilities ' +
-      'and its own issuer, and <strong>what its document advertises is what ' +
-      'its endpoints do</strong>. A name that has never been asked for is ' +
-      'not here: a name becomes an authorization server BY being asked for, ' +
-      'with the same capabilities the default one has, so the set of ' +
-      'possible ones is every string and the set of real ones is ' +
-      'this.</p><table><thead><tr><th class="p">Authorization ' +
-      'server</th><th>Metadata</th><th>Endpoints</th><th class="s">Asked ' +
-      'for</th></tr></thead><tbody><tr><td><code>' +
-      esc(authorizationServers.DEFAULT_ID) + '</code><div class="why">the ' +
-      'unprefixed endpoints</div></td><td><a ' +
-      'href="/.well-known/oauth-authorization-server" target="_blank" ' +
-      'rel="noopener noreferrer"><code>' +
-      '/.well-known/oauth-authorization-server</code></a><br><a ' +
-      'href="/.well-known/openid-configuration" target="_blank" ' +
-      'rel="noopener noreferrer"><code>' +
-      '/.well-known/openid-configuration</code></a></td><td><code>' +
-      '/oauth2/authorize</code><br><code>/oauth2/token</code></td><td>' +
-      'always</td></tr>' +
-      namedServers.map(function (one) {
-        return '<tr><td><code>' + esc(one.id) + '</code>' +
-          (one.autoCreated
-            ? '<div class="why">created by being asked for</div>'
-            : '<div class="why">configured here</div>') + '</td>' +
-          '<td><a href="' + esc(one.urls.oauth) + '" target="_blank" ' +
-          'rel="noopener ' +
-          'noreferrer"><code>' + esc(one.urls.oauth) + '</code></a><br>' +
-          '<a href="' + esc(one.urls.oidc) + '" target="_blank" ' +
-          'rel="noopener ' +
-          'noreferrer"><code>' + esc(one.urls.oidc) + '</code></a></td>' +
-          '<td><code>' + esc(one.urls.authorize) + '</code><br><code>' +
-          esc(one.urls.token) + '</code></td>' +
-          '<td>' + esc(one.seen) + ' time(s)</td></tr>';
-      }).join('') +
-      '</tbody></table><p class="lead"><a ' +
-      'href="/admin/authorization-servers">Configure them</a> — what a ' +
-      'profile publishes is what that authorization server enforces, so ' +
-      'narrowing <code>code_challenge_methods_supported</code> there refuses ' +
-      'the other method at that server\'s own authorization endpoint and ' +
-      'nowhere else.</p>';
+  // It was load-time work until #50's R2, a statement just below PROTOCOLS;
+  // it is this `wire` step now, run once for whichever instance is installed
+  // — by the composition root at the point in the sequence where requiring
+  // this file used to run it, or when a process without the root loads this
+  // module. The table it hands over is still the one just above.
+  // -------------------------------------------------------------------------
+  static wire(instance: StsMetadata): void {
+    helpers.log.debug("Entering StsMetadata.wire().");
+    instance.deps.cryptoMetadata.setProtocolFamilies(PROTOCOLS);
+    helpers.log.debug("Leaving StsMetadata.wire().");
   }
 
-  // Drift, if any. Shown at the top because it is the thing a reader most needs
-  // to know about the rest of the page. Five kinds now rather than three: the
-  // protocol list above is hand-written on a page that derives everything else,
-  // so the checks that keep it honest report here beside the others.
-  if (report.undocumented.length || report.stale.length ||
-      report.unknownSpecs.length || report.unknownProtocolGroups.length ||
-      report.unknownProtocolSpecs.length || report.unclaimedGroups.length) {
-    // NOT FOLDED, AND IT IS THE ONE BLOCK ON THIS PAGE THAT IS NOT. Every
-    // other paragraph here is prose a reader may skip; this one appears only
-    // when the page disagrees with the router, which is the whole reason this
-    // page exists (see the drift checks above). A report that has to be
-    // clicked open to be read is a report somebody can close and forget. It
-    // is also built across several statements rather than as one expression,
-    // so it could not go through admin.warn() as it stands.
-    html += '<div class="warn"><strong>This page is out of step with the ' +
-            'router.</strong><ul>';
-    if (report.undocumented.length) {
-      html += '<li>Registered but not described here: ' +
-        report.undocumented.map(function (p) {
-          return '<code>' + esc(p) + '</code>';
-        }).join(', ') +
-        '. They are listed below under <em>Undocumented</em>.</li>';
-    }
-    if (report.stale.length) {
-      html += '<li>Described here but NOT registered: ' +
-        report.stale.map(function (p) { return '<code>' + esc(p) + '</code>'; })
-                    .join(', ') +
-        '. Either the route was renamed or the description is stale.</li>';
-    }
-    if (report.unknownSpecs.length) {
-      html += '<li>Endpoints reference specification ids that do not exist: ' +
-        report.unknownSpecs.map(function (i) {
-          return '<code>' + esc(i) + '</code>';
-        }).join(', ') +
-        '.</li>';
-    }
-    if (report.unknownProtocolGroups.length) {
-      html += '<li>The protocol list names endpoint groups that have no ' +
-        'rows: ' +
-        report.unknownProtocolGroups.map(function (i) {
-          return '<code>' + esc(i) + '</code>';
-        }).join(', ') + '. Either the group was renamed or the family is ' +
-        'gone.</li>';
-    }
-    if (report.unknownProtocolSpecs.length) {
-      html += '<li>The protocol list references specification ids that do ' +
-        'not exist: ' +
-        report.unknownProtocolSpecs.map(function (i) {
-          return '<code>' + esc(i) + '</code>';
-        }).join(', ') + '.</li>';
-    }
-    if (report.unclaimedGroups.length) {
-      html += '<li>These endpoint groups are on the page and no protocol ' +
-        'above claims them: ' +
-        report.unclaimedGroups.map(function (i) {
-          return '<code>' + esc(i) + '</code>';
-        }).join(', ') + '. A family was added to this service and not to the ' +
-        'list at the top of this page.</li>';
-    }
-    html += '</ul></div>';
-  } else {
-    html += '<div class="ok">Every registered route is described, every ' +
-      'description matches a registered route (' + rows.length +
-      ' endpoints), and every one of the ' + report.protocols.length +
-      ' protocol families above names a group that is here and a ' +
-      'specification that exists.</div>';
+  // A stable html id for a group heading, so the protocol list above can link
+  // into the table below it. Derived from the group name rather than typed
+  // beside it: a hand-kept id is one more thing to get out of step with the
+  // heading it names.
+  //
+  // No entering/leaving pair, like `esc()`, `groupsOf()` and `specLinks()`
+  // beside it: it is called once per group heading and once per protocol card
+  // while a page is being built, and a trace of the page is what the callers
+  // already log.
+  private groupAnchor(group) {
+    return 'group-' + String(group).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
   }
 
-  groupsOf(rows).forEach(function (group) {
-    html += '<h2 id="' + esc(groupAnchor(group)) + '">' + esc(group) +
-      '</h2><table><thead><tr><th class="p">Path</th><th>Methods</th><th ' +
-      'class="n">Name</th><th>What it is</th><th ' +
-      'class="s">Specifications</th></tr></thead><tbody>';
-    rows.filter(function (r) { return r.group === group; })
-      .sort(function (a, b) {
-        return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0);
-      })
-      .forEach(function (r) {
-        html += '<tr><td class="p">' + pathCell(r) + '</td>' +
-          '<td class="m">' + esc(r.methods.join(', ')) + '</td>' +
-          '<td class="n">' +
-          (r.documented === false ?
-           '<span class="bad">' + esc(r.name) + '</span>'
-                                                     : esc(r.name)) + '</td>' +
-          // WHAT AN ENDPOINT IS, FOLDED. This table is every route the router
-          // has — around 250 of them — and this column is a paragraph on most
-          // rows, which made the one page in this console that lists
-          // everything the one page nobody could skim. admin.note() leaves a
-          // short description alone and folds a long one behind its first
-          // sentence; see the block above it in ../admin-ui/admin.ts.
-          '<td>' + admin.note(esc(r.what)) + '</td>' +
-          '<td class="s">' + specLinks(r.specs) + '</td></tr>';
+  // The protocol list, joined to what is actually on the page: how many
+  // endpoint rows each family has here, and the three kinds of drift a
+  // hand-written list on a derived page can carry.
+  private protocolReport(rows) {
+    const { log } = this.deps;
+    log.debug("Entering StsMetadata.protocolReport().");
+    const countBy = {};
+    rows.forEach(function (r) {
+      countBy[r.group] = (countBy[r.group] || 0) + 1;
+    });
+    const claimed = {};
+    const missingGroups = [];
+    const missingSpecs = [];
+    const list = PROTOCOLS.map(function (p) {
+      let endpoints = 0;
+      p.groups.forEach(function (group) {
+        claimed[group] = true;
+        if (!Object.prototype.hasOwnProperty.call(countBy, group)) {
+          missingGroups.push(p.name + ' -> ' + group);
+          return;
+        }
+        endpoints += countBy[group];
       });
+      (p.specs || []).forEach(function (id) {
+        if (!SPEC_BY_ID[id]) {
+          missingSpecs.push(p.name + ' -> ' + id);
+        }
+      });
+      return { name: p.name, what: p.what, sockets: p.sockets || '',
+               groups: p.groups.slice(0), specs: (p.specs || []).slice(0),
+               // CARRIED INTO THE DOCUMENT rather than left on the table, so
+               // the drift test can see it. A card that names no
+               // specification has to say why, and the reason travels with
+               // the card — a list of exemptions kept in the test would be a
+               // second place to edit and the one that gets forgotten.
+               notAProtocol: !!p.notAProtocol,
+               endpoints: endpoints };
+    });
+    // The direction that catches a new protocol family arriving with no row in
+    // PROTOCOLS: a group of endpoints nobody claims and nothing excuses.
+    const unclaimed = Object.keys(countBy).filter(function (group) {
+      return !claimed[group] && NON_PROTOCOL_GROUPS.indexOf(group) === -1;
+    });
+    log.debug("Leaving StsMetadata.protocolReport(). " + list.length +
+              " protocol(s), " + missingGroups.length +
+              " missing group(s), " + unclaimed.length +
+              " unclaimed group(s).");
+    return { protocols: list, missingGroups: missingGroups,
+             missingSpecs: missingSpecs, unclaimedGroups: unclaimed };
+  }
+
+  // -------------------------------------------------------------------------
+  // The router's own list of what is registered, grouped by path so the three
+  // methods on /oauth2/register/:client_id read as one endpoint.
+  //
+  // Express 4 keeps the routes on app._router.stack. It is a private member,
+  // which is worth a word: the alternative is a list maintained by hand, and
+  // this page exists precisely because that list cannot be trusted. If a
+  // future Express moves it, the tests fail loudly (the page reports every
+  // described path as stale) rather than quietly reporting nothing.
+  // -------------------------------------------------------------------------
+  registeredRoutes(): RegisteredRoute[] {
+    const { log } = this.deps;
+    log.debug("Entering StsMetadata.registeredRoutes().");
+    const shared = this.deps.app as any;
+    const router = shared._router || shared.router;
+    const stack = (router && router.stack) || [];
+    const byPath = new Map<string, Set<string>>();
+    stack.forEach(function (layer) {
+      if (!layer.route || !layer.route.path) {
+        return;
+      }
+      const path = String(layer.route.path);
+      const methods = Object.keys(layer.route.methods || {})
+        .filter(function (m) {
+          return m !== '_all';
+        })
+        .map(function (m) {
+          return m.toUpperCase();
+        });
+      if (!byPath.has(path)) {
+        byPath.set(path, new Set());
+      }
+      methods.forEach(function (m) {
+        byPath.get(path).add(m);
+      });
+    });
+    const out: RegisteredRoute[] = [];
+    byPath.forEach(function (methods, path) {
+      out.push({ path: path, methods: Array.from(methods).sort() });
+    });
+    log.debug("Leaving StsMetadata.registeredRoutes(). " + out.length +
+              " path(s).");
+    return out;
+  }
+
+  // Join the router's paths to their descriptions, and report both kinds of
+  // drift.
+  describeEndpoints() {
+    const { log } = this.deps;
+    log.debug("Entering StsMetadata.describeEndpoints().");
+    const described = new Map<string, EndpointEntry>();
+    ENDPOINTS.forEach(function (e) {
+      described.set(e.path, e);
+    });
+
+    const rows = [];
+    const undocumented = [];
+    this.registeredRoutes().forEach(function (route) {
+      const entry = described.get(route.path);
+      if (entry) {
+        rows.push(Object.assign({}, entry,
+                                { methods: route.methods, documented: true }));
+        described.delete(route.path);
+        return;
+      }
+      undocumented.push(route.path);
+      rows.push({ path: route.path, methods: route.methods,
+                  group: 'Undocumented',
+                  name: '(undocumented)', specs: [],
+                  what: 'This route is registered but sts_metadata.ts does ' +
+                        'not describe it.',
+                  documented: false });
+    });
+    // Whatever is left was described and is not registered.
+    const stale = Array.from(described.keys());
+    // Any spec id that no entry references, and any reference to a spec that
+    // does not exist. Both are drift in the same table.
+    const referenced = new Set<string>();
+    rows.forEach(function (r) {
+      (r.specs || []).forEach(function (id) {
+        referenced.add(id);
+      });
+    });
+    const unknownSpecs = Array.from(referenced)
+                              .filter(function (id) {
+                                return !SPEC_BY_ID[id];
+                              });
+    // The hand-written half of the page, checked against the derived half.
+    // See the header above PROTOCOLS for the three kinds of drift this reports
+    // and why a list that cannot be derived still has to be checked.
+    const protocols = this.protocolReport(rows);
+    log.debug("Leaving StsMetadata.describeEndpoints(). " + rows.length +
+              " row(s), " + undocumented.length +
+              " undocumented, " + stale.length + " stale, " +
+              protocols.protocols.length + " protocol(s).");
+    return { rows: rows, undocumented: undocumented, stale: stale,
+             unknownSpecs: unknownSpecs,
+             protocols: protocols.protocols,
+             unknownProtocolGroups: protocols.missingGroups,
+             unknownProtocolSpecs: protocols.missingSpecs,
+             unclaimedGroups: protocols.unclaimedGroups };
+  }
+
+  // Called once per page, but named beside `groupAnchor()` as one of the
+  // helpers with no entering/leaving pair — the exception stated there.
+  private groupsOf(rows) {
+    const seen = [];
+    GROUP_ORDER.forEach(function (g) {
+      if (rows.some(function (r) {
+        return r.group === g;
+      })) {
+        seen.push(g);
+      }
+    });
+    rows.forEach(function (r) {
+      if (seen.indexOf(r.group) === -1) {
+        seen.push(r.group);
+      }
+    });
+    return seen;
+  }
+
+  // Called for every cell of every table on the page, so no entering/leaving
+  // pair — the hot-path exception `groupAnchor()` states.
+  private esc(v) {
+    return this.deps.xmlEscape(v == null ? '' : String(v));
+  }
+
+  // -------------------------------------------------------------------------
+  // Whether a path can be turned into a link a reader can actually follow.
+  //
+  // The temptation is to link all of them, and it produces a page with 22 dead
+  // links out of 41. A path is followable from a browser only if it answers a
+  // GET and is a concrete URL:
+  //
+  //   * no GET — a link on POST /oauth2/token issues a GET, and the router has
+  //     no GET for it, so the reader lands on Express's "Cannot GET
+  //     /oauth2/token". That reads as a broken service rather than as a wrong
+  //     link.
+  //   * a parameter — "/oauth2/register/:client_id" is a route pattern. The
+  //     literal string with the colon in it is not an address of anything.
+  //   * a wildcard — same, and the concrete form of each of these is already
+  //     listed as its own row (the well-known documents), so nothing is lost.
+  //
+  // So the ones that work become links and the rest say why not. The reason
+  // is worth showing rather than hiding: "POST only" is the single most useful
+  // thing to know about an endpoint you were about to click.
+  private linkabilityOf(row) {
+    const { log } = this.deps;
+    log.debug("Entering StsMetadata.linkabilityOf().");
+    const methods = row.methods || [];
+    if (methods.indexOf('GET') === -1) {
+      log.debug("Leaving StsMetadata.linkabilityOf().");
+      return { linkable: false,
+               reason: methods.length === 1
+                 ? methods[0] + ' only'
+                 : 'no GET (' + methods.join(', ') + ')' };
+    }
+    if (row.path.indexOf(':') !== -1) {
+      const name = (/:([A-Za-z0-9_]+)/.exec(row.path) || [])[0] ||
+        'a parameter';
+      log.debug("Leaving StsMetadata.linkabilityOf().");
+      return { linkable: false, reason: 'takes ' + name };
+    }
+    if (row.path.indexOf('*') !== -1) {
+      log.debug("Leaving StsMetadata.linkabilityOf().");
+      return { linkable: false, reason: 'wildcard' };
+    }
+    log.debug("Leaving StsMetadata.linkabilityOf().");
+    return { linkable: true, reason: '' };
+  }
+
+  // The path column: a link where that is honest, the bare path where it is
+  // not.
+  //
+  // Links are root-relative, so they follow the host this page was reached at
+  // — localhost:8081, sts:8081 on the compose network, or a published port —
+  // without this document having to know which. They open in a new tab so the
+  // index survives the click, which matters because most of these return a
+  // document to read and compare against the row it came from.
+  private pathCell(row) {
+    const { log } = this.deps;
+    log.debug("Entering StsMetadata.pathCell().");
+    const link = this.linkabilityOf(row);
+    if (!link.linkable) {
+      log.debug("Leaving StsMetadata.pathCell().");
+      return '<code>' + this.esc(row.path) + '</code> <span class="why" ' +
+             'title="This path is listed because it is registered, but it ' +
+             'cannot be followed from a browser.">' +
+             this.esc(link.reason) + '</span>';
+    }
+    const title = 'GET ' + row.path + ' in a new tab' +
+                  (row.effect ? ' — ' + row.effect : '');
+    log.debug("Leaving StsMetadata.pathCell().");
+    return '<a href="' + this.esc(row.path) + '" target="_blank" ' +
+           'rel="noopener noreferrer" title="' +
+           this.esc(title) + '"><code>' + this.esc(row.path) + '</code></a>' +
+           (row.effect
+             ? ' <span class="eff" title="' + this.esc(row.effect) +
+               '">&#8599;</span>'
+             : '');
+  }
+
+  // Called once per table row and per protocol card, so no entering/leaving
+  // pair — the exception `groupAnchor()` states.
+  private specLinks(ids) {
+    const self = this;
+    if (!ids || !ids.length) {
+      return '<span class="none">&mdash;</span>';
+    }
+    return ids.map(function (id) {
+      const spec = SPEC_BY_ID[id];
+      if (!spec) {
+        return '<span class="bad">unknown spec id "' + self.esc(id) +
+               '"</span>';
+      }
+      return '<a href="#spec-' + self.esc(id) + '">' +
+             self.esc(spec.name.split(' — ')[0].split(' (')[0]) + '</a>';
+    }).join(', ');
+  }
+
+  // WHERE THIS PAGE'S DOCUMENT COMES FROM, SINCE IT IS NO LONGER FROM HERE.
+  //
+  // This function builds the BODY of a console page and nothing else — no
+  // doctype, no head, no <style>. `admin.respond()` wraps what comes back in
+  // `admin.page()`, which is the console's two columns, its sidebar, its
+  // breadcrumb, its gate banner and the ONE stylesheet it has. Two
+  // consequences worth stating because both were the temptation while writing
+  // this:
+  //
+  //   * **The classes used below live in admin.js.** `.lead`, `.m`, `.why`,
+  //     `.eff`, `.bad`, `.none`, `.protos` and `a.btn` are that file's, marked
+  //     there as this page's. A <style> block of this file's own would be
+  //     markup inside <body>, which browsers accept and no validator does —
+  //     and there would then be two stylesheets to keep in step.
+  //   * **Still no script, and that is not this page's choice.** The
+  //     Content-Security-Policy this service sets is `script-src 'none'`, so
+  //     the download control below is an `<a download>` rather than anything
+  //     that builds a blob.
+  private renderInner(base, report) {
+    const { log, config, admin, authorizationServers, port } = this.deps;
+    const self = this;
+    const esc = function (v) {
+      return self.esc(v);
+    };
+    const APP_VERSION = this.appVersion;
+    log.debug("Entering StsMetadata.renderInner().");
+    const rows = report.rows;
+
+    let html = '<p class="lead">Every protocol this service speaks, every ' +
+      'endpoint it registers and every specification it implements. The ' +
+      'endpoint list is read from the running Express router on each ' +
+      'request, not from a list kept by hand, so it cannot claim an endpoint ' +
+      'that is not there or miss one that is. Issuer identifier <code>' +
+      esc(base) + '</code>; WS-Trust issuer <code>' +
+      esc(config.value('wstrust.issuer')) + '</code>.' +
+      // The build, in the lead paragraph rather than only in the console's
+      // footer, because this is the page somebody reads to answer "what does
+      // this service do" and the honest form of that answer names a release.
+      // The footer says it on every page; this is the one page where it is
+      // part of the subject rather than provenance in the margin.
+      ' This is <strong>mock-sts ' + esc(APP_VERSION.version) + '</strong>' +
+      (APP_VERSION.commit ? ', built from commit <code>' +
+       esc(APP_VERSION.commit) + '</code>' : '') +
+      (APP_VERSION.stamped ? '' : ' — computed at startup rather than ' +
+       'stamped into a build, so this process is a checkout rather than an ' +
+       'artifact') +
+      '. It is listening on port ' + esc(port) +
+      // The scheme, said out loud, because the issuer above and every endpoint
+      // below are built from the URL this request arrived on — so they follow
+      // the socket by themselves, and a reader comparing this page against a
+      // configuration file needs to know which socket that was. It is also the
+      // one requirement RFC 9700 mode cannot settle with a check.
+      (config.value('global.https')
+        ? ' over <strong>HTTPS</strong> (global.https' +
+          (config.value('oauth2.rfc9700')
+            ? ', which RFC 9700 mode turns on — section 2.1 says an ' +
+              'authorization response must not be sent over an unencrypted ' +
+              'connection'
+            : '') +
+          '), with the same certificate LDAPS 636 serves, issued under this ' +
+          'service\'s own Root. It is regenerated on every start unless ' +
+          'tls.certificateFile supplies one, so fetch it from ' +
+          '<code>/tls/server-certificate</code> and trust it — without ' +
+          'verification the first time, since there is no plain port left ' +
+          'to fetch it from.'
+        : ' over plain HTTP.') + '</p>';
+
+    // -----------------------------------------------------------------------
+    // THE DOWNLOAD CONTROL, AT THE TOP BECAUSE IT IS ABOUT THE WHOLE PAGE.
+    //
+    // `download` on an anchor is the entire mechanism: the same URL the page
+    // documents, asked for as an attachment. It is not a form and not a
+    // button, for the reason in the header — nothing on this service may run
+    // a script, so anything cleverer would be a control that did nothing. It
+    // carries the session cookie because it is an ordinary same-origin GET,
+    // which is what makes it work now that this page is behind the console's
+    // gate.
+    // -----------------------------------------------------------------------
+    html += '<p><a class="btn" href="/admin/sts-metadata?format=json" ' +
+      'download="sts-metadata.json" title="The whole of this page as JSON: ' +
+      'every protocol, every endpoint, every specification, and the drift ' +
+      'report">Download all of this as JSON</a> <span class="why">' +
+      esc(rows.length) + ' endpoints, ' + esc(report.protocols.length) +
+      ' protocol families, ' + esc(SPECS.length) +
+      ' specifications</span></p>';
+
+    html += '<h2 id="protocols">Protocols this service speaks</h2>' +
+      '<p class="lead">Thirteen families. The count on each card is how many ' +
+      'rows that family has in the tables below, and it is not a measure of ' +
+      'how much of the protocol is here: <strong>four of these live mostly ' +
+      'on a raw socket and two register no route at all</strong>, and this ' +
+      'page is built by walking the Express router. Where that is the case ' +
+      'the card says where the protocol really is.</p>' +
+      '<div class="protos">' +
+      report.protocols.map(function (p) {
+        const target = p.groups.length
+          ? '#' + self.groupAnchor(p.groups[0])
+          : '';
+        const title = target
+          ? '<a href="' + esc(target) + '">' + esc(p.name) + '</a>'
+          : '<span class="n">' + esc(p.name) + '</span>';
+        const specs = self.specLinks(p.specs);
+        return '<div class="proto">' + title +
+          '<div class="d">' + esc(p.what) + '</div>' +
+          (p.sockets ? '<div class="d"><em>' + esc(p.sockets) + '</em></div>'
+                     : '') +
+          '<div class="c">' +
+          (p.endpoints
+            ? esc(p.endpoints) + ' endpoint(s) below'
+            : 'no endpoint of its own') +
+          ' &middot; ' + specs + '</div></div>';
+      }).join('') + '</div>';
+
+    html += '<p class="lead"><strong>This is a test double.</strong> It ' +
+      'signs everything with a key generated fresh at each start, it never ' +
+      'checks ' +
+      'a password, and it does not validate access tokens issued by a ' +
+      'separate authorization server. The <em>coverage</em> column below ' +
+      'says where each specification is implemented in full and where the ' +
+      'shape is right but the enforcement is deliberately absent.</p>';
+
+    // -----------------------------------------------------------------------
+    // THE NAMED AUTHORIZATION SERVERS, which this page cannot read off the
+    // router.
+    //
+    // The same blind spot the Kerberos and LDAP listeners have, arrived at
+    // from the other direction: those are sockets the walk cannot see, and
+    // these are ONE route — `/:as/oauth2/…` — serving as many authorization
+    // servers as have been asked for. A reader counting rows would conclude
+    // there is one authorization server here, and there are as many as
+    // somebody has named.
+    //
+    // Only the ones that have actually been ACCESSED are listed, because the
+    // set is unbounded by construction: a name becomes an authorization server
+    // by being asked for, so listing "all of them" would mean listing every
+    // string. What is here is what this process has actually served.
+    // -----------------------------------------------------------------------
+    const namedServers = authorizationServers.list().filter(function (one) {
+      return one.id !== authorizationServers.DEFAULT_ID;
+    });
+    if (namedServers.length) {
+      html += '<h2>Authorization servers</h2>' +
+        '<p class="lead">This process publishes <strong>' +
+        (namedServers.length + 1) +
+        '</strong> authorization servers, and only the endpoint PATTERN is ' +
+        'on the list below — the walk that builds this page sees ' +
+        '<code>/:as/oauth2/…</code> as one route however many names have ' +
+        'been served through it. Each has its own metadata, its own ' +
+        'capabilities and its own issuer, and <strong>what its document ' +
+        'advertises is what its endpoints do</strong>. A name that has never ' +
+        'been asked for is not here: a name becomes an authorization server ' +
+        'BY being asked for, with the same capabilities the default one has, ' +
+        'so the set of possible ones is every string and the set of real ' +
+        'ones is this.</p><table><thead><tr><th class="p">Authorization ' +
+        'server</th><th>Metadata</th><th>Endpoints</th><th class="s">Asked ' +
+        'for</th></tr></thead><tbody><tr><td><code>' +
+        esc(authorizationServers.DEFAULT_ID) + '</code><div class="why">the ' +
+        'unprefixed endpoints</div></td><td><a ' +
+        'href="/.well-known/oauth-authorization-server" target="_blank" ' +
+        'rel="noopener noreferrer"><code>' +
+        '/.well-known/oauth-authorization-server</code></a><br><a ' +
+        'href="/.well-known/openid-configuration" target="_blank" ' +
+        'rel="noopener noreferrer"><code>' +
+        '/.well-known/openid-configuration</code></a></td><td><code>' +
+        '/oauth2/authorize</code><br><code>/oauth2/token</code></td><td>' +
+        'always</td></tr>' +
+        namedServers.map(function (one) {
+          return '<tr><td><code>' + esc(one.id) + '</code>' +
+            (one.autoCreated
+              ? '<div class="why">created by being asked for</div>'
+              : '<div class="why">configured here</div>') + '</td>' +
+            '<td><a href="' + esc(one.urls.oauth) + '" target="_blank" ' +
+            'rel="noopener ' +
+            'noreferrer"><code>' + esc(one.urls.oauth) + '</code></a><br>' +
+            '<a href="' + esc(one.urls.oidc) + '" target="_blank" ' +
+            'rel="noopener ' +
+            'noreferrer"><code>' + esc(one.urls.oidc) + '</code></a></td>' +
+            '<td><code>' + esc(one.urls.authorize) + '</code><br><code>' +
+            esc(one.urls.token) + '</code></td>' +
+            '<td>' + esc(one.seen) + ' time(s)</td></tr>';
+        }).join('') +
+        '</tbody></table><p class="lead"><a ' +
+        'href="/admin/authorization-servers">Configure them</a> — what a ' +
+        'profile publishes is what that authorization server enforces, so ' +
+        'narrowing <code>code_challenge_methods_supported</code> there ' +
+        'refuses the other method at that server\'s own authorization ' +
+        'endpoint and nowhere else.</p>';
+    }
+
+    // Drift, if any. Shown at the top because it is the thing a reader most
+    // needs to know about the rest of the page. Five kinds now rather than
+    // three: the protocol list above is hand-written on a page that derives
+    // everything else, so the checks that keep it honest report here beside
+    // the others.
+    if (report.undocumented.length || report.stale.length ||
+        report.unknownSpecs.length || report.unknownProtocolGroups.length ||
+        report.unknownProtocolSpecs.length || report.unclaimedGroups.length) {
+      // NOT FOLDED, AND IT IS THE ONE BLOCK ON THIS PAGE THAT IS NOT. Every
+      // other paragraph here is prose a reader may skip; this one appears only
+      // when the page disagrees with the router, which is the whole reason
+      // this page exists (see the drift checks above). A report that has to be
+      // clicked open to be read is a report somebody can close and forget. It
+      // is also built across several statements rather than as one
+      // expression, so it could not go through admin.warn() as it stands.
+      html += '<div class="warn"><strong>This page is out of step with the ' +
+              'router.</strong><ul>';
+      if (report.undocumented.length) {
+        html += '<li>Registered but not described here: ' +
+          report.undocumented.map(function (p) {
+            return '<code>' + esc(p) + '</code>';
+          }).join(', ') +
+          '. They are listed below under <em>Undocumented</em>.</li>';
+      }
+      if (report.stale.length) {
+        html += '<li>Described here but NOT registered: ' +
+          report.stale.map(function (p) {
+            return '<code>' + esc(p) + '</code>';
+          }).join(', ') +
+          '. Either the route was renamed or the description is stale.</li>';
+      }
+      if (report.unknownSpecs.length) {
+        html += '<li>Endpoints reference specification ids that do not ' +
+          'exist: ' +
+          report.unknownSpecs.map(function (i) {
+            return '<code>' + esc(i) + '</code>';
+          }).join(', ') +
+          '.</li>';
+      }
+      if (report.unknownProtocolGroups.length) {
+        html += '<li>The protocol list names endpoint groups that have no ' +
+          'rows: ' +
+          report.unknownProtocolGroups.map(function (i) {
+            return '<code>' + esc(i) + '</code>';
+          }).join(', ') + '. Either the group was renamed or the family is ' +
+          'gone.</li>';
+      }
+      if (report.unknownProtocolSpecs.length) {
+        html += '<li>The protocol list references specification ids that do ' +
+          'not exist: ' +
+          report.unknownProtocolSpecs.map(function (i) {
+            return '<code>' + esc(i) + '</code>';
+          }).join(', ') + '.</li>';
+      }
+      if (report.unclaimedGroups.length) {
+        html += '<li>These endpoint groups are on the page and no protocol ' +
+          'above claims them: ' +
+          report.unclaimedGroups.map(function (i) {
+            return '<code>' + esc(i) + '</code>';
+          }).join(', ') + '. A family was added to this service and not to ' +
+          'the list at the top of this page.</li>';
+      }
+      html += '</ul></div>';
+    } else {
+      html += '<div class="ok">Every registered route is described, every ' +
+        'description matches a registered route (' + rows.length +
+        ' endpoints), and every one of the ' + report.protocols.length +
+        ' protocol families above names a group that is here and a ' +
+        'specification that exists.</div>';
+    }
+
+    this.groupsOf(rows).forEach(function (group) {
+      html += '<h2 id="' + esc(self.groupAnchor(group)) + '">' + esc(group) +
+        '</h2><table><thead><tr><th class="p">Path</th><th>Methods</th><th ' +
+        'class="n">Name</th><th>What it is</th><th ' +
+        'class="s">Specifications</th></tr></thead><tbody>';
+      rows.filter(function (r) {
+        return r.group === group;
+      })
+        .sort(function (a, b) {
+          return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0);
+        })
+        .forEach(function (r) {
+          html += '<tr><td class="p">' + self.pathCell(r) + '</td>' +
+            '<td class="m">' + esc(r.methods.join(', ')) + '</td>' +
+            '<td class="n">' +
+            (r.documented === false
+              ? '<span class="bad">' + esc(r.name) + '</span>'
+              : esc(r.name)) + '</td>' +
+            // WHAT AN ENDPOINT IS, FOLDED. This table is every route the
+            // router has — around 250 of them — and this column is a
+            // paragraph on most rows, which made the one page in this console
+            // that lists everything the one page nobody could skim.
+            // admin.note() leaves a short description alone and folds a long
+            // one behind its first sentence; see the block above it in
+            // ../admin-ui/admin.ts.
+            '<td>' + admin.note(esc(r.what)) + '</td>' +
+            '<td class="s">' + self.specLinks(r.specs) + '</td></tr>';
+        });
+      html += '</tbody></table>';
+    });
+
+    html += '<h2 id="specifications">Specifications implemented</h2>' +
+      '<table><thead><tr><th class="n">Specification</th>' +
+      '<th>Published by</th><th>Coverage in this mock</th></tr></thead>' +
+      '<tbody>';
+    SPECS.forEach(function (s) {
+      html += '<tr id="spec-' + esc(s.id) + '"><td class="n"><a href="' +
+        esc(s.url) +
+        '" target="_blank" rel="noopener noreferrer">' + esc(s.name) +
+        '</a></td><td>' + esc(s.where) + '</td><td>' +
+        admin.note(esc(s.coverage)) +
+        '</td></tr>';
+    });
     html += '</tbody></table>';
-  });
 
-  html += '<h2 id="specifications">Specifications implemented</h2>' +
-    '<table><thead><tr><th class="n">Specification</th>' +
-    '<th>Published by</th><th>Coverage in this mock</th></tr></thead><tbody>';
-  SPECS.forEach(function (s) {
-    html += '<tr id="spec-' + esc(s.id) + '"><td class="n"><a href="' +
-      esc(s.url) +
-      '" target="_blank" rel="noopener noreferrer">' + esc(
-          s.name) + '</a></td><td>' + esc(s.where) + '</td><td>' +
-      admin.note(esc(s.coverage)) +
-      '</td></tr>';
-  });
-  html += '</tbody></table>';
+    html += admin.note('Machine-readable: <code>' + esc(base) +
+      '/admin/sts-metadata?format=json</code>, which is what the button at ' +
+      'the top hands you as a file. It is behind the console gate like the ' +
+      'page, so a program fetching it signs in at <code>/authn/login</code> ' +
+      'first, or reads the same service through <code>/admin-api</code>, ' +
+      'which is not gated. This document is not a specification-defined ' +
+      'discovery document &mdash; for those, see ' +
+      '<code>/.well-known/openid-configuration</code>, ' +
+      '<code>/.well-known/oauth-authorization-server</code>, ' +
+      '<code>/.well-known/openid-credential-issuer</code>, ' +
+      '<code>/.well-known/jwt-vc-issuer</code>, ' +
+      '<code>/.well-known/did.json</code> and ' +
+      '<code>/.well-known/did-configuration.json</code>.');
+    log.debug("Leaving StsMetadata.renderInner(). " + html.length +
+              " characters.");
+    return html;
+  }
 
-  html += admin.note('Machine-readable: <code>' + esc(base) +
-    '/admin/sts-metadata?format=json</code>, which is what the button at the ' +
-    'top hands you as a file. It is behind the console gate like the page, ' +
-    'so a program fetching it signs in at <code>/authn/login</code> first, ' +
-    'or reads the same service through <code>/admin-api</code>, which is not ' +
-    'gated. This document is not a specification-defined discovery document ' +
-    '&mdash; for those, see <code>/.well-known/openid-configuration</code>, ' +
-    '<code>/.well-known/oauth-authorization-server</code>, ' +
-    '<code>/.well-known/openid-credential-issuer</code>, ' +
-    '<code>/.well-known/jwt-vc-issuer</code>, ' +
-    '<code>/.well-known/did.json</code> and ' +
-    '<code>/.well-known/did-configuration.json</code>.');
-  log.debug("Leaving renderInner(). " + html.length + " characters.");
-  return html;
-}
+  private metadataJson(base, report) {
+    const { log, config, port } = this.deps;
+    const self = this;
+    const APP_VERSION = this.appVersion;
+    log.debug("Entering StsMetadata.metadataJson().");
+    log.debug("Leaving StsMetadata.metadataJson().");
+    return {
+      service: 'idptools mock Security Token Service',
+      // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read
+      // from the running router, so it describes the process that answered —
+      // and this says which process that was. Downloaded, the two travel
+      // together, which is the point: an endpoint list with no build number on
+      // it is a claim about a service and not about a release of one.
+      version: APP_VERSION.version,
+      build: {
+        number: APP_VERSION.build,
+        commit: APP_VERSION.commit || undefined,
+        at: APP_VERSION.builtAt,
+        // See the management API index for what this distinction is worth.
+        stamped: APP_VERSION.stamped === true
+      },
+      issuer: base,
+      wsTrustIssuer: config.value('wstrust.issuer'),
+      port: port,
+      testDouble: true,
+      endpoints: report.rows.map(function (r) {
+        const link = self.linkabilityOf(r);
+        return { path: r.path, methods: r.methods, name: r.name,
+                 group: r.group,
+                 description: r.what, specs: r.specs,
+                 documented: r.documented !== false,
+                 // Whether the path can be followed from a browser, and the
+                 // absolute URL when it can. Reported rather than left for a
+                 // client to work out, because getting it wrong is what
+                 // produces a dead link.
+                 linkable: link.linkable,
+                 notLinkableBecause: link.linkable ? undefined : link.reason,
+                 url: link.linkable ? base + r.path : undefined,
+                 effect: r.effect };
+      }),
+      specifications: SPECS,
+      // The protocol list, with the endpoint count each family actually has on
+      // this page. It is in the document rather than only on the page for the
+      // reason everything else here is: a test can then assert that this
+      // service still speaks the thirteen it claims to, which is not a
+      // question the endpoint list answers — two of the thirteen register no
+      // route at all.
+      protocols: report.protocols,
+      // The drift report is part of the document, not just the page: a test
+      // asserts these are empty, which is the only thing that keeps the
+      // descriptions honest.
+      undocumentedPaths: report.undocumented,
+      stalePaths: report.stale,
+      unknownSpecIds: report.unknownSpecs,
+      // The same, for the hand-written half. `unclaimedGroups` is the one that
+      // catches the direction nothing else can: a protocol family added to
+      // this service and not to the list at the top of the page.
+      unknownProtocolGroups: report.unknownProtocolGroups,
+      unknownProtocolSpecIds: report.unknownProtocolSpecs,
+      unclaimedGroups: report.unclaimedGroups
+    };
+  }
 
-function metadataJson(base, report) {
-  log.debug("Entering metadataJson().");
-  log.debug("Leaving metadataJson().");
-  return {
-    service: 'idptools mock Security Token Service',
-    // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read from
-    // the running router, so it describes the process that answered — and this
-    // says which process that was. Downloaded, the two travel together, which
-    // is the point: an endpoint list with no build number on it is a claim
-    // about a service and not about a release of one.
-    version: APP_VERSION.version,
-    build: {
-      number: APP_VERSION.build,
-      commit: APP_VERSION.commit || undefined,
-      at: APP_VERSION.builtAt,
-      // See the management API index for what this distinction is worth.
-      stamped: APP_VERSION.stamped === true
-    },
-    issuer: base,
-    wsTrustIssuer: config.value('wstrust.issuer'),
-    port: PORT,
-    testDouble: true,
-    endpoints: report.rows.map(function (r) {
-      var link = linkabilityOf(r);
-      return { path: r.path, methods: r.methods, name: r.name, group: r.group,
-               description: r.what, specs: r.specs,
-               documented: r.documented !== false,
-               // Whether the path can be followed from a browser, and the
-               // absolute URL when it can. Reported rather than left for a
-               // client to work out, because getting it wrong is what produces
-               // a dead link.
-               linkable: link.linkable,
-               notLinkableBecause: link.linkable ? undefined : link.reason,
-               url: link.linkable ? base + r.path : undefined,
-               effect: r.effect };
-    }),
-    specifications: SPECS,
-    // The protocol list, with the endpoint count each family actually has on
-    // this page. It is in the document rather than only on the page for the
-    // reason everything else here is: a test can then assert that this service
-    // still speaks the thirteen it claims to, which is not a question the
-    // endpoint list answers — two of the thirteen register no route at all.
-    protocols: report.protocols,
-    // The drift report is part of the document, not just the page: a test
-    // asserts these are empty, which is the only thing that keeps the
-    // descriptions honest.
-    undocumentedPaths: report.undocumented,
-    stalePaths: report.stale,
-    unknownSpecIds: report.unknownSpecs,
-    // The same, for the hand-written half. `unclaimedGroups` is the one that
-    // catches the direction nothing else can: a protocol family added to this
-    // service and not to the list at the top of the page.
-    unknownProtocolGroups: report.unknownProtocolGroups,
-    unknownProtocolSpecIds: report.unknownProtocolSpecs,
-    unclaimedGroups: report.unclaimedGroups
-  };
+  registerRoutes(app: { get: Function }): void {
+    const { log, baseUrlOf, admin } = this.deps;
+    const self = this;
+    log.debug("Entering StsMetadata.registerRoutes().");
+    // -----------------------------------------------------------------------
+    // THE PAGE. It is `/admin/sts-metadata` and it is REGISTERED HERE rather
+    // than in admin.js, which is the arrangement two rules of this service
+    // leave standing: this module is required LAST by server.js so that it is
+    // never the reason a route is missing from its own list, and admin.js must
+    // not require it back (that would drag every console route behind the last
+    // module in the file). What it borrows is the shell — see the header.
+    // Since #50's R1 "required last" is "registered last":
+    // `common/protocol_stack.ts` calls this after every other module's
+    // `registerRoutes()`.
+    //
+    // The gate above it is admin.js's one `app.use('/admin', ...)`, which
+    // express applies to routes registered after it. Nothing here repeats that
+    // check: a second opinion about who may read this page is a second thing
+    // to get wrong.
+    //
+    // `admin.respond()` answers `?format=json` itself, which keeps the machine
+    // -readable form byte-for-byte the shape every other console page's is —
+    // 200, `Cache-Control: no-store`, and the JSON this file builds.
+    // -----------------------------------------------------------------------
+    app.get('/admin/sts-metadata', function (req, res) {
+      log.debug("Entering the STS metadata endpoint.");
+      const base = baseUrlOf(req);
+      const report = self.describeEndpoints();
+      admin.respond(req, res, self.metadataJson(base, report),
+                    'Service metadata', '/admin/sts-metadata',
+                    self.renderInner(base, report));
+      log.debug("Leaving the STS metadata endpoint. " + report.rows.length +
+                " endpoints, " + report.protocols.length +
+                " protocol families.");
+    });
+    log.debug("Leaving StsMetadata.registerRoutes().");
+  }
 }
 
 // ---------------------------------------------------------------------------
-// THE PAGE. It is `/admin/sts-metadata` and it is REGISTERED HERE rather than
-// in admin.js, which is the arrangement two rules of this service leave
-// standing: this module is required LAST by server.js so that it is never the
-// reason a route is missing from its own list, and admin.js must not require it
-// back (that would drag every console route behind the last module in the
-// file). What it borrows is the shell — see the header.
-//
-// The gate above it is admin.js's one `app.use('/admin', ...)`, which express
-// applies to routes registered after it. Nothing here repeats that check: a
-// second opinion about who may read this page is a second thing to get wrong.
-//
-// `admin.respond()` answers `?format=json` itself, which keeps the machine
-// -readable form byte-for-byte the shape every other console page's is —
-// 200, `Cache-Control: no-store`, and the JSON this file builds.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-app.get('/admin/sts-metadata', function (req, res) {
-  log.debug("Entering the STS metadata endpoint.");
-  const base = baseUrlOf(req);
-  const report = describeEndpoints();
-  admin.respond(req, res, metadataJson(base, report), 'Service metadata',
-                '/admin/sts-metadata', renderInner(base, report));
-  log.debug("Leaving the STS metadata endpoint. " + report.rows.length +
-            " endpoints, " + report.protocols.length + " protocol families.");
-});
+const slot = new InstanceSlot<StsMetadata>(
+  'sts_metadata',
+  () => new StsMetadata(StsMetadata.defaultDeps()),
+  StsMetadata.wire,
+  helpers.log);
 
-module.exports = {
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` last, at the point in the route order where
+// requiring this module used to register the page.
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
+export = {
+  registerRoutes: slot.forward('registerRoutes'),
+  StsMetadata: StsMetadata,
+  installInstance: (instance: StsMetadata): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  // The three tables are data, not instance state: the same arrays they
+  // always were.
   SPECS: SPECS,
   PROTOCOLS: PROTOCOLS,
   ENDPOINTS: ENDPOINTS,
-  registeredRoutes: registeredRoutes,
-  describeEndpoints: describeEndpoints
+  registeredRoutes: slot.forward('registeredRoutes'),
+  describeEndpoints: slot.forward('describeEndpoints')
 };

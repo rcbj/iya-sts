@@ -19,7 +19,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    This proposal fails that test both ways — there is no cycle (`ldap_server.js`
    knows nothing about SCIM) and no route moves (the `/admin/ldap/*` routes are already
    registered by the time this file is read) — so it is a require. It must still
-   come before `sts_metadata.js`, which is last for everybody, and it starts
+   come before `sts_metadata.ts`, which is last for everybody, and it starts
    NOTHING: it is HTTP all the way down, so requiring it is the whole of its
    installation.
 
@@ -171,7 +171,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 
    **THE ROUTES ARE REGISTERED ONE BY ONE AND NOT BEHIND `scimmy-routers`.** That
    package exists and would have done it in a line. It mounts an express
-   `Router`, and `registeredRoutes()` in `sts_metadata.js` skips any layer with
+   `Router`, and `registeredRoutes()` in `sts_metadata.ts` skips any layer with
    no `.route` — so every SCIM endpoint would have been INVISIBLE to the drift
    check, silently, which is the one thing that page exists to prevent. Its
    constructor also REQUIRES an authentication scheme and a handler, and what

@@ -1509,7 +1509,7 @@ through two functions on the directory's credentials slot:
 * **A passwordless sign-in is not asked.** It never presented the password that
   must be changed.
 
-The route is described in `sts_metadata.js`. `tests/admin_bootstrap.js`
+The route is described in `sts_metadata.ts`. `tests/admin_bootstrap.js`
 section 7 drives the flow over HTTP in a child process. It checks that the form
 is drawn in place of a session, and that a mismatch and the reserved password
 are refused. It checks that a good change sets a session cookie, redirects on

@@ -323,7 +323,7 @@ exactly that page. So no view function learnt an argument and the two doors
 cannot disagree.
 
 **IT NEVER LOADS A ROUTE-REGISTERING MODULE, NOT EVEN LAZILY.**
-`sts_metadata.js` (names, the router walk), `ldap/ldap_server.js` (the realm's
+`sts_metadata.ts` (names, the router walk), `ldap/ldap_server.js` (the realm's
 base DN), `kerberos/krb5_kdc.js` (the realm name) and `spiffe/spiffe_server.ts`
 (the bindings) are read out of `require.cache` by `loaded()` only if something
 already loaded them. `certificate_views.ts` requires inside a function, which

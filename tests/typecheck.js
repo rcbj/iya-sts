@@ -46,8 +46,10 @@ const TSC = path.join(ROOT, 'tests', 'node_modules', 'typescript', 'bin',
 const compiledTree = require('../common/compiled_tree');
 
 // The directories whose own files have opted in — every directory the
-// service runs from since 2026-09-16 — and the two root modules. The files
-// under them that are not this repository's to change stay unchecked: the
+// service runs from since 2026-09-16 — and the one JavaScript root module.
+// The other root module, `sts_metadata.ts`, is TypeScript (#50) and needs no
+// marker; `ROOT_SOURCES` is what holds `tsconfig.json` to including it. The
+// files under them that are not this repository's to change stay unchecked: the
 // root CLAUDE.md names `common/vendored/` (a directory, never listed here
 // because it is not read) and the eight Kerberos codec copies.
 const CHECKED_DIRS = ['acme', 'admin-core', 'admin-ui', 'authn', 'cluster',
@@ -56,7 +58,8 @@ const CHECKED_DIRS = ['acme', 'admin-core', 'admin-ui', 'authn', 'cluster',
                       'oauth-oidc', 'oid4vc', 'persistence', 'pki', 'portal',
                       'saml', 'scep', 'scim', 'spiffe', 'ssf', 'tls',
                       'ws-federation', 'ws-trust', 'xacml'];
-const CHECKED_FILES = ['server.js', 'sts_metadata.js'];
+const CHECKED_FILES = ['server.js'];
+const ROOT_SOURCES = ['sts_metadata.ts'];
 const NOT_OURS = ['kerberos/krb5_primitives.js', 'kerberos/krb5_asn1.js',
                   'kerberos/krb5_crypto.js', 'kerberos/krb5_messages.js',
                   'kerberos/krb5_ndr.js', 'kerberos/krb5_pac.js',
@@ -116,7 +119,7 @@ function run(t) {
   const included = (tsconfig.include || []);
   const missing = CHECKED_DIRS.map(function (dir) {
     return dir + '/*.js';
-  }).concat(CHECKED_FILES).filter(function (pattern) {
+  }).concat(CHECKED_FILES, ROOT_SOURCES).filter(function (pattern) {
     return included.indexOf(pattern) < 0;
   });
   t.equal(missing.join(', '), '',
@@ -127,7 +130,7 @@ function run(t) {
   // rules forbid — or a stale one that would shadow nothing and mislead.
   // `uncompiledSources()` lists the sources WITHOUT a twin; every source
   // must be on it.
-  const all = [];
+  const all = ROOT_SOURCES.slice();
   fs.readdirSync(ROOT, { withFileTypes: true }).forEach(function (dir) {
     if (!dir.isDirectory() ||
         compiledTree.NOT_SOURCES.indexOf(dir.name) >= 0) {

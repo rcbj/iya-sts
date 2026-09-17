@@ -756,8 +756,8 @@ exports `registerRoutes(app)`, and `load()` requires it and then calls
 used to register the routes, so the route order did not move (Express's layer
 list, 603 layers with their handlers, is identical before and after). The
 JavaScript route modules — the parent project's locked `krb5_kdc`,
-`krb5_service` and `spnego`, `tls/tls_server`, `ldap/ldap_server` and
-`sts_metadata` — still register at their require, which `load()` makes at its
+`krb5_service` and `spnego`, `tls/tls_server` and `ldap/ldap_server` — still
+register at their require, which `load()` makes at its
 old place. So the file now holds two interleaved orders: the REQUIRE order,
 which decides load-time effects (slot fills, stores, cycles, and where a
 JavaScript module's routes land), and the order of `register()` calls, which
@@ -3535,7 +3535,7 @@ The rule it puts on this file is small and worth stating, because it is the one
 that will be broken by accident: **an algorithm this service performs must be in
 a TABLE here rather than in a literal at a call site.** A `switch` in a
 protocol module is invisible to that page, so the page would go on looking
-complete while being wrong — which is the failure `sts_metadata.js` exists to
+complete while being wrong — which is the failure `sts_metadata.ts` exists to
 prevent for endpoints and this arrangement extends to algorithms.
 
 ## WHERE A SIGN-OUT GOES, AND THE CLIENT SECRET, ON THE NEW-APPLICATION FORM (2026-08-30)
@@ -5550,7 +5550,7 @@ A field parsed and never drawn falls back to its default on every round trip; a
 field drawn and never parsed is a control that does nothing. **Neither is an
 error anywhere.** So the list is declared here, `admin-ui/pki_admin.ts` draws
 from it, and `tests/pki_authoring.js` compares the two — which is
-`sts_metadata.js`'s argument about endpoints, one layer down. It caught
+`sts_metadata.ts`'s argument about endpoints, one layer down. It caught
 `pki_selected` being absent whenever the object store was empty.
 
 **The field NAMES are the debugger page's, verbatim.** Not decoration: the two
@@ -6462,7 +6462,7 @@ NOTHING from this repository — not `helpers.js`, not `config.js`, not even the
 logger. So its position in the require order is not a position, and it can never
 close a cycle. That matters more here than it did in the parent project:
 `server.js`, `home/home.ts` (6a), `admin-ui/admin.ts` (18),
-`mgmt-api/admin_api.ts` (19), `portal/portal.ts` and `sts_metadata.js` (24) all
+`mgmt-api/admin_api.ts` (19), `portal/portal.ts` and `sts_metadata.ts` (24) all
 read it, which is six modules spread across the whole require order — including
 the two whose positions are the most constrained in the file. **A version module
 that could drag a route would be a version module that decided where routes

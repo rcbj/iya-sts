@@ -84,7 +84,7 @@ when registered).
   throttle's 429; a 404 label, 405, 501 or 503 is the server's own shape and is
   not.
 * **THE WRONG METHOD IS MIDDLEWARE, NOT `app.all()`.** Express 4 records `all` as
-  every method it knows on the ROUTE, so `sts_metadata.js` would list thirty-four
+  every method it knows on the ROUTE, so `sts_metadata.ts` would list thirty-four
   methods per EST path. A middleware after the routes answers 405 with `Allow`.
 * **THE CONSOLE'S ISSUE-SERVER-KEY ANSWERS A 200 PAGE**, not a 303, because its
   answer carries a private key; every other EST action goes through

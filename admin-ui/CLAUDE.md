@@ -9,7 +9,7 @@ say; the rest are listed after the table and argued in their own sections.
 | `admin_rbac.ts` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
 | `delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
 | `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
-| `crypto_metadata.ts` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.js`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
+| `crypto_metadata.ts` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.ts`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
 | `federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.ts`'s palette, hexagon and text metric. |
 
 The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
@@ -535,7 +535,7 @@ Three things about them:
 * **Registration is still one loop, in order.** It runs inside `admin.ts`'s
   `registerRoutes(app)` — which, since #50's R1, `common/protocol_stack.ts`
   calls at 18 rather than the module's require running it — so the routes are
-  registered in order, below the gate, and visible to `sts_metadata.js` reading
+  registered in order, below the gate, and visible to `sts_metadata.ts` reading
   the router. Rule 1 is held, not bent.
 * **A row carries what its family does NOT do.** These are the pages somebody
   lands on while deciding whether this service can stand in for a real one, and
@@ -552,7 +552,7 @@ Three things about them:
   concrete endpoints, as `/admin/gnap` did. So the list is not in this file
   and not hand-kept: see *Every Protocols page lists its realm's endpoints*
   at the foot, where the table names ROUTES, the names and methods come from
-  `sts_metadata.js` and the router, and a test fails on both drifts.
+  `sts_metadata.ts` and the router, and a test fails on both drifts.
 
 **Where the two grouped families' pages went in the sidebar** is argued in
 `SECTIONS` beside the rows: the OAuth 2.0 / OIDC settings page is FIRST in its
@@ -1132,7 +1132,7 @@ text nothing renders and everybody keeps editing.
 **What still cannot be checked from here is the same gap rule 7 and rule 7a
 both describe**: no code in this process can see that a blurb has gone STALE.
 The marker catches a missing one; a blurb describing what a page did last month
-is invisible, exactly as a `sts_metadata.js` coverage note is.
+is invisible, exactly as a `sts_metadata.ts` coverage note is.
 
 ### *What it deliberately does not do* is about THIS CONSOLE, not about the service
 
@@ -1177,7 +1177,7 @@ borrows the shell on exactly the terms below and the section above argues the
 rest.)
 
 `/admin/sts-metadata` — *Service metadata*, the last item in the sidebar — is
-built by `../sts_metadata.js`. It moved under `/admin` on 2026-08-24 from
+built by `../sts_metadata.ts`. It moved under `/admin` on 2026-08-24 from
 `/sts-metadata`, and the split of labour is worth knowing before either half is
 edited:
 
@@ -1189,7 +1189,7 @@ edited:
   `.lead`, `.m`, `.why`, `.eff`, `.bad`, `.none`, `.protos`, `a.btn`. They are
   there because `page()` emits the console's ONLY `<style>`, and a second one
   inside `<body>` is markup no validator accepts.
-* **The require goes one way and must stay that way.** `sts_metadata.js`
+* **The require goes one way and must stay that way.** `sts_metadata.ts`
   requires this module; this module must never require it back. That file is
   the LAST thing `common/protocol_stack.ts` loads — it lists what every other module
   registered — so a require from here would drag every console route behind it,
@@ -1308,7 +1308,7 @@ Six things about it are decisions rather than mechanics.
   deciding "this one is short enough" decides it once, against a paragraph that
   then grows. So a note added to this console tomorrow starts folding itself
   when it passes about a line, with no edit anywhere — which is the same
-  property `consoleGuide()` and `sts_metadata.js` have and for the same reason.
+  property `consoleGuide()` and `sts_metadata.ts` have and for the same reason.
 * **A LIST ITEM THAT OPENS WITH A LINK IS NEVER FOLDED, AND ONE THAT OPENS WITH
   A CODE PATH KEEPS IT IN THE SUMMARY.** `bullet()` enforces both. The Overview
   page's index and the machine-readable lists are rows whose POINT is the link
@@ -1320,7 +1320,7 @@ Six things about it are decisions rather than mechanics.
   `<details class="warn fold">`, so a page with a caveat on it still looks like
   one when the caveat is closed. Folding a warning into something that looked
   like body text would be the one place this change hid a fact rather than
-  tidying one. `sts_metadata.js`'s drift report is not folded at all, and says
+  tidying one. `sts_metadata.ts`'s drift report is not folded at all, and says
   in a comment why: it appears only when that page disagrees with the router,
   and a report that has to be opened is one somebody can close and forget.
 * **NOTHING IS EVER SAID ONLY IN A TOOLTIP.** A `title` is unreachable from a
@@ -1372,7 +1372,7 @@ that nobody has to — said nothing about any of them.
 
 ### EVERY TABLE IS READ FROM THE MODULE THAT PERFORMS THE ALGORITHM
 
-That is `sts_metadata.js`'s argument one layer down, and it is the design rather
+That is `sts_metadata.ts`'s argument one layer down, and it is the design rather
 than a nicety. That page walks the live router because a hand-kept list of
 routes goes stale the first time somebody adds one and the failure is silent in
 the worst direction — the page still looks complete. An algorithm table is the
@@ -1397,19 +1397,19 @@ Also after `admin-ui/admin` for the shell and the gate.
 **Only two things on the page are written by hand, and both are things no table
 can hold**: the per-family prose in `FAMILIES` (what each identity service signs,
 and why) and `STANDARDS` (which document an envelope comes from, and how much of
-it is really implemented). Both follow `sts_metadata.js`'s rule — every
+it is really implemented). Both follow `sts_metadata.ts`'s rule — every
 `coverage` starts `full`, `partial` or `mock` and says what is missing — and it
 is worth more here than there, because a page about cryptography that overstates
 what it implements is actively dangerous to somebody using it to learn.
 
-### THE FAMILY LIST IS CHECKED AGAINST `sts_metadata.js` RATHER THAN AGREED WITH IT
+### THE FAMILY LIST IS CHECKED AGAINST `sts_metadata.ts` RATHER THAN AGREED WITH IT
 
 The page reports on the identity services this mock ADVERTISES, so the list of
 them has to be the list `/admin/sts-metadata` draws its cards from. Two tables
 naming the same protocol families are two tables that will disagree the first
 time another arrives — invisibly, because each page would look complete on
-its own. So `sts_metadata.js` requires this module and hands `PROTOCOLS` over at
-its own require time (`setProtocolFamilies()`), and the page reports BOTH
+its own. So `sts_metadata.ts` requires this module and hands `PROTOCOLS` over
+from its `wire` step (`setProtocolFamilies()`), and the page reports BOTH
 directions of drift the way that page reports both directions of endpoint drift:
 a family advertised with no crypto profile, a profile naming a family that is
 not advertised, and — a third direction that page has no equivalent of — a
@@ -1491,7 +1491,7 @@ in the BINDING, not in the signature, and the page says which.
 
 ### WHAT IT COSTS TO ADD A PROTOCOL FAMILY, NOW
 
-A card in `sts_metadata.js`'s `PROTOCOLS`, an entry in its `ENDPOINTS`, **and a
+A card in `sts_metadata.ts`'s `PROTOCOLS`, an entry in its `ENDPOINTS`, **and a
 row in `crypto_metadata.ts`'s `FAMILIES`**. The third is enforced:
 `tests/vendored/admin_api.js` — this repository's own — fails on the drift
 report being non-empty in either direction, on a coverage note that does not
@@ -3983,7 +3983,7 @@ every other target in this console.
 
 ## Five pages this file does not draw, and the furniture it lends them
 
-`/admin/sts-metadata` has been built by `../sts_metadata.js` since 2026-08-24,
+`/admin/sts-metadata` has been built by `../sts_metadata.ts` since 2026-08-24,
 and since 2026-09-01 five more pages are built somewhere else:
 `/admin/ldap/service`, `/admin/ldap/directory`, `/admin/ldap/applications`,
 `/admin/ldap/federations` and `/admin/ldap/spiffe`, all drawn by
@@ -4784,7 +4784,7 @@ Three smaller consequences of the move:
 
 * **The path did not change.** Nothing outside `SECTIONS` needed editing:
   `NAV` is derived, the breadcrumb reads its label from `NAV`, `GET
-  /admin-api/xacml/monitor` still mirrors it, and `sts_metadata.js`'s
+  /admin-api/xacml/monitor` still mirrors it, and `sts_metadata.ts`'s
   `ENDPOINTS` row keeps its `XACML` group, which is about the path space rather
   than about the sidebar.
 * **The label is `XACML decisions` and not `Monitor`.** Under a heading that
@@ -4936,7 +4936,7 @@ the catalogue it publishes is what a script builds a create from.
 ## The API explorer is a page of this console now (2026-09-09)
 
 `/admin/api-explorer`, built by **`admin-ui/api_explorer.ts`** at 19a. It is the
-third page in this console that this file does not draw — `sts_metadata.js` and
+third page in this console that this file does not draw — `sts_metadata.ts` and
 `crypto_metadata.ts` are the others — and it is the first with a **script** on
 it.
 
@@ -5710,7 +5710,7 @@ own, which `gnap/gnap_console.ts` writes.
 **THE TABLE IS `admin-core/protocol_endpoints.ts` AND NOT THIS FILE**, which is
 how the paragraph that refused an endpoint list (under *The eight new pages*)
 was answered rather than ignored. A row names Express ROUTES; the name comes
-from `sts_metadata.js`'s `ENDPOINTS`, the methods from the router, the URL from
+from `sts_metadata.ts`'s `ENDPOINTS`, the methods from the router, the URL from
 `baseUrlOf(req)` so it carries the realm prefix. Sockets the router cannot see
 (KDC, Kerberos service, LDAP/LDAPS at the realm's base DN, SPIFFE's
 gRPC bindings for this realm) are built from their settings. The TLS row is one

@@ -12,8 +12,8 @@
 // at the point in the sequence where requiring that module used to register
 // its routes. The route order is therefore the order of the `register()` calls
 // below, and the modules still written in JavaScript (the parent project's
-// Kerberos closure, `tls_server`, `ldap_server`, `sts_metadata`) still register
-// when they are required, at the require that loads them. The two sequences
+// Kerberos closure, `tls_server`, `ldap_server`) still register when they are
+// required, at the require that loads them. The two sequences
 // are interleaved exactly as they ran before, and the router's layer list was
 // compared before and after the change and is identical.
 //
@@ -841,7 +841,7 @@ class ProtocolStack {
     // mirror the page without the management API requiring this file — a
     // require in that direction would drag every one of tls_server's routes
     // (and, before #50's R1, this page's) ahead of the management API's own.
-    // And ./sts_metadata.js, last in this file, hands it the protocol family
+    // And ./sts_metadata.ts, last in this file, hands it the protocol family
     // list so that the two pages' idea of what this service advertises is
     // checked rather than agreed by hand.
     // -------------------------------------------------------------------------
@@ -951,7 +951,7 @@ class ProtocolStack {
     // **AFTER `admin-ui/admin.ts`, and that is the constraint that decides the
     // line.** It fills that module's eighth slot — the reader and the four
     // actions behind `/admin/ssf` and `/admin-api/ssf` — and it requires it for
-    // the page shell and the gate, exactly as `sts_metadata.js` and
+    // the page shell and the gate, exactly as `sts_metadata.ts` and
     // `crypto_metadata.js` do. Rule 3e's test was applied both ways round: a
     // require from `admin.js` to here CLOSES A CYCLE, and a require from
     // `mgmt-api/admin_api.ts` to here would MOVE ROUTES — every /ssf endpoint
@@ -1141,7 +1141,7 @@ class ProtocolStack {
     // cache hit that registers nothing and moves nothing; and nothing in this
     // service requires that module back, so there is no cycle to close.
     //
-    // It is NOT last. `sts_metadata.js` is, for everybody, because it reads the
+    // It is NOT last. `sts_metadata.ts` is, for everybody, because it reads the
     // router to list what everything else registered — and a logout endpoint
     // missing from that list would be the exact drift that page exists to
     // catch.
@@ -1149,7 +1149,15 @@ class ProtocolStack {
     require('../logout/logout');
     this.build('logout/logout', require('../logout/logout'), 'Logout');
     this.register(app, require('../logout/logout'), 'logout/logout');
+    // -------------------------------------------------------------------------
+    // 24. GET /admin/sts-metadata — LAST, FOR EVERYBODY. It reads the router to
+    // list what everything else registered, so its `register()` is the last
+    // one here; its `wire` step hands its protocol family list to the crypto
+    // page (20a), which is installed long before this build.
+    // -------------------------------------------------------------------------
     require('../sts_metadata');
+    this.build('sts_metadata', require('../sts_metadata'), 'StsMetadata');
+    this.register(app, require('../sts_metadata'), 'sts_metadata');
     this.build('common/protocol_stack', require('./protocol_stack'),
                'ProtocolStack');
     this.checkOrigins();

@@ -611,7 +611,7 @@ For the next person adding a console surface, following the shape
 * `mgmt-api/admin_api.ts` — three GETs and a POST with ten documented actions
   (`import-alfa` arrived in phase four);
   `mgmt-api/admin_api_spec.ts` — `Xacml`, `XacmlPolicies` and `XacmlEditor`.
-* `sts_metadata.js` — **eight** `ENDPOINTS` rows, four of them console pages
+* `sts_metadata.ts` — **eight** `ENDPOINTS` rows, four of them console pages
   and four management API, which are again the ones a checklist forgets.
 
 **The one thing that is not a file**: `protocolSettingsJsonFor()` is NOT the
@@ -1091,7 +1091,7 @@ section 1b of `tests/vendored/sts_xacml_remote_pep.js` pin both.
 * `mgmt-api/` — two GETs, three actions and two schemas for phase five itself,
   plus the nineteen undocumented editor actions and thirty-two request bodies
   that defect 5 below turned out to owe.
-* `sts_metadata.js` — **six** `ENDPOINTS` rows.
+* `sts_metadata.ts` — **six** `ENDPOINTS` rows.
 * `admin-ui/crypto_metadata.ts` — the XACML row's missing halves (see below).
 * `docker-compose.yml` — a `xacml-pep` service under `profiles: [xacml]`.
 * And the container itself, `xacml-pep/`, which has its own `CLAUDE.md`.

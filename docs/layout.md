@@ -11,7 +11,7 @@ themselves did not change; the paths did.
 
 ```
 server.js            the shell: requires the modules and listens
-sts_metadata.js      reads the router to list what everything else registered
+sts_metadata.ts      reads the router to list what everything else registered
 
 common/              config, helpers, the express app, the counters, the audit
                      log, the application registry, the claim catalogues
@@ -79,7 +79,7 @@ first by `server.js`, `common/config.js` and `common/helpers.js`.
 
 ## Adding an endpoint
 
-Costs one entry in `sts_metadata.js`. That page reads the endpoint list off the
+Costs one entry in `sts_metadata.ts`. That page reads the endpoint list off the
 live router so it cannot go stale by omission, but it reports two kinds of drift
 and the parent project's test fails on both: a route registered and undescribed,
 and a description whose path is not registered (what a rename produces).

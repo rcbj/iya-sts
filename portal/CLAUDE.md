@@ -34,7 +34,7 @@ SOMEBODY A CREDENTIAL rather than taking one. **EIGHT SINCE 2026-09-13** —
 
 **`NAV` IS THE PAGE LIST AND THERE IS NO SECOND COPY.** `navBar()` draws the
 column from it, `headingFor()` titles the page from it, and `paths()` reports it
-to `sts_metadata.js` — so a page added there appears in the column, in the
+to `sts_metadata.ts` — so a page added there appears in the column, in the
 browser tab and in the endpoint list, and one removed leaves none of the three
 behind. `tests/vendored/sts_portal_sessions.js` asserts, for the first four
 (Overview, Applications, Password, Security keys), that its own entry is marked
@@ -43,7 +43,7 @@ behind. `tests/vendored/sts_portal_sessions.js` asserts, for the first four
 **A `GET` AND A `POST` SHARE `/portal/password`.** The form has to live
 somewhere now that it is not on the overview, and a form and the handler that
 answers it on two addresses is a distinction nobody could state a reason for.
-`sts_metadata.js` is keyed by path and merges the methods, so this costs one
+`sts_metadata.ts` is keyed by path and merges the methods, so this costs one
 entry rather than two.
 
 **THE GETs ASK THE ACCESS GATE FOR `read` AND THE POSTs FOR `manage-own`.**

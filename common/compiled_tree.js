@@ -20,7 +20,8 @@
 // no `.ts` is left), and this answers nothing.
 //
 // **WHERE IT LOOKS** is where `tsconfig.build.json` compiles: `.ts` files one
-// level down, in the service's own directories, declarations aside.
+// level down, in the service's own directories, and at the package root
+// (`sts_metadata.ts`, #50), declarations aside.
 //
 // **NO LOGGER, AND THEREFORE NO Entering/Leaving LINES**, for
 // `config_file.js`'s reason: this runs before anything that could make one,
@@ -39,8 +40,22 @@ const NOT_SOURCES = ['node_modules', 'tests', 'node-ldapjs', 'xacml-pep',
                      'docs', 'deploy', 'types', '.git', '.claude',
                      '.github'];
 
-// Every `dir/x.ts` under `root` with no `dir/x.js` beside it, as paths
-// relative to `root`.
+// The `.ts` sources in one listing with no `.js` of the same name beside
+// them, each prefixed with `prefix` (the directory, or '' for the root).
+function twinless(names, prefix, out) {
+  names.forEach(function (name) {
+    if (!/\.ts$/.test(name) || /\.d\.ts$/.test(name)) {
+      return;
+    }
+    const twin = name.slice(0, -3) + '.js';
+    if (names.indexOf(twin) < 0) {
+      out.push(prefix + name);
+    }
+  });
+}
+
+// Every `x.ts` at the root of `root` and every `dir/x.ts` under it with no
+// `.js` beside it, as paths relative to `root`.
 function uncompiledSources(root) {
   const base = root || ROOT;
   const out = [];
@@ -65,16 +80,14 @@ function uncompiledSources(root) {
       out.push(dir.name + '/ (unreadable: ' + ((e && e.message) || e) + ')');
       return;
     }
-    names.forEach(function (name) {
-      if (!/\.ts$/.test(name) || /\.d\.ts$/.test(name)) {
-        return;
-      }
-      const twin = name.slice(0, -3) + '.js';
-      if (names.indexOf(twin) < 0) {
-        out.push(dir.name + '/' + name);
-      }
-    });
+    twinless(names, dir.name + '/', out);
   });
+  // The package root's own sources, compiled in place like the rest.
+  twinless(dirs.filter(function (entry) {
+    return entry.isFile();
+  }).map(function (entry) {
+    return entry.name;
+  }), '', out);
   return { found: out.sort(), problem: '' };
 }
 

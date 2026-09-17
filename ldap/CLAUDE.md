@@ -1618,7 +1618,7 @@ such object" for entries that plainly exist, the failure that registration point
 exists to prevent, reintroduced one layer out.
 
 `registerWorkerOperations()` is called AFTER the seven `server.*` calls, for the
-reason `sts_metadata.js` is required last: it reads what everything above it
+reason `sts_metadata.ts` is required last: it reads what everything above it
 registered. Called before them it would register seven operations resolving to
 nothing, and every one would throw in the worker, where the failure reaches a
 client as `LDAP_OPERATIONS_ERROR` and reaches a reader as nothing at all.
@@ -1713,7 +1713,7 @@ knowing before touching any of it.
 
 * **THEY ARE STILL BUILT HERE, and that is not a leftover.** A console page is
   a `path` and a `label` in `admin-ui/admin.ts`'s `SECTIONS` whoever builds the
-  body — `/admin/sts-metadata` is built by `../sts_metadata.js` and has been
+  body — `/admin/sts-metadata` is built by `../sts_metadata.ts` and has been
   since 2026-08-24. Moving these bodies into that file would mean moving
   `description()`, `eachEntryInRealm()` and `entryObject()` with them, or
   exporting all three: the directory's own store belongs to the directory's own
@@ -1733,7 +1733,7 @@ knowing before touching any of it.
   `admin.pageNavPair()`, `admin.perPageOptions()`,
   `admin.clipped()` and `admin.tile()` are the same functions `/admin/tokens`
   and `/admin/applications` use, exported for the reason `page()`, `note()` and
-  `tip()` are exported to `sts_metadata.js`. A control on one of these pages
+  `tip()` are exported to `sts_metadata.ts`. A control on one of these pages
   that behaved differently from the identical-looking control on the page next
   door would be the worst possible outcome of moving them here. **Do not write
   a paging control in this file.**
