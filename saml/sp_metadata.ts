@@ -121,6 +121,11 @@ import audit = require('../common/audit');
 // (2026-09-17). A leaf, so this require closes no cycle.
 import stsCrypto = require('../common/crypto');
 import applications = require('../common/applications');
+// THE BACKGROUND REFRESH (#37 follow-up): it walks every trust realm, and
+// each document is refreshed by ONE process of a cluster, through a claim.
+// Both are libraries that require nothing reaching back here.
+import realms = require('../common/realms');
+import clusterClaims = require('../cluster/cluster_claims');
 // The outbound policy — the kill switch, the scheme rule and the insecure
 // switch — from the module that owns it. A library that registers nothing and
 // requires only config, helpers and version, so a require from saml/ closes no
@@ -179,9 +184,29 @@ interface SpMetadataDeps {
   applications: typeof applications;
   fedHttp: typeof fedHttp;
   stsCrypto: typeof stsCrypto;
+  realms: typeof realms;
+  clusterClaims: typeof clusterClaims;
+}
+
+// What `freshness()` answers about the metadata consumed onto an entry.
+interface Freshness {
+  state: string;
+  consumedAt: string;
+  how: string;
+  validUntil: string;
+  expiresAt: string;
+  cacheDuration: string;
+  staleAt: string;
+  refreshable: boolean;
+  source: string;
+  why: string;
 }
 
 class SpMetadata {
+  // True only while a background consumption runs — `consume()` is
+  // synchronous, so nothing else can observe it set.
+  private quiet = false;
+
   constructor(private readonly deps: SpMetadataDeps) {
     deps.helpers.log.debug("Entering SpMetadata.constructor().");
     deps.helpers.log.debug("Leaving SpMetadata.constructor().");
@@ -204,7 +229,9 @@ class SpMetadata {
       audit: audit,
       applications: applications,
       fedHttp: fedHttp,
-      stsCrypto: stsCrypto
+      stsCrypto: stsCrypto,
+      realms: realms,
+      clusterClaims: clusterClaims
     };
   }
 
@@ -259,7 +286,7 @@ class SpMetadata {
   // signed with in this role. A document with no SAML 2.0 SPSSODescriptor is
   // not this kind of metadata and is refused.
   // ---------------------------------------------------------------------------
-  parse(xml: string): ParsedMetadata {
+  parse(xml: string, wanted?: string[]): ParsedMetadata {
     const { log } = this.deps.helpers;
     const { DOMParser } = this.deps.xmldom;
     const self = this;
@@ -284,27 +311,43 @@ class SpMetadata {
       return { ok: false, why: 'the metadata has no root element' };
     }
     const root = doc.documentElement;
-    // An EntitiesDescriptor holding several entities is legal and is NOT
-    // supported: which of them this application is cannot be worked out from a
-    // document that does not know which application it was fetched for, and
-    // guessing the first would silently encrypt to whoever happened to be
-    // listed first. Named rather than half-handled.
+    // AN AGGREGATE (#37 follow-up): an <md:EntitiesDescriptor> — what a
+    // federation operator publishes, and what an MDQ responder may answer
+    // with — is read for the ONE entity this application is, found by
+    // entityID at any depth of nesting. Without names to look for, which is a
+    // parse nobody asked about a particular application, it is refused as it
+    // always was: picking the first would register whoever happened to be
+    // listed first.
+    let entity = root;
+    let chain = [];
     if (root.localName === 'EntitiesDescriptor') {
-      log.debug("Leaving SpMetadata.parse(). An EntitiesDescriptor.");
-      return { ok: false, why: 'this is an <md:EntitiesDescriptor> holding ' +
-               'several entities. Give the <md:EntityDescriptor> for this ' +
-               'one ' +
-               'service provider — a document listing many does not say ' +
-               'which ' +
-               'of them this application is, and picking the first would ' +
-               'encrypt to whoever happens to be listed first' };
-    }
-    if (root.localName !== 'EntityDescriptor') {
+      const names = (wanted || []).filter(function (one) {
+        return !!one;
+      });
+      if (!names.length) {
+        log.debug("Leaving SpMetadata.parse(). An aggregate, and no name.");
+        return { ok: false, why: 'this is an <md:EntitiesDescriptor> ' +
+                 'holding several entities, and nothing says which of them ' +
+                 'this application is' };
+      }
+      const found = this.entitiesIn(root, names, []);
+      if (found.length !== 1) {
+        log.debug("Leaving SpMetadata.parse(). " + found.length +
+                  " matching entities in the aggregate.");
+        return { ok: false, why: found.length
+          ? 'the <md:EntitiesDescriptor> describes "' + names[0] + '" ' +
+            found.length + ' times, and which one is meant cannot be told'
+          : 'the <md:EntitiesDescriptor> does not describe this ' +
+            'application ("' + names.join('", "') + '")' };
+      }
+      entity = found[0].entity;
+      chain = found[0].chain;
+    } else if (root.localName !== 'EntityDescriptor') {
       log.debug("Leaving SpMetadata.parse(). Not an EntityDescriptor.");
       return { ok: false, why: 'the document is <' + root.localName +
-               '>, not an <md:EntityDescriptor>' };
+               '>, not an <md:EntityDescriptor> or <md:EntitiesDescriptor>' };
     }
-    const sp = this.childrenByLocal(root, 'SPSSODescriptor').filter(
+    const sp = this.childrenByLocal(entity, 'SPSSODescriptor').filter(
         function (one) {
       return String(one.getAttribute('protocolSupportEnumeration') || '')
         .split(/\s+/).indexOf(NS_SAMLP) >= 0;
@@ -319,7 +362,7 @@ class SpMetadata {
 
     const out: ParsedMetadata = {
       ok: true,
-      entityId: root.getAttribute('entityID') || '',
+      entityId: entity.getAttribute('entityID') || '',
       certificate: '',
       certificateUse: '',
       signingCertificates: [],
@@ -332,11 +375,26 @@ class SpMetadata {
         String(sp.getAttribute('AuthnRequestsSigned') || '') === 'true',
       wantAssertionsSigned:
         String(sp.getAttribute('WantAssertionsSigned') || '') === 'true',
-      validUntil: this.earliest([root.getAttribute('validUntil') || '',
-                                 sp.getAttribute('validUntil') || '']),
-      cacheDuration: sp.getAttribute('cacheDuration') ||
-                     root.getAttribute('cacheDuration') || '',
-      signed: this.childrenByLocal(root, 'Signature').length > 0,
+      // THE EFFECTIVE EXPIRY is the earliest validUntil anywhere on the way
+      // down — every enclosing EntitiesDescriptor, the EntityDescriptor, the
+      // SPSSODescriptor — and the effective cacheDuration the SHORTEST
+      // (saml-metadata-2.0-os section 2.3.1: an element's validity cannot
+      // outlast its parent's).
+      validUntil: this.earliest(chain.concat([entity, sp]).map(function (el) {
+        return el.getAttribute('validUntil') || '';
+      })),
+      cacheDuration: this.shortest(chain.concat([entity, sp]).map(
+        function (el) {
+          return el.getAttribute('cacheDuration') || '';
+        })),
+      signed: this.childrenByLocal(root, 'Signature').length > 0 ||
+              this.childrenByLocal(entity, 'Signature').length > 0,
+      rootSigned: this.childrenByLocal(root, 'Signature').length > 0,
+      entitySigned: this.childrenByLocal(entity, 'Signature').length > 0,
+      aggregate: entity !== root,
+      rootElement: root.localName,
+      entityXml: entity !== root
+        ? new this.deps.xmldom.XMLSerializer().serializeToString(entity) : '',
       skipped: []
     };
 
@@ -429,6 +487,69 @@ class SpMetadata {
     }
     log.debug("Leaving SpMetadata.childrenByLocal(). " + out.length);
     return out;
+  }
+
+  // Every EntityDescriptor under an aggregate whose entityID is one of
+  // `names`, with the EntitiesDescriptors that enclose it (outermost first).
+  private entitiesIn(parent, names, chain) {
+    const { log } = this.deps.helpers;
+    const self = this;
+    log.debug("Entering SpMetadata.entitiesIn().");
+    let out = [];
+    const here = chain.concat([parent]);
+    this.childrenByLocal(parent, 'EntityDescriptor').forEach(function (one) {
+      if (names.indexOf(String(one.getAttribute('entityID') || '')) >= 0) {
+        out.push({ entity: one, chain: here });
+      }
+    });
+    this.childrenByLocal(parent, 'EntitiesDescriptor').forEach(
+      function (nested) {
+        out = out.concat(self.entitiesIn(nested, names, here));
+      });
+    log.debug("Leaving SpMetadata.entitiesIn(). " + out.length);
+    return out;
+  }
+
+  // An xs:duration in milliseconds, or -1 when it is absent or unreadable.
+  // A year is 365 days and a month 30: metadata durations are hours and days
+  // in practice, and the approximation only matters for a document that asks
+  // to be cached for months.
+  durationMs(value) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.durationMs().");
+    const m = /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(
+      String(value || '').trim());
+    if (!m || String(value).trim() === 'P' || /T$/.test(String(value).trim())) {
+      log.debug("Leaving SpMetadata.durationMs(). Unreadable.");
+      return -1;
+    }
+    const n = function (i) {
+      log.debug("Entering n().");
+      log.debug("Leaving n().");
+      return m[i] ? Number(m[i]) : 0;
+    };
+    const days = n(1) * 365 + n(2) * 30 + n(3);
+    log.debug("Leaving SpMetadata.durationMs().");
+    return Math.round((((days * 24 + n(4)) * 60 + n(5)) * 60 + n(6)) * 1000);
+  }
+
+  // The shortest of some xs:duration values, as written; '' for none.
+  private shortest(values) {
+    const { log } = this.deps.helpers;
+    const self = this;
+    log.debug("Entering SpMetadata.shortest().");
+    let best = '';
+    values.forEach(function (one) {
+      const text = String(one || '').trim();
+      if (!text || self.durationMs(text) < 0) {
+        return;
+      }
+      if (!best || self.durationMs(text) < self.durationMs(best)) {
+        best = text;
+      }
+    });
+    log.debug("Leaving SpMetadata.shortest(). " + (best || 'none'));
+    return best;
   }
 
   // Whether an endpoint can be written as a return address, and when it
@@ -589,93 +710,135 @@ class SpMetadata {
         return;
       }
       const parsed = new URL(String(url).trim());
-      const agent = parsed.protocol === 'https:' ? https : http;
-      let settled = false;
-      const done = function (answer) {
-        log.debug("Entering done().");
-        if (settled) {
-          log.debug("Leaving done().");
+      // THE ADDRESS, IN PRODUCT MODE (#37 follow-up): what the name resolves
+      // to is checked against the internal-address rule and the connection
+      // is PINNED to the address that was checked —
+      // `federation_http.ts`'s `vetHost()`, which the RFC 9728 import and the
+      // back-channel logout already ask. A metadata URL and an MDQ responder
+      // are operators' choices, and the rule is still theirs to break only in
+      // development; this path had never asked.
+      fedHttp.vetHost(parsed.hostname).then(function (vetted) {
+        if (!vetted.ok) {
+          log.debug("Leaving SpMetadata.fetchMetadata(). The address was " +
+                    "refused.");
+          resolve({ ok: false, errorCode: 'STS-SAML-0079',
+                    why: vetted.why });
           return;
         }
-        settled = true;
-        resolve(answer);
-        log.debug("Leaving done().");
-      };
-      const cap = self.maxMetadataBytes();
-      const insecure = fedHttp.allowInsecure();
-      if (parsed.protocol !== 'https:') {
-        // Every insecure request, not only the setting — federation_http.ts's
-        // rule.
-        log.warn('saml2: fetching SP metadata from ' + parsed.origin +
-                 ' over plain http because ' +
-                 'federation.outboundAllowInsecure is ON.');
-      }
-      const request = agent.get(String(url).trim(), {
-        headers: { accept: 'application/samlmetadata+xml, application/xml, ' +
-                           'text/xml',
-                   'user-agent': USER_AGENT },
-        // THE CERTIFICATE CHECK, and `federation.outboundAllowInsecure` is what
-        // turns it off — the half the copy of this policy never applied.
-        rejectUnauthorized: !insecure
-      }, function (res) {
-        // NO REDIRECT FOLLOWING, deliberately: a redirect is how a URL somebody
-        // vetted becomes a URL nobody vetted, and this is one of two places in
-        // this service that dials anything at all.
-        if (res.statusCode >= 300 && res.statusCode < 400) {
-          res.resume();
-          done({ ok: false, status: res.statusCode, errorCode: 'STS-SAML-0047',
-                 why: 'it answered ' + res.statusCode + ' with a redirect to ' +
-                                                        '"' +
-                      (res.headers.location || '(no Location)') + '". ' +
-                      'Redirects are not followed here — a redirect is how a ' +
-                      'vetted URL becomes an unvetted one. Put the final URL ' +
-                      'on the entry' });
-          return;
-        }
-        if (res.statusCode !== 200) {
-          res.resume();
-          done({ ok: false, status: res.statusCode, errorCode: 'STS-SAML-0048',
-                 why: 'it answered ' + res.statusCode + ' rather than 200' });
-          return;
-        }
-        let body = '';
-        let size = 0;
-        res.setEncoding('utf8');
-        res.on('data', function (chunk) {
-          size += chunk.length;
-          if (size > cap) {
-            // A cap, because the other end is not this service's to trust and a
-            // metadata document is kilobytes. Destroying the socket is what
-            // stops an endless response from being read into memory.
-            request.destroy();
-            done({ ok: false, errorCode: 'STS-SAML-0049', why: 'the document ' +
-                'is larger than ' + cap +
-                   ' bytes (saml2.spMetadataMaxBytes), which no service ' +
-                   'provider metadata is' });
-            return;
-          }
-          body += chunk;
-        });
-        res.on('end', function () {
-          done({ ok: true, xml: body, status: 200 });
-        });
-      });
-      request.setTimeout(self.timeoutMs(), function () {
-        request.destroy();
-        done({ ok: false, errorCode: 'STS-SAML-0050', why: 'it did not ' +
-                                                           'answer ' +
-            'within ' + self.timeoutMs() +
-               'ms (federation.outboundTimeoutMs)' });
-      });
-      request.on('error', function (e) {
-        // The message is the node error's, because "self-signed certificate",
-        // "connection refused" and "getaddrinfo ENOTFOUND" send somebody to
-        // three different places and a single word for all three sends them
-        // nowhere.
-        done({ ok: false, errorCode: 'STS-SAML-0051',
-               why: 'the request failed: ' + e.message });
+        self.dial(parsed, vetted, resolve);
       });
     });
+  }
+
+  // THE REQUEST ITSELF, once the address is allowed — see fetchMetadata().
+  private dial(parsed, vetted, resolve) {
+    const { fedHttp, http, https } = this.deps;
+    const { log } = this.deps.helpers;
+    const self = this;
+    log.debug("Entering SpMetadata.dial(). " + parsed.origin);
+    const url = parsed.href;
+    const agent = parsed.protocol === 'https:' ? https : http;
+    let settled = false;
+    const done = function (answer) {
+      log.debug("Entering done().");
+      if (settled) {
+        log.debug("Leaving done().");
+        return;
+      }
+      settled = true;
+      resolve(answer);
+      log.debug("Leaving done().");
+    };
+    const cap = self.maxMetadataBytes();
+    const insecure = fedHttp.allowInsecure();
+    if (parsed.protocol !== 'https:') {
+      // Every insecure request, not only the setting — federation_http.ts's
+      // rule.
+      log.warn('saml2: fetching SP metadata from ' + parsed.origin +
+               ' over plain http because ' +
+               'federation.outboundAllowInsecure is ON.');
+    }
+    const options: any = {
+      headers: { accept: 'application/samlmetadata+xml, application/xml, ' +
+                         'text/xml',
+                 'user-agent': USER_AGENT },
+      // THE CERTIFICATE CHECK, and `federation.outboundAllowInsecure` is what
+      // turns it off — the half the copy of this policy never applied.
+      rejectUnauthorized: !insecure
+    };
+    if (vetted.address) {
+      // PINNED to the address that was checked; the Host header and the TLS
+      // server name still come from the URL.
+      options.lookup = function (hostname, lookupOptions, callback) {
+        log.debug("Entering lookup().");
+        log.debug("Leaving lookup().");
+        if (lookupOptions && lookupOptions.all) {
+          callback(null, [{ address: vetted.address,
+                            family: vetted.family }]);
+          return;
+        }
+        callback(null, vetted.address, vetted.family);
+      };
+    }
+    const request = agent.get(url, options, function (res) {
+      // NO REDIRECT FOLLOWING, deliberately: a redirect is how a URL somebody
+      // vetted becomes a URL nobody vetted, and this is one of two places in
+      // this service that dials anything at all.
+      if (res.statusCode >= 300 && res.statusCode < 400) {
+        res.resume();
+        done({ ok: false, status: res.statusCode, errorCode: 'STS-SAML-0047',
+               why: 'it answered ' + res.statusCode + ' with a redirect to ' +
+                                                      '"' +
+                    (res.headers.location || '(no Location)') + '". ' +
+                    'Redirects are not followed here — a redirect is how a ' +
+                    'vetted URL becomes an unvetted one. Put the final URL ' +
+                    'on the entry' });
+        return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        done({ ok: false, status: res.statusCode, errorCode: 'STS-SAML-0048',
+               why: 'it answered ' + res.statusCode + ' rather than 200' });
+        return;
+      }
+      let body = '';
+      let size = 0;
+      res.setEncoding('utf8');
+      res.on('data', function (chunk) {
+        size += chunk.length;
+        if (size > cap) {
+          // A cap, because the other end is not this service's to trust and a
+          // metadata document is kilobytes. Destroying the socket is what
+          // stops an endless response from being read into memory.
+          request.destroy();
+          done({ ok: false, errorCode: 'STS-SAML-0049', why: 'the document ' +
+              'is larger than ' + cap +
+                 ' bytes (saml2.spMetadataMaxBytes), which no service ' +
+                 'provider metadata is' });
+          return;
+        }
+        body += chunk;
+      });
+      res.on('end', function () {
+        done({ ok: true, xml: body, status: 200 });
+      });
+    });
+    request.setTimeout(self.timeoutMs(), function () {
+      request.destroy();
+      done({ ok: false, errorCode: 'STS-SAML-0050', why: 'it did not ' +
+                                                         'answer ' +
+          'within ' + self.timeoutMs() +
+             'ms (federation.outboundTimeoutMs)' });
+    });
+    request.on('error', function (e) {
+      // The message is the node error's, because "self-signed certificate",
+      // "connection refused" and "getaddrinfo ENOTFOUND" send somebody to
+      // three different places and a single word for all three sends them
+      // nowhere.
+      done({ ok: false, errorCode: 'STS-SAML-0051',
+             why: 'the request failed: ' + e.message });
+    });
+    log.debug("Leaving SpMetadata.dial().");
   }
 
   // The audit row for a refresh that did not happen. The reason sentences name
@@ -686,6 +849,12 @@ class SpMetadata {
     const { audit } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.refreshRefused().");
+    // A BACKGROUND consumption writes no row per refusal: the refresher
+    // records the state change instead (see `recordRefresh()`).
+    if (this.quiet) {
+      log.debug("Leaving SpMetadata.refreshRefused(). Quiet.");
+      return;
+    }
     audit.failure(code, {
       protocol: 'SAML 2.0', channel: 'internal',
       target: String(identifier || ''),
@@ -706,40 +875,57 @@ class SpMetadata {
   // the last good registration in place. An application that was working does
   // not stop working because a metadata server was down.
   // ---------------------------------------------------------------------------
-  refresh(identifier) {
+  refresh(identifier, options?) {
     const { applications } = this.deps;
     const { log } = this.deps.helpers;
     const self = this;
+    const opts = options || {};
     log.debug("Entering SpMetadata.refresh(). identifier=" + identifier);
     const record = applications.get(identifier);
     if (!record) {
       log.debug("Leaving SpMetadata.refresh(). No such application.");
-      this.refreshRefused('STS-SAML-0044', identifier, 'there is no such ' +
-                                                  'application to refresh');
-      log.debug("Leaving SpMetadata.refresh().");
+      if (!opts.quiet) {
+        this.refreshRefused('STS-SAML-0044', identifier, 'there is no such ' +
+                                                    'application to refresh');
+      }
       return Promise.resolve({ ok: false,
                                errors: ['There is no application "' +
         identifier + '" in this registry. Create it first — a metadata URL ' +
         'is an attribute on an entry, and this action never takes a URL ' +
         'from the caller.'] });
     }
-    const url = ((record.fields && record.fields.samlSpMetadataUrl) || '');
-    const wanted = Array.isArray(url) ? url[0] : url;
-    log.debug("Leaving SpMetadata.refresh().");
+    // WHERE FROM: the entry's own `samlSpMetadataUrl`, else — for an entry
+    // with none — the realm's Metadata Query Protocol responder, asked for
+    // this entity by name (`mdqUrlFor()`). Both are an operator's choice; the
+    // request never supplies either.
+    const url = this.first((record.fields || {}).samlSpMetadataUrl);
+    const mdq = url ? '' : this.mdqUrlFor(identifier);
+    const wanted = url || mdq;
+    const how = url ? 'refresh' : (mdq ? 'mdq' : 'refresh');
+    log.debug("Leaving SpMetadata.refresh(). Fetching " +
+              (wanted || '(nothing)') + ".");
     return this.fetchMetadata(wanted).then(function (answer) {
       if (!answer.ok) {
-        log.warn('saml2: could not refresh metadata for ' + identifier + ' — ' +
-                 answer.why +
-                 '. Nothing on the entry was changed.');
+        // A BACKGROUND refresh (`quiet`) writes no line and no row per
+        // failure — the refresher records a state change and a periodic
+        // summary instead (the standing rule against a log line per event).
+        if (!opts.quiet) {
+          log.warn('saml2: could not refresh metadata for ' + identifier +
+                   ' — ' + answer.why + '. Nothing on the entry was ' +
+                   'changed.');
+          self.refreshRefused(answer.errorCode || 'STS-SAML-0051', identifier,
+                              'the metadata could not be fetched: ' +
+                              answer.why);
+        }
         log.debug("Leaving SpMetadata.refresh(). The fetch failed.");
-        self.refreshRefused(answer.errorCode || 'STS-SAML-0051', identifier,
-                       'the metadata could not be fetched: ' + answer.why);
-        return { ok: false, errors: ['The metadata at "' + wanted + '" could ' +
-            'not be read: ' +
-          answer.why + '. Nothing on the entry was changed, so whatever ' +
-          'certificate it already had is still in force.'] };
+        return self.marked({ ok: false, why: answer.why,
+          errors: ['The metadata at "' + wanted + '" could not be read: ' +
+            answer.why + '. Nothing on the entry was changed, so whatever ' +
+            'it already had is still in force.'] },
+          answer.errorCode || 'STS-SAML-0051');
       }
-      const consumed = self.consume(identifier, answer.xml, 'refresh');
+      const consumed = self.consumeQuietly(!!opts.quiet, identifier,
+                                           answer.xml, how, opts.actor);
       if (consumed.ok) {
         consumed.url = wanted;
       }
@@ -790,9 +976,13 @@ class SpMetadata {
   // reaches this code.
   //
   // **A SIGNED DOCUMENT IS VERIFIED WHEN THERE IS SOMETHING TO VERIFY IT
-  // AGAINST**: `samlSpMetadataSigningCertificate` on the entry. With it set, an
-  // unsigned document, or one whose signature does not verify, is refused.
-  // Without it the signature is recorded as `signed-not-verified` and the
+  // AGAINST**: `samlSpMetadataSigningCertificate` on the entry, and — since
+  // the #37 follow-up — the realm's `saml2.metadataTrustAnchors`, a
+  // federation operator's keys. With either set, an unsigned document, or one
+  // whose signature verifies against none of them, is refused. An aggregate
+  // is verified by its OWN signature where it has one, and otherwise by the
+  // signature on this entity's EntityDescriptor. Without an anchor the
+  // signature is recorded as `signed-not-verified` and the
   // document consumed — the operator's choice of source stands in for it, as
   // above, and saying "verified" about a signature checked against the key
   // inside the same document would be the decoration `request_signature.ts`
@@ -803,13 +993,15 @@ class SpMetadata {
   // document whose validUntil has passed is expired and is not consumed
   // (saml-metadata-2.0-os section 2.2.1); and an encryption certificate this
   // service cannot encrypt to refuses the whole document, as it always did. A
-  // SIGNING certificate that is not RSA is SKIPPED and reported rather than
-  // refusing the document, because a service provider may publish an EC key
-  // beside an RSA one and the RSA one is still worth registering.
+  // SIGNING certificate this service cannot verify with is SKIPPED and
+  // reported rather than refusing the document — since the #37 follow-up
+  // that is only a key no XML signature method uses, because RSA, EC, EdDSA,
+  // DSA, ML-DSA and SLH-DSA keys are all verified.
   //
-  // `validUntil` and `cacheDuration` are RECORDED and shown, and nothing
-  // enforces them after consumption — this service never refetches on its
-  // own. Stated on the page rather than implied.
+  // `validUntil` and `cacheDuration` ARE ENFORCED AFTER CONSUMPTION since
+  // the #37 follow-up — see `freshness()`: past the effective validUntil the
+  // service provider's requests are refused, and past cacheDuration the
+  // background refresher fetches the document again.
   // ---------------------------------------------------------------------------
   consume(identifier, xml, how, actor?): Record<string, any> {
     const { applications, stsCrypto } = this.deps;
@@ -826,7 +1018,9 @@ class SpMetadata {
                'provider) first.'] };
     }
     const fields = record.fields || {};
-    const parsed = this.parse(xml);
+    const names = [identifier].concat(
+      this.valuesOf(fields.samlEntityId));
+    const parsed = this.parse(xml, names);
     if (!parsed.ok) {
       this.refreshRefused('STS-SAML-0052', identifier,
                           'the metadata document is unusable: ' + parsed.why);
@@ -834,8 +1028,6 @@ class SpMetadata {
       return { ok: false, errors: ['The metadata document is unusable: ' +
                parsed.why + '. Nothing on the entry was changed.'] };
     }
-    const names = [identifier].concat(
-      this.valuesOf(fields.samlEntityId));
     if (names.indexOf(String(parsed.entityId)) < 0) {
       this.refreshRefused('STS-SAML-0066', identifier, 'the document ' +
                           'describes "' + parsed.entityId + '"');
@@ -856,30 +1048,39 @@ class SpMetadata {
                'was changed.'] };
     }
 
-    // The document's own signature.
-    const anchor = this.first(fields.samlSpMetadataSigningCertificate);
+    // The document's own signature, against the TRUST ANCHORS: this entry's
+    // `samlSpMetadataSigningCertificate` and the realm's
+    // `saml2.metadataTrustAnchors` (a federation operator's keys). With any
+    // anchor configured the document MUST verify against one of them; with
+    // none a signature is recorded and not believed.
+    const anchors = this.trustAnchorsFor(fields);
     let signature = parsed.signed ? 'signed-not-verified' : 'unsigned';
-    if (anchor) {
-      const verdict = parsed.signed
-        ? stsCrypto.verifyXmlSignature(String(xml),
-          { element: 'EntityDescriptor', certPem: this.toPem(anchor) })
-        : { ok: false, why: 'the document is unsigned' };
+    if (anchors.length) {
+      const verdict = this.verifyAgainst(String(xml), parsed, anchors);
       if (!verdict.ok) {
         this.refreshRefused('STS-SAML-0065', identifier, 'the document\'s ' +
                             'signature was not verified: ' + verdict.why);
         log.debug("Leaving SpMetadata.consume(). Signature refused.");
-        return { ok: false, errors: ['samlSpMetadataSigningCertificate is ' +
-                 'set on this application, so its metadata must be signed ' +
-                 'with that key, and ' + verdict.why + '. Nothing on the ' +
-                 'entry was changed.'] };
+        return { ok: false, errors: ['This service provider\'s metadata ' +
+                 'must be signed by a trust anchor (' + anchors.length +
+                 ' configured: samlSpMetadataSigningCertificate on the ' +
+                 'entry and saml2.metadataTrustAnchors), and ' + verdict.why +
+                 '. Nothing on the entry was changed.'] };
       }
       signature = 'verified';
     }
 
-    // The encryption certificate, as it always was.
+    // The encryption certificate. One marked use="encryption" that cannot be
+    // encrypted to refuses the document, as it always did; an UNQUALIFIED key
+    // that is not RSA is a signing key (EC, EdDSA, post-quantum) and is simply
+    // not used for encryption.
+    const skipped = (parsed.skipped || []).slice(0);
     if (parsed.certificate) {
       const bad = this.certificateProblem(parsed.certificate);
-      if (bad) {
+      if (bad && parsed.certificateUse !== 'encryption') {
+        skipped.push('the unqualified key is not an encryption key: ' + bad);
+        parsed.certificate = '';
+      } else if (bad) {
         this.refreshRefused('STS-SAML-0053', identifier, 'the metadata ' +
                             'carries a certificate this service cannot use: ' +
                             bad);
@@ -889,7 +1090,6 @@ class SpMetadata {
                  'on the entry was changed.'] };
       }
     }
-    const skipped = (parsed.skipped || []).slice(0);
     const signing = (parsed.signingCertificates || []).filter(function (one) {
       const problem = applications.samlCertificateProblem(one);
       if (problem) {
@@ -924,6 +1124,11 @@ class SpMetadata {
       samlSpAuthnRequestsSigned: parsed.authnRequestsSigned ? 'TRUE' : 'FALSE',
       samlSpWantAssertionsSigned:
         parsed.wantAssertionsSigned ? 'TRUE' : 'FALSE',
+      // An explicit use="encryption" key is the service provider asking for
+      // encrypted assertions (see the attribute's schema row).
+      samlSpWantAssertionsEncrypted:
+        parsed.certificate && parsed.certificateUse === 'encryption'
+          ? 'TRUE' : 'FALSE',
       samlSpMetadataValidUntil: parsed.validUntil,
       samlSpMetadataCacheDuration: parsed.cacheDuration,
       samlSpMetadataConsumedAt: new Date().toISOString() + ' ' + how,
@@ -957,9 +1162,12 @@ class SpMetadata {
       log.debug("Leaving SpMetadata.consume(). The entry would not take it.");
       return { ok: false, errors: written.errors || [] };
     }
+    const quiet = this.quiet;
     skipped.forEach(function (why) {
-      log.warn('saml2: consuming the metadata for ' + identifier + ': ' + why +
-               '.');
+      if (!quiet) {
+        log.warn('saml2: consuming the metadata for ' + identifier + ': ' +
+                 why + '.');
+      }
     });
     log.info('saml2: consumed the metadata for ' + identifier + ' (' + how +
              '): ' + parsed.acsEndpoints.length + ' assertion consumer ' +
@@ -1000,6 +1208,548 @@ class SpMetadata {
     };
   }
 
+  // `consume()`, with its per-refusal audit rows withheld when `quiet`.
+  private consumeQuietly(quiet, identifier, xml, how, actor) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.consumeQuietly(). quiet=" + quiet);
+    this.quiet = quiet;
+    try {
+      const out = this.consume(identifier, xml, how, actor);
+      if (!out.ok && !out.why) {
+        out.why = (out.errors || []).join(' ');
+      }
+      log.debug("Leaving SpMetadata.consumeQuietly().");
+      return out;
+    } finally {
+      this.quiet = false;
+    }
+  }
+
+  // A result carrying its error code, the registry's own way (a Symbol, so
+  // it is never serialised to a caller).
+  private marked(result, code) {
+    const { errorCodes } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.marked(). " + code);
+    log.debug("Leaving SpMetadata.marked().");
+    return errorCodes.mark(result, code);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TRUST ANCHORS FOR A METADATA DOCUMENT (#37 follow-up): the entry's
+  // own certificate, then the realm's list. Base64 DER, deduplicated; a value
+  // that is not a certificate this service verifies with is left out here and
+  // named by `anchorProblems()` on the page.
+  // ---------------------------------------------------------------------------
+  trustAnchorsFor(fields?) {
+    const { stsCrypto } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.trustAnchorsFor().");
+    const out = [];
+    const add = function (value) {
+      log.debug("Entering add().");
+      const der = String(value || '').replace(/-----[^-]+-----/g, '')
+        .replace(/\s+/g, '');
+      if (der && out.indexOf(der) < 0 &&
+          !stsCrypto.xmlSignatureKeyProblem(der)) {
+        out.push(der);
+      }
+      log.debug("Leaving add().");
+    };
+    add(this.first((fields || {}).samlSpMetadataSigningCertificate));
+    this.realmAnchorValues().forEach(add);
+    log.debug("Leaving SpMetadata.trustAnchorsFor(). " + out.length);
+    return out;
+  }
+
+  // The realm's configured anchors as written, and what is wrong with each.
+  realmAnchorValues(): string[] {
+    const { config } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.realmAnchorValues().");
+    const raw = config.value('saml2.metadataTrustAnchors');
+    const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (one) {
+        return String(one).trim();
+      }).filter(function (one) {
+        return !!one;
+      });
+    log.debug("Leaving SpMetadata.realmAnchorValues(). " + list.length);
+    return list;
+  }
+
+  anchorProblems(): string[] {
+    const { stsCrypto } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.anchorProblems().");
+    const out = [];
+    this.realmAnchorValues().forEach(function (value, i) {
+      const problem = stsCrypto.xmlSignatureKeyProblem(
+        value.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''));
+      if (problem) {
+        out.push('saml2.metadataTrustAnchors entry ' + (i + 1) + ' is not ' +
+                 'used: ' + problem);
+      }
+    });
+    log.debug("Leaving SpMetadata.anchorProblems(). " + out.length);
+    return out;
+  }
+
+  // Verify a document's signature against any of `anchors`: the aggregate's
+  // own signature where it has one, else this entity's. `{ ok, why }`.
+  private verifyAgainst(xml, parsed, anchors) {
+    const { stsCrypto } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.verifyAgainst().");
+    if (!parsed.signed) {
+      log.debug("Leaving SpMetadata.verifyAgainst(). Unsigned.");
+      return { ok: false, why: 'the document is unsigned' };
+    }
+    const document = parsed.rootSigned ? xml
+      : (parsed.aggregate ? parsed.entityXml : xml);
+    const element = parsed.rootSigned ? parsed.rootElement
+                                      : 'EntityDescriptor';
+    let why = '';
+    for (let i = 0; i < anchors.length; i++) {
+      const verdict: any = stsCrypto.verifyXmlSignature(document,
+        { element: element, certPem: this.toPem(anchors[i]) });
+      if (verdict.ok) {
+        log.debug("Leaving SpMetadata.verifyAgainst(). Anchor " + (i + 1));
+        return { ok: true, why: '', weak: !!verdict.weak };
+      }
+      why = verdict.why;
+    }
+    log.debug("Leaving SpMetadata.verifyAgainst(). None verified.");
+    return { ok: false, why: 'its signature verifies against none of the ' +
+             anchors.length + ' trust anchor(s): ' + why };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE METADATA QUERY PROTOCOL (draft-young-md-query, and its SAML profile
+  // draft-young-md-query-saml): `<base>/entities/<percent-encoded entityID>`,
+  // GET, answered with the entity's metadata. The base is the realm's
+  // `saml2.mdqBaseUrl` — an operator's choice, like `samlSpMetadataUrl` —
+  // and the entityID is the only part a request can influence, encoded so it
+  // is one path segment of that operator's server. '' when unconfigured.
+  // ---------------------------------------------------------------------------
+  mdqUrlFor(entityId) {
+    const { config } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.mdqUrlFor().");
+    const base = String(config.value('saml2.mdqBaseUrl') || '').trim()
+      .replace(/\/+$/, '');
+    log.debug("Leaving SpMetadata.mdqUrlFor(). " + (base ? 'set' : 'unset'));
+    return base && entityId
+      ? base + '/entities/' + encodeURIComponent(String(entityId)) : '';
+  }
+
+  // IMPORT ONE SERVICE PROVIDER FROM THE MDQ RESPONDER, by entityID: the
+  // console's and `/admin-api`'s `mdq-import`, and the background lookup
+  // below. An entry that does not exist is created ONLY once the responder has
+  // answered with a document that parses for that entity — and removed again
+  // if consuming it is then refused — so a name nobody publishes leaves
+  // nothing behind.
+  mdqImport(entityId, options?) {
+    const { applications } = this.deps;
+    const { log } = this.deps.helpers;
+    const self = this;
+    const opts = options || {};
+    log.debug("Entering SpMetadata.mdqImport(). " + entityId);
+    const url = this.mdqUrlFor(entityId);
+    if (!url) {
+      log.debug("Leaving SpMetadata.mdqImport(). Not configured.");
+      return Promise.resolve(this.marked({ ok: false, errors: [
+        'saml2.mdqBaseUrl is not set in this realm, so there is no Metadata ' +
+        'Query responder to ask.'] }, 'STS-SAML-0075'));
+    }
+    log.debug("Leaving SpMetadata.mdqImport(). Asking " + url);
+    return this.fetchMetadata(url).then(function (answer) {
+      if (!answer.ok) {
+        if (!opts.quiet) {
+          self.refreshRefused(answer.errorCode || 'STS-SAML-0051', entityId,
+                              'the MDQ responder did not answer: ' +
+                              answer.why);
+        }
+        return self.marked({ ok: false, why: answer.why, errors: [
+          'The Metadata Query responder did not answer for "' + entityId +
+          '": ' + answer.why + '.'] }, answer.errorCode || 'STS-SAML-0051');
+      }
+      const parsed = self.parse(answer.xml, [String(entityId)]);
+      if (!parsed.ok || parsed.entityId !== String(entityId)) {
+        if (!opts.quiet) {
+          self.refreshRefused('STS-SAML-0052', entityId, 'the MDQ answer ' +
+                              'is unusable: ' + (parsed.why || 'another ' +
+                              'entity'));
+        }
+        return self.marked({ ok: false, errors: ['The Metadata Query ' +
+          'responder\'s answer for "' + entityId + '" is unusable: ' +
+          (parsed.why || 'it describes "' + parsed.entityId + '"') + '.'] },
+          'STS-SAML-0052');
+      }
+      let created = false;
+      if (!applications.get(entityId)) {
+        const made = applications.createApplication({
+          identifier: String(entityId), kind: 'saml2-service-provider',
+          protocol: 'SAML 2.0',
+          note: 'imported from the Metadata Query responder',
+          fields: { samlEntityId: String(entityId) }
+        });
+        if (!made.ok) {
+          return made;
+        }
+        created = true;
+      }
+      const consumed = self.consumeQuietly(!!opts.quiet, entityId,
+                                           answer.xml, 'mdq', opts.actor);
+      if (!consumed.ok && created) {
+        applications.deleteApplication(entityId, { actor: 'saml2 MDQ' });
+      }
+      if (consumed.ok) {
+        consumed.url = url;
+        consumed.created = created;
+      }
+      return consumed;
+    });
+  }
+
+  // THE ASYNCHRONOUS LOOKUP an SSO request for a service provider with no
+  // consumed metadata starts, and never waits on (`saml2_sso.ts`): that
+  // request is answered with what is known NOW — which in product mode is a
+  // refusal of any unregistered return address — and the NEXT one finds the
+  // registration. One lookup per entityID at a time, and a name that failed
+  // is not asked again until the refresh interval has passed, so a stream of
+  // invented entityIDs costs the responder one request each per interval.
+  queueMdqLookup(entityId) {
+    const { realms } = this.deps;
+    const { log } = this.deps.helpers;
+    const self = this;
+    log.debug("Entering SpMetadata.queueMdqLookup(). " + entityId);
+    if (!entityId || !this.mdqUrlFor(entityId)) {
+      log.debug("Leaving SpMetadata.queueMdqLookup(). Nothing to ask.");
+      return false;
+    }
+    const key = realms.currentId() + '\u0000' + entityId;
+    const last = mdqLookups.get(key);
+    if (last && (last.pending ||
+                 Date.now() - last.at < this.refreshIntervalMs())) {
+      log.debug("Leaving SpMetadata.queueMdqLookup(). Asked recently.");
+      return false;
+    }
+    mdqLookups.set(key, { pending: true, at: Date.now() });
+    const realm = realms.current();
+    setImmediate(function () {
+      realms.run(realm, function () {
+        self.mdqImport(entityId, { quiet: true }).then(function (answer) {
+          mdqLookups.set(key, { pending: false, at: Date.now(),
+                                ok: !!answer.ok });
+        });
+      });
+    });
+    log.debug("Leaving SpMetadata.queueMdqLookup(). Queued.");
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // HOW CURRENT THE CONSUMED METADATA IS (#37 follow-up), in every mode:
+  //
+  //   none     nothing was consumed onto this entry
+  //   fresh    consumed, and neither of the two times below has passed
+  //   stale    cacheDuration has elapsed since it was consumed — the
+  //            refresher fetches it again where it can (`refreshable`), and it
+  //            keeps WORKING until validUntil
+  //   expired  the effective validUntil has passed: the service provider's
+  //            SSO and SLO requests are REFUSED (`STS-SAML-0074`) until a
+  //            newer document is consumed
+  //
+  // With no cacheDuration a document is stale halfway between its
+  // consumption and its validUntil, so it is fetched again before it
+  // expires; with neither, it never goes stale. Nothing here dials anything.
+  // ---------------------------------------------------------------------------
+  freshness(fields?, now?): Freshness {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.freshness().");
+    const f = fields || {};
+    const at = Number.isFinite(now) ? now : Date.now();
+    const consumedText = this.first(f.samlSpMetadataConsumedAt);
+    const consumedAt = Date.parse(consumedText.split(' ')[0] || '');
+    const how = consumedText.split(' ')[1] || '';
+    const validUntil = this.first(f.samlSpMetadataValidUntil);
+    const expires = validUntil ? Date.parse(validUntil) : NaN;
+    const cacheDuration = this.first(f.samlSpMetadataCacheDuration);
+    const cacheMs = this.durationMs(cacheDuration);
+    const url = this.first(f.samlSpMetadataUrl);
+    const out: Freshness = {
+      state: 'none', consumedAt: '', how: how, validUntil: validUntil,
+      expiresAt: Number.isFinite(expires) ? new Date(expires).toISOString()
+                                          : '',
+      cacheDuration: cacheDuration, staleAt: '',
+      // Refreshable by the URL on the entry, or — for a document the MDQ
+      // responder answered with — by that responder, if the realm still has
+      // one. ('x' only asks whether one is configured.)
+      refreshable: !!url || (how === 'mdq' &&
+                             !!this.mdqUrlFor(this.first(f.samlEntityId) ||
+                                              'x')),
+      source: url ? 'url' : how, why: ''
+    };
+    if (!Number.isFinite(consumedAt)) {
+      out.why = 'no metadata has been consumed';
+      log.debug("Leaving SpMetadata.freshness(). None.");
+      return out;
+    }
+    out.consumedAt = new Date(consumedAt).toISOString();
+    const staleAt = cacheMs >= 0 ? consumedAt + cacheMs
+      : (Number.isFinite(expires) ? consumedAt + (expires - consumedAt) / 2
+                                  : NaN);
+    out.staleAt = Number.isFinite(staleAt)
+      ? new Date(staleAt).toISOString() : '';
+    if (Number.isFinite(expires) && expires <= at) {
+      out.state = 'expired';
+      out.why = 'the consumed metadata expired at ' + out.expiresAt +
+                ' (its effective validUntil) and must be refreshed';
+    } else if (Number.isFinite(staleAt) && staleAt <= at) {
+      out.state = 'stale';
+      out.why = 'the consumed metadata is past its cacheDuration (stale ' +
+                'since ' + out.staleAt + ') and ' + (out.refreshable
+                  ? 'is due to be fetched again'
+                  : 'was uploaded, so nothing here can fetch it again') +
+                '; it is still used until ' + (out.expiresAt || 'replaced');
+    } else {
+      out.state = 'fresh';
+    }
+    log.debug("Leaving SpMetadata.freshness(). " + out.state);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE BACKGROUND REFRESHER (#37 follow-up). A timer started from
+  // `server.js`'s `announce()` — the front process's listen path, never a
+  // require and never a request worker — that every
+  // `saml2.spMetadataRefreshIntervalS` walks every trust realm's service
+  // providers and fetches again each STALE document it can (a
+  // `samlSpMetadataUrl`, or one imported by MDQ), through `refresh()` and so
+  // through the federation outbound policy.
+  //
+  //   * ONE PROCESS PER CLUSTER refreshes a given document: each is claimed
+  //     (`cluster_claims`, scope `saml2.sp-metadata-refresh`, keyed by realm,
+  //     entity and the consumption being replaced) before it is fetched. On a
+  //     store that cannot be shared the claim is this process's, which is the
+  //     only process there is.
+  //   * A FAILED REFRESH CHANGES NOTHING ON THE ENTRY, so the last good
+  //     document keeps working until its validUntil. It is recorded as a
+  //     STATE — `refreshStatus()`, drawn on the SAML 2.0 page — and logged
+  //     only when that state changes, plus one summary line per hour while
+  //     anything is failing. Never a line per failed attempt.
+  //   * `saml2.spMetadataRefresh` off stops it at the next tick.
+  //   * The timer is unreferenced: it is never why a process stays up.
+  // ---------------------------------------------------------------------------
+  refreshIntervalMs() {
+    const { config } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.refreshIntervalMs().");
+    log.debug("Leaving SpMetadata.refreshIntervalMs().");
+    return Number(config.value('saml2.spMetadataRefreshIntervalS')) * 1000;
+  }
+
+  startRefresher() {
+    const { log } = this.deps.helpers;
+    const self = this;
+    log.debug("Entering SpMetadata.startRefresher().");
+    if (refresher.timer) {
+      log.debug("Leaving SpMetadata.startRefresher(). Already running.");
+      return false;
+    }
+    const tick = function () {
+      log.debug("Entering tick().");
+      refresher.timer = setTimeout(function () {
+        self.sweepOnce().then(tick, function (e) {
+          log.debug("Caught in the metadata refresher: " +
+                    ((e && e.message) || e));
+          tick();
+        });
+      }, self.refreshIntervalMs());
+      if (typeof refresher.timer.unref === 'function') {
+        refresher.timer.unref();
+      }
+      log.debug("Leaving tick().");
+    };
+    tick();
+    log.info('saml2: the service provider metadata refresher runs every ' +
+             (this.refreshIntervalMs() / 1000) + 's ' +
+             '(saml2.spMetadataRefreshIntervalS): a document past its ' +
+             'cacheDuration is fetched again from its samlSpMetadataUrl or ' +
+             'the MDQ responder, and one past its validUntil is refused.');
+    log.debug("Leaving SpMetadata.startRefresher().");
+    return true;
+  }
+
+  stopRefresher() {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.stopRefresher().");
+    if (refresher.timer) {
+      clearTimeout(refresher.timer);
+      refresher.timer = null;
+    }
+    log.debug("Leaving SpMetadata.stopRefresher().");
+  }
+
+  // ONE PASS over every realm. Resolves to `{ due, refreshed, failed,
+  // skipped }` and never rejects.
+  sweepOnce(): Promise<Record<string, number>> {
+    const { config, realms } = this.deps;
+    const { log } = this.deps.helpers;
+    const self = this;
+    log.debug("Entering SpMetadata.sweepOnce().");
+    const totals = { due: 0, refreshed: 0, failed: 0, skipped: 0 };
+    let chain: Promise<unknown> = Promise.resolve();
+    realms.list().forEach(function (realm) {
+      chain = chain.then(function () {
+        return realms.run(realm, function () {
+          if (!config.value('saml2.spMetadataRefresh')) {
+            return null;
+          }
+          return self.sweepRealm(totals);
+        });
+      });
+    });
+    log.debug("Leaving SpMetadata.sweepOnce().");
+    return chain.then(function () {
+      self.summarise();
+      return totals;
+    }, function (e) {
+      log.debug("Caught in SpMetadata.sweepOnce(): " +
+                ((e && e.message) || e));
+      return totals;
+    });
+  }
+
+  private sweepRealm(totals) {
+    const { applications, clusterClaims, realms } = this.deps;
+    const { log } = this.deps.helpers;
+    const self = this;
+    log.debug("Entering SpMetadata.sweepRealm().");
+    const realmId = realms.currentId();
+    const due = applications.list().filter(function (row) {
+      const fresh = self.freshness(row.fields || {});
+      return fresh.refreshable &&
+        (fresh.state === 'stale' || fresh.state === 'expired');
+    });
+    totals.due += due.length;
+    log.debug("Leaving SpMetadata.sweepRealm(). " + due.length + " due.");
+    return due.reduce(function (chain, row) {
+      return chain.then(function () {
+        const consumed = self.first((row.fields || {})
+          .samlSpMetadataConsumedAt);
+        return clusterClaims.claim({
+          scope: 'saml2.sp-metadata-refresh',
+          value: realmId + '\n' + row.identifier + '\n' + consumed,
+          ttlMs: self.refreshIntervalMs()
+        }).then(function (claimed) {
+          if (!claimed.ok) {
+            totals.skipped++;
+            return null;
+          }
+          return self.refresh(row.identifier, { quiet: true,
+                                                actor: 'saml2 refresher' })
+            .then(function (answer) {
+              self.recordRefresh(realmId, row.identifier, answer);
+              if (answer.ok) {
+                totals.refreshed++;
+              } else {
+                totals.failed++;
+              }
+            });
+        });
+      });
+    }, Promise.resolve());
+  }
+
+  // The state a refresh leaves behind, and a line when it CHANGES.
+  private recordRefresh(realmId, identifier, answer) {
+    const { audit } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.recordRefresh(). " + identifier);
+    const key = realmId + '\u0000' + identifier;
+    const before = refreshStates.get(key);
+    const now = new Date().toISOString();
+    const why = answer.ok ? '' : String(answer.why ||
+      (answer.errors || []).join(' '));
+    const state = {
+      ok: !!answer.ok, lastAttemptAt: now,
+      lastSuccessAt: answer.ok ? now : (before ? before.lastSuccessAt : ''),
+      failingSince: answer.ok ? '' : ((before && !before.ok)
+        ? before.failingSince : now),
+      failures: answer.ok ? 0 : ((before && !before.ok)
+        ? before.failures + 1 : 1),
+      why: why
+    };
+    refreshStates.set(key, state);
+    if (!before || before.ok !== state.ok) {
+      const code = answer.ok ? '' : (this.deps.errorCodes.codeOf(answer) ||
+                                     'STS-SAML-0076');
+      audit.audit({
+        action: 'saml2.metadata.refresh',
+        outcome: answer.ok ? 'success' : 'failure',
+        errorCode: answer.ok ? '' : 'STS-SAML-0076',
+        protocol: 'SAML 2.0', channel: 'internal', target: identifier,
+        summary: 'The background refresh of "' + identifier + '"\'s ' +
+                 'metadata ' + (answer.ok ? 'succeeded' +
+                 (before ? ' again' : '') : 'started failing: ' + why),
+        detail: { realm: realmId, cause: code }
+      });
+      if (answer.ok) {
+        log.info('saml2: the metadata of "' + identifier + '" was refreshed ' +
+                 'in the background' + (before ? ', after ' + before.failures +
+                 ' failed attempt(s)' : '') + '.');
+      } else {
+        log.warn(this.deps.errorCodes.tag('STS-SAML-0076') + 'saml2: the ' +
+                 'background refresh of "' + identifier + '"\'s metadata ' +
+                 'is failing (' + why + '). The last good document stays in ' +
+                 'force until its validUntil; this is logged once, and again ' +
+                 'only when it recovers.');
+      }
+    }
+    log.debug("Leaving SpMetadata.recordRefresh().");
+  }
+
+  // One summary line per hour while any background refresh is failing.
+  private summarise() {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.summarise().");
+    const failing = [];
+    refreshStates.forEach(function (state, key) {
+      if (!state.ok) {
+        failing.push(key.split('\u0000').join('/'));
+      }
+    });
+    if (failing.length && Date.now() - refresher.summaryAt >= 3600000) {
+      refresher.summaryAt = Date.now();
+      log.warn(this.deps.errorCodes.tag('STS-SAML-0076') + 'saml2: ' +
+               failing.length + ' service provider metadata refresh(es) ' +
+               'still failing: ' + failing.slice(0, 10).join(', ') +
+               (failing.length > 10 ? ', …' : '') + '.');
+    }
+    log.debug("Leaving SpMetadata.summarise(). " + failing.length);
+  }
+
+  // What the refresher last found for one entity in the ambient realm, or
+  // null when it has not tried.
+  refreshStatus(identifier) {
+    const { realms } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.refreshStatus().");
+    const state = refreshStates.get(realms.currentId() + '\u0000' +
+                                    identifier);
+    log.debug("Leaving SpMetadata.refreshStatus().");
+    return state ? Object.assign({}, state) : null;
+  }
+
+  refresherRunning(): boolean {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.refresherRunning().");
+    log.debug("Leaving SpMetadata.refresherRunning().");
+    return !!refresher.timer;
+  }
+
   // The first value of a single- or multi-valued field, trimmed.
   private first(value) {
     const { log } = this.deps.helpers;
@@ -1033,6 +1783,15 @@ class SpMetadata {
 // built from `defaultDeps()` when the module loads (see
 // `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
+// THE REFRESHER'S STATE, per process: its timer, when it last summarised,
+// what each background refresh last found (realm \0 entity), and the MDQ
+// lookups a request started. Process state, not a store: another node's
+// refresher keeps its own, and a restart begins with nothing tried.
+const refresher: { timer: any; summaryAt: number } =
+  { timer: null, summaryAt: 0 };
+const refreshStates = new Map<string, any>();
+const mdqLookups = new Map<string, any>();
+
 const slot = new InstanceSlot<SpMetadata>(
   'saml/sp_metadata',
   () => new SpMetadata(SpMetadata.defaultDeps()),
@@ -1053,5 +1812,17 @@ export = {
   fetchMetadata: slot.forward('fetchMetadata'),
   refresh: slot.forward('refresh'),
   upload: slot.forward('upload'),
-  consume: slot.forward('consume')
+  consume: slot.forward('consume'),
+  freshness: slot.forward('freshness'),
+  durationMs: slot.forward('durationMs'),
+  trustAnchorsFor: slot.forward('trustAnchorsFor'),
+  anchorProblems: slot.forward('anchorProblems'),
+  mdqUrlFor: slot.forward('mdqUrlFor'),
+  mdqImport: slot.forward('mdqImport'),
+  queueMdqLookup: slot.forward('queueMdqLookup'),
+  startRefresher: slot.forward('startRefresher'),
+  stopRefresher: slot.forward('stopRefresher'),
+  sweepOnce: slot.forward('sweepOnce'),
+  refreshStatus: slot.forward('refreshStatus'),
+  refresherRunning: slot.forward('refresherRunning')
 };

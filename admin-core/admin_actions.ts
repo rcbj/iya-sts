@@ -3047,8 +3047,9 @@ class AdminActions {
   // see the header — so this function decides nothing except which attribute
   // and which mode, and the registry refuses an attribute that is derived
   // rather than declared without being asked twice.
-  saml2Action(body) {
+  saml2Action(body): any {
     const { log, applications, saml2 } = this.deps;
+    const self = this;
     log.debug("Entering AdminActions.saml2Action(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
@@ -3104,8 +3105,8 @@ class AdminActions {
     // meant while the attribute held one value; `remove-signing-certificate`
     // takes one off by value. Both go through `updateApplication()`, which
     // strips PEM armour and whitespace — the schema holds base64 DER, what a
-    // ds:X509Certificate carries — and refuses a value that is not an RSA
-    // certificate before anything is written.
+    // ds:X509Certificate carries — and refuses a certificate whose key signs
+    // nothing `common/crypto.js` verifies before anything is written.
     // ---------------------------------------------------------------------
     if (action === 'set-signing-certificate') {
       const result = this.replaceSigningCertificates(identifier,
@@ -3164,10 +3165,28 @@ class AdminActions {
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0791', result);
     }
+    // THE TWO THAT DIAL OUT (#37 follow-up), and so answer with a PROMISE,
+    // as `applicationsAction()`'s `refresh-metadata` does: fetch this service
+    // provider's metadata again now (its URL, or the MDQ responder), and
+    // import one from the MDQ responder by entityID, creating its entry.
+    if (action === 'refresh-metadata') {
+      log.debug("Leaving AdminActions.saml2Action(). refresh-metadata.");
+      return spMetadata.refresh(identifier, { actor: body.actor || '' })
+        .then(function (result) {
+          return self.refusedBy('STS-ADMIN-0532', result);
+        });
+    }
+    if (action === 'mdq-import') {
+      log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
+      return spMetadata.mdqImport(identifier, { actor: body.actor || '' })
+        .then(function (result) {
+          return self.refusedBy('STS-ADMIN-0532', result);
+        });
+    }
     log.debug("Leaving AdminActions.saml2Action(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The nine are: register, ' +
+                                 'The eleven are: register, ' +
                                       'set-logout-service, ' +
                                       'remove-logout-service, ' +
                                       'set-signing-certificate, ' +
@@ -3175,7 +3194,8 @@ class AdminActions {
                                       'confirm-signing-certificate, ' +
                                       'discard-signing-certificate, ' +
                                       'set-metadata-signing-certificate, ' +
-                                      'upload-metadata.'] });
+                                      'upload-metadata, refresh-metadata, ' +
+                                      'mdq-import.'] });
   }
 
   // Replace a service provider's registered signing certificates with one —

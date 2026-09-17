@@ -17406,6 +17406,18 @@ class AdminConsole {
       'placeholder="https://sp.example.com/saml"><button>Register</button>' +
       '<span class="note">The same thing a request or a metadata fetch would ' +
       'do.</span></div></form>' +
+      '<h2>Import one from the Metadata Query responder</h2><p ' +
+      'class="sub">Asks <code>saml2.mdqBaseUrl</code> for the entity by ' +
+      'name (<code>&lt;base&gt;/entities/&lt;entityID&gt;</code>), creates ' +
+      'the entry if the answer describes it, and consumes the document — ' +
+      'held to the realm\'s metadata trust anchors when it has any. A ' +
+      'request from a service provider with no metadata starts the same ' +
+      'lookup in the background.</p><form method="post" ' +
+      'action="/admin/saml2"><div class="formrow"><input type="hidden" ' +
+      'name="action" value="mdq-import"><label for="mdq_sp">entityID</label>' +
+      '<input type="text" id="mdq_sp" name="sp" ' +
+      'placeholder="https://sp.example.com/saml"><button>Import</button>' +
+      '</div></form>' +
       this.configFormsFor('/admin/saml2') +
       this.note('These decide the SHAPE of an assertion — who issued it, how ' +
       'long it is good for, what is signed. <a ' +
@@ -17685,23 +17697,50 @@ class AdminConsole {
           '</td></tr>' +
         '<tr><td>The document\'s own signature</td><td>' +
           self.esc(meta.signature || 'unknown') + '</td></tr>' +
-        '<tr><td>validUntil</td><td>' +
+        '<tr><td>State</td><td><strong>' +
+          self.esc(String(meta.state || '').toUpperCase()) + '</strong>' +
+          (meta.stateWhy ? ' <span class="sub">— ' + self.esc(meta.stateWhy) +
+                           '</span>' : '') +
+          (meta.state === 'expired'
+            ? ' <span class="sub">Every request from this service provider ' +
+              'is REFUSED until a newer document is consumed.</span>' : '') +
+          '</td></tr>' +
+        '<tr><td>validUntil (effective)</td><td>' +
           (meta.validUntil
-            ? self.esc(meta.validUntil) +
-              (meta.expired ? ' <strong>— EXPIRED.</strong> <span ' +
-                              'class="sub">Shown, not enforced: what it ' +
-                              'registered is still in use. Refresh or ' +
-                              're-upload it.</span>' : '')
+            ? self.esc(meta.validUntil) + ' <span class="sub">— enforced: ' +
+              'past it this service provider\'s requests are refused</span>'
             : '<span class="sub">none stated</span>') + '</td></tr>' +
-        '<tr><td>cacheDuration</td><td>' +
-          (meta.cacheDuration ? self.esc(meta.cacheDuration) +
-           ' <span class="sub">— recorded; this service never refetches on ' +
-           'its own</span>' : '<span class="sub">none stated</span>') +
+        '<tr><td>cacheDuration (effective)</td><td>' +
+          (meta.cacheDuration ? self.esc(meta.cacheDuration) : '<span ' +
+           'class="sub">none stated</span>') +
+          (meta.staleAt ? ' <span class="sub">— stale from ' +
+                          self.esc(meta.staleAt) + '</span>' : '') +
+          '</td></tr>' +
+        '<tr><td>Background refresh</td><td>' +
+          (!meta.refreshable
+            ? '<span class="sub">not possible: the document was ' +
+              'uploaded, and a stale one keeps working until its ' +
+              'validUntil</span>'
+            : (meta.refresherEnabled ? 'on' : '<strong>off</strong> ' +
+               '(saml2.spMetadataRefresh)') +
+              (meta.refresh
+                ? ' — last attempt ' + self.esc(meta.refresh.lastAttemptAt) +
+                  (meta.refresh.ok ? ', succeeded'
+                    : ', <strong>FAILING</strong> since ' +
+                      self.esc(meta.refresh.failingSince) + ' (' +
+                      self.esc(String(meta.refresh.failures)) +
+                      ' attempt(s)): ' + self.esc(meta.refresh.why))
+                : ' <span class="sub">— not attempted in this ' +
+                  'process</span>')) +
           '</td></tr>' +
         '<tr><td>AuthnRequestsSigned</td><td>' +
           yes(meta.authnRequestsSigned) + '</td></tr>' +
         '<tr><td>WantAssertionsSigned</td><td>' +
           yes(meta.wantAssertionsSigned) + '</td></tr>' +
+        '<tr><td>Encrypted assertions wanted</td><td>' +
+          yes(meta.wantAssertionsEncrypted) + ' <span class="sub">— true ' +
+          'when the document publishes a use="encryption" key; the ' +
+          'assertion is then encrypted to it in every mode</span></td></tr>' +
         '<tr><td>NameIDFormats</td><td>' +
           ((meta.nameIdFormats || []).length
             ? this.codeList(meta.nameIdFormats) + ' <span class="sub">— a ' +
@@ -17752,13 +17791,29 @@ class AdminConsole {
       '<button>Consume it</button><span class="note">Its entityID must be ' +
       'this service provider\'s. Nothing changes if it is refused.</span>' +
       '</div></form>' +
+      '<form method="post" action="/admin/saml2">' + carryBack +
+      '<div class="formrow"><input type="hidden" name="action" ' +
+      'value="refresh-metadata"><input type="hidden" name="sp" value="' +
+      self.esc(identifier) + '"><button>Refresh it now</button>' +
+      '<span class="note">From its samlSpMetadataUrl, or — with none — ' +
+      (meta.mdqUrl ? 'from the MDQ responder, <code>' +
+                     self.esc(meta.mdqUrl) + '</code>'
+                   : 'from the MDQ responder (saml2.mdqBaseUrl, not set ' +
+                     'here)') + '.</span></div></form>' +
       '<h3>The certificate its metadata must be signed with</h3>' +
-      this.note(meta.signingCertificateConfigured
-        ? 'Set: a document that is unsigned, or not signed with this key, ' +
-          'is refused.'
-        : 'Not set: a signed document is consumed and recorded as ' +
-          '<code>signed-not-verified</code>, and the trust act is your ' +
-          'choice of URL or document.') +
+      this.note((meta.signingCertificateConfigured
+        ? 'Set: a document that is unsigned, or not signed with this key ' +
+          'or a realm trust anchor, is refused.'
+        : (meta.trustAnchors
+          ? 'Not set on the entry, and this realm has ' + meta.trustAnchors +
+            ' metadata trust anchor(s) (saml2.metadataTrustAnchors): a ' +
+            'document that verifies against none of them is refused.'
+          : 'Not set, and no realm trust anchor: a signed document is ' +
+            'consumed and recorded as <code>signed-not-verified</code>, and ' +
+            'the trust act is your choice of URL or document.')) +
+        ((meta.trustAnchorProblems || []).length
+          ? ' <strong>' + self.esc(meta.trustAnchorProblems.join('; ')) +
+            '.</strong>' : '')) +
       '<form method="post" action="/admin/saml2">' + carryBack +
       '<div class="formrow"><input type="hidden" name="action" ' +
       'value="set-metadata-signing-certificate"><input type="hidden" ' +
@@ -30671,16 +30726,29 @@ class AdminConsole {
     app.post('/admin/saml2', function (req, res) {
       log.debug("Entering the admin SAML 2.0 action endpoint.");
       const body = parseBody(req);
-      const result = saml2Action(body);
       const identifier = String(body.sp || body.serviceProvider || '').trim();
       // The list state the form carried, REBUILT rather than echoed — see
       // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new form
       // on a drill-down needing `carryBack` in it.
       const listView = self.listViewFromBack('/admin/saml2', body.back);
-      const back = identifier && result.ok !== false
-        ? '/admin/saml2' + queryWith(listView, { sp: identifier })
-        : '/admin/saml2' + queryWith(listView, {});
-      self.respondToAction(req, res, back, result);
+      const answer = function (result) {
+        log.debug("Entering answer().");
+        const back = identifier && result.ok !== false
+          ? '/admin/saml2' + queryWith(listView, { sp: identifier })
+          : '/admin/saml2' + queryWith(listView, {});
+        self.respondToAction(req, res, back, result);
+        log.debug("Leaving answer().");
+      };
+      // `refresh-metadata` and `mdq-import` dial out and answer with a
+      // promise (#37 follow-up); everything else answers with the object.
+      Promise.resolve(saml2Action(body)).then(answer, function (e) {
+        log.error(errorCodes.tag('STS-ADMIN-0724') + 'admin: the SAML 2.0 ' +
+                  'action "' + String(body.action || '') + '" failed: ' +
+                  ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-ADMIN-0724');
+        answer({ ok: false, errors: ['The action failed: ' +
+                                     ((e && e.message) || e)] });
+      });
       log.debug("Leaving the admin SAML 2.0 action endpoint.");
     });
 
