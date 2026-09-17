@@ -1,3 +1,4 @@
+// @ts-check
 // File: webauthn.js
 //
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ const crypto = require('crypto');
 // load threw a TypeError from inside its own fallback. The caught reason is
 // kept in `loadProblem` and reported by the silent logger's owner, if any.
 const noop = function () {};
+/** @type {any} */
 let log = { debug: noop, info: noop, warn: noop, error: noop };
 let loadProblem = '';
 try {
@@ -462,7 +464,7 @@ function verifyAssertion(input) {
 }
 
 module.exports = {
-  // The COSE tables, for `admin-ui/crypto_metadata.js`, which reports what
+  // The COSE tables, for `admin-ui/crypto_metadata.ts`, which reports what
   // this relying party will accept rather than keeping a second copy of it.
   // They are DATA and not behaviour: exporting them cannot change what this
   // file verifies, and the alternative was a list of algorithms typed into a

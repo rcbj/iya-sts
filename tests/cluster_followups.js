@@ -488,18 +488,22 @@ function childMain() {
            'E2b. the next create of a name, sent the moment the first was ' +
            'answered and before its claim is released, waits and runs rather ' +
            'than being refused as in progress', sequence.join(','));
-      const adminSource = fs.readFileSync(ROOT + '/admin-ui/admin.js', 'utf8');
+      const adminSource = fs.readFileSync(ROOT + '/admin-ui/admin.ts', 'utf8');
       const handlers = ["app.post('/admin/users',",
                         "app.post('/admin/users/new',",
                         "app.post('/admin/groups',"];
       note(handlers.every(function (head) {
         const at = adminSource.indexOf(head);
-        const next = adminSource.indexOf('\napp.', at + head.length);
-        return at >= 0 && adminSource.slice(at, next)
+        // The next registration, however deeply indented: since #50 the
+        // console registers its routes from a method. Not found is refused
+        // rather than read as "to the end of the file".
+        const after = /\n\s*app\./.exec(adminSource.slice(at + head.length));
+        const next = after ? at + head.length + after.index : -1;
+        return at >= 0 && next > at && adminSource.slice(at, next)
           .indexOf('createClaims.runClaimed(') >= 0;
       }), 'E3. the console\'s user, new-user and group create handlers each ' +
           'create through runClaimed()');
-      const scimSource = fs.readFileSync(ROOT + '/scim/scim.js', 'utf8');
+      const scimSource = fs.readFileSync(ROOT + '/scim/scim.ts', 'utf8');
       note((scimSource.match(/\.ingress\(claimingIngress\('(User|Group)'/g) ||
             []).length === 2,
            'E4. both SCIM ingress handlers — the road a Bulk create takes — ' +
@@ -586,7 +590,7 @@ function childMain() {
            'there, whatever door asks', JSON.stringify(onEntry));
 
       // ================= G. A GNAP DECISION =================================
-      const gnapSource = fs.readFileSync(ROOT + '/gnap/gnap_interact.js',
+      const gnapSource = fs.readFileSync(ROOT + '/gnap/gnap_interact.ts',
                                          'utf8');
       const approveAt = gnapSource.indexOf("app.get('/gnap/approve/:id'");
       const tail = gnapSource.slice(approveAt);
@@ -661,15 +665,16 @@ function childMain() {
            'H4. under the limit a verified credential is answered and its ' +
            'buckets cleared (a limit of 1 no longer blocks)',
            JSON.stringify([cleared, afterClear]));
-      const oauthSource = fs.readFileSync(ROOT + '/oauth-oidc/oauth2.js',
+      const oauthSource = fs.readFileSync(ROOT + '/oauth-oidc/oauth2.ts',
                                           'utf8');
-      const counted = (oauthSource.match(/await countSecretFailure\(/g) ||
-                       []).length;
+      // Methods of `OAuth2Server` since #50, so each call is `self.`.
+      const counted = (oauthSource.match(
+        /await self\.countSecretFailure\(/g) || []).length;
       note(counted === 7 && (oauthSource.match(
-             /const overLimit = await countSecretFailure\(/g) || []).length ===
-           counted &&
-           (oauthSource.match(/await settleSecretSuccess\(/g) || []).length ===
-           3,
+             /const overLimit = await self\.countSecretFailure\(/g) ||
+           []).length === counted &&
+           (oauthSource.match(/await self\.settleSecretSuccess\(/g) ||
+            []).length === 3,
            'H5. every client-secret failure at the token, PAR and ' +
            'introspection endpoints is answered on its count, and every ' +
            'success is settled before it is answered');

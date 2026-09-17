@@ -403,10 +403,10 @@ function run(t) {
             'and noteSessionChanged() never creates a session that is not ' +
             'there — a session ended meanwhile stays ended');
     const sites = [
-      ['saml/saml2_sso.js', 'session.saml2ServiceProviders[ctx.spEntityId]'],
-      ['saml/saml11_sso.js', 'session.saml11RelyingParties[ctx.rpId]'],
-      ['ws-federation/wsfed.js', 'session.wsfedRealms[realm] = wreply;'],
-      ['oauth-oidc/frontchannel_logout.js', 'session.oidcClients[clientId]']
+      ['saml/saml2_sso.ts', 'session.saml2ServiceProviders[ctx.spEntityId]'],
+      ['saml/saml11_sso.ts', 'session.saml11RelyingParties[ctx.rpId]'],
+      ['ws-federation/wsfed.ts', 'session.wsfedRealms[realm] = wreply;'],
+      ['oauth-oidc/frontchannel_logout.ts', 'session.oidcClients[clientId]']
     ];
     const missing = sites.filter(function (site) {
       const text = fs.readFileSync(path.join(ROOT, site[0]), 'utf8');

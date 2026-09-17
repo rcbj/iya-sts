@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ssf_events.js
@@ -890,7 +891,7 @@ const RISC_EVENTS = [
               'credential-change**, so the two lists are the same list ' +
               'rather than two alike ones — which is why there is one ' +
               'CREDENTIAL_TYPES here and not a copy per vocabulary.' }
-    ].concat(RISC_COMMON_MEMBERS),
+    ].concat(/** @type {any} */ (RISC_COMMON_MEMBERS)),
     required: ['credential_type'],
     what: 'A credential belonging to this account was FOUND compromised — ' +
           'seen in a breach corpus, or reported. THE ONLY ONE OF THE ' +
@@ -1052,7 +1053,8 @@ const RISC_EVENTS = [
 // THE THREE VOCABULARIES IN ONE TABLE. SSF's own first, because they are about
 // the pipe every one of the others travels on; then CAEP's eight about a
 // SESSION, then RISC's fourteen about an ACCOUNT.
-const EVENTS = SSF_EVENTS.concat(CAEP_EVENTS).concat(RISC_EVENTS);
+const EVENTS = /** @type {any[]} */ (SSF_EVENTS).concat(CAEP_EVENTS)
+  .concat(RISC_EVENTS);
 
 const CAEP_EVENT_URIS = CAEP_EVENTS.map(function (row) {
   return row.uri;

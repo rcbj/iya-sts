@@ -71,7 +71,7 @@
 //     service's to name. The owner chose signatures only on 2026-09-13; a
 //     nested refresh token still gets one, on the JWS inside it.
 //   * NOT THE SPIFFE JWT-SVID. The JWT authority has no certificate.
-//   * NOT `oid4vc/vc_did.js`'s generated credentials, signed with a key the
+//   * NOT `oid4vc/vc_did.ts`'s generated credentials, signed with a key the
 //     request generated and nobody certified.
 //   * NOT THE DIF DOMAIN LINKAGE CREDENTIAL, although its key IS certified.
 //     The Well Known DID Configuration specification allows exactly `alg` and
@@ -97,7 +97,7 @@
 // ---------------------------------------------------------------------------
 // THE `x5u` ADDRESS.
 //
-// `GET /pki/chain/{scope}/{sha256}.pem`, served by `pki/pki_service.js` beside
+// `GET /pki/chain/{scope}/{sha256}.pem`, served by `pki/pki_service.ts` beside
 // the CRL and OCSP endpoints and for their reason that the scope is in the
 // path rather than taken from a realm prefix: an address inside a token is
 // fetched by a client that knows nothing about this service's realm
@@ -161,48 +161,48 @@ const DEFAULT_MODE = 'x5u';
 const USE_CASES = [
   { id: 'access-token', setting: 'oauth2.accessTokenCertificateHeader',
     label: 'OAuth 2.0 access tokens',
-    where: 'oauth-oidc/oauth2.js accessToken() — every grant, the ' +
+    where: 'oauth-oidc/oauth2.ts accessToken() — every grant, the ' +
            'management API\'s tokens included' },
   { id: 'id-token', setting: 'oauth2.idTokenCertificateHeader',
     label: 'OpenID Connect ID Tokens',
-    where: 'oauth-oidc/oauth2.js idToken(), in the default RS256 and in ' +
+    where: 'oauth-oidc/oauth2.ts idToken(), in the default RS256 and in ' +
            'whatever id_token_signed_response_alg a client registered' },
   { id: 'refresh-token', setting: 'oauth2.refreshTokenCertificateHeader',
     label: 'Refresh tokens (the signed JWT inside the JWE)',
-    where: 'oauth-oidc/oauth2.js refreshToken() — the header is on the inner ' +
+    where: 'oauth-oidc/oauth2.ts refreshToken() — the header is on the inner ' +
            'JWS, which only this service ever opens' },
   { id: 'userinfo', setting: 'oauth2.userinfoCertificateHeader',
     label: 'Signed UserInfo responses',
-    where: 'oauth-oidc/oauth2.js, userinfo_signed_response_alg' },
+    where: 'oauth-oidc/oauth2.ts, userinfo_signed_response_alg' },
   { id: 'introspection', setting: 'oauth2.introspectionCertificateHeader',
     label: 'RFC 9701 JWT introspection responses',
-    where: 'oauth-oidc/introspection_jwt.js respond(), in RS256 or whatever ' +
+    where: 'oauth-oidc/introspection_jwt.ts respond(), in RS256 or whatever ' +
            'introspection_signed_response_alg a resource server registered' },
   { id: 'oauth-signed-metadata',
     setting: 'oauth2.signedMetadataCertificateHeader',
     label: 'RFC 8414 signed_metadata',
-    where: 'oauth-oidc/oauth2.js signedMetadata(), both discovery documents' },
+    where: 'oauth-oidc/oauth2.ts signedMetadata(), both discovery documents' },
   { id: 'vci-credential', setting: 'oid4vci.credentialCertificateHeader',
     label: 'OpenID4VCI credentials',
-    where: 'oid4vc/vc_issuer.js, the SD-JWT VC issuer JWT and the JWT VC' },
+    where: 'oid4vc/vc_issuer.ts, the SD-JWT VC issuer JWT and the JWT VC' },
   { id: 'vci-signed-metadata',
     setting: 'oid4vci.signedMetadataCertificateHeader',
     label: 'OpenID4VCI signed issuer metadata',
-    where: 'oid4vc/vc_issuer.js, the credential issuer\'s signed_metadata' },
+    where: 'oid4vc/vc_issuer.ts, the credential issuer\'s signed_metadata' },
   { id: 'vp-request-object', setting: 'oid4vp.requestObjectCertificateHeader',
     label: 'OpenID4VP Request Objects',
-    where: 'oid4vc/vc_verifier.js, the signed authorization request' },
+    where: 'oid4vc/vc_verifier.ts, the signed authorization request' },
   { id: 'ssf-set', setting: 'ssf.setCertificateHeader',
     label: 'Security Event Tokens',
     where: 'ssf/ssf_events.js, every SET pushed or polled — CAEP and RISC ' +
            'included' },
   { id: 'wstrust-jwt', setting: 'wstrust.jwtCertificateHeader',
     label: 'WS-Trust JWT tokens',
-    where: 'ws-trust/wstrust.js, a JWT issued in a ' +
+    where: 'ws-trust/wstrust.ts, a JWT issued in a ' +
            'RequestSecurityTokenResponse' },
   { id: 'gnap-access-token', setting: 'gnap.accessTokenCertificateHeader',
     label: 'GNAP JWT access tokens',
-    where: 'gnap/gnap_tokens.js, the jwt-signed format and the JWS inside ' +
+    where: 'gnap/gnap_tokens.ts, the jwt-signed format and the JWS inside ' +
            'jwt-encrypted' }
 ];
 
@@ -365,7 +365,7 @@ function chainPemsOf(pki, record) {
   return chains.get(cacheKey) ? pems.concat([rootPem]) : pems;
 }
 
-// The scope segment an address names a realm by — `pki/pki_service.js`'s
+// The scope segment an address names a realm by — `pki/pki_service.ts`'s
 // convention, `default` for the default realm.
 function scopeSegmentOf(realmId) {
   log.debug("Entering scopeSegmentOf().");

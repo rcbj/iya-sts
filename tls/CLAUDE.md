@@ -19,7 +19,7 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   the embedded debugger's listener. So one anchor covers all three and a caller
   trusts this service once per start rather than three times. The LDAPS half is
   what makes `ldap_server.js` require this module, and therefore what fixes
-  their order in `common/protocol_stack.js` (rule 6); the other two need no
+  their order in `common/protocol_stack.ts` (rule 6); the other two need no
   require order, because `server.js` and `debugger_server.js` already have this
   module in hand by the time they listen. The private key crosses a module boundary and no
   network one: it is generated per start, held in memory, and
@@ -538,7 +538,7 @@ Four things about how it is wired are worth knowing before changing any of it:
   `registerCertifiable()` record at require time and that module acts on it in
   `start()`. A require in the other direction would drag every `/tls` route
   into the router wherever `pki.js` is first required from — which is
-  `common/service_state.js`, above everything.
+  `common/service_state.ts`, above everything.
 * **THE ORDERING IS WHAT MAKES IT WORK.** This module is required at 20 and its
   certificate is built at require time; `pki.start()` runs afterwards and
   BEFORE `server.js`'s `listen()` binds anything. So no client ever sees the
@@ -570,8 +570,8 @@ certificate was self-signed:
 
 | Caller | What it is | What it did instead |
 |---|---|---|
-| `common/oidc_rp.js`'s back channel | how `/admin` and `/portal` redeem an authorization code at `/oauth2/token` | **the admin console could not be signed into** — *Signing in did not complete*, with `the loopback request to /oauth2/token failed: unable to get local issuer certificate` under it |
-| `ssf/ssf_http.js`'s push | delivery to this service's own two Shared Signals receivers | every push to a loopback receiver failed |
+| `common/oidc_rp.ts`'s back channel | how `/admin` and `/portal` redeem an authorization code at `/oauth2/token` | **the admin console could not be signed into** — *Signing in did not complete*, with `the loopback request to /oauth2/token failed: unable to get local issuer certificate` under it |
+| `ssf/ssf_http.ts`'s push | delivery to this service's own two Shared Signals receivers | every push to a loopback receiver failed |
 | `tests/tools/trust.js` | the anchor every node-driven job in the protocol suite is handed as `NODE_EXTRA_CA_CERTS` | the suite could not open a connection to the service at all |
 
 **WHY IT LOOKS LIKE A PIN AND REFUSES EVERYTHING.** OpenSSL takes a
@@ -696,7 +696,7 @@ failing their own OpenID Connect back channel with **`unable to get local
 issuer certificate`** — the console's *Signing in did not complete*.
 
 `server.js` now hands all four across, `request_pool.js` carries them,
-`request_worker.js` installs them, and `trustAnchorPems()` **prefers a handed-in
+`request_worker.ts` installs them, and `trustAnchorPems()` **prefers a handed-in
 anchor over anything this process's own PKI would answer** — because a worker
 does not own the socket and did not make the certificate, so its own Root is
 not an answer it can honestly give. The handed anchor still goes through
@@ -906,7 +906,7 @@ product process must not be a way to add one.
 
 **REFUSED RATHER THAN GATED, AND THAT IS A STRUCTURAL CHOICE.** The natural gate is
 `/admin-api`'s access token with `admin:write`, and that verification is middleware inside
-`mgmt-api/admin_api.js`, exported as nothing — a copy here would be a second answer to who
+`mgmt-api/admin_api.ts`, exported as nothing — a copy here would be a second answer to who
 may administer this service. **That argument still holds for these two routes and they are
 unchanged**; what it no longer implies is that product mode has no runtime door. It read
 *"there is no management-API truststore operation either … the runtime door still to
@@ -926,8 +926,8 @@ form and a Remove button per row; `GET /admin-api/tls/trust` and `POST
 validity and `ca` off OpenSSL (it reads the ML-DSA anchors forge cannot), each anchor
 carries `source` and `addedAt`, and `removeAnchor()` takes ONE fingerprint in either the
 colon or the plain-hex spelling. The vocabulary, the audit row (`admin.truststore.change`)
-and the sentences are `admin-core/admin_actions.js`'s `truststoreAction()`; the reply is
-`admin-core/admin_views.js`'s `truststoreJson()`.
+and the sentences are `admin-core/admin_actions.ts`'s `truststoreAction()`; the reply is
+`admin-core/admin_views.ts`'s `truststoreJson()`.
 
 Four things about it are decisions:
 
@@ -945,9 +945,9 @@ Four things about it are decisions:
 * **NOTHING IS PERSISTED**, which is the rule this array already follows (the note above
   `anchors`). The durable door is still `tls.trustAnchorsFile`. *Superseded later
   the same day — see* A RUNTIME ANCHOR SURVIVES A RESTART *below.*
-* **THE SLOT IS FILLED BY `common/protocol_stack.js`, NOT BY THIS MODULE, AND THAT IS
-  FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.js`'s require —
-  `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.js` → here — so a
+* **THE SLOT IS FILLED BY `common/protocol_stack.ts`, NOT BY THIS MODULE, AND THAT IS
+  FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.ts`'s require —
+  `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts` → here — so a
   `require('../admin-ui/admin')` at its top level would be a cycle and would find no
   `setTruststore` on that module's half-built exports. The stack fills it on the line after
   it requires this module, where both are whole. **That load order is itself worth
@@ -997,7 +997,7 @@ refusal removed.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 
-`server.js` installs `common/proxy_protocol.js` on the main port when
+`server.js` installs `common/proxy_protocol.ts` on the main port when
 `global.proxyProtocol` is `v2`; this module's `listen()` installed it on
 `permissiveServer` and `strictServer` until both were deleted on 2026-09-16, and
 installs nothing now. It shadows the server's `connection` emit, so the TLS

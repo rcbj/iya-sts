@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// A PASSWORD POLICY PROFILE, as `common/password_policy.js` read() answers it
+// A PASSWORD POLICY PROFILE, as `common/password_policy.ts` read() answers it
 // (#50, 2026-09-16): the description of the entry, and then one member per row
 // of that file's FIELDS table — the table is the source, and a field added
 // there is added here.

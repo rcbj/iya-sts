@@ -11,8 +11,40 @@
     "types": ["node"],
     "typeRoots": ["./tests/node_modules/@types"]
   },
-  "include": ["server.js", "sts_metadata.js", "types/**/*.d.ts",
-              "common/*.js"],
-  "exclude": ["node_modules", "tests/node_modules", "node-ldapjs",
-              "common/vendored", "debugger/embedded"]
+  "include": [
+    "server.js", "sts_metadata.js", "types/**/*.d.ts",
+    "acme/*.js", "acme/*.ts",
+    "admin-core/*.js", "admin-core/*.ts",
+    "admin-ui/*.js", "admin-ui/*.ts",
+    "authn/*.js", "authn/*.ts",
+    "cluster/*.js", "cluster/*.ts",
+    "common/*.js", "common/*.ts",
+    "debugger/*.js", "debugger/*.ts",
+    "est/*.js", "est/*.ts",
+    "federation/*.js", "federation/*.ts",
+    "gnap/*.js", "gnap/*.ts",
+    "home/*.js", "home/*.ts",
+    "kerberos/*.js", "kerberos/*.ts",
+    "ldap/*.js", "ldap/*.ts",
+    "logout/*.js", "logout/*.ts",
+    "mgmt-api/*.js", "mgmt-api/*.ts",
+    "oauth-oidc/*.js", "oauth-oidc/*.ts",
+    "oid4vc/*.js", "oid4vc/*.ts",
+    "persistence/*.js", "persistence/*.ts",
+    "pki/*.js", "pki/*.ts",
+    "portal/*.js", "portal/*.ts",
+    "saml/*.js", "saml/*.ts",
+    "scep/*.js", "scep/*.ts",
+    "scim/*.js", "scim/*.ts",
+    "spiffe/*.js", "spiffe/*.ts",
+    "ssf/*.js", "ssf/*.ts",
+    "tls/*.js", "tls/*.ts",
+    "ws-federation/*.js", "ws-federation/*.ts",
+    "ws-trust/*.js", "ws-trust/*.ts",
+    "xacml/*.js", "xacml/*.ts"
+  ],
+  "exclude": [
+    "node_modules", "tests/node_modules", "node-ldapjs",
+    "common/vendored", "debugger/embedded"
+  ]
 }

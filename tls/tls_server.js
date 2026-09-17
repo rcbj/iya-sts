@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: tls_server.js
@@ -267,6 +268,8 @@ function truststoreOpenToAnybody() {
 // ---------------------------------------------------------------------------
 function protocolOptions() {
   log.debug("Entering protocolOptions().");
+  // `any`: the setting is a string, and the TLS types want a version literal.
+  /** @type {any} */
   const options = { minVersion: String(config.value('tls.minVersion') ||
                                        'TLSv1.2') };
   const ciphers = String(config.value('tls.ciphers') || '').trim();
@@ -347,7 +350,7 @@ let listenError = null;
 // REQUEST WORKER existed. A worker loads this module like everything else, so
 // it made a certificate of its own — and `/admin` and `/portal` are OpenID
 // Connect relying parties that dial this service BACK on a loopback address and
-// PIN its certificate (`common/oidc_rp.js`). So a worker pinned the one it had
+// PIN its certificate (`common/oidc_rp.ts`). So a worker pinned the one it had
 // just made, the front process presented the one IT had made, and the back
 // channel failed TLS verification. The symptom is `TypeError: fetch failed`
 // during a console sign-in, which names nothing.
@@ -548,6 +551,16 @@ function certificateProvenance() {
            '(tls.certificateFile), so it does NOT change when this service ' +
            'restarts — trust its issuer once';
   }
+  // #70: this said "self-signed" whatever the certificate was. Since
+  // 2026-09-11 the listener certificate is issued under this service's Root
+  // whenever there is a hierarchy, which is what a non-empty chain records;
+  // only a process with none still presents a self-signed one.
+  if (SERVER_CERTIFICATE && (SERVER_CERTIFICATE.chainPem || []).length) {
+    log.debug('Leaving certificateProvenance(). Issued under the Root.');
+    return 'issued by this service\'s TLS Issuing CA under its own Root ' +
+           'and reissued on every start, so trust the Root ' +
+           '(/pki/revocation lists it) rather than the certificate itself';
+  }
   log.debug('Leaving certificateProvenance(). Self-signed.');
   return 'self-signed and regenerated on every start';
 }
@@ -561,7 +574,7 @@ function fingerprintOf(pem) {
   // `colon-hex` is what `openssl x509 -fingerprint -sha256` prints, which is
   // what a person is holding when they compare this by eye. It is the same
   // digest RFC 8705's `x5t#S256` uses in `oauth-oidc/mtls.js` and the same one
-  // SPIRE's authority id truncates in `spiffe/spiffe_ca.js` — three spellings
+  // SPIRE's authority id truncates in `spiffe/spiffe_ca.ts` — three spellings
   // of one computation, which is why the format is a parameter and the three
   // functions that each computed it are one.
   return stsCrypto.certificateThumbprint(pem, { format: 'colon-hex' });
@@ -913,7 +926,7 @@ const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
 // **IT IS A REGISTRATION AND NOT A CALL, and the ordering is the whole of why
 // it works.** This module is required at 20 and its certificate is built at
 // require time; `pki.start()` runs afterwards, from
-// `common/service_state.js`, and BEFORE `listen()` binds anything. So the
+// `common/service_state.ts`, and BEFORE `listen()` binds anything. So the
 // swap below has already happened by the time a socket exists — nothing is
 // re-keyed under a live listener, and no client ever sees the self-signed one.
 //
@@ -1333,8 +1346,8 @@ function secureContextOptions() {
 //
 // While the certificate above was SELF-SIGNED those were one question with one
 // answer, and three callers in this repository answered it by pinning the leaf:
-// the back channel in `common/oidc_rp.js`, the loopback push in
-// `ssf/ssf_http.js`, and the suite's anchor in `tests/tools/trust.js`.
+// the back channel in `common/oidc_rp.ts`, the loopback push in
+// `ssf/ssf_http.ts`, and the suite's anchor in `tests/tools/trust.js`.
 //
 // The hour the leaf acquired an ISSUER all three broke, and they broke in the
 // way that names nothing about what changed. OpenSSL takes a self-signed leaf
@@ -2168,7 +2181,7 @@ function listAnchors() {
 // the change log and `reloadStoredAnchors()`.
 //
 // **A SLOT BECAUSE A REQUIRE CANNOT WORK IN EITHER DIRECTION.** This module is
-// loaded from inside `admin-ui/admin.js`'s require, long before the directory
+// loaded from inside `admin-ui/admin.ts`'s require, long before the directory
 // module, and a require from here to it would register every /ldap route ahead
 // of the console's (rule 3e); the directory module requires THIS one for its
 // LDAPS certificate, so it fills the slot with a call in the ordinary
@@ -3433,7 +3446,7 @@ app.get('/tls/server-certificate', function (req, res) {
 // **REFUSED RATHER THAN GATED, AND THE REFUSAL SAYS WHERE TO GO.** The obvious
 // alternative was to require the credential `/admin-api` requires — an access
 // token with `admin:write` — and it was not taken for a structural reason:
-// that verification is middleware inside `mgmt-api/admin_api.js`, exported as
+// that verification is middleware inside `mgmt-api/admin_api.ts`, exported as
 // nothing, and a second copy of it here would be a second answer to "who may
 // administer this service" (the mistake `logout.js` exists to prevent).
 //
@@ -3481,14 +3494,14 @@ function refuseTruststoreChange(req, res, route) {
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE AS THE GATED DOORS SEE IT (2026-09-12).
 //
-// Three functions, handed to `admin-ui/admin.js`'s `setTruststore()` slot and
+// Three functions, handed to `admin-ui/admin.ts`'s `setTruststore()` slot and
 // forwarded from there to the action and view layers in `admin-core/`. This
 // module cannot hand them over itself at require time, and the reason is worth
 // knowing before anybody tries: it is first loaded from INSIDE `admin.js`'s own
-// require — `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.js`
+// require — `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts`
 // → here — so a `require('../admin-ui/admin')` at this module's top level
 // would be a cycle and would hand back that module's half-built exports, on
-// which `setTruststore` does not exist yet. `common/protocol_stack.js` fills
+// which `setTruststore` does not exist yet. `common/protocol_stack.ts` fills
 // the slot on the line after it requires this module, where both are whole.
 //
 // **`add` IS STRICT AND `/tls/trust` IS NOT.** A block OpenSSL cannot read is
@@ -3839,7 +3852,7 @@ module.exports = {
   clearAnchors: clearAnchors,
   removeAnchor: removeAnchor,
   // The three the console and the management API reach the truststore
-  // through — see the block above it. `common/protocol_stack.js` hands this to
+  // through — see the block above it. `common/protocol_stack.ts` hands this to
   // `admin.setTruststore()`.
   truststore: truststore,
   // The truststore's durable half: `ldap/ldap_server.js` installs the store

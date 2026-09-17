@@ -76,11 +76,11 @@ the package root. **The files did not change; the paths did.**
 | `federation/` | **federation relationships** — the register, the attribute mapping, the four endpoints, and the only outbound request this service makes |
 | `kerberos/` | the KDC, the acceptor, SPNEGO in three layers — the negotiation, the page that explains it, and the sign-in that turns a ticket into a session — and the codec |
 | `ldap/` · `scim/` · `tls/` · `spiffe/` · `oid4vc/` | one family each |
-| `acme/`, `est/`, `scep/` | **CERTIFICATE ENROLLMENT** — ACME (RFC 8555), EST (RFC 7030) and SCEP (RFC 8894), each with its console pages under Protocols and Monitoring and its `/admin-api` operations, all issuing through `common/cert_enrollment.js` |
+| `acme/`, `est/`, `scep/` | **CERTIFICATE ENROLLMENT** — ACME (RFC 8555), EST (RFC 7030) and SCEP (RFC 8894), each with its console pages under Protocols and Monitoring and its `/admin-api` operations, all issuing through `common/cert_enrollment.ts` |
 | `gnap/` | **GNAP** — the grant engine, the resource-owner pages, RFC 9421 HTTP message signatures, the five token formats, the RS-facing endpoints and the two console pages |
 | `persistence/` | **the only place this service writes anything down** — three modes (`memory`, `ldif`, `postgres`) behind one driver interface, and the RFC 2849 codec under the middle one |
 | `admin-ui/` · `mgmt-api/` | the console and the management API |
-| `admin-core/` | **what those two both DO, with neither of them in it** — the thirty-one actions behind every control on `/admin` and every `/admin-api` operation that changes something. They were in `admin-ui/admin.js` until 2026-09-12, which made the API depend on the console |
+| `admin-core/` | **what those two both DO, with neither of them in it** — the thirty-one actions behind every control on `/admin` and every `/admin-api` operation that changes something. They were in `admin-ui/admin.ts` until 2026-09-12, which made the API depend on the console |
 | `home/` | the front door — `GET /`, and the one image this service serves |
 | `logout/` | the protocol-independent sign-out — one model of what a live session IS across every family, and the endpoint that ends it |
 | `tests/` | **the only test directory in this repository** — in-process assertions about its own module contracts, `npm test`, no port and no container. Every test that drives this service over HTTP lives in the [OAuth2/OIDC Debugger](https://idptools.com) project's suite, federation included |
@@ -88,7 +88,7 @@ the package root. **The files did not change; the paths did.**
 
 At the package root there are exactly two modules: **`server.js`**, the shell that
 requires the others and listens, and **`sts_metadata.js`**, which reads the router
-to list what everything else registered and is therefore required last. `logout/logout.js`
+to list what everything else registered and is therefore required last. `logout/logout.ts`
 is required immediately before it, second to last, because it reads nine of the
 modules above and must come after every one of them.
 
@@ -154,7 +154,7 @@ requires an authentication scheme, and what this service would have installed is
 handler that accepts everything, dressed as a check.
 
 **WS-Federation used to be the gap here, and this note used to say so.** Until
-`wsfed.js` existed, the pieces a passive-requestor profile needs — the assertion
+`wsfed.ts` existed, the pieces a passive-requestor profile needs — the assertion
 builder, the signer, the login screen — were all present and the profile that joins
 them was not, which made this an assertion *issuer* rather than an identity provider
 with a browser-facing SSO profile. It now has one; see *WS-Federation* below. What
@@ -175,6 +175,22 @@ has changed: it is a statement about *that document*, which describes a
 `/saml2/metadata/{sp}` there is one per service provider.
 
 ## Running it
+
+**It runs from an image, not from a checkout (since 2026-09-16).** Part of the
+service is written in TypeScript and is compiled only while the image is built;
+`node server.js` on a checkout stops and says so. Build the image and run it:
+
+```bash
+git submodule update --init --recursive
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts            # 8081; add -e VAR=value for any setting
+```
+
+Every environment variable this page mentions for `node server.js` is passed the
+same way, with `-e`.
+
+What follows is how the image's own process starts, and it is what the
+`Dockerfile` does; on a checkout the last line refuses (see above).
 
 ```bash
 # Once per checkout: the LDAP directory is built on node-ldapjs, which is a
@@ -310,7 +326,7 @@ makes the balancer the only way in. A trusted address that sends no header is
 closed too (`STS-PROXY-0002`). The one exception is **this host**: loopback, or a
 peer on the node's own address, is served plain, because the console's and the
 portal's OpenID Connect back channel and the Shared Signals push dial the main
-port on loopback without a header. `common/proxy_protocol.js` argues each of
+port on loopback without a header. `common/proxy_protocol.ts` argues each of
 these; the refusals are `STS-PROXY-0001`–`0009` in `docs/error-codes.md`.
 
 ### Configuration
@@ -1109,7 +1125,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. It was a hardcoded 60 in wsfed.js until 2026-08-27. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
+| `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. It was a hardcoded 60 in wsfed.ts until 2026-08-27. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
 | `wsfed.entityId` | `STS_WSFED_ENTITY_ID`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The entityID in the federation metadata at /FederationMetadata/2007-06/FederationMetadata.xml. Split from the SAML issuer because the two are different things that happened to share a value: this names the IdP, that names whoever signed an assertion. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock relying party at /wsfed/rp remembers a wctx it minted. |
 
@@ -1155,7 +1171,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm dc+sd-jwt and jwt_vc_json credentials are signed with, and the one the DID Configuration's Domain Linkage Credential and /did/generate's did:web credential use. The metadata's credential_signing_alg_values_supported names it, /oauth2/jwks and /.well-known/did.json publish the key, and the mock Verifier checks against it. ldp_vc is bbs-2023 and is not affected. A credential already issued keeps the algorithm it was signed with. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a wallet's openid4vci-proof+jwt `iat` may be from now, either way. The c_nonce is what makes a proof single use; this is what stops one minted long ago being used at all. |
 | `oid4vci.cNonceTtlS` | `OID4VCI_C_NONCE_TTL_S` | `300` | yes | How long a c_nonce from the Nonce Endpoint may be quoted in a proof; `c_nonce_expires_in` says the same number. |
-| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Mock Credential Issuer` | yes | The `display.name` of the credential issuer metadata — what a wallet shows as who is offering the credential. The credential configurations' own display names and colours are part of the catalogue in oid4vc/vc_issuer.js and are not settings. |
+| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Mock Credential Issuer` | yes | The `display.name` of the credential issuer metadata — what a wallet shows as who is offering the credential. The credential configurations' own display names and colours are part of the catalogue in oid4vc/vc_issuer.ts and are not settings. |
 | `oid4vci.domainLinkageLifetimeS` | `OID4VCI_DOMAIN_LINKAGE_LIFETIME_S` | `31536000` | yes | How long the Domain Linkage Credential at /.well-known/did-configuration.json says it is valid. It is signed per request, so this is the window a cached copy may be believed for. |
 | `oid4vci.generatedDidCredentialLifetimeS` | `OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S` | `3600` | yes | How long the SD-JWT VC that /did/generate signs with the DID it hands back is valid. |
 
@@ -1339,7 +1355,7 @@ on **`/admin/backup-codes`**, under Protocols.
 Everything else here implements somebody's document and can be checked against
 it; there is no RFC for a recovery code. What every identity provider does
 converges anyway — a handful of random strings, each accepted once — so the
-decisions that are left are this service's own, and `common/backup_codes.js`
+decisions that are left are this service's own, and `common/backup_codes.ts`
 argues each of them.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
@@ -1354,7 +1370,7 @@ Five things about this mechanism do not fit in a cell.
 * **A SET IS ISSUED BY AN ACT AND NOT BY A REQUEST.** There is no control
   anywhere — on `/portal`, on `/admin`, on `/admin-api` — that issues one. The
   two call sites are a confirmed authenticator enrolment and a security key
-  enrolled in the `mfa` role, both in `common/credentials.js`. A recovery
+  enrolled in the `mfa` role, both in `common/credentials.ts`. A recovery
   mechanism a person has to remember to ask for produces exactly the population
   it exists to protect, one person at a time: the ones who did not ask are the
   ones who will need it.
@@ -1400,7 +1416,7 @@ ceremony does is decided by the specification and by the browser*. That is true
 of the CRYPTOGRAPHY and false of the CEREMONY. What a browser does with
 `navigator.credentials.create()` is decided almost entirely by the options the
 relying party hands it, and every one of those was a literal inside a string in
-`authn/authn.js` — so a client author trying to find out what their client does
+`authn/authn.ts` — so a client author trying to find out what their client does
 with `attestation: "none"`, or with a discoverable credential, had no way to ask
 this service for one.
 
@@ -1508,7 +1524,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | Unspent, unexpired join tokens a realm holds. At the bound a NEW token is refused with RESOURCE_EXHAUSTED; a token already handed to an agent is never evicted. |
 | `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every SPIRE Server API `List*` method. |
 | `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes (per process — a realm may not carry it) | How many mTLS connections are remembered so an X509-SVID is one authentication per connection rather than per call. |
-| `spiffe.bundlePath` | `STS_SPIFFE_BUNDLE_PATH` | `/spiffe/bundle` | **restart** — the route is registered at require time, and the require order is the route order | Where the trust bundle is published. A real federation partner is configured with this URL and polls it. |
+| `spiffe.bundlePath` | `STS_SPIFFE_BUNDLE_PATH` | `/spiffe/bundle` | **restart** — the route is registered once, at startup, by `common/protocol_stack.ts`, in the route order | Where the trust bundle is published. A real federation partner is configured with this URL and polls it. |
 | `spiffe.workloadSocketEnabled` | `STS_SPIFFE_WORKLOAD_SOCKET_ENABLED` | `true` | **restart** — the listener is bound when the process starts | Whether the Workload API is served on a Unix domain socket. ON by default because that is what SPIFFE_ENDPOINT_SOCKET means to every real client — go-spiffe, spiffe-helper, the SPIRE agent — so without it nothing connects unconfigured. |
 | `spiffe.workloadSocket` | `STS_SPIFFE_WORKLOAD_SOCKET` | `/tmp/spire-agent/public/api.sock` | **restart** — the listener is bound when the process starts | Where that socket lives. SPIRE's own default path, so a client that was pointed at a SPIRE agent needs no change. |
 | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` | `8092` | **restart** — the listener is bound when the process starts | The Workload API over TCP, which the Workload Endpoint specification permits (tcp://host:port) and which is how this is reached from another container or from a host that cannot share the socket. 0 turns it off and leaves the Unix socket alone. |
@@ -1552,7 +1568,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 
 ## How it is put together
 
-A mock Security Token Service used by the test suite, **split across forty-nine files at its root** (it was one 4,489-line `server.js` until 2026-08-03; eight protocol families in one file meant no way to see what was in it short of reading it). `server.js` is now the shell — it requires `app.js` (the express app and every middleware, which must load before any route) and `helpers.js` (the log, the keys, and the helpers more than one protocol needs), then the modules that register routes, and listens: `authn.js`, `wstrust.js`, `oauth2.js`, `wsfed.js`, `vc_offers.js`, `vc_did.js`, `vc_issuer.js`, `vc_verifier.js`, `krb5_kdc.js`, `krb5_service.js`, `spnego.js`, `admin.js`, `admin_api.js`, `ldap_server.js`, `tls_server.js`, `sts_metadata.js`. The rest are reached through those rather than named there — `saml2.js`, `saml11.js`, `vc_configs.js`, `vc_claims.js`, `vc_verifier_config.js`, `claim_attributes.js`, `group_claims.js`, `dpop.js`, `admin_stats.js`, `audit.js`, `bbs2023.js`, `webauthn.js`, `admin_api_spec.js`, `admin_api_docs.js` and the nine `krb5_*.js` files under the KDC and the negotiation — which is not a hierarchy so much as the consequence of the rule below. One file among them is **not a module at all**: `admin_api_explorer.js` is browser code, read off disk by `admin_api_docs.js` and served verbatim at `/admin/api-explorer/explorer.js`, and nothing in node ever requires it.
+A mock Security Token Service used by the test suite, **split across forty-nine files at its root** (it was one 4,489-line `server.js` until 2026-08-03; eight protocol families in one file meant no way to see what was in it short of reading it). `server.js` is now the shell — it requires `app.js` (the express app and every middleware, which must load before any route) and `helpers.js` (the log, the keys, and the helpers more than one protocol needs), then the modules that register routes, and listens: `authn.js`, `wstrust.ts`, `oauth2.js`, `wsfed.ts`, `vc_offers.js`, `vc_did.js`, `vc_issuer.js`, `vc_verifier.js`, `krb5_kdc.js`, `krb5_service.js`, `spnego.js`, `admin.js`, `admin_api.js`, `ldap_server.js`, `tls_server.js`, `sts_metadata.js`. The rest are reached through those rather than named there — `saml2.ts`, `saml11.ts`, `vc_configs.js`, `vc_claims.js`, `vc_verifier_config.js`, `claim_attributes.js`, `group_claims.js`, `dpop.js`, `admin_stats.js`, `audit.js`, `bbs2023.js`, `webauthn.js`, `admin_api_spec.js`, `admin_api_docs.js` and the nine `krb5_*.js` files under the KDC and the negotiation — which is not a hierarchy so much as the consequence of the rule below. One file among them is **not a module at all**: `admin_api_explorer.js` is browser code, read off disk by `admin_api_docs.js` and served verbatim at `/admin/api-explorer/explorer.js`, and nothing in node ever requires it.
 
 The Kerberos files are a stack rather than a feature list, bottom up: `krb5_primitives.js`
 (what no runtime gives you — CTS, RC4, MD4, MD5), `krb5_crypto.js` (the RFC 3961
@@ -1564,12 +1580,17 @@ identities), `krb5_gss.js` (the RFC 4121 framing a real service is handed),
 `krb5_kdc.js` (the KDC) and `krb5_service.js` (the acceptor). Only the last two
 register anything.
 
-Three things about that split are load-bearing. **Requiring a module registers its
-endpoints** — each does `app.get(...)` at its top level against the shared app from
+Three things about that split are load-bearing. **Requiring a module registered its
+endpoints** — each did `app.get(...)` at its top level against the shared app from
 `app.js`, rather than exporting a `register()` function, which is what let 4,400
 lines of handlers move without being re-indented; so the require order in
-`server.js` is the route order, and the middleware has to live in `app.js` because
-express applies it only to routes added after it. **`vc_configs.js` and
+`server.js` was the route order, and the middleware has to live in `app.js` because
+express applies it only to routes added after it. **Since 2026-09-16 (#50) a module
+converted to TypeScript exports `registerRoutes(app)` instead and registers nothing
+when required**; `common/protocol_stack.ts` — where the sequence has lived since
+2026-09-07 — calls each one at the place its routes always had, and the modules
+still in JavaScript still register when required, so the route order did not
+move. **`vc_configs.js` and
 `vc_offers.js` exist to break cycles, not to group code**: the credential
 configurations are read by both the issuer and the authorization server, and the
 Credential Offer's pre-authorized codes are *minted* by the offer pages and
@@ -1581,8 +1602,8 @@ the symptom arrives later as something that is not a function. **Five helpers
 for the same reason** and not because they are especially general.
 
 `dpop.js` is the exception to the rule above: it registers nothing. It is a library
-— there is no `app.get` in it — so its position in `server.js`'s require order does
-not matter, and it requires `helpers.js` and nothing else, so it cannot be part of a
+— there is no `app.get` in it — so its position in the require order (in
+`common/protocol_stack.ts` since 2026-09-07) does not matter, and it requires `helpers.js` and nothing else, so it cannot be part of a
 cycle. **`admin_stats.js` is a library in exactly that sense and for exactly that
 reason**, and it needs the property more than `dpop.js` does: it is called from
 `app.js`'s call log, from `helpers.js`'s `signJwt()`, from both assertion builders,
@@ -4020,7 +4041,7 @@ view — the same lists for a person *named*, filtered and paged, behind the
 console's two roles, and with the two NON-SPEC undos this page has not (restoring
 a revoked token, clearing a Kerberos sign-out instant). `GET|POST
 /admin-api/logout` is the same again for a test, with four operations. All three
-call one pair of functions in `logout/logout.js`, which is what stops them coming
+call one pair of functions in `logout/logout.ts`, which is what stops them coming
 to disagree about what a live session is.
 
 ### OpenID Connect Front-Channel Logout 1.0
@@ -4676,7 +4697,7 @@ types. A federation relationship is created through the gated console or through
 than make this process issue a GET.
 
 The mechanism that keeps that honest is the API rather than the intention.
-`federation_http.js` **will not take a URL**: it takes a relationship and the
+`federation_http.ts` **will not take a URL**: it takes a relationship and the
 *name* of the attribute holding one, and refuses any name outside its list of
 three. A caller with a URL from anywhere else cannot use it. Beside that: `https`
 only unless `federation.outboundAllowInsecure` says otherwise (warned on every
@@ -4750,7 +4771,7 @@ bugs rather than fidelity bugs, and a happy path proves close to nothing.
 
 ### WS-Federation — the profile that joins the pieces
 
-`wsfed.js` is the Web (Passive) Requestor Profile of WS-Federation 1.2 section 13,
+`wsfed.ts` is the Web (Passive) Requestor Profile of WS-Federation 1.2 section 13,
 and it is the browser-facing SSO profile this service went without for a long time.
 Everything it needs already existed — an assertion builder, a signer, a login screen,
 a session — and what was missing was the thing that hands an assertion to a relying
@@ -4787,7 +4808,7 @@ them as before. When `wsfed.entityId` and `saml.issuer` differ — the metadata
 names one and every assertion names the other — `/wsfed` says so and the process
 logs it at startup.
 
-**SAML 1.1 is the default token, not SAML 2.0**, which is why `saml11.js` exists.
+**SAML 1.1 is the default token, not SAML 2.0**, which is why `saml11.ts` exists.
 WS-Federation is token-type agnostic and this service has issued SAML 2.0 for years,
 so 2.0 looks like the obvious default — but AD FS issues **1.1** to a WS-Federation
 relying party unless told otherwise, and the RP libraries written against it (WIF,
@@ -4823,7 +4844,7 @@ every SAML 1.1 assertion this service issued carried an `Id="_0"` attribute the
 schema does not have, verified anyway, and had to be fixed at six signers
 independently.
 
-**The session is the one `oauth2.js` owns.** `wsfed.js` is required after it in
+**The session is the one `oauth2.js` owns.** `wsfed.ts` is required after it in
 `server.js`, so the dependency is one-way and no cycle exists, and `startSession` /
 `endSession` are functions rather than four repeated lines precisely so the cookie's
 name, path and `SameSite` cannot drift apart between the two protocols — two sessions
@@ -5622,7 +5643,7 @@ Values may contain `${username}`-style placeholders, because a claim that can on
 
 **Three rules decide what a claim's value actually is, and they are stated on the page because two of them only show up in the collision.** The protocol's own claim wins: an ID Token always carries `name`, `given_name`, `family_name`, `preferred_username` and `email` built from the sign-in, so ticking `cn`, `givenName`, `sn`, `uid` or `mail` *on that set* changes nothing the client sees — while the same five reach an access token from the directory, because the protocol sets none of them there. Then a typed claim beats a directory attribute of the same name, since somebody who wrote `email` by hand said something more specific than somebody who ticked `mail`. Then the attribute, read from the entry, or invented from the username where the entry has nothing — deterministically, so one username is one invented person across restarts. A nested claim stays nested in a JWT (`address.locality` is a member of an `address` object, per OIDC Core 5.1.1) and becomes the attribute's literal name in an assertion, where the content model cannot nest; both families then call one claim by one name.
 
-**Adding the checkboxes surfaced a bug that had been reachable all along, in both assertion builders.** `saml2.js` and `saml11.js` appended the configured attributes to their own without deduplicating, so a configured claim called `name` produced *two* `<saml:Attribute Name="name">` elements and the relying party read whichever the builder happened to emit first. Typing that name was always possible; ticking `cn` made it a checkbox away. Both now filter the configured attributes against what is already there — by name for SAML 2.0, and by **namespace and name together** for SAML 1.1, since that profile splits a claim URI into the two and a filter on the local name alone would drop an attribute that collided with nothing. It is the same rule the JWT builders have always followed, written as a filter because an assertion is a list of elements and not an object: there, a duplicate name is not an overwrite.
+**Adding the checkboxes surfaced a bug that had been reachable all along, in both assertion builders.** `saml2.ts` and `saml11.ts` appended the configured attributes to their own without deduplicating, so a configured claim called `name` produced *two* `<saml:Attribute Name="name">` elements and the relying party read whichever the builder happened to emit first. Typing that name was always possible; ticking `cn` made it a checkbox away. Both now filter the configured attributes against what is already there — by name for SAML 2.0, and by **namespace and name together** for SAML 1.1, since that profile splits a claim URI into the two and a filter on the local name alone would drop an attribute that collided with nothing. It is the same rule the JWT builders have always followed, written as a filter because an assertion is a list of elements and not an object: there, a duplicate name is not an overwrite.
 
 **Every change to a claim set writes a row in the audit log**, both halves of it and refusals included, naming which set, what was added and what was removed — and never a value, because a claim value on this service is whatever somebody typed into a web form. That row is *in addition* to the `admin.change` or `api.change` row the call log writes for the same POST, which is the arrangement the audit log's own section explains: one act, several facts, at different layers. It is recorded from `setClaimSet()` and from the selection's own installer rather than at the seven action branches, because those two are the funnels every branch already passes through — the same reason `recordAuthentication()` is one line and not fourteen.
 
@@ -6181,8 +6202,10 @@ never sent.
 
 **It changes the require order, and `server.js` says so out loud.** `ldap_server.js` now
 requires `tls_server.js` — for the certificate, nothing else — so node loads that module
-first whatever `server.js` says. Since **the require order in `server.js` is the route
-order**, the line there was moved to match: `./tls_server` before `./ldap_server`. It
+first whatever `server.js` says. Since **the require order in `server.js` was the route
+order** — and for these two modules, both still JavaScript, it still is, in
+`common/protocol_stack.ts` where the sequence now lives — the line there was moved
+to match: `./tls_server` before `./ldap_server`. It
 changes no output, because `/admin/sts-metadata` sorts its rows by path within a group; it keeps
 that file honest for the next reader.
 
@@ -7842,7 +7865,7 @@ draws both columns for that reason.
 ### The encoder is the debugger's own, vendored byte-identical
 
 `common/vendored/x509.js` — the same module behind that project's *PKI / X.509*
-workflow page, and what `spiffe/spiffe_ca.js` already issues X509-SVIDs with. So
+workflow page, and what `spiffe/spiffe_ca.ts` already issues X509-SVIDs with. So
 a certificate issued here and one issued there are built by **one** encoder, and
 a difference between them is a difference in the arguments rather than in two
 implementations that drifted. The three tiers are its own `root-ca`,
@@ -7925,50 +7948,45 @@ service has ever issued.
 ## Running the tests
 
 ```bash
-npm test                          # the in-process suite: one process, under
-                                  # two seconds, no port and no container
-./docker-run-tests.sh             # ALL 23 jobs, ENTIRELY IN CONTAINERS: the
+./docker-npm-test.sh              # the in-process suite, in the tests image
+./docker-npm-test.sh --only=crypto  # ...only the files whose name matches
+./docker-npm-test.sh --list       # ...name them and run none
+./docker-run-tests.sh             # EVERY job, ENTIRELY IN CONTAINERS: the
                                   # service AND the runner, on a host that has
                                   # docker and nothing else. What CI runs
-./local-run-tests.sh              # ALL 23 jobs, with a report written: that
-                                  # suite AND the protocol jobs, the latter
-                                  # against a CONTAINER built from this tree
-./local-run-tests.sh --only=crypto --open
-./local-run-tests.sh --no-protocol  # the in-process suite alone, 3 seconds
-./local-run-tests.sh --no-docker    # the protocol jobs against a service run
-                                    # on this machine instead of a container
-./local-run-tests.sh --keep-stack   # leave the container up afterwards, to
-                                    # read /admin or re-run one job by hand
-./local-run-tests.sh --modes=cluster  # a fourth mode, only when named: two
+./docker-run-tests.sh --modes=memory  # one mode rather than all three
+./docker-run-tests.sh --modes=cluster # a fourth mode, only when named: two
                                       # service containers active-active on one
                                       # postgres behind an HAProxy, every job's
                                       # requests alternating between them
-./run-coverage.sh                 # the same run, with coverage collected —
-                                  # in containers too, with the RUNNER in the
+./docker-run-tests.sh --only=crypto --no-browser
+                                  # anything else goes to the runner
+./run-coverage.sh                 # coverage, collected by a run of its own —
+                                  # in a container, with the RUNNER in the
                                   # container rather than the service
-./run-coverage.sh --no-docker     # ...and the same collection on this machine
 ```
 
-**THE TWO LAUNCHERS RUN THE SAME TWENTY-THREE JOBS AND DIFFER ONLY IN WHERE THE
-TESTS THEMSELVES RUN**, which is the whole reason both exist.
-`./local-run-tests.sh` is the development loop: the service is a container, the
-jobs are plain node processes on your machine driving your Chrome, so editing a
-test and re-running it costs nothing. `./docker-run-tests.sh` puts the runner in
-a container too — node, the browser and this working tree, built from
-`tests/Dockerfile` — brings both up from `docker-compose-run-tests.yml` on a
-private network, and exits with the suite's status. It needs **docker and
-nothing else**: no node, no `npm install`, no Chrome, no checkout of the parent
-project. That makes it what `.github/workflows/tests.yml` runs on every push,
-and what to reach for when a run passes on one machine and not on another —
-a difference between the two launchers is a difference in the environment and
-in nothing else.
+**SINCE #50 NOTHING HERE RUNS ON A CHECKOUT.** Part of the service is
+TypeScript, compiled only inside an image build, so `npm test` and
+`node server.js` refuse on a checkout (`common/compiled_tree.js`,
+`STS-CORE-0093`) and the in-process suite runs through `./docker-npm-test.sh`.
+**`./local-run-tests.sh` — the host-run development loop, the jobs as node
+processes against a service container — was removed on 2026-09-16 for the
+same reason**, so `./docker-run-tests.sh` is the whole suite.
 
-**CI RUNS BOTH LAUNCHERS, IN TWO JOBS THAT DO NOT DEPEND ON EACH OTHER** —
+`./docker-run-tests.sh` puts the runner in a container — node, the browser and
+this working tree, built from `tests/Dockerfile` — brings it and the service up
+from `docker-compose-run-tests.yml` on a private network, and exits with the
+suite's status. It needs **docker and nothing else**: no node, no
+`npm install`, no Chrome, no checkout of the parent project. That makes it what
+`.github/workflows/tests.yml` runs on every push.
+
+**CI RUNS THE SUITE AND COVERAGE IN TWO JOBS THAT DO NOT DEPEND ON EACH OTHER** —
 `tests` wraps `./docker-run-tests.sh` and `coverage` wraps `./run-coverage.sh`,
 and three artifacts come out of a run: `test-report` (the plain suite's
 `tests/report/latest`), `coverage-report` (the rendered `coverage/`) and
 `coverage-test-report` (the instrumented run's own report). They are two jobs
-rather than two steps because both launchers move the `tests/report/latest`
+rather than two steps because both scripts move the `tests/report/latest`
 symlink, so in one workspace the second run would quietly relabel the first
 run's artifact; two jobs are two workspaces. It also means the coverage pass
 still runs when the suite goes red, which is when its report is worth most, and
@@ -7978,20 +7996,18 @@ nodes behind a load balancer, which no bare run includes — on a runner of its
 own and uploads `cluster-test-report`. All four uploads are `if: always()`.
 
 Neither can disturb a mock you are already running. Each is its own compose
-project with its own container names, `./local-run-tests.sh` publishes a free
-port found at start and `./docker-run-tests.sh` publishes none at all, so
-`docker compose up`'s `sts` on 8081 is untouched by both — including by their
-teardowns.
+project with its own container names, and `./docker-run-tests.sh` publishes no
+port at all, so `docker compose up`'s `sts` on 8081 is untouched by both —
+including by their teardowns.
 
-`npm test` is what `tests/` is for and is unchanged by everything below it: it
-needs `npm install` to have been run and nothing else — no port, no container,
-no browser, no network — and it asserts this repository's own module contracts,
-which no caller over HTTP could check. `tests/CLAUDE.md` argues where the line
-is.
+The in-process suite (`npm test`, run by `./docker-npm-test.sh`) is what
+`tests/` is for: no port, no stack, no browser, no network — and it asserts
+this repository's own module contracts, which no caller over HTTP could check.
+`tests/CLAUDE.md` argues where the line is.
 
-**`./local-run-tests.sh` adds a report** — `tests/report/<timestamp>/` with
-`report.html`, JUnit `report.xml`, `summary.json` and one log per job, and
-`tests/report/latest` pointing at the newest. It runs each test file in a
+**`./docker-run-tests.sh` writes a report** — `tests/report/<mode>/<timestamp>/`
+with `report.html`, JUnit `report.xml`, `summary.json` and one log per job, and
+`tests/report/<mode>/latest` pointing at the newest. It runs each test file in a
 process of its own, so a file that hangs is a job that times out rather than a
 suite that never finishes, and a file that takes its process down is one red job
 rather than a run with no report at all. The per-assertion detail in the report
@@ -8006,7 +8022,7 @@ pin. FOURTEEN jobs live in `tests/vendored/` — nine of them byte-identical
 copies of the parent's, and FIVE this repository's own: the four that drive
 `/admin` and `/admin-api`, ours since 2026-08-28, and the delegated permission
 example added 2026-09-01, which was never over there at all. Every
-`./local-run-tests.sh` runs the lot: the metadata drift checks, the management
+`./docker-run-tests.sh` runs the lot: the metadata drift checks, the management
 API and every one of its operations, the whole admin console in a real browser,
 the five-application delegated permission example, DPoP, the authorization
 server's endpoints, the DID-named issuer, SAML 1.1, SAML encryption, the
@@ -8015,19 +8031,14 @@ it the browser job. `--no-protocol` is the way back to the in-process suite
 alone, and it says in the report that nothing was checked about any protocol
 surface.
 
-**What they drive is a CONTAINER, built from this working tree by this
-repository's own `docker-compose.yml`.** The launcher builds the image, brings
-up one container — its own compose project, its own container name, a free host
-port, `persistence.mode=memory`, no database — hands the runner its URL, and
-LEAVES IT RUNNING when the suite finishes, printing how to reach it and how to
-stop it (`--tear-down` is the way back); the tests themselves are ordinary node
-scripts on this machine. What that buys is that the thing under test is the IMAGE: the same
-`npm install --omit=dev` against the committed lock, the same node, the same
-`COPY . ./` with `.dockerignore` deciding what is in it — so a module missing
-from the build context or a submodule that was never initialised fails HERE
-rather than in somebody's deployment. `--no-docker` runs the service on this
-machine instead (nine ports of its own, both SPIFFE Unix sockets off, stopped
-by the pid it started), which is what a machine with no docker falls back to.
+**What they drive is a CONTAINER, built from this working tree.** The launcher
+builds the image and brings it up from `docker-compose-run-tests.yml` — its
+own compose project, its own container names, no published port — once per
+mode, and tears it down after each. What that buys is that the thing under
+test is the IMAGE: the same `npm install --omit=dev` against the committed
+lock, the same node, the same `COPY . ./` with `.dockerignore` deciding what is
+in it — so a module missing from the build context or a submodule that was
+never initialised fails HERE rather than in somebody's deployment.
 
 **A coverage run is the one that cannot drive that container**, and the reason
 is worth keeping straight from a claim about containers in general: V8 writes
@@ -8037,15 +8048,17 @@ RUNNER into a container instead — `docker compose run --rm --no-deps` on
 `docker-compose-run-tests.yml`'s `tests` service, which never starts the `sts`
 service — and lets it start the service it measures as a child process in
 there, with `./coverage` and `./tests/report` bind-mounted out. So a coverage
-run needs docker and nothing else too; `./run-coverage.sh --no-docker` is the
-host run, and a machine without docker falls back to it loudly.
+run needs docker and nothing else too. `./run-coverage.sh --no-docker` is the
+host run, and a machine without docker falls back to it loudly — but since #50
+a host run meets the same refusal as `npm test` on a checkout.
 
 A vendored job can be AHEAD of this tree — those jobs are developed against the
 parent's own checkout of this service — and it then fails here naming a feature
 this tree has not got. That is a fact about when the copy was taken rather than
-a fault in the runner; `./local-run-tests.sh --vendor-check` reports the drift
-when both checkouts are present, and `--vendor-sync` is the only sanctioned way
-those copies change.
+a fault in the runner; `node tests/tools/vendor-check.js` reports the drift
+when both checkouts are present (the parent project beside this one, or
+`--parent=<dir>`), and `node tests/tools/vendor-check.js --sync` is the only
+sanctioned way those copies change.
 
 **`./run-coverage.sh` collects coverage with nothing installed.** It uses node's
 own `NODE_V8_COVERAGE` and renders the result with `tests/tools/coverage-report.js`

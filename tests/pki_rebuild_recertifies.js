@@ -13,7 +13,7 @@
 // certificates of two authorities. Two holes made it and this file holds each
 // shut:
 //
-//   A. **THE BUILD ACTION DID NOT RE-MINT.** `pki_admin.js`'s `build` — the
+//   A. **THE BUILD ACTION DID NOT RE-MINT.** `pki_admin.ts`'s `build` — the
 //      action `/admin-api/pki/build` reaches — rebuilt the branch and left the
 //      row's recorded certificates where they were, which `build-scope` and a
 //      Root replacement never did. It was hidden by WHEN a runtime realm's

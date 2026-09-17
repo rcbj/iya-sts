@@ -107,7 +107,7 @@ const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
 // THE AUTHORITIES WHOSE clientAuth LEAVES ARE IDENTITIES, AND ONLY THESE.
 //
 // `tls-client` is this module's own. `acme`, `est` and `scep` are the three
-// enrollment protocols' (`common/cert_enrollment.js`, the same day), whose
+// enrollment protocols' (`common/cert_enrollment.ts`, the same day), whose
 // leaves are issued to a directory entry and name it in a `urn:sts:person:` or
 // `urn:sts:application:` subjectAltName — a certificate somebody enrolled for a
 // TLS client is exactly as much an identity as one issued on the portal. What

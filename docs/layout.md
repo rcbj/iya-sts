@@ -49,11 +49,14 @@ Those are the maintainer-facing documents; this site is the user-facing one.
 
 ## Four things about the layout that are load-bearing
 
-**The require order in `server.js` is the route order.** Every module calls
-`app.get(...)` at its top level rather than exporting a `register()`, so express
-applies middleware only to routes added after it and the order of the requires in
-`server.js` decides everything. There is a table of the ordering constraints in
-the root `CLAUDE.md`; each one is a real dependency rather than a preference.
+**The order in `common/protocol_stack.ts` is the route order.** A module written
+in TypeScript exports `registerRoutes(app)` and registers nothing when it is
+required; that file — the composition root, loaded by `server.js` — calls each
+one in turn, and requires the modules still written in JavaScript, which register
+their routes at that require. Express applies middleware only to routes added
+after it, so that one sequence decides which handler wins. There is a table of
+the ordering constraints in the root `CLAUDE.md`; each one is a real dependency
+rather than a preference.
 
 **`common/vendored/` is not to be edited.** Those files are byte-identical copies
 of files in the [OAuth2/OIDC Debugger](https://idptools.com), and two of that

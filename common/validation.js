@@ -15,7 +15,7 @@
 // **`String()` AT THE READ SITE IS A CONVENTION AND NOT A CONTROL**, and the
 // difference is the whole reason this file exists. It is applied by whoever
 // wrote the line, it cannot be checked, and where it is missing nothing says
-// so. When this file was written, `oauth-oidc/oauth2.js`'s authorization
+// so. When this file was written, `oauth-oidc/oauth2.ts`'s authorization
 // endpoint had it on `redirect_uri` and passed `q.client_id` to
 // `clientConfigOf()` without it four lines later. Neither was a bug. The point
 // is that nobody could tell without reading both.

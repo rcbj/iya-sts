@@ -7,7 +7,7 @@
 //
 // ACME, EST and SCEP each have an over-HTTP job of their own, driven by an
 // independent client. What is here is what those three cannot see, because
-// every one of them reaches `common/cert_enrollment.js` through a protocol that
+// every one of them reaches `common/cert_enrollment.ts` through a protocol that
 // has already made most of the interesting inputs impossible:
 //
 //   * THE PROFILE TABLE AS A TABLE — the nine issued, the five refused BY

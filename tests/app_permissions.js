@@ -6,10 +6,10 @@
 // A CONFIGURED PERMISSION IS NOT AN ACT, AND THE PICTURE OF ONE MUST NOT LOOK
 // LIKE THE PICTURE OF THE OTHER.
 //
-// `common/app_permissions.js` builds a graph in `common/delegation.js`'s shape
+// `common/app_permissions.ts` builds a graph in `common/delegation.js`'s shape
 // and hands it to the SAME renderer the acts picture uses. That is what makes
 // `/admin/delegation/allowed` cost one new relation instead of a second
-// `delegation_map.js` — and it is also the whole risk of the arrangement: a
+// `delegation_map.ts` — and it is also the whole risk of the arrangement: a
 // graph in the acts' shape, drawn by the acts' renderer, can very easily come
 // out looking like the acts. Every assertion below is about the difference.
 //
@@ -60,7 +60,7 @@ const log = require('bunyan').createLogger({ name: 'app_permissions',
   level: process.env.LOG_LEVEL || 'info' });
 
 // The two colours the ACTS picture uses to say impersonation and delegation,
-// quoted here from `delegation_map.js`'s palette. A configured line must never
+// quoted here from `delegation_map.ts`'s palette. A configured line must never
 // take either: they are a judgement about a MECHANISM, and a permission nobody
 // has exercised has performed no mechanism at all. Written out rather than
 // imported because that module does not export them — and because a test that

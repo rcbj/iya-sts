@@ -720,7 +720,7 @@ const SETTINGS = [
   // Added 2026-09-14 (#46). Behind an L4 load balancer with TLS passthrough —
   // an AWS Network Load Balancer is the case — the peer of every connection is
   // the balancer, and no forwarded header can exist below TLS.
-  // `common/proxy_protocol.js` argues the three kinds of peer and where the
+  // `common/proxy_protocol.ts` argues the three kinds of peer and where the
   // address is put.
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
@@ -803,7 +803,7 @@ const SETTINGS = [
     path: 'admin.bootstrapUsername', env: 'STS_ADMIN_BOOTSTRAP_USERNAME',
     type: 'string', dflt: 'admin', runtime: false,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     restartReason: 'the bootstrap runs once, between the persistence store ' +
                    'opening and the listener binding, so a change after that ' +
@@ -1156,7 +1156,7 @@ const SETTINGS = [
   // -------------------------------------------------------------------------
   // WEB SECURITY. The controls that protect the browser-facing surfaces — the
   // sign-in screen, the consent screen, the admin console and the User Portal
-  // — against the OWASP Top Ten. See common/websecurity.js.
+  // — against the OWASP Top Ten. See common/websecurity.ts.
   // -------------------------------------------------------------------------
   { key: 'security.rateLimitWindowS', group: 'Web security',
     label: 'Rate-limit window (seconds)',
@@ -1231,7 +1231,7 @@ const SETTINGS = [
 
   // ---------------------------------------------------------------------
   // SESSIONS AND THE SIGN-IN CLOCKS (2026-09-12). Four literals in
-  // `authn/authn.js` and three in `common/oidc_rp.js` that an audit for what
+  // `authn/authn.ts` and three in `common/oidc_rp.ts` that an audit for what
   // was hard-coded found: an absolute session lifetime of an hour with no
   // idle timeout at all, the ten minutes a sign-in waits at the screen, the
   // five minutes a second-factor step waits, and the bounds on this service's
@@ -1363,7 +1363,7 @@ const SETTINGS = [
   // the same day into the PASSWORD POLICY — `pwdMinLength` on
   // `cn=default,ou=passwordPolicies` in each realm's directory, beside the
   // history and composition rules, edited on /admin/policies.
-  // `common/password_policy.js` argues why that is a directory entry rather
+  // `common/password_policy.ts` argues why that is a directory entry rather
   // than a group of rows: one rule in two places would be two answers to what a
   // password must be.
   //
@@ -1461,7 +1461,7 @@ const SETTINGS = [
   // them.
   //
   // They are `totp.` and not `authn.` because the group is what decides the
-  // console page (`SETTING_HOMES` in `admin-ui/admin.js`), and what they
+  // console page (`SETTING_HOMES` in `admin-ui/admin.ts`), and what they
   // configure is a MECHANISM rather than the sign-in screen that offers it.
   // `authn.unauthenticatedSessions` is in the `Roles` group for the mirror
   // image of the same reason.
@@ -1586,7 +1586,7 @@ const SETTINGS = [
   // A short list of single-use strings that stands in for whichever second
   // factor a person is configured for when they cannot produce it — the phone
   // is lost or flat, the security key is in a drawer at home. There is no RFC
-  // for it; `common/backup_codes.js` makes every decision that is left and
+  // for it; `common/backup_codes.ts` makes every decision that is left and
   // argues each one.
   //
   // **THERE ARE ONLY FIVE ROWS AND THREE OF THEM ARE THE SHAPE OF A CODE**,
@@ -1700,7 +1700,7 @@ const SETTINGS = [
   // CEREMONY. What a browser does with `navigator.credentials.create()` is
   // decided almost entirely by the `PublicKeyCredentialCreationOptions` the
   // relying party hands it, and every one of those was a literal in a string
-  // in `authn/authn.js` — the RP name, the algorithms offered, the user
+  // in `authn/authn.ts` — the RP name, the algorithms offered, the user
   // verification requirement, the attestation conveyance, the timeout. An
   // operator could not move any of them, and a client author trying to find
   // out what their client does with `attestation: "none"` or with a resident
@@ -3495,7 +3495,7 @@ const SETTINGS = [
 
   // -------------------------------------------------------------------------
   // SOFTWARE STATEMENTS (RFC 7591 section 2.3), 2026-09-13 — four rows, argued
-  // in `oauth-oidc/software_statement.js`. The issuer refusal is ON in both
+  // in `oauth-oidc/software_statement.ts`. The issuer refusal is ON in both
   // modes, as the RFC 7523 and RFC 7522 issuer refusals are, because a
   // statement trusted from anybody fixes a client's metadata for anybody.
   // -------------------------------------------------------------------------
@@ -4260,7 +4260,7 @@ const SETTINGS = [
   // 2026-09-13. Three groups, one per protocol, each homed on its own console
   // page, and every row realm-settable because each realm issues from Issuing
   // CAs of its own. What is common to the three — who may have a certificate
-  // for whom, what goes in it, where it is kept — is common/cert_enrollment.js
+  // for whom, what goes in it, where it is kept — is common/cert_enrollment.ts
   // and has no setting that would let one protocol answer it differently.
   // -------------------------------------------------------------------------
   { key: 'acme.enabled', group: 'ACME', label: 'Run the ACME server',
@@ -4476,7 +4476,7 @@ const SETTINGS = [
   // be before it stops believing its own tokens.
   //
   // Four rows, added 2026-08-24, replacing three module-level `const`s in
-  // `oauth-oidc/oauth2.js` (`ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` and the
+  // `oauth-oidc/oauth2.ts` (`ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` and the
   // ID Token's reuse of the first). Everything about the shape of them is the
   // runtime rule at the top of this file read literally: a lifetime captured
   // in a `const` at require time is the one thing /admin/config cannot change,
@@ -4615,7 +4615,7 @@ const SETTINGS = [
 
   // ---------------------------------------------------------------------
   // REFRESH-TOKEN ENCRYPTION (2026-09-12). Every refresh token is a signed JWT
-  // encrypted to its own realm (`oauth-oidc/refresh_token_crypto.js`). The two
+  // encrypted to its own realm (`oauth-oidc/refresh_token_crypto.ts`). The two
   // ALGORITHM rows are read on every issuance and may change at any time: a
   // token already issued was sealed under what was in force then, and the
   // realm holds a key of every kind, so a change never strands one. The two
@@ -4675,7 +4675,7 @@ const SETTINGS = [
 
   // RFC 9101, THE JWT-SECURED AUTHORIZATION REQUEST (2026-09-13). Eight rows
   // (with RFC 9396's `authorizationDetailsMaxEntries` among them), and
-  // `oauth-oidc/request_object.js` argues each. Every one is runtime and may be
+  // `oauth-oidc/request_object.ts` argues each. Every one is runtime and may be
   // carried by a realm: the six about a REQUEST are read per request, and the
   // two about the ENCRYPTION KEY are read when a realm's key set is made,
   // exactly as the refresh-token key's two above are.
@@ -4781,8 +4781,8 @@ const SETTINGS = [
                  'after it.' },
 
   // RFC 9126 — PUSHED AUTHORIZATION REQUESTS (2026-09-13). Six rows, all
-  // runtime and so all settable on a trust realm; `oauth-oidc/par.js` and the
-  // PAR endpoint in `oauth-oidc/oauth2.js` read each where it is used.
+  // runtime and so all settable on a trust realm; `oauth-oidc/par.ts` and the
+  // PAR endpoint in `oauth-oidc/oauth2.ts` read each where it is used.
   { key: 'oauth2.pushedAuthorizationRequests', group: 'OAuth 2.0 / OIDC',
     label: 'Pushed authorization requests (RFC 9126)',
     env: 'STS_OAUTH2_PUSHED_AUTHORIZATION_REQUESTS', type: 'bool', dflt: true,
@@ -4880,7 +4880,7 @@ const SETTINGS = [
   // so both settable on a trust realm: what THIS SERVICE'S OWN resource server
   // requires of the authentication behind an access token. A registered API's
   // requirement is on its application entry instead (`oauthStepUpAcrValues`,
-  // `oauthStepUpMaxAge`); `oauth-oidc/step_up.js` argues why there are two.
+  // `oauthStepUpMaxAge`); `oauth-oidc/step_up.ts` argues why there are two.
   { key: 'oauth2.stepUpAcrValues', group: 'OAuth 2.0 / OIDC',
     label: 'Step-up: acr values this service\'s resource server requires',
     env: 'STS_OAUTH2_STEP_UP_ACR_VALUES', type: 'string', dflt: '',
@@ -4971,7 +4971,7 @@ const SETTINGS = [
   { key: 'admin.readGroup', group: 'Admin console', label: 'Admin Read role',
     env: 'ADMIN_READ_GROUP', type: 'string', dflt: 'admin-read', runtime: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     description: 'The cn of the directory group whose members may READ the ' +
                  'console — every page, and every ?format=json view of one. ' +
@@ -4984,7 +4984,7 @@ const SETTINGS = [
   { key: 'admin.writeGroup', group: 'Admin console', label: 'Admin Write role',
     env: 'ADMIN_WRITE_GROUP', type: 'string', dflt: 'admin-write',
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     runtime: true,
     description: 'The cn of the directory group whose members may POST a ' +
@@ -5009,7 +5009,7 @@ const SETTINGS = [
     label: 'Require an access token on /admin-api',
     env: 'ADMIN_API_AUTH_REQUIRED', type: 'bool', dflt: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     runtime: true,
     description: 'Every call into /admin-api must present a Bearer access ' +
@@ -5025,7 +5025,7 @@ const SETTINGS = [
     label: 'The management API client\'s secret',
     env: 'ADMIN_API_CLIENT_SECRET', type: 'string', dflt: '',
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     secret: true,
     restartReason: 'the seeded registration is written once, at startup, so ' +
@@ -5053,14 +5053,14 @@ const SETTINGS = [
   // as the ONLY audience would refuse every token minted under another name
   // for the same process — `sts:8081` on the compose network, the random host
   // port the local launcher publishes — so while this row is still at its
-  // default (or set empty), mgmt-api/admin_api.js accepts this value AND
+  // default (or set empty), mgmt-api/admin_api.ts accepts this value AND
   // `/admin-api` under the request's own base. Set to anything else, it pins
   // exactly that one value, as it always did.
   { key: 'adminApi.audience', group: 'Management API',
     label: 'The audience an /admin-api token must carry',
     env: 'ADMIN_API_AUDIENCE', type: 'string', derived: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     dflt: function () {
       log.debug("Entering dflt().");
@@ -5084,7 +5084,7 @@ const SETTINGS = [
     label: 'Open until the bootstrap administrator signs in',
     env: 'ADMIN_OPEN_WHEN_EMPTY', type: 'bool', dflt: true, runtime: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     description: 'SINCE 2026-09-13, on a service that seeded its bootstrap ' +
                  'administrator (admin.bootstrapUsername): ON, every ' +
@@ -5358,7 +5358,7 @@ const SETTINGS = [
     description: 'Whether this service may make an HTTP request OUT, to a ' +
                  'partner\'s token endpoint, UserInfo endpoint or JWKS. This ' +
                  'was the first outbound request in this service and ' +
-                 'federation/federation_http.js argues it at length: a URL ' +
+                 'federation/federation_http.ts argues it at length: a URL ' +
                  'an ADMINISTRATOR configured on a relationship is a ' +
                  'different thing from a URL an unauthenticated caller ' +
                  'REGISTERED, which is why oauthJwksUri on an application ' +
@@ -5520,7 +5520,7 @@ const SETTINGS = [
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
   // NOT oauth2.clockSkewS: that one is a TOLERANCE applied when this service
-  // READS a token or an assertion back — federation/federation_sp.js applies
+  // READS a token or an assertion back — federation/federation_sp.ts applies
   // it to an inbound partner assertion and argues there that a deployment
   // decides its reading tolerance once — and this one is what this service
   // WRITES into a document it issues. One is about somebody else's clock and
@@ -6079,7 +6079,7 @@ const SETTINGS = [
   // separated it from every other setting that governs an assertion's validity.
   //
   // UNTIL 2026-08-27 THIS WAS A MODULE-LEVEL `const lifetimeMin = 60` in
-  // ws-federation/wsfed.js and could not be changed at all — which is why the
+  // ws-federation/wsfed.ts and could not be changed at all — which is why the
   // default is 60 rather than something better argued: it is what this service
   // has always issued, and a new default would have changed every existing
   // caller's tokens on an upgrade.
@@ -6512,7 +6512,7 @@ const SETTINGS = [
     description: 'The `display.name` of the credential issuer metadata — ' +
                  'what a wallet shows as who is offering the credential. The ' +
                  'credential configurations\' own display names and colours ' +
-                 'are part of the catalogue in oid4vc/vc_issuer.js and are ' +
+                 'are part of the catalogue in oid4vc/vc_issuer.ts and are ' +
                  'not settings.' },
 
   { key: 'oid4vci.domainLinkageLifetimeS', group: 'OID4VCI',
@@ -6535,7 +6535,7 @@ const SETTINGS = [
   // THE TWO DID FLAGS, which were the last two environment variables in this
   // service with no row here.
   //
-  // They were read in `oid4vc/vc_did.js` as
+  // They were read in `oid4vc/vc_did.ts` as
   // `didFlag('OID4VCI_SD_JWT_ISSUER_DID')` — a module-level const, compared
   // against the literal string 'true' — which is the shape every setting in
   // this table used to have. Two consequences, and the second is why they moved
@@ -7674,7 +7674,7 @@ const SETTINGS = [
                  'LATENCY and nothing else — every PEP still converges on ' +
                  'its next poll — which is what makes it safe to turn off ' +
                  'in a deployment with no egress. It was the third outbound ' +
-                 'request in this service and xacml/xacml_pep_http.js ' +
+                 'request in this service and xacml/xacml_pep_http.ts ' +
                  'argues it rather than citing the other two.' },
 
   { key: 'xacml.pepNotifyAllowedHosts', group: 'XACML',
@@ -7724,7 +7724,7 @@ const SETTINGS = [
   //
   // THE FIRST IS THAT THIS SERVICE DIALS OUT. Push delivery (RFC 8935) posts
   // each Security Event Token to a URL the RECEIVER chose, which is a weaker
-  // position than federation's outbound request and `ssf/ssf_http.js` says so
+  // position than federation's outbound request and `ssf/ssf_http.ts` says so
   // at length rather than citing it. `ssf.pushDelivery`, `ssf.pushAllowedHosts`
   // and `ssf.pushAllowInsecure` are the bounds. Poll delivery (RFC 8936) dials
   // nothing at all — the receiver comes here — so a deployment that wants none
@@ -7886,7 +7886,7 @@ const SETTINGS = [
                  'and a weaker case than federation\'s: RFC 8935 push IS ' +
                  'the receiver telling the transmitter where to post, so ' +
                  'the URL is caller-supplied by construction. ' +
-                 'ssf/ssf_http.js argues it rather than citing federation. ' +
+                 'ssf/ssf_http.ts argues it rather than citing federation. ' +
                  'Turning it off leaves the whole of SSF working over POLL ' +
                  'delivery, which dials nothing — and ' +
                  'delivery_methods_supported then advertises only poll, so ' +
@@ -8040,7 +8040,7 @@ const SETTINGS = [
   // THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS (2026-09-10).
   //
   // It is RESTART-ONLY and that is a fact about where the seeding runs rather
-  // than a decision: the two streams are created as `ssf/ssf.js` is required
+  // than a decision: the two streams are created as `ssf/ssf.ts` is required
   // and again as each realm is built, so turning this off at runtime would
   // leave the streams that already exist and turning it on would create none.
   // What it does answer at runtime is `accept()`, which refuses a push at
@@ -8052,7 +8052,7 @@ const SETTINGS = [
     label: 'Register the console and the portal as receivers',
     env: 'STS_SSF_INTERNAL_RECEIVERS', type: 'bool', dflt: true,
     runtime: false,
-    restartReason: 'the two streams are seeded as ssf/ssf.js is required and ' +
+    restartReason: 'the two streams are seeded as ssf/ssf.ts is required and ' +
                    'again as each realm is built, so turning this off in ' +
                    'place would leave the streams that already exist and ' +
                    'turning it on would create none',
@@ -9021,9 +9021,12 @@ const SETTINGS = [
     dflt: 'ec-p256', runtime: false, realmRuntime: true,
     restartReason: 'the X.509 authority is generated with this key type at ' +
                    'startup',
-    description: 'The key the trust domain\'s X.509 authority is generated ' +
-                 'with, and therefore the key type of every X509-SVID it ' +
-                 'signs. EC P-256 by default because that is what SPIRE ' +
+    description: 'The key type of every X509-SVID, and of the self-signed ' +
+                 'X.509 authority a realm with no certificate hierarchy ' +
+                 'falls back to. It no longer decides the authority\'s key ' +
+                 'where there is a hierarchy: that is the realm\'s SPIFFE ' +
+                 'Issuing CA, under the Root. EC P-256 by default because ' +
+                 'that is what SPIRE ' +
                  'issues and what the X509-SVID specification recommends. ' +
                  'RSA 4096 takes several seconds to generate at startup, ' +
                  'which is worth knowing before wondering why the bundle ' +
@@ -10299,7 +10302,7 @@ function processValue(key) {
 // ---------------------------------------------------------------------------
 // THE BASE URL OF THE MANAGEMENT API, AS THE PROCESS KNOWS IT WITHOUT A
 // REQUEST. `adminApi.audience`'s derived default, and what
-// mgmt-api/admin_api.js compares a token's `aud` against beside the
+// mgmt-api/admin_api.ts compares a token's `aud` against beside the
 // request-relative base.
 //
 // Read process-wide, for the reason the audience itself is computed outside
@@ -10424,7 +10427,7 @@ function checkOverride(key, raw, forRealm) {
   // process, settable on a realm, because a realm binds no socket. realms.js
   // passes `true` explicitly, because it is validating a realm's overrides
   // before any realm is ambient. The OTHER CALLERS passed nothing: three in
-  // admin-core/admin_actions.js (admin-ui/admin.js when this was written),
+  // admin-core/admin_actions.ts (admin-ui/admin.ts when this was written),
   // which pre-validate a whole section before writing any of it, and
   // setOverride() here (which passes the realm it computed since then). All of
   // them are inside a request, so the realm the write lands in is the ambient

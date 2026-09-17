@@ -1034,7 +1034,7 @@ async function theSignOutButtonEndsBothSessions(door, surface, who) {
 //
 // The portal was one page with four cards; it became four pages behind a
 // navigation column, and `/portal/applications` was the new one. The column
-// has grown since (`portal/portal.js`'s NAV); this section still checks the
+// has grown since (`portal/portal.ts`'s NAV); this section still checks the
 // original four. This section
 // is here rather than in the parent project's suite for the ownership reason
 // the manifest gives: the tree that adds a control to a hosted surface is the

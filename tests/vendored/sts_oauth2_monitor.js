@@ -45,7 +45,7 @@
 // `sts_pki_workbench.js` records the same gap. That reason has since expired
 // (the window is closed by the bootstrap administrator's first sign-in, not by
 // a grant, and grants nothing to a person already holding a role —
-// `admin-ui/admin_rbac.js`, 2026-09-13), but the section has not been written.
+// `admin-ui/admin_rbac.ts`, 2026-09-13), but the section has not been written.
 // The gate that refuses it is one middleware for every console POST and is
 // asserted by `sts_admin_console.js`.
 // And a SPENT request_uri, which needs a whole browser sign-in; `tests/par.js`

@@ -108,7 +108,7 @@
 // neither).
 //
 // The DIRECTORY half has to be inverted, for the reason `vc_claims.js`'s is:
-// `ldap_server.js` is required late (21 in `common/protocol_stack.js`) because
+// `ldap_server.js` is required late (21 in `common/protocol_stack.ts`) because
 // requiring it pulls every `/ldap` route into the router at that point, and a
 // module the token
 // endpoint reads cannot drag those routes to the front. So this file offers
@@ -180,7 +180,7 @@ const roles = require('./roles');
 // this file — so this cannot close a cycle and cannot move a route. It is the
 // SAME module `common/keystore.js` seals this service's own signing keys and
 // `common/pki.js`'s certificate authority hierarchy with, and the same one
-// `common/credentials.js` seals an authenticator's shared secret with. See
+// `common/credentials.ts` seals an authenticator's shared secret with. See
 // SEALED_FIELDS below for why an application's issued signing key joins them.
 const keystore = require('./keystore');
 
@@ -484,7 +484,7 @@ const PROTOCOLS = [
   // an AuthnRequest, a bind DN on 389. A Shared Signals RECEIVER is the other
   // way round — it agrees a stream and then this service POSTs events to it —
   // which is why it is the only family here whose `deliveryAttribute` is a
-  // URL this service DIALS. See ssf/ssf_http.js, which argues that at length.
+  // URL this service DIALS. See ssf/ssf_http.ts, which argues that at length.
   { id: 'ssf', label: 'Shared Signals', kind: 'ssf-receiver',
     kinds: ['ssf-receiver'],
     identifierAttribute: 'ssfReceiverId', redirectAttribute: '',
@@ -975,7 +975,7 @@ const SCHEMA = {
     // does not: `oauthDelegatedPermission` on webapp1 is a fact about webapp1
     // AND about the resource whose permission it names, and neither entry is
     // complete on its own. That is what makes this a RELATIONSHIP rather than
-    // one more declaration, and it is why `common/app_permissions.js` exists to
+    // one more declaration, and it is why `common/app_permissions.ts` exists to
     // read the two halves together — see its header, which argues the model.
     //
     // The shape is Microsoft Entra ID's, deliberately and by name: a resource
@@ -1208,7 +1208,7 @@ const SCHEMA = {
     // RFC 9101 AND OPENID CONNECT DYNAMIC CLIENT REGISTRATION (2026-09-13).
     // FIVE MEMBERS a client registers about the REQUEST OBJECTS it sends to
     // the authorization endpoint, each an attribute, and all five READ by
-    // `oauth-oidc/request_object.js`. Family-scoped for the introspection
+    // `oauth-oidc/request_object.ts`. Family-scoped for the introspection
     // attributes' reason.
     //
     // `oauthRequestUri` IS THE ONE THAT MATTERS MOST, because it is the whole
@@ -1286,7 +1286,7 @@ const SCHEMA = {
             'empty defers to oauth2.requireSignedRequestObject.' },
     // RFC 9126 SECTION 6 (2026-09-13). ONE MEMBER a client registers about
     // HOW it sends an authorization request: pushed, or not at all. READ by
-    // `oauth-oidc/oauth2.js`'s `pushedRequestPolicyRefusal()`. Family-scoped for
+    // `oauth-oidc/oauth2.ts`'s `pushedRequestPolicyRefusal()`. Family-scoped for
     // the introspection attributes' reason.
     { name: 'oauthRequirePushedAuthorizationRequests', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
@@ -1307,7 +1307,7 @@ const SCHEMA = {
     // type selects its resource server the way a delegated permission does),
     // and a CLIENT may register the types it will use (RFC 9396 section 10's
     // `authorization_details_types`). READ by
-    // `oauth-oidc/authorization_details.js`. Family-scoped for the
+    // `oauth-oidc/authorization_details.ts`. Family-scoped for the
     // introspection attributes' reason.
     { name: 'oauthAuthorizationDetailsType', kind: 'multi',
       from: 'the console, the management API, the RFC 9728 import, or by ' +
@@ -1345,7 +1345,7 @@ const SCHEMA = {
     // written by an operator, never by a registration. ENFORCED by the stand-in
     // resource `/oauth2/step-up/resource/{identifier}`, which answers for this
     // application; READ through `stepUpRequirementOf()` below, whose grammar is
-    // `oauth-oidc/step_up.js`'s header's. Family-scoped for the introspection
+    // `oauth-oidc/step_up.ts`'s header's. Family-scoped for the introspection
     // attributes' reason.
     { name: 'oauthStepUpAcrValues', kind: 'single',
       from: 'the console, the management API, or by hand',
@@ -1598,7 +1598,7 @@ const SCHEMA = {
             'else\'s certificate.' },
     // -------------------------------------------------------------------
     // RFC 7591 SECTION 2.3 — SOFTWARE STATEMENTS (2026-09-13). Two kinds of
-    // row, and `oauth-oidc/software_statement.js` argues both: on a PUBLISHER,
+    // row, and `oauth-oidc/software_statement.ts` argues both: on a PUBLISHER,
     // the declaration and the statement this realm issued it; on a client that
     // REGISTERED with a statement, three facts about how it got in. The keys a
     // declared publisher signs with are the ones above — `oauthJwks` and the
@@ -2251,7 +2251,7 @@ const SCHEMA = {
     // them is the design: one is SECRET and one is not, so that every page
     // listing service principals can say what is held without opening a key.
     // Both are DERIVED in `EDITABLE`'s sense — neither is a form field — and
-    // written by `kerberos/krb5_person_keys.js` through the directory slot,
+    // written by `kerberos/krb5_person_keys.ts` through the directory slot,
     // NOT through updateApplication(), whose audit summary and reply quote
     // the value written. They are rows here for one reason that is not
     // optional: writeApplication() REPLACES an entry from its record, and an
@@ -2277,7 +2277,7 @@ const SCHEMA = {
             'different generations.' },
     // CERTIFICATE ENROLLMENT (2026-09-13): what ACME, EST and SCEP issued to
     // this application, the credentials that let it ask, and the host names
-    // an administrator registered for it. `common/cert_enrollment.js` is the
+    // an administrator registered for it. `common/cert_enrollment.ts` is the
     // one reader and writer; the attributes are schema rows so that a sighting
     // rewriting this entry from its record does not erase them.
     { name: 'appEnrolledCertificate', kind: 'multi',
@@ -2286,7 +2286,7 @@ const SCHEMA = {
             'an enrollment protocol: serial, protocol, profile, subject, ' +
             'names, validity, who asked, whether the key was generated here, ' +
             'the certificate and its issuing chain, and a revocation mark. ' +
-            'Public material. Written by common/cert_enrollment.js only.' },
+            'Public material. Written by common/cert_enrollment.ts only.' },
     { name: 'appEnrolledPrivateKey', kind: 'multi',
       from: '/.well-known/est/serverkeygen',
       secret: true,
@@ -2315,7 +2315,7 @@ const SCHEMA = {
             'certificate for over ACME, EST or SCEP. Registering one is the ' +
             'whole proof of control: this service never dials a name to ' +
             'validate it. Set by an administrator; read by ' +
-            'common/cert_enrollment.js.' },
+            'common/cert_enrollment.ts.' },
     { name: 'appRegistrationJson', kind: 'single',
       from: 'POST /oauth2/register',
       what: 'THE RFC 7591 REGISTRATION VERBATIM, as JSON on one attribute. ' +
@@ -2406,7 +2406,7 @@ const SCHEMA = {
             'push goes to the endpoint on the STREAM, which the receiver ' +
             'named when it created one, and this service will not take a URL ' +
             'to dial from an application entry. That is the same position ' +
-            'federation/federation_http.js takes about oauthJwksUri, one ' +
+            'federation/federation_http.ts takes about oauthJwksUri, one ' +
             'family along: a URL recorded here is a note about what a ' +
             'receiver is, and a URL on a stream is a URL this service opens ' +
             'a connection to. The two are deliberately not the same store.' },
@@ -2414,7 +2414,7 @@ const SCHEMA = {
     // THE ONE ATTRIBUTE ON THIS ENTRY THAT LIMITS SHARED SIGNALS (2026-09-12).
     //
     // Every other SSF attribute here is a declaration nothing reads. This one
-    // is READ, by `ssf/ssf_streams.js`'s allowedEventsFor(), at two moments:
+    // is READ, by `ssf/ssf_streams.ts`'s allowedEventsFor(), at two moments:
     // when a stream owned by this application is agreed (its `events_delivered`
     // is narrowed) and at every delivery (so tightening it takes effect on
     // streams that already exist). Empty means unrestricted, which is what
@@ -2819,7 +2819,7 @@ const EDITABLE = {
   oauthAssertionExpiresAt: 'set',
   // WHERE THE KEY PAIR CAME FROM (2026-09-13) — issued here, or a certificate
   // uploaded in its place. `set` for the six's reason, and in this table at
-  // all because `admin-ui/pki_admin.js` writes it through updateApplication()
+  // all because `admin-ui/pki_admin.ts` writes it through updateApplication()
   // beside them; KEY_SOURCES below is the closed vocabulary it is checked
   // against.
   oauthAssertionKeySource: 'set',
@@ -3352,7 +3352,7 @@ function ssfAllowedEventProblem(value) {
 //
 // The document is held to the one thing that makes it the document it claims
 // to be — a JSON object carrying a `resource` string — and no further: the
-// member-by-member reading is `oauth-oidc/protected_resource_metadata.js`'s,
+// member-by-member reading is `oauth-oidc/protected_resource_metadata.ts`'s,
 // which this module cannot require (it requires this one), and a declaration
 // nothing reads is not the place for a second opinion about RFC 9728.
 // ---------------------------------------------------------------------------
@@ -3560,7 +3560,7 @@ function corsOriginsForClient(name, attributes) {
 
 // ---------------------------------------------------------------------------
 // WHAT A SHARED SIGNALS STREAM'S OWNER IS ALLOWED, WITHOUT BUILDING A VIEW
-// (2026-09-14). `ssf/ssf_streams.js` asks this for every event on every stream,
+// (2026-09-14). `ssf/ssf_streams.ts` asks this for every event on every stream,
 // and it used `get()` and then `list()` — a whole `view()` of EVERY application
 // in the realm, sealed signing keys opened, to read one attribute. A session
 // sweep that expired 2,412 sessions sent a session-revoked for each, and on a
@@ -3677,7 +3677,7 @@ function corsOriginsOfRealm() {
 // four secret managers (`common/secrets.js`). That is what seals this
 // service's own signing keys, what seals `common/pki.js`'s three CA key pairs
 // in the `sts_keys` row family, what seals every minted row in product mode,
-// and what `common/credentials.js` seals an authenticator's shared secret
+// and what `common/credentials.ts` seals an authenticator's shared secret
 // with. A key pair issued FROM that hierarchy being the one piece of private
 // key material left in the clear was the gap this closes.
 //
@@ -3736,7 +3736,7 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        'gnapMacaroonKey'];
 
 // The label each sealed field is sealed under, which is what
-// /admin/encryption counts by (admin-ui/encryption_admin.js DATA_CLASSES). One
+// /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
 // label per KIND of secret, so the page can say what it is looking at.
 const SEAL_LABELS = {
   oauthAssertionPrivateKey: 'application-private-key',
@@ -3784,7 +3784,7 @@ const KEY_SOURCES = ['issued', 'uploaded-realm-ca', 'uploaded-external-ca'];
 // ---------------------------------------------------------------------------
 // WHICH ATTRIBUTE HOLDS WHICH HALF OF A MANAGED KEY PAIR, PER PROFILE
 // (2026-09-13). The two sets share no name — the RFC 7522 block in SCHEMA
-// argues why — and three modules have to agree on them: `admin-ui/pki_admin.js`
+// argues why — and three modules have to agree on them: `admin-ui/pki_admin.ts`
 // writes them, the application page and `GET /admin-api/applications` read
 // them, and `/admin/pki` lists them. This module owns the schema, so it owns
 // the answer; a second copy in any of the three is the one that would go
@@ -4014,7 +4014,7 @@ function registrationUriProblem(metadata) {
 // because every write door comes through here: RFC 7591 registration and RFC
 // 7592 update (`register()`, `updateRegistration()`, and the endpoint's own 400
 // in front of them), the console's create and set, and `/admin-api`.
-// `oauth-oidc/introspection_jwt.js` asks the same function when it answers, for
+// `oauth-oidc/introspection_jwt.ts` asks the same function when it answers, for
 // a value an `ldapmodify` put on the entry.
 //
 // **THE LISTS ARE `common/crypto.js`'s**, so a value this service cannot sign
@@ -4143,7 +4143,7 @@ function introspectionAttributeProblem(attribute, value, fields) {
 //
 // The introspection check's shape, for its reason — this module owns what a
 // value of one of its attributes may be, and every write door comes through
-// here. `oauth-oidc/request_object.js` reads the same tables when it verifies.
+// here. `oauth-oidc/request_object.ts` reads the same tables when it verifies.
 //
 //   request_uris                   absolute URLs, https — or http where
 //                                  `mode.acceptsLooseRequestUris()` — with no
@@ -4421,7 +4421,7 @@ function pushedAuthorizationAttributeProblem(attribute, value) {
 // `mtlsAttributeProblem()`: 0134 for a value, 0135 for a second parameter and
 // 0136 for a flag that is not TRUE or FALSE. 0133 is the registration
 // endpoint's — a client asking for bound tokens from a service whose main port
-// is not TLS — and is decided in `oauth-oidc/oauth2.js`, which knows the port.
+// is not TLS — and is decided in `oauth-oidc/oauth2.ts`, which knows the port.
 // ---------------------------------------------------------------------------
 const TLS_SUBJECT_ATTRIBUTES = certificateSubject.MEMBER_NAMES.map(
   function (member) {
@@ -4524,7 +4524,7 @@ function mtlsAttributeProblem(attribute, value, fields) {
 //
 // This module owns what a value of its attributes may be, for the introspection
 // check's reason, so the TYPE DEFINITION a resource writes is read here — and
-// `oauth-oidc/authorization_details.js` reads it back through
+// `oauth-oidc/authorization_details.ts` reads it back through
 // `authorizationDetailsTypeOf()` rather than parsing it a second way.
 //
 //   a type name                    1 to 512 printable characters with no
@@ -4788,7 +4788,7 @@ function authorizationDetailsAttributeProblem(attribute, value) {
 // RFC 9470: WHAT A RESOURCE MAY REQUIRE (2026-09-13).
 //
 // The grammar of the two attributes, here because this module owns them (the
-// rule `authorizationDetailsTypeOf()` keeps). `oauth-oidc/step_up.js` holds
+// rule `authorizationDetailsTypeOf()` keeps). `oauth-oidc/step_up.ts` holds
 // the same acr pattern for what arrives in a request, and cannot be required
 // from here without `common/` reaching into a protocol directory, so the
 // pattern is repeated and `tests/rfc9470_step_up.js` holds the two equal.
@@ -5958,7 +5958,7 @@ function applyRegistrationFields(record, registration, statement) {
   log.debug("Entering applyRegistrationFields().");
   const meta = registration || {};
   // HOW A SOFTWARE STATEMENT LET IT IN (RFC 7591 section 2.3, 2026-09-13), as
-  // three facts `oauth-oidc/software_statement.js` verified — never read off
+  // three facts `oauth-oidc/software_statement.ts` verified — never read off
   // the document, whose `software_statement` member is only the string the
   // client sent. An ABSENT statement CLEARS all three, for RFC 9701's reason
   // below: RFC 7592 section 2.2 replaces the whole registration.
@@ -6461,7 +6461,7 @@ function clientConfigOf(identifier) {
     ? String(fields.oauthTokenEndpointAuthMethod)
     : (loaded.record.registered ? 'client_secret_basic' : '');
   // THE REDIRECT URIs GO THROUGH returnAddressesOf() (2026-09-12), so that a
-  // callback development LEARNT — `common/oidc_rp.js` teaches the console's and
+  // callback development LEARNT — `common/oidc_rp.ts` teaches the console's and
   // portal's own clients the address they were reached at — is not a registered
   // redirect URI in product until somebody confirms it. That is what every
   // reader of this member gets, RFC 9700 mode's exact-match check included,
@@ -6561,7 +6561,7 @@ function clientConfigOf(identifier) {
       fields.oauthTlsClientCertificateThumbprint === undefined
       ? '' : String(fields.oauthTlsClientCertificateThumbprint),
     // RFC 9701 section 6, spelled as the registration members because
-    // `oauth-oidc/introspection_jwt.js` reads them by those names. Empty is
+    // `oauth-oidc/introspection_jwt.ts` reads them by those names. Empty is
     // "not registered", and that file applies the section's defaults.
     introspection_signed_response_alg:
       fields.oauthIntrospectionSignedResponseAlg === undefined
@@ -6573,7 +6573,7 @@ function clientConfigOf(identifier) {
       fields.oauthIntrospectionEncryptedResponseEnc === undefined
       ? '' : String(fields.oauthIntrospectionEncryptedResponseEnc),
     // RFC 9101 / OpenID Connect Registration, spelled as the registration
-    // members because `oauth-oidc/request_object.js` reads them by those names.
+    // members because `oauth-oidc/request_object.ts` reads them by those names.
     request_uris: valuesOf(fields.oauthRequestUri).map(String),
     request_object_signing_alg:
       fields.oauthRequestObjectSigningAlg === undefined
@@ -6591,7 +6591,7 @@ function clientConfigOf(identifier) {
     require_pushed_authorization_requests:
       String(fields.oauthRequirePushedAuthorizationRequests || '')
         .toUpperCase() === 'TRUE',
-    // RFC 9396 section 10, read by `oauth-oidc/authorization_details.js`.
+    // RFC 9396 section 10, read by `oauth-oidc/authorization_details.ts`.
     // Empty is "any type this authorization server supports".
     authorization_details_types:
       valuesOf(fields.oauthAuthorizationDetailsTypes).map(String)
@@ -6842,7 +6842,7 @@ function createApplication(detail) {
              'identifier is being used as one. Its per-service-provider ' +
              'metadata is live from now — /admin/applications names the URL, ' +
              'which carries a slug this module deliberately does not compute ' +
-             '(slugOf() belongs to saml/saml2_sso.js, and requiring it here ' +
+             '(slugOf() belongs to saml/saml2_sso.ts, and requiring it here ' +
              'would point this module at a protocol). Set samlEntityId ' +
              'explicitly to use a different name.');
   }
@@ -7019,7 +7019,7 @@ function updateApplication(identifier, change) {
   // PROTOCOL FAMILY CHECK ABOVE IS: this function is the ONE door the console
   // form and `POST /admin-api/applications/update` both go through, and a rule
   // enforced in either of them alone would be a rule the other could walk
-  // around. `common/app_permissions.js`'s five actions call this function too,
+  // around. `common/app_permissions.ts`'s five actions call this function too,
   // so there is one implementation of each rule and not five.
   //
   // Three rules, and each of them is about something that would otherwise fail
@@ -7294,7 +7294,7 @@ function updateApplication(identifier, change) {
   // FUNCTION TOUCHES THE VALUE — including the sentence that goes to the audit
   // log, which quotes it. See SEALED_FIELDS: this is the ONE door the console
   // form, `POST /admin-api/applications/set`, `POST /admin-api/pki/issue` and
-  // `admin-ui/pki_admin.js`'s Issue control all go through, so there is one
+  // `admin-ui/pki_admin.ts`'s Issue control all go through, so there is one
   // place a signing key can be written and one place it is encrypted.
   //
   // A CLEAR IS UNTOUCHED — an empty value takes the attribute off, and there is
@@ -7378,7 +7378,7 @@ function updateApplication(identifier, change) {
     //     address, so a mark on it is taken off. Adding an address that is
     //     already on the entry as observed is therefore how an explicit write
     //     confirms it, and it is a change even though the value was there.
-    //   * `common/oidc_rp.js` teaching its own client the address it was
+    //   * `common/oidc_rp.ts` teaching its own client the address it was
     //     reached at, which is a SIGHTING wearing an update's shape. It passes
     //     `observed: true` and the address is marked — but only where it was
     //     newly added (a sighting may not demote a registration) and only in a
@@ -8027,7 +8027,7 @@ function get(identifier) {
 // DELEGATED PERMISSIONS: THE SCHEMA'S HALF OF THE FEATURE.
 //
 // The MODEL — the register, both directions, the actions and the picture — is
-// `common/app_permissions.js`, and it is a separate file for the reason
+// `common/app_permissions.ts`, and it is a separate file for the reason
 // `delegation_map.js` is separate from `delegation.js`: this module owns the
 // SCHEMA and therefore owns how a permission is spelled on an entry and how a
 // spelling is read back, and that module owns what the two halves MEAN when
@@ -8154,7 +8154,7 @@ function permissionNameProblem(name) {
 // consented scope has no delimiter to protect and may legitimately be a whole
 // permission identifier, so it gets the RFC's rule and nothing more.
 //
-// It lives HERE rather than in `common/consent.js` for the reason the ordering
+// It lives HERE rather than in `common/consent.ts` for the reason the ordering
 // rule lives in updateApplication(): this module owns the SCHEMA, so it owns
 // what a value of one of its attributes may be, and a second copy of the
 // grammar over there would be the thing that eventually disagreed. That module
@@ -8318,7 +8318,7 @@ function forPermission(id) {
 // name; and `forPermission()` needs a name on the end that the reader is trying
 // to work out.
 //
-// `common/user_graph.js` is the caller and its `permissionsAddressedTo()` says
+// `common/user_graph.ts` is the caller and its `permissionsAddressedTo()` says
 // what it does with the answer. Doing it there instead would have meant a
 // second walk of the container per scope value — one `forPermission()` call per
 // name — where this is one walk per audience and then a read of the entry the
@@ -8637,7 +8637,7 @@ function requiredRolesOf(identifier) {
 // embedded PEP uses it to decide how to behave when the issuance policy is
 // missing: an application that requires only EVERYBODY loses nothing by the
 // policy being absent, and one that requires `staff` loses the whole point of
-// having said so. See `xacml/xacml_role_pep.js`, which argues that split.
+// having said so. See `xacml/xacml_role_pep.ts`, which argues that split.
 function requiresNarrowedRoles(identifier) {
   log.debug("Entering requiresNarrowedRoles().");
   const required = requiredRolesOf(identifier);
@@ -8705,7 +8705,7 @@ function maxApplications() {
 // authorization server now: an unauthenticated request is sent to
 // `/oauth2/authorize` with the client_id below, comes back to the redirect URI
 // below with a code, and the code is redeemed with the secret below at
-// `/oauth2/token`. `common/oidc_rp.js` is the client and argues the whole of
+// `/oauth2/token`. `common/oidc_rp.ts` is the client and argues the whole of
 // it. **These rows stopped being descriptions and became load-bearing**, which
 // is what the paragraph above was already reaching for when it said a
 // registration is a CLIENT rather than a row on a page.
@@ -8755,7 +8755,7 @@ function maxApplications() {
 // **`global.publicBaseUrl` IS THAT NAME WHEN IT IS SET** (2026-09-12), with the
 // ambient realm's prefix — `seedInternalApplications()` runs inside
 // `realms.run()` for a realm being built, so the prefix is the realm's. That
-// matters in product mode, where `common/oidc_rp.js` no longer LEARNS a
+// matters in product mode, where `common/oidc_rp.ts` no longer LEARNS a
 // callback from a request: a seeded entry naming `localhost` would be a console
 // nobody reaching the service by its real name could sign in to. Unset, this is
 // the localhost starting value it always was, prefix and all left off, which is
@@ -8786,10 +8786,10 @@ function internalBaseUrl() {
 // in. `sts-debugger-ui` is the CLIENT a person signs in through, and it holds
 // a grant of that permission — the mapping from an application to a
 // permission another application exposes, in Microsoft Entra ID's shape
-// (`common/app_permissions.js`). The api row comes first because a permission
+// (`common/app_permissions.ts`). The api row comes first because a permission
 // is defined before it is granted.
 //
-// The identifiers and the permission are `debugger/debugger_access.js`'s and
+// The identifiers and the permission are `debugger/debugger_access.ts`'s and
 // are written out here rather than required: this file is a registry every
 // module reads, and a require from it into a feature directory would make the
 // registry depend on the feature. `tests/debugger_access.js` compares them.
@@ -8998,8 +8998,8 @@ function internalApplications() {
       // of them the machine door to their realm: a token this realm's
       // authorization server issues to this realm's copy of the client works
       // at `/realm/<id>/admin-api` and nowhere else, and never at a
-      // service-wide operation (`mgmt-api/admin_api.js`'s gate and
-      // `admin-ui/admin_scope.js`). The default realm's copy is still the
+      // service-wide operation (`mgmt-api/admin_api.ts`'s gate and
+      // `admin-ui/admin_scope.ts`). The default realm's copy is still the
       // service's and works everywhere.
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own management API at ' +
@@ -9186,7 +9186,7 @@ module.exports = {
   corsOriginsOfRealm: corsOriginsOfRealm,
   ssfAllowedEventProblem: ssfAllowedEventProblem,
   // THE SEALED ATTRIBUTE AND THE PREFIX TEST THAT RECOGNISES ONE. Exported for
-  // `admin-ui/admin.js`, whose application page dumps `attributes` — the entry
+  // `admin-ui/admin.ts`, whose application page dumps `attributes` — the entry
   // as the directory holds it — and therefore meets the ciphertext. It shows
   // the opened value from `fields` beside a note saying the store holds it
   // encrypted, which is the one place the two halves of view() are drawn
@@ -9208,7 +9208,7 @@ module.exports = {
   clientConfigOf: clientConfigOf,
   registrationUriProblem: registrationUriProblem,
   // RFC 9701 section 6 — the check, the tables it checks against, and which
-  // attribute holds which member. `oauth-oidc/introspection_jwt.js` and the
+  // attribute holds which member. `oauth-oidc/introspection_jwt.ts` and the
   // registration endpoint read them; nothing else should keep a copy.
   introspectionResponseProblem: introspectionResponseProblem,
   INTROSPECTION_ATTRIBUTES: INTROSPECTION_ATTRIBUTES,
@@ -9218,7 +9218,7 @@ module.exports = {
   INTROSPECTION_ENCRYPTION_ALGS: INTROSPECTION_ENCRYPTION_ALGS,
   INTROSPECTION_ENCRYPTION_ENCS: INTROSPECTION_ENCRYPTION_ENCS,
   // RFC 9101 — the check, its tables, and which attribute holds which member.
-  // `oauth-oidc/request_object.js` and the registration endpoint read them.
+  // `oauth-oidc/request_object.ts` and the registration endpoint read them.
   requestObjectMetadataProblem: requestObjectMetadataProblem,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
   pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
@@ -9227,7 +9227,7 @@ module.exports = {
   TLS_SUBJECT_ATTRIBUTES: TLS_SUBJECT_ATTRIBUTES,
   TLS_BOUND_TOKENS_ATTRIBUTE: TLS_BOUND_TOKENS_ATTRIBUTE,
   // RFC 9396 — what an entry may say about authorization_details, and the
-  // definition reader `oauth-oidc/authorization_details.js` uses.
+  // definition reader `oauth-oidc/authorization_details.ts` uses.
   AUTHORIZATION_DETAILS_BUILT_IN: AUTHORIZATION_DETAILS_BUILT_IN,
   authorizationDetailsTypeOf: authorizationDetailsTypeOf,
   authorizationDetailsLocationProblem: authorizationDetailsLocationProblem,
@@ -9296,7 +9296,7 @@ module.exports = {
   forAppliesTo: forAppliesTo,
   // ---------------------------------------------------------------------------
   // THE DELEGATED PERMISSION HALF. Everything a reader of ONE entry needs; what
-  // needs two entries is common/app_permissions.js, which requires this module
+  // needs two entries is common/app_permissions.ts, which requires this module
   // and is where the register, the actions and the picture live.
   //
   // `permissionIdOf()` and `permissionBaseOf()` are exported rather than kept
@@ -9310,7 +9310,7 @@ module.exports = {
   parsePermissionValue: parsePermissionValue,
   permissionValueOf: permissionValueOf,
   permissionNameProblem: permissionNameProblem,
-  // The RFC 6749 section 3.3 grammar on its own, for common/consent.js — see
+  // The RFC 6749 section 3.3 grammar on its own, for common/consent.ts — see
   // the block above it for why the schema owner owns this rule.
   scopeTokenProblem: scopeTokenProblem,
   permissionBaseProblem: permissionBaseProblem,

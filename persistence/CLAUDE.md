@@ -166,8 +166,8 @@ const sessions = realms.map({ persist: 'authn.sessions' });
 Every mutation of the three shapes already funnels through `set`, `delete`,
 `clear` or an array mutator, so naming the store names every write to it.
 **What that does NOT name is an edit to an OBJECT the store holds**, and two
-stores declared on 2026-09-12 are made of them: `ssf/caep.js`'s and
-`ssf/risc.js`'s registers, whose state machines do `row.counts[uri] += 1` on a
+stores declared on 2026-09-12 are made of them: `ssf/caep.ts`'s and
+`ssf/risc.ts`'s registers, whose state machines do `row.counts[uri] += 1` on a
 row already in the map. Each has a `touch()` that re-sets the key after an edit;
 without it the flush would write every row as it was CREATED, and a restart
 would put back a session that was never revoked. A new store holding mutable
@@ -204,7 +204,7 @@ verdict for each; a new undeclared store owes a row here.
 | `ldap_server.js` `entries` | Persisted another way — the directory's diff, above. |
 | `ldap_server.js` `usernameIndexes`, `subtreeClocks`, `groupIndexes`, `uuidIndexes`; `federation.js` `releaseIndexes` | Fine — derived from the directory and rebuilt from it. |
 | `helpers.js` `stsKeysFor` | Persisted another way — `keystore.js`. |
-| `ssf_streams.js` `deadCounts`, `tally`; `ssf_dead_letter_report.js` `sweepNotes` | Fine — this process's estimate and its own sweep report; the letters themselves are persisted. |
+| `ssf_streams.ts` `deadCounts`, `tally`; `ssf_dead_letter_report.ts` `sweepNotes` | Fine — this process's estimate and its own sweep report; the letters themselves are persisted. |
 
 `memory` is still the default. A run that says nothing about persistence behaves
 exactly as every run before this existed — which is the whole compatibility
@@ -657,7 +657,7 @@ slow.
 
 **A flush READS a value when it takes the journal and WRITES it when its
 transaction commits.** `minted.flush()` had two callers that did not wait for
-each other — `persistence.js`'s scheduled flush and `request_worker.js`'s
+each other — `persistence.js`'s scheduled flush and `request_worker.ts`'s
 commit announcement (`flushMinted()`) — so two transactions from ONE process
 could be open at once, a key written between their journal takes was in both
 with two different values, and `ON CONFLICT DO UPDATE` kept whichever COMMITTED
@@ -724,7 +724,7 @@ containers against this store need, and three things changed here for it:
   `highest` is beside it; `/admin/persistence` reports both and the hole count.
 
 `persistence.clusterStore()` hands the driver to `cluster/cluster_claims.js` and
-`cluster/cluster_secrets.js`. The four `sts_cluster_*` tables are schema version
+`cluster/cluster_secrets.ts`. The four `sts_cluster_*` tables are schema version
 5.
 
 **WHAT THE CLUSTER BARRIER HOLDS A RESPONSE ON (2026-09-14, #46 follow-up).** It

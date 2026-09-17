@@ -328,8 +328,9 @@ function run(t) {
     // And the portal's card is drawn from that answer — as SOURCE, because
     // requiring the portal registers its routes in run.js's one process.
     const portalSource = require('fs').readFileSync(
-      path.join(__dirname, '..', 'portal', 'portal.js'), 'utf8');
-    const overviewAt = portalSource.indexOf('function overviewPage(');
+      path.join(__dirname, '..', 'portal', 'portal.ts'), 'utf8');
+    const overviewAt = portalSource.indexOf(
+      'overviewPage(session, message, error) {');
     const overview = portalSource.slice(overviewAt,
       portalSource.indexOf('directoryBlock(session, entry)', overviewAt));
     t.check(/authn\.signOnFactsFor\(session\)/.test(overview) &&

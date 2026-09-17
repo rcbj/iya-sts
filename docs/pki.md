@@ -761,7 +761,7 @@ other worker issues from.
 
 `common/vendored/x509.js` — the same module behind the
 [OAuth2/OIDC Debugger](https://idptools.com)'s *PKI / X.509* workflow page, and
-what `spiffe/spiffe_ca.js` already issues X509-SVIDs with. So a certificate
+what `spiffe/spiffe_ca.ts` already issues X509-SVIDs with. So a certificate
 issued here and one issued there are built by **one** encoder, and a difference
 between them is a difference in the arguments rather than in two implementations
 that drifted. The three tiers are that module's own `root-ca`, `intermediate-ca`

@@ -439,8 +439,8 @@ function checkTheMethodTableAgrees(t) {
 // 7. THE WORKER TABLE IS FILLED IN A WORKER AND NOWHERE ELSE.
 //
 // **THIS SECTION EXISTS BECAUSE THE FIRST VERSION REGISTERED UNCONDITIONALLY
-// AND COST `tests/spiffe_pki.js`.** Requiring `common/request_worker.js` pulls
-// `common/service_state.js` in at module scope — the store, the keys, the
+// AND COST `tests/spiffe_pki.js`.** Requiring `common/request_worker.ts` pulls
+// `common/service_state.ts` in at module scope — the store, the keys, the
 // minted rows, coordination — and `run.js` runs every file in ONE process, so
 // doing it at a new point in the load order changed what a later file saw of
 // the certificate hierarchy. That file passed alone and failed in the suite,

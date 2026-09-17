@@ -23,7 +23,7 @@ CAEP/RISC for GNAP web applications. Asked, rcbj decided:
 | CAEP / RISC | **GNAP sessions emit CAEP**, **GNAP web apps are scoped receivers**, **grant revocation emits CAEP** — and explicitly NOT "signals revoke grants" |
 | Where the tests live | **owned here**: `tests/*.js` in process, plus `tests/vendored/` `local: true` jobs with an independent client |
 
-Later in the same session: remembered approvals are stored in `common/consent.js`
+Later in the same session: remembered approvals are stored in `common/consent.ts`
 as **digest tokens** (`gnap:<22 chars of base64url SHA-256 over the canonical
 JSON of one access right>`) — rcbj approved that shape — and **every GNAP
 endpoint validates its body against a JSON Schema and sanitises it**.
@@ -34,39 +34,43 @@ Route-free libraries, each require-able from an in-process test:
 
 | Module | What it is |
 |---|---|
-| `gnap_sf.js` | RFC 8941 structured fields, written out here — the signature base is the thing both ends must build byte for byte |
-| `gnap_httpsig.js` | RFC 9421 sign and verify, RFC 9530 Content-Digest. `tests/gnap_httpsig.js` holds it to the RFC's Appendix B vectors |
-| `gnap_keys.js` | key formats, proof method normalisation, thumbprints, the key descriptor every other module takes |
-| `gnap_proof.js` | verifies a request's proof — httpsig, mtls, jwsd, jws, and the nested proofs of a key rotation |
-| `gnap_schemas.js` | the six ajv 2020-12 JSON Schemas. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
-| `gnap_request.js` | `checkEnvelope()` (depth/key bounds, then the schema, then the walker) and one parser per document |
-| `gnap_access.js` | access rights: covers, intersect, the RFC 9767 token model and its presentation checks |
-| `token_macaroon.js`, `token_biscuit.js`, `token_zcap.js` | the three library formats |
-| `gnap_tokens.js` | the format dispatcher; the two JWT formats go through `helpers.signJwt` and `common/crypto.js` |
-| `gnap_store.js` | twelve `realms.map({ persist })` stores — grants, continuations, interactions, user codes, tokens and their value index, management handles, instances, user references, resource sets, replay |
-| `gnap_subject.js` | sub_ids and the `id_token` / `saml2` assertions |
-| `gnap_http.js` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.js` |
-| `gnap_monitor.js` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
-| `gnap_signals.js` | CAEP emission and the SSF subject scope |
-| `gnap_grants.js` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
-| `gnap_rs.js` | introspection, registration, and judging a presented token |
-| `gnap_console.js` | the view and action layer both admin doors render (no route, no `res`, no markup) |
+| `gnap_sf.ts` | RFC 8941 structured fields, written out here — the signature base is the thing both ends must build byte for byte |
+| `gnap_httpsig.ts` | RFC 9421 sign and verify, RFC 9530 Content-Digest. `tests/gnap_httpsig.js` holds it to the RFC's Appendix B vectors |
+| `gnap_keys.ts` | key formats, proof method normalisation, thumbprints, the key descriptor every other module takes |
+| `gnap_proof.ts` | verifies a request's proof — httpsig, mtls, jwsd, jws, and the nested proofs of a key rotation |
+| `gnap_schemas.ts` | the six ajv 2020-12 JSON Schemas. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
+| `gnap_request.ts` | `checkEnvelope()` (depth/key bounds, then the schema, then the walker) and one parser per document |
+| `gnap_access.ts` | access rights: covers, intersect, the RFC 9767 token model and its presentation checks |
+| `token_macaroon.ts`, `token_biscuit.ts`, `token_zcap.ts` | the three library formats |
+| `gnap_tokens.ts` | the format dispatcher; the two JWT formats go through `helpers.signJwt` and `common/crypto.js` |
+| `gnap_store.ts` | twelve `realms.map({ persist })` stores — grants, continuations, interactions, user codes, tokens and their value index, management handles, instances, user references, resource sets, replay |
+| `gnap_subject.ts` | sub_ids and the `id_token` / `saml2` assertions |
+| `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
+| `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
+| `gnap_signals.ts` | CAEP emission and the SSF subject scope |
+| `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
+| `gnap_rs.ts` | introspection, registration, and judging a presented token |
+| `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
 
-Route modules: `gnap.js` (required from `common/protocol_stack.js`, **23d**,
-after XACML and before logout), which requires `gnap_interact.js` (the
-resource-owner pages) and `gnap_admin.js` (the two console pages), then installs
+Route modules: `gnap.ts` (required from `common/protocol_stack.ts`, **23d**,
+after XACML and before logout), which requires `gnap_interact.ts` (the
+resource-owner pages) and `gnap_admin.ts` (the two console pages), then installs
 the SSF scope.
 
-**After `admin-ui/admin`** and after `ssf/ssf` — it requires `gnap_admin.js`,
+**After `admin-ui/admin`** and after `ssf/ssf` — it requires `gnap_admin.ts`,
 which draws two console pages in the shell, and installs its subject scope on
-`ssf/ssf_streams.js` at require time. `mgmt-api/admin_api.js` reaches its view
-layer (`gnap_console.js`) lazily, inside the three operations, so the management
-API does not move `/gnap` ahead of itself. Requires `gnap_interact.js` and
-`gnap_admin.js` itself, so the family is ONE line in the require order.
+`ssf/ssf_streams.ts` at require time. `mgmt-api/admin_api.ts` reaches its view
+layer (`gnap_console.ts`) lazily, inside the three operations, so the management
+API does not move `/gnap` ahead of itself (before #50's R1 a require moved
+routes; now only `common/protocol_stack.ts`'s `register()` calls place them,
+and the lazy require still keeps the view layer's load-time code where it
+belongs). Requires `gnap_interact.ts` and `gnap_admin.ts` itself, so the family
+is ONE require in the require order — and three `register()` calls, `gnap`,
+`gnap_interact`, `gnap_admin`, in the order their routes always landed.
 
 ## Things that cost real time, and would again
 
-* **`macaroon@3`'s `exportBinary()` is broken for V2.** `token_macaroon.js`
+* **`macaroon@3`'s `exportBinary()` is broken for V2.** `token_macaroon.ts`
   writes the V2 binary encoding itself (`encodeBinaryV2()`), and
   `tests/vendored/sts_gnap_rs.js` decodes it with a decoder of its own.
 * **`@biscuit-auth/biscuit-wasm` needs a custom WebAssembly loader** that walks
@@ -82,7 +86,7 @@ API does not move `/gnap` ahead of itself. Requires `gnap_interact.js` and
   format tests, whose audiences were all URLs.
 * **The three library formats REFUSE by returning `{ ok: false }`; the JWT
   formats throw.** Both mint callers only caught a throw, so a refused mint put
-  a token with no value into the store and the response. `gnap_tokens.js`'s
+  a token with no value into the store and the response. `gnap_tokens.ts`'s
   `mintedOrThrow()` turns a returned refusal into a throw.
 * **The JWT formats did not validate the model and could mint nothing.** The
   library formats validate in their own `mint()`; the JWT branch signed whatever
@@ -101,9 +105,9 @@ API does not move `/gnap` ahead of itself. Requires `gnap_interact.js` and
   same union. `validate()` names a control character whenever one was found and
   otherwise reports the deepest path.
 * **SSF's gate is synchronous across twelve endpoints; GNAP's resource server
-  check is async** (a zcap signature). `gnap_rs.js` is split: `presentation()`
+  check is async** (a zcap signature). `gnap_rs.ts` is split: `presentation()`
   is everything decidable from this service's own record of the token plus the
-  key proof, and is what `ssf/ssf_auth.js` calls; `authenticate()` adds the
+  key proof, and is what `ssf/ssf_auth.ts` calls; `authenticate()` adds the
   format's own verification.
 * **Which refusal is 403.** Only a rights shortfall (`STS-GNAP-0308`) is
   `insufficient_scope`; deciding on the sentence made nearly every format
@@ -116,18 +120,18 @@ API does not move `/gnap` ahead of itself. Requires `gnap_interact.js` and
 
 ## Shared Signals
 
-`gnap_signals.js` does three things and its header argues each: grant and
+`gnap_signals.ts` does three things and its header argues each: grant and
 token revocation send CAEP `session-revoked` (session `gnap-grant:<id>` /
 `gnap-token:<jti>`), modification sends `token-claims-change`, and the scope
 installed with `ssf_streams.setSubjectScope('gnap', …)` refuses a stream owned by
 a GNAP web application (a `gnap-client` with a finish URI) any subject who never
-approved a grant to it. `ssf/ssf.js`'s `emitProtocolEvent()` is the delivery,
-and `ssf/ssf_auth.js`'s `gnap` scheme is how an application owns a stream as
+approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
+and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
 itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision.
 
 ## A person's opaque identifier is over their subject (2026-09-14)
 
-`gnap_subject.js`'s `opaqueIdFor()` HMACs the person's `urn:uuid:` subject where the
+`gnap_subject.ts`'s `opaqueIdFor()` HMACs the person's `urn:uuid:` subject where the
 directory holds one, and the name only where it does not, and the user reference it
 records keeps that subject. So a rename leaves the identifier and the reference naming
 the renamed person, and a name deleted and re-created gets a different identifier while
@@ -137,21 +141,21 @@ directory edit. Every identifier minted before the change moves once. `account` 
 `tests/stable_subject.js` D9–D10.
 ## Spent once across the cluster (2026-09-14, #46) — capability `gnap.once`
 
-Every one-time value here was spent in `gnap_store.js`'s persisted maps — once
+Every one-time value here was spent in `gnap_store.ts`'s persisted maps — once
 per NODE against one store, because the maps replicate rather than share. Each
 caller keeps its in-memory check first and then asks `store.spend(kind, value,
 lifetimeS, usedCode)`, one `cluster/cluster_claims.js` claim in scope
-`gnap.<kind>`; `gnap_store.js` provides the capability.
+`gnap.<kind>`; `gnap_store.ts` provides the capability.
 
 | Value | Where it is spent | Refused |
 |---|---|---|
 | continuation access token | `continueGrant()`, after the caller's proof | `invalid_continuation` 401, `STS-GNAP-0710` |
 | interaction reference | `continueAccepted()` | `invalid_interaction`, `0711` |
-| redirect / app start link | `startMode()` in `gnap_interact.js` | page 400, `0712` |
+| redirect / app start link | `startMode()` in `gnap_interact.ts` | page 400, `0712` |
 | user code (both modes of a grant, one claim) | `POST /gnap/code` | page 400, `0713` |
 | token management access token | `manageVerified()`, after the proof | `invalid_rotation` / `invalid_request` 401, `0714` |
 | key proof (httpsig nonce, JWS) | `proof.verifyRequestOnce()` / `spendProof()` | the caller's proof refusal, `0715` |
-| the resource owner's DECISION on one interaction (2026-09-14) | `claimDecision()` in `gnap_interact.js`, before `grants.decide()` on `POST /gnap/approve/:id` and the remembered approval, and before the cancelled sign-in's finish | page 400, `0717` |
+| the resource owner's DECISION on one interaction (2026-09-14) | `claimDecision()` in `gnap_interact.ts`, before `grants.decide()` on `POST /gnap/approve/:id` and the remembered approval, and before the cancelled sign-in's finish | page 400, `0717` |
 
 A store that cannot be asked refuses with `STS-GNAP-0716`. What is decided:
 
@@ -174,9 +178,9 @@ A store that cannot be asked refuses with `STS-GNAP-0716`. What is decided:
   (`noteReplayKey()`), returned as `replayKeys`, and spent by
   `verifyRequestOnce()`, which every acting caller awaits — so `identifyCaller()`,
   `continuationCaller()`, `introspect()` and `register()` became asynchronous.
-  `presentation()` stays synchronous because `ssf/ssf_auth.js` calls it that
+  `presentation()` stays synchronous because `ssf/ssf_auth.ts` calls it that
   way; `authenticate()` spends its keys. **The SSF gate's GNAP scheme spends
-  them ahead of the handler**: `ssf/ssf_cluster.js`'s `spendGnapProof` route
+  them ahead of the handler**: `ssf/ssf_cluster.ts`'s `spendGnapProof` route
   middleware runs `presentation()` and the spend, and `ssf_auth.js` reads the
   result (`STS-SSF-0099` where a shared store has no spend) — `ssf/CLAUDE.md`
   carries it.

@@ -116,7 +116,7 @@ const CONDITIONAL = {
 // so the answer is to walk through the door rather than to stop reading the
 // console, the way a browser does.
 //
-// The role comes from the console's open window (admin-ui/admin_rbac.js):
+// The role comes from the console's open window (admin-ui/admin_rbac.ts):
 // while the bootstrap administrator has not yet signed in to the console — or,
 // where none was seeded, while neither role group has a member — and
 // `admin.openWhenEmpty` is on (the default), whoever signs in holds both. Once

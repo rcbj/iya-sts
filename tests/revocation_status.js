@@ -3173,11 +3173,11 @@ async function theRegisteredDoors(t) {
   // failure guarded against is a sign-in path added or edited to reach
   // completeSignIn() without the check.
   const fedSource = fs.readFileSync(path.join(ROOT, 'federation',
-                                              'federation_sp.js'), 'utf8')
+                                              'federation_sp.ts'), 'utf8')
     .split('\n');
   const sites = [];
   fedSource.forEach(function (line, at) {
-    if (/^\s*return completeSignIn\(/.test(line)) {
+    if (/^\s*return (?:this\.)?completeSignIn\(/.test(line)) {
       const before = fedSource.slice(Math.max(0, at - 3), at).join('\n');
       sites.push({ line: at + 1, wrapped: /signerStillAccepted\(/.test(before),
                    opaque: /The profile endpoint answered/.test(before) });
@@ -3199,14 +3199,14 @@ async function theRegisteredDoors(t) {
           /\}, verified\.jwk\);/.test(fedSource.join('\n')),
           'and a partner JWT\'s check is handed the key that verified it',
           'verifyForeignJwt() returns jwk');
-  const vpSource = fs.readFileSync(path.join(ROOT, 'oid4vc', 'vc_verifier.js'),
+  const vpSource = fs.readFileSync(path.join(ROOT, 'oid4vc', 'vc_verifier.ts'),
                                    'utf8');
   t.check(/verifyPresentation\(presentations\[0\], record\);\s*await issuerCertificateRevocation\(verified\);\s*record\.verdict = \{/
             .test(vpSource) && /pem: pem,/.test(vpSource) &&
           (vpSource.match(/result\.issuerCertificatePem = verifyIssuerSignature\(/g) || []).length === 2,
           'and the OID4VP response endpoint asks before it records a ' +
           'verdict, with the certificate both verifiers report having ' +
-          'used', 'vc_verifier.js');
+          'used', 'vc_verifier.ts');
   log.debug("Leaving theRegisteredDoors().");
 }
 
@@ -3257,7 +3257,7 @@ async function theMainPort(t, minted) {
   }, function (req, res) {
     status.annotateRequest(req).then(function () {
       const verified = mtls.peerVerified(req);
-      // WHAT A WORKER IS HANDED, decoded the way `request_worker.js`'s
+      // WHAT A WORKER IS HANDED, decoded the way `request_worker.ts`'s
       // `decodePeer()` decodes it, and put on a shim socket the way that file
       // does — then asked the same question.
       const forwarded = requestPool.peerOf(req);

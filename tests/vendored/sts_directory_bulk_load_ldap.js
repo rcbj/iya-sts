@@ -43,19 +43,19 @@
 // `docker-compose.yml` deliberately does NOT publish 389 and 636 — a host
 // already running slapd would fail to start the stack with a port binding error
 // naming a service nobody was thinking about — so this job cannot simply assume
-// `localhost:389`. Two arrangements reach it and both are set up by a launcher:
+// `localhost:389`. The launcher sets it up:
 //
 //   * `./docker-run-tests.sh` — the runner is a container on the bridge with
 //     the service, so `ldap://sts:389` works with nothing published at all.
-//   * `./local-run-tests.sh` — the runner is a host process, so that launcher
-//     picks a FREE host port and layers `tests/docker-compose-ldap.yml` over
-//     the compose file to map it to 389. The operator's own `docker compose up`
-//     is untouched.
+//   * `./local-run-tests.sh`, until it was removed on 2026-09-16 — the runner
+//     was a host process, so that launcher picked a FREE host port and layered
+//     `tests/docker-compose-ldap.yml` over the compose file to map it to 389.
+//     The operator's own `docker compose up` was untouched.
 //
-// Either way the launcher hands this job `STS_LDAP_URL`. Without it the job
+// The launcher hands this job `STS_LDAP_URL`. Without it the job
 // falls back to the service's own hostname on 389, which is what a hand-run
 // against a service started with `node server.js` gets — and if nothing is
-// listening it FAILS, naming the variable and both launchers. **It is not
+// listening it FAILS, naming the variable and the launcher. **It is not
 // skipped**: this suite's rule since 2026-08-28 is that a job which cannot run
 // is a failure rather than a green tick, because a suite that reports success
 // having driven nothing is worse than one that is honestly absent.
@@ -815,10 +815,9 @@ async function test() {
     assert.fail("could not bind to " + ldapUrl() + ": " + (e.message || e) +
       "\n\nThis job drives the directory's OWN SOCKET, which " +
       "docker-compose.yml deliberately does not publish (a host running " +
-      "slapd would fail to start the stack). Both launchers arrange it and " +
-      "set STS_LDAP_URL: ./docker-run-tests.sh puts the runner on the bridge " +
-      "with the service, and ./local-run-tests.sh picks a free host port and " +
-      "layers tests/docker-compose-ldap.yml over the compose file. Running " +
+      "slapd would fail to start the stack). ./docker-run-tests.sh " +
+      "arranges it and sets STS_LDAP_URL, by putting the runner on the " +
+      "bridge with the service. Running " +
       "this file by hand against `node server.js` needs STS_LDAP_URL, or " +
       "STS_LDAP_PORT if the service is on this host. It is NOT skipped when " +
       "it cannot connect: the socket is the thing under test.");

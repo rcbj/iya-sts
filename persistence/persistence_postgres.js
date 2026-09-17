@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: persistence/persistence_postgres.js
@@ -1039,7 +1040,8 @@ function create(options) {
   // needed it, unless the role is the service itself). cluster.js decides.
   function fenced(reason, message, lost) {
     log.debug("Entering fenced().");
-    const err = new Error(errorCodes.tag('STS-CLUSTER-0001') + message);
+    const err = /** @type {any} */ (
+      new Error(errorCodes.tag('STS-CLUSTER-0001') + message));
     err.fenced = true;
     err.reason = reason;
     err.lost = lost || [];
@@ -1118,7 +1120,7 @@ function create(options) {
   // which is exactly right and costs nothing to arrange.
   // ---------------------------------------------------------------------
   // HOW MANY CHANGE ROWS THIS PROCESS HAS WRITTEN. A local counter and not a
-  // query: `common/request_worker.js` needs to know whether its flush actually
+  // query: `common/request_worker.ts` needs to know whether its flush actually
   // wrote anything, and asking the database that after every request is a round
   // trip for a question this process already knows the answer to.
   //
@@ -3537,7 +3539,7 @@ function create(options) {
 //   * `directory.concurrent-writes` — `saveDirectory()` merges each entry with
 //     the row as it is now (`directory_merge.js`) and keeps the first of two
 //     adds; `persistence.js` applies what the store decided; the create doors
-//     claim their names across nodes (`ldap/directory_create_claims.js`).
+//     claim their names across nodes (`ldap/directory_create_claims.ts`).
 // ---------------------------------------------------------------------------
 capabilities.provide('store.no-foreign-deletes');
 capabilities.provide('directory.concurrent-writes');

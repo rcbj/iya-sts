@@ -8,7 +8,7 @@
 //
 // An operator watched a console session expire an hour after signing in, with
 // its ID Token and access token, and was sent back through the sign-in screen.
-// `common/oidc_rp.js` now keeps the tokens a sign-in was issued, and when they
+// `common/oidc_rp.ts` now keeps the tokens a sign-in was issued, and when they
 // run out redeems the refresh token and writes the new ones onto THE SAME
 // SESSION. The end-to-end half — a real refresh token grant over the loopback
 // back channel, a page answered 200 on the same cookie — is
@@ -409,11 +409,12 @@ function checkRegistration(t) {
   t.log.info('both surfaces register the renewal above everything that reads ' +
              'the session');
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
-                                          'admin.js'), 'utf8');
+                                          'admin.ts'), 'utf8');
   const renewAdmin = admin.indexOf("app.use('/admin', " +
                                    "oidcRp.renewal('admin'))");
-  const firstAdmin = firstIndex(admin, [/^app\.use\('\/admin', function/m,
-                                        /^app\.(get|post|all)\('\/admin/m]);
+  // Indented since #50: the console registers its routes from a method.
+  const firstAdmin = firstIndex(admin, [/^\s*app\.use\('\/admin', function/m,
+                                        /^\s*app\.(get|post|all)\('\/admin/m]);
   t.check(renewAdmin >= 0, 'the console registers oidcRp.renewal(\'admin\')');
   t.check(renewAdmin >= 0 && firstAdmin > renewAdmin,
           'ABOVE the console gate and every /admin route (rule 1)',
@@ -421,10 +422,10 @@ function checkRegistration(t) {
           firstAdmin);
 
   const portal = fs.readFileSync(path.join(__dirname, '..', 'portal',
-                                           'portal.js'), 'utf8');
+                                           'portal.ts'), 'utf8');
   const renewPortal = portal.indexOf("app.use(BASE, oidcRp.renewal('portal'))");
   const firstPortal = firstIndex(portal,
-                                 [/^app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)/m]);
+                                 [/^\s*app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)/m]);
   t.check(renewPortal >= 0, 'the portal registers oidcRp.renewal(\'portal\')');
   t.check(renewPortal >= 0 && firstPortal > renewPortal,
           'ABOVE the first /portal route (rule 1)',

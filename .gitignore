@@ -23,9 +23,11 @@ node_modules
 data/
 
 # THE TEST REPORT and the coverage report, both generated and both timestamped.
-# `./local-run-tests.sh` writes tests/report/<run>/ and points tests/report/latest
-# at it; `./run-coverage.sh` writes coverage/, including coverage/raw/ — V8's own
-# JSON, which is tens of megabytes per run. Neither is committed for the reason
+# `./docker-run-tests.sh` writes tests/report/<mode>/<run>/ and points
+# tests/report/<mode>/latest at it (`./local-run-tests.sh` wrote there too until
+# it was removed on 2026-09-16); `./run-coverage.sh` writes its own run under
+# tests/report/ and writes coverage/, including coverage/raw/ — V8's own JSON,
+# which is tens of megabytes per run. Neither is committed for the reason
 # the data directory above is not: a report is a claim about ONE run on ONE
 # machine, and a stale one in the repository would be read as a claim about the
 # code it sits beside.

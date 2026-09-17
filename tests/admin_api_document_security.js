@@ -233,8 +233,8 @@ async function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('=== the source: one place assembles this, and the gate still ' +
              'spells the rule the same way ===');
-  const apiSource = codeOf('mgmt-api/admin_api.js');
-  const explorerSource = codeOf('admin-ui/api_explorer.js');
+  const apiSource = codeOf('mgmt-api/admin_api.ts');
+  const explorerSource = codeOf('admin-ui/api_explorer.ts');
 
   // THE MIDDLEWARE'S OWN LINE. If the gate stops deciding the scope by the
   // method — a per-operation table, a third scope — this file's comparison
@@ -253,8 +253,8 @@ async function run(t) {
   // then complained that the prose had failed to pass an option. What a real
   // call always has is the table as its first argument.
   const callSites = [];
-  [['mgmt-api/admin_api.js', apiSource],
-   ['admin-ui/api_explorer.js', explorerSource]].forEach(function (pair) {
+  [['mgmt-api/admin_api.ts', apiSource],
+   ['admin-ui/api_explorer.ts', explorerSource]].forEach(function (pair) {
     const source = pair[1];
     let at = source.indexOf('buildSpec(');
     while (at >= 0) {

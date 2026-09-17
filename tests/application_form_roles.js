@@ -11,7 +11,7 @@
 // delivery, events. Three readers take that one list: `createApplication()`'s
 // accepted fields, `GET /admin-api/applications/new`, and the console form at
 // `/admin/applications/new`. The first two take every row whatever its role;
-// the form draws a section PER ROLE, by name, in `admin-ui/admin.js`.
+// the form draws a section PER ROLE, by name, in `admin-ui/admin.ts`.
 //
 // **SO A NEW ROLE REACHES THE API AND SILENTLY NOT THE FORM**, and that is not
 // hypothetical: `delivery` (`ssfDeliveryEndpoint`) was accepted by the API from
@@ -19,7 +19,7 @@
 // and no page errors — a field simply is not there — which is why this is a
 // check on the SOURCE rather than something an HTTP job would notice.
 //
-// In process, reading `admin-ui/admin.js` as text: requiring the console would
+// In process, reading `admin-ui/admin.ts` as text: requiring the console would
 // register every /admin route on the shared app in `run.js`'s one process.
 // ---------------------------------------------------------------------------
 
@@ -47,7 +47,7 @@ function run(t) {
                              'it had on 2026-09-12',
           roles.join(', '));
   const source = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
-                                           'admin.js'), 'utf8');
+                                           'admin.ts'), 'utf8');
   const drawn = [];
   const re = /declarationFieldsSection\(\s*'([a-z-]+)'/g;
   let m = re.exec(source);
@@ -63,7 +63,7 @@ function run(t) {
     t.check(drawn.indexOf(role) >= 0,
             'the create form draws a section for the "' + role + '" role (' +
             attributes.join(', ') + ')',
-            'admin-ui/admin.js calls declarationFieldsSection() for: ' +
+            'admin-ui/admin.ts calls declarationFieldsSection() for: ' +
             drawn.join(', '));
   });
   drawn.forEach(function (role) {

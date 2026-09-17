@@ -3,12 +3,14 @@
 # tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: THREE BY
 # DEFAULT, AND A FOURTH (`cluster`) ON REQUEST.
 #
-# `./local-run-tests.sh` and `./docker-run-tests.sh` both run the whole suite
-# once per mode, and this file is the ONE place the modes are defined. Two
-# copies would be two answers to "what does a green run cover", and the two
-# launchers would drift apart in exactly the way that matters: the one CI runs
-# would stop testing something the developer's one still did, or the reverse,
-# and nothing would say so.
+# `./docker-run-tests.sh` runs the whole suite once per mode, and this file is
+# the ONE place the modes are defined. It was written when
+# `./local-run-tests.sh` did the same (it was removed on 2026-09-16): two
+# copies would have been two answers to "what does a green run cover", and the
+# two launchers would have drifted apart in exactly the way that matters — the
+# one CI runs would stop testing something the developer's one still did, or
+# the reverse, and nothing would say so. It stays a file of its own so that a
+# second launcher, if one comes back, reads the same definition.
 #
 # ---------------------------------------------------------------------------
 # WHY THREE, AND WHY THEY ARE NOT INTERCHANGEABLE.

@@ -7,7 +7,7 @@
 // THAT PROFILE, AND EVERY RESOURCE SERVER HERE CHECKS ONE AS SECTION 4 SAYS
 // (2026-09-13).
 //
-// `oauth-oidc/jwt_access_token.js` argues the design. What is held here:
+// `oauth-oidc/jwt_access_token.ts` argues the design. What is held here:
 //
 //   1. THE LIBRARY: the `typ` reading (RFC 7515 section 4.1.9's case and
 //      prefix rules), the issuer and audience readings against a base and the
@@ -260,7 +260,7 @@ function plan(t) {
   // oauth2.js's `protocolScopes()` exempts these same six names from being
   // read as an application's client_id. Two lists answering two questions,
   // compared here so that one cannot grow a seventh alone.
-  const source = fs.readFileSync(path.join(ROOT, 'oauth-oidc', 'oauth2.js'),
+  const source = fs.readFileSync(path.join(ROOT, 'oauth-oidc', 'oauth2.ts'),
                                  'utf8');
   const listed = /const names = \[([^\]]*)\]/.exec(source);
   const names = listed ? listed[1].replace(/[\s']/g, '').split(',') : [];

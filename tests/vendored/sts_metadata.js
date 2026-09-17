@@ -67,7 +67,7 @@ const CONSOLE_USER = "sts-metadata-test";
 // A browser sign-on session for the console. It was three fetches, lifted from
 // tests/vendored/admin_api.js; it is `console_signin.js`'s walk now (below).
 //
-// The role comes from the bootstrap window (`admin-ui/admin_rbac.js`,
+// The role comes from the bootstrap window (`admin-ui/admin_rbac.ts`,
 // `rolesOf()`): until the seeded bootstrap administrator first signs in to the
 // console, whoever signs in holds both roles, while `admin.openWhenEmpty` is on
 // (the default). Once that account has signed in the roster is enforced and

@@ -8,7 +8,7 @@
 // `admin-ui/CLAUDE.md` refuses a script nine times over — so every "pick the
 // next valid element" dropdown on this page is computed on the SERVER by the
 // same code that will validate the result, and choosing one is a form POST that
-// re-renders the page. That is the whole design of `xacml/xacml_editor.js`, and
+// re-renders the page. That is the whole design of `xacml/xacml_editor.ts`, and
 // it is what makes the editor testable at all: a grammar that only existed
 // inside a browser could not be asserted in node.
 //
@@ -80,7 +80,7 @@
 // invisible to `/admin-api`, where `xacmlAction()` had already been given
 // that translation, and invisible to `tests/xacml_pap.js`, which asserts the
 // refusal it gets back from the function rather than the sentence a browser is
-// shown. Fixed in `admin-ui/admin.js` so that the console and `/admin-api`
+// shown. Fixed in `admin-ui/admin.ts` so that the console and `/admin-api`
 // cannot disagree about what a refusal said.
 //
 // THE MUTANTS, each applied to a copy of the tree, driven, and reverted:
@@ -465,7 +465,7 @@ const SURVEY = `
                                     t.indexOf("Nothing to edit") === 0; }),
     // THE TREE TABLE ONLY, found by its own header (2026-09-13). Every
     // Protocols page now draws an Endpoints table as well
-    // (admin-core/protocol_endpoints.js), and "every tr on the page" counted
+    // (admin-core/protocol_endpoints.ts), and "every tr on the page" counted
     // its rows as elements of a policy — so the empty repository drew "1 row".
     rows: Array.from(document.querySelectorAll("table")).filter(function (t) {
         const th = t.querySelector("tr th");

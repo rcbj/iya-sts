@@ -41,7 +41,7 @@
 // THE ENGINE IS THE VENDORED ONE, AND THAT IS THE POINT OF USING IT
 //
 // `common/vendored/x509.js` is the debugger's own PKI code, byte-identical,
-// already in this repository and already the thing `spiffe/spiffe_ca.js` runs
+// already in this repository and already the thing `spiffe/spiffe_ca.ts` runs
 // its certificate authority on. Over there it is held to roughly 240
 // certificates by `tests/pki_x509.js` — every key algorithm against every
 // signature algorithm, every X.509v3 extension, a four-deep chain — and each
@@ -223,7 +223,7 @@ function postAnchor(url, pem) {
 }
 
 // ---------------------------------------------------------------------------
-// ONE CERTIFICATE. The shape `spiffe/spiffe_ca.js` uses, because there is one
+// ONE CERTIFICATE. The shape `spiffe/spiffe_ca.ts` uses, because there is one
 // right way to call this engine and a second spelling of it here would be a
 // second set of edge cases.
 // ---------------------------------------------------------------------------
@@ -335,7 +335,7 @@ async function main() {
   say(opts, 'Building a Root CA, an Issuing CA and a TLS client certificate ' +
             'for ' + opts.subject + ' on ' + REPO +
             '/common/vendored/x509.js ' +
-            '— the same engine spiffe/spiffe_ca.js issues X509-SVIDs with.');
+            '— the same engine spiffe/spiffe_ca.ts issues X509-SVIDs with.');
 
   const minted = await mint({ subject: opts.subject, years: opts.years });
   const root = minted.root;

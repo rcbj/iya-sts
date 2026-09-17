@@ -72,8 +72,9 @@
 //     for — so a second run against the same service would otherwise meet
 //     "already in this registry" five times. Every previous `abcapp*` is
 //     forgotten before anything is created, which also means a run against a
-//     service left up by `./local-run-tests.sh --keep-stack` starts from the
-//     same state as a run against a fresh container.
+//     service somebody left running (a hand run; `./local-run-tests.sh
+//     --keep-stack` until that launcher was removed on 2026-09-16) starts from
+//     the same state as a run against a fresh container.
 //   * **NOTHING ELSE IN THE SUITE COUNTS APPLICATIONS.** The registry is
 //     append-only from every other job's point of view: no job asserts a total,
 //     and this one adds five entries under identifiers nothing else uses. It
@@ -326,8 +327,9 @@ async function theServiceIsThere() {
 // STEP 0: FORGET ANY PREVIOUS COPY OF THE EXAMPLE.
 //
 // The identifiers are fixed, so this is what makes a second run against the
-// same service — the one `./local-run-tests.sh --keep-stack` leaves up — start
-// from the state a fresh container starts from. `forget` loses a fact, and
+// same service — one somebody left running, as `./local-run-tests.sh
+// --keep-stack` did until 2026-09-16 — start from the state a fresh container
+// starts from. `forget` loses a fact, and
 // losing this one is the intention.
 //
 // A refusal is IGNORED and not asserted about, because the ordinary case is

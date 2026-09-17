@@ -54,7 +54,7 @@ const nodeCrypto = require("crypto");
 
 // ---------------------------------------------------------------------------
 // THIRTY LINES OF RFC 4226 OVER RFC 6238, carried rather than required from
-// `common/totp.js` — `sts_dpop.js`'s rule, and `sts_portal_totp.js` is where
+// `common/totp.ts` — `sts_dpop.js`'s rule, and `sts_portal_totp.js` is where
 // the same lines are checked against the specification's own vectors.
 //
 // **IT IS HERE FOR A FIXTURE RATHER THAN FOR A CLAIM**, which is the only
@@ -610,7 +610,7 @@ async function theRefusalsHold(b) {
 // 5. THE ASSERTION THAT PINS THE DESIGN.
 //
 // **CLAIMS 1 TO 4 ALL PASS AGAINST A PAGE THAT DUMPS THE ENTRY.** This one
-// does not, and it is the whole reason `common/inetorgperson.js` is a fixed
+// does not, and it is the whole reason `common/inetorgperson.ts` is a fixed
 // list rather than an iteration: this service writes `sts`-prefixed
 // CREDENTIALS onto the same object the schema attributes live on, and some of
 // them — the TOTP shared secret above all — can be read back and used.
@@ -734,7 +734,7 @@ async function theCredentialsAreNotOnIt(b) {
 // ===========================================================================
 // 6. ONE PERSON CANNOT READ ANOTHER'S ENTRY.
 //
-// The rule at the top of `portal/portal.js`: no route here takes an identity
+// The rule at the top of `portal/portal.ts`: no route here takes an identity
 // from the request. This is the newest reader of the directory in that file
 // and therefore the newest place that rule could have been broken — a
 // `username` honoured here would be every attribute of anybody's account, to

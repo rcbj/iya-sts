@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: assertion_grant.js

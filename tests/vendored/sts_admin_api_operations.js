@@ -187,7 +187,7 @@ function isShapeRefusal(message) {
 
 // The number words the mock's refusal sentences use to count their own lists.
 // It writes "The six are: …" rather than "The 6 are: …" almost everywhere, and
-// `common/claim_attributes.js` writes the digit — so both spellings are read.
+// `common/claim_attributes.ts` writes the digit — so both spellings are read.
 const NUMBER_WORDS = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
   nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
@@ -1704,7 +1704,7 @@ async function theClaimSetDoorsRoundTrip() {
 // /realm/acme/admin/claims was added to every realm's tokens at once, the
 // DEFAULT realm's included, while each realm's console showed it as that
 // realm's own configuration. The OTHER HALF of the same claim set was already
-// per realm (the directory attributes, in common/claim_attributes.js), so one
+// per realm (the directory attributes, in common/claim_attributes.ts), so one
 // claim set disagreed with itself about whether it belonged to a realm.
 //
 // It is asserted HERE rather than by reading the two consoles, because the
@@ -2446,7 +2446,7 @@ async function theSamlRegistriesRoundTrip() {
   // It was found by ENFORCING the operation's own schema: every action here
   // declares a `requestBody` with `additionalProperties: false`, the OpenAPI
   // document has always published it, and since 2026-09-06
-  // `mgmt-api/admin_api.js` compiles that same object with ajv and refuses a
+  // `mgmt-api/admin_api.ts` compiles that same object with ajv and refuses a
   // body that does not match.
   //
   // That is precisely the hazard the comment twenty lines below this one warns
@@ -3449,7 +3449,7 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     "GET /logout?user=… should answer 200; it answered " + inventory.status);
   assert.ok((inventory.body.families || []).length > 5,
     "the sign-out view should list every family a logout reaches — the " +
-    "prose for those lives in logout/logout.js and is rendered by both " +
+    "prose for those lives in logout/logout.ts and is rendered by both " +
     "doors, so a family added there appears here with no edit. It listed " +
     (inventory.body.families || []).length);
   const rows = inventory.body.rows || [];
@@ -3559,7 +3559,7 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
 //
 // It also asserts the one refusal the gate is responsible for rather than
 // this resource: a token carrying only `admin:read` may LIST the truststore and
-// may not change it. That is `mgmt-api/admin_api.js`'s middleware, by method,
+// may not change it. That is `mgmt-api/admin_api.ts`'s middleware, by method,
 // and it is asserted HERE because a truststore anybody with a read token could
 // add to would be `POST /tls/trust` all over again with a credential in front.
 // ---------------------------------------------------------------------------
@@ -3943,7 +3943,7 @@ async function theKerberosPrincipalsRoundTrip() {
 // It still revokes what it grants, and reads the roster back to its starting
 // count. The window in which anybody who signs in holds both roles is closed
 // by the bootstrap administrator's first console sign-in wherever one was
-// seeded (every realm since #32; admin-ui/admin_rbac.js), and only where none
+// seeded (every realm since #32; admin-ui/admin_rbac.ts), and only where none
 // was does the older rule apply — open while neither role group has a member,
 // so that a first grant closes it for everybody not in the roster.
 // ---------------------------------------------------------------------------

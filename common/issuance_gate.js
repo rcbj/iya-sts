@@ -11,7 +11,7 @@
 // Token, a SAML assertion, a WS-Federation response, a WS-Trust token, a
 // browser session. Since 2026-09-05 each of those asks this file first, and
 // this file asks whoever filled the slot below — which is
-// `xacml/xacml_role_pep.js`, an EMBEDDED POLICY ENFORCEMENT POINT that turns
+// `xacml/xacml_role_pep.ts`, an EMBEDDED POLICY ENFORCEMENT POINT that turns
 // the question into a XACML request and puts it to the PDP.
 //
 // So the answer to "may this application be issued anything for this person"
@@ -28,7 +28,7 @@
 //
 //   * A require from an issuance site to `xacml/` would MOVE ROUTES. Eight
 //     modules issue something and all but one are required BEFORE
-//     `xacml/xacml.js` at 23c — `wstrust` at 7, `authn` at 8, `oauth2` at 9,
+//     `xacml/xacml.ts` at 23c — `wstrust` at 7, `authn` at 8, `oauth2` at 9,
 //     `wsfed` at 10, the two SAML profiles at 10a and 10b, the KDC at 15.
 //     (GNAP, at 23d, came later and asks through this file like the rest.)
 //     Requiring the XACML family from any of the seven registers eight
@@ -36,7 +36,7 @@
 //     instead, ahead of the management API's own, which is the failure
 //     CLAUDE.md's require-order table exists to prevent.
 //   * And it would CLOSE A CYCLE. `xacml_admin.js` requires
-//     `admin-ui/admin.js`, which requires `oauth2.js`.
+//     `admin-ui/admin.ts`, which requires `oauth2.js`.
 //
 // A require in the other direction — the PEP reaching into `oauth2.js` — is
 // not a candidate at all: the PEP would then have to know about every caller.
@@ -60,7 +60,7 @@
 // subsystem that could brick every protocol family by being half-loaded would
 // be the worst possible thing to put in front of a mock. **Where enforcement
 // must fail CLOSED it does so in the PEP, which knows whether somebody
-// actually asked for a restriction** — see `xacml/xacml_role_pep.js`, which
+// actually asked for a restriction** — see `xacml/xacml_role_pep.ts`, which
 // argues the one case that refuses on a missing policy and the one that does
 // not. This file's job is to be absent-safe; it is not the file that decides
 // what a restriction means.

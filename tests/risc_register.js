@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE RISC ACCOUNT REGISTER AND ITS THREE STATE MACHINES, DRIVEN IN PROCESS.
 //
-// `ssf/risc.js` is what the fourteen RISC event types are ABOUT: an ACCOUNT,
+// `ssf/risc.ts` is what the fourteen RISC event types are ABOUT: an ACCOUNT,
 // the states RISC believes it is in, and how many events of which type have
 // been sent concerning it. It has no DOM, no socket and no route, which is
 // what makes it drivable here.
@@ -94,7 +94,7 @@ function deleted(username, before) {
     username: username, realm: 'default', before: before, after: {} };
 }
 
-// What `ssf.js`'s transmit() hands back to the register once the SET exists.
+// What `ssf.ts`'s transmit() hands back to the register once the SET exists.
 function transmitted(row, uri, payload, streamId) {
   log.debug("Entering transmitted().");
   risc.noteTransmitted({ stream_id: streamId || 'st-1' }, {

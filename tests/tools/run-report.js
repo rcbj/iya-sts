@@ -4,7 +4,11 @@
 // File: tests/tools/run-report.js
 //
 // ===========================================================================
-// THE REPORT GENERATOR. `./local-run-tests.sh`, or `npm run report`.
+// THE REPORT GENERATOR. `./docker-run-tests.sh` runs it in the tests container
+// (tests/run-tests-in-container.sh), and `./run-coverage.sh` runs it too;
+// `./local-run-tests.sh` ran it on the host until it was removed (2026-09-16).
+// Since #50 a host run of it meets common/compiled_tree.js's refusal
+// (STS-CORE-0093), because the TypeScript is compiled only inside an image.
 //
 // `npm test` (tests/run.js) runs every test in ONE process and prints bunyan
 // lines. That is the right shape for the thing it is — under two seconds, no
@@ -36,9 +40,9 @@
 //   logs/00-test-runner.log        THIS RUNNER'S own output — the jobs it
 //                                  chose, the ones it could not start and why,
 //                                  the reason a job was SKIPPED, the summary.
-//                                  ./local-run-tests.sh tees it;
 //                                  ./docker-run-tests.sh takes it out of
-//                                  `docker compose logs tests`
+//                                  `docker compose logs tests` (the
+//                                  removed ./local-run-tests.sh tee'd it)
 //
 // A JOB THAT NEVER STARTED HAS NO logs/NN- FILE, which is the whole reason the
 // second one exists: what it says about that job is said in the runner's
@@ -131,9 +135,10 @@
 //                          tools/vendor-check.js is what takes it now.
 //   --service-url=<url>    DRIVE A SERVICE SOMEBODY ELSE STARTED, at this URL,
 //                          instead of starting a throwaway one. This is how
-//                          ./local-run-tests.sh hands over the CONTAINER it
-//                          brought up with docker-compose.yml — see THE
-//                          SERVICE UNDER THE PROTOCOL JOBS below. The URL is
+//                          ./local-run-tests.sh handed over the CONTAINER it
+//                          brought up with docker-compose.yml, until it was
+//                          removed (2026-09-16) — see THE SERVICE UNDER THE
+//                          PROTOCOL JOBS below. The URL is
 //                          checked before any job runs, and a service that
 //                          does not answer FAILS the protocol jobs rather
 //                          than skipping them, exactly as a throwaway one
@@ -153,9 +158,11 @@
 // THE SERVICE UNDER THE PROTOCOL JOBS COMES FROM ONE OF TWO PLACES, AND THIS
 // RUNNER STARTS ONLY THE SECOND.
 //
-//   A CONTAINER, brought up from docker-compose.yml by ./local-run-tests.sh
-//   and handed here as --service-url (or STS_TEST_SERVICE_URL). This is the
-//   DEFAULT way the launcher runs, since 2026-08-28, and what it buys is that
+//   A CONTAINER, brought up by a launcher and handed here as --service-url
+//   (or STS_TEST_SERVICE_URL). ./docker-run-tests.sh's is the `sts` service of
+//   docker-compose-run-tests.yml; ./local-run-tests.sh's, from 2026-08-28
+//   until that launcher was removed on 2026-09-16, was docker-compose.yml's.
+//   What it buys is that
 //   the thing under test is the IMAGE — the same Dockerfile, the same
 //   `npm install --omit=dev`, the same node — rather than whatever the
 //   developer's own `node_modules` and node version happen to be. Several
@@ -163,9 +170,10 @@
 //   source, and a suite that never builds one cannot see them.
 //
 //   A THROWAWAY PROCESS, started by tools/service.js on a block of ports of
-//   its own. Still here, still what --no-docker uses, and still what a COVERAGE
-//   run uses — because V8 writes its coverage from inside the process being
-//   measured, and this runner cannot reach inside a container to collect it.
+//   its own. Still here, and still what a COVERAGE run uses (it was also
+//   ./local-run-tests.sh --no-docker's) — because V8 writes its coverage
+//   from inside the process being measured, and this runner cannot reach
+//   inside a container to collect it.
 //
 // The lifetime rule is the same one that governs everything else here: WHOEVER
 // STARTED IT STOPS IT. A service handed in through --service-url is never
@@ -189,7 +197,7 @@
 //                   the OTHER half of the log level: the vendored modules
 //                   under common/vendored/ build their loggers from this file
 //                   and never see STS_LOG_LEVEL, so a quiet run needs both.
-//                   ./local-run-tests.sh sets it from --sts-log-level.
+//                   ./run-coverage.sh sets it from the level.
 //   COVERAGE=true   collect V8 coverage from every job AND from the throwaway
 //                   service, then render it. `./run-coverage.sh` is the way in.
 //   COVERAGE_DIR    where the raw data and the rendered report go
@@ -944,7 +952,7 @@ function writeHtml(runDir, results, meta) {
       ' on <code>' +
       escapeHtml(meta.serviceUrl || '?') + '</code>. They are byte-identical ' +
       'copies of the parent project\'s jobs and are not edited here; ' +
-      '<code>./local-run-tests.sh --vendor-check</code> reports drift when ' +
+      '<code>node tests/tools/vendor-check.js</code> reports drift when ' +
       'both checkouts are present.';
   } else if (meta.protocolWhy) {
     html += ' Protocol jobs were not run: ' + escapeHtml(meta.protocolWhy) +
@@ -1238,10 +1246,11 @@ async function waitForExternalService(url, log, timeoutMs) {
 //
 // **A LAUNCHER'S ANSWER ALWAYS WINS**, the same precedence `STS_LDAP_URL`
 // above uses: a variable already in this process's environment was put there
-// by ./local-run-tests.sh or ./docker-run-tests.sh, which arranged the socket
-// themselves and know where it is. This only answers for the service THIS
-// runner started, and answers nothing at all when it started none — the
-// compose stacks reach this with no `instance`, and their defaults stand.
+// by a launcher — ./docker-run-tests.sh now, ./local-run-tests.sh until
+// 2026-09-16 — which arranged the socket itself and knows where it is. This
+// only answers for the service THIS runner started, and answers nothing at
+// all when it started none — the compose stacks reach this with no
+// `instance`, and their defaults stand.
 // ---------------------------------------------------------------------------
 function chosenPorts(instance) {
   log.debug("Entering chosenPorts().");
@@ -1269,8 +1278,8 @@ function chosenPorts(instance) {
 //
 //   * `./run-coverage.sh`, which never passes --service-url because V8
 //     collects from inside the process it measures
-//   * `./local-run-tests.sh --no-docker`, where STS_URL is only ever assigned
-//     inside composeUp()
+//   * `./local-run-tests.sh --no-docker`, where STS_URL was only ever
+//     assigned inside composeUp() (that launcher was removed on 2026-09-16)
 //   * a bare `node tests/tools/run-report.js`
 //
 // Until this existed all three ran the whole protocol half against a gated API
@@ -1290,9 +1299,10 @@ function chosenPorts(instance) {
 // ---------------------------------------------------------------------------
 function pinTheManagementApiSecret() {
   log.debug('Entering pinTheManagementApiSecret().');
-  // A caller who set either name already MEANS it — `./local-run-tests.sh`
-  // exports the first before it brings a container up, and a person debugging
-  // a stack by hand sets the second. Overwriting one here would mint a token
+  // A caller who set either name already MEANS it — `./docker-run-tests.sh`
+  // exports the first before it brings its stack up (as `./local-run-tests.sh`
+  // did until 2026-09-16), and a person debugging a stack by hand sets the
+  // second. Overwriting one here would mint a token
   // against a secret the running service has never heard of.
   if (process.env.ADMIN_API_CLIENT_SECRET ||
       process.env.STS_ADMIN_API_CLIENT_SECRET) {
@@ -1538,7 +1548,7 @@ async function main() {
         // modules under common/vendored/ each build their own bunyan logger at
         // load from the CONFIG_FILE's logLevel, so a `debug` file goes on
         // writing every canonicalization however low this level is.
-        // ./local-run-tests.sh picks the file from the level and exports it
+        // ./run-coverage.sh picks the file from the level and exports it
         // under this name.
         configFile: process.env.STS_TEST_CONFIG_FILE || '',
         coverageDir: wantCoverage ? rawProtocol : '',
@@ -1657,10 +1667,10 @@ async function main() {
       const why = 'no launcher provided a remote PEP (XACML_PEP_URL), so ' +
                   'this job would have to build an image and start a ' +
                   'container of its own — and no docker daemon answered (' +
-                  dockerHere.why + '). BOTH ./local-run-tests.sh and ' +
-                  './docker-run-tests.sh bring one up as part of their stack ' +
-                  'and neither takes this branch; a bare run-report.js ' +
-                  'against a service somebody else started is what does. The ' +
+                  dockerHere.why + '). ./docker-run-tests.sh brings one up ' +
+                  'as part of its stack and never takes this branch; a ' +
+                  'run with no such stack — a bare run-report.js, or a ' +
+                  'coverage run — is what does. The ' +
                   'remote XACML PEP therefore has NO end-to-end coverage in ' +
                   'this run: what stands is tests/xacml_pep.js, which loads ' +
                   'that container\'s modules in a child process and makes no ' +
@@ -1776,20 +1786,21 @@ async function main() {
         // THREE WAYS IT CAN BE ANSWERED AND THIS LINE IS THE THIRD.
         // ./docker-run-tests.sh puts `ldap://sts:389` in the runner
         // container's environment (the runner is on the bridge, nothing is
-        // published); ./local-run-tests.sh picks a free host port, layers
-        // tests/docker-compose-ldap.yml and exports STS_LDAP_URL. Both of
-        // those arrive here as an INHERITED variable, and the `||` below is
-        // what lets them win: this object is assigned OVER process.env, so a
-        // bare assignment here would overwrite the launcher's answer with a
-        // guess about a service the launcher did not start.
+        // published); ./local-run-tests.sh picked a free host port, layered
+        // tests/docker-compose-ldap.yml and exported STS_LDAP_URL, until it
+        // was removed on 2026-09-16. A launcher's answer arrives here as an
+        // INHERITED variable, and the `||` below is what lets it win: this
+        // object is assigned OVER process.env, so a bare assignment here
+        // would overwrite the launcher's answer with a guess about a service
+        // the launcher did not start.
         //
-        // What it adds is the THROWAWAY case: `--no-docker`, and every
-        // coverage run. There the service is a child of this process on a
-        // block of ports this runner chose, so nothing outside knows where
-        // its directory is listening and only this line can say. The port
-        // comes from `instance.ports` by NAME rather than as an offset from
-        // `instance.base`, so a listener added to or removed from the middle
-        // of that block cannot silently move it.
+        // What it adds is the THROWAWAY case: every coverage run, and a bare
+        // run with no --service-url. There the service is a child of this
+        // process on a block of ports this runner chose, so nothing outside
+        // knows where its directory is listening and only this line can say.
+        // The port comes from `instance.ports` by NAME rather than as an
+        // offset from `instance.base`, so a listener added to or removed from
+        // the middle of that block cannot silently move it.
         STS_LDAP_URL: process.env.STS_LDAP_URL ||
           (instance.ports && instance.ports.LDAP_PORT
             ? 'ldap://localhost:' + instance.ports.LDAP_PORT

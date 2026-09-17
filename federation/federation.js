@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: federation.js
@@ -121,7 +122,7 @@
 // It registers no route. It requires `helpers.js`, `config.js`, `realms.js`,
 // `audit.js`, `error_codes.js` and `applications.js` (below) and nothing else
 // in this repository — none of which registers a route or reaches back here —
-// which is what lets `admin_stats.js`, `authn/authn.js`, `admin-ui/admin.js`,
+// which is what lets `admin_stats.js`, `authn/authn.ts`, `admin-ui/admin.ts`,
 // `admin-core/`, `ldap_server.js`, `federation_graph.js` and
 // `federation_sp.js` all require it in the ordinary direction with no cycle
 // and no route moved. Do not let it grow a require of anything that registers
@@ -202,8 +203,8 @@ const applications = require('./../common/applications');
 // THE PATHS, HERE RATHER THAN IN `federation_sp.js` WHERE THEY ARE SERVED.
 //
 // Three things need them and only one of them may require that module.
-// `federation_sp.js` registers routes, so `admin-ui/admin.js` must not require
-// it — `common/protocol_stack.js` loads that module BEFORE the console, and a
+// `federation_sp.js` registers routes, so `admin-ui/admin.ts` must not require
+// it — `common/protocol_stack.ts` loads that module BEFORE the console, and a
 // require in the other direction would be the reason a route moved the day
 // somebody reorders the two (the line already drawn around
 // `spiffe_server.js`). But the console page's whole job is to tell an operator

@@ -25,14 +25,14 @@
 // THE CODE IS COMPUTED BY AN IMPLEMENTATION WRITTEN FOR THIS FILE, AND THAT IS
 // THE WHOLE VALUE OF THE JOB.
 //
-// `tests/totp.js` asserts `common/totp.js` against RFC 4226's and RFC 6238's
+// `tests/totp.js` asserts `common/totp.ts` against RFC 4226's and RFC 6238's
 // own published vectors, so the SERVICE's arithmetic is known to be right. What
 // that cannot show is that a THIRD PARTY holding the secret this service handed
 // out can produce a code this service accepts — which is the only thing an
 // authenticator app ever does, and the only claim a person cares about.
 //
 // So the thirty lines below are deliberately not `require`d from
-// `common/totp.js`. They are the same shape a client author would write, and
+// `common/totp.ts`. They are the same shape a client author would write, and
 // they are checked against RFC 6238's Appendix B before they are trusted (see
 // `theGeneratorIsRight()`) — because a test-side generator that agreed with a
 // broken service would be worse than no test at all. It is the arrangement

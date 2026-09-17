@@ -7,8 +7,8 @@
 # compose DNS name (https://sts:8081) and this container has a Chrome of its own.
 # Do NOT run it from a host shell: there is no `sts` name there, the report would
 # be written into the working tree by whatever user ran it, and the browser jobs
-# would drive the machine's own Chrome — which is ./local-run-tests.sh's job and
-# is a different (deliberately different) run.
+# would drive the machine's own Chrome — which was ./local-run-tests.sh's job,
+# a deliberately different run, until that launcher was removed (2026-09-16).
 #
 # It is this repository's answer to ../id-proto-debugger/tests/run-tests-in-container.sh
 # and is very much shorter, for the reason its launcher is: that script has to

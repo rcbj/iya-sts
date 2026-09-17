@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE PROXY PROTOCOL V2 READER (2026-09-14, #46), IN PROCESS.
 //
-// `common/proxy_protocol.js` takes a binary header off the front of every TCP
+// `common/proxy_protocol.ts` takes a binary header off the front of every TCP
 // connection BEFORE the listener — TLS included — sees a byte, and puts the
 // client address it names on the socket. Four claims are held here:
 //

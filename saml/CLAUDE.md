@@ -5,15 +5,15 @@ provider for each of them**.
 
 | File | What it is |
 |---|---|
-| `saml2.js` | A SAML 2.0 assertion: build, sign, encrypt, and the attribute statement. Registers nothing. |
-| `saml11.js` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
-| `saml2_sso.js` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
-| `saml11_sso.js` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
-| `sp_metadata.js` | A service provider's metadata: parsing it, and fetching it by an explicit refresh — through `../federation/federation_http.js`'s outbound policy since 2026-09-12. Registers nothing. |
-| `authn_context.js` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
-| `document_settings.js` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
-| `return_address.js` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
-| `person_attributes.js` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
+| `saml2.ts` | A SAML 2.0 assertion: build, sign, encrypt, and the attribute statement. Registers nothing. |
+| `saml11.ts` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
+| `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
+| `saml11_sso.ts` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
+| `sp_metadata.ts` | A service provider's metadata: parsing it, and fetching it by an explicit refresh — through `../federation/federation_http.ts`'s outbound policy since 2026-09-12. Registers nothing. |
+| `authn_context.ts` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
+| `document_settings.ts` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
+| `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
+| `person_attributes.ts` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
 
 ## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
 
@@ -27,7 +27,7 @@ identity-provider-initiated, and a flow begins when a browser arrives carrying a
 Six things follow, and each is a branch that would have had to exist in every
 function of a merged implementation:
 
-| | SAML 2.0 (`saml2_sso.js`) | SAML 1.1 (`saml11_sso.js`) |
+| | SAML 2.0 (`saml2_sso.ts`) | SAML 1.1 (`saml11_sso.ts`) |
 |---|---|---|
 | the relying party names itself | `<saml:Issuer>` on the request | it cannot — `providerId`, the path segment, or GUESSED from the TARGET's origin |
 | a failure goes | to the service provider, as a Response with a status | to a PAGE — there is nothing to answer |
@@ -43,8 +43,8 @@ And the spellings differ almost everywhere the two overlap: `AssertionID` not
 in a response.
 
 What IS shared is shared deliberately and is exactly three things: the
-application registry, the session, and `slugOf()` — which `saml11_sso.js`
-requires FROM `saml2_sso.js` rather than reimplementing, because the slug is a
+application registry, the session, and `slugOf()` — which `saml11_sso.ts`
+requires FROM `saml2_sso.ts` rather than reimplementing, because the slug is a
 handle for an application and two spellings of it would make
 `/saml2/metadata/app-1a2b3c` and `/saml11/metadata/app-9f8e7d` name one entry in
 one directory.
@@ -61,7 +61,7 @@ because the reason each existed is still worth a reader's attention:
 |---|---|
 | `README.md` | the profile, its three bindings, and what is still absent |
 | the root `CLAUDE.md` | the non-goals table row is gone; the require-order table has 10a |
-| `../ws-federation/wsfed.js` | its federation metadata still publishes no `IDPSSODescriptor`, which is now a fact about THAT document — the IDPSSODescriptor is at `/saml2/metadata` |
+| `../ws-federation/wsfed.ts` | its federation metadata still publishes no `IDPSSODescriptor`, which is now a fact about THAT document — the IDPSSODescriptor is at `/saml2/metadata` |
 | `../sts_metadata.js` | the `saml2` coverage note, and the protocol card that said NO ROUTE OF ITS OWN |
 | `docs/` | the user-facing half |
 
@@ -100,7 +100,7 @@ change was mostly a prose sweep.
   provider that asked for PAOS and got a form post would conclude that PAOS
   worked.
 
-**And what `saml11_sso.js` does not do**, which is a shorter list because most
+**And what `saml11_sso.ts` does not do**, which is a shorter list because most
 of what is missing there is missing from the PROTOCOL rather than from this
 implementation:
 
@@ -125,13 +125,13 @@ implementation:
 
 ---
 
-## Six decisions in `saml2_sso.js`, and the two most likely to be undone
+## Six decisions in `saml2_sso.ts`, and the two most likely to be undone
 
 The file's own header argues all six at length. Two of them are the ones somebody
 will try to "fix":
 
 **1. THERE IS NO SIGN-IN SCREEN IN THIS DIRECTORY, and that was once the
-deliberate difference from `../ws-federation/wsfed.js`.** That module had a
+deliberate difference from `../ws-federation/wsfed.ts`.** That module had a
 screen of its own because section 13.2.1 lets a WS-Federation sign-in request
 arrive as a cross-site form POST, which `SameSite=Lax` keeps the session cookie
 off — so it could not read the session it would need in order to skip the
@@ -141,7 +141,7 @@ endpoint**, which is a top-level GET navigation and therefore DOES carry a Lax
 cookie. What follows is single sign-on with OAuth in one session, a WebAuthn
 ceremony available at the screen, and one fewer place asking for a username.
 **WS-Federation gave up its own screen for the same funnel on 2026-08-26**
-(`wsfed.js` says why), so the asymmetry is gone the right way round. Do not give
+(`wsfed.ts` says why), so the asymmetry is gone the right way round. Do not give
 this profile a screen of its own.
 
 **2. THE METADATA IS PER SERVICE PROVIDER AND IS MINTED FOR ANYTHING ASKED FOR.**
@@ -175,7 +175,7 @@ on the ask, and the application entry is created by the first valid AuthnRequest
 and why the digest is the only thing they have to know.
 
 The other four: any entityID is accepted and nothing is verified; the assertion
-is built by `saml2.js` and not by that file; the Response is signed as well as
+is built by `saml2.ts` and not by that file; the Response is signed as well as
 the assertion and both are settings; and an artifact is one-shot.
 
 ### An artifact is one-shot ACROSS THE CLUSTER (2026-09-14, #46) — capability `saml.artifacts-once`
@@ -190,7 +190,7 @@ requests inside that moment on two nodes and got the assertion twice.
 Both profiles now keep the map check first and unchanged, delete, and then SPEND
 the artifact through `cluster/cluster_claims.js` (scopes `saml2.artifact` and
 `saml11.artifact`) before answering. `resolveArtifact()` → `spendArtifact()` in
-`saml2_sso.js` and the artifact branch of `respond()` in `saml11_sso.js`, both
+`saml2_sso.ts` and the artifact branch of `respond()` in `saml11_sso.ts`, both
 now asynchronous at that point. What is decided, and why:
 
 * **The claim lives for the artifact's remaining lifetime plus 60 s** of clock
@@ -205,8 +205,8 @@ now asynchronous at that point. What is decided, and why:
   store), `0060` (the answer failed after the spend) — renumbered from
   0055–0058 when feature/46 was rebased onto develop, which had taken 0055 and
   0056 for the ForceAuthn and RequestedAuthnContext refusals. The capability is provided
-  from `saml2_sso.js` for both profiles, because the row names it and
-  `saml11_sso.js` requires that module.
+  from `saml2_sso.ts` for both profiles, because the row names it and
+  `saml11_sso.ts` requires that module.
 
 `tests/cluster_single_use_protocols.js` section 1 holds both profiles: a node
 still holding a resolved artifact is refused, the same restore against an empty
@@ -291,14 +291,14 @@ attributes"*: its signature-wrapping guard, firing on a document this service
 built itself.
 
 The fix WAS one option in each signer — `idAttribute: 'AssertionID'` in
-`saml11.js`, `'ResponseID'` in `saml11_sso.js`'s `signDocument()`. Then the real
+`saml11.ts`, `'ResponseID'` in `saml11_sso.ts`'s `signDocument()`. Then the real
 attribute is found, nothing is injected, and the reference names the id a SAML
 1.1 relying party expects. **WS-Federation's assertions changed as a result and
 are more correct for it**; `/wsfed/rp` verifies them check by check and was used
 to prove it.
 
 **It was only safe because neither name was already on that default list.** The
-opposite case was recorded in `saml2_sso.js`: naming `ID` for SAML 2.0 unshifts a
+opposite case was recorded in `saml2_sso.ts`: naming `ID` for SAML 2.0 unshifts a
 DUPLICATE onto the list and trips the very same guard on a document that has
 nothing wrong with it. Two spellings of one argument, each of which had to be
 got exactly right in opposite directions at six call sites.
@@ -310,8 +310,8 @@ IS WHAT `common/crypto.js` BOUGHT.** Every signer and verifier here now goes
 through one module over `common/vendored/xmldsig.js`, which resolves `ID`,
 `AssertionID`, `ResponseID` and `RequestID` from the document itself. There is
 no list to be told about, nothing is ever invented, and **there is no longer a
-parameter to get wrong** — `signDocument()` in `saml11_sso.js` and
-`verifyAssertionSignature()` in `wsfed.js` both lost theirs.
+parameter to get wrong** — `signDocument()` in `saml11_sso.ts` and
+`verifyAssertionSignature()` in `wsfed.ts` both lost theirs.
 
 The story is kept rather than deleted because it is the best argument this
 repository has for a single signer: a defect that produced a schema-invalid
@@ -405,7 +405,7 @@ lines away. The message is now chosen from the error.
 The *SAML* group held TWO rows from 2026-08-27 — `saml.issuer` and
 `saml.clockSkewS` — and five more since 2026-09-12: `saml.signatureAlgorithm`,
 `saml.canonicalizationAlgorithm` and the three `saml.organization*` rows
-(`document_settings.js`). What they have in common is the entry test for that
+(`document_settings.ts`). What they have in common is the entry test for that
 group: each is read by what BOTH profiles sign and therefore reaches WS-Trust
 or WS-Federation as well. See *The validity window* below for
 `saml.clockSkewS`.
@@ -538,7 +538,7 @@ for, the assertion states what it is actually valid for, and a relying party
 trusting the envelope discards early rather than late.
 
 **ONE CALLER HAD TO BE EDITED ANYWAY**, and it is the exception that proves the
-choke point. `saml2_sso.js` passes its own
+choke point. `saml2_sso.ts` passes its own
 `SubjectConfirmationData/NotOnOrAfter`, because the Web Browser SSO profile
 requires the bearer confirmation to carry one; it now adds the same skew. Two
 expiries inside one assertion that disagree is a defect a service provider
@@ -548,7 +548,7 @@ is the one thing about this feature that is not automatic.
 
 **AND IT IS NOT `oauth2.clockSkewS`.** That one is a TOLERANCE applied wherever
 this service READS a document back, including an inbound partner assertion at
-`/federation/acs/{id}` — where `federation/federation_sp.js` argues that a
+`/federation/acs/{id}` — where `federation/federation_sp.ts` argues that a
 reading tolerance is decided once and reuses it on purpose. `saml.clockSkewS` is
 what this service WRITES into a document it issues. Merging them would take away
 a deployment's ability to read strictly and issue forgivingly, which are
@@ -562,8 +562,8 @@ independent choices.
 `value` is untouched and is what every existing caller passes. One element per
 value with the same name is not a multi-valued attribute — it is a relying party
 reading the first and silently seeing one where there are four. That is also why
-the precedence rules in `../common/claim_attributes.js` and
-`../common/group_claims.js` are written as a FILTER in these two builders rather
+the precedence rules in `../common/claim_attributes.ts` and
+`../common/group_claims.ts` are written as a FILTER in these two builders rather
 than as an assignment order: an assertion is a list of elements, so a duplicate
 name is not an overwrite.
 
@@ -581,32 +581,32 @@ enforced for these two, because `exp` collides with nothing in an assertion.
 
 ## The require order
 
-`saml2.js` and `saml11.js` require only libraries — `../common/helpers`,
+`saml2.ts` and `saml11.ts` require only libraries — `../common/helpers`,
 `../common/config`, `../common/crypto`, `../common/error_codes`,
-`../common/admin_stats`, and this directory's `document_settings.js` and
-`authn_context.js` — none of which requires them back, so they cannot join a
+`../common/admin_stats`, and this directory's `document_settings.ts` and
+`authn_context.ts` — none of which requires them back, so they cannot join a
 cycle and their position is not a position at all.
 
-**`saml2_sso.js` is position 10a in `common/protocol_stack.js` (the require
+**`saml2_sso.ts` is position 10a in `common/protocol_stack.ts` (the require
 order `server.js` loads) and has one real constraint**: it
-must come after `../authn/authn.js`, and it is a STRONGER dependency than
+must come after `../authn/authn.ts`, and it is a STRONGER dependency than
 WS-Federation's rather than a weaker one — that module signs users into the
 session `authn.js` owns, and this one has no sign-in screen at all and reaches
 that service's through `beginAuthentication()`. It has no constraint against
-`wsfed.js` in either direction; the two share the session and know nothing about
+`wsfed.ts` in either direction; the two share the session and know nothing about
 each other. It sits between them and OID4VC so that the two browser SSO profiles
 read together in the route order and on `/admin/sts-metadata`.
 
-`../admin-ui/admin.js` (and `../admin-core/`) require it in the ORDINARY
+`../admin-ui/admin.ts` (and `../admin-core/`) require it in the ORDINARY
 direction — a plain require, not another inverted slot — and rule 3e's test is
-why: `common/protocol_stack.js` requires this module at 10a and those at 18 or
+why: `common/protocol_stack.ts` requires this module at 10a and those at 18 or
 later, so a require from there closes no cycle and moves no route.
 
-**`saml11_sso.js` is position 10b and has TWO constraints**, the second of which
+**`saml11_sso.ts` is position 10b and has TWO constraints**, the second of which
 is the only require between the two profiles. It must come after
-`../authn/authn.js`, for exactly the reason 10a must — no sign-in screen of its
+`../authn/authn.ts`, for exactly the reason 10a must — no sign-in screen of its
 own, and `beginAuthentication()` is how it reaches one. And **it must come after
-`saml2_sso.js`**, because it takes `slugOf()` from it: one application must have
+`saml2_sso.ts`**, because it takes `slugOf()` from it: one application must have
 one handle across both profiles, or the console shows one directory entry as two.
 That require is in the ordinary direction, so it closes no cycle and moves no
 route. Nothing else passes between the two modules.
@@ -635,14 +635,14 @@ out of the policy, here as everywhere: the form posts to the assertion consumer
 service, which is by definition another origin.
 
 The root `CLAUDE.md` asks for that argument to be made again rather than by
-analogy for each new scripted page. It is made in `saml2_sso.js`, above
+analogy for each new scripted page. It is made in `saml2_sso.ts`, above
 `AUTOPOST_SCRIPT`.
 
 ## `/saml11/autopost.js` IS THE SIXTH, AND THE ARGUMENT IS MADE A SIXTH TIME
 
 This is the case where the rule earns its keep, because the fifth scripted page
 is the one next door and "the same as that" is the most tempting and least useful
-thing that could be said. It is made again in `saml11_sso.js` and it stands on
+thing that could be said. It is made again in `saml11_sso.ts` and it stands on
 its own: the **Browser/POST profile IS a self-submitting form in its own older
 specification** — saml-bindings-1.1 section 4.1.2 describes the identity provider
 returning a document containing a form whose action is the assertion consumer and
@@ -671,8 +671,9 @@ binding long enough to be truncated, and the `saml2.*` settings turned off one a
 a time — especially `signAssertion`, since an unsigned assertion being ACCEPTED
 by a service provider is the finding that matters and no happy path shows it.
 
-**`./local-run-tests.sh --saml-only=sts` IS THE FAST LOOP** and needs no
-Keycloak at all — four SAML 2.0 jobs and the SAML 1.1 one, against this service
+**The parent project's `../id-proto-debugger/local-run-tests.sh --saml-only=sts`
+IS THE FAST LOOP** (that launcher, not this repository's of the same name,
+which was removed on 2026-09-16) and needs no Keycloak at all — four SAML 2.0 jobs and the SAML 1.1 one, against this service
 alone.
 
 **`tests/saml_encrypted_sso.js` IS DELIBERATELY NOT PAIRED**, and that is a
@@ -712,13 +713,13 @@ record of the decisions.
 
 ### Fixed in EVERY mode, because each was wrong in every mode
 
-* **THE AUTHENTICATION CONTEXT LIED.** Three copies — `saml2_sso.js`,
-  `saml11_sso.js`, `wsfed.js` — plus both builders' defaults called every
+* **THE AUTHENTICATION CONTEXT LIED.** Three copies — `saml2_sso.ts`,
+  `saml11_sso.ts`, `wsfed.ts` — plus both builders' defaults called every
   session that was not two factors or a key alone a PASSWORD: a TLS client
   certificate (amr `swk`), a Kerberos ticket over SPNEGO, a federated sign-in and
-  the unauthenticated session. `authn_context.js` is the one reading now, in this
+  the unauthenticated session. `authn_context.ts` is the one reading now, in this
   directory rather than `common/` because both vocabularies are SAML's, and in
-  this direction because `wsfed.js` already required `saml/`. **An ordinary
+  this direction because `wsfed.ts` already required `saml/`. **An ordinary
   password sign-in, a key alone and two factors produce byte-for-byte what they
   did** — the contract the parent's paired SAML jobs rest on. The builders'
   defaults are `unspecified` now; every caller passes a class.
@@ -734,14 +735,14 @@ record of the decisions.
   about a user who really signed in.
 * **NO SIGNER PASSED AN ALGORITHM.** `saml.signatureAlgorithm` and
   `saml.canonicalizationAlgorithm` reach all ten signers across `saml/`,
-  `ws-federation/` and `federation/` through `document_settings.js`, and the
+  `ws-federation/` and `federation/` through `document_settings.ts`, and the
   Redirect binding's `SigAlg` is read ONCE per message for both the parameter
   and the signature. Exclusive c14n only — the verifier here refuses inclusive
   c14n on a nested element, and every assertion is nested.
-* **`sp_metadata.js` HAD ITS OWN COPY OF THE OUTBOUND POLICY AND IT WAS WRONG**
+* **`sp_metadata.ts` HAD ITS OWN COPY OF THE OUTBOUND POLICY AND IT WAS WRONG**
   four ways: `federation.outbound` ignored, `outboundAllowInsecure` applied to the
   scheme but not the certificate, no User-Agent, and a `|| 5000` timeout fallback
-  that disagreed with the setting's 15000. It asks `federation_http.js` now.
+  that disagreed with the setting's 15000. It asks `federation_http.ts` now.
 
 ### Product mode only, each behind the predicate that names the question
 
@@ -749,7 +750,7 @@ record of the decisions.
 |---|---|---|
 | ACS URL / `shire` must be a registered `samlAssertionConsumerService`, exact match, no mock fallback — and an address a development sighting wrote is still marked OBSERVED and does not count until confirmed (`applications.returnAddressesOf()`, `STS-REG-0049`) | `acceptsUnregisteredAddresses()` | unchanged, and the sighting is marked |
 | An empty `saml2.entityId` / `saml11.providerId` is not replaced with `urn:sts:idp[:saml11]`; SSO and metadata refuse, naming the setting | `inventsClaimValues()` | unchanged |
-| Given name, surname, mail, display name come off the directory entry or are omitted | `inventsClaimValues()` (via `userFor()` and `person_attributes.js`) | unchanged |
+| Given name, surname, mail, display name come off the directory entry or are omitted | `inventsClaimValues()` (via `userFor()` and `person_attributes.ts`) | unchanged |
 | SAML 1.1 AttributeQuery / AuthenticationQuery refused | `opensTestControls()` | answered |
 | SAML 2.0: an assertion configured to be encrypted that cannot be is a Responder status, not plaintext | `sendsWeakerThanAsked()` — it used `opensTestControls()` for an hour, for want of a predicate that named the question | plaintext + WARN |
 
@@ -781,7 +782,7 @@ cancellation was ever read. An in-process probe counted twelve redirects and sti
 for both; the section above calling `ForceAuthn` hand-verified was true of the first leg
 only.
 
-**The fix is the RFC 9470 step-up shape** (`oauth-oidc/step_up.js`'s `step_up_honoured`),
+**The fix is the RFC 9470 step-up shape** (`oauth-oidc/step_up.ts`'s `step_up_honoured`),
 with the marker on the SERVER's copy of the request so a browser cannot claim the trip:
 
 * the redirect to the screen stamps `forcedAt` on the held request;

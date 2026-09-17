@@ -227,7 +227,7 @@ async function theOldPageIsGone() {
   });
 
   // THE RESOURCE IS KEPT AND THE PAGE IS NOT, which is rule 7 read the way
-  // round it usually is not — see `mgmt-api/admin_api.js`. Asserted because
+  // round it usually is not — see `mgmt-api/admin_api.ts`. Asserted because
   // deleting it would be the tidy-looking mistake, and because a caller's
   // script is the thing that would find out.
   const roster = await get("/mfa");
@@ -286,7 +286,7 @@ async function theSettingsAreOnTheirPages() {
   const web = await get("/webauthn");
   check("GET /admin-api/webauthn carries the thirteen webauthn.* settings — " +
         "there were NONE of these before 2026-09-10, and every ceremony " +
-        "parameter was a literal in a string in authn/authn.js", function () {
+        "parameter was a literal in a string in authn/authn.ts", function () {
     assert.strictEqual(web.status, 200,
       "it answered " + web.status + " " + String(web.raw).slice(0, 200));
     const keys = keysOf(web.body);
@@ -442,7 +442,7 @@ async function theReportFollowsTheSettings() {
 
   const totp = await get("/totp");
   check("the TOTP page's digest table marks the one in use the same way, " +
-        "from common/totp.js", function () {
+        "from common/totp.ts", function () {
     const status = totp.body.status;
     assert.ok(status && Array.isArray(status.algorithms),
       "there is no digest table on the report.");

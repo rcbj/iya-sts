@@ -67,11 +67,12 @@ function read(rel) {
 // is a CONTAINER they brought up — this runner cannot pin a secret into
 // something that was already started, which is the same argument run-report.js
 // makes about `--service-url`.
-const MINTING_LAUNCHERS = ['local-run-tests.sh', 'docker-run-tests.sh'];
+// ./local-run-tests.sh was the second until it was removed (2026-09-16, #50).
+const MINTING_LAUNCHERS = ['docker-run-tests.sh'];
 
 function run(t) {
   log.debug("Entering run().");
-  t.log.info('=== the two docker launchers mint one themselves ===');
+  t.log.info('=== the docker launcher mints one itself ===');
   MINTING_LAUNCHERS.forEach(function (name) {
     const text = read(name);
     t.check(text.indexOf('tests/tools/admin-api-token.js') !== -1,

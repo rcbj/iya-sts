@@ -657,8 +657,9 @@ module.exports = {
 
 // ---------------------------------------------------------------------------
 // AND THE LAST LINE ARMS pq_jose.js. **REQUIRING THIS MODULE IS WHAT MAKES
-// ITS ASYNCHRONOUS HALF USE A POOL**, which is the same shape as rule 1 in the
-// root CLAUDE.md — requiring a protocol module is what registers its routes.
+// ITS ASYNCHRONOUS HALF USE A POOL**, which is the shape rule 1 in the root
+// CLAUDE.md had until #50's R1 — requiring a protocol module was what
+// registered its routes (it still is for the JavaScript ones).
 //
 // It is here rather than at whichever call site happened to want it first, and
 // that is a correction rather than a preference: common/crypto.js filled the

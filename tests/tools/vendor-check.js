@@ -35,7 +35,12 @@
 // can do is MISS a newer assertion — which is a reason to sync before a
 // release, not a reason to fail a developer's run.
 //
-// `./local-run-tests.sh --vendor-check` and `--vendor-sync` are the way in.
+// Run it directly (it finds its paths from its own location), with the
+// parent project checked out beside this one or named with --parent=: it
+// reads files and runs none of the parent's code, so all it needs is this
+// repository's `npm install` (for bunyan). `./local-run-tests.sh
+// --vendor-check` and `--vendor-sync` were the way in until that launcher was
+// removed on 2026-09-16.
 // ===========================================================================
 
 const fs = require('fs');
@@ -187,7 +192,7 @@ function main() {
   log.error(differs.length + ' differ, ' + missingHere.length +
             ' missing here, ' + goneUpstream.length + ' gone upstream.');
   log.error('The parent is the source of truth: edit there, then run ' +
-            '`./local-run-tests.sh --vendor-sync`. A fix made in ' +
+            '`node tests/tools/vendor-check.js --sync`. A fix made in ' +
             'tests/vendored/ is overwritten by the next sync and never ' +
             'reaches the stack that gates that project.');
   log.debug('Leaving main(). Drift.');

@@ -25,8 +25,9 @@ const log = require('bunyan').createLogger({ name: 'xacml_pep_realms',
 // produces. `tests/vendored/sts_xacml_remote_pep.js` drives the `xacml-pep/`
 // container against a THROWAWAY REALM (`XACML_PEP_REALM`, `pep-e2e` by
 // default), so a registration made by that job has never been in the default
-// realm and never will be — and somebody who ran `./local-run-tests.sh` and
-// then opened the monitor page was told nothing had registered, which was true
+// realm and never will be — and somebody who ran `./local-run-tests.sh` (a
+// launcher that left its stack up, removed 2026-09-16) and then opened the
+// monitor page was told nothing had registered, which was true
 // of the realm they were reading and false of the process they were reading it
 // in.
 //

@@ -5,7 +5,7 @@
 // ===========================================================================
 // EVERY REFRESH TOKEN IS A SIGNED JWT ENCRYPTED TO ITS OWN REALM (2026-09-12).
 //
-// `oauth-oidc/refresh_token_crypto.js` argues the design. What is held here:
+// `oauth-oidc/refresh_token_crypto.ts` argues the design. What is held here:
 //
 //   1. the settings table's enum lists ARE `common/crypto.js`'s JWE tables —
 //      `config.js` cannot require that module, so they are written out twice

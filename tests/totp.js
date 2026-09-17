@@ -258,7 +258,7 @@ function run(t) {
           'so an app that reads them is told exactly what will be checked');
 
   t.log.info('=== it is a SECOND factor and the store says so ===');
-  // The claim `common/totp.js` is built on, asserted against the credential
+  // The claim `common/totp.ts` is built on, asserted against the credential
   // store rather than against the prose: an authenticator app must never make
   // an account usable on its own, and must never count as activated.
   const mechanisms = credentials.mechanismsFor('nobody-at-all');

@@ -625,7 +625,7 @@ function bindChild() {
   (async function () {
     try {
       const d = require(ROOT + '/ldap/ldap_server.js');
-      const credentials = require(ROOT + '/common/credentials.js');
+      const credentials = require(ROOT + '/common/credentials');
       const persistence = require(ROOT + '/persistence/persistence');
       const made = d.createUser('bind-limited', { origin: 'test' });
       const pw = credentials.setPassword('bind-limited',

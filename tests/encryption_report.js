@@ -9,7 +9,7 @@
 // of the two things behind it that nothing else in this repository can check:
 //
 //   * **THE TABLE AND THE CALL SITES AGREE.** The page describes each class
-//     of sealed data by a LABEL (`admin-ui/encryption_admin.js`'s
+//     of sealed data by a LABEL (`admin-ui/encryption_admin.ts`'s
 //     `DATA_CLASSES`), and the labels are passed by call sites in several
 //     different modules. A class described here and never sealed
 //     is a row about something that does not happen; a label passed by a call

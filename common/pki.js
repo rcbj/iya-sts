@@ -238,10 +238,10 @@ const USE_CASES = [
           'the others, under a name that says which of the five it is.' },
   { id: 'tls', scope: 'process', label: 'TLS listeners',
     cn: 'TLS Issuing CA',
-    what: 'The certificate served on LDAPS 636 and on the main port when ' +
-          'global.https is on — two sockets since 2026-09-16, when the 8443 ' +
-          'and 9443 listeners this use case is still named for were ' +
-          'deleted. ' +
+    what: 'The certificate served on LDAPS 636, on the main port when ' +
+          'global.https is on, and on the embedded debugger\'s listener — ' +
+          'the 8443 and 9443 listeners this use case is still named for ' +
+          'were deleted on 2026-09-16. ' +
           'PROCESS-scoped because those sockets are: one certificate answers ' +
           'every realm, so a realm\'s Intermediate signing it would make one ' +
           'realm vouch for every other realm\'s front door.' },
@@ -254,7 +254,7 @@ const USE_CASES = [
   // encodes perfectly and every path builder refuses the chain with a message
   // about path length that names neither certificate.
   // **AND THE ONE USE CASE WITH A KEY ALGORITHM OF ITS OWN**, for the reason
-  // `spiffe/spiffe_ca.js`'s header gives at length and which is why the
+  // `spiffe/spiffe_ca.ts`'s header gives at length and which is why the
   // vendored encoder is here at all: EC P-256 is what SPIRE issues and what
   // the X509-SVID specification recommends, and `node-forge` — what this
   // service used before that module arrived — cannot sign with an EC key at
@@ -297,7 +297,7 @@ const USE_CASES = [
   // about what SCEP issued, and an operator who has to stop trusting one
   // protocol's certificates wants a CA to distrust and a CRL to read rather
   // than a filter over serials. What a certificate from any of them CONTAINS,
-  // and for whom it may be issued, is `common/cert_enrollment.js`'s and the
+  // and for whom it may be issued, is `common/cert_enrollment.ts`'s and the
   // same for all three; `issueEnrolled()` below is the door they sign through.
   { id: 'acme', scope: 'realm', label: 'ACME enrollment',
     cn: 'ACME Issuing CA',
@@ -410,7 +410,7 @@ function intermediatePathLen(kind) {
 //
 // What the preference is FOR is the default case: out of the box an X509-SVID
 // is signed ES256 by an EC P-256 authority, as it was before the SPIFFE
-// authority joined this hierarchy and as SPIRE does. `spiffe/spiffe_ca.js`'s
+// authority joined this hierarchy and as SPIRE does. `spiffe/spiffe_ca.ts`'s
 // header argues why that particular fidelity was worth vendoring a certificate
 // encoder for.
 //
@@ -2277,7 +2277,7 @@ function signerSentence(problem, subject) {
 // `/admin/pki` is still accepted HERE.* The last check below asks the register
 // about every certificate on the path, and a revoked one is refused. No list is
 // FETCHED, and none needs to be: the checks before it guarantee the whole path
-// is this service's own. `admin-ui/crypto_metadata.js` still draws published
+// is this service's own. `admin-ui/crypto_metadata.ts` still draws published
 // and consulted as two rows, because they are still two claims.
 // ---------------------------------------------------------------------------
 async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
@@ -2597,7 +2597,7 @@ async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
 // service Root is held to that function's rule and refused by its sentence.
 //
 // **THE RECORD IT RETURNS IS `issueSigningKeyPair()`'s SHAPE WITH AN EMPTY
-// PRIVATE KEY**, so `admin-ui/pki_admin.js` writes both through ONE table and
+// PRIVATE KEY**, so `admin-ui/pki_admin.ts` writes both through ONE table and
 // taking a key pair off is one act whichever way it arrived. `source` is the
 // one member an issue does not carry, and it is what the application's page
 // draws: `uploaded-realm-ca` or `uploaded-external-ca`.
@@ -3624,7 +3624,7 @@ function thumbprintOf(pem) {
 
 // A certificate PEM as DER. Here rather than in one of the vendored modules
 // because those are byte-identical to the parent project's and must stay so;
-// `spiffe/spiffe_ca.js` has the same three lines for the same reason.
+// `spiffe/spiffe_ca.ts` has the same three lines for the same reason.
 function pemToDer(pem) {
   log.debug("Entering pemToDer().");
   log.debug("Leaving pemToDer().");
@@ -4098,8 +4098,8 @@ function forgetCertificate(scopeId, useCaseId, slot) {
 // listener's own, certified over a key that never leaves `tls/tls_server.js`,
 // or an enrolled one (`issueEnrolled()`) over a key this module is handed
 // public — EST's `/serverkeygen` generates its pair in
-// `common/cert_enrollment.js`, not here. This one is for
-// a remote XACML PEP's HTTPS listener (`pep-tls`, and `xacml/xacml_pep_tls.js`
+// `common/cert_enrollment.ts`, not here. This one is for
+// a remote XACML PEP's HTTPS listener (`pep-tls`, and `xacml/xacml_pep_tls.ts`
 // is the caller): the key pair is GENERATED here, certified from the use
 // case's Issuing CA, handed back ONCE, and forgotten — `certify()` records the
 // certificate under a slot and no private key, exactly as it does for a key
@@ -4435,7 +4435,7 @@ async function issueUnder(scopeId, useCaseId, spec) {
 //     the list `pki_revocation.issuedList()` reads, so OCSP knows it.
 //
 // **WHAT GOES INTO THE CERTIFICATE IS DECIDED BY THE CALLER AND NOT HERE.**
-// `common/cert_enrollment.js` builds the subject and the subjectAltName from
+// `common/cert_enrollment.ts` builds the subject and the subjectAltName from
 // the directory entry and refuses a name the entry does not own; this module
 // signs what it is handed, over the key it is handed, and never reads a CSR.
 // That keeps the certificate authority ignorant of who a person is, which is
@@ -4605,7 +4605,7 @@ function describeIssuer(scopeId, useCaseId) {
 // which is the rule the signing key already follows.
 //
 // An object is a key pair, its certificate, and what it took to make them.
-// Nothing here interprets one — `common/pki_authoring.js` does — so this is
+// Nothing here interprets one — `common/pki_authoring.ts` does — so this is
 // four accessors and a cap.
 // ===========================================================================
 
@@ -4629,7 +4629,7 @@ function describeIssuer(scopeId, useCaseId) {
 //
 // `pki.maxStoredObjects` is the number, read per call. `MAX_OBJECTS` stays as
 // the default it replaces and as a GETTER on this module's exports, so
-// `common/pki_authoring.js`'s view — which reads `pki.MAX_OBJECTS` — draws the
+// `common/pki_authoring.ts`'s view — which reads `pki.MAX_OBJECTS` — draws the
 // live cap without being edited.
 const MAX_OBJECTS = 200;
 
@@ -5930,7 +5930,7 @@ async function certifyRegistered(opts) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT `common/service_state.js` CALLS (for `server.js` and for a request
+// WHAT `common/service_state.ts` CALLS (for `server.js` and for a request
 // worker alike), after `keystore.start()` and before anything binds.
 //
 // **IT IS NEVER FATAL.** `persistence.start()` is the one place in this
@@ -6490,7 +6490,7 @@ module.exports = {
   // The certificate register.
   certify: certify,
   // Issue WITHOUT recording, for a caller that owns what comes out — see
-  // `issueUnder()`'s header. `spiffe/spiffe_ca.js` is the caller.
+  // `issueUnder()`'s header. `spiffe/spiffe_ca.ts` is the caller.
   issueUnder: issueUnder,
   // The door ACME, EST and SCEP sign through — `issueUnder()` plus the
   // profile's extensions, the family CA's CDP/AIA and a record OCSP reads.
@@ -6521,7 +6521,7 @@ module.exports = {
   issueTlsServerKeyPair: issueTlsServerKeyPair,
   TLS_SERVER_KEY_ALGS: TLS_SERVER_KEY_ALGS,
   DEFAULT_TLS_SERVER_KEY_ALG: DEFAULT_TLS_SERVER_KEY_ALG,
-  // Startup. `common/service_state.js` calls it, for `server.js` and a
+  // Startup. `common/service_state.ts` calls it, for `server.js` and a
   // request worker, after `keystore.start()` and before anything binds.
   start: start,
   SUBJECT_KINDS: SUBJECT_KINDS,
@@ -6548,7 +6548,7 @@ module.exports = {
   verifySignerChain: verifySignerChain,
   signerChainSummary: signerChainSummary,
   clearChain: clearChain,
-  // The object store and the issuer list, which `common/pki_authoring.js`
+  // The object store and the issuer list, which `common/pki_authoring.ts`
   // reads. They are here rather than there because the ROW is this module's —
   // see THE OBJECT STORE above.
   // The row accessors, for `common/pki_revocation.js`. They are exported
@@ -6568,7 +6568,7 @@ module.exports = {
   thumbprintOf: thumbprintOf,
   // THE CLUSTER'S BUILD AND READ (2026-09-14, #46), for a module that keeps
   // something in a scope's row which one node must make for all of them —
-  // `scep/scep_ra.js`'s RA certificate. `refreshScope()` lands this process's
+  // `scep/scep_ra.ts`'s RA certificate. `refreshScope()` lands this process's
   // queued writes of the row and takes what the store holds.
   oneBuildInTheCluster: oneBuildInTheCluster,
   refreshScope: function (scopeId) {

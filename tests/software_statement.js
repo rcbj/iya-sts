@@ -4,7 +4,7 @@
 // tests/software_statement.js — RFC 7591 SECTION 2.3 SOFTWARE STATEMENTS AT
 // POST /oauth2/register AND RFC 7592's PUT (2026-09-13).
 //
-// What `oauth-oidc/software_statement.js` promises, driven over HTTP against
+// What `oauth-oidc/software_statement.ts` promises, driven over HTTP against
 // the protocol stack in a child process — the arrangement
 // `tests/oauth_oid4vc_hardcoded.js` uses, because every case needs the mode
 // and four settings flipped between requests, and a container cannot be told

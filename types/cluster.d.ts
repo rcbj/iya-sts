@@ -11,10 +11,11 @@
 // `cluster/cluster_claims.js` claim().
 export interface ClaimResult {
   ok: boolean;
-  handle?: string;
+  handle?: any;
   reason?: 'used' | 'store' | string;
   why?: string;
-  existing?: { claimedAt?: any; expiresAt?: any; origin?: string };
+  existing?: any;
+  errorCode?: string;
 }
 
 // `cluster/cluster_counters.js` advance().

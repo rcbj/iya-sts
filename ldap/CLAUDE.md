@@ -3,7 +3,7 @@
 An embedded LDAP v3 directory (RFC 4511) on raw TCP 389 and, over TLS, on raw TCP
 636 as LDAPS. One file — and it is the largest module in the service, because the
 directory is also the STORE for four other things: people, groups, applications
-(`../common/applications.js`) and the SPIFFE registry (`../spiffe/spiffe_registry.js`).
+(`../common/applications.js`) and the SPIFFE registry (`../spiffe/spiffe_registry.ts`).
 
 **It is built on the `node-ldapjs` SUBMODULE and the library is not patched.** See
 the root `CLAUDE.md` for the submodule's placement rules, which have already cost
@@ -43,7 +43,7 @@ from `listen()`* is the rule this is an instance of.
    applies — that module knows nothing about this one, so there is no cycle, and its
    routes (`/tls*`) collide with nothing here. What the require DOES do is pull those
    routes into the express router at that point, so the require order
-   (`common/protocol_stack.js`) loads `./tls_server` BEFORE `./ldap_server` to
+   (`common/protocol_stack.ts`) loads `./tls_server` BEFORE `./ldap_server` to
    keep "the require order is the route order" true rather than a fiction node
    quietly corrects. It changes no output —
    `/admin/sts-metadata` sorts its rows by path within a group. Its embedded directory grows an entry under
@@ -230,7 +230,7 @@ from `listen()`* is the rule this is an instance of.
    **A SECOND hook runs the other way, and it is the console that offers it.**
    `/admin/users?user=<name>` shows that user's directory object — every attribute,
    operational ones included — and `admin.js` must NOT require this module to get
-   it: the require order (`common/protocol_stack.js`) loads `admin.js` FIRST,
+   it: the require order (`common/protocol_stack.ts`) loads `admin.js` FIRST,
    so a require from there would pull
    every route this module registers into the router ahead of the console's routes, and
    `GET /admin/sts-metadata` is built by walking that router. So `admin.js` exports
@@ -392,7 +392,7 @@ from `listen()`* is the rule this is an instance of.
    say so where a reader will see it. The exceptions are `cn=admin-read` and
    `cn=admin-write` (`admin.readGroup`, `admin.writeGroup`), which decide who may
    use the ADMIN CONSOLE — the SIXTH slot below is what carries this module's
-   group functions to `admin-ui/admin_rbac.js` so that they can. Even those two
+   group functions to `admin-ui/admin_rbac.ts` so that they can. Even those two
    grant nothing outside `/admin`: no token, assertion, ticket, PAC or credential
    is changed by being in one, and every protocol endpoint answers a member
    exactly as it answers anybody else. The general sentence is what matters and
@@ -628,7 +628,7 @@ does, so a per-realm roster would have meant anybody who can create a realm
 granting themselves both roles inside it and walking back out into the default
 one. **Since #32 each realm has a roster of its own**: `rosterViewFor(realm)`
 builds the same nine functions bound to a named realm, the default view still
-answers a caller that names none, and `admin-ui/admin_scope.js` confines a
+answers a caller that names none, and `admin-ui/admin_scope.ts` confines a
 realm's administrators to their realm — which is what answers the escalation
 the pinning prevented (`admin-ui/CLAUDE.md` 8d).
 `setDirectoryReader()` and `setDirectoryWriter()` are deliberately NOT pinned:
@@ -1049,7 +1049,7 @@ GC, key generation and scimmy's own coercion.
 The sixth section moved `allPolicies()`, `allRoles()` and `applicationEntry()`'s
 fallback onto `entriesUnder()` and left `allApplications()` and
 `applicationCount()` walking every entry in the realm. That was cheap while
-nothing asked for the whole registry per request. Then `ssf/ssf_streams.js`
+nothing asked for the whole registry per request. Then `ssf/ssf_streams.ts`
 started asking — once per event, per stream, to find a stream owner named by an
 `ssfReceiverId` — and a SCIM create emits an event per person. A dispatched bulk
 load profiled with half a worker's CPU in `normalizeDn()` under
@@ -1383,7 +1383,7 @@ binds no protocol port at all. Its `liveConnections` is therefore permanently
 empty.
 
 **That did not degrade the sign-out, it inverted it.** `boundConnections()`
-answered "there are none"; the driver in `logout/logout.js` ends what
+answered "there are none"; the driver in `logout/logout.ts` ends what
 `collect()` finds; nothing was found, so nothing was ended and nothing was
 reported — and a global logout said it had ended everything while a bound
 connection went on being signed in. It was green in two modes of the suite and
@@ -1413,7 +1413,7 @@ differently:
   answer it belongs to, so the client could be told a connection had ended
   while it was still open — the same bug, made rarer and harder to see.
   `common/request_pool.js`'s `LDAP_DROP_HEADER` carries the argument and
-  `common/request_worker.js` holds the other end.
+  `common/request_worker.ts` holds the other end.
 
 **An ask that cannot be made THROWS**, and that is deliberate: the driver
 records the row as not ended, with the reason, where returning the rows would
@@ -1431,7 +1431,7 @@ The mirror and the response header both stop at the front process of ONE
 container. With several nodes in `cluster.mode=active-active`, a bind held on
 node A was not listed by `/admin/sessions` answered by B, and a global sign-out
 answered by B ended what B could see, said so, and left A's socket bound.
-`ldap_cluster_connections.js` is the fix, and it is two things for the same
+`ldap_cluster_connections.ts` is the fix, and it is two things for the same
 reason the in-container fix was two:
 
 * **CLOSING is an INSTRUCTION BY IDENTITY.** `dropConnectionsFor(key)` first
@@ -1499,7 +1499,7 @@ protocol-independent half — the front process accepts the connection, decodes
 the BER and writes the reply, and hands a `{ kind, args }` pair to a worker.
 
 **THE CHANNEL HAD EXISTED SINCE 2026-09-09 AND NOTHING FILLED IT.**
-`common/request_pool.js` offered `runOperation()`, `common/request_worker.js`
+`common/request_pool.js` offered `runOperation()`, `common/request_worker.ts`
 offered `register()`, the root `CLAUDE.md` said the LDAP protocol fanned out —
 and no module in the tree called either function. Naming `ldap` in that setting
 dispatched nothing at all. The prose described a mechanism and there was no
@@ -1672,7 +1672,7 @@ Every other attribute on an application entry describes the application it is
 on. `oauthPermissionBaseUri` and `oauthPermission` (on the RESOURCE) and
 `oauthDelegatedPermission` (on the CLIENT) do not: a grant is a fact about two
 entries at once, joined by a string composed from a third attribute on the first
-of them. `common/app_permissions.js` is what reads the two halves together and
+of them. `common/app_permissions.ts` is what reads the two halves together and
 `common/CLAUDE.md` argues the model.
 
 **Nothing about this directory changed to take them.** They are rows in
@@ -1712,7 +1712,7 @@ happened to have been written here. Four things follow, and each is worth
 knowing before touching any of it.
 
 * **THEY ARE STILL BUILT HERE, and that is not a leftover.** A console page is
-  a `path` and a `label` in `admin-ui/admin.js`'s `SECTIONS` whoever builds the
+  a `path` and a `label` in `admin-ui/admin.ts`'s `SECTIONS` whoever builds the
   body — `/admin/sts-metadata` is built by `../sts_metadata.js` and has been
   since 2026-08-24. Moving these bodies into that file would mean moving
   `description()`, `eachEntryInRealm()` and `entryObject()` with them, or
@@ -1729,7 +1729,7 @@ knowing before touching any of it.
   its own since 2026-09-09, which is
   what a test drives and what somebody locked out of the console reaches for.
 * **THE PAGING AND THE SHORTENING ARE THE CONSOLE'S, NOT THIS FILE'S.**
-  `adminViews.pagedRows()` (`admin-core/admin_views.js` since 2026-09-12),
+  `adminViews.pagedRows()` (`admin-core/admin_views.ts` since 2026-09-12),
   `admin.pageNavPair()`, `admin.perPageOptions()`,
   `admin.clipped()` and `admin.tile()` are the same functions `/admin/tokens`
   and `/admin/applications` use, exported for the reason `page()`, `note()` and
@@ -1761,7 +1761,7 @@ comment above that function carries the argument, including why the `title` is
 set as well and is not redundant.
 
 **Rule 3e's NINTH SLOT is `admin.setDirectoryPages()` and this file fills it**,
-with the eight view functions, so that `mgmt-api/admin_api.js` (19) can mirror
+with the eight view functions, so that `mgmt-api/admin_api.ts` (19) can mirror
 these pages without requiring this module (21) and dragging every route
 registered here ahead of its own. It is validated WHOLE, so a name added to
 `DIRECTORY_PAGE_NAMES` without a view is a refused install rather than one
@@ -1770,7 +1770,7 @@ operation answering as though no directory were loaded. See the root
 
 ## `oauthConsent`: the seventh slot, and the one attribute here that records an answer
 
-`common/consent.js` owns the MODEL — the value's grammar, what "outstanding"
+`common/consent.ts` owns the MODEL — the value's grammar, what "outstanding"
 means, the global override, the register both console halves read. This module
 owns the STORE, which is `oauthConsent` on an entry under `ou=users`. That
 division is `group_claims.js`'s and `applications.js`'s: neither file knows the
@@ -1814,8 +1814,8 @@ own invented names.
 `/admin/ldap/roles`, `/admin/ldap/policies` and `/admin/ldap/peps`. They are
 built here for the same reason the other five are, and the specific fact that
 made them cheap is that **this module already requires all three of the modules
-that own those containers** — `common/roles.js`, `xacml/xacml_store.js` and
-`xacml/xacml_pep_registry.js` — because it fills each one's
+that own those containers** — `common/roles.js`, `xacml/xacml_store.ts` and
+`xacml/xacml_pep_registry.ts` — because it fills each one's
 `setDirectory()` slot. The schemas were already in scope. No new require, no
 cycle, no route moved.
 
@@ -1891,7 +1891,7 @@ every reader goes through.
 
 The authenticator app's shared secret, beside `userPassword` and
 `stsWebauthnCredential` on the person's own entry. `readTotp()` and
-`writeTotp()` are the two functions `common/credentials.js` reaches through the
+`writeTotp()` are the two functions `common/credentials.ts` reaches through the
 slot this module fills, and `persons()` beside them is what
 `secondFactorHolders()` walks for the roster on `/admin/users` — which was
 `/admin/mfa` for a few hours on 2026-09-10.
@@ -1918,7 +1918,7 @@ mean an authenticator that silently stopped working.
 ## `stsBackupCodes`: THE SECOND ONE, AND ITS REASON IS NOT ARITHMETIC (2026-09-10)
 
 The recovery codes, on the same entry. `readBackupCodes()` and
-`writeBackupCodes()` are the pair `common/credentials.js` reaches through this
+`writeBackupCodes()` are the pair `common/credentials.ts` reaches through this
 module's slot, and they are shaped exactly like the TOTP pair above:
 **single-valued** — `writeBackupCodes()` ASSIGNS, because a person holds one set
 and never two, and a `null` value deletes, which is what an operator's Clear
@@ -1936,7 +1936,7 @@ difference between them is the thing to keep straight:
   again?** This service says yes, on `/portal/mfa`, because a list shown exactly
   once at the end of an enrolment somebody is rushing through is a list most
   people close without reading — and the moment it matters is months later.
-  `common/backup_codes.js` argues it at length.
+  `common/backup_codes.ts` argues it at length.
 
 That difference matters to a reader of an ENTRY rather than to this module,
 which holds no key and only ever writes whichever of the two forms it was
@@ -1987,7 +1987,7 @@ whole purpose IS the attributes.
 
 **What stops the portal reading something it should not is therefore not the
 shape of this hook — it is the FIXED LIST at the other end.**
-`common/inetorgperson.js` has no `sts`-prefixed name on it and cannot grow one
+`common/inetorgperson.ts` has no `sts`-prefixed name on it and cannot grow one
 by accident, which is why handing over everything is safe here and would not be
 anywhere else.
 
@@ -1998,7 +1998,7 @@ because the value arrays are read and never mutated by anything that draws them.
 
 ### And the class definition is merged into `learnName()` like every other schema
 
-`common/inetorgperson.js` is a fourth independently maintained list of LDAP
+`common/inetorgperson.ts` is a fourth independently maintained list of LDAP
 spellings — `STANDARD_NAMES` is the first, `vc_claims.js`'s catalogue and the
 SCIM mapping the others — and it names most of the same types. Merged rather
 than trusted, so a disagreement between the page a PERSON reads and the page an
@@ -2052,7 +2052,7 @@ signature against a key nobody meant.
 ## `stsKrb5Keys`: THE FOURTH, AND THE FIRST THIS DIRECTORY WITHHOLDS FROM ITS OWN DUMP (2026-09-12)
 
 A person's Kerberos long-term keys, derived from their password by
-`kerberos/krb5_person_keys.js` so a product-mode KDC can authenticate them —
+`kerberos/krb5_person_keys.ts` so a product-mode KDC can authenticate them —
 `stsKrb5Keys` (one sealed value: name, realm, kvno, salt, a stamp of the password hash,
 every enctype's key) and `stsKrb5KeyInfo` (the public half). A service principal's
 random keys are the same pair under `ou=applications`, `krb5ServiceKeys` and
@@ -2128,7 +2128,7 @@ mode verified. It reads `credentials.verify()`'s own `reason === 'verified'` now
 `passwordVerified`, and words an ANONYMOUS bind as RFC 4511 section 5.1.1's unauthenticated
 bind — unverified in both modes, which is the specification rather than a permission.
 **`REFUSED_PASSWORD` stays refused in BOTH modes, deliberately**: it can only turn a bind
-that would have been verified into a refusal, never the reverse, and `common/credentials.js`
+that would have been verified into a refusal, never the reverse, and `common/credentials.ts`
 refuses the same literal first at every door.
 
 ## THE SOCKETS
@@ -2146,7 +2146,7 @@ seeded at require time in the mode the process starts in); mutation-tested again
 demo gate forced on.
 
 **THE PROXY PROTOCOL (2026-09-14, #46).** With `global.proxyProtocol` at `v2`,
-`listen()` installs `common/proxy_protocol.js` on `plainServer.server` and
+`listen()` installs `common/proxy_protocol.ts` on `plainServer.server` and
 `secureServer.server` — the `net.Server` and `tls.Server` ldapjs built — before
 each binds, so the header comes off before the first LDAP message and, on 636,
 before the handshake. Nothing in this file reads the address differently: ldapjs's
@@ -2163,7 +2163,7 @@ is still answering.
 
 **A NINTH CONTAINER**, seeded in both modes beside `ou=roles`, holding the
 password policy's profiles — `cn=default` only, and only once somebody saves it.
-`common/password_policy.js` owns the schema and fills nothing here but a slot:
+`common/password_policy.ts` owns the schema and fills nothing here but a slot:
 `allPasswordPolicies`, `writePasswordPolicy` (REPLACES, and puts the container
 back if a restored directory predates it) and `deletePasswordPolicy`. Its
 attribute spellings — both the profile's and the two it maintains on a person —
@@ -2200,7 +2200,7 @@ that had proved who it was could then add, modify, rename or delete any entry in
 any realm — `ou=trustAnchors` (the client-certificate truststore),
 `ou=federations` (whose signing certificates decide whose assertions this service
 believes), `ou=policies`, `ou=roles` and every person. **One write was an
-escalation rather than vandalism**: `admin-ui/admin_rbac.js` reads a person's OWN
+escalation rather than vandalism**: `admin-ui/admin_rbac.ts` reads a person's OWN
 `memberOf` when it decides whether they hold a console role, so
 `memberOf: cn=admin-write,…` written on your own entry made you an administrator
 of the service.
@@ -2303,7 +2303,7 @@ counted with `attemptShared()` in `sts_cluster_windows`, so N nodes are one
 limit rather than N (`common/CLAUDE.md`, *Several nodes: one rate-limit
 budget*). That read is a round trip, so the handler finishes in `finishBind()`
 when it is in, and marks the request `stsAsyncOperation`; `performOperation()`
-then answers a PROMISE, which `request_worker.js`'s `handleOperation()` already
+then answers a PROMISE, which `request_worker.ts`'s `handleOperation()` already
 resolves. **With no shared store the bind is synchronous exactly as before** —
 every in-process caller of `performOperation()` reads its answer in the same
 tick. **Since 2026-09-14 the shared count also decides the ANSWER**: a failure
@@ -2389,7 +2389,7 @@ nodes writing one row*) — the right repair, and a client already holding an id
 that names nothing.
 
 So the doors that can wait claim what they are about to create BEFORE they
-check, through `directory_create_claims.js` over `cluster/cluster_claims.js`:
+check, through `directory_create_claims.ts` over `cluster/cluster_claims.js`:
 the normalised DN, and for a person the lower-cased username, both computed by
 `createClaimSpec()` here. The second of two concurrent creates waits for the
 first and then meets the directory's own refusal, exactly as if the first had
@@ -2447,5 +2447,5 @@ the handler), a SCIM create of a User or a Group, and `POST
   (v5) `entryUUID`, so both nodes create the same entry and the merge makes them
   one — at the cost of a name deleted and signed in again getting the same
   subject there; a single process keeps random values.
-  `directory_create_claims.js`'s header has it, and
+  `directory_create_claims.ts`'s header has it, and
   `tests/cluster_autocreate_subject.js` holds both halves.

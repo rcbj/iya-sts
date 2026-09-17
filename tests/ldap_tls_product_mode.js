@@ -200,7 +200,7 @@ function productInventsNothingAndAuditsTruthfully(t) {
              'verified ===');
   const run = inAChild({ STS_MODE: 'product' },
     'const d = require(R + "/ldap/ldap_server.js");const credentials = ' +
-    'require(R + "/common/credentials.js");const audit = require(R + ' +
+    'require(R + "/common/credentials");const audit = require(R + ' +
     '"/common/audit.js");const made = d.createUser("probe-person", { origin: ' +
     '"test" });const entry = ' +
     'd.entries.get("uid=probe-person,ou=users,dc=example,dc=com");const ' +

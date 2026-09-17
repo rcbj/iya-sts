@@ -1590,6 +1590,14 @@ function keyed(factory) {
 
 // A Map, per realm. Every member of the Map interface is delegated, including
 // the iterator — `for (const [k, v] of store)` is a shape this codebase uses.
+//
+// The JSDoc (#50) says what a caller holds: a Map, plus `realmMap()`. The
+// facade is built as a plain object with the iterator attached afterwards,
+// which the checker cannot see as a Map, so the return is cast.
+/**
+ * @param {any} [options]
+ * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any> }}
+ */
 function map(options) {
   log.debug("Entering map().");
   const per = keyed(function () { return new Map(); });
@@ -1803,7 +1811,7 @@ function map(options) {
   };
   facade[Symbol.iterator] = function () { return per()[Symbol.iterator](); };
   log.debug("Leaving map().");
-  return facade;
+  return /** @type {any} */ (facade);
 }
 
 // An Array, per realm. A Proxy rather than a facade because an array is used by
@@ -2222,7 +2230,7 @@ function segmentedArr(options, per, size) {
 /**
  * @template T
  * @param {(realm?: any) => T} [factory]
- * @param {object} [options]
+ * @param {any} [options]
  * @returns {T}
  */
 function obj(factory, options) {

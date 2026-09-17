@@ -91,8 +91,9 @@
 // `XACML_PEP_HTTPS_URL` and `XACML_PEP_SERVER_CERT_DIR` for section 1b. That
 // is the primary arrangement and the one CI runs:
 //
-//   * `./local-run-tests.sh` adds `--profile xacml` to the project it already
-//     brings the service up in, on a free host port, and exports the three.
+//   * `./local-run-tests.sh` added `--profile xacml` to the project it
+//     already brought the service up in, on a free host port, and exported
+//     the three — until that launcher was removed on 2026-09-16.
 //   * `./docker-run-tests.sh` declares the service in
 //     `docker-compose-run-tests.yml`; the tests container reaches it at
 //     `http://xacml-pep:9090` on the bridge they share.
@@ -601,10 +602,11 @@ function pepLog(lines) {
     return "\n(the PEP container was never created)";
   }
   // TRIED EVEN FOR A CONTAINER THIS JOB DID NOT CREATE, because under
-  // ./local-run-tests.sh the launcher's container and this process are on the
-  // same machine and its log is the most useful thing a failure here can
-  // carry. Under ./docker-run-tests.sh there is no docker to ask, so the
-  // fallback names the container and the command rather than pretending.
+  // ./local-run-tests.sh (removed 2026-09-16) the launcher's container and
+  // this process were on the same machine, and its log is the most useful
+  // thing a failure here can carry. Under ./docker-run-tests.sh there is no
+  // docker to ask, so the fallback names the container and the command
+  // rather than pretending.
   const got = dockerQuiet(["logs", "--tail", String(lines || 30), PEP_NAME]);
   if (!got.ok && LAUNCHER_STARTED_IT) {
     log.debug("Leaving pepLog().");
@@ -625,15 +627,17 @@ function pepLog(lines) {
 // ---------------------------------------------------------------------------
 // WHERE THE SERVICE IS, AND THEREFORE WHERE THE PEP GOES.
 //
-// This job is run in three stacks and the service is not the same KIND of thing
-// in all three, so the network is discovered rather than assumed:
+// This job has been run in three stacks (two since 2026-09-16) and the service
+// is not the same KIND of thing in each, so the network is discovered rather
+// than assumed:
 //
-//   * `./local-run-tests.sh` and `./docker-run-tests.sh` put the service in a
-//     CONTAINER on a compose network with a published port. The PEP joins that
+//   * `./docker-run-tests.sh` puts the service in a CONTAINER on a compose
+//     network (as `./local-run-tests.sh` did, with a published port, until it
+//     was removed on 2026-09-16). The PEP joins that
 //     network, dials the service by its container HOSTNAME on the INTERNAL port
 //     — which is what `docker-compose.yml` ships and is a name in the
 //     certificate — and publishes a port of its own for this job to reach.
-//   * `--no-docker` and a bare `run-report.js` run the service as a plain
+//   * a coverage run and a bare `run-report.js` run the service as a plain
 //     process on this machine. There is no compose network to join, so the PEP
 //     runs on the HOST network: it dials the same URL this job was given, and
 //     the nudge comes back to a port on the same loopback. It is still the

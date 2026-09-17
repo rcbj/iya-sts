@@ -38,13 +38,13 @@
 // one of them, and the client is the RIGHT-MOST `X-Forwarded-For` entry that is
 // not one of them. A request worker believes what the front process wrote,
 // always: the unix socket it listens on is reachable by nothing else
-// (`request_worker.js` argues that), and the front process writes ONE address,
+// (`request_worker.ts` argues that), and the front process writes ONE address,
 // the one it resolved here.
 //
 // **WHAT THIS IS NOT.** It does not read a client certificate from a header
 // and never will (`global.trustProxy`'s own description): mutual TLS behind a
 // load balancer needs L4 passthrough, `common/CLAUDE.md` says how. And it does
-// not speak the PROXY protocol — `common/proxy_protocol.js` does, below this
+// not speak the PROXY protocol — `common/proxy_protocol.ts` does, below this
 // file: it puts the header's client address on the SOCKET, so the peer this
 // file reads is already the client's and the balancer is never a hop here.
 //
@@ -186,7 +186,7 @@ function peerIsTrustedProxy(req) {
 
 // ---------------------------------------------------------------------------
 // THE SAME RANGES, ASKED ONE LAYER DOWN (2026-09-14):
-// `common/proxy_protocol.js` believes a PROXY protocol header from these
+// `common/proxy_protocol.ts` believes a PROXY protocol header from these
 // addresses and from nobody else.
 // Unlike `peerIsTrustedProxy()`, an empty list trusts NOBODY here — the old
 // rule that list keeps for forwarded headers would let any caller name any
