@@ -726,6 +726,15 @@ class SpMetadata {
           return;
         }
         self.dial(parsed, vetted, resolve);
+      }, function (e) {
+        // `vetHost()` answers rather than rejects; this is the case it did
+        // not anticipate, and an address that could not be judged is one this
+        // service does not dial.
+        log.debug("Caught in SpMetadata.fetchMetadata(): " +
+                  ((e && e.message) || e));
+        resolve({ ok: false, errorCode: 'STS-SAML-0079',
+                  why: 'the host could not be checked against the outbound ' +
+                       'address rule: ' + ((e && e.message) || e) });
       });
     });
   }
