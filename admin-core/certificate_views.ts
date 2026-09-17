@@ -81,10 +81,12 @@
 // describer, the error codes, `pki`, `realms`, both registries of key pairs,
 // `helpers`, the X.509 encoder and `pkijs` through its constructor — and the
 // three LAZY requires as loader functions, called where the requires were.
-// The module still exports `PAGES` and its three functions from a
-// TRANSITIONAL instance at the bottom, for `admin-ui/pki_admin.ts`,
-// `admin-ui/crypto_metadata.ts`, `mgmt-api/admin_api.ts` and the test;
-// `CertificateViews` is exported beside them for the composition root.
+// Since R2 the composition root (`common/protocol_stack.ts`) builds the
+// instance; the module still exports `PAGES`, and its three functions are
+// FACADES that forward to that instance, for `admin-ui/pki_admin.ts`,
+// `admin-ui/crypto_metadata.ts`, `mgmt-api/admin_api.ts` and the test. A
+// process without the root builds a default at load. `CertificateViews` is
+// exported beside them for the root.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -104,6 +106,7 @@ import personAssertions = require('../common/person_assertions');
 import helpers = require('../common/helpers');
 import x509 = require('../common/vendored/x509');
 import pkijs = require('pkijs');
+import InstanceSlot = require('../common/instance_slot');
 
 // The pages a details view is drawn on. The route that draws one passes its
 // own path to the renderer, so this list decides nothing at request time; it
@@ -134,6 +137,34 @@ class CertificateViews {
   constructor(private readonly deps: CertificateViewsDeps) {
     deps.log.debug("Entering CertificateViews.constructor().");
     deps.log.debug("Leaving CertificateViews.constructor().");
+  }
+
+  // What the composition root passes, from the real modules, with the three
+  // lazy requires as loaders (see the header).
+  static defaultDeps(): CertificateViewsDeps {
+    log.debug("Entering CertificateViews.defaultDeps().");
+    log.debug("Leaving CertificateViews.defaultDeps().");
+    return {
+      log: log,
+      loadTlsServer: function () {
+        return require('../tls/tls_server');
+      },
+      loadSpiffeCa: function () {
+        return require('../spiffe/spiffe_ca');
+      },
+      loadAdminViews: function () {
+        return require('./admin_views');
+      },
+      details: details,
+      errorCodes: errorCodes,
+      pki: pki,
+      realms: realms,
+      applications: applications,
+      personAssertions: personAssertions,
+      helpers: helpers,
+      x509: x509,
+      pkijs: pkijs
+    };
   }
 
   private scopeOfRealm() {
@@ -520,36 +551,31 @@ class CertificateViews {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const views = new CertificateViews({
-  log: log,
-  loadTlsServer: function () {
-    return require('../tls/tls_server');
-  },
-  loadSpiffeCa: function () {
-    return require('../spiffe/spiffe_ca');
-  },
-  loadAdminViews: function () {
-    return require('./admin_views');
-  },
-  details: details,
-  errorCodes: errorCodes,
-  pki: pki,
-  realms: realms,
-  applications: applications,
-  personAssertions: personAssertions,
-  helpers: helpers,
-  x509: x509,
-  pkijs: pkijs
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<CertificateViews>(
+  'admin-core/certificate_views',
+  () => new CertificateViews(CertificateViews.defaultDeps()),
+  null,
+  log);
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   CertificateViews: CertificateViews,
   PAGES: PAGES,
-  normalFingerprint: views.normalFingerprint.bind(views) as
-    CertificateViews['normalFingerprint'],
-  detailsView: views.detailsView.bind(views) as CertificateViews['detailsView'],
-  listView: views.listView.bind(views) as CertificateViews['listView']
+  installInstance: (instance: CertificateViews): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  normalFingerprint: slot.forward('normalFingerprint'),
+  detailsView: slot.forward('detailsView'),
+  listView: slot.forward('listView')
 };
