@@ -126,7 +126,7 @@ const CODE_IN_TEXT = /STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}/g;
 const SUBSYSTEMS = [
   { id: 'HTTP', label: 'HTTP front door',
     where: 'common/app.js, common/cors.js, common/validation.js, ' +
-           'common/websecurity.js',
+           'common/websecurity.ts',
     what: 'Every HTTP request passes through here before it reaches a ' +
           'protocol: the security headers, the CORS allowlist, the body ' +
           'parsers, the validation guard, the rate limiter, and the call-log ' +
@@ -137,20 +137,20 @@ const SUBSYSTEMS = [
   // subsystem of its own rather than HTTP's — a refusal here happens before
   // any listener's protocol has read a byte, on every TCP listener at once.
   { id: 'PROXY', label: 'PROXY protocol',
-    where: 'common/proxy_protocol.js, server.js',
+    where: 'common/proxy_protocol.ts, server.js',
     what: 'The HAProxy PROXY protocol v2 header read at the front of every ' +
           'TCP connection when global.proxyProtocol is v2: who may send one ' +
           '(global.trustedProxies), the header itself, and the startup ' +
           'refusal when nobody is trusted.' },
   { id: 'CORE', label: 'Service core',
-    where: 'server.js, common/protocol_stack.js, common/config.js, ' +
+    where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
            'common/mode.js, common/version.js, sts_metadata.js, home/',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
     where: 'common/worker_pool.js, common/worker.js, common/request_pool.js, ' +
-           'common/request_worker.js, common/service_state.js',
+           'common/request_worker.ts, common/service_state.ts',
     what: 'The child processes post-quantum signing runs in, and the request ' +
           'workers the whole protocol stack can be dispatched to.' },
   { id: 'STORE', label: 'Persistence and coordination',
@@ -171,9 +171,9 @@ const SUBSYSTEMS = [
           'keys that survive a restart; the key-encryption key and the ' +
           'database password read from a secret store.' },
   { id: 'PKI', label: 'Certificate authority',
-    where: 'common/pki.js, common/pki_authoring.js, ' +
+    where: 'common/pki.js, common/pki_authoring.ts, ' +
            'common/pki_revocation.js, common/revocation_status.js, pki/, ' +
-           'admin-ui/pki_admin.js',
+           'admin-ui/pki_admin.ts',
     what: 'The Root, Intermediate and Issuing CAs, certificate authoring, ' +
           'the CRL and OCSP responders, and the revocation check a presented ' +
           'certificate is held to.' },
@@ -183,7 +183,7 @@ const SUBSYSTEMS = [
   // the protocol a failing client spoke, and `STS-ENROLL-*` is the half none of
   // them owns — who may have a certificate for whom, and what goes in it.
   { id: 'ENROLL', label: 'Certificate enrollment core',
-    where: 'common/cert_enrollment.js, common/enrollment_monitor.js',
+    where: 'common/cert_enrollment.ts, common/enrollment_monitor.ts',
     what: 'Who may be issued a certificate for which directory entry, what ' +
           'a certificate issued over ACME, EST or SCEP contains, the PKCS#10 ' +
           'proof of possession, the enrolled certificates and credentials ' +
@@ -206,9 +206,9 @@ const SUBSYSTEMS = [
           'GetNextCACert and PKIOperation, the CMS envelope, the RA ' +
           'certificate, challenge passwords, and its console pages.' },
   { id: 'AUTHN', label: 'Sign-in, second factors and sessions',
-    where: 'authn/, common/credentials.js, common/totp.js, ' +
-           'common/backup_codes.js, common/password_policy.js, ' +
-           'common/oidc_rp.js',
+    where: 'authn/, common/credentials.ts, common/totp.ts, ' +
+           'common/backup_codes.ts, common/password_policy.ts, ' +
+           'common/oidc_rp.ts',
     what: 'The sign-in screen, WebAuthn, TOTP and recovery codes, password ' +
           'verification, the sign-on session, and the OpenID Connect relying ' +
           'party the console and the portal sign in through.' },
@@ -271,7 +271,7 @@ const SUBSYSTEMS = [
           'push finish outbound request; the console pages; and CAEP ' +
           'emission for grants.' },
   { id: 'XACML', label: 'XACML and access policy',
-    where: 'xacml/, common/access_gate.js, common/issuance_gate.js, ' +
+    where: 'xacml/, common/access_gate.ts, common/issuance_gate.js, ' +
            'common/roles.js',
     what: 'The PDP, the policy repository, the embedded PEPs that decide ' +
           'this service\'s own access and issuance, the PIP over HTTP, and ' +
@@ -306,17 +306,17 @@ const SUBSYSTEMS = [
     where: 'logout/',
     what: 'The protocol-independent sign-out and the session inventory.' },
   { id: 'REG', label: 'Registries',
-    where: 'common/applications.js, common/consent.js, ' +
-           'common/app_permissions.js, common/delegation.js, ' +
+    where: 'common/applications.js, common/consent.ts, ' +
+           'common/app_permissions.ts, common/delegation.js, ' +
            'common/admin_stats.js, common/audit.js, ' +
-           'common/claim_attributes.js, common/group_claims.js, ' +
-           'common/user_graph.js, common/credential_graph.js, ' +
-           'common/inetorgperson.js',
+           'common/claim_attributes.ts, common/group_claims.ts, ' +
+           'common/user_graph.ts, common/credential_graph.ts, ' +
+           'common/inetorgperson.ts',
     what: 'The application registry, consent, delegated permissions, the ' +
           'delegation register, the statistics and the claim configuration.' },
   { id: 'DBG', label: 'Protocol debugger',
     where: 'debugger/, and the debugger scope rule in ' +
-           'oauth-oidc/oauth2.js',
+           'oauth-oidc/oauth2.ts',
     what: 'The embedded identity protocol debugger: its listener, its ' +
           'sign-in, the access token its api requires, the permission that ' +
           'token carries, and the api process it forwards to.' }
@@ -675,6 +675,11 @@ const CODES = [
     summary: 'A realm\'s key set could not be generated off the event loop; ' +
       'the first read of it generates it on the loop instead.',
     spec: 'none — logged' },
+  { code: 'STS-CORE-0093',
+    summary: 'The service or its in-process suite was started from a tree ' +
+      'whose TypeScript sources are not compiled, which only an image ' +
+      'build does (#50).',
+    spec: 'none — the process exits before listening' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -3090,7 +3095,7 @@ const CODES = [
   { code: 'STS-AUTHN-0037',
     summary: 'A WebAuthn ceremony failed a check this service has no ' +
       'specific code for; the check-name table in ' +
-      'authn/webauthn_policy.js is behind the verifier.',
+      'authn/webauthn_policy.ts is behind the verifier.',
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0038',
     summary: 'A security key\'s signature counter could not be recorded ' +
@@ -5082,7 +5087,7 @@ const CODES = [
       'while resolving a request object.',
     spec: 'server_error (HTTP 500)' },
   // PUSHED AUTHORIZATION REQUESTS (RFC 9126), 2026-09-13. Block 0400..0449;
-  // oauth-oidc/par.js and the PAR endpoint in oauth-oidc/oauth2.js.
+  // oauth-oidc/par.ts and the PAR endpoint in oauth-oidc/oauth2.ts.
   { code: 'STS-OAUTH-0400',
     summary: 'A pushed authorization request arrived while ' +
       'oauth2.pushedAuthorizationRequests is off.',
@@ -5292,7 +5297,7 @@ const CODES = [
       'method did not authenticate by certificate and no more specific ' +
       'reason was recorded; refused in every mode.',
     spec: 'invalid_client (HTTP 401)' },
-  // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.js`
+  // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.ts`
   // decides; the authorization endpoint, `dpop.presentedAccessToken()` and the
   // stand-in resource answer. Block reserved at 0500..0529.
   { code: 'STS-OAUTH-0500',
@@ -9816,7 +9821,7 @@ const CODES = [
       'ALLOWED without a policy decision.',
     spec: '' },
   { code: 'STS-XACML-0050',
-    summary: 'common/access_gate.js was given a decider that is not a ' +
+    summary: 'common/access_gate.ts was given a decider that is not a ' +
       'function; every access decision is allowed.',
     spec: '' },
   { code: 'STS-XACML-0051',
@@ -10795,7 +10800,7 @@ const CODES = [
       'so that operation runs unvalidated.',
     spec: '' },
   { code: 'STS-API-0011',
-    summary: 'The crypto reporter slot that admin-ui/crypto_metadata.js ' +
+    summary: 'The crypto reporter slot that admin-ui/crypto_metadata.ts ' +
       'fills was not installed, so the crypto report, the key list or ' +
       'a key export could not be answered.',
     spec: 'HTTP 503 { ok: false, errors }' },
@@ -10824,7 +10829,7 @@ const CODES = [
     spec: 'HTTP 503' },
   { code: 'STS-API-0018',
     summary: 'The Shared Signals action rejected instead of resolving a ' +
-      'refusal, which is a defect in ssf/ssf.js.',
+      'refusal, which is a defect in ssf/ssf.ts.',
     spec: 'HTTP 500 { ok: false, errors }' },
   { code: 'STS-API-0019',
     summary: 'The CAEP action rejected instead of resolving a refusal.',

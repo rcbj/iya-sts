@@ -6,7 +6,7 @@
 // WHAT A KERBEROS TICKET SAYS, AND WHAT THE SESSION MINTED FROM IT CLAIMS.
 //
 // `/authn/spnego` turns a service ticket into the browser session sixteen
-// protocol families read. Two pure functions in `kerberos/spnego_authn.js`
+// protocol families read. Two pure functions in `kerberos/spnego_authn.ts`
 // decide what that session IS — `usernameFor()` picks the identity out of the
 // client principal, and `factorsFor()` reads `amr` and `acr` off the ticket's
 // own flags — and both are one line of arithmetic with a paragraph of argument
@@ -42,7 +42,7 @@
 // here should depend on a developer's exported appconfig.
 delete process.env.CONFIG_FILE;
 
-const door = require('../kerberos/spnego_authn.js');
+const door = require('../kerberos/spnego_authn');
 const principals = require('../kerberos/krb5_principals.js');
 
 // This file's own logger, for the Entering/Leaving lines and the handled

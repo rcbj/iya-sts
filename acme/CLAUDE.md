@@ -8,7 +8,7 @@ half; this is why it is built the way it is.
 
 **It is one of three enrollment families** — ACME, EST (`est/`) and SCEP
 (`scep/`) — and everything about a certificate that is not a wire format is
-`common/cert_enrollment.js`'s: who may be issued what, what the certificate
+`common/cert_enrollment.ts`'s: who may be issued what, what the certificate
 says, where it is kept and how it is revoked. This directory is forbidden from
 deciding any of that, and `common/CLAUDE.md` is where the core is argued. The
 shared contract the three were built against is recorded in the session that
@@ -35,12 +35,12 @@ records the principal as the entry itself (`admin: false`, `hasEntry: true`).
 
 | Module | What it is |
 |---|---|
-| `acme_jws.js` | The envelope, read strictly: the media type, the flattened JWS, strict base64url, the protected header, account keys and their RFC 7638 thumbprint, the signature (through `common/crypto.js`), the Replay-Nonce, the External Account Binding, the payload schemas, contacts, RFC 9773 certificate identifiers. A LIBRARY — no route, no state |
-| `acme_store.js` | Seven `realms.map({ persist })` stores: accounts, the key → account index, orders, authorizations, the certificate index, the renewal index, spent nonces |
-| `acme.js` | The fourteen routes under `/enroll/acme`, and `require('./acme_admin')` so the family is one line in `common/protocol_stack.js` (23e) |
-| `acme_console.js` | The view and action model both admin doors render (no route, no `res`, no markup), `gnap/gnap_console.js`'s arrangement |
-| `acme_admin.js` | `/admin/acme` (Protocols) and `/admin/acme/monitor` (Monitoring) |
-| `acme_api.js` | `ROUTES` for `/admin-api/acme`, `/admin-api/acme/monitor` and `/admin-api/acme/:action`, spread into `mgmt-api/admin_api.js` |
+| `acme_jws.ts` | The envelope, read strictly: the media type, the flattened JWS, strict base64url, the protected header, account keys and their RFC 7638 thumbprint, the signature (through `common/crypto.js`), the Replay-Nonce, the External Account Binding, the payload schemas, contacts, RFC 9773 certificate identifiers. A LIBRARY — no route, no state |
+| `acme_store.ts` | Seven `realms.map({ persist })` stores: accounts, the key → account index, orders, authorizations, the certificate index, the renewal index, spent nonces |
+| `acme.ts` | The fourteen routes under `/enroll/acme`, and `require('./acme_admin')` so the family is one require in `common/protocol_stack.ts` (23e), followed by two `register()` calls — `acme`, then `acme_admin` (#50's R1: neither registers anything when required) |
+| `acme_console.ts` | The view and action model both admin doors render (no route, no `res`, no markup), `gnap/gnap_console.ts`'s arrangement |
+| `acme_admin.ts` | `/admin/acme` (Protocols) and `/admin/acme/monitor` (Monitoring) |
+| `acme_api.ts` | `ROUTES` for `/admin-api/acme`, `/admin-api/acme/monitor` and `/admin-api/acme/:action`, spread into `mgmt-api/admin_api.ts` |
 
 ## The routes, and the RFC sections behind each
 
@@ -73,7 +73,7 @@ credential.
 
 ### The request pipeline's ORDER is the contract
 
-`authenticate()` in `acme.js`: media type → size → flattened JWS → protected
+`authenticate()` in `acme.ts`: media type → size → flattened JWS → protected
 header → `alg` → the jwk/kid rule → the nonce's MAC and expiry → `url` → the
 account (kid) or the key (jwk) → **the signature** → **the nonce spent** → the
 per-identity throttle → the payload. Cheap refusals come first, and the nonce
@@ -86,8 +86,8 @@ A nonce has to be accepted by whichever process answers the NEXT request — the
 front process or any request worker — and a replicated store arrives half a
 second to a second late. So a nonce is `version | expiry | 16 random bytes |
 MAC(realm, expiry, random)` under the `acme-nonce` secret
-`cluster/cluster_secrets.js` declares, put into `STS_ACME_NONCE_SECRET` before
-any worker forks (`ssf/ssf_receivers.js`'s channel). Any process can check it
+`cluster/cluster_secrets.ts` declares, put into `STS_ACME_NONCE_SECRET` before
+any worker forks (`ssf/ssf_receivers.ts`'s channel). Any process can check it
 with no lookup.
 
 **Single use is the store half** (`acme.usedNonces`) and it CONVERGES rather
@@ -280,10 +280,10 @@ as failure patterns.
 * **A JSON value written through the `Write` tool with `\u0000` in a regex
   arrives as a literal NUL byte**, which makes the file invisible to `grep`
   (`common/CLAUDE.md` records the same trap). The patterns here use `\x00`.
-* **`acme_console.js` cannot require `acme.js` at load**: `acme.js` requires
-  `acme_admin.js`, which requires the console model, so a require at load hands
+* **`acme_console.ts` cannot require `acme.ts` at load**: `acme.ts` requires
+  `acme_admin.ts`, which requires the console model, so a require at load hands
   back the half-built exports. The console model reads the URLs lazily.
-* **`acme_admin.js` may not require `admin-core/admin_views.js`**
+* **`acme_admin.ts` may not require `admin-core/admin_views.ts`**
   (`tests/admin_actions_layer.js` names the files that may), so the console
   session's actor is read through `acme_console.consoleActorOf()`.
 * **The console's POST handler is asynchronous** (a revocation awaits the CA),

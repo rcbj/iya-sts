@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: server.js
@@ -48,12 +49,15 @@
 // are*; the module list that stood here named root-level files that moved into
 // directories on 2026-08-23.
 //
-// **Requiring a module registers its endpoints** (rule 1). Each one does
+// **A composition root registers every endpoint** (rule 1). Until #50's R1
+// (2026-09-16) requiring a module registered its endpoints — each did
 // `app.get(...)` at its top level against the shared app from
-// `common/app.js`, rather than exporting a register() function — which kept
-// every handler exactly where it was written instead of re-indented inside a
-// wrapper. So the require order is the route order, and it lives in
-// `common/protocol_stack.js` (below); the root CLAUDE.md's table says what
+// `common/app.js`, which kept every handler exactly where it was written
+// instead of re-indented inside a wrapper. A module converted to TypeScript
+// now exports `registerRoutes(app)` and registers nothing when required; the
+// JavaScript ones still register at their require. Both orders — the
+// requires and the `register()` calls, interleaved as they always ran — live
+// in `common/protocol_stack.ts` (below); the root CLAUDE.md's table says what
 // each position depends on. sts_metadata.js is last on purpose: it reads the
 // router to list what everything else registered, and while it re-reads it
 // per request, being last means it is never the reason a route is missing.
@@ -65,6 +69,11 @@
 // longer resolves against the package root from where those modules sit. This
 // makes it absolute once, in place, so every direct reader agrees. See
 // common/config_file.js.
+// A TREE WHOSE TYPESCRIPT IS NOT COMPILED IS REFUSED, BEFORE ANYTHING ELSE
+// (#50). TypeScript here is compiled only inside an image build, so a checkout
+// cannot run the service; this says so instead of a "Cannot find module"
+// from the first converted module. See `common/compiled_tree.js`.
+require('./common/compiled_tree').refuseUncompiledTree('node server.js');
 require('./common/config_file').resolveConfigFile();
 
 const http = require('http');
@@ -126,7 +135,7 @@ const APP_VERSION = version.load();
 // **IT DOES NOT OPEN ANYTHING HERE.** Opening a Postgres pool is asynchronous
 // and a `require` cannot wait, so the store is opened and READ from
 // `persistence.start()` at the foot of this file (through
-// `common/service_state.js`) — before the HTTP listener binds and before the
+// `common/service_state.ts`) — before the HTTP listener binds and before the
 // socket owners start. That makes it one more module whose real work happens
 // outside require time, and the only one that must go FIRST among them: what
 // it restores is what the others are about to serve.
@@ -141,15 +150,15 @@ const persistence = require('./persistence/persistence');
 // ---------------------------------------------------------------------------
 // EVERY PROTOCOL MODULE, IN THE ORDER THAT IS THE ROUTE ORDER.
 //
-// That sequence moved to `common/protocol_stack.js` on 2026-09-07 and the
+// That sequence moved to `common/protocol_stack.ts` on 2026-09-07 and the
 // reason is that it acquired a SECOND READER: a request worker loads the same
 // stack, registers the same routes in the same order, and binds none of the
 // sockets. Two copies of the order would be two answers to "which handler
 // wins" — see that file's header.
 //
 // The modules whose `listen()` is called below come back from it, because
-// this file needs the handles. Requiring them registered their HTTP views and
-// started nothing. (`tlsServer` is among them and owns no socket since
+// this file needs the handles. Loading the stack registered their HTTP views
+// and started nothing. (`tlsServer` is among them and owns no socket since
 // 2026-09-16; its `listen()` is still a startup step — see announce().)
 // ---------------------------------------------------------------------------
 const stack = require('./common/protocol_stack');
@@ -321,7 +330,7 @@ function announce() {
   // the listener has its own entry there.
   const kdcListeners = krb5.listen();
   // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
-  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.js` into
+  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.ts` into
   // the parent project's Kerberos COPY set (`kerberos/CLAUDE.md`). Installing
   // after `listen()` returned is not a race — `listen()` is synchronous up to
   // the bind, and a `connection` event is delivered from the event loop,
@@ -400,7 +409,7 @@ function announce() {
   });
   // THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13): `/pki/` and nothing else,
   // because RFC 5280 section 8 and RFC 5019 section 5 put CRL and OCSP
-  // addresses on http:// — see pki/pki_service.js. Recorded rather than
+  // addresses on http:// — see pki/pki_service.ts. Recorded rather than
   // thrown, for the reason every raw listener here is.
   require('./pki/pki_service').listen().whenReady.then(function (ready) {
     if (ready.port) {
@@ -604,7 +613,7 @@ const proxyProtocol = require('./common/proxy_protocol');
 //
 // The steps — the store, the signing keys, what this process minted,
 // coordination and (since 2026-09-11) the certificate authority — moved to
-// `common/service_state.js` on 2026-09-07, because a REQUEST WORKER has to run
+// `common/service_state.ts` on 2026-09-07, because a REQUEST WORKER has to run
 // exactly the same steps in exactly the same order. Each step's argument is
 // in that file, where it has always been.
 // ---------------------------------------------------------------------------
@@ -664,7 +673,7 @@ serviceState.start().then(function (both) {
   // in the default realm, made if absent, in both console roles, and forced to
   // change its password at its first sign-in. `credentials.bootstrap()` below
   // then gives that account its generated password in product mode. See
-  // admin-ui/admin_rbac.js's seedBootstrapAdministrator().
+  // admin-ui/admin_rbac.ts's seedBootstrapAdministrator().
   //
   // **ONCE FOR THE CLUSTER, SINCE 2026-09-14 (#46 section 8).** Several nodes
   // cold-started against one empty store each seeded the account and each
@@ -891,7 +900,7 @@ if (useHttps) {
   tlsServer.observeConnectionsOn(mainServer,
                                  'the main port (' + PORT + ')');
   // The PROXY protocol header comes off BEFORE the TLS handshake — see
-  // common/proxy_protocol.js. A no-op with global.proxyProtocol off.
+  // common/proxy_protocol.ts. A no-op with global.proxyProtocol off.
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
                                       channel: 'http' });
   mainServer.listen(PORT, HOST, announce);

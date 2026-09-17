@@ -1,5 +1,6 @@
 // Configuration the test launchers select for a run below debug level
-// (local-run-tests.sh's THE SERVICE'S LOG LEVEL block).
+// (docker-run-tests.sh's and run-coverage.sh's THE SERVICE'S LOG LEVEL
+// blocks; local-run-tests.sh had one too until it was removed, 2026-09-16).
 //
 // Identical to env/local.js apart from this comment; the two differed in the
 // log level until 2026-09-12, when every appconfig file here went to info. See
@@ -102,7 +103,7 @@ var config = {
     // it); the skew is capped at 300, which is what krb5.clockSkew allows.
     //
     // refreshTokenTtlS IS A BEHAVIOUR CHANGE: it was thirty days as a constant
-    // in oauth-oidc/oauth2.js and is twenty-four hours here. Put 2592000 back
+    // in oauth-oidc/oauth2.ts and is twenty-four hours here. Put 2592000 back
     // for exactly the old behaviour.
     //
     // clockSkewS is NOT clientAssertionSkewS above it: that one is how far out

@@ -7,7 +7,7 @@
 | `defaults.js` | **GENERATED, and never hand-edited.** One row per setting in `common/config.js`'s `SETTINGS`, written from its `dflt` column by `generate_defaults.js`. It is not selected by anything — it is the layer UNDER whichever file is. |
 | `generate_defaults.js` | `node env/generate_defaults.js` writes the above. Adding a setting is one edit: add the row to `SETTINGS`, regenerate. |
 | `local.js` | the appconfig for a host run — `CONFIG_FILE=./env/local.js node server.js` — and the default of the image (`Dockerfile`) and of `docker-compose.yml` |
-| `test.js` | the appconfig the test launchers pick for a run below debug level (`local-run-tests.sh`'s *THE SERVICE'S LOG LEVEL*) |
+| `test.js` | the appconfig the test launchers pick for a run below debug level (the *THE SERVICE'S LOG LEVEL* block of `docker-run-tests.sh` and of `run-coverage.sh`) |
 | `docker-tests.js` | the default appconfig of the service container in `docker-compose-run-tests.yml` |
 
 **`CONFIG_FILE` selects one of the last three and it is a LAYER, not the whole

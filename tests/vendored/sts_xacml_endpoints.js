@@ -8,7 +8,7 @@
 // Profile, and `tests/xacml_pep.js` holds the two things about the remote PEP
 // that no running service can be asked. All three are in process, and between
 // them they never make one HTTP request — so until this file existed, every
-// route in `xacml/xacml.js` was uncovered: the decision endpoint, the
+// route in `xacml/xacml.ts` was uncovered: the decision endpoint, the
 // repository, the embedded PEP, the three the remote PEP lives on and — since
 // 2026-09-06 — the PIP.
 //
@@ -375,7 +375,7 @@ async function decisionFor(subject, action, resource) {
 // The three `/xacml/pep` endpoints no longer accept a certificate that chains
 // to nothing: a DN is only worth resolving to a directory entry if this service
 // verified the chain it came from. So this file builds a Root CA, an Issuing CA
-// and a client leaf on the SAME engine `spiffe/spiffe_ca.js` issues X509-SVIDs
+// and a client leaf on the SAME engine `spiffe/spiffe_ca.ts` issues X509-SVIDs
 // with, and POSTs the root to `/tls/trust` — which is exactly what the parent
 // project's `tests/pki_mutual_tls.js` has always done, and what
 // `tests/tools/pep-credential.js` does for the launchers.

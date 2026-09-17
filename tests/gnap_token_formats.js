@@ -25,7 +25,7 @@
 //   * **THE MATCHER IS A TABLE OF CASES.** `accessCovers()` is section 8's
 //     cross-product sentence, and its edges (a union covering what no single
 //     grant does, an empty dimension that must not be vacuous) are argued in
-//     `gnap/gnap_access.js` and pinned here.
+//     `gnap/gnap_access.ts` and pinned here.
 //
 // Every refusal is asserted by CODE, and the code is asserted to be MARKED on
 // the refusal object as well as named on it, because the route module reads
@@ -683,7 +683,7 @@ async function zcapCases(t) {
 //
 // They had no in-process case at all: the three library formats each have a
 // module of their own with `mint(model, keys)` / `verify(value, keys, ctx)`,
-// and the JWT formats live inside `gnap/gnap_tokens.js`'s dispatcher, keyed by
+// and the JWT formats live inside `gnap/gnap_tokens.ts`'s dispatcher, keyed by
 // the ambient REALM's signing key rather than by a key handed in. So an adapter
 // gives them the library shape — `keys.realm` is the realm the token is minted
 // and verified in, and "another AS key" is another realm, which is exactly what

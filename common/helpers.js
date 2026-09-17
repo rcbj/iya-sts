@@ -326,7 +326,7 @@ const HOST = config.value('global.host');
 //
 // OID4VCI section 10: the ISSUER publishes a key in
 // `credential_request_encryption.jwks` and a wallet encrypts its Credential
-// Request to it. That key lived in `oid4vc/vc_issuer.js` until this date as a
+// Request to it. That key lived in `oid4vc/vc_issuer.ts` until this date as a
 // thing of its own — generated at module load, handed to request workers
 // through `process.env.STS_VCI_REQUEST_ENC_KEY_PEM`, persisted in no mode — and
 // every trust realm in a pooled process shared the one key the pool handed
@@ -401,7 +401,7 @@ function makeRequestEncryptionKey(made) {
 // THE REFRESH-TOKEN ENCRYPTION KEYS (2026-09-12).
 //
 // Every refresh token this service issues is a signed JWT ENCRYPTED to its own
-// realm — `oauth-oidc/refresh_token_crypto.js` does the sealing and argues it.
+// realm — `oauth-oidc/refresh_token_crypto.ts` does the sealing and argues it.
 // These are the keys, and there are three because JWE key management comes in
 // three kinds and the algorithm is a setting
 // (`oauth2.refreshTokenEncryptionAlg`):
@@ -488,7 +488,7 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
 // RFC 9101 section 6.1 lets a client ENCRYPT its request object to the
 // authorization server, and the key it encrypts to is one this server
 // PUBLISHES — so, unlike the refresh-token keys above, these two are in
-// `/oauth2/jwks`, marked `use: "enc"`. `oauth-oidc/request_object.js` decrypts
+// `/oauth2/jwks`, marked `use: "enc"`. `oauth-oidc/request_object.ts` decrypts
 // with them. An RSA pair for RSA-OAEP and RSA-OAEP-256, an EC pair for ECDH-ES
 // and its key-wrapping variants; the symmetric algorithms are keyed by the
 // client's own secret and need no key here.
@@ -1728,7 +1728,7 @@ function prepareKeySets(realmIds) {
 // ---------------------------------------------------------------------------
 // THE OPENID4VCI REQUEST-ENCRYPTION KEY OF A KEY SET, as `{ privateKey,
 // publicJwk }` — the CURRENT realm's when no set is named. What
-// `oid4vc/vc_issuer.js` publishes and decrypts with.
+// `oid4vc/vc_issuer.ts` publishes and decrypts with.
 //
 // Every set made from 2026-09-12 carries one, so this is a property read. The
 // rest of the function is the ONE case that does not: a set RESTORED from a
@@ -2026,7 +2026,7 @@ let bbsRefusedText = '';
 // **AND ACROSS NODES SINCE 2026-09-14 (#46 section 1).** The same three jobs
 // failed again in the suite's `cluster` mode, one level up: each CONTAINER
 // generated its own pair, so `/bbs/keys/1` answered a different key on each
-// node. `cluster/cluster_secrets.js` now declares the pair (`bbs-keypair`):
+// node. `cluster/cluster_secrets.ts` now declares the pair (`bbs-keypair`):
 // the store keeps the first node's, sealed, and every front process puts it in
 // `STS_BBS_KEYPAIR` before anything issues — the variable this function
 // already read. Its argument for being there rather than in `sts_keys` is at
@@ -2311,7 +2311,7 @@ function multipartParts(req) {
 // before somebody looks for a bug there: it reads `req.query`, and express's
 // query parser gives an array for a repeat already.
 //
-// `admin-ui/admin.js`'s `listField()` is the same function, written first, for
+// `admin-ui/admin.ts`'s `listField()` is the same function, written first, for
 // the console's checkbox columns. It is not called from here and this is not
 // called from there — that module requires `oauth2.js` (rule 5), so nothing
 // below it can require it back. Folding the two together is a change to make in
@@ -2842,7 +2842,7 @@ function publishedKidFor(kid) {
 
 // Does a header's `kid` name the ambient realm's key with this internal kid,
 // under either spelling. For the verifiers here that find their own key by
-// `kid` (`ssf/ssf_events.js`, `oid4vc/vc_verifier.js`).
+// `kid` (`ssf/ssf_events.js`, `oid4vc/vc_verifier.ts`).
 function kidNamesKey(headerKid, internalKid) {
   log.debug("Entering kidNamesKey().");
   log.debug("Leaving kidNamesKey().");
@@ -3268,7 +3268,7 @@ function userFor(username) {
 // callers now need the same string and two of them cannot reach that module.
 // `scim_auth.js` and `spiffe_auth.js` require it directly and always could;
 // `spiffe_ca.js` cannot, and the reason is rule 3e's test rather than a
-// preference — `admin-ui/admin.js` requires `spiffe_ca.js`, and `server.js`
+// preference — `admin-ui/admin.ts` requires `spiffe_ca.js`, and `server.js`
 // requires `admin.js` at 18 and `tls_server.js` at 20, so a require from that
 // module would pull every `/tls*` route into the express router ahead of the
 // console's and `GET /admin/sts-metadata` walks that router. A leaf in
@@ -3414,8 +3414,8 @@ function numberWord(count) {
 // to retry, and dropping them leaves a conforming client unable to proceed with
 // no error to point at.
 //
-// It was written inside `scim/scim_auth.js` and moved here on 2026-08-31 when
-// `ssf/ssf_auth.js` became the second caller. A second copy of this would be a
+// It was written inside `scim/scim_auth.ts` and moved here on 2026-08-31 when
+// `ssf/ssf_auth.ts` became the second caller. A second copy of this would be a
 // second thing to update, and it would be a version behind within a release —
 // which is the argument that file already made about not writing a second
 // access-token check.

@@ -22,7 +22,7 @@
 //   * It is ENFORCED. An application entry names the roles it REQUIRES, and
 //     nothing is issued for that application to somebody who holds none of
 //     them — a decision made by the XACML PDP through the embedded PEP in
-//     `xacml/xacml_role_pep.js`, never by an `if` in an issuance site.
+//     `xacml/xacml_role_pep.ts`, never by an `if` in an issuance site.
 //
 // THOSE ARE TWO DIFFERENT RELATIONS AND THIS FILE KEEPS THEM APART, because
 // collapsing them is the mistake that makes the whole feature unreadable:
@@ -89,7 +89,7 @@
 // The DIRECTORY arrives through a slot pointing the other way, exactly as
 // `group_claims.js`, `applications.js` and `xacml_store.js` do it: only
 // `ldap/ldap_server.js` can answer what is in `ou=roles`, and it is required
-// at 21 in `common/protocol_stack.js`, so a require reaching it from here
+// at 21 in `common/protocol_stack.ts`, so a require reaching it from here
 // would drag every `/ldap` route to the front of the router.
 // ---------------------------------------------------------------------------
 

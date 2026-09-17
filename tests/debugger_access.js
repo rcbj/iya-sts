@@ -10,7 +10,7 @@
 //
 //   A. the permission, the client id and the resource identifier are ONE
 //      spelling in the three files that write them — `debugger_access.js`,
-//      `common/applications.js`'s seed and `common/oidc_rp.js`'s surface — and
+//      `common/applications.js`'s seed and `common/oidc_rp.ts`'s surface — and
 //      the seeded entries define and grant it;
 //   B. `narrowScope()` takes the permission off for somebody who is not a
 //      console administrator, for an application, for an unauthenticated
@@ -209,10 +209,10 @@ async function run(t) {
   // -------------------------------------------------------------------------
   t.log.info('=== D. oauth2.js asks at both grant points ===');
   const oauthSource = fs.readFileSync(path.join(__dirname, '..', 'oauth-oidc',
-                                                'oauth2.js'), 'utf8');
+                                                'oauth2.ts'), 'utf8');
   const tokenSetBody = oauthSource.slice(oauthSource.indexOf(
-    'async function tokenSet('), oauthSource.indexOf(
-    'async function tokenSet(') + 4000);
+    'async tokenSet('), oauthSource.indexOf(
+    'async tokenSet(') + 4000);
   t.check(/debuggerAccess\.narrowScope\(\s*opts\.scope/.test(tokenSetBody) &&
           tokenSetBody.indexOf('debuggerAccess.narrowScope') <
             tokenSetBody.indexOf('accessTokenPlan('),
@@ -220,8 +220,8 @@ async function run(t) {
           'it, so no grant mints the permission for somebody who may not ' +
           'hold it');
   const responseBody = oauthSource.slice(oauthSource.indexOf(
-    'async function issueAuthorizationResponse('), oauthSource.indexOf(
-    'async function issueAuthorizationResponse(') + 3000);
+    'async issueAuthorizationResponse('), oauthSource.indexOf(
+    'async issueAuthorizationResponse(') + 3000);
   t.check(/const scope = debuggerAccess\.narrowScope\(/.test(responseBody),
           'and the authorization endpoint narrows before a code carries it');
 

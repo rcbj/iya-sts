@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: krb5_service.js
@@ -930,7 +931,8 @@ function startTcp(port) {
     log.info('krb5-service: ' + servicePrincipal().join('/') + ' listening ' +
         'on ' +
         'TCP ' +
-      server.address().port + ' — present a GSS-wrapped AP-REQ');
+      (/** @type {any} */ (server.address())).port +
+      ' — present a GSS-wrapped AP-REQ');
   });
   log.debug('Leaving startTcp().');
   return server;

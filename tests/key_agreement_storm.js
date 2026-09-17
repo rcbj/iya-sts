@@ -81,7 +81,7 @@ async function run(t) {
   // **THE ASSERTION IS ABOUT THE CACHE AND NOT ABOUT WHO WAS CALLED**, and
   // that is deliberate. A first version of this file counted calls to two
   // providers it installed itself — and `tests/run.js` runs every file in ONE
-  // process, where `common/service_state.js` has already started `pki.js`
+  // process, where `common/service_state.ts` has already started `pki.js`
   // with providers of its own, so the counters measured a function nobody was
   // calling and the file failed while the service was correct. What is below
   // is true whoever wired the watcher up, which is the property a test of a
@@ -94,7 +94,7 @@ async function run(t) {
   // `pki.start()` is what subscribes (`watchRealms()`), and the handler
   // returns early when `keySetFor` is missing, so a file that started nothing
   // would assert "no keys were made" about a watcher that was never called.
-  // Both are supplied exactly as `common/service_state.js` supplies them, and
+  // Both are supplied exactly as `common/service_state.ts` supplies them, and
   // the difference between the defect and the fix is which one the watcher
   // reaches for.
   //
@@ -211,7 +211,7 @@ async function run(t) {
   // -------------------------------------------------------------------------
   // **THE FIX LIVES IN TWO FILES AND THE SECTIONS ABOVE PIN ONLY ONE**, which
   // a mutation run showed rather than a reading: deleting `keySetHeldFor` from
-  // `common/service_state.js` — the only production caller of `pki.start()` —
+  // `common/service_state.ts` — the only production caller of `pki.start()` —
   // leaves every assertion above green, because this file supplies providers
   // of its own. Without it `pki.js` falls back to certifying nothing at all,
   // which is SAFE (no storm) and is not the intended behaviour: a realm whose
@@ -222,7 +222,7 @@ async function run(t) {
   // agree perfectly right up until one of them is edited.
   // -------------------------------------------------------------------------
   const options = fs.readFileSync(
-    path.join(__dirname, '..', 'common', 'service_state.js'), 'utf8');
+    path.join(__dirname, '..', 'common', 'service_state.ts'), 'utf8');
 
   // **THE WHOLE FILE AND NOT A SLICE OF THE CALL.** A first version cut the
   // options object out between `pki.start({` and the first `})`, and the
@@ -232,12 +232,12 @@ async function run(t) {
   // the file IS the call site and a boundary nobody has to get right is worth
   // more than a tighter match.
   t.check(options.indexOf('pki.start(') >= 0,
-          'common/service_state.js is where pki.start() is called — the ' +
+          'common/service_state.ts is where pki.start() is called — the ' +
           'check below is about that call and this is what says it is still ' +
           'here');
 
   t.check(options.indexOf('keySetFor:') >= 0,
-          'common/service_state.js hands pki.start() a key-set provider');
+          'common/service_state.ts hands pki.start() a key-set provider');
   t.check(options.indexOf('keySetHeldFor:') >= 0,
           'AND THE HELD-CHECK BESIDE IT. This is the half that stops the ' +
           'realm watcher generating a key set in every process — without it ' +

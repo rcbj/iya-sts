@@ -9,17 +9,22 @@
 // CORS, the body parser and the call log.
 //
 // It is a module of its own, and the reason is the registration order. Each
-// protocol module registers its endpoints as a side effect of being required
-// (`const app = require('./app')` then `app.get(...)` at its top level), which
-// keeps every handler exactly where it was written instead of wrapped in a
-// register() function and re-indented. Express applies middleware in the order
+// protocol module used to register its endpoints as a side effect of being
+// required (`const app = require('./app')` then `app.get(...)` at its top
+// level), which kept every handler exactly where it was written instead of
+// wrapped in a register() function and re-indented. Since #50's R1
+// (2026-09-16) a module converted to TypeScript exports `registerRoutes(app)`
+// instead and `common/protocol_stack.ts` calls it; the JavaScript ones still
+// register when required. Either way, Express applies middleware in the order
 // it was added and only to routes added AFTER it, so the middleware has to be
-// installed by the time any protocol module is loaded — i.e. here, in the
-// module they all require, rather than in server.js, which requires them.
+// installed before the first route is registered — i.e. here, in the module
+// every route module requires and every registration is made against, rather
+// than in server.js, which loads them.
 //
-// The consequence to remember when adding a module: `common/protocol_stack.js`
+// The consequence to remember when adding a module: `common/protocol_stack.ts`
 // (which server.js and every request worker load) requires the protocol
-// modules in a deliberate order, and that order is the route order.
+// modules and calls their `registerRoutes(app)` in a deliberate order, and
+// that order is the route order.
 // Nothing here has overlapping paths, so it does not currently matter — but a
 // new module that registers a wildcard would matter a great deal.
 // ---------------------------------------------------------------------------
@@ -531,7 +536,7 @@ app.use(function (req, res, next) {
   // deliberately "does it still carry the clause" rather than "is it still the
   // value I set": several routes here legitimately relax the policy, and
   // every one of them goes through contentSecurityPolicy(), which cannot drop
-  // the framing clauses, or (mgmt-api/admin_api_docs.js, a leaf) writes them
+  // the framing clauses, or (mgmt-api/admin_api_docs.ts, a leaf) writes them
   // out itself — so a policy without them was set by something that is not
   // us, and the base policy is put back.
   //
@@ -624,13 +629,13 @@ app.options('*', corsPolicy.preflight());
 // **`application/pkcs10` JOINED THEM ON 2026-09-13, FOR EST.** An EST body is
 // base64 text rather than DER (RFC 8951), so the text parser would not corrupt
 // it — but it would strip a byte-order mark and replace an invalid byte with
-// U+FFFD before `est/est.js` could refuse the body for containing one, which
+// U+FFFD before `est/est.ts` could refuse the body for containing one, which
 // turns a malformed request into a different malformed request. Taken raw, the
 // bytes EST checks are the bytes the client sent.
 // **`application/x-pki-message` JOINED THEM THE SAME DAY, FOR SCEP.** A
 // PKIOperation POST (RFC 8894 section 4.3) is a binary CMS SignedData, which
 // is the OCSP case exactly: the text parser would drain the stream and decode
-// DER as UTF-8, so `scep/scep.js` would verify a signature over bytes the
+// DER as UTF-8, so `scep/scep.ts` would verify a signature over bytes the
 // client never signed and refuse every correct request as badMessageCheck.
 app.use(bodyParser.raw({
   type: ['application/kerberos', 'application/octet-stream',
@@ -872,7 +877,7 @@ app.use(function (req, res, next) {
 // **AFTER THE CALL LOG ON PURPOSE.** A refusal is exactly the request an
 // operator wants to find afterwards, and the middleware above is what puts a
 // request in `/admin/audit`. Registered ahead of it, every refusal this makes
-// would be invisible — which is the same argument `common/websecurity.js` makes
+// would be invisible — which is the same argument `common/websecurity.ts` makes
 // about a rate-limit lockout nobody can see being a support call with no
 // evidence in it.
 //

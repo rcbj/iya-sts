@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: sts_metadata.js
@@ -26,14 +27,23 @@
 //     parent project's `tests/vendored/sts_metadata.js` now signs in the way
 //     `tests/vendored/admin_api.js` does.
 //   * **REQUIRING `admin.js` FROM HERE MOVES NOTHING.** That is the question to
-//     ask of any require in this service, because require order is route order
-//     — and this one is safe in both directions: server.js requires the console
-//     long before it requires this file, so the require below is a cache hit
-//     that registers nothing; and in a process that somehow loaded this file
-//     first, the console's routes and its gate would register AHEAD of this
-//     page's route, which is the order this page needs anyway. There is no
-//     cycle: `admin.js` does not require this module and must not — it would
-//     drag the console's own routes behind the last module in server.js.
+//     ask of any require in this service, because require order was route
+//     order until #50's R1 (and still is for a JavaScript module, which this
+//     one is) — and this one is safe in both directions:
+//     `common/protocol_stack.ts` requires the console long before it requires
+//     this file, so the require below is a cache hit that registers nothing;
+//     and in a process that somehow loaded this file first, the console's
+//     routes and its gate would have registered AHEAD of this page's route,
+//     which is the order this page needs anyway. Since R1 the console
+//     (`admin.ts`) registers nothing when required, so such a process would
+//     have this page's route with no gate in front of it until something
+//     called the console's `registerRoutes(app)` — one more reason this file
+//     is required last, by `common/protocol_stack.ts`, after that call. There
+//     is no cycle: `admin.ts` does not require this module and must not — it
+//     would register this page's route (this file still registers at require)
+//     at the console's position, ahead of everything it is meant to list, and
+//     before R1 it would also have dragged the console's own routes behind
+//     the last module in server.js.
 //
 // A DOWNLOAD BUTTON is on the page because the JSON form is now behind the
 // gate too: `?format=json` in a browser is a session-carrying GET, and an
@@ -103,7 +113,7 @@ const authorizationServers = require('./oauth-oidc/authorization_servers');
 // loads that module long before this one, so it registers nothing here.
 //
 // It is a `setX()` rather than an export that module reads for the reason
-// `logout/logout.js` fills `admin.setLogoutReader()`: the reader has to run
+// `logout/logout.ts` fills `admin.setLogoutReader()`: the reader has to run
 // after the writer, and this is the only point in the process where that is
 // guaranteed.
 // ---------------------------------------------------------------------------
@@ -441,7 +451,7 @@ const SPECS = [
               'different outcome from a network failure and is recorded as ' +
               'one. It also RECEIVES on that profile at POST /ssf/receive, ' +
               'the roles reversed, so a client can be the transmitter. NOT ' +
-              'covered: retries, deliberately — see ssf/ssf_http.js.' },
+              'covered: retries, deliberately — see ssf/ssf_http.ts.' },
   { id: 'caep', name: 'OpenID Continuous Access Evaluation Profile 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-caep-1_0-final.html',
@@ -1838,7 +1848,7 @@ const SPECS = [
     coverage: 'full: an EST enrollment body must be sent as ' +
               'application/pkcs10 and anything else is refused 415. The ' +
               'PKCS#10 request inside it is verified, proof of possession ' +
-              'included, by common/cert_enrollment.js.' },
+              'included, by common/cert_enrollment.ts.' },
   // ===== SCEP specs (scep/) =====
   { id: 'rfc8894', name: 'Simple Certificate Enrolment Protocol (RFC 8894)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8894',
@@ -3630,7 +3640,7 @@ const ENDPOINTS = [
           'IMPLEMENTS NO SPECIFICATION (2026-09-10). The four ' +
           '`backupCodes.*` settings — whether a set is issued at all, how ' +
           'many codes, how long each is, and how it is grouped for reading — ' +
-          'with the mechanism read from common/backup_codes.js rather than ' +
+          'with the mechanism read from common/backup_codes.ts rather than ' +
           'written down here, which is the rule /admin/crypto-metadata is ' +
           'built on. **A SET IS ISSUED AUTOMATICALLY AND ONCE**, by the act ' +
           'of enrolling a second factor; there is no control here, on ' +
@@ -3652,7 +3662,7 @@ const ENDPOINTS = [
           'seconds in a step, the steps of clock skew forgiven, the shared ' +
           'secret length, the label a phone shows, whether new enrolments ' +
           'are offered, and how long an unconfirmed one lives. The algorithm ' +
-          'table is READ FROM common/totp.js rather than written down here, ' +
+          'table is READ FROM common/totp.ts rather than written down here, ' +
           'which is the rule /admin/crypto-metadata is built on. **CHANGING ' +
           'THE DIGEST, THE DIGITS OR THE PERIOD AFFECTS NEW ENROLMENTS ' +
           'ONLY** — an existing secret is verified with the parameters the ' +
@@ -3677,7 +3687,7 @@ const ENDPOINTS = [
           'factor, how many one person may hold — which are not WebAuthn at ' +
           'all but what THIS service does with a key. **NOT ONE OF THESE ' +
           'EXISTED UNTIL 2026-09-10**: every ceremony parameter was a ' +
-          'literal in a string in authn/authn.js. **ONE IS ENFORCED AND THE ' +
+          'literal in a string in authn/authn.ts. **ONE IS ENFORCED AND THE ' +
           'REST ARE REQUESTS** — userVerification is checked against the UV ' +
           'flag inside the bytes the authenticator signed, and nothing ' +
           'signed says what the browser was asked about attestation, the ' +
@@ -3776,7 +3786,7 @@ const ENDPOINTS = [
           'own bearer token, compared in constant time, then the `aud`, then ' +
           'the signature — and it is exempt from the CSRF check for the same ' +
           'reason, there being no browser and no cookie. See ' +
-          'ssf/ssf_receivers.js.',
+          'ssf/ssf_receivers.ts.',
     coverage: 'full for RFC 8935 section 2.1 receipt: the media type, the ' +
               'authorization header, the 202 with an empty body, and section ' +
               '2.4\'s {err, description} refusal shape. Poll delivery at ' +
@@ -4200,12 +4210,12 @@ const ENDPOINTS = [
     what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, WITH THIS SERVICE AT BOTH ' +
           'ENDS (2026-09-10). The portal\'s stream names this path as its ' +
           '`delivery.endpoint_url`, on this service\'s own loopback ' +
-          'address, and `ssf/ssf_http.js` POSTs each SET here as ' +
+          'address, and `ssf/ssf_http.ts` POSTs each SET here as ' +
           'application/secevent+jwt with the stream\'s ' +
           '`authorization_header`. IT IS A REAL HTTP REQUEST ON PURPOSE: ' +
           'handing the event to the page in process would skip the body, the ' +
           'media type, the authorization header and the signature, which is ' +
-          'everything a receiver does — the argument `common/oidc_rp.js` ' +
+          'everything a receiver does — the argument `common/oidc_rp.ts` ' +
           'makes about redeeming an authorization code in process, made ' +
           'again for a different protocol. UNAUTHENTICATED BY SESSION AND ' +
           'NOT UNGUARDED: what it checks is the bearer token on its own ' +
@@ -4375,7 +4385,7 @@ const ENDPOINTS = [
           'ONE generations table, newest first, with the origin as the last ' +
           'row, plus the acts, the parties and every line in words. THE ' +
           'PICTURE IS THE DELEGATION MAP ASKED A DIFFERENT QUESTION: ' +
-          'common/credential_graph.js returns a graph in ' +
+          'common/credential_graph.ts returns a graph in ' +
           'delegation.graph()\'s shape, so the same code draws it and a ' +
           'party here is the same party, drawn the same way, as on the four ' +
           'pages that had it first. A CREDENTIAL THIS SERVICE NO LONGER ' +
@@ -5552,7 +5562,7 @@ const ENDPOINTS = [
     specs: ['rfc5280'],
     what: 'NON-SPEC. What the certificate details dialog on /admin/pki and ' +
           '/admin/crypto-metadata opens, as JSON, from the same view layer ' +
-          '(admin-core/certificate_views.js) — so a certificate cannot be ' +
+          '(admin-core/certificate_views.ts) — so a certificate cannot be ' +
           'openable on one door and unknown on the other. Without ' +
           '`certificate` it is the LIST: one row per certificate with every ' +
           'place it appears, which is where a caller finds the SHA-256 ' +
@@ -5733,7 +5743,7 @@ const ENDPOINTS = [
     what: 'NON-SPEC. The four `backupCodes.*` settings, with the mechanism ' +
           'beside them — the alphabet, the bits per code, how they are ' +
           'generated, how they are compared and how they are stored — read ' +
-          'from common/backup_codes.js rather than written down. **status ' +
+          'from common/backup_codes.ts rather than written down. **status ' +
           'HAS NO SPECIFICATION COLUMN BECAUSE THERE IS NO SPECIFICATION**: ' +
           'every field in it is a decision this service made. There is no ' +
           'operation that ISSUES a set and none that READS a code; POST ' +
@@ -5746,7 +5756,7 @@ const ENDPOINTS = [
     name: 'TOTP MFA settings',
     specs: ['rfc6238', 'rfc4226'],
     what: 'NON-SPEC. The eight `totp.*` settings, with the RFC 6238 ' +
-          'algorithm table beside them — read from common/totp.js rather ' +
+          'algorithm table beside them — read from common/totp.ts rather ' +
           'than written down, so the report cannot describe a digest this ' +
           'service does not compute. Changing the digest, the digits or the ' +
           'period affects NEW enrolments only; the skew window is live for ' +
@@ -5826,7 +5836,7 @@ const ENDPOINTS = [
           '/admin-api/logout rather than a shape of it: that one answers ' +
           '"what is alice still signed into", keyed on one identity across ' +
           'ten families, and this one answers "who is signed in at all", ' +
-          'which has no user in it. Both read logout/logout.js, the one ' +
+          'which has no user in it. Both read logout/logout.ts, the one ' +
           'model of what a live session is. Every row carries the key and id ' +
           'the revoke takes, the sessionId that GET ' +
           '/admin-api/tokens?session= takes, and an expiryRule saying which ' +
@@ -7584,7 +7594,7 @@ const ENDPOINTS = [
           'THE POST CHECKS THE CODE FOR REAL IN BOTH MODES and SPENDS it: a ' +
           'failed spend REFUSES the sign-in, which is the opposite of what ' +
           '/authn/totp does with its counter and is argued in ' +
-          'common/credentials.js — a one-time code that cannot be counted is ' +
+          'common/credentials.ts — a one-time code that cannot be counted is ' +
           'replayable for ninety seconds, and a recovery code that cannot be ' +
           'marked spent works for ever. On success the session records amr ' +
           '["pwd","otp"] and acr "mfa": RFC 8176 registers no value for a ' +
@@ -7592,7 +7602,7 @@ const ENDPOINTS = [
           'relying party can look up. Rate limited by identity AND by ' +
           'address, through the same buckets as the code step. **IT ISSUES ' +
           'NOTHING AND ENROLS NOBODY** — a set is created by the ACT of ' +
-          'enrolling a second factor, once, in common/credentials.js. This ' +
+          'enrolling a second factor, once, in common/credentials.ts. This ' +
           'page has NO SCRIPT: a person reads a string off paper and types ' +
           'it.' },
   { path: '/authn/password-change', group: 'Authentication',
@@ -8227,7 +8237,7 @@ const ENDPOINTS = [
     effect: 'issues a certificate and writes it onto the entry',
     what: 'Section 7.4: a CSR naming exactly the order\'s identifiers, ' +
           'verified for proof of possession, issued through ' +
-          'common/cert_enrollment.js from the realm\'s ACME Issuing CA and ' +
+          'common/cert_enrollment.ts from the realm\'s ACME Issuing CA and ' +
           'written onto the entry. A second finalize answers ' +
           'orderNotReady.' },
   { path: '/enroll/acme/authz/:id', group: 'ACME', name: 'An authorization',
@@ -8461,7 +8471,7 @@ SPECS.forEach(function (s) { SPEC_BY_ID[s.id] = s; });
 // the router if it is HTTP:
 //
 //   * SAML 2.0 and SAML 1.1 register NO ROUTE. The assertions are built by
-//     saml/saml2.js and saml/saml11.js and travel inside somebody else's
+//     saml/saml2.ts and saml/saml11.ts and travel inside somebody else's
 //     envelope — a WS-Trust RSTR, a WS-Federation wresult — so a page built by
 //     walking the router lists neither, and a reader would conclude this
 //     service has no SAML in it.
@@ -8597,7 +8607,7 @@ const PROTOCOLS = [
     sockets: 'It is also the only protocol family here that makes an ' +
              'OUTBOUND request. Push delivery POSTs to a URL the RECEIVER ' +
              'chose, which is a weaker position than federation\'s ' +
-             'back-channel and ssf/ssf_http.js argues rather than cites: ' +
+             'back-channel and ssf/ssf_http.ts argues rather than cites: ' +
              'RFC 8935 push IS the receiver telling the transmitter where ' +
              'to post. ssf.pushDelivery turns it off entirely, and poll ' +
              'delivery dials nothing at all.' },
@@ -8611,7 +8621,7 @@ const PROTOCOLS = [
           'the third — plus Single Logout and SIGNED METADATA PER SERVICE ' +
           'PROVIDER, minted for any entityID asked for. **This card used to ' +
           'say NO ROUTE OF ITS OWN**, and it was true for years: the ' +
-          'assertions were built by saml/saml2.js and travelled inside ' +
+          'assertions were built by saml/saml2.ts and travelled inside ' +
           'somebody else\'s envelope. They still do — a WS-Trust RSTR and a ' +
           'WS-Federation wresult carry the same builder\'s output — and now ' +
           'there is a browser profile of their own beside it.',
@@ -8620,7 +8630,7 @@ const PROTOCOLS = [
              'before this profile existed.' },
   { name: 'SAML 1.1', groups: ['SAML 1.1'],
     specs: ['saml11', 'saml11-bindings', 'saml11-profiles', 'xmldsig'],
-    what: 'The same again in the older grammar (saml/saml11.js), because a ' +
+    what: 'The same again in the older grammar (saml/saml11.ts), because a ' +
           'WS-Federation relying party is as likely to want SAML 1.1 as 2.0 ' +
           'and an implementation that only ever tested the newer one has ' +
           'tested half of what it claims. **This card used to say it had no ' +
@@ -8784,7 +8794,7 @@ const PROTOCOLS = [
           'first factor. What every identity provider does converges anyway ' +
           '— a handful of random strings, each accepted once — so the ' +
           'decisions that are left are this service\'s own and ' +
-          'common/backup_codes.js argues each: fifty bits out of an alphabet ' +
+          'common/backup_codes.ts argues each: fifty bits out of an alphabet ' +
           'with no confusable pair, because this is the one credential here ' +
           'somebody writes on paper; HASHED with scrypt since 2026-09-11 — ' +
           'the same form userPassword is stored in — which is why a set is ' +
@@ -9350,7 +9360,7 @@ function renderInner(base, report) {
           // rows, which made the one page in this console that lists
           // everything the one page nobody could skim. admin.note() leaves a
           // short description alone and folds a long one behind its first
-          // sentence; see the block above it in ../admin-ui/admin.js.
+          // sentence; see the block above it in ../admin-ui/admin.ts.
           '<td>' + admin.note(esc(r.what)) + '</td>' +
           '<td class="s">' + specLinks(r.specs) + '</td></tr>';
       });

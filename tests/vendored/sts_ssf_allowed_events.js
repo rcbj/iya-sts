@@ -17,7 +17,7 @@
 //      reaching it — so the limit cannot be escaped by creating a stream first.
 //      Loosening it again gives back only what the stream was AGREED, never a
 //      type withheld at agreement (section 6): delivery is the agreement less
-//      what the entry no longer allows (`ssf/ssf_streams.js`,
+//      what the entry no longer allows (`ssf/ssf_streams.ts`,
 //      `deliversEvent()`). The stream's own configuration reports what
 //      delivery will actually do.
 //

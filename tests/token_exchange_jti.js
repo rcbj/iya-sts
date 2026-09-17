@@ -6,7 +6,7 @@
 // A TOKEN EXCHANGE THAT MINTS NO ID TOKEN LOGS NO ERROR ABOUT ONE
 // (2026-09-14).
 //
-// `oauth-oidc/oauth2.js`'s token exchange records a delegation act naming the
+// `oauth-oidc/oauth2.ts`'s token exchange records a delegation act naming the
 // identifiers of what it produced, read back off the tokens with `jtiOf()` —
 // for `exchanged.access_token`, `exchanged.id_token` and
 // `exchanged.refresh_token`, whether or not the last two exist. `jtiOf()` read

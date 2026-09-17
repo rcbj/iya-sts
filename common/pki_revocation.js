@@ -76,7 +76,7 @@ const pki = require('./pki');
 const realms = require('./realms');
 // The error-code registry (a leaf). A refusal returned to a caller carries its
 // code non-enumerably, so an OCSP answer or a console reply serialised whole
-// never shows it; `pki/pki_service.js` marks its response from `codeOf()`.
+// never shows it; `pki/pki_service.ts` marks its response from `codeOf()`.
 const errorCodes = require('./error_codes');
 const keyMaterial = require('./vendored/key_material');
 const x509 = require('./vendored/x509');
@@ -427,7 +427,7 @@ function describeEntry(one) {
 // section 5 adds that an OCSP responder MUST support plain HTTP, and RFC 4516
 // defines the `ldap` scheme and no other. So the http addresses name
 // `pki.httpPort`, a plain listener that answers `/pki/` and nothing else
-// (pki/pki_service.js), and `ldaps://` is not written at all; the LDAPS
+// (pki/pki_service.ts), and `ldaps://` is not written at all; the LDAPS
 // listener still serves the same entries to anybody who asks it directly.
 //
 // **AND THE PORT IS THE ONE A CLIENT DIALS, WHICH IS NOT ALWAYS THE ONE THE
@@ -1467,7 +1467,7 @@ async function answerOcsp(scopeId, caId, requestDer) {
     .toBER(false));
   log.debug('Leaving answerOcsp(). ' + reported.length + ' answer(s).');
   return { ok: true, der: der, status: 'successful', answers: reported,
-           // For `pki/pki_service.js`'s RFC 5019 section 6.2 cache headers,
+           // For `pki/pki_service.ts`'s RFC 5019 section 6.2 cache headers,
            // which are computed from the same instants the response carries.
            thisUpdate: now.toISOString(),
            nextUpdate: wholeSeconds(now.getTime() +

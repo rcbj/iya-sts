@@ -52,24 +52,26 @@
 # postgres/CLAUDE.md and persistence/CLAUDE.md argue it; do not argue it again
 # here.
 #
-# THE TEST SUITE USES THIS FILE AND NOT ONE WORD OF THIS PARAGRAPH'S SUBJECT,
-# AND THE DISTINCTION IS THE WHOLE POINT. Since 2026-08-28
-# `./local-run-tests.sh` brings the `sts` service below up as the thing its
-# protocol jobs drive — so this file is now on the path of every test run — but
-# it does so with `STS_PERSISTENCE_MODE=memory` and `--no-deps`, which means no
+# THE TEST SUITE USED THIS FILE AND NOT ONE WORD OF THIS PARAGRAPH'S SUBJECT,
+# AND THE DISTINCTION WAS THE WHOLE POINT. **No launcher brings this file up
+# since 2026-09-16**, when `./local-run-tests.sh` was removed; the suite's
+# stack is docker-compose-run-tests.yml. The record, kept because the
+# substitutions below were made for it: from 2026-08-28 that launcher brought
+# the `sts` service below up as the thing its protocol jobs drove, and it did
+# so with `STS_PERSISTENCE_MODE=memory` and `--no-deps`, which meant no
 # database, no volume that matters and nothing carried from one run to the
 # next. A test that persisted would be a test whose second run started from the
 # first run's leavings. **SO NEITHER TEST STACK EXERCISES THE APPLICATION ROLE
-# EITHER** — `--no-deps` means the postgres service below never starts on a
-# `./local-run-tests.sh` run, and docker-compose-run-tests.yml has no database
-# service at all. What the split costs a test run is nothing, and what it gains
-# is nothing; it is the plain `docker compose up` stack, and an operator's own
-# database, that connect as `sts_app`. Dropping `--no-deps` and setting
-# STS_PERSISTENCE_MODE=postgres is what a run against it would take, and the
-# paragraph above is why no run does that by default. The parent project's
-# stack is unchanged and unaffected: it starts this service with its own
-# configuration and `persistence.mode` at its default of `memory`, which is why
-# not one job there had to change either.
+# EITHER** — `--no-deps` meant the postgres service below never started on a
+# `./local-run-tests.sh` run, and docker-compose-run-tests.yml had no database
+# service at all (it has one since 2026-09-09, as a test store). What the split
+# costs a test run is nothing, and what it gains is nothing; it is the plain
+# `docker compose up` stack, and an operator's own database, that connect as
+# `sts_app`. Dropping `--no-deps` and setting STS_PERSISTENCE_MODE=postgres is
+# what a run against it would take, and the paragraph above is why no run does
+# that by default. The parent project's stack is unchanged and unaffected: it
+# starts this service with its own configuration and `persistence.mode` at its
+# default of `memory`, which is why not one job there had to change either.
 #
 # (That describes the default launch. `tests/tools/modes.sh` since runs the
 # suite in `postgres` and `dispatch` modes as well, which bring the database up
@@ -106,10 +108,11 @@
 # `curl -k https://localhost:8081/...` does. The row on the service argues it;
 # `STS_HTTPS=false` is the way back.
 #
-# What the substitutions buy is a SECOND caller: `./local-run-tests.sh` brings
-# this same file up as the service its protocol jobs drive. That run needs four
-# things to differ, and every one of them is a thing that would otherwise break
-# somebody else's work on this machine:
+# What the substitutions bought was a SECOND caller: `./local-run-tests.sh`
+# brought this same file up as the service its protocol jobs drove, until it was
+# removed on 2026-09-16. They are kept — a hand run beside a person's own stack
+# needs the same four — and that run needed four things to differ, every one of
+# them a thing that would otherwise break somebody else's work on this machine:
 #
 #   STS_HOST_PORT               a free port, chosen per run, because 8081 is
 #                               where a person's own stack already is — and
@@ -145,10 +148,12 @@
 #
 # NOTE FOR ANYONE ADDING A VALUE HERE: `sudo` empties the environment, so a
 # launcher that needs sudo for docker has to name each variable on the sudo
-# command line. `local-run-tests.sh`'s COMPOSE_FORWARDED_VARS is that list, and
-# a substitution added below with no row there substitutes to its DEFAULT with
-# nothing said — which is how the parent project's stack spent months ignoring
-# every tuning variable it was given.
+# command line. A launcher's COMPOSE_ENV array, which `tests/tools/compose.sh`
+# hands to compose, is that list (`local-run-tests.sh`'s COMPOSE_FORWARDED_VARS
+# was, until that launcher was removed on 2026-09-16), and a substitution added
+# below with no row there substitutes to its DEFAULT with nothing said — which
+# is how the parent project's stack spent months ignoring every tuning variable
+# it was given.
 # ---------------------------------------------------------------------------
 version: '2.4'
 services:
@@ -557,7 +562,7 @@ services:
       # THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13). Published because it
       # is the one listener whose entire purpose is to be reached from outside:
       # every certificate this service issues names it for its CRL, its OCSP
-      # responder and its issuer's certificate (pki/pki_service.js). The host
+      # responder and its issuer's certificate (pki/pki_service.ts). The host
       # side is `STS_PKI_HOST_PORT` for the reason `STS_HOST_PORT` is, and the
       # SAME variable is handed to the service below as PKI_DISTRIBUTION_PORT,
       # so the address in a certificate is the address this mapping made.
@@ -935,15 +940,17 @@ services:
   # (`docker compose --profile xacml up`) rather than a container everybody
   # pays for.
   #
-  # **SINCE 2026-09-06 `./local-run-tests.sh` ASKS FOR THAT PROFILE BY NAME**,
-  # which the paragraph above used to say it never did. The suite has a job
-  # that drives a REMOTE PEP end to end — registration, the pull, a policy
+  # **FROM 2026-09-06 `./local-run-tests.sh` ASKED FOR THAT PROFILE BY NAME**,
+  # which the paragraph above used to say it never did, until that launcher
+  # was removed on 2026-09-16 (docker-compose-run-tests.yml has an `xacml-pep`
+  # service of its own). The suite has a job that drives a REMOTE PEP end to
+  # end — registration, the pull, a policy
   # deployed at the PAP changing what this container allows, the nudge arriving
   # over the bridge — and none of it is assertable without a second container
-  # on this network. The launcher overrides the four variables below that
-  # matter to it (`XACML_PEP_PDP_URL` names the throwaway realm that job owns,
+  # on this network. The launcher overrode the four variables below that
+  # mattered to it (`XACML_PEP_PDP_URL` names the throwaway realm that job owns,
   # `XACML_PEP_HOST_PORT` is a free port rather than 9090, and the two
-  # intervals are shortened) and tears the whole project down afterwards. A
+  # intervals are shortened) and tore the whole project down afterwards. A
   # PLAIN `docker compose up` IS UNAFFECTED: without `--profile xacml` this
   # service does not start, exactly as before.
   #
@@ -1057,7 +1064,7 @@ services:
       # The mock's certificate is issued by its own Root, which this container
       # is not given — and development mode regenerates both on every start —
       # so there is no anchor to verify against. `pep.js` logs this on every
-      # start rather than once, for federation_http.js's reason: a
+      # start rather than once, for federation_http.ts's reason: a
       # certificate check turned off months ago and forgotten is the worst
       # kind of leftover.
       - PEP_TLS_INSECURE=true
@@ -1086,11 +1093,11 @@ services:
       - PEP_PIP=${XACML_PEP_PIP:-true}
       - PEP_POLL_INTERVAL_MS=${XACML_PEP_POLL_INTERVAL_MS:-15000}
       # OVERRIDABLE SINCE 2026-09-06 BECAUSE THE SUITE OVERRIDES IT.
-      # ./local-run-tests.sh brings this service up as part of its stack and
-      # tests/vendored/sts_xacml_remote_pep.js reads the counters this beat
-      # carries off /admin-api/xacml/peps — at the shipped sixty seconds that
-      # job would spend a minute waiting for a number. A demonstration
-      # container still beats once a minute.
+      # ./local-run-tests.sh brought this service up as part of its stack
+      # (until 2026-09-16) and tests/vendored/sts_xacml_remote_pep.js reads
+      # the counters this beat carries off /admin-api/xacml/peps — at the
+      # shipped sixty seconds that job would spend a minute waiting for a
+      # number. A demonstration container still beats once a minute.
       - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-60000}
       - PEP_LOG_LEVEL=${XACML_PEP_LOG_LEVEL:-info}
 

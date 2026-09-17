@@ -42,17 +42,17 @@
 // ---------------------------------------------------------------------------
 // THIS IS NO LONGER THE ORDINARY WAY THAT SERVICE IS STARTED, SINCE 2026-08-28.
 //
-// `./local-run-tests.sh` brings up a CONTAINER from the repository's own
-// docker-compose.yml and hands run-report.js its URL, so that the thing under
-// test is the IMAGE rather than this machine's node_modules — its header
-// argues that at length and it is not repeated here. This module is what
-// `--no-docker` uses, what a machine with no docker falls back to, and what a
-// COVERAGE run uses of necessity: V8 writes its data from inside the process
-// being measured, into a directory that process can write, so an instrumented
-// service has to be one this runner started.
+// A launcher brings up a CONTAINER and hands run-report.js its URL, so that
+// the thing under test is the IMAGE rather than this machine's node_modules —
+// ./docker-run-tests.sh does, and ./local-run-tests.sh did (from
+// docker-compose.yml) until it was removed on 2026-09-16. This module is what
+// a bare run-report.js uses, what `./run-coverage.sh --no-docker` uses, and
+// what every COVERAGE run uses of necessity: V8 writes its data from inside
+// the process being measured, into a directory that process can write, so an
+// instrumented service has to be one this runner started.
 //
-// So the three numbered decisions above are still live — a coverage run and a
-// dockerless run both take every one of them — and the lifetime rule is
+// So the three numbered decisions above are still live — every coverage run
+// takes every one of them — and the lifetime rule is
 // unchanged in both directions: this module's caller stops what this module
 // started, and never touches a service it was merely handed.
 // ===========================================================================
@@ -221,7 +221,7 @@ function environmentFor(base, opts) {
   //
   // The DEFAULT is on, matching env/local.js, env/test.js and
   // env/docker-tests.js, and a caller's own STS_HTTPS still wins so that
-  // `STS_HTTPS=false ./local-run-tests.sh --no-docker` is a plain-port run.
+  // `STS_HTTPS=false ./run-coverage.sh --no-docker` is a plain-port run.
   // ---------------------------------------------------------------------
   env.STS_HTTPS = String(process.env.STS_HTTPS === undefined
     ? 'true'

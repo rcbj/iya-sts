@@ -422,7 +422,7 @@ function checkScimCounters(t) {
 // ---------------------------------------------------------------------------
 // 5b. THE CAEP AND RISC REGISTERS (2026-09-12).
 //
-// Both were `new Map()` beside `ssf_streams.js`'s streams, which have been per
+// Both were `new Map()` beside `ssf_streams.ts`'s streams, which have been per
 // realm since the day SSF arrived — so a stream agreed in `acme` counted its
 // events against a session row every realm's console listed, and deleting
 // `alice` in `acme` put a `purged` row on the DEFAULT realm's
@@ -489,7 +489,7 @@ function checkSignalRegisters(t) {
 // ---------------------------------------------------------------------------
 // 5c. THE STORES WHOSE MODULES CANNOT BE LOADED IN THIS PROCESS (2026-09-12).
 //
-// `oid4vc/vc_offers.js` registers the offer pages and `spiffe/spiffe_auth.js`
+// `oid4vc/vc_offers.ts` registers the offer pages and `spiffe/spiffe_auth.ts`
 // requires `tls/tls_server.js`, which registers `/tls*` — and `run.js` runs
 // every file in ONE process, where a route registered here moves what a later
 // file sees of the router. So they are asserted in a CHILD PROCESS, which is
@@ -663,7 +663,7 @@ function checkChildStores(t) {
     log.debug("Leaving read().");
     return fs.readFileSync(path.join(root, rel), 'utf8');
   };
-  const scim = read('scim/scim_auth.js');
+  const scim = read('scim/scim_auth.ts');
   ['digestNonces', 'hobaChallenges', 'hobaSeen'].forEach(function (name) {
     t.check(new RegExp('^const ' + name + ' = realms\\.map\\(', 'm').test(
         scim) &&
@@ -723,8 +723,8 @@ function checkKerberosStores(t) {
 }
 
 // ---------------------------------------------------------------------------
-// 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.js`, the approver
-// index in `gnap/gnap_signals.js` and the counters in `gnap/gnap_monitor.js`.
+// 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
+// index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
 // `tests/vendored/sts_gnap_core.js` asserts the over-HTTP half — a token from
 // one realm refused by another realm's resource server, a continuation token
@@ -739,6 +739,7 @@ function checkGnapStores(t) {
   t.log.info('the GNAP stores');
   const fs = require('fs');
   const path = require('path');
+  const { sourceFilesIn } = require('./tools/source_file');
   const store = require('../gnap/gnap_store');
   const monitor = require('../gnap/gnap_monitor');
   const signals = require('../gnap/gnap_signals');
@@ -785,8 +786,8 @@ function checkGnapStores(t) {
   });
 
   const dir = path.join(__dirname, '..', 'gnap');
-  fs.readdirSync(dir)
-    .filter(function (f) { return /\.js$/.test(f); })
+  // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+  sourceFilesIn(fs.readdirSync(dir))
     .forEach(function (file) {
     const src = fs.readFileSync(path.join(dir, file), 'utf8');
     t.check(!/^(const|let|var)\s+\w+\s*=\s*new (Map|Set)\(/m.test(src),

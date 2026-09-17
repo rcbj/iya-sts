@@ -3,12 +3,12 @@
 WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
 `/wsfed/rp` that verifies a sign-in response check by check. One file.
 
-4. **`wsfed.js` must stay after `authn/authn.js` in the require order**, and
+4. **`wsfed.ts` must stay after `authn/authn.ts` in the require order**, and
    that is a dependency rather than a preference: it signs users in to the
    browser session `authn.js` owns, through the `startSession` / `sessionOf` /
    `endSession` it exports, so that single sign-on works across the protocols.
-   (The rule named `oauth2.js` while that module owned the session; `wsfed.js`
-   sits after both, at 10 in `../common/protocol_stack.js`.) The dependency is
+   (The rule named `oauth2.js` while that module owned the session; `wsfed.ts`
+   sits after both, at 10 in `../common/protocol_stack.ts`.) The dependency is
    one-way — `authn.js` knows nothing about WS-Federation — which is what keeps
    it out of the cycles rule 2 exists to avoid. Do not give WS-Federation a
    session store of its own to "decouple" them: two stores would each look
@@ -21,7 +21,7 @@ WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
 Section 13.2.1 lets the sign-in request arrive as a cross-site form POST, which
 `SameSite=Lax` keeps the session cookie off, so such a request is sent to the
 sign-in screen even though a session exists. The quirk is kept rather than
-worked around; `../authn/authn.js`'s `startSession()` owns the cookie and says
+worked around; `../authn/authn.ts`'s `startSession()` owns the cookie and says
 why. (This section used to argue that WS-Federation needed a sign-in screen of
 its own for this reason; it has none since 2026-08-26 — see below.)
 
@@ -49,7 +49,7 @@ and wrong about the funnel: the parameters a person needs to see for a
 `wsignin1.0` are `wtrealm`, `wreply`, `wctx`, `wauth` and `whr`, and a screen
 printing `client_id: (none)` would describe a request that does not exist. But
 `beginAuthentication()` takes a `details` array for exactly that, and
-`saml2_sso.js` and `saml11_sso.js` both pass their own protocol's parameters
+`saml2_sso.ts` and `saml11_sso.ts` both pass their own protocol's parameters
 through it. What owning the screen actually bought was owning the FUNNEL — and
 three features live in the funnel and were therefore inert for this profile
 alone:
@@ -91,19 +91,19 @@ is the whole mechanism. See the root `CLAUDE.md`.
 * **`wreply` must be registered in product mode** (`mode.acceptsUnregisteredAddresses()`):
   one of the `wsfedReplyUrl` values on the `wtrealm`'s entry, exact match, with
   none sent meaning the registered one and NO fallback to `/wsfed/rp`. The rule is
-  `../saml/return_address.js`, shared with both SAML profiles. Development passes
+  `../saml/return_address.ts`, shared with both SAML profiles. Development passes
   no registration to it at all, so a request with no `wreply` still goes to the
   mock relying party even when the entry recorded one — byte for byte what it did.
   **Which `wsfedReplyUrl` values count is `applications.returnAddressesOf()`'s
   answer** (the same day): a `wreply` a development sighting wrote is marked
   OBSERVED on `appReturnAddressObserved`, and product refuses it with
   `STS-REG-0049` until an operator confirms it. See `../common/CLAUDE.md`.
-* **`authnMethodsFor()` is `../saml/authn_context.js`'s reading now**, which
+* **`authnMethodsFor()` is `../saml/authn_context.ts`'s reading now**, which
   fixed the defect all three copies had (a certificate, a Kerberos ticket, a
   federated or unauthenticated session was `am:password`). The `wauth` hardware
   and multi-factor checks read `hardwareKey` / `multiFactor` off the same answer.
 * **The persona claims** come off the directory entry in product mode or are
-  omitted (`../saml/person_attributes.js`), and **the signed metadata describes
+  omitted (`../saml/person_attributes.ts`), and **the signed metadata describes
   what the realm's mode emits** — it said `Always "Mock"` and
   `username@sts.example` in a product deployment's signed document.
 * **`wsfed.entityId` and `saml.issuer` differing is reported** on `/wsfed` and

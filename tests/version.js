@@ -58,8 +58,8 @@ const ROOT = path.join(__dirname, '..');
 // The source of a module with its FULL-LINE COMMENTS removed.
 //
 // **THIS EXISTS BECAUSE THE TEST FAILED ON ITSELF THE FIRST TIME IT RAN**, and
-// the failure is worth keeping written down: `home/home.js` and
-// `mgmt-api/admin_api.js` both explain, in a comment, that they USED to read
+// the failure is worth keeping written down: `home/home.ts` and
+// `mgmt-api/admin_api.ts` both explain, in a comment, that they USED to read
 // `require('../package.json').version` and why that was wrong. A check that
 // greps the raw file for the old pattern therefore fails on the two files that
 // document having stopped doing it — which would leave a maintainer with the
@@ -228,7 +228,7 @@ function run(t) {
   //     a CHECKOUT has no stamp, so each of them computed its own record —
   //     stamping the instant it happened to be required. The front page said
   //     `0.1.20260907060910` and `/admin-api` said `0.1.20260907060911`,
-  //     because `home/home.js` is required at 6a and `mgmt-api/admin_api.js`
+  //     because `home/home.ts` is required at 6a and `mgmt-api/admin_api.ts`
   //     at 19 and the modules in between took a second to load.
   //
   //     A container never showed it: every module there reads one stamped
@@ -277,8 +277,8 @@ function run(t) {
   //    agree perfectly right up until the moment they stop.
   // -----------------------------------------------------------------------
   t.log.info('=== one source for every surface ===');
-  const drawers = ['home/home.js', 'admin-ui/admin.js', 'portal/portal.js',
-                   'mgmt-api/admin_api.js', 'sts_metadata.js'];
+  const drawers = ['home/home.ts', 'admin-ui/admin.ts', 'portal/portal.ts',
+                   'mgmt-api/admin_api.ts', 'sts_metadata.js'];
   drawers.forEach(function (rel) {
     const src = codeOf(rel);
     t.check(/require\((['"])[^'"]*common\/version\1\)/.test(src),
@@ -302,8 +302,8 @@ function run(t) {
   t.check(version.userAgent().indexOf('(') < 0,
           'and with no component it is the bare product token',
           version.userAgent());
-  ['federation/federation_http.js', 'ssf/ssf_http.js',
-   'xacml/xacml_pep_http.js'].forEach(function (rel) {
+  ['federation/federation_http.ts', 'ssf/ssf_http.ts',
+   'xacml/xacml_pep_http.ts'].forEach(function (rel) {
     const src = codeOf(rel);
     t.check(/version'\)\.userAgent\(/.test(src) ||
             /userAgent\(/.test(src),

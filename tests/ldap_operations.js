@@ -483,8 +483,8 @@ function checkTheOperationTableAgrees(t) {
   // WORKER (2026-09-12).
   //
   // `registerWorkerOperations()` returns early unless `STS_REQUEST_WORKER` is
-  // set, because requiring `common/request_worker.js` pulls
-  // `common/service_state.js` in at module scope and a front process would be
+  // set, because requiring `common/request_worker.ts` pulls
+  // `common/service_state.ts` in at module scope and a front process would be
   // filling a table nothing there ever reads. `spiffe_grpc.js` carries the
   // argument and the test it cost.
   //

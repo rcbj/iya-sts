@@ -60,7 +60,7 @@
 // It requires npm packages, `./vendored/xmldsig.js`, and `./config` — and
 // `config.js` requires nothing in this repository, so there is no cycle to
 // close and no route order to disturb. It registers no endpoint, exactly like
-// `oauth-oidc/dpop.js` (rule 3), and it is BELOW `helpers.js` rather than
+// `oauth-oidc/dpop.ts` (rule 3), and it is BELOW `helpers.js` rather than
 // beside it: helpers requires this file for its key generation and its token
 // minting, so this file may never require helpers back. Concretely, that means
 // **nothing here reads `STS`, the ambient realm, or a session** — every
@@ -543,7 +543,7 @@ function signQueryString(queryString, privateKeyPem, sigAlg) {
 // ===========================================================================
 //
 // ---------------------------------------------------------------------------
-// THIS SECTION IS MOVED FROM `saml/saml2.js` RATHER THAN REPLACED BY THE
+// THIS SECTION IS MOVED FROM `saml/saml2.ts` RATHER THAN REPLACED BY THE
 // VENDORED encryptXml()/decryptXml(), AND THAT IS A DELIBERATE EXCEPTION TO
 // EVERYTHING SAID AT THE TOP OF THIS FILE. It is worth the paragraph, because
 // the obvious reading of this refactor is that the vendored module always wins.
@@ -564,7 +564,7 @@ function signQueryString(queryString, privateKeyPem, sigAlg) {
 //
 // So this is centralization by MOVE. It was already one implementation with two
 // callers; it is now one implementation in the module where the other three
-// crypto families live, and `saml/saml2.js` re-exports it so WS-Trust's
+// crypto families live, and `saml/saml2.ts` re-exports it so WS-Trust's
 // `?encrypt=1` path is untouched.
 // ---------------------------------------------------------------------------
 
@@ -652,8 +652,8 @@ function transportOptions(transport) {
 // So it is an ordinary optional parameter. Not a sixth inverted slot (root
 // CLAUDE.md rule 3e): a slot costs every reader an indirection and is for a
 // require that would close a cycle or move a route, and a caller that already
-// has the function can simply hand it over. `saml/saml2.js` and
-// `ws-trust/wstrust.js` pass `helpers.logArtifact` and their log output is
+// has the function can simply hand it over. `saml/saml2.ts` and
+// `ws-trust/wstrust.ts` pass `helpers.logArtifact` and their log output is
 // byte-for-byte what it was before this move.
 // ---------------------------------------------------------------------------
 function artifact(opts, what, stage, value) {
@@ -1009,7 +1009,7 @@ function decryptElement(xml, privateKeyPem, opts) {
 // jsonwebtoken on its own.
 //
 // Those eight are still not counted, which is a documented property rather
-// than an oversight (see `oid4vc/vc_issuer.js` and `ws-trust/wstrust.js`),
+// than an oversight (see `oid4vc/vc_issuer.ts` and `ws-trust/wstrust.ts`),
 // and centralizing the signature does not change it.
 // ---------------------------------------------------------------------------
 // The `jsonwebtoken` sign options this service uses, passed through by name.
@@ -1026,7 +1026,7 @@ const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
 //
 // Every algorithm this service signs with or verifies is a row here, and every
 // module that touches a JWS reads this rather than keeping a table of its own.
-// `oauth-oidc/dpop.js` had the second one — nine rows, node-crypto parameters,
+// `oauth-oidc/dpop.ts` had the second one — nine rows, node-crypto parameters,
 // its own verifier — which is how DPoP came to accept a different set of
 // algorithms from everything else in the service for no reason anybody chose.
 //
@@ -1084,7 +1084,7 @@ const JWS_ALGS = {
 // `kty: 'AKP'` is RFC 9964's key type for all of them, which is also why they
 // are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
 // oct and not for AKP, so a DPoP proof signed with one could not be bound to
-// anything. See oauth-oidc/dpop.js. (RFC 9964 has since defined the
+// anything. See oauth-oidc/dpop.ts. (RFC 9964 has since defined the
 // AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; DPoP still
 // refuses these algorithms by name.)
 pqJose.PQ_ALGS.forEach(function (alg) {
@@ -1686,7 +1686,7 @@ function verifyJwsAsync(token, key, opts) {
 // ===========================================================================
 //
 // ---------------------------------------------------------------------------
-// WRITTEN OUT BY HAND, AND THAT IS KEPT ON PURPOSE. `oid4vc/vc_issuer.js` made
+// WRITTEN OUT BY HAND, AND THAT IS KEPT ON PURPOSE. `oid4vc/vc_issuer.ts` made
 // the argument where this code used to live and it still holds: OID4VCI
 // section 10 is a Credential Issuer and a Wallet encrypting to each other, and
 // having the steps visible — the content key, the wrap, the AAD, the tag — is
@@ -2508,7 +2508,7 @@ function certificateSerial(prefixHex) {
 // two callers want disjoint sets and a third will want a third — modelling it
 // would be inventing a certificate profile language for two users.
 //
-// A THIRD generator is deliberately NOT folded in: `spiffe/spiffe_ca.js` issues
+// A THIRD generator is deliberately NOT folded in: `spiffe/spiffe_ca.ts` issues
 // through `common/vendored/x509.js` because **node-forge cannot sign with an EC
 // key at all** and SPIFFE issues P-256. That is a capability gap, not a
 // duplication, and `common/vendored/CLAUDE.md` records it.
@@ -2608,7 +2608,7 @@ function selfSignedRsaCertificate(opts) {
 // NODE-FORGE CANNOT DO ANY OF THIS. It has no ML-DSA, cannot parse a
 // certificate whose signature algorithm it does not know, and cannot sign with
 // a key it cannot represent — which is the same capability gap
-// `spiffe/spiffe_ca.js` records for EC keys, one algorithm generation later.
+// `spiffe/spiffe_ca.ts` records for EC keys, one algorithm generation later.
 // ---------------------------------------------------------------------------
 const ML_DSA_OIDS = {
   'ml-dsa-44': '2.16.840.1.101.3.4.3.17',
@@ -2898,9 +2898,9 @@ function stripPem(pem) {
 // RFC 7638 JWK THUMBPRINT.
 //
 // THERE WERE THREE OF THESE, which is one more than the audit that started this
-// work had found: `oauth-oidc/dpop.js` (hand-built canonical JSON, full member
-// table), `spiffe/spiffe_ca.js` (JSON.stringify over an object literal whose
-// keys happen to be in lexicographic order) and `oid4vc/vc_issuer.js` (the same
+// work had found: `oauth-oidc/dpop.ts` (hand-built canonical JSON, full member
+// table), `spiffe/spiffe_ca.ts` (JSON.stringify over an object literal whose
+// keys happen to be in lexicographic order) and `oid4vc/vc_issuer.ts` (the same
 // trick, RSA only, inline in a key-generation IIFE).
 //
 // All three were correct. That is precisely the problem: RFC 7638 is a
@@ -3080,7 +3080,7 @@ function constantTimeEquals(a, b) {
 // value is an HMAC truncated to N digits, and an HMAC is a keyed signature —
 // so this is the fourth thing this service signs with, and the rule this
 // module was written to enforce is that there is one place it happens. A
-// `createHmac` in `common/totp.js` would be the fifth call site of a
+// `createHmac` in `common/totp.ts` would be the fifth call site of a
 // cryptographic primitive outside the one module that is supposed to hold
 // them all, and the argument against that is the same argument the six XML
 // signers lost in 2026-08-27.
@@ -3089,7 +3089,7 @@ function constantTimeEquals(a, b) {
 // other pair in this file makes: this function is handed a key, a counter and
 // a shape, and it answers with digits. It does not know what a time step is,
 // how wide a skew window an operator allows, whether a code has been spent
-// before, or what base32 is. `common/totp.js` owns all four, because all four
+// before, or what base32 is. `common/totp.ts` owns all four, because all four
 // are decisions about a deployment rather than about an algorithm — which is
 // why that module can be read for the mechanism's behaviour and this one for
 // its arithmetic.
@@ -3664,17 +3664,19 @@ function decryptWithKek(kek, stored, label) {
 // purpose from being the credential for another if a second caller ever
 // appears.
 // ---------------------------------------------------------------------------
-function deriveSharedCredential(secret, label) {
+// `...parts` rather than `arguments` (#50): the same inputs, in the same
+// order, and a signature the type checker can read.
+function deriveSharedCredential(secret, label, ...parts) {
   log.debug('Entering deriveSharedCredential(). label=' + label);
   const mac = nodeCrypto.createHmac('sha256', Buffer.from(String(secret || ''),
                                                           'utf8'));
   mac.update(String(label || ''), 'utf8');
-  for (let i = 2; i < arguments.length; i++) {
+  for (let i = 0; i < parts.length; i++) {
     // A SEPARATOR THAT CANNOT APPEAR IN A PART. Without one, ('ab', 'c') and
     // ('a', 'bc') derive the same credential, which is the ordinary way a
     // concatenated MAC input goes wrong.
     mac.update('\u0000', 'utf8');
-    mac.update(String(arguments[i] == null ? '' : arguments[i]), 'utf8');
+    mac.update(String(parts[i] == null ? '' : parts[i]), 'utf8');
   }
   log.debug('Leaving deriveSharedCredential().');
   return b64u(mac.digest());
@@ -3950,7 +3952,7 @@ module.exports = {
   constantTimeEquals: constantTimeEquals,
   // --- one-time passwords (RFC 4226 section 5.3) ---
   // The primitive only. The time step, the skew window, the replay guard and
-  // base32 are `common/totp.js`'s, for the reason written above hotpCode().
+  // base32 are `common/totp.ts`'s, for the reason written above hotpCode().
   HOTP_ALGS: HOTP_ALGS,
   hotpSpec: hotpSpec,
   hotpCode: hotpCode,

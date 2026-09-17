@@ -48,7 +48,7 @@ entry rather than two.
 
 **THE GETs ASK THE ACCESS GATE FOR `read` AND THE POSTs FOR `manage-own`.**
 Drawing a page is reading. That distinction is the reason the portal has an
-action of its own at all — see `common/access_gate.js`'s `ACTION` — and a
+action of its own at all — see `common/access_gate.ts`'s `ACTION` — and a
 deployment that later lets a helpdesk role READ an account without changing it
 needs the two to have been kept apart from the beginning.
 
@@ -114,7 +114,7 @@ this".
 
 ### It is a DRY RUN, and the gate has to be told
 
-`preview: true` on the request, honoured in `xacml/xacml_role_pep.js`. Nothing
+`preview: true` on the request, honoured in `xacml/xacml_role_pep.ts`. Nothing
 is being issued — somebody is looking at a page — so the refusals must not be
 written to the audit log as `xacml.issuance.refused` and must not be counted on
 `/admin/xacml/monitor` as decisions this service made. Drawing this page for a
@@ -222,7 +222,7 @@ this one MINTS a shared secret and shows it. The design follows from that.
 
 Pressing *Set up* mints a secret and holds it in memory (`totp.enrolmentTtlMinutes`,
 per realm, like every other pending record in this service);
-`common/credentials.js` writes the attribute only when a code proves the app
+`common/credentials.ts` writes the attribute only when a code proves the app
 really has it.
 
 **An unconfirmed secret on somebody's entry would be a second factor they
@@ -235,7 +235,7 @@ own account with a form they abandoned. It is the same shape of lockout
 
 `script-src 'none'` covers every page here except `/portal/keys` (see below,
 2026-09-10), so a QR library running in the browser was never available on this
-one — `common/totp.js` renders an SVG and it arrives as
+one — `common/totp.ts` renders an SVG and it arrives as
 a `data:` URI, which `img-src 'self' data:` already allowed for the two OID4VC
 offer pages.
 
@@ -549,7 +549,7 @@ the sign-on session at all: the browser goes to `/oauth2/authorize`, the sign-in
 screen is reached only because the AUTHORIZATION ENDPOINT decides it needs one,
 and what comes back is a code that buys an ID Token that establishes the
 portal's OWN session in its own cookie (`sts_portal`).
-`common/oidc_rp.js` runs it and argues it.
+`common/oidc_rp.ts` runs it and argues it.
 
 Three things about it are this directory's:
 
@@ -563,7 +563,7 @@ Three things about it are this directory's:
   `/realm/acme/portal` and then opening `/realm/acme/admin` meant signing in
   again, and so did the other direction.** Nothing here changed — the console's
   flow moved to the ambient realm to meet this one. `admin-ui/CLAUDE.md` argues
-  what that cost the console and `common/oidc_rp.js` holds the split.
+  what that cost the console and `common/oidc_rp.ts` holds the split.
 * **A `Location` HEADER IS NOT MARKUP, AND THIS SURFACE IS WHERE THAT COST
   SOMETHING.** `app.js` rewrites every root-relative `href`, `action` and `src`
   in an HTML response into the current realm — which is what carries this
@@ -649,7 +649,7 @@ that calls `beginAuthentication()` — so the reason below is why the flow works
 at all rather than why this file redirects where it does.
 
 `requireSignIn()` used to send an unauthenticated visitor through
-`authn.beginAuthentication()`, exactly as `saml2_sso.js` and `consent_screen.js`
+`authn.beginAuthentication()`, exactly as `saml2_sso.ts` and `consent_screen.js`
 do. This was a plain `303` to `/authn/login` at first **and it does not work**:
 that endpoint draws a form for a PENDING AUTHENTICATION RECORD, and a POST
 naming no record is answered `This sign-in form has expired`. The portal is not a
@@ -694,8 +694,8 @@ path was wrong, so the flow most people take was the one that failed.
 
 **AND THE SAME MISTAKE WAS IN TWO OTHER FILES**, found by looking for it rather
 than by being told: the federation index's *The sign-in screen* link
-(`federation/federation_sp.js`) and the admin console's 401 for a form posted
-with an expired session (`admin-ui/admin.js`, whose link was ALSO swallowed into
+(`federation/federation_sp.ts`) and the admin console's 401 for a form posted
+with an expired session (`admin-ui/admin.ts`, whose link was ALSO swallowed into
 a `<details>` summary and so was not clickable at all). The rule read off all
 three: **`/authn/login` is never a destination — link to a page that STARTS a
 sign-in, and let it mint the record.**
@@ -705,11 +705,11 @@ sign-in, and let it mint the record.**
 | | Control | Where |
 |---|---|---|
 | A01 | identity from the session, never the request | this directory, and THREE test files at three layers — see below |
-| A02 | scrypt for passwords, activation token hashed | `common/credentials.js`, `common/crypto.js` |
+| A02 | scrypt for passwords, activation token hashed | `common/credentials.ts`, `common/crypto.js` |
 | A03 | every value through `esc()`; no SQL built from input anywhere | this directory |
-| A04 | rate limiting on activation, sign-in and password change | `common/websecurity.js` |
+| A04 | rate limiting on activation, sign-in and password change | `common/websecurity.ts` |
 | A05 | the CSP `app.js` sets on every response | `common/app.js` |
-| A07 | CSRF tokens, the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `common/websecurity.js`, `authn/authn.js` |
+| A07 | CSRF tokens, the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `common/websecurity.ts`, `authn/authn.ts` |
 | A09 | every act audited | `common/audit.js` |
 
 **Changing a password requires the current one even though the person is signed
@@ -768,7 +768,7 @@ page must be drawn for the session's own person and must not name theirs.
 
 A person's own security activity: what this identity provider has SAID about
 their sessions and their account, to this portal, over OpenID CAEP and RISC.
-`ssf/ssf_receivers.js` holds the design, `ssf/CLAUDE.md` argues it, and the A01
+`ssf/ssf_receivers.ts` holds the design, `ssf/CLAUDE.md` argues it, and the A01
 half is above. Three things belong here.
 
 **IT IS UNDER *Your account* AND NOT UNDER *How you sign in*.** That section
@@ -807,7 +807,7 @@ not to hand*, which is a sentence about the second factor.
 ### There is no button that issues a set, and that is the shape of the feature
 
 **THIS SECTION REVERSED ON 2026-09-11.** It read: *a set is created by
-`common/credentials.js` at the moment a second factor is enrolled, once, and
+`common/credentials.ts` at the moment a second factor is enrolled, once, and
 there is no door here or anywhere else that creates one on request — a recovery
 mechanism a person has to remember to ask for produces exactly the population it
 exists to protect, one person at a time.* That argument is still true and the
@@ -852,7 +852,7 @@ every value.
 
 ### It draws a FIXED LIST and never the entry, which is the whole design
 
-`common/inetorgperson.js` is the list and this page is a reader of it.
+`common/inetorgperson.ts` is the list and this page is a reader of it.
 Iterating the stored attributes instead would have been shorter and is the one
 thing this section must not do: **an entry in this directory carries whatever
 anybody put on it**, and this service writes four `sts`-prefixed CREDENTIALS
@@ -908,7 +908,7 @@ These attributes are written by an operator, by SCIM, or over LDAP. This portal
 changes how somebody AUTHENTICATES and not what the directory records about
 them, and the page says so rather than leaving a reader to wonder where the
 form is. **Most of them cannot be written through `/admin/users/new` either** —
-that form checks against `oid4vc/vc_claims.js`'s catalogue, which is
+that form checks against `oid4vc/vc_claims.ts`'s catalogue, which is
 twenty-seven claim-bearing attributes rather than this schema's fifty — so
 `departmentNumber` and `roomNumber` reach an entry over SCIM or LDAP or not at
 all.
@@ -1085,7 +1085,7 @@ already uses**, which is the deletion's one gift to this page.
 `oidcRp.beginSignIn()` used to fail for one reason — `sts-user-portal` gone or
 without a secret — and the page said *which is what has happened*. In product
 mode it can also refuse because this portal is being reached at an address that
-entry does not carry as a redirect URI, which `common/oidc_rp.js` now refuses
+entry does not carry as a redirect URI, which `common/oidc_rp.ts` now refuses
 rather than writing the address onto the entry (an invented `Host` header would
 otherwise plant a callback on this service's own client). The reason is in
 `started.why` either way; `started.reason` says which kind it is, and the note
@@ -1111,7 +1111,7 @@ same day, so a caller that means to send a link creates with
 
 ACME and SCEP authenticate with a credential bound to ONE directory entry — an
 External Account Binding key and a single-use challenge password
-(`common/cert_enrollment.js`, rule 3ag). An administrator makes one for anybody
+(`common/cert_enrollment.ts`, rule 3ag). An administrator makes one for anybody
 on `/admin/acme` and `/admin/scep`; this page is where a person makes one for
 THEMSELVES, lists the certificates ACME, EST and SCEP issued them, and revokes
 one. EST needs nothing made first — the person's username and password are its
@@ -1131,9 +1131,9 @@ credential — so its card only lists the labelled addresses.
   `…PerAddress`) under its own bucket name, `portal-enrollment`; a protocol
   turned off in the realm is refused at the door as well as hidden on the page
   (`STS-PORTAL-0050`).
-* **IT IS A FILE BESIDE `portal.js` REGISTERED THROUGH `register(context)`**:
+* **IT IS A FILE BESIDE `portal.ts` REGISTERED THROUGH `register(context)`**:
   the shell, the sign-in, the CSRF field and the escaping are private to
-  `portal.js`, which hands them over at the foot of its own routes. That keeps
+  `portal.ts`, which hands them over at the foot of its own routes. That keeps
   the route order the column's and the new file to what is new.
 
 **THE TLS CLIENT CERTIFICATES THIS PORTAL ISSUES DIRECTLY are
@@ -1163,7 +1163,7 @@ three differences:
 * **On success it spends the link, clears `pwdReset`, clears the rate-limit
   bucket, audits `portal.password-reset`, and sends a CAEP `credential-change`
   (password, create, initiated by the user)** through
-  `ssf/account_signals.js`. It signs nobody in: the page links to `/portal`,
+  `ssf/account_signals.ts`. It signs nobody in: the page links to `/portal`,
   where the ordinary sign-in happens with the new password, for
   `/portal/activate`'s magic-link argument.
 

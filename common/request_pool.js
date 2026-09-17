@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 // THE FRONT PROCESS'S END OF THE REQUEST WORKERS: FORK, ROUTE, PROXY, DRAIN.
 //
-// `request_worker.js` says what a worker is and why it speaks real HTTP over a
+// `request_worker.ts` says what a worker is and why it speaks real HTTP over a
 // unix socket. This file is the half that runs where the sockets are, and its
 // job is the sentence the whole change exists for: **the front process should
 // be doing request/response I/O and nothing else.**
@@ -663,7 +663,7 @@ const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 // (2026-09-13).
 //
 // The console and the portal redeem their authorization code over a real HTTP
-// request to this service's own token endpoint (`common/oidc_rp.js`), and the
+// request to this service's own token endpoint (`common/oidc_rp.ts`), and the
 // code lives in the memory of the worker that ran `/oauth2/authorize` until
 // replication carries it anywhere else. With one pool that worker was the one
 // running `/admin/callback` too — the browser's session held both to it — so
@@ -802,12 +802,14 @@ function peerOf(req) {
 // The session cookie, which is the affinity key. Named here rather than
 // imported from authn.js because this file must not require a protocol module:
 // it is loaded by app.js, which is above every route, and a require in that
-// direction would drag authn's routes to the front of the router (rule 1).
+// direction would have dragged authn's routes to the front of the router
+// (rule 1, before #50's R1) — and would still run authn's load-time code, and
+// reach its JavaScript requires, from underneath app.js.
 const SESSION_COOKIE = 'sts_session';
 
 // AND THE TWO RELYING-PARTY COOKIES (2026-09-08). Since this service's own
 // console and user portal became OpenID Connect clients, each holds a session
-// of its OWN on a cookie of its own — `common/oidc_rp.js` names them — and a
+// of its OWN on a cookie of its own — `common/oidc_rp.ts` names them — and a
 // request carrying one of those and no sign-on cookie was, to this file, a
 // request with no affinity at all. Two consequences, and the second is the one
 // that broke a suite: it was routed by load rather than to the worker holding
@@ -1467,7 +1469,7 @@ function poolFor(url) {
 //
 // **THE EMBEDDED DEBUGGER'S STATUS IS THE SAME SHAPE OF FACT (2026-09-13).**
 // Its listener and its api child are held by the front process only
-// (`debugger/debugger_api_process.js`), so `/admin/debugger` and
+// (`debugger/debugger_api_process.ts`), so `/admin/debugger` and
 // `GET /admin-api/debugger` answered by a worker would report a listener that
 // never bound and a child that was never forked. Pinned for that reason; the
 // settings drawn on that page are ordinary configuration either way.
@@ -1522,7 +1524,7 @@ function ensureSocketDir() {
   try {
     fs.chmodSync(socketDir, 0o700);
   } catch (e) {
-    // See request_worker.js: a filesystem that does not carry modes is not a
+    // See request_worker.ts: a filesystem that does not carry modes is not a
     // reason to refuse to serve, and the socket itself is narrowed too.
     log.warn(errorCodes.tag('STS-WORKER-0010') +
              'request_pool: could not narrow the mode on ' + socketDir + ': ' +
@@ -1713,7 +1715,7 @@ function receivePublishedKeys(entry, published) {
 //
 // `ldap_server.js` IS REQUIRED LAZILY, INSIDE BOTH, and that is a rule rather
 // than a convenience: this module is loaded by `server.js` before the protocol
-// stack and by `request_worker.js` as part of it, and a require at the top of
+// stack and by `request_worker.ts` as part of it, and a require at the top of
 // this file would pull the whole directory — and its eight `/admin/ldap/*`
 // console pages — into the router at a point of its own choosing. The same
 // lazy-require-inside-the-one-function shape `xacml_admin.js` uses on
@@ -2136,7 +2138,7 @@ function fork(pool) {
     // the top of this file for what happens without it.
     //
     // AND WHICH POOL IT IS IN. One thing in a worker reads it: the OpenID
-    // Connect back channel in `common/oidc_rp.js`, which names the worker that
+    // Connect back channel in `common/oidc_rp.ts`, which names the worker that
     // should redeem a code and has to know whether that can be itself — see
     // PROTOCOL_WORKER_HEADER.
     env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1',
@@ -2167,7 +2169,7 @@ function fork(pool) {
                   // of 64 was never anywhere near being reached by it. What
                   // fixes that failure is the explicit backlog on the worker's
                   // own socket — see `bindSocket()` in
-                  // `common/request_worker.js`. This bounds the OTHER end,
+                  // `common/request_worker.ts`. This bounds the OTHER end,
                   // which is real (the suite runs many jobs at once) and is
                   // not the thing that was measured.
                   //
@@ -2180,7 +2182,7 @@ function fork(pool) {
                   //
                   // **THE HAZARD A BOUND CREATES, WRITTEN DOWN BECAUSE IT IS
                   // THE REASON THE NUMBER IS NOT SMALL**: this service makes
-                  // requests to ITSELF — `common/oidc_rp.js`'s back channel
+                  // requests to ITSELF — `common/oidc_rp.ts`'s back channel
                   // dials the front process, which dispatches again — so a
                   // worker holding N in-flight requests that are each waiting
                   // on a reentrant call needs an N+1th connection to make
@@ -2198,7 +2200,7 @@ function fork(pool) {
                   generation: generation };
   workers.push(entry);
   // TELL IT WHAT IT IS. Nothing is loaded in the child until this arrives —
-  // see request_worker.js for why the certificate travels here rather than in
+  // see request_worker.ts for why the certificate travels here rather than in
   // the fork's environment.
   try {
     // THE SIGNING KEYS TRAVEL WITH THE CERTIFICATE, for the same reason and on
@@ -2610,7 +2612,7 @@ function mutationKeyOf(req, url) {
 // TO THE SID.
 //
 // The handle ROTATES — on every re-authentication, and when an arrival session
-// becomes a sign-in (`authn/authn.js`, `mintSessionHandle()`) — and the sid
+// becomes a sign-in (`authn/authn.ts`, `mintSessionHandle()`) — and the sid
 // does not. Binding `s:<whole value>` would add a binding per rotation and
 // leave the old one pointing at a worker for a value no browser will present
 // again. The sid is also what the worker's store is keyed by, so it names the
@@ -3884,7 +3886,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // forwarded host from a peer that may not forward is dropped, so the worker
   // cannot believe what this process would not have. **Behind an L4 balancer
   // with `global.proxyProtocol` on, the peer IS the client**:
-  // `common/proxy_protocol.js` put the header's address on the socket before
+  // `common/proxy_protocol.ts` put the header's address on the socket before
   // this request was parsed, so what is written here is that address and the
   // balancer never appears (`tests/proxy_protocol.js` 3a).
   headers['x-forwarded-for'] = clientAddress.clientAddressOf(req) ||

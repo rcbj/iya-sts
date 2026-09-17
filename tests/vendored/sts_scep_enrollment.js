@@ -9,7 +9,7 @@
 // Every certificate here is obtained the way a device obtains one: GetCACaps,
 // GetCACert, and a PKIOperation carrying a CMS SignedData signed by the device
 // and a CMS EnvelopedData encrypted to the RA — built by `scep_client.js`,
-// which shares no code with `scep/` or `common/cert_enrollment.js`. A CertRep
+// which shares no code with `scep/` or `common/cert_enrollment.ts`. A CertRep
 // is read back, its RA signature verified, its envelope opened with the
 // device's key, and the certificate inside it checked with node's own X509
 // verifier up to the realm Intermediate and the service Root.

@@ -28,7 +28,7 @@
 //   5. THE failInfo EVERY CORE CODE MAPS TO.
 //
 // The messages are built with `tests/vendored/scep_client.js` — the protocol
-// job's own client — rather than with `scep/scep_cms.js`, for that job's
+// job's own client — rather than with `scep/scep_cms.ts`, for that job's
 // reason: a codec checked against itself agrees with itself. It is one of the
 // few requires from `tests/` into `tests/vendored/`, and the first of them is
 // argued in `tests/saml_assertion_grant.js` on the same ground.
@@ -55,6 +55,11 @@ require('../scep/scep');
 const cms = require('../scep/scep_cms');
 const ra = require('../scep/scep_ra');
 const scepModule = require('../scep/scep');
+// Loading a module registers nothing since #50's R1; the composition root
+// (`common/protocol_stack.ts`) does, so a test that loads one module
+// registers its routes itself.
+scepModule.registerRoutes(app);
+require('../scep/scep_admin').registerRoutes(app);
 const consoleModel = require('../scep/scep_console');
 const api = require('../scep/scep_api');
 const client = require('./vendored/scep_client');

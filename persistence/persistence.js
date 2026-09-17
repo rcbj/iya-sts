@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: persistence/persistence.js
@@ -2574,7 +2575,7 @@ module.exports = {
     log.debug("Leaving restoreMinted().");
     return minted.restore();
   },
-  // THE MINTED FLUSH, for `common/request_worker.js`'s commit-before-answer.
+  // THE MINTED FLUSH, for `common/request_worker.ts`'s commit-before-answer.
   // The store's flush and this one are two schedulers, and a caller that
   // awaited only the first would leave everything this service MINTS exactly
   // as racy as it was — which is most of what a browser flow writes.
@@ -2594,7 +2595,7 @@ module.exports = {
       return both[0];
     });
   },
-  // THE STORE `cluster/cluster_claims.js` AND `cluster/cluster_secrets.js`
+  // THE STORE `cluster/cluster_claims.js` AND `cluster/cluster_secrets.ts`
   // WORK AGAINST (2026-09-14, #46): the open driver when it can hold an atomic
   // claim and a shared secret — postgres — and null otherwise, which those
   // modules answer from this process's memory. Handed over rather than
@@ -2663,7 +2664,7 @@ module.exports = {
         keystore.pendingWrites()));
   },
   // THE SEQUENCE THIS PROCESS'S LAST COMMIT REACHED, for
-  // `common/request_worker.js`'s commit announcement. It is the STORE's answer
+  // `common/request_worker.ts`'s commit announcement. It is the STORE's answer
   // and not this process's `applied`: what a reader has to wait for is the
   // sequence the write actually landed at, which only the store knows.
   // Whether this process has written any change rows — read either side of a

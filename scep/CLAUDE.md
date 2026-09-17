@@ -5,21 +5,23 @@
 request inside a CMS SignedData it signed and a CMS EnvelopedData encrypted to
 the realm's SCEP RA, and is answered with a CertRep signed by the RA whose
 certificate is encrypted back to it. Required at 23g in
-`common/protocol_stack.js`, as one line.
+`common/protocol_stack.ts`, as one require, and registered there by two
+`register()` calls — `scep`, then `scep_admin` — since #50's R1, when requiring
+a converted module stopped registering its routes.
 
 | File | What it is |
 |---|---|
-| `scep.js` | The eight routes (`/enroll/scep`, `/pkiclient.exe`, `/:profile`, `/:profile/pkiclient.exe`, GET and POST), the four operations, the five message types, the transaction store. Requires `scep_admin.js` itself, AFTER its exports are assigned. |
-| `scep_cms.js` | The CMS codec: read a pkiMessage, verify its signer, open its envelope, write a certs-only SignedData, an EnvelopedData and a CertRep. A LIBRARY (rule 3) that decides nothing. |
-| `scep_ra.js` | The RA certificate: an RSA leaf of the realm's SCEP Issuing CA, `pki.certify()` slot `scep-ra`, pinned, re-issued on demand. |
-| `scep_console.js` | The view model and the six actions both `/admin/scep` and `/admin-api/scep` use (rule 7). No route, no `res`, no markup. |
-| `scep_admin.js` | `GET/POST /admin/scep` (Protocols) and `GET /admin/scep/monitor` (Monitoring). |
-| `scep_api.js` | The three `/admin-api` rows, `module.exports = { ROUTES }`, requiring the model lazily. |
+| `scep.ts` | The eight routes (`/enroll/scep`, `/pkiclient.exe`, `/:profile`, `/:profile/pkiclient.exe`, GET and POST), the four operations, the five message types, the transaction store. Requires `scep_admin.ts` itself, AFTER its exports are assigned. |
+| `scep_cms.ts` | The CMS codec: read a pkiMessage, verify its signer, open its envelope, write a certs-only SignedData, an EnvelopedData and a CertRep. A LIBRARY (rule 3) that decides nothing. |
+| `scep_ra.ts` | The RA certificate: an RSA leaf of the realm's SCEP Issuing CA, `pki.certify()` slot `scep-ra`, pinned, re-issued on demand. |
+| `scep_console.ts` | The view model and the six actions both `/admin/scep` and `/admin-api/scep` use (rule 7). No route, no `res`, no markup. |
+| `scep_admin.ts` | `GET/POST /admin/scep` (Protocols) and `GET /admin/scep/monitor` (Monitoring). |
+| `scep_api.ts` | The three `/admin-api` rows, `module.exports = { ROUTES }`, requiring the model lazily. |
 
 What a certificate may be issued for, what goes in it and where it is kept are
-**not decided here**: every issuance goes through `common/cert_enrollment.js`,
+**not decided here**: every issuance goes through `common/cert_enrollment.ts`,
 and `common/CLAUDE.md` and that file's header argue it. The counters are
-`common/enrollment_monitor.js`'s.
+`common/enrollment_monitor.ts`'s.
 
 ## The decisions
 
@@ -65,12 +67,12 @@ the job asserts the code is not in the reply bytes.
 
 `failInfoForCore()` maps every core code: the CSR signature and a refused
 signer certificate to `badMessageCheck`, an unacceptable or KEM key to
-`badAlg`, everything else to `badRequest`. `scep_cms.js`'s own refusals carry
+`badAlg`, everything else to `badRequest`. `scep_cms.ts`'s own refusals carry
 their failInfo with them.
 
 ### Four codec decisions, each a refusal somebody will meet
 
-`scep_cms.js`'s header argues them; in short:
+`scep_cms.ts`'s header argues them; in short:
 
 1. **SHA-256/384/512 only** — SHA-1 and MD5 `badAlg` (`sscep -S sha256`).
 2. **AES-128/192/256-CBC only** — DES-EDE3-CBC `badAlg` (`sscep -E aes`). The
@@ -90,7 +92,7 @@ their failInfo with them.
 
 Rule 3r is about primitives having one policy. This is an ENVELOPE only SCEP
 reads, over node's own primitives, with every algorithm it accepts in a table
-`admin-ui/crypto_metadata.js` reads (`algorithms()`) — `gnap/gnap_httpsig.js`'s
+`admin-ui/crypto_metadata.ts` reads (`algorithms()`) — `gnap/gnap_httpsig.ts`'s
 arrangement.
 
 ### The RA certificate
@@ -209,11 +211,11 @@ section 2.3; `STS-SCEP-0034`).
   The client slices bytes with a TLV walker wherever a signature is involved.
 * **forge's `pki` reads RSA certificates only**, so the EC-signer negative reads
   the issuer and serial with the same walker.
-* **`node --check` passes and `require` loops**: `scep.js` requires
-  `scep_admin.js` → `scep_console.js`, which reads `scep.js`'s tables — so the
-  console requires `./scep` lazily and `scep.js` assigns its exports first.
+* **`node --check` passes and `require` loops**: `scep.ts` requires
+  `scep_admin.ts` → `scep_console.ts`, which reads `scep.ts`'s tables — so the
+  console requires `./scep` lazily and `scep.ts` assigns its exports first.
 * **`admin-core/admin_views` may be required only from the allowed list** in
-  `tests/admin_actions_layer.js`; `scep_console.js` is on it and `scep_admin.js`
+  `tests/admin_actions_layer.js`; `scep_console.ts` is on it and `scep_admin.ts`
   is not, which is why the console session's actor is read in the model.
 * **A challenge secret is base64url** and so is not a PrintableString (`_` is
   outside its alphabet). forge writes challengePassword as UTF8String; OpenSSL

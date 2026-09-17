@@ -6,13 +6,13 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 
 | File | What it is |
 |---|---|
-| `authn.js` | The sign-in screen, the session store, and the pending-authentication record. |
+| `authn.ts` | The sign-in screen, the session store, and the pending-authentication record. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
-| `webauthn_policy.js` | The ceremony's options and the four policy settings that refuse, kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_policy.ts` | The ceremony's options and the four policy settings that refuse, kept out of `webauthn.js` so that file stays loadable on its own. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
 `/authn/spnego` — sign in with a Kerberos ticket — is
-`kerberos/spnego_authn.js`, and the split is a dependency rather than a filing
+`kerberos/spnego_authn.ts`, and the split is a dependency rather than a filing
 mistake. This module is #8 in the require order because `oauth2.js` reads the
 session it owns; every Kerberos module is #15 and below so that the KDC's routes
 are not dragged to the front of the router. A require from here to there would do
@@ -45,9 +45,9 @@ is made at the password screen, and it owns no session of its own. Splitting the
 would put the two halves of one ceremony in two places and leave the pending
 record crossing a directory boundary for no gain.
 
-**It OWNS THE SESSION.** `ws-federation/wsfed.js`, `saml/saml2_sso.js` and
-`admin-ui/admin.js` take it from here through the exported `startSession` /
-`sessionOf` / `endSession`, and `oauth-oidc/oauth2.js` reads the session and
+**It OWNS THE SESSION.** `ws-federation/wsfed.ts`, `saml/saml2_sso.ts` and
+`admin-ui/admin.ts` take it from here through the exported `startSession` /
+`sessionOf` / `endSession`, and `oauth-oidc/oauth2.ts` reads the session and
 never writes one. Do not give any other module a session store to "decouple" it:
 two stores would each look correct alone and never see each other, and the
 symptom is a sign-on that silently is not single.
@@ -93,7 +93,7 @@ in* has a session and is not an authenticated identity.
   why they share one mechanism and shared one defect.
 * **STEP-UP** is the one kind that RAISES `acr`: RFC 9470, where a resource
   server's `insufficient_user_authentication` sends the client back for a
-  stronger method (`oauth-oidc/step_up.js`). The levels are ordered `0` < `1`
+  stronger method (`oauth-oidc/step_up.ts`). The levels are ordered `0` < `1`
   < `mfa`. An elapsed `max_age` usually leaves `acr` where it was and moves
   only `auth_time`. `prompt=login` and `ForceAuthn` can LOWER it, which is a
   **step-down**.
@@ -177,9 +177,9 @@ contract:
   **Rotation also closed a fixation hole**: an arrival session keeps its sid
   through the sign-in that upgrades it, and it used to keep its cookie too.
   `common/request_pool.js` binds worker affinity to the sid part.
-* **`assurance-level-change`**, from `ssf/caep.js` on a `reauthenticated`
+* **`assurance-level-change`**, from `ssf/caep.ts` on a `reauthenticated`
   notice whose `acr` moved, on the private `urn:sts:acr` scale with
-  `change_direction` from `oauth-oidc/step_up.js`'s ordering. It is in
+  `change_direction` from `oauth-oidc/step_up.ts`'s ordering. It is in
   `caep.autoEmitTypes`' default; a deployment that pinned the old list emits
   nothing for it.
 
@@ -228,8 +228,8 @@ contract:
 * **Two workers creating one person** keep both UUIDs (`ldap/CLAUDE.md`), and
   `sameIdentity()` treats a session under the alias as the same person.
 * **A rename keeps every name-keyed record together** — the identity register, the tokens
-  and sessions filed under a person, the RISC register (`ssf/risc.js`), GNAP's opaque
-  identifier and user reference (`gnap/gnap_subject.js`), and a person's TLS client and
+  and sessions filed under a person, the RISC register (`ssf/risc.ts`), GNAP's opaque
+  identifier and user reference (`gnap/gnap_subject.ts`), and a person's TLS client and
   enrolled certificates, whose issuing records now keep the holder's subject
   (`common/tls_client_certificates.js`'s `currentHolderOf()`: a rename follows the entry,
   a deleted-and-re-created name is refused `HOLDER_GONE`). A WS-Trust JWT for somebody
@@ -241,7 +241,7 @@ contract:
 **`startSession()` TOOK A SIXTH ARGUMENT FOR FEDERATION, AND IT REPLACED A
 DOUBLE-COUNT RATHER THAN ADDING A FEATURE.** This function has always recorded
 the authentication ITSELF — that is what makes a WS-Federation sign-in appear on
-`/admin/users` without `wsfed.js` knowing the console exists. `../federation/`
+`/admin/users` without `wsfed.ts` knowing the console exists. `../federation/`
 broke that assumption in two places at once: `methodPhraseFor()` answers "sign-in
 screen (password)" for an `amr` it does not recognise, which is exactly wrong for
 somebody who never saw this screen at all, and the attributes a foreign identity
@@ -261,7 +261,7 @@ at this screen is in the middle of SOMETHING — an authorization request, a
 something, whole. Handing it to the federated flow is what lets a foreign
 identity provider satisfy any protocol this service speaks.
 
-The require goes to the REGISTER and never to `federation_sp.js`: that module
+The require goes to the REGISTER and never to `federation_sp.ts`: that module
 requires THIS file — it has no sign-in screen of its own and calls
 `startSession()` directly — so a require back would close a cycle. The register
 in the middle is what both halves can safely reach, and it registers no route, so
@@ -336,7 +336,7 @@ the realm feature would have become a privilege escalation.
 `ldap/ldap_server.js` pins `admin_rbac.js`'s whole directory to the default realm
 for that reason, and this function is the other half of the same decision.
 (**Since 2026-09-14 (#32) a realm HAS a roster of its own, confined to that realm
-by `admin-ui/admin_scope.js`, and the gate asks the roster of the realm the
+by `admin-ui/admin_scope.ts`, and the gate asks the roster of the realm the
 session was signed in through** — `admin-ui/CLAUDE.md` 8d. This function still
 reads the session out of the default realm's partition; which roster decides
 moved, and the escalation above is closed by the confinement.) **The
@@ -347,9 +347,9 @@ were nobody.
 **Two things make this the boundary already drawn rather than a hole in it, and
 both have to stay true if anything here is reworked:**
 * **It grants nothing else.** Its only caller is `consoleSignOn()` in
-  `admin-ui/admin.js`, which REPORTS the sign-on session behind the console's
+  `admin-ui/admin.ts`, which REPORTS the sign-on session behind the console's
   own relying-party session; since 2026-09-06 the gate (`gateStateFor()`, now
-  in `admin-core/admin_views.js`) reads the relying-party session instead.
+  in `admin-core/admin_views.ts`) reads the relying-party session instead.
   No token is issued on the session it finds and no assertion names it. Every
   protocol module still calls `sessionOf()` and still sees its own realm's
   partition only.
@@ -372,7 +372,7 @@ conclude is that `/oauth2/authorize` would have taken the same cookie.
 ---
 
 
-**`authn.js` is the authentication service, and it is not part of any protocol.**
+**`authn.ts` is the authentication service, and it is not part of any protocol.**
 The sign-in screen used to be rendered inside `GET /oauth2/authorize`: no session
 meant a 200 with the login form in the body, at the authorization endpoint's own
 URL. It is now its own endpoint and its own module, and the protocol endpoints
@@ -407,7 +407,7 @@ Four things about that are load-bearing:
   authentication service that will redirect a browser to an arbitrary URL after
   signing somebody in is a credential phishing tool with a login screen in front
   of it.
-* **It owns the SESSION**, and `wsfed.js` and `admin.js` take it from here.
+* **It owns the SESSION**, and `wsfed.ts` and `admin.js` take it from here.
   `oauth2.js`'s old note said the session lived there "because this module owns
   the login flow the session comes out of" — which is exactly the sentence that
   moved it, now that the login flow has. `oauth2.js` reads the session and never
@@ -429,7 +429,7 @@ Four things about that are load-bearing:
   of a request. And `methodPhraseFor()` exists because there are three outcomes
   now: the two-way conditional it replaced asked whether `hwk` was present and
   called a passwordless sign-in a password one. Anything downstream that reads
-  `hwk` to mean "two factors" is wrong for the same reason — `wsfed.js`'s
+  `hwk` to mean "two factors" is wrong for the same reason — `wsfed.ts`'s
   `authnMethodsFor()` was, and now tests for `hwk` AND `pwd`.
 
 ---
@@ -438,7 +438,7 @@ Four things about that are load-bearing:
 
 `webauthnCredentials` was a `realms.map({ persist: 'authn.webauthnCredentials' })`
 holding ONE key per person. It survived a restart and it was still the wrong
-store, because **`common/credentials.js` already held the security keys** — on
+store, because **`common/credentials.ts` already held the security keys** — on
 the person's own directory entry, multi-valued, each carrying the ROLE it was
 enrolled in. That is the store `mechanismsFor()` reads, and `mechanismsFor()` is
 what `/portal/keys`, `/admin/users`, `removeKey()`'s last-way-in refusal and
@@ -511,13 +511,17 @@ security key instead of a password* is recorded in `portal/CLAUDE.md`.
 
 ## `setSessionObserver()` — the one INVERTED HOOK this module offers
 
-Added 2026-09-03 for the CAEP profile. `ssf/caep.js` needs to know when a
+Added 2026-09-03 for the CAEP profile. `ssf/caep.ts` needs to know when a
 session starts, is presented and ends, because that is what a CAEP event is
 *about* — and it cannot be required from here: this module is **8** in the
-require order (`common/protocol_stack.js`) and `ssf/ssf.js` is **23b**, so a
-require the other way would register every `/ssf` route here, ahead of
-`oauth2.js`, ahead of the admin console, ahead of ldap, scim and spiffe. That is rule 1, and it would
-close a cycle besides. So this module holds a function and `ssf/ssf.js` fills
+require order (`common/protocol_stack.ts`) and `ssf/ssf.ts` is **23b**, so a
+require the other way would have registered every `/ssf` route here, ahead of
+`oauth2.js`, ahead of the admin console, ahead of ldap, scim and spiffe. That
+was rule 1 until #50's R1 — `ssf.ts` now registers nothing when required, and
+`common/protocol_stack.ts` registers it at 23b — but the require would still
+run that module's load-time code (its slot fills, and the JavaScript
+`ldap_server` it reaches, whose routes WOULD still move) at 8, and it would
+close a cycle besides. So this module holds a function and `ssf/ssf.ts` fills
 it at its own require time, exactly as `admin.setSignalsReporter()` works one
 layer up.
 
@@ -537,7 +541,7 @@ signing out has nothing to do with whether a receiver is up.
 | Where | Kind |
 |---|---|
 | `startSession()`, last, after the cookie and the audit row | `established` |
-| `oauth-oidc/oauth2.js`'s authorization endpoint, through `notePresented()` | `presented` |
+| `oauth-oidc/oauth2.ts`'s authorization endpoint, through `notePresented()` | `presented` |
 | `dropSession()`, after the delete and before the audit row | `revoked` |
 
 Two more have been added since the table was written: `reauthenticateSession()`
@@ -576,7 +580,7 @@ authorization server now, so this module holds two kinds of browser row:
 | SIGN-ON | `startSession()`, at the screen or any other credential | `sts_session` | `/oauth2/authorize`, `/wsfed`, both SAML profiles — every protocol family |
 | RELYING PARTY | `startRelyingPartySession()`, from a verified ID Token | `sts_admin`, `sts_portal` | the surface that minted it, and nothing else |
 
-**They are one store because rule 3m says so** — `logout.js` reads this map,
+**They are one store because rule 3m says so** — `logout.ts` reads this map,
 `/admin/sessions` draws it, CAEP observes it, and a second register would be a
 second answer to "is somebody signed in" with the wrong half being whichever
 surface a reader happened to open. It is the same arrangement the KEYED API
@@ -588,7 +592,7 @@ Four things about a relying-party session:
 * **IT IS NOT AN AUTHENTICATION AND NOTHING RECORDS ONE.** The person
   authenticated at the authorization endpoint and `startSession()` counted it
   there. A second `recordAuthentication()` would double every console sign-in
-  on `/admin/users` — the defect `federation_sp.js` shipped once and the reason
+  on `/admin/users` — the defect `federation_sp.ts` shipped once and the reason
   `startSession()` has a sixth argument.
 * **IT NAMES THE SIGN-ON SESSION IT CAME FROM AND DIES WITH IT.** The cascade
   is in `dropSession()`, the one place a session ends, so every door that ends
@@ -603,7 +607,7 @@ Four things about a relying-party session:
   `startRelyingPartySession()` keeps the tokens on the session (`rpTokens`) and,
   where there is a refresh token, sets `expires` to the end of the RENEWAL
   WINDOW — the refresh token's lifetime from the sign-in — rather than to the
-  parent's. `common/oidc_rp.js`'s `renewIfDue()` redeems the refresh token when
+  parent's. `common/oidc_rp.ts`'s `renewIfDue()` redeems the refresh token when
   the ID Token and access token run out and `renewRelyingPartySession()` writes
   the new ones onto THE SAME RECORD: same id, same cookie, same `authTime`, no
   `session.start`, no authentication, no CAEP event — one `session.renew` audit
@@ -629,13 +633,13 @@ Four things about a relying-party session:
 
 **A CONSOLE SESSION'S PARENT IS IN A DIFFERENT PARTITION FROM THE SESSION
 ITSELF (2026-09-11).** The console's code flow runs in the AMBIENT realm while
-its own session lives in the DEFAULT realm, so everything in `authn.js` that
+its own session lives in the DEFAULT realm, so everything in `authn.ts` that
 learnt that is here: `derivedFromRealm` is the field, `relyingPartySessionOf()`
 looks the parent up where it lives, and `dropSession()`'s cascade walks the
 default partition as well as the parent's own — without which a sign-out ends
 the sign-on session and leaves the console session it issued working, which is
 the defect that cascade exists to prevent. `tests/cross_surface_sso.js` pins all
-of it in process and `common/oidc_rp.js`'s surface table argues the split.
+of it in process and `common/oidc_rp.ts`'s surface table argues the split.
 
 ## `clearSessionCookie()` TAKES A NAME AND APPENDS (2026-09-06)
 
@@ -696,7 +700,7 @@ and the password in front of the code.
 
 Since 2026-08-26 it takes an `application` — the identifier the caller's own
 protocol presented, a `client_id` from `oauth2.js`, an entityID from
-`saml2_sso.js`, a relying party id from `saml11_sso.js` — and what comes back
+`saml2_sso.ts`, a relying party id from `saml11_sso.ts` — and what comes back
 is now one of FOUR things:
 
 | What the entry names | What comes back |
@@ -835,7 +839,7 @@ so `beginAuthentication()` logs the other values' problems at INFO. There is no
 banner to put them on and the flow succeeding is exactly why nobody would go
 looking.
 
-**`returnTo` is checked twice, here and again in `federation_sp.js`**, which
+**`returnTo` is checked twice, here and again in `federation_sp.ts`**, which
 that module's decision 4 already argued for its own reasons. Two checks on one
 value is deliberate: this one catches a caller's bug and that one catches
 somebody handing the federated entry point a `returnTo` of their own.
@@ -958,8 +962,8 @@ work" would answer differently the first time one of them learned a fifth.
 
 ## THE SECOND SECOND FACTOR, AND THE DAY `mfaRequired` STARTED MEANING SOMETHING (2026-09-10)
 
-RFC 6238 one-time codes. `/authn/totp` is the screen, `common/totp.js` is the
-mechanism and `common/credentials.js` holds the enrolment; this file's part is
+RFC 6238 one-time codes. `/authn/totp` is the screen, `common/totp.ts` is the
+mechanism and `common/credentials.ts` holds the enrolment; this file's part is
 the two things a sign-in has to decide — **whether a second factor is demanded,
 and which one**.
 
@@ -1029,7 +1033,7 @@ arriving through a different door.
 
 ### The code is checked for real, and this screen is the second SPNEGO
 
-`common/totp.js`'s header carries the argument at length and it is the one
+`common/totp.ts`'s header carries the argument at length and it is the one
 `kerberos/CLAUDE.md` already makes: Kerberos cannot be permissive because the
 password there IS the key, and RFC 6238 cannot be permissive because the code
 IS the comparison. A verifier that accepted any six digits would leave no
@@ -1134,7 +1138,7 @@ Three things about it are decisions:
   Running in the realm is also what makes the event right rather than merely
   present, since the observer builds a subject from the realm's own issuer.
 
-**THE EVENT SAYS `policy` AND NOT `user`.** `caep.js`'s rule for a `revoked` act
+**THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
 neither — a lifetime this service configured ran out, which is what CAEP section
 2 means by a policy evaluation. Without that this event would have gone out
@@ -1147,7 +1151,7 @@ notice carries `initiatingEntity` and `expired`, and `reason_user` becomes
 `startSession()` puts `via` on the session as well as handing it to
 `recordAuthentication()` and to the observer. It was in neither place the
 session lives, so *what is this session* could only be answered fully by the
-CAEP register — which `ssf/ssf.js` fills, and a process without it lost the
+CAEP register — which `ssf/ssf.ts` fills, and a process without it lost the
 answer entirely. `/admin/sessions` reads it off the store that owns the session.
 
 It is the protocol the sign-in came THROUGH and not the only one the session
@@ -1254,9 +1258,9 @@ from elsewhere.
 A session IS an issuance — `ISSUANCE.SESSION` has been in
 `common/issuance_gate.js`'s list since it was written — and it was asked at
 exactly ONE door: this module's own sign-in screen. **Five other paths minted a
-session and never asked**: a federated assertion (`federation_sp.js`), a SPNEGO
+session and never asked**: a federated assertion (`federation_sp.ts`), a SPNEGO
 ticket (`spnego_authn.js`), a client certificate (`tls_server.js`), a WS-Trust
-UsernameToken (`wstrust.js`), and this file's OWN WebAuthn funnel.
+UsernameToken (`wstrust.ts`), and this file's OWN WebAuthn funnel.
 
 So an application narrowed to a role refused a password sign-in and admitted the
 same person through any of the five. Federation is where that cost most, for the
@@ -1271,7 +1275,7 @@ sites is four that remember and a sixth added later that does not.
 Four things about it are load-bearing.
 
 * **IT REFUSES BY RETURNING NULL AND NEVER BY THROWING.** Two callers —
-  `tls_server.js` and `wstrust.js` — wrap this in a `try` that treats a failure
+  `tls_server.js` and `wstrust.ts` — wrap this in a `try` that treats a failure
   as bookkeeping which must not break an exchange already completed. That is
   correct for a defect in this function and exactly wrong for a refusal, which
   would be swallowed and the session started anyway. A null is a value they have
@@ -1311,7 +1315,7 @@ points rather than families.
 FRONT DOOR, AND ON 2026-09-10 TWO OF THOSE ARRIVED.** This service's own admin
 console and user portal became Shared Signals receivers, each hosting a receive
 endpoint at `/admin/signals/receive` and `/portal/signals/receive`. Both are
-under a prefix on that list. What arrives at them is `ssf/ssf_http.js` POSTing a
+under a prefix on that list. What arrives at them is `ssf/ssf_http.ts` POSTing a
 Security Event Token over the loopback interface — a server-to-server request
 that carries no cookie, will never send one back, and is answered 202 with an
 empty body.
@@ -1379,7 +1383,7 @@ a service that has lost it, and a hand-made GET must not produce one.
 `POST /authn/totp` treats a failed counter write as a warning: the
 authentication succeeded and the worst case is a replay inside ninety seconds.
 Here a failed spend refuses the sign-in, because a recovery code that cannot be
-marked spent is a permanent credential. `common/credentials.js` carries the
+marked spent is a permanent credential. `common/credentials.ts` carries the
 argument and `verifyBackupCode()` is where it is enforced, so this endpoint has
 no branch of its own for it.
 
@@ -1424,7 +1428,7 @@ Four things are load-bearing:
   honouring a session nobody is using, so `sessionEnded()` — THE ONE PLACE the
   question is answered — asks it every time a session is looked up
   (`sessionOf()`, `relyingPartySessionOf()`, `consoleSession()`, the
-  keyed-session lookup) and on every sweep, and `logout/logout.js` asks the same
+  keyed-session lookup) and on every sweep, and `logout/logout.ts` asks the same
   function.
 * **AN IDLE SESSION IS ENDED, NOT MERELY REFUSED.** It goes through
   `expireSession()` like an absolute expiry, so it writes the `session.end` row
@@ -1442,7 +1446,7 @@ Four things are load-bearing:
   session they are using. An ARRIVAL session is exempt: it has an inactivity
   window of its own on the screen's clock.
 
-`common/oidc_rp.js`'s flow lifetime reads `authn.pendingTtlS` as well — the two
+`common/oidc_rp.ts`'s flow lifetime reads `authn.pendingTtlS` as well — the two
 were "deliberately the same" as two literals, which is how two numbers come
 apart. `tests/session_clocks.js` pins all of it, mutation-tested against ten.
 
@@ -1475,7 +1479,7 @@ different origins. `tests/webauthn_addresses.js` pins it.
 **`pwdReset: TRUE` on a person's entry means the password must be changed
 before it can be used.** The attribute comes from
 draft-behera-ldap-password-policy, and the bootstrap administrator is its first
-writer (`admin-ui/CLAUDE.md`, 8a). `common/credentials.js` reads and writes it
+writer (`admin-ui/CLAUDE.md`, 8a). `common/credentials.ts` reads and writes it
 through two functions on the directory's credentials slot:
 `passwordResetRequired()` and `setPasswordResetRequired()`.
 
@@ -1547,7 +1551,7 @@ description says which doors it does not reach: a federated assertion, SPNEGO,
 a TLS client certificate, the OAuth password grant, an LDAP bind, WS-Trust and
 SCIM Basic. A session that already exists is not ended. **The enrolment emits
 no CAEP event**, because the signals the request asked for are the ADMIN doors'
-(`admin-core/admin_actions.js`); the portal's own enrolment pages do not emit
+(`admin-core/admin_actions.ts`); the portal's own enrolment pages do not emit
 either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
 
 ## SEVERAL NODES: A SIGN-OUT HOLDS, AND TWO COPIES OF A SESSION MERGE (2026-09-14, #46 section 3)
@@ -1578,7 +1582,7 @@ row (`ssf.delivery`), and the next section.
 
 **A merge only helps a list that reached the store, and until 2026-09-14 none
 of the four did on its own.** Each protocol records the party ON the session
-object — `saml2_sso.js`, `saml11_sso.js`, `wsfed.js`, and
+object — `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts`, and
 `frontchannel_logout.js`'s `noteClient()` — and `sessions` journals a `set()`,
 never an edit to an object it holds, so the list was written only if something
 re-set the row later (with no idle timeout, nothing did). Identity-provider

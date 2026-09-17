@@ -140,6 +140,21 @@ function childScript() {
     "  entry.SyncAuthorizedEntries(stream);",
     "  stream.emit('data', { ids: [made.underA] });",
     "  const sync = await synced;",
+    // A UNARY call through the real wrapper, which is what records the
+    // call's metrics row.
+    "  const unary = await new Promise(function (resolve) {",
+    "    entry.GetAuthorizedEntries({ request: {},",
+    "      getPeer: function () { return '127.0.0.1:1'; },",
+    "      getAuthContext: function () { return null; },",
+    "      metadata: { get: function () { return []; } } },",
+    "      function (err, reply) { resolve({ err: err, reply: reply }); });",
+    "  });",
+    "  out.unaryError = unary.err ?",
+    "    String(unary.err.details || unary.err.message) : '';",
+    "  const stats = require(" +
+    JSON.stringify(path.join(ROOT, 'common/admin_stats')) + ");",
+    "  const snap = JSON.stringify(stats.snapshot());",
+    "  out.metricsRow = snap.indexOf('grpc:Entry.GetAuthorizedEntries') >= 0;",
     "  auth.callerOf = realCallerOf;",
     "  out.syncError = sync.error || '';",
     "  const byId = function (list) {",
@@ -214,6 +229,12 @@ function run(t) {
           'it lists the revisions of agent A\'s set and no other entry');
   t.equal(out.syncEntries.join(','), 'alias,grandchildA,underAlias',
           'and sends in full only the ones the agent did not say it holds');
+
+  t.log.info('=== a gRPC call is counted on its own metrics row ===');
+  t.equal(out.unaryError, '', 'the unary wrapper answered');
+  t.check(out.metricsRow, 'the call is on a row named ' +
+          'grpc:Entry.GetAuthorizedEntries — until 2026-09-16 every gRPC ' +
+          'call was counted on one row with no method or path');
 
   t.log.info('=== and is issued nothing from any other entry ===');
   // gRPC status codes: 7 is PERMISSION_DENIED, 3 is INVALID_ARGUMENT. The

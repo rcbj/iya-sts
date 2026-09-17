@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
-// `gnap/gnap_sf.js` and `gnap/gnap_httpsig.js` are route-free libraries, and
+// `gnap/gnap_sf.ts` and `gnap/gnap_httpsig.ts` are route-free libraries, and
 // every claim worth making about them is a comparison with an answer somebody
 // ELSE published:
 //
@@ -30,7 +30,7 @@
 //     member that is a Token. Choosing the message is the whole test.
 //
 // The GNAP policy over these libraries — which components a grant request
-// must cover, which key a `keyid` names — is `gnap/gnap_proof.js`'s and is not
+// must cover, which key a `keyid` names — is `gnap/gnap_proof.ts`'s and is not
 // asserted here.
 // ---------------------------------------------------------------------------
 // THREE THINGS THE RFCs THEMSELVES GET WRONG, recorded where they are asserted

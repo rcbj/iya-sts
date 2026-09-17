@@ -6,7 +6,7 @@
 // ONE PERSON, ONE SIGN-IN LINE, AND THE LIST THAT IS ON IT.
 //
 // `/admin/delegation/user` draws everything issued in one person's name.
-// `common/user_graph.js` builds that graph and `admin-ui/delegation_map.js`
+// `common/user_graph.ts` builds that graph and `admin-ui/delegation_map.ts`
 // draws it, and until 2026-08-26 the first of them made ONE LINE PER PROTOCOL
 // FAMILY somebody had authenticated with. Those lines join the same two boxes —
 // the person and the hexagon — so the second of them computed the same clipped

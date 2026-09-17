@@ -39,7 +39,7 @@
 //   1. REAL AUTHENTICATION. A presented password is verified against the hashed
 //      `userPassword` on the person's directory entry, at every door that takes
 //      one: the sign-in screen, an LDAP bind, a WS-Security UsernameToken, SCIM
-//      Basic. `common/credentials.js` performs it; this file decides whether it
+//      Basic. `common/credentials.ts` performs it; this file decides whether it
 //      is asked.
 //   2. EVERY REFERENCED OBJECT EXISTS ALREADY. Nothing is created because it
 //      was named — not a user, not an application, not a service principal, not
@@ -315,7 +315,7 @@ function requiresConfidentialDirectoryBinds() {
 }
 
 // Are FAILED binds rate limited? Product: failures are counted per bind DN and
-// per address in `common/websecurity.js`'s buckets, and a caller over either
+// per address in `common/websecurity.ts`'s buckets, and a caller over either
 // limit is refused before its password is checked — so a correct guess during a
 // lockout is refused like a wrong one and teaches nothing. A SUCCESSFUL bind is
 // never counted, because a connection pool binds on every connection it opens.
@@ -382,7 +382,7 @@ function requiresEnrollmentTls() {
 // **AN RFC 9701 JWT RESPONSE IS NOT ASKED THIS**, and must not be: that
 // response names the resource server that asked in its `aud`, so it needs an
 // authenticated caller in every mode, and section 5 says to refuse one that is
-// not. `oauth-oidc/oauth2.js`'s `introspectEndpoint()` makes both decisions.
+// not. `oauth-oidc/oauth2.ts`'s `introspectEndpoint()` makes both decisions.
 function opensIntrospection() {
   log.debug("Entering opensIntrospection().");
   log.debug("Leaving opensIntrospection().");
@@ -411,7 +411,7 @@ function acceptsUnsignedRequestObjects() {
 // asks the server to check what comes back. Development allows both, logged,
 // because a client under test commonly serves its request object from a local
 // listener with no certificate; product refuses both. What is fetched is ONLY
-// ever a URI the client REGISTERED — `oauth-oidc/request_object.js` argues that
+// ever a URI the client REGISTERED — `oauth-oidc/request_object.ts` argues that
 // half, and no mode changes it.
 function acceptsLooseRequestUris() {
   log.debug("Entering acceptsLooseRequestUris().");
@@ -457,7 +457,7 @@ function limitsDebuggerDestinations() {
 // thing to import there. Product answers no — the name is resolved once, every
 // address is checked against loopback, the private ranges, link-local and the
 // reserved blocks, and the connection is pinned to the address that was
-// checked. `oauth-oidc/protected_resource_metadata.js` argues it.
+// checked. `oauth-oidc/protected_resource_metadata.ts` argues it.
 function dialsInternalAddresses() {
   log.debug("Entering dialsInternalAddresses().");
   log.debug("Leaving dialsInternalAddresses().");
@@ -479,7 +479,7 @@ function acceptsNonconformingResourceMetadata() {
 // Is the management API gated by the console's session and roles WHEN
 // `adminApi.authRequired` IS OFF? Since 2026-09-09 that setting — on by
 // default, in both modes — puts an access token in front of `/admin-api`
-// first, and `mgmt-api/admin_api.js` asks this only below it. See the note
+// first, and `mgmt-api/admin_api.ts` asks this only below it. See the note
 // above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
 // TURNS ON**, because it is the only one that was ever off.
 function gatesManagementApi() {
@@ -571,7 +571,7 @@ const REQUIREMENTS = [
              'holding a second factor, which that grant cannot carry. ' +
              'WS-Trust requires a credential, and accepts an assertion only ' +
              'when this realm signed it and it is inside its Conditions.',
-    where: 'common/credentials.js, ws-trust/wstrust.js, oauth-oidc/oauth2.js' },
+    where: 'common/credentials.ts, ws-trust/wstrust.ts, oauth-oidc/oauth2.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -583,7 +583,7 @@ const REQUIREMENTS = [
              'link-local or reserved address is not dialled — the name is ' +
              'resolved once and the connection pinned to the address that ' +
              'was checked. A malformed document is refused in both modes.',
-    where: 'oauth-oidc/protected_resource_metadata.js' },
+    where: 'oauth-oidc/protected_resource_metadata.ts' },
   { id: 'realm-chooser',
     what: 'The realm chooser before sign-in lists every realm',
     development: 'A browser with no session at /admin or /portal, on a ' +
@@ -592,13 +592,13 @@ const REQUIREMENTS = [
     product: 'The same page asks for the realm\'s id in a text box, so the ' +
              'deployment\'s realms are not published to anybody who can ' +
              'reach it.',
-    where: 'common/realm_chooser.js' },
+    where: 'common/realm_chooser.ts' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
     development: 'An assertion or token that should have been encrypted and ' +
                  'could not be is sent in the clear, with a warning.',
     product: 'Refused.',
-    where: 'saml/saml2_sso.js, ws-trust/wstrust.js' },
+    where: 'saml/saml2_sso.ts, ws-trust/wstrust.ts' },
   { id: 'objects',
     what: 'A referenced object must already exist',
     development: 'A user, application, service principal or authorization ' +
@@ -608,8 +608,8 @@ const REQUIREMENTS = [
     product: 'An unknown name is REFUSED. Everything must be created ahead ' +
              'of time, through the console, /admin-api, SCIM or an LDAP add.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
-           'common/applications.js, oauth-oidc/authorization_servers.js, ' +
-           'spiffe/spiffe_workload.js, scim/scim_auth.js' },
+           'common/applications.js, oauth-oidc/authorization_servers.ts, ' +
+           'spiffe/spiffe_workload.ts, scim/scim_auth.ts' },
   { id: 'key-material',
     what: 'Signing keys survive a restart',
     development: 'A new signing key is generated on every start and held in ' +
@@ -644,7 +644,7 @@ const REQUIREMENTS = [
              'refused ' +
              '401 invalid_client otherwise (400 for a JWT request, RFC 9701 ' +
              'section 5).',
-    where: 'oauth-oidc/oauth2.js, oauth-oidc/introspection_jwt.js' },
+    where: 'oauth-oidc/oauth2.ts, oauth-oidc/introspection_jwt.ts' },
   { id: 'request-objects',
     what: 'A JWT-secured authorization request is signed, and a request_uri ' +
           'is HTTPS',
@@ -660,7 +660,7 @@ const REQUIREMENTS = [
              'application/oauth-authz-req+jwt or application/jwt, or the ' +
              'request is refused invalid_request_uri. In both modes a ' +
              'request_uri is fetched only when the client registered it.',
-    where: 'oauth-oidc/request_object.js' },
+    where: 'oauth-oidc/request_object.ts' },
   // 2026-09-09: `adminApi.authRequired` (on by default, both modes) put an
   // access token in front of this surface, so the two columns below are what
   // happens with that setting OFF. Both columns say so.
@@ -675,7 +675,7 @@ const REQUIREMENTS = [
     product: 'The same access token while adminApi.authRequired is on. With ' +
              'it off: gated exactly as /admin is — the same session, the ' +
              'same two roles.',
-    where: 'mgmt-api/admin_api.js' },
+    where: 'mgmt-api/admin_api.ts' },
   { id: 'console',
     what: '/admin requires a sign-in and a role',
     development: 'Required — and it always was; the setting that could turn ' +
@@ -683,7 +683,7 @@ const REQUIREMENTS = [
                  'so what the gate proves is that somebody typed a name that ' +
                  'holds a role.',
     product: 'Required, and the sign-in behind it verifies the credential.',
-    where: 'admin-ui/admin.js' },
+    where: 'admin-ui/admin.ts' },
   { id: 'certificate-enrollment',
     what: 'ACME and EST require TLS; an enrollment credential is verified',
     development: 'ACME (/enroll/acme) and EST (/.well-known/est) answer over ' +
@@ -698,7 +698,7 @@ const REQUIREMENTS = [
              '(STS-ENROLL-0060). EST verifies the directory password and ' +
              'requires the client secret. Everything else is as in ' +
              'development.',
-    where: 'common/cert_enrollment.js, acme/, est/, scep/' },
+    where: 'common/cert_enrollment.ts, acme/, est/, scep/' },
   { id: 'scim',
     what: '/scim/v2 requires a credential',
     development: 'Required in one of RFC 7644 section 2\'s six schemes — and ' +
@@ -708,7 +708,7 @@ const REQUIREMENTS = [
              'check neither; a HOBA key may be registered only by the ' +
              'signed-in owner of an existing account, and registering one ' +
              'never creates an account.',
-    where: 'scim/scim_auth.js' },
+    where: 'scim/scim_auth.ts' },
   { id: 'shared-signals',
     what: '/ssf requires a credential',
     development: 'Required in one of the schemes the endpoints accept — and ' +
@@ -716,7 +716,7 @@ const REQUIREMENTS = [
     product: 'Required and verified: a Basic credential is checked against ' +
              'the person\'s userPassword, and ssf.authBasic removes the ' +
              'scheme.',
-    where: 'ssf/ssf_auth.js' },
+    where: 'ssf/ssf_auth.ts' },
   { id: 'demo-data',
     what: 'A new service contains demonstration data',
     development: 'The directory is seeded with three people, two groups, a ' +
@@ -732,7 +732,7 @@ const REQUIREMENTS = [
              'KDC refuses to build krbtgt or its service account on the ' +
              'passwords published in this repository.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
-           'spiffe/spiffe_registry.js' },
+           'spiffe/spiffe_registry.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +
@@ -740,8 +740,8 @@ const REQUIREMENTS = [
                  'fills an absent attribute with a generated value, and a ' +
                  'security event names an @example.com subject.',
     product: 'A value comes from the person\'s directory entry or is omitted.',
-    where: 'common/helpers.js, oauth-oidc/oauth2.js, oid4vc/vc_claims.js, ' +
-           'ssf/ssf_subjects.js, ssf/risc.js' },
+    where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
+           'ssf/ssf_subjects.js, ssf/risc.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -761,9 +761,9 @@ const REQUIREMENTS = [
              'are not learnt from a request\'s Host header (set ' +
              'global.publicBaseUrl), and a WebAuthn RP ID that does not fit ' +
              'the host refuses the ceremony instead of falling back to it.',
-    where: 'saml/saml2_sso.js, saml/saml11_sso.js, ws-federation/wsfed.js, ' +
-           'oid4vc/vc_offers.js, oid4vc/vc_verifier.js, ' +
-           'common/applications.js, common/oidc_rp.js, authn/authn.js' },
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, ws-federation/wsfed.ts, ' +
+           'oid4vc/vc_offers.ts, oid4vc/vc_verifier.ts, ' +
+           'common/applications.js, common/oidc_rp.ts, authn/authn.ts' },
   { id: 'test-controls',
     what: 'Test controls are open',
     development: 'POST /tls/trust and /tls/trust/clear, POST ' +
@@ -783,8 +783,8 @@ const REQUIREMENTS = [
              'oauth2.softwareStatementOpensRegistration is on, which is the ' +
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
-    where: 'tls/tls_server.js, oauth-oidc/oauth2.js, kerberos/krb5_kdc.js, ' +
-           'logout/logout.js, saml/saml11_sso.js, scim/scim_auth.js' },
+    where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
+           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -836,7 +836,7 @@ const REQUIREMENTS = [
              'refused with 53 before its password is checked; a successful ' +
              'bind clears its own DN\'s counter, never its address\'s, and ' +
              'is never counted.',
-    where: 'ldap/ldap_server.js, common/websecurity.js' },
+    where: 'ldap/ldap_server.js, common/websecurity.ts' },
   { id: 'spire',
     what: 'The SPIRE Server API requires an X509-SVID',
     development: 'Required over mutual TLS and authorized against SPIRE\'s ' +
@@ -844,7 +844,7 @@ const REQUIREMENTS = [
                  'mint the SVID that gets them in.',
     product: 'The same, over a registry that no longer mints an entry for ' +
              'whoever asks.',
-    where: 'spiffe/spiffe_auth.js' },
+    where: 'spiffe/spiffe_auth.ts' },
   // 2026-09-12. The one row here whose two columns differ in what is REFUSED
   // for a reason that is not "development checks nothing": both modes consult
   // the register, and the difference is what an UNREACHABLE foreign CRL costs.
@@ -865,7 +865,7 @@ const REQUIREMENTS = [
              'pki.revocationRequireDistributionPoint is on.',
     where: 'common/revocation_status.js, tls/tls_server.js, ' +
            'oauth-oidc/mtls.js, oauth-oidc/client_auth.js, ' +
-           'scim/scim_auth.js, spiffe/spiffe_auth.js, common/pki.js' },
+           'scim/scim_auth.ts, spiffe/spiffe_auth.ts, common/pki.js' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -880,7 +880,7 @@ const REQUIREMENTS = [
              'handed an ALLOW-LIST — this service\'s own addresses and ' +
              'debugger.allowedDestinations — and refuses every other ' +
              'destination, raw sockets included.',
-    where: 'debugger/debugger_server.js, debugger/debugger_api_process.js' }
+    where: 'debugger/debugger_server.ts, debugger/debugger_api_process.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be

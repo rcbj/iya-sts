@@ -82,7 +82,7 @@ function directoryOf(table, groupsByUser) {
 
 function run(t) {
   log.debug("Entering run().");
-  // WHAT WAS INSTALLED, not `null`. `xacml/xacml_store.js`'s
+  // WHAT WAS INSTALLED, not `null`. `xacml/xacml_store.ts`'s
   // `directoryInstalled()` argues why that distinction is not pedantry, and it
   // is the same one-process, one-reference situation here: another file in
   // this run may have filled these.

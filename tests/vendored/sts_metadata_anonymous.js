@@ -66,7 +66,7 @@
 //      that produces at the far end is a client verifying today's signatures
 //      against yesterday's certificate. **`/sts/cert` was the one document
 //      here without that header** and this job is what found it; the header
-//      and the reason are now in `ws-trust/wstrust.js` beside the route.
+//      and the reason are now in `ws-trust/wstrust.ts` beside the route.
 //
 // ---------------------------------------------------------------------------
 // A BAD CREDENTIAL IS NOT THE ABSENCE OF ONE, AND SCIM IS THE ONE ROW WHERE
@@ -77,7 +77,7 @@
 // document does not become private because the caller mumbled — and the three
 // SCIM discovery endpoints answer 401. **That is asserted rather than
 // tolerated, in both directions**, because it is a documented decision and not
-// an accident: `scim/scim_auth.js`'s authenticate() states the order it
+// an accident: `scim/scim_auth.ts`'s authenticate() states the order it
 // resolves in, and its first rule is that a credential which was PRESENTED and
 // FAILED is always a refusal even where none was required — so that a client
 // testing its expired-token path cannot get a 200 because the endpoint would
@@ -1007,7 +1007,7 @@ async function aBadCredentialIsNotTheAbsenceOfOne() {
         assert.strictEqual(r.status, 401,
           where + " answered " + r.status + " to a caller presenting a token " +
           "that does not verify, and this row expects 401. That is SCIM's " +
-          "documented order (scim/scim_auth.js's authenticate()): a " +
+          "documented order (scim/scim_auth.ts's authenticate()): a " +
           "credential which was presented and FAILED is always a refusal, " +
           "even on an endpoint that would have accepted nobody, so that a " +
           "client testing its expired-token path cannot get a 200 by " +
@@ -1347,7 +1347,7 @@ function everyFamilyIsAccountedFor() {
 // The other half of the drift check, one level down: a family that already has
 // a card can grow a SECOND document, and nothing above would notice. This
 // reads the registrations rather than the prose — the literal in `app.get()`,
-// and the constant where the path is one (ssf.js's WELL_KNOWN and scim.js's
+// and the constant where the path is one (ssf.ts's WELL_KNOWN and scim.js's
 // HOBA_REGISTER_PATH today; a scan of string literals would have matched
 // sentences of documentation instead).
 // ===========================================================================

@@ -9,7 +9,7 @@
 // Two places held one until this date, and neither was a place anybody looks
 // for a credential:
 //
-//   * THE TOKEN STORE WAS KEYED BY THE TOKEN. `spiffe/spiffe_api.js`'s
+//   * THE TOKEN STORE WAS KEYED BY THE TOKEN. `spiffe/spiffe_api.ts`'s
 //     `joinTokens` is a persisted `realms.map()`, and a persisted row's KEY is
 //     written as it is — `persistence/persistence_minted.js` seals the body
 //     and not the key — so every unspent token sat in `sts_minted` and

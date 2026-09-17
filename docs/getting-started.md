@@ -31,9 +31,14 @@ submodule: a plain `--init` there stops one level short of this one.
 ## Run it
 
 ```bash
-npm install
-CONFIG_FILE=./env/local.js node server.js
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 -e CONFIG_FILE=./env/local.js iya-sts
 ```
+
+**From an image, not from a checkout (since 2026-09-16).** Part of the service
+is written in TypeScript and is compiled only while the image is built, so
+`node server.js` on a checkout stops and says so. Every setting below that is
+shown as an environment variable is passed with `-e`.
 
 `CONFIG_FILE` selects a file in `env/` — `local.js`, `test.js` or
 `docker-tests.js`. At the default `debug` level every endpoint call and every
@@ -97,13 +102,17 @@ Everything is in memory and nothing is shared, so a second instance is just a
 second process — but every default port collides. Give the second one its own:
 
 ```bash
-CONFIG_FILE=./env/local.js \
-  STS_PORT=8091 LDAP_PORT=3891 LDAPS_PORT=6391 \
-  KRB5_KDC_PORT=8891 KRB5_SERVICE_PORT=8891 \
-  STS_SPIFFE_WORKLOAD_PORT=8093 STS_SPIFFE_SERVER_PORT=8182 \
-  STS_SPIFFE_WORKLOAD_SOCKET=/tmp/spire-agent-2/public/api.sock \
-  node server.js
+docker run --rm -p 8091:8091 \
+  -e CONFIG_FILE=./env/local.js \
+  -e STS_PORT=8091 -e LDAP_PORT=3891 -e LDAPS_PORT=6391 \
+  -e KRB5_KDC_PORT=8891 -e KRB5_SERVICE_PORT=8891 \
+  -e STS_SPIFFE_WORKLOAD_PORT=8093 -e STS_SPIFFE_SERVER_PORT=8182 \
+  -e STS_SPIFFE_WORKLOAD_SOCKET=/tmp/spire-agent-2/public/api.sock \
+  iya-sts
 ```
+
+In separate containers the default ports no longer collide inside them; the
+different values matter for what you publish with `-p`.
 
 The SPIFFE Unix socket is the one thing this service puts on a filesystem, and
 two instances sharing a path is the one collision that is not a bind error: the

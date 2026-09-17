@@ -7,7 +7,7 @@
 // (2026-09-13).
 //
 // `/admin/applications/new` can create an application from a protected
-// resource's metadata document, and `oauth-oidc/protected_resource_metadata.js`
+// resource's metadata document, and `oauth-oidc/protected_resource_metadata.ts`
 // is the reading. What is asserted here is what no request can choose or no
 // reply can show:
 //

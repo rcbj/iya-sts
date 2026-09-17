@@ -7,10 +7,10 @@ behind an access token only a console administrator is issued.
 
 | File | What it is |
 |---|---|
-| `debugger_server.js` | The listener's own express app: security headers, the sign-in callback, the landing paths, THE GATE, the forwarder to `/api`, the static site. A socket owner — bound from `server.js`'s `listen()`. |
-| `debugger_api_process.js` | The api as a forked child on a unix socket: the environment it is given, the allow-list, start, restart with backoff, give up, stop. |
-| `debugger_access.js` | Who may use it: `narrowScope()` at issuance and `isAdministrator()` at the gate. A library (rule 3). |
-| `debugger_admin.js` | `/admin/debugger`, and the view `GET /admin-api/debugger` answers (rule 7). |
+| `debugger_server.ts` | The listener's own express app: security headers, the sign-in callback, the landing paths, THE GATE, the forwarder to `/api`, the static site. A socket owner — bound from `server.js`'s `listen()`. |
+| `debugger_api_process.ts` | The api as a forked child on a unix socket: the environment it is given, the allow-list, start, restart with backoff, give up, stop. |
+| `debugger_access.ts` | Who may use it: `narrowScope()` at issuance and `isAdministrator()` at the gate. A library (rule 3). |
+| `debugger_admin.ts` | `/admin/debugger`, and the view `GET /admin-api/debugger` answers (rule 7). |
 | `embedded/` | **Not source.** The debugger project's embedded build output, gitignored and dockerignored — see *Where the built tree comes from*. |
 
 ## The eight decisions, and they were rcbj's
@@ -176,12 +176,12 @@ scope a client asks for, and that base becomes the token's `aud`. An ADDRESS
 base would make the permission depend on the host name the debugger was reached
 by — `localhost` and `127.0.0.1` would be two permissions and one would match
 nothing. `urn:sts:debugger-api:` is the same everywhere. It is written out in
-THREE files — `debugger_access.js`, `common/applications.js`'s seed and
-`common/oidc_rp.js`'s surface — because the latter two are libraries every module
+THREE files — `debugger_access.ts`, `common/applications.js`'s seed and
+`common/oidc_rp.ts`'s surface — because the latter two are libraries every module
 reads and must not require a feature directory; `tests/debugger_access.js`
 compares them.
 
-## Who may hold it — `debugger_access.js`
+## Who may hold it — `debugger_access.ts`
 
 **Administrator means a MEMBER of what the console means**: `admin_rbac.rolesOf()`
 in the DEFAULT realm, either role — **and the empty-roster rule is NOT honoured**
@@ -232,10 +232,10 @@ the session was minted in a worker and arrives by replication; see *Not done*.
 The api trusts this service's main port through `NODE_EXTRA_CA_CERTS`, which node
 reads once at start — so `build-root` on `/admin/pki` left a running child trusting
 a Root that is gone, and every call it made to this service failed. Nothing inside
-the child can be told, so `debugger_server.js`'s `checkAnchor()` compares, at most
+the child can be told, so `debugger_server.ts`'s `checkAnchor()` compares, at most
 every five seconds and only on a forwarded call, the anchor `tls_server.js`
 publishes now with the one the child was started with, and
-`debugger_api_process.js`'s `updateAnchor()` writes the new PEM and replaces the
+`debugger_api_process.ts`'s `updateAnchor()` writes the new PEM and replaces the
 child. **A replacement is a hand-over, not a failure**: it is not counted toward
 `debugger.restartLimit`, the successor is forked at once, and the child is
 not-ready from the moment it is told to exit, so the call that noticed gets the

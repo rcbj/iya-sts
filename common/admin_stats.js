@@ -1181,7 +1181,7 @@ function scimDetailRow(table, operation) {
 // unhappy, which is the same guarantee audit() gives and for the same reason.
 //
 // **EVERYTHING IS READ BEFORE ANYTHING IS WRITTEN**, which is the rule
-// `xacml/xacml_monitor.js`'s `record()` states at length and had to learn the
+// `xacml/xacml_monitor.ts`'s `record()` states at length and had to learn the
 // hard way: a caller whose object throws on a property access — a getter, a
 // Proxy, a half-built object — otherwise leaves the row with the call counted
 // and no bucket, and the page's own arithmetic stops reconciling permanently
@@ -1996,7 +1996,7 @@ function recordAuthentication(detail) {
         // itself would say nothing.
         linkedTo: info.linkedTo ? identityKeyOf(info.linkedTo) : '',
         // WHAT A FOREIGN IDENTITY PROVIDER SAID ABOUT THEM, where a federated
-        // sign-in is what brought us here. Only `federation/federation_sp.js`
+        // sign-in is what brought us here. Only `federation/federation_sp.ts`
         // sets it, and it is passed through UNTOUCHED for exactly the reason
         // `certificate` above is: this file counts, and the directory decides
         // what to do about it. Nothing here reads it.
@@ -2180,7 +2180,7 @@ const RESERVED_JWT_CLAIMS = [
 // DEFAULT realm's included, and every other realm's — while each realm's
 // console showed it as though it were that realm's own configuration. The
 // other half of the same claim set was already per realm
-// (`common/claim_attributes.js` holds the DIRECTORY ATTRIBUTES a set carries),
+// (`common/claim_attributes.ts` holds the DIRECTORY ATTRIBUTES a set carries),
 // so one set disagreed with itself about whether it belonged to a realm.
 //
 // The LABEL and the KIND are constants and are duplicated into every
@@ -2239,7 +2239,7 @@ const CLAIM_SET_IDS = Object.keys(CLAIM_SETS);
 // to reach it).
 //
 // DERIVED FROM `kind` rather than typed out, for the reason NAV is derived from
-// SECTIONS in admin-ui/admin.js: a set added to CLAIM_SETS and forgotten in a
+// SECTIONS in admin-ui/admin.ts: a set added to CLAIM_SETS and forgotten in a
 // hand-written list would be a set with a store, an issuance path and no page
 // to configure it on, and nothing would fail. `jwt` is the OAuth/OIDC half;
 // everything else is an assertion. The STORE did not split and must not — one
@@ -2361,7 +2361,7 @@ function resolvedSamlAttributes(id, context) {
 //     loop and hands back a half-initialised module.
 //   * what it needs is the DIRECTORY's group membership, and only
 //     ldap_server.js can answer that — required late in
-//     `common/protocol_stack.js` (21), so any require reaching it drags every
+//     `common/protocol_stack.ts` (21), so any require reaching it drags every
 //     /ldap route to the front of the express router that
 //     /admin/sts-metadata is built by walking.
 //
@@ -3010,7 +3010,7 @@ function tokenList() {
 //   * A global logout can report what it invalidated rather than only what it
 //     could reach, which is what makes "everything for this person is dead" a
 //     checkable claim instead of a hope.
-//   * CAEP can carry it. `ssf/caep.js` transmits a Security Event Token the
+//   * CAEP can carry it. `ssf/caep.ts` transmits a Security Event Token the
 //     moment a session is revoked, and a receiver that acts on one has been
 //     told about an assertion this service considers dead — which is the
 //     channel SAML and Kerberos do not have.

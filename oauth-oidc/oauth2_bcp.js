@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: oauth2_bcp.js
@@ -3611,7 +3612,7 @@ function state() {
 
 // #46: a rotated refresh token is redeemed once across the cluster and a
 // replay revokes its family by id (`spendRefreshToken()`); the hosted
-// surfaces' renewal is single-flight across nodes in `common/oidc_rp.js`,
+// surfaces' renewal is single-flight across nodes in `common/oidc_rp.ts`,
 // which this row names too. At require time — see cluster/CLAUDE.md.
 capabilities.provide('oauth.refresh-rotation');
 

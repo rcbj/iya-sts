@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: krb5_kdc.js
@@ -2870,7 +2871,7 @@ function startTcp(port) {
   const server = net.createServer(function (socket) {
     let buffer = Buffer.alloc(0);
     // THE CLIENT'S ADDRESS, read off the socket — which, with
-    // global.proxyProtocol on, `common/proxy_protocol.js` (installed from
+    // global.proxyProtocol on, `common/proxy_protocol.ts` (installed from
     // server.js, so this file gains no require) has already set to the
     // address in the PROXY header rather than the load balancer's.
     const peer = (socket.remoteAddress || '?') + ':' +
@@ -2931,7 +2932,7 @@ function startTcp(port) {
       });
     });
   });
-  server.on('error', function (err) {
+  server.on('error', /** @param {any} err */ function (err) {
     log.error(errorCodes.tag('STS-KRB-0052') +
       'krb5: the TCP listener on port ' + port + ' failed: ' + err.message +
       (err.code === 'EACCES'
@@ -2943,7 +2944,8 @@ function startTcp(port) {
   server.listen(port, listenHost(), function () {
     // The BOUND port, not the requested one: asked for 0 the OS picks, and
     // logging the request would print "listening on TCP 0".
-    log.info('krb5: KDC listening on TCP ' + server.address().port + ' for ' +
+    log.info('krb5: KDC listening on TCP ' +
+             (/** @type {any} */ (server.address())).port + ' for ' +
         'realm ' + ourRealm());
   });
   log.debug('Leaving startTcp().');
@@ -3219,7 +3221,8 @@ function listen(port) {
   result.whenReady = new Promise(function (resolve, reject) {
     function bindUdp() {
       log.debug("Entering bindUdp().");
-      const bound = tcp.address() ? tcp.address().port : requested;
+      const bound = tcp.address()
+        ? (/** @type {any} */ (tcp.address())).port : requested;
       result.port = bound;
       result.udp = startUdp(bound);
       result.udp.once('listening', function () { resolve(result); });

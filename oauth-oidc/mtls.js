@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: mtls.js
@@ -230,7 +231,7 @@ function peerVerified(req) {
 }
 
 // RFC 8705 `x5t#S256`: SHA-256 over the DER, base64url. The same digest
-// `tls/tls_server.js` prints as colon-hex and `spiffe/spiffe_ca.js` truncates
+// `tls/tls_server.js` prints as colon-hex and `spiffe/spiffe_ca.ts` truncates
 // as an authority id — three spellings of one computation, which is why the
 // shared function takes a format and the three that each computed it are one.
 function thumbprintOf(cert) {

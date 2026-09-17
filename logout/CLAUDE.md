@@ -4,7 +4,7 @@ The protocol-independent sign-out. One file:
 
 | File | What it is |
 |---|---|
-| `logout.js` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
+| `logout.ts` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
 
 It is a directory of its own rather than a file in `authn/` or in `common/`, and
 each of those was considered:
@@ -73,15 +73,15 @@ once.
 ## It is a plain require of everything and needs no slot — except one
 
 Rule 3e's test: a slot is what you reach for when a require would close a cycle
-or move a route. Neither applies to the nine requires at the top of `logout.js`,
-because `common/protocol_stack.js` requires this module SECOND TO LAST — after
+or move a route. Neither applies to the nine requires at the top of `logout.ts`,
+because `common/protocol_stack.ts` requires this module SECOND TO LAST — after
 every one of them, before `sts_metadata.js` — so each is a cache hit that
 registers nothing, and nothing in this service requires this file back.
 
 **The one exception is `admin.js`, and it fails the test BOTH ways round**,
 which is why `setLogoutReader()` exists and is the console's sixth slot. This
 module requires `ldap_server.js`; `ldap_server.js` requires `admin.js`; so
-`admin.js -> logout.js -> ldap_server.js -> admin.js` is a cycle, and it would
+`admin.js -> logout.ts -> ldap_server.js -> admin.js` is a cycle, and it would
 also drag every `/admin/ldap/*` route into the router ahead of the console's own. The
 slot carries ONE object — `FAMILIES`, `inventoryFor`, `terminate` — validated
 whole at install time, because a partial one would leave `/admin/logout` listing
@@ -217,7 +217,7 @@ they live rather than here:
   same way and will not be caught by anything this file does.
 
 And one that is a whole specification: **OpenID Connect Front-Channel Logout
-1.0**, in `oauth-oidc/frontchannel_logout.js`. See `oauth-oidc/CLAUDE.md`.
+1.0**, in `oauth-oidc/frontchannel_logout.ts`. See `oauth-oidc/CLAUDE.md`.
 
 **SPIFFE is deliberately absent from `FAMILIES` and that is an answer rather
 than a gap.** A SPIFFE identity is a WORKLOAD, attested per call and holding no
@@ -238,7 +238,7 @@ inventing a link that is not there.
 answers the other half — *who is signed in at all* — and it is what
 `/admin/sessions` and `GET /admin-api/sessions` draw.
 
-**It is HERE and not in `admin-ui/admin.js` because this module is the one model
+**It is HERE and not in `admin-ui/admin.ts` because this module is the one model
 of what a live session is.** That is this directory's whole reason to exist, and
 a console page that walked `authn.sessions`, `ldap_server.boundConnections()`
 and the ticket register itself would be a SECOND answer to *is this still live* —

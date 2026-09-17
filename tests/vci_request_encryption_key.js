@@ -6,7 +6,7 @@
 // THE OPENID4VCI CREDENTIAL REQUEST-ENCRYPTION KEY IS A MEMBER OF THE REALM'S
 // KEY SET (2026-09-12).
 //
-// It was a key of its own until that date: generated when `oid4vc/vc_issuer.js`
+// It was a key of its own until that date: generated when `oid4vc/vc_issuer.ts`
 // loaded, handed to request workers in
 // `process.env.STS_VCI_REQUEST_ENC_KEY_PEM`, persisted in no mode, and SHARED
 // by every trust realm in a pooled process — so a realm's issuer decrypted
@@ -33,7 +33,7 @@
 //   5. THE HAND-OFF IS GONE, read as source, because a fourth copy of the old
 //      arrangement would pass every behavioural assertion above.
 //   6. THE ISSUER USES IT — in a CHILD PROCESS, because requiring
-//      `oid4vc/vc_issuer.js` registers routes on the shared app and `run.js`
+//      `oid4vc/vc_issuer.ts` registers routes on the shared app and `run.js`
 //      runs every file in one process.
 //
 // WHY IN PROCESS AT ALL, tests/CLAUDE.md's first question: sections 2 to 4 are
@@ -568,8 +568,8 @@ function checkSource(t) {
     return fs.readFileSync(path.join(ROOT, rel), 'utf8');
   };
   const pool = read('common/request_pool.js');
-  const worker = read('common/request_worker.js');
-  const issuer = read('oid4vc/vc_issuer.js');
+  const worker = read('common/request_worker.ts');
+  const issuer = read('oid4vc/vc_issuer.ts');
   const code = function (text) {
     log.debug("Entering code().");
     log.debug("Leaving code().");

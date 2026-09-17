@@ -9,7 +9,7 @@
 // claims here are about it. They are about the path a realm with NO branch
 // takes, which is still a supported configuration in three ways
 // (`pki.autoBuild: false`, a Root that could not be built, and every
-// in-process caller that never runs `common/service_state.js`), and which is
+// in-process caller that never runs `common/service_state.ts`), and which is
 // what this service did for its whole life until that date.
 //
 // **THE CHILD IS NOT FASTIDIOUSNESS — IT IS `tls_trust_anchor.js`'s REASON

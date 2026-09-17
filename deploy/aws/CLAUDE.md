@@ -78,7 +78,7 @@ reported as an unencrypted UserInfo response.
 inside and out, because the service writes those numbers into what it
 publishes: `PKI_DISTRIBUTION_BASE_URL` and `PKI_DISTRIBUTION_LDAP_HOST` name the
 NLB, so a certificate's CRL address is followable. Every node listener reads the
-PROXY v2 header (`common/proxy_protocol.js`). ECS allows five target groups per
+PROXY v2 header (`common/proxy_protocol.ts`). ECS allows five target groups per
 service; this uses three.
 
 **IT WAS FOUR UNTIL 2026-09-16**, the fourth being 9443, the service's

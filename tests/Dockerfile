@@ -198,6 +198,28 @@ RUN if [ ! -f tests/tools/run-report.js ]; then \
       exit 1; \
     fi
 
+# ---------------------------------------------------------------------------
+# THE TYPESCRIPT, COMPILED IN THIS IMAGE AND KEPT BESIDE ITS OUTPUT (#50).
+#
+# The jobs require the service's modules by path from /usr/src/sts, so the
+# tree here is compiled in place — `build-typescript.sh` emits each `x.js`
+# beside its `x.ts` — exactly as the service image's `typescript` stage does.
+# Unlike that stage it does NOT strip the sources: this is a test harness, not
+# the shipped image, and `tests/typecheck.js` has to read them.
+#
+# **IT READS A PRISTINE COPY, /usr/src/sts-source**, taken before compiling.
+# In the compiled tree a `.ts` has a `.js` twin, which that test treats as a
+# compiled artifact where none may be (the host rule), and which would itself
+# be type-checked as a second copy of the module. The copy borrows this
+# tree's two `node_modules` by link, for the types.
+# ---------------------------------------------------------------------------
+COPY . /usr/src/sts-source/
+RUN ln -s /usr/src/sts/node_modules /usr/src/sts-source/node_modules \
+ && ln -s /usr/src/sts/tests/node_modules \
+          /usr/src/sts-source/tests/node_modules \
+ && STS_IN_IMAGE_BUILD=1 ./build-typescript.sh
+ENV STS_TYPECHECK_ROOT=/usr/src/sts-source
+
 # The report is written here and bind-mounted out by the compose file. Created
 # in the image so that a run with NO mount still writes somewhere real rather
 # than failing at the end of a passing suite.

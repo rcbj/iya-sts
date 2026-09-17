@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowJs": false,
+    "checkJs": false,
+    "declaration": false,
+    "sourceMap": false,
+    "noEmitOnError": true
+  },
+  "include": [
+    "types/**/*.d.ts",
+    "*/*.ts"
+  ],
+  "exclude": [
+    "node_modules", "tests", "node-ldapjs", "xacml-pep",
+    "common/vendored", "debugger/embedded"
+  ]
+}

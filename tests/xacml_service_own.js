@@ -13,7 +13,7 @@ const log = require('bunyan').createLogger({ name: 'xacml_service_own',
 // REPOSITORY, AND THE CONSOLE HAS TO SAY SO.
 //
 // `role-issuance` gates all nine issuance sites and `access-control` gates the
-// surfaces `common/access_gate.js` guards. Both are BUILT IN — the
+// surfaces `common/access_gate.ts` guards. Both are BUILT IN — the
 // template is called at decision time rather than seeded into `ou=policies` —
 // because that container is per trust realm, so a policy seeded once into the
 // default realm leaves every realm created afterwards unable to decide

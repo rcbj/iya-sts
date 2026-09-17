@@ -77,16 +77,11 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
-// The two launchers, each with the compose file it drives and the /16 it is
-// expected to sit in. They are DELIBERATELY different: one run of each
-// launcher on one machine then needs no scan, which is the ordinary case on a
-// developer's machine and was the ordinary case in CI before the modes loop.
+// The launcher, with the compose file it drives and the /16 it is expected to
+// sit in. There were two until 2026-09-16, when ./local-run-tests.sh (whose
+// stack sat in 172.29) was removed (#50); the list stays a list so a second
+// launcher is a row rather than a rewrite.
 const LAUNCHERS = [
-  {
-    script: 'local-run-tests.sh',
-    compose: 'docker-compose.yml',
-    base: '172.29'
-  },
   {
     script: 'docker-run-tests.sh',
     compose: 'docker-compose-run-tests.yml',
@@ -153,14 +148,14 @@ function checkTheScanIsSharedAndComplete(t) {
 }
 
 // ---------------------------------------------------------------------------
-// BOTH LAUNCHERS CALL IT, AND THE BASE EACH ONE PASSES IS ITS OWN COMPOSE
+// EVERY LAUNCHER CALLS IT, AND THE BASE EACH ONE PASSES IS ITS OWN COMPOSE
 // FILE'S DEFAULT. The second half is what keeps a plain run on an idle
 // machine byte-for-byte what it was: the first candidate freeSubnet() offers
 // is `<base>.0.0/24`, so nothing moves unless something is in the way.
 // ---------------------------------------------------------------------------
 function checkBothLaunchersScan(t) {
   log.debug("Entering checkBothLaunchersScan().");
-  t.log.info('=== both launchers choose a subnet, from their own base ===');
+  t.log.info('=== the launcher chooses a subnet, from its own base ===');
 
   LAUNCHERS.forEach(function (launcher) {
     const script = read(launcher.script);
@@ -190,13 +185,21 @@ function checkBothLaunchersScan(t) {
     }
   });
 
-  // The two must not share a /16 either, or one run of each launcher — the
-  // ordinary case when somebody checks a change both ways — pays for the scan
-  // and, worse, races it.
-  t.check(LAUNCHERS[0].base !== LAUNCHERS[1].base,
-          'and the two launchers sit in different /16s',
-          'a developer running both at once is the ordinary case, and it ' +
-          'should not depend on a scan to work');
+  // AND NOT IN THE /16 OF `docker compose up`'S STACK (docker-compose.yml),
+  // which somebody's development service may be sitting in while the suite
+  // runs. This compared two launchers until ./local-run-tests.sh — whose
+  // stack WAS that compose file — was removed on 2026-09-16 (#50); the dev
+  // stack is still there, so the separation still matters.
+  const devDeclared = /STS_NETWORK_SUBNET:-([0-9.]+)\.0\.0\/\d+/.exec(
+    read('docker-compose.yml'));
+  t.check(devDeclared !== null &&
+          LAUNCHERS.every(function (launcher) {
+            return launcher.base !== devDeclared[1];
+          }),
+          'and no launcher sits in the /16 of docker-compose.yml\'s stack',
+          'a development stack left up is the ordinary case, and a test run ' +
+          'beside it should not depend on a scan to work; found ' +
+          (devDeclared ? devDeclared[1] : 'no default'));
   log.debug("Leaving checkBothLaunchersScan().");
 }
 

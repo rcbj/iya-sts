@@ -43,6 +43,10 @@ const ldap = require('../ldap/ldap_server');
 // Registers `/admin/pki` and starts nothing.
 const pkiAdmin = require('../admin-ui/pki_admin');
 const app = require('../common/app');
+// Loading a module registers nothing since #50's R1; the composition root
+// (`common/protocol_stack.ts`) does, so a test that loads one module
+// registers its routes itself.
+pkiAdmin.registerRoutes(app);
 
 const log = require('bunyan').createLogger({ name: 'pki_key_pair_paging',
   level: process.env.LOG_LEVEL || 'info' });

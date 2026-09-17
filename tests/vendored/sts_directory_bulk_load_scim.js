@@ -100,7 +100,7 @@
 // `phoneNumbers` are multi-valued with a `type`, five attributes are members of
 // one `addresses` entry, and four live under the enterprise extension URN.
 //
-// **That table is `scim/scim_map.js`'s and this job READS it**, from
+// **That table is `scim/scim_map.ts`'s and this job READS it**, from
 // `GET /admin-api/scim`, exactly as the preflight reads the attribute catalogue
 // from `GET /admin-api/users/new`. A copy in here would be a second definition
 // of the mapping that would drift, and the drift would show up as five thousand
@@ -252,7 +252,7 @@ async function readTheMapping(catalogue) {
       "phoneNumbers and only `type` tells telephoneNumber from mobile, five " +
       "are members of one addresses entry, and an extension member goes " +
       "under a URN rather than at the top level. They were added to " +
-      "scim/scim.js on 2026-09-06 for this job.");
+      "scim/scim.ts on 2026-09-06 for this job.");
   });
 
   const byLdap = {};

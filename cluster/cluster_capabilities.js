@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: cluster/cluster_capabilities.js
@@ -69,7 +70,7 @@ const CAPABILITIES = [
     what: 'An atomic "once" in the store that every single-use value can be ' +
           'spent through.' },
   { id: 'cluster.shared-secrets', section: '5',
-    by: 'cluster/cluster_secrets.js',
+    by: 'cluster/cluster_secrets.ts',
     what: 'Secrets every node must agree on are generated once, sealed, and ' +
           'read by every node before it serves.' },
   // ---- section 1: keys and the certificate authority -----------------------
@@ -86,20 +87,20 @@ const CAPABILITIES = [
     what: 'A revocation or an issued certificate recorded on one node cannot ' +
           'be lost to another node\'s save, and CRL numbers only go up.' },
   { id: 'scep.ra-agreement', section: '1',
-    by: 'scep/scep_ra.js',
+    by: 'scep/scep_ra.ts',
     what: 'Every node presents the same SCEP RA certificate.' },
   { id: 'spiffe.authority-agreement', section: '1',
-    by: 'spiffe/spiffe_ca.js',
+    by: 'spiffe/spiffe_ca.ts',
     what: 'Every node issues SVIDs from, and verifies against, the same ' +
           'SPIFFE X.509 and JWT authorities.' },
   { id: 'vc.keys-agreement', section: '1',
-    by: 'cluster/cluster_secrets.js',
+    by: 'cluster/cluster_secrets.ts',
     what: 'Every node signs bbs-2023 Data Integrity proofs with, and ' +
           'publishes at /bbs/keys/1 and in the did:web document, the same ' +
           'BBS key pair.' },
   // ---- section 2: single-use values ----------------------------------------
   { id: 'oauth.codes-once', section: '2',
-    by: 'oauth-oidc/oauth2.js',
+    by: 'oauth-oidc/oauth2.ts',
     what: 'An authorization code and a PAR request_uri are spent once across ' +
           'the cluster, and a replayed code revokes what it bought.' },
   { id: 'oauth.refresh-rotation', section: '2',
@@ -107,32 +108,32 @@ const CAPABILITIES = [
     what: 'A rotated refresh token is redeemed once, reuse detection sees ' +
           'every node, and the hosted surfaces renew once.' },
   { id: 'oauth.dpop-jti', section: '2',
-    by: 'oauth-oidc/dpop.js',
+    by: 'oauth-oidc/dpop.ts',
     what: 'A DPoP proof\'s jti is accepted once across the cluster, and the ' +
           'server nonce verifies on every node.' },
   { id: 'authn.second-factors-once', section: '2',
-    by: 'common/credentials.js',
+    by: 'common/credentials.ts',
     what: 'A TOTP step and a recovery code are accepted once across the ' +
           'cluster, and a WebAuthn signature counter never goes backwards.' },
   { id: 'credentials.links-once', section: '2',
-    by: 'common/credentials.js',
+    by: 'common/credentials.ts',
     what: 'An activation or password-reset link is used once across the ' +
           'cluster.' },
   { id: 'enrollment.credentials-once', section: '2',
-    by: 'common/cert_enrollment.js',
+    by: 'common/cert_enrollment.ts',
     what: 'An ACME External Account Binding key binds one account, a SCEP ' +
           'challenge password and an ACME nonce are spent once, and a SPIFFE ' +
           'join token is used once.' },
   { id: 'saml.artifacts-once', section: '2',
-    by: 'saml/saml2_sso.js',
+    by: 'saml/saml2_sso.ts',
     what: 'A SAML 2.0 or SAML 1.1 artifact is resolved once across the ' +
           'cluster.' },
   { id: 'oid4vc.once', section: '2',
-    by: 'oid4vc/vc_issuer.js',
+    by: 'oid4vc/vc_issuer.ts',
     what: 'An OpenID4VCI pre-authorized code and c_nonce are spent once, and ' +
           'tx_code failures are counted across the cluster.' },
   { id: 'gnap.once', section: '2',
-    by: 'gnap/gnap_store.js',
+    by: 'gnap/gnap_store.ts',
     what: 'A GNAP continuation, interaction reference, user code and request ' +
           'signature are spent once across the cluster.' },
   { id: 'kerberos.replay-cache', section: '2',
@@ -140,7 +141,7 @@ const CAPABILITIES = [
     what: 'A Kerberos AP-REQ authenticator is accepted once across the ' +
           'cluster.' },
   { id: 'security.rate-limits', section: '2',
-    by: 'common/websecurity.js',
+    by: 'common/websecurity.ts',
     what: 'Rate limits and LDAP bind throttling count every node\'s attempts ' +
           'against one budget.' },
   // ---- section 3: last writer wins -----------------------------------------
@@ -159,17 +160,17 @@ const CAPABILITIES = [
           'written back by a node holding an older copy.' },
   // ---- section 4: sign-out -------------------------------------------------
   { id: 'ldap.connections-cluster', section: '4',
-    by: 'ldap/ldap_cluster_connections.js',
+    by: 'ldap/ldap_cluster_connections.ts',
     what: 'A sign-out closes an identity\'s LDAP connections on every node, ' +
           'and the session inventory lists them all.' },
   // ---- section 5: valid requests refused -----------------------------------
   { id: 'secrets.protocol-keys', section: '5',
-    by: 'common/websecurity.js',
+    by: 'common/websecurity.ts',
     what: 'The CSRF key, the ACME nonce key and the SSF receiver secret are ' +
           'the cluster\'s shared secrets rather than generated per process ' +
           'or per run.' },
   { id: 'scim.challenge-state', section: '5',
-    by: 'scim/scim_auth.js',
+    by: 'scim/scim_auth.ts',
     what: 'A SCIM Digest or HOBA challenge issued by one node is answered at ' +
           'any node.' },
   { id: 'spnego.pending', section: '5',
@@ -178,7 +179,7 @@ const CAPABILITIES = [
           'load balancer makes one address for everybody.' },
   // ---- section 6: shared signals -------------------------------------------
   { id: 'ssf.delivery', section: '6',
-    by: 'ssf/ssf.js',
+    by: 'ssf/ssf.ts',
     what: 'An acknowledged SET is never delivered again by another node, a ' +
           'session end emits one event, and stream health is one state.' },
   // ---- section 8: operations -----------------------------------------------
@@ -186,7 +187,7 @@ const CAPABILITIES = [
     by: 'persistence/persistence_replication.js',
     what: 'The change log is trimmed below what every live node has applied.' },
   { id: 'ops.bootstrap-once', section: '8',
-    by: 'common/credentials.js',
+    by: 'common/credentials.ts',
     what: 'A cold start of several nodes against an empty store generates one ' +
           'bootstrap administrator password.' }
 ];

@@ -12,7 +12,7 @@
 //
 //   1. a GNAP web application is a Shared Signals RECEIVER in its own right: it
 //      creates and polls a stream with a GNAP access token (the `gnap` scheme
-//      in `ssf/ssf_auth.js`), so the stream's owner is the APPLICATION;
+//      in `ssf/ssf_auth.ts`), so the stream's owner is the APPLICATION;
 //   2. that stream is SCOPED: an event about a person who never approved a
 //      grant to that application does not reach it, while an unscoped stream
 //      beside it does receive the same event — the control that proves the
@@ -210,7 +210,7 @@ async function test() {
     "registered a second web application");
 
   // =========================================================================
-  // 1. A GNAP ACCESS TOKEN OWNS A STREAM (ssf/ssf_auth.js, the gnap scheme).
+  // 1. A GNAP ACCESS TOKEN OWNS A STREAM (ssf/ssf_auth.ts, the gnap scheme).
   // =========================================================================
   log.info("=== 1. a stream owned with a GNAP token ===");
   const ssfGrant = await h.redirectGrant(web, OWNER,

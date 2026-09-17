@@ -45,8 +45,8 @@ const log = require('bunyan').createLogger({ name: 'MANIFEST',
 // stack and its host stack, and are what its CI drives. A fix made HERE would
 // be overwritten by the next sync and would never reach the stack that
 // actually gates that project. **Edit the parent's copy, then re-sync** —
-// `./local-run-tests.sh --vendor-sync` does the copy and
-// `--vendor-check` reports what differs.
+// `node tests/tools/vendor-check.js --sync` does the copy and
+// `node tests/tools/vendor-check.js` reports what differs.
 //
 // THE EXCEPTION IS EVERY JOB MARKED `local: true` BELOW — most of them drive
 // this service's own `/admin` console and `/admin-api`, and the note above
@@ -110,17 +110,18 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // `sts_xacml_remote_pep.js`, and the ordinary way it gets its container is that
 // the LAUNCHER brought one up:
 //
-//   * `./local-run-tests.sh` adds `--profile xacml` to the project it already
-//     starts the service in and publishes the PEP on a free host port;
+//   * `./local-run-tests.sh` added `--profile xacml` to the project it already
+//     started the service in and published the PEP on a free host port, until
+//     it was removed on 2026-09-16;
 //   * `./docker-run-tests.sh` declares an `xacml-pep` service in
 //     `docker-compose-run-tests.yml`, on the bridge the tests container shares
 //     with the service.
 //
-// Both then export `XACML_PEP_URL`, `XACML_PEP_NAME` and `XACML_PEP_REALM`, and
-// the job drives that container over HTTP and shells out to nothing. **THAT IS
-// WHY THE LAUNCHER OWNS IT**: the containerized runner is a container with no
-// docker in it, deliberately, so a job that started its own could never run in
-// the stack that gates this repository.
+// Each exports (or exported) `XACML_PEP_URL`, `XACML_PEP_NAME` and
+// `XACML_PEP_REALM`, and the job drives that container over HTTP and shells
+// out to nothing. **THAT IS WHY THE LAUNCHER OWNS IT**: the containerized
+// runner is a container with no docker in it, deliberately, so a job that
+// started its own could never run in the stack that gates this repository.
 //
 // The flag matters only when NEITHER launcher is involved — a bare
 // `node tests/tools/run-report.js`, or a coverage run, both of which drive a
@@ -548,10 +549,11 @@ const JOBS = [
   // through and reported as a hang rather than as the measurement it is.
   //
   // **THE LDAP ONE NEEDS THE DIRECTORY'S OWN SOCKET**, which
-  // `docker-compose.yml` deliberately does not publish. Both launchers arrange
+  // `docker-compose.yml` deliberately does not publish. The launchers arrange
   // it and hand the job `STS_LDAP_URL` — `./docker-run-tests.sh` by putting
-  // the runner on the bridge with the service, `./local-run-tests.sh` by
-  // layering `tests/docker-compose-ldap.yml` with a free host port. It is NOT
+  // the runner on the bridge with the service, and `./local-run-tests.sh`
+  // (removed 2026-09-16) by layering `tests/docker-compose-ldap.yml` with a
+  // free host port. It is NOT
   // marked `docker: true`: that flag is for a job needing a DAEMON, and this
   // one needs a port. Run by hand with neither, it FAILS naming the variable
   // rather than reporting green having driven nothing.

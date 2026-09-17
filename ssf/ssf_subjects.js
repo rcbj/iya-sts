@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ssf_subjects.js
@@ -625,6 +626,7 @@ function subjectForUser(userid, format, issuer, facts) {
   }
   if (chosen === 'aliases') {
     const mail = realOrInventedMail(name, known);
+    /** @type {any[]} */
     const identifiers = [
       { format: 'issuer_subject_id', iss: String(issuer || ''),
         sub: issuerSubject }

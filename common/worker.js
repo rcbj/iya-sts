@@ -34,7 +34,7 @@
 // The state this service keeps is read and written ACROSS sessions, not within
 // one: `operatorConfig` (common/config.js), `realms` (common/realms.js), the
 // KDC `replayCache` (kerberos/krb5_service.js), `digestNonces` /
-// `hobaChallenges` / `hobaSeen` (scim/scim_auth.js), `principals`
+// `hobaChallenges` / `hobaSeen` (scim/scim_auth.ts), `principals`
 // (kerberos/krb5_principals.js), the SPIFFE registry, and the tokens this
 // service mints — minted on one worker and introspected from another. Split N
 // ways those fail SILENTLY: replay detection that stops detecting, a config

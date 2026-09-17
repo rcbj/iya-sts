@@ -8,9 +8,9 @@
 //
 // Every GNAP document is refused in three layers before a handler reads it —
 // `validation.checkDocument()` bounds its depth and key count, an ajv 2020 JSON
-// Schema (`gnap/gnap_schemas.js`) bounds every string, array and object and
+// Schema (`gnap/gnap_schemas.ts`) bounds every string, array and object and
 // refuses a control character in any member, and the walker in
-// `gnap/gnap_request.js` enforces what RFC 9635 and RFC 9767 require. The over-
+// `gnap/gnap_request.ts` enforces what RFC 9635 and RFC 9767 require. The over-
 // HTTP jobs assert that a refusal ARRIVES; this file asserts WHICH LAYER
 // refused and why, because a schema that silently stopped applying would be
 // invisible over HTTP for every request the walker also happens to refuse.

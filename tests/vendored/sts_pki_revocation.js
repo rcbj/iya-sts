@@ -295,7 +295,7 @@ async function test() {
         });
   // THIS ANSWER IS A REFUSAL, which is why it is `no-store`. An AUTHORITATIVE
   // OCSP answer carries RFC 5019 section 6.2's cache headers
-  // (`pki/pki_service.js`'s `sendOcsp()`), and
+  // (`pki/pki_service.ts`'s `sendOcsp()`), and
   // `sts_pki_distribution_points.js` asserts those; the label below predates
   // that and describes every OCSP answer rather than this one.
   check("and an OCSP answer is NOT cached, unlike a CRL — it carries " +
