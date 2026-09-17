@@ -64,10 +64,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `Est` takes the modules it uses through its constructor
-// (`EstDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `Est` is exported beside them for the
-// composition root.
+// (`EstDeps`). Since #50's R2 the composition root builds the instance
+// (`Est.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `Est` is exported
+// beside them for the composition root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -88,6 +89,7 @@ import keyMaterial = require('../common/vendored/key_material');
 import x509 = require('../common/vendored/x509');
 import mtls = require('../oauth-oidc/mtls');
 import codec = require('./est_codec');
+import InstanceSlot = require('../common/instance_slot');
 
 const FAMILY = 'est';
 
@@ -164,6 +166,32 @@ class Est {
   constructor(private readonly deps: EstDeps) {
     deps.log.debug("Entering Est.constructor().");
     deps.log.debug("Leaving Est.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): EstDeps {
+    log.debug("Entering Est.defaultDeps().");
+    log.debug("Leaving Est.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      errorCodes: errorCodes,
+      validation: validation,
+      applications: applications,
+      core: core,
+      monitor: monitor,
+      keyMaterial: keyMaterial,
+      x509: x509,
+      mtls: mtls,
+      codec: codec,
+      loadPkijs: function () {
+        return require('pkijs');
+      },
+      loadAsn1js: function () {
+        return require('asn1js');
+      }
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1076,36 +1104,29 @@ class Est {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const est = new Est({
-  log: log,
-  config: config,
-  errorCodes: errorCodes,
-  validation: validation,
-  applications: applications,
-  core: core,
-  monitor: monitor,
-  keyMaterial: keyMaterial,
-  x509: x509,
-  mtls: mtls,
-  codec: codec,
-  loadPkijs: function () {
-    return require('pkijs');
-  },
-  loadAsn1js: function () {
-    return require('asn1js');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Est>(
+  'est/est',
+  () => new Est(Est.defaultDeps()),
+  null,
+  log);
 
+// FACADES since #50's R2: each resolves the installed instance when called.
 const HANDLERS = {
-  cacerts: est.cacerts.bind(est),
-  simpleenroll: est.simpleenroll.bind(est),
-  simplereenroll: est.simplereenroll.bind(est),
-  serverkeygen: est.serverkeygen.bind(est),
-  csrattrs: est.csrattrs.bind(est),
-  fullcmc: est.fullcmc.bind(est)
+  cacerts: slot.forward('cacerts'),
+  simpleenroll: slot.forward('simpleenroll'),
+  simplereenroll: slot.forward('simplereenroll'),
+  serverkeygen: slot.forward('serverkeygen'),
+  csrattrs: slot.forward('csrattrs'),
+  fullcmc: slot.forward('fullcmc')
 };
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
@@ -1130,9 +1151,14 @@ const EST_PATH = new RegExp('^' + BASE.replace(/\./g, '\\.') +
 // after this module's (#50, R1).
 require('./est_admin');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => est.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   Est: Est,
+  installInstance: (instance: Est): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FAMILY: FAMILY,
   BASE: BASE,
   PATHS: PATHS,
@@ -1141,14 +1167,12 @@ export = {
   handlers: {
     // The route functions, for `tests/est_handlers.js` to drive with a fake
     // request — exactly what Express calls.
-    operation: est.operation.bind(est),
-    wrongMethod: est.wrongMethod.bind(est)
+    operation: slot.forward('operation'),
+    wrongMethod: slot.forward('wrongMethod')
   },
-  basicCredentialOf: est.basicCredentialOf.bind(est) as
-    Est['basicCredentialOf'],
-  csrAttributesFor: est.csrAttributesFor.bind(est) as Est['csrAttributesFor'],
-  serverKeyAlgorithm: est.serverKeyAlgorithm.bind(est) as
-    Est['serverKeyAlgorithm'],
-  requestedNameSet: est.requestedNameSet.bind(est) as Est['requestedNameSet'],
-  recordNameSet: est.recordNameSet.bind(est) as Est['recordNameSet']
+  basicCredentialOf: slot.forward('basicCredentialOf'),
+  csrAttributesFor: slot.forward('csrAttributesFor'),
+  serverKeyAlgorithm: slot.forward('serverKeyAlgorithm'),
+  requestedNameSet: slot.forward('requestedNameSet'),
+  recordNameSet: slot.forward('recordNameSet')
 };

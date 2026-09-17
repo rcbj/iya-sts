@@ -57,14 +57,17 @@
 //     for each rather than the module.
 //   * **THE DIRECTORY SLOT IS A FIELD OF THE INSTANCE**, filled by
 //     `setDirectory()` exactly as the module variable was.
-//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, from ONE TRANSITIONAL
-//     instance built with the real modules at the bottom of this file: the
-//     functions bound to it, the tables from the class's static members. That
-//     instance goes when the composition root exists; `CertEnrollment` is
-//     exported beside it for that root.
-//   * **THE CAPABILITY ROW IS STILL DECLARED AT REQUIRE TIME**, by the
-//     transitional instance's `provideCapability()`, at the point the old
-//     top-level call ran.
+//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**: the functions, and
+//     the tables from the class's static members. Since #50's R2 the
+//     composition root builds the instance (`CertEnrollment.defaultDeps()`) and
+//     installs it; the module's old export names are FACADES that forward to
+//     it, for the JavaScript callers, and a process without the root builds a
+//     default when this module finishes loading. `CertEnrollment` is exported
+//     beside them for that root.
+//   * **THE CAPABILITY ROW IS STILL DECLARED AT REQUIRE TIME**, by `wire()`'s
+//     call to `provideCapability()`, which runs when the root installs the
+//     instance as it loads the stack (or, without the root, when this module
+//     finishes loading).
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -93,6 +96,7 @@ import mtls = require('../oauth-oidc/mtls');
 // `persistence.js` lazily, so neither can close a cycle from here.
 import claims = require('../cluster/cluster_claims');
 import capabilities = require('../cluster/cluster_capabilities');
+import InstanceSlot = require('./instance_slot');
 
 const FAMILIES = ['acme', 'est', 'scep'];
 
@@ -251,6 +255,50 @@ class CertEnrollment {
   constructor(private readonly deps: CertEnrollmentDeps) {
     deps.log.debug("Entering CertEnrollment.constructor().");
     deps.log.debug("Leaving CertEnrollment.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): CertEnrollmentDeps {
+    log.debug("Entering CertEnrollment.defaultDeps().");
+    log.debug("Leaving CertEnrollment.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      net: net,
+      asn1js: asn1js,
+      pkijs: pkijs,
+      log: log,
+      helpers: helpers,
+      applications: applications,
+      audit: audit,
+      config: config,
+      credentials: credentials,
+      errorCodes: errorCodes,
+      keyMaterial: keyMaterial,
+      keystore: keystore,
+      mode: mode,
+      pki: pki,
+      realms: realms,
+      x509: x509,
+      adminRbac: adminRbac,
+      mtls: mtls,
+      claims: claims,
+      capabilities: capabilities,
+      loadRevocation: function () {
+        return require('./pki_revocation');
+      },
+      loadWebsecurity: function () {
+        return require('./websecurity');
+      }
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once
+  // for whichever instance is installed (#50, R2).
+  static wire(instance: CertEnrollment): void {
+    log.debug("Entering CertEnrollment.wire().");
+    instance.provideCapability();
+    log.debug("Leaving CertEnrollment.wire().");
   }
 
   // ---------------------------------------------------------------------------
@@ -2977,65 +3025,37 @@ class CertEnrollment {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and set going where the JavaScript's
-// top-level `capabilities.provide()` ran: after everything above, before the
-// exports.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const enrollment = new CertEnrollment({
-  nodeCrypto: nodeCrypto,
-  net: net,
-  asn1js: asn1js,
-  pkijs: pkijs,
-  log: log,
-  helpers: helpers,
-  applications: applications,
-  audit: audit,
-  config: config,
-  credentials: credentials,
-  errorCodes: errorCodes,
-  keyMaterial: keyMaterial,
-  keystore: keystore,
-  mode: mode,
-  pki: pki,
-  realms: realms,
-  x509: x509,
-  adminRbac: adminRbac,
-  mtls: mtls,
-  claims: claims,
-  capabilities: capabilities,
-  loadRevocation: function () {
-    return require('./pki_revocation');
-  },
-  loadWebsecurity: function () {
-    return require('./websecurity');
-  }
-});
+const slot = new InstanceSlot<CertEnrollment>(
+  'common/cert_enrollment',
+  () => new CertEnrollment(CertEnrollment.defaultDeps()),
+  CertEnrollment.wire,
+  log);
 
-enrollment.provideCapability();
-
-// A bound method keeps the signature of the method it was bound from.
-type Bound<K extends keyof CertEnrollment> = CertEnrollment[K];
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   CertEnrollment: CertEnrollment,
+  installInstance: (instance: CertEnrollment): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FAMILIES: CertEnrollment.FAMILIES,
-  withheldValues: enrollment.withheldValues.bind(enrollment) as
-    Bound<'withheldValues'>,
-  transportRefusal: enrollment.transportRefusal.bind(enrollment) as
-    Bound<'transportRefusal'>,
-  throttled: enrollment.throttled.bind(enrollment) as Bound<'throttled'>,
-  throttledShared: enrollment.throttledShared.bind(enrollment) as
-    Bound<'throttledShared'>,
-  countFailure: enrollment.countFailure.bind(enrollment) as
-    Bound<'countFailure'>,
-  countFailureShared: enrollment.countFailureShared.bind(enrollment) as
-    Bound<'countFailureShared'>,
-  sharesThrottle: enrollment.sharesThrottle.bind(enrollment) as
-    Bound<'sharesThrottle'>,
-  retryAfterOf: enrollment.retryAfterOf.bind(enrollment) as
-    Bound<'retryAfterOf'>,
-  keyAlgName: enrollment.keyAlgName.bind(enrollment) as Bound<'keyAlgName'>,
+  withheldValues: slot.forward('withheldValues'),
+  transportRefusal: slot.forward('transportRefusal'),
+  throttled: slot.forward('throttled'),
+  throttledShared: slot.forward('throttledShared'),
+  countFailure: slot.forward('countFailure'),
+  countFailureShared: slot.forward('countFailureShared'),
+  sharesThrottle: slot.forward('sharesThrottle'),
+  retryAfterOf: slot.forward('retryAfterOf'),
+  keyAlgName: slot.forward('keyAlgName'),
   FAMILY_LABELS: CertEnrollment.FAMILY_LABELS,
   PROFILE_IDS: CertEnrollment.PROFILE_IDS,
   REFUSED_PROFILES: CertEnrollment.REFUSED_PROFILES,
@@ -3044,93 +3064,59 @@ export = {
   SECRET_ATTRIBUTES: CertEnrollment.SECRET_ATTRIBUTES,
   URN_PREFIX: CertEnrollment.URN_PREFIX,
   MAX_CREDENTIALS_PER_ENTRY: CertEnrollment.MAX_CREDENTIALS_PER_ENTRY,
-  setDirectory: enrollment.setDirectory.bind(enrollment) as
-    Bound<'setDirectory'>,
-  hasDirectory: enrollment.hasDirectory.bind(enrollment) as
-    Bound<'hasDirectory'>,
-  refuse: enrollment.refuse.bind(enrollment) as Bound<'refuse'>,
-  isFamily: enrollment.isFamily.bind(enrollment) as Bound<'isFamily'>,
-  isKind: enrollment.isKind.bind(enrollment) as Bound<'isKind'>,
-  wellFormedId: enrollment.wellFormedId.bind(enrollment) as
-    Bound<'wellFormedId'>,
-  entryUri: enrollment.entryUri.bind(enrollment) as Bound<'entryUri'>,
-  entryFromUri: enrollment.entryFromUri.bind(enrollment) as
-    Bound<'entryFromUri'>,
-  entryLabel: enrollment.entryLabel.bind(enrollment) as Bound<'entryLabel'>,
-  resolveEntry: enrollment.resolveEntry.bind(enrollment) as
-    Bound<'resolveEntry'>,
-  normalHostName: enrollment.normalHostName.bind(enrollment) as
-    Bound<'normalHostName'>,
-  normalSerial: enrollment.normalSerial.bind(enrollment) as
-    Bound<'normalSerial'>,
-  adminFor: enrollment.adminFor.bind(enrollment) as Bound<'adminFor'>,
-  sessionIsAdmin: enrollment.sessionIsAdmin.bind(enrollment) as
-    Bound<'sessionIsAdmin'>,
-  sessionPrincipal: enrollment.sessionPrincipal.bind(enrollment) as
-    Bound<'sessionPrincipal'>,
-  authenticatePerson: enrollment.authenticatePerson.bind(enrollment) as
-    Bound<'authenticatePerson'>,
-  authenticateApplication:
-    enrollment.authenticateApplication.bind(enrollment) as
-    Bound<'authenticateApplication'>,
-  authenticateCertificate:
-    enrollment.authenticateCertificate.bind(enrollment) as
-    Bound<'authenticateCertificate'>,
+  setDirectory: slot.forward('setDirectory'),
+  hasDirectory: slot.forward('hasDirectory'),
+  refuse: slot.forward('refuse'),
+  isFamily: slot.forward('isFamily'),
+  isKind: slot.forward('isKind'),
+  wellFormedId: slot.forward('wellFormedId'),
+  entryUri: slot.forward('entryUri'),
+  entryFromUri: slot.forward('entryFromUri'),
+  entryLabel: slot.forward('entryLabel'),
+  resolveEntry: slot.forward('resolveEntry'),
+  normalHostName: slot.forward('normalHostName'),
+  normalSerial: slot.forward('normalSerial'),
+  adminFor: slot.forward('adminFor'),
+  sessionIsAdmin: slot.forward('sessionIsAdmin'),
+  sessionPrincipal: slot.forward('sessionPrincipal'),
+  authenticatePerson: slot.forward('authenticatePerson'),
+  authenticateApplication: slot.forward('authenticateApplication'),
+  authenticateCertificate: slot.forward('authenticateCertificate'),
   authenticatePresentedCertificate:
-    enrollment.authenticatePresentedCertificate.bind(enrollment) as
-    Bound<'authenticatePresentedCertificate'>,
-  authorizeTarget: enrollment.authorizeTarget.bind(enrollment) as
-    Bound<'authorizeTarget'>,
-  allowedProfiles: enrollment.allowedProfiles.bind(enrollment) as
-    Bound<'allowedProfiles'>,
-  checkProfile: enrollment.checkProfile.bind(enrollment) as
-    Bound<'checkProfile'>,
-  defaultProfile: enrollment.defaultProfile.bind(enrollment) as
-    Bound<'defaultProfile'>,
-  parseCsr: enrollment.parseCsr.bind(enrollment) as Bound<'parseCsr'>,
-  targetFromRequest: enrollment.targetFromRequest.bind(enrollment) as
-    Bound<'targetFromRequest'>,
-  namesFor: enrollment.namesFor.bind(enrollment) as Bound<'namesFor'>,
-  issue: enrollment.issue.bind(enrollment) as Bound<'issue'>,
-  issueWithServerKey: enrollment.issueWithServerKey.bind(enrollment) as
-    Bound<'issueWithServerKey'>,
-  enrolledOf: enrollment.enrolledOf.bind(enrollment) as Bound<'enrolledOf'>,
-  findEnrolled: enrollment.findEnrolled.bind(enrollment) as
-    Bound<'findEnrolled'>,
-  revokeEnrolled: enrollment.revokeEnrolled.bind(enrollment) as
-    Bound<'revokeEnrolled'>,
-  serverKeyOf: enrollment.serverKeyOf.bind(enrollment) as Bound<'serverKeyOf'>,
-  createEab: enrollment.createEab.bind(enrollment) as Bound<'createEab'>,
-  findEab: enrollment.findEab.bind(enrollment) as Bound<'findEab'>,
-  bindEab: enrollment.bindEab.bind(enrollment) as Bound<'bindEab'>,
-  bindEabOnce: enrollment.bindEabOnce.bind(enrollment) as Bound<'bindEabOnce'>,
-  deleteEab: enrollment.deleteEab.bind(enrollment) as Bound<'deleteEab'>,
-  eabsOf: enrollment.eabsOf.bind(enrollment) as Bound<'eabsOf'>,
-  createScepChallenge: enrollment.createScepChallenge.bind(enrollment) as
-    Bound<'createScepChallenge'>,
-  redeemScepChallenge: enrollment.redeemScepChallenge.bind(enrollment) as
-    Bound<'redeemScepChallenge'>,
-  redeemScepChallengeOnce:
-    enrollment.redeemScepChallengeOnce.bind(enrollment) as
-    Bound<'redeemScepChallengeOnce'>,
-  deleteScepChallenge: enrollment.deleteScepChallenge.bind(enrollment) as
-    Bound<'deleteScepChallenge'>,
-  scepChallengesOf: enrollment.scepChallengesOf.bind(enrollment) as
-    Bound<'scepChallengesOf'>,
-  hostNamesOf: enrollment.hostNamesOf.bind(enrollment) as Bound<'hostNamesOf'>,
-  addHostName: enrollment.addHostName.bind(enrollment) as Bound<'addHostName'>,
-  removeHostName: enrollment.removeHostName.bind(enrollment) as
-    Bound<'removeHostName'>,
-  certificatesInRealm: enrollment.certificatesInRealm.bind(enrollment) as
-    Bound<'certificatesInRealm'>,
-  eabsInRealm: enrollment.eabsInRealm.bind(enrollment) as Bound<'eabsInRealm'>,
-  challengesInRealm: enrollment.challengesInRealm.bind(enrollment) as
-    Bound<'challengesInRealm'>,
-  hostNamesInRealm: enrollment.hostNamesInRealm.bind(enrollment) as
-    Bound<'hostNamesInRealm'>,
-  authorityOf: enrollment.authorityOf.bind(enrollment) as Bound<'authorityOf'>,
-  caChainOf: enrollment.caChainOf.bind(enrollment) as Bound<'caChainOf'>,
-  ensureAuthority: enrollment.ensureAuthority.bind(enrollment) as
-    Bound<'ensureAuthority'>,
-  derToPem: enrollment.derToPem.bind(enrollment) as Bound<'derToPem'>
+    slot.forward('authenticatePresentedCertificate'),
+  authorizeTarget: slot.forward('authorizeTarget'),
+  allowedProfiles: slot.forward('allowedProfiles'),
+  checkProfile: slot.forward('checkProfile'),
+  defaultProfile: slot.forward('defaultProfile'),
+  parseCsr: slot.forward('parseCsr'),
+  targetFromRequest: slot.forward('targetFromRequest'),
+  namesFor: slot.forward('namesFor'),
+  issue: slot.forward('issue'),
+  issueWithServerKey: slot.forward('issueWithServerKey'),
+  enrolledOf: slot.forward('enrolledOf'),
+  findEnrolled: slot.forward('findEnrolled'),
+  revokeEnrolled: slot.forward('revokeEnrolled'),
+  serverKeyOf: slot.forward('serverKeyOf'),
+  createEab: slot.forward('createEab'),
+  findEab: slot.forward('findEab'),
+  bindEab: slot.forward('bindEab'),
+  bindEabOnce: slot.forward('bindEabOnce'),
+  deleteEab: slot.forward('deleteEab'),
+  eabsOf: slot.forward('eabsOf'),
+  createScepChallenge: slot.forward('createScepChallenge'),
+  redeemScepChallenge: slot.forward('redeemScepChallenge'),
+  redeemScepChallengeOnce: slot.forward('redeemScepChallengeOnce'),
+  deleteScepChallenge: slot.forward('deleteScepChallenge'),
+  scepChallengesOf: slot.forward('scepChallengesOf'),
+  hostNamesOf: slot.forward('hostNamesOf'),
+  addHostName: slot.forward('addHostName'),
+  removeHostName: slot.forward('removeHostName'),
+  certificatesInRealm: slot.forward('certificatesInRealm'),
+  eabsInRealm: slot.forward('eabsInRealm'),
+  challengesInRealm: slot.forward('challengesInRealm'),
+  hostNamesInRealm: slot.forward('hostNamesInRealm'),
+  authorityOf: slot.forward('authorityOf'),
+  caChainOf: slot.forward('caChainOf'),
+  ensureAuthority: slot.forward('ensureAuthority'),
+  derToPem: slot.forward('derToPem')
 };

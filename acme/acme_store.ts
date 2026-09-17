@@ -39,10 +39,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AcmeStore` takes the modules it uses through its constructor
-// (`AcmeStoreDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `AcmeStore` is exported beside them for the
-// composition root.
+// (`AcmeStoreDeps`). Since #50's R2 the composition root builds the instance
+// (`AcmeStore.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when the module finishes loading.
+// `AcmeStore` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -52,6 +53,7 @@ import realms = require('../common/realms');
 // The atomic "once" a nonce is spent through across nodes — see
 // `spendNonceOnce()`. A LIBRARY that reaches `persistence.js` lazily.
 import claims = require('../cluster/cluster_claims');
+import InstanceSlot = require('../common/instance_slot');
 
 const accounts = realms.map({ persist: 'acme.accounts' });
 // thumbprint -> account id. An account IS its key (section 7.3.1), and a key
@@ -87,6 +89,18 @@ class AcmeStore {
   constructor(private readonly deps: AcmeStoreDeps) {
     deps.log.debug("Entering AcmeStore.constructor().");
     deps.log.debug("Leaving AcmeStore.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): AcmeStoreDeps {
+    log.debug("Entering AcmeStore.defaultDeps().");
+    log.debug("Leaving AcmeStore.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      log: log,
+      claims: claims
+    };
   }
 
   newId(bytes) {
@@ -397,50 +411,46 @@ class AcmeStore {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const acmeStore = new AcmeStore({
-  nodeCrypto: nodeCrypto,
-  log: log,
-  claims: claims
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AcmeStore>(
+  'acme/acme_store',
+  () => new AcmeStore(AcmeStore.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AcmeStore: AcmeStore,
+  installInstance: (instance: AcmeStore): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   MAX_USED_NONCES: MAX_USED_NONCES,
-  createAccount: acmeStore.createAccount.bind(acmeStore) as
-    AcmeStore['createAccount'],
-  getAccount: acmeStore.getAccount.bind(acmeStore) as AcmeStore['getAccount'],
-  accountByThumbprint: acmeStore.accountByThumbprint.bind(acmeStore) as
-    AcmeStore['accountByThumbprint'],
-  saveAccount: acmeStore.saveAccount.bind(acmeStore) as
-    AcmeStore['saveAccount'],
-  rekeyAccount: acmeStore.rekeyAccount.bind(acmeStore) as
-    AcmeStore['rekeyAccount'],
-  listAccounts: acmeStore.listAccounts.bind(acmeStore) as
-    AcmeStore['listAccounts'],
-  createAuthorization: acmeStore.createAuthorization.bind(acmeStore) as
-    AcmeStore['createAuthorization'],
-  getAuthorization: acmeStore.getAuthorization.bind(acmeStore) as
-    AcmeStore['getAuthorization'],
-  saveAuthorization: acmeStore.saveAuthorization.bind(acmeStore) as
-    AcmeStore['saveAuthorization'],
-  createOrder: acmeStore.createOrder.bind(acmeStore) as
-    AcmeStore['createOrder'],
-  getOrder: acmeStore.getOrder.bind(acmeStore) as AcmeStore['getOrder'],
-  saveOrder: acmeStore.saveOrder.bind(acmeStore) as AcmeStore['saveOrder'],
-  recordCertificate: acmeStore.recordCertificate.bind(acmeStore) as
-    AcmeStore['recordCertificate'],
-  getCertificate: acmeStore.getCertificate.bind(acmeStore) as
-    AcmeStore['getCertificate'],
-  saveCertificate: acmeStore.saveCertificate.bind(acmeStore) as
-    AcmeStore['saveCertificate'],
-  certificateByCertId: acmeStore.certificateByCertId.bind(acmeStore) as
-    AcmeStore['certificateByCertId'],
-  certificateBySerial: acmeStore.certificateBySerial.bind(acmeStore) as
-    AcmeStore['certificateBySerial'],
-  spendNonce: acmeStore.spendNonce.bind(acmeStore) as AcmeStore['spendNonce'],
-  spendNonceOnce: acmeStore.spendNonceOnce.bind(acmeStore) as
-    AcmeStore['spendNonceOnce']
+  createAccount: slot.forward('createAccount'),
+  getAccount: slot.forward('getAccount'),
+  accountByThumbprint: slot.forward('accountByThumbprint'),
+  saveAccount: slot.forward('saveAccount'),
+  rekeyAccount: slot.forward('rekeyAccount'),
+  listAccounts: slot.forward('listAccounts'),
+  createAuthorization: slot.forward('createAuthorization'),
+  getAuthorization: slot.forward('getAuthorization'),
+  saveAuthorization: slot.forward('saveAuthorization'),
+  createOrder: slot.forward('createOrder'),
+  getOrder: slot.forward('getOrder'),
+  saveOrder: slot.forward('saveOrder'),
+  recordCertificate: slot.forward('recordCertificate'),
+  getCertificate: slot.forward('getCertificate'),
+  saveCertificate: slot.forward('saveCertificate'),
+  certificateByCertId: slot.forward('certificateByCertId'),
+  certificateBySerial: slot.forward('certificateBySerial'),
+  spendNonce: slot.forward('spendNonce'),
+  spendNonceOnce: slot.forward('spendNonceOnce')
 };

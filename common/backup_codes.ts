@@ -124,11 +124,13 @@
 //     logger, the settings reader, `crypto.js`'s comparison and secret-hashing
 //     half, the error codes and node's `randomInt`. Nothing inside the class
 //     reaches for a module on its own.
-//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, from ONE TRANSITIONAL
-//     instance built from the real modules at the bottom of this file, because
-//     `credentials.ts`, the portal and the console require it by those names.
-//     That instance goes when the composition root exists; `BackupCodes` is
-//     exported beside it for that root.
+//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, because `credentials.ts`,
+//     the portal and the console require it by those names. Since #50's R2 the
+//     composition root builds the instance (`BackupCodes.defaultDeps()`) and
+//     installs it; the module's old export names are FACADES that forward to
+//     it, for the JavaScript callers, and a process without the root builds a
+//     default when this module finishes loading. `BackupCodes` is exported
+//     beside them for that root.
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
@@ -138,6 +140,7 @@ import crypto = require('./crypto');
 // The error codes. A LEAF that requires nothing, so it cannot close a cycle
 // from here; the one failure this module has is logged with its code.
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 // See the header: the same thirty-two characters as base32 and for a different
 // reason, declared here so that a change to either cannot move the other.
@@ -174,6 +177,22 @@ class BackupCodes {
   constructor(private readonly deps: BackupCodesDeps) {
     deps.log.debug("Entering BackupCodes.constructor().");
     deps.log.debug("Leaving BackupCodes.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): BackupCodesDeps {
+    helpers.log.debug("Entering BackupCodes.defaultDeps().");
+    helpers.log.debug("Leaving BackupCodes.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      crypto: crypto as unknown as BackupCodesDeps['crypto'],
+      errorCodes: errorCodes,
+      randomInt: function (min: number, max: number): number {
+        return nodeCrypto.randomInt(min, max);
+      }
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -525,34 +544,41 @@ class BackupCodes {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const codes = new BackupCodes({
-  log: helpers.log,
-  config: config,
-  crypto: crypto as unknown as BackupCodesDeps['crypto'],
-  errorCodes: errorCodes,
-  randomInt: function (min: number, max: number): number {
-    return nodeCrypto.randomInt(min, max);
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<BackupCodes>(
+  'common/backup_codes',
+  () => new BackupCodes(BackupCodes.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   BackupCodes: BackupCodes,
+  installInstance: (instance: BackupCodes): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   ALPHABET: BackupCodes.ALPHABET,
-  settings: codes.settings.bind(codes) as BackupCodes['settings'],
-  offered: codes.offered.bind(codes) as BackupCodes['offered'],
-  generate: codes.generate.bind(codes) as BackupCodes['generate'],
-  generateCode: codes.generateCode.bind(codes) as BackupCodes['generateCode'],
-  normalise: codes.normalise.bind(codes) as BackupCodes['normalise'],
-  formatted: codes.formatted.bind(codes) as BackupCodes['formatted'],
-  matches: codes.matches.bind(codes) as BackupCodes['matches'],
-  hash: codes.hash.bind(codes) as BackupCodes['hash'],
-  hashAsync: codes.hashAsync.bind(codes) as BackupCodes['hashAsync'],
-  matchesHash: codes.matchesHash.bind(codes) as BackupCodes['matchesHash'],
-  matchesHashAsync: codes.matchesHashAsync.bind(codes) as
-    BackupCodes['matchesHashAsync'],
-  isHash: codes.isHash.bind(codes) as BackupCodes['isHash'],
-  wellFormed: codes.wellFormed.bind(codes) as BackupCodes['wellFormed'],
-  report: codes.report.bind(codes) as BackupCodes['report']
+  settings: slot.forward('settings'),
+  offered: slot.forward('offered'),
+  generate: slot.forward('generate'),
+  generateCode: slot.forward('generateCode'),
+  normalise: slot.forward('normalise'),
+  formatted: slot.forward('formatted'),
+  matches: slot.forward('matches'),
+  hash: slot.forward('hash'),
+  hashAsync: slot.forward('hashAsync'),
+  matchesHash: slot.forward('matchesHash'),
+  matchesHashAsync: slot.forward('matchesHashAsync'),
+  isHash: slot.forward('isHash'),
+  wellFormed: slot.forward('wellFormed'),
+  report: slot.forward('report')
 };

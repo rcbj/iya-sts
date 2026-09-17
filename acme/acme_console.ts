@@ -31,10 +31,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AcmeConsole` takes the modules it uses through its constructor
-// (`AcmeConsoleDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `AcmeConsole` is exported beside them for the
-// composition root.
+// (`AcmeConsoleDeps`). Since #50's R2 the composition root builds the instance
+// (`AcmeConsole.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when the module finishes loading.
+// `AcmeConsole` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -49,6 +50,7 @@ import validation = require('../common/validation');
 import revocation = require('../common/pki_revocation');
 import adminViews = require('../admin-core/admin_views');
 import store = require('./acme_store');
+import InstanceSlot = require('../common/instance_slot');
 
 const vz = validation.z;
 
@@ -108,6 +110,28 @@ class AcmeConsole {
   constructor(private readonly deps: AcmeConsoleDeps) {
     deps.log.debug("Entering AcmeConsole.constructor().");
     deps.log.debug("Leaving AcmeConsole.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): AcmeConsoleDeps {
+    log.debug("Entering AcmeConsole.defaultDeps().");
+    log.debug("Leaving AcmeConsole.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      errorCodes: errorCodes,
+      audit: audit,
+      mode: mode,
+      core: core,
+      monitor: monitor,
+      revocation: revocation,
+      adminViews: adminViews,
+      store: store,
+      loadAcme: function () {
+        return require('./acme');
+      }
+    };
   }
 
   refused(code, sentence) {
@@ -552,33 +576,31 @@ class AcmeConsole {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const acmeConsole = new AcmeConsole({
-  log: log,
-  config: config,
-  errorCodes: errorCodes,
-  audit: audit,
-  mode: mode,
-  core: core,
-  monitor: monitor,
-  revocation: revocation,
-  adminViews: adminViews,
-  store: store,
-  loadAcme: function () {
-    return require('./acme');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AcmeConsole>(
+  'acme/acme_console',
+  () => new AcmeConsole(AcmeConsole.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AcmeConsole: AcmeConsole,
+  installInstance: (instance: AcmeConsole): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   ACME_ACTIONS: ACME_ACTIONS,
-  consoleActorOf: acmeConsole.consoleActorOf.bind(acmeConsole) as
-    AcmeConsole['consoleActorOf'],
-  acmeView: acmeConsole.acmeView.bind(acmeConsole) as AcmeConsole['acmeView'],
-  acmeMonitorView: acmeConsole.acmeMonitorView.bind(acmeConsole) as
-    AcmeConsole['acmeMonitorView'],
-  acmeAction: acmeConsole.acmeAction.bind(acmeConsole) as
-    AcmeConsole['acmeAction']
+  consoleActorOf: slot.forward('consoleActorOf'),
+  acmeView: slot.forward('acmeView'),
+  acmeMonitorView: slot.forward('acmeMonitorView'),
+  acmeAction: slot.forward('acmeAction')
 };

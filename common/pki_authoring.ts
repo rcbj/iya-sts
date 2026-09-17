@@ -93,10 +93,12 @@
 // `FIELDS`, `DN_FIELDS`, `PQ_MODES` and their derivatives — stay module-level
 // constants built at load, exactly as before, because `FIELDS` is generated
 // from the encoder's own tables at that moment; the class carries them as
-// static members too. The module still exports every name it did, from ONE
-// TRANSITIONAL instance built with the real modules below, for
-// `admin-ui/pki_admin.ts`, `mgmt-api/` and the tests; it goes when the
-// composition root exists.
+// static members too. The module still exports every name it did, for
+// `admin-ui/pki_admin.ts`, `mgmt-api/` and the tests. Since #50's R2 the
+// composition root builds the instance (`PkiAuthoring.defaultDeps()`) and
+// installs it; the module's old export names are FACADES that forward to it,
+// for the JavaScript callers, and a process without the root builds a default
+// when this module finishes loading.
 // ===========================================================================
 
 import bunyan = require('bunyan');
@@ -118,6 +120,7 @@ import errorCodes = require('./error_codes');
 // project's, which is the whole point of vendoring them.
 import x509 = require('./vendored/x509');
 import keyMaterial = require('./vendored/key_material');
+import InstanceSlot = require('./instance_slot');
 
 // ---------------------------------------------------------------------------
 // THE FIVE CRYPTOGRAPHIC APPROACHES.
@@ -389,6 +392,22 @@ class PkiAuthoring {
   constructor(private readonly deps: PkiAuthoringDeps) {
     deps.log.debug("Entering PkiAuthoring.constructor().");
     deps.log.debug("Leaving PkiAuthoring.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): PkiAuthoringDeps {
+    log.debug("Entering PkiAuthoring.defaultDeps().");
+    log.debug("Leaving PkiAuthoring.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      pki: pki,
+      errorCodes: errorCodes,
+      x509: x509,
+      keyMaterial: keyMaterial,
+      nodeCrypto: nodeCrypto
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1981,74 +2000,59 @@ class PkiAuthoring {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const authoring = new PkiAuthoring({
-  log: log,
-  config: config,
-  pki: pki,
-  errorCodes: errorCodes,
-  x509: x509,
-  keyMaterial: keyMaterial,
-  nodeCrypto: nodeCrypto
-});
+const slot = new InstanceSlot<PkiAuthoring>(
+  'common/pki_authoring',
+  () => new PkiAuthoring(PkiAuthoring.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PkiAuthoring: PkiAuthoring,
+  installInstance: (instance: PkiAuthoring): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FIELDS: PkiAuthoring.FIELDS,
   FIELD_NAMES: PkiAuthoring.FIELD_NAMES,
   DN_FIELDS: PkiAuthoring.DN_FIELDS,
   PQ_MODES: PkiAuthoring.PQ_MODES,
   PQ_MODE_IDS: PkiAuthoring.PQ_MODE_IDS,
   SLOW_FAMILIES: PkiAuthoring.SLOW_FAMILIES,
-  draftFrom: authoring.draftFrom.bind(authoring) as PkiAuthoring['draftFrom'],
-  defaultDraft: authoring.defaultDraft.bind(authoring) as
-    PkiAuthoring['defaultDraft'],
-  applyProfile: authoring.applyProfile.bind(authoring) as
-    PkiAuthoring['applyProfile'],
-  profiles: authoring.profiles.bind(authoring) as PkiAuthoring['profiles'],
-  profileFor: authoring.profileFor.bind(authoring) as
-    PkiAuthoring['profileFor'],
-  defaultProfileId: authoring.defaultProfileId.bind(authoring) as
-    PkiAuthoring['defaultProfileId'],
-  pqModes: authoring.pqModes.bind(authoring) as PkiAuthoring['pqModes'],
-  pqModeFor: authoring.pqModeFor.bind(authoring) as PkiAuthoring['pqModeFor'],
-  keyAlgorithms: authoring.keyAlgorithms.bind(authoring) as
-    PkiAuthoring['keyAlgorithms'],
-  alternativeKeyAlgorithms:
-    authoring.alternativeKeyAlgorithms.bind(authoring) as
-    PkiAuthoring['alternativeKeyAlgorithms'],
-  signerDescriptorFor: authoring.signerDescriptorFor.bind(authoring) as
-    PkiAuthoring['signerDescriptorFor'],
-  signatureAlgorithms: authoring.signatureAlgorithms.bind(authoring) as
-    PkiAuthoring['signatureAlgorithms'],
-  subjectFrom: authoring.subjectFrom.bind(authoring) as
-    PkiAuthoring['subjectFrom'],
-  extensionsFrom: authoring.extensionsFrom.bind(authoring) as
-    PkiAuthoring['extensionsFrom'],
-  parseAltNames: authoring.parseAltNames.bind(authoring) as
-    PkiAuthoring['parseAltNames'],
-  parseAccessDescriptions: authoring.parseAccessDescriptions.bind(authoring) as
-    PkiAuthoring['parseAccessDescriptions'],
-  parsePolicies: authoring.parsePolicies.bind(authoring) as
-    PkiAuthoring['parsePolicies'],
-  parsePolicyMappings: authoring.parsePolicyMappings.bind(authoring) as
-    PkiAuthoring['parsePolicyMappings'],
-  parseNameConstraints: authoring.parseNameConstraints.bind(authoring) as
-    PkiAuthoring['parseNameConstraints'],
-  parseCustomExtensions: authoring.parseCustomExtensions.bind(authoring) as
-    PkiAuthoring['parseCustomExtensions'],
-  linesOf: authoring.linesOf.bind(authoring) as PkiAuthoring['linesOf'],
-  generateKeys: authoring.generateKeys.bind(authoring) as
-    PkiAuthoring['generateKeys'],
-  issue: authoring.issue.bind(authoring) as PkiAuthoring['issue'],
-  useStoredKey: authoring.useStoredKey.bind(authoring) as
-    PkiAuthoring['useStoredKey'],
-  chainFor: authoring.chainFor.bind(authoring) as PkiAuthoring['chainFor'],
-  exportKeys: authoring.exportKeys.bind(authoring) as
-    PkiAuthoring['exportKeys'],
-  describeObject: authoring.describeObject.bind(authoring) as
-    PkiAuthoring['describeObject'],
-  view: authoring.view.bind(authoring) as PkiAuthoring['view']
+  draftFrom: slot.forward('draftFrom'),
+  defaultDraft: slot.forward('defaultDraft'),
+  applyProfile: slot.forward('applyProfile'),
+  profiles: slot.forward('profiles'),
+  profileFor: slot.forward('profileFor'),
+  defaultProfileId: slot.forward('defaultProfileId'),
+  pqModes: slot.forward('pqModes'),
+  pqModeFor: slot.forward('pqModeFor'),
+  keyAlgorithms: slot.forward('keyAlgorithms'),
+  alternativeKeyAlgorithms: slot.forward('alternativeKeyAlgorithms'),
+  signerDescriptorFor: slot.forward('signerDescriptorFor'),
+  signatureAlgorithms: slot.forward('signatureAlgorithms'),
+  subjectFrom: slot.forward('subjectFrom'),
+  extensionsFrom: slot.forward('extensionsFrom'),
+  parseAltNames: slot.forward('parseAltNames'),
+  parseAccessDescriptions: slot.forward('parseAccessDescriptions'),
+  parsePolicies: slot.forward('parsePolicies'),
+  parsePolicyMappings: slot.forward('parsePolicyMappings'),
+  parseNameConstraints: slot.forward('parseNameConstraints'),
+  parseCustomExtensions: slot.forward('parseCustomExtensions'),
+  linesOf: slot.forward('linesOf'),
+  generateKeys: slot.forward('generateKeys'),
+  issue: slot.forward('issue'),
+  useStoredKey: slot.forward('useStoredKey'),
+  chainFor: slot.forward('chainFor'),
+  exportKeys: slot.forward('exportKeys'),
+  describeObject: slot.forward('describeObject'),
+  view: slot.forward('view')
 };

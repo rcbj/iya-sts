@@ -36,10 +36,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AcmeJws` takes the modules it uses through its constructor
-// (`AcmeJwsDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `AcmeJws` is exported beside them for the
-// composition root.
+// (`AcmeJwsDeps`). Since #50's R2 the composition root builds the instance
+// (`AcmeJws.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `AcmeJws` is
+// exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -53,6 +54,7 @@ import stsCrypto = require('../common/crypto');
 // nonceSecret().
 import clusterSecrets = require('../cluster/cluster_secrets');
 import validation = require('../common/validation');
+import InstanceSlot = require('../common/instance_slot');
 
 const vz = validation.z;
 
@@ -143,6 +145,41 @@ class AcmeJws {
   constructor(private readonly deps: AcmeJwsDeps) {
     deps.log.debug("Entering AcmeJws.constructor().");
     deps.log.debug("Leaving AcmeJws.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): AcmeJwsDeps {
+    log.debug("Entering AcmeJws.defaultDeps().");
+    log.debug("Leaving AcmeJws.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      net: net,
+      asn1js: asn1js,
+      pkijs: pkijs,
+      log: log,
+      stsCrypto: stsCrypto,
+      clusterSecrets: clusterSecrets,
+      validation: validation
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once
+  // for whichever instance is installed (#50, R2) — which the root does as
+  // it loads the stack, so still AT REQUIRE TIME:
+  //
+  // AT REQUIRE TIME, and that is the whole of what makes the Replay-Nonce
+  // paragraph below true. A lazy first call would put the secret into the
+  // environment of whichever process answered the first ACME request — and
+  // `request_pool.js` forks its workers EAGERLY, before the listener binds,
+  // so by then every worker would already hold an environment without it and
+  // each would generate a secret of its own: a nonce issued by one worker
+  // refused as forged by the next, in exactly the `dispatch` mode the
+  // self-describing nonce exists for.
+  static wire(instance: AcmeJws): void {
+    log.debug("Entering AcmeJws.wire().");
+    instance.nonceSecret();
+    log.debug("Leaving AcmeJws.wire().");
   }
 
   // ---------------------------------------------------------------------------
@@ -882,19 +919,20 @@ class AcmeJws {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const acmeJws = new AcmeJws({
-  nodeCrypto: nodeCrypto,
-  net: net,
-  asn1js: asn1js,
-  pkijs: pkijs,
-  log: log,
-  stsCrypto: stsCrypto,
-  clusterSecrets: clusterSecrets,
-  validation: validation
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AcmeJws>(
+  'acme/acme_jws',
+  () => new AcmeJws(AcmeJws.defaultDeps()),
+  AcmeJws.wire,
+  log);
 
 // ---------------------------------------------------------------------------
 // THE FLATTENED JWS JSON OBJECT. Exactly three members: RFC 8555 section 6.2
@@ -1006,14 +1044,7 @@ const CHALLENGE_RESPONSE = vz.looseObject({});
 const NONCE_VERSION = 1;
 const NONCE_SECRET_VAR = 'STS_ACME_NONCE_SECRET';
 
-// AT REQUIRE TIME, and that is the whole of what makes the paragraph above
-// true. A lazy first call would put the secret into the environment of
-// whichever process answered the first ACME request — and `request_pool.js`
-// forks its workers EAGERLY, before the listener binds, so by then every worker
-// would already hold an environment without it and each would generate a
-// secret of its own: a nonce issued by one worker refused as forged by the
-// next, in exactly the `dispatch` mode the self-describing nonce exists for.
-acmeJws.nonceSecret();
+// The secret is made AT REQUIRE TIME — see `AcmeJws.wire()`.
 
 // ---------------------------------------------------------------------------
 // THE EXTERNAL ACCOUNT BINDING (section 7.3.4). A flattened JWS whose protected
@@ -1029,8 +1060,13 @@ const EAB_HEADER = vz.strictObject({
   url: vz.string().min(1).max(2048)
 });
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   AcmeJws: AcmeJws,
+  installInstance: (instance: AcmeJws): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   MEDIA_TYPE: MEDIA_TYPE,
   ERROR_PREFIX: ERROR_PREFIX,
   ACCOUNT_ALGS: ACCOUNT_ALGS,
@@ -1042,39 +1078,29 @@ export = {
              NEW_ORDER: NEW_ORDER, FINALIZE: FINALIZE, REVOKE: REVOKE,
              AUTHZ_UPDATE: AUTHZ_UPDATE, KEY_CHANGE_INNER: KEY_CHANGE_INNER,
              CHALLENGE_RESPONSE: CHALLENGE_RESPONSE },
-  refusal: acmeJws.refusal.bind(acmeJws) as AcmeJws['refusal'],
-  isJoseJson: acmeJws.isJoseJson.bind(acmeJws) as AcmeJws['isJoseJson'],
-  decodeB64url: acmeJws.decodeB64url.bind(acmeJws) as AcmeJws['decodeB64url'],
-  b64u: acmeJws.b64u.bind(acmeJws) as AcmeJws['b64u'],
-  parseBody: acmeJws.parseBody.bind(acmeJws) as AcmeJws['parseBody'],
-  parseFlattenedObject: acmeJws.parseFlattenedObject.bind(acmeJws) as
-    AcmeJws['parseFlattenedObject'],
-  parseProtectedHeader: acmeJws.parseProtectedHeader.bind(acmeJws) as
-    AcmeJws['parseProtectedHeader'],
-  checkAlgorithm: acmeJws.checkAlgorithm.bind(acmeJws) as
-    AcmeJws['checkAlgorithm'],
-  checkAccountKey: acmeJws.checkAccountKey.bind(acmeJws) as
-    AcmeJws['checkAccountKey'],
-  algorithmFitsKey: acmeJws.algorithmFitsKey.bind(acmeJws) as
-    AcmeJws['algorithmFitsKey'],
-  verifyFlattened: acmeJws.verifyFlattened.bind(acmeJws) as
-    AcmeJws['verifyFlattened'],
-  readPayload: acmeJws.readPayload.bind(acmeJws) as AcmeJws['readPayload'],
-  checkPayload: acmeJws.checkPayload.bind(acmeJws) as AcmeJws['checkPayload'],
-  mintNonce: acmeJws.mintNonce.bind(acmeJws) as AcmeJws['mintNonce'],
-  checkNonce: acmeJws.checkNonce.bind(acmeJws) as AcmeJws['checkNonce'],
-  parseEab: acmeJws.parseEab.bind(acmeJws) as AcmeJws['parseEab'],
-  verifyEabMac: acmeJws.verifyEabMac.bind(acmeJws) as AcmeJws['verifyEabMac'],
-  checkContacts: acmeJws.checkContacts.bind(acmeJws) as
-    AcmeJws['checkContacts'],
-  certIdOf: acmeJws.certIdOf.bind(acmeJws) as AcmeJws['certIdOf'],
-  parseCertId: acmeJws.parseCertId.bind(acmeJws) as AcmeJws['parseCertId'],
-  serialContentBytes: acmeJws.serialContentBytes.bind(acmeJws) as
-    AcmeJws['serialContentBytes'],
-  certificateFacts: acmeJws.certificateFacts.bind(acmeJws) as
-    AcmeJws['certificateFacts'],
-  pemToDer: acmeJws.pemToDer.bind(acmeJws) as AcmeJws['pemToDer'],
-  spkiOfJwk: acmeJws.spkiOfJwk.bind(acmeJws) as AcmeJws['spkiOfJwk'],
-  normalIdentifier: acmeJws.normalIdentifier.bind(acmeJws) as
-    AcmeJws['normalIdentifier']
+  refusal: slot.forward('refusal'),
+  isJoseJson: slot.forward('isJoseJson'),
+  decodeB64url: slot.forward('decodeB64url'),
+  b64u: slot.forward('b64u'),
+  parseBody: slot.forward('parseBody'),
+  parseFlattenedObject: slot.forward('parseFlattenedObject'),
+  parseProtectedHeader: slot.forward('parseProtectedHeader'),
+  checkAlgorithm: slot.forward('checkAlgorithm'),
+  checkAccountKey: slot.forward('checkAccountKey'),
+  algorithmFitsKey: slot.forward('algorithmFitsKey'),
+  verifyFlattened: slot.forward('verifyFlattened'),
+  readPayload: slot.forward('readPayload'),
+  checkPayload: slot.forward('checkPayload'),
+  mintNonce: slot.forward('mintNonce'),
+  checkNonce: slot.forward('checkNonce'),
+  parseEab: slot.forward('parseEab'),
+  verifyEabMac: slot.forward('verifyEabMac'),
+  checkContacts: slot.forward('checkContacts'),
+  certIdOf: slot.forward('certIdOf'),
+  parseCertId: slot.forward('parseCertId'),
+  serialContentBytes: slot.forward('serialContentBytes'),
+  certificateFacts: slot.forward('certificateFacts'),
+  pemToDer: slot.forward('pemToDer'),
+  spkiOfJwk: slot.forward('spkiOfJwk'),
+  normalIdentifier: slot.forward('normalIdentifier')
 };

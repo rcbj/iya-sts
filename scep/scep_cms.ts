@@ -73,10 +73,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `ScepCms` takes the modules it uses through its constructor
-// (`ScepCmsDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `ScepCms` is exported beside them for the
-// composition root.
+// (`ScepCmsDeps`). Since #50's R2 the composition root builds the instance
+// (`ScepCms.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `ScepCms` is
+// exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -85,6 +86,7 @@ import pkijs = require('pkijs');
 import forge = require('node-forge');
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 
 // ---------------------------------------------------------------------------
@@ -201,6 +203,20 @@ class ScepCms {
   constructor(private readonly deps: ScepCmsDeps) {
     deps.log.debug("Entering ScepCms.constructor().");
     deps.log.debug("Leaving ScepCms.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ScepCmsDeps {
+    log.debug("Entering ScepCms.defaultDeps().");
+    log.debug("Leaving ScepCms.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      asn1js: asn1js,
+      pkijs: pkijs,
+      forge: forge,
+      log: log
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1250,19 +1266,28 @@ class ScepCms {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const scepCms = new ScepCms({
-  nodeCrypto: nodeCrypto,
-  asn1js: asn1js,
-  pkijs: pkijs,
-  forge: forge,
-  log: log
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ScepCms>(
+  'scep/scep_cms',
+  () => new ScepCms(ScepCms.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ScepCms: ScepCms,
+  installInstance: (instance: ScepCms): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   OID: OID,
   DIGESTS: DIGESTS,
   SIGNATURES: SIGNATURES,
@@ -1272,20 +1297,16 @@ export = {
   PKI_STATUS: PKI_STATUS,
   FAIL_INFO: FAIL_INFO,
   NONCE_BYTES: NONCE_BYTES,
-  parsePkiMessage: scepCms.parsePkiMessage.bind(scepCms) as
-    ScepCms['parsePkiMessage'],
-  verifySigner: scepCms.verifySigner.bind(scepCms) as ScepCms['verifySigner'],
-  openEnvelope: scepCms.openEnvelope.bind(scepCms) as ScepCms['openEnvelope'],
-  readIssuerAndSerial: scepCms.readIssuerAndSerial.bind(scepCms) as
-    ScepCms['readIssuerAndSerial'],
-  readIssuerAndSubject: scepCms.readIssuerAndSubject.bind(scepCms) as
-    ScepCms['readIssuerAndSubject'],
-  describeCertificate: scepCms.describeCertificate.bind(scepCms) as
-    ScepCms['describeCertificate'],
-  certsOnly: scepCms.certsOnly.bind(scepCms) as ScepCms['certsOnly'],
-  envelope: scepCms.envelope.bind(scepCms) as ScepCms['envelope'],
-  certRep: scepCms.certRep.bind(scepCms) as ScepCms['certRep'],
-  algorithms: scepCms.algorithms.bind(scepCms) as ScepCms['algorithms'],
-  derToPem: scepCms.derToPem.bind(scepCms) as ScepCms['derToPem'],
-  pemToDer: scepCms.pemToDer.bind(scepCms) as ScepCms['pemToDer']
+  parsePkiMessage: slot.forward('parsePkiMessage'),
+  verifySigner: slot.forward('verifySigner'),
+  openEnvelope: slot.forward('openEnvelope'),
+  readIssuerAndSerial: slot.forward('readIssuerAndSerial'),
+  readIssuerAndSubject: slot.forward('readIssuerAndSubject'),
+  describeCertificate: slot.forward('describeCertificate'),
+  certsOnly: slot.forward('certsOnly'),
+  envelope: slot.forward('envelope'),
+  certRep: slot.forward('certRep'),
+  algorithms: slot.forward('algorithms'),
+  derToPem: slot.forward('derToPem'),
+  pemToDer: slot.forward('pemToDer')
 };

@@ -37,10 +37,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `ScepConsole` takes the modules it uses through its constructor
-// (`ScepConsoleDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `ScepConsole` is exported beside them for the
-// composition root.
+// (`ScepConsoleDeps`). Since #50's R2 the composition root builds the instance
+// (`ScepConsole.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when the module finishes loading.
+// `ScepConsole` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -55,6 +56,7 @@ import monitor = require('../common/enrollment_monitor');
 import adminViews = require('../admin-core/admin_views');
 import cms = require('./scep_cms');
 import ra = require('./scep_ra');
+import InstanceSlot = require('../common/instance_slot');
 
 const vz = validation.z;
 const vt = validation.types;
@@ -169,6 +171,30 @@ class ScepConsole {
   constructor(private readonly deps: ScepConsoleDeps) {
     deps.log.debug("Entering ScepConsole.constructor().");
     deps.log.debug("Leaving ScepConsole.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ScepConsoleDeps {
+    helpers.log.debug("Entering ScepConsole.defaultDeps().");
+    helpers.log.debug("Leaving ScepConsole.defaultDeps().");
+    return {
+      log: log,
+      baseUrlOf: baseUrlOf,
+      config: config,
+      errorCodes: errorCodes,
+      mode: mode,
+      realms: realms,
+      validation: validation,
+      core: core,
+      monitor: monitor,
+      adminViews: adminViews,
+      cms: cms,
+      ra: ra,
+      loadScep: function () {
+        return require('./scep');
+      }
+    };
   }
 
   refused(code, errors) {
@@ -521,38 +547,35 @@ class ScepConsole {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const scepConsole = new ScepConsole({
-  log: log,
-  baseUrlOf: baseUrlOf,
-  config: config,
-  errorCodes: errorCodes,
-  mode: mode,
-  realms: realms,
-  validation: validation,
-  core: core,
-  monitor: monitor,
-  adminViews: adminViews,
-  cms: cms,
-  ra: ra,
-  loadScep: function () {
-    return require('./scep');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ScepConsole>(
+  'scep/scep_console',
+  () => new ScepConsole(ScepConsole.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ScepConsole: ScepConsole,
+  installInstance: (instance: ScepConsole): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SCEP_ACTIONS: SCEP_ACTIONS,
   ACTION_SCHEMAS: ACTION_SCHEMAS,
   REVOKE_REASONS: REVOKE_REASONS,
   EXCEPTIONS: EXCEPTIONS,
-  queryOf: scepConsole.queryOf.bind(scepConsole) as ScepConsole['queryOf'],
-  actorOf: scepConsole.actorOf.bind(scepConsole) as ScepConsole['actorOf'],
-  scepView: scepConsole.scepView.bind(scepConsole) as ScepConsole['scepView'],
-  scepMonitorView: scepConsole.scepMonitorView.bind(scepConsole) as
-    ScepConsole['scepMonitorView'],
-  scepAction: scepConsole.scepAction.bind(scepConsole) as
-    ScepConsole['scepAction']
+  queryOf: slot.forward('queryOf'),
+  actorOf: slot.forward('actorOf'),
+  scepView: slot.forward('scepView'),
+  scepMonitorView: slot.forward('scepMonitorView'),
+  scepAction: slot.forward('scepAction')
 };

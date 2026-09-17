@@ -33,10 +33,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AcmeAdmin` takes the modules it uses through its constructor
-// (`AcmeAdminDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `AcmeAdmin` is exported beside them for the
-// composition root.
+// (`AcmeAdminDeps`). Since #50's R2 the composition root builds the instance
+// (`AcmeAdmin.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when the module finishes loading.
+// `AcmeAdmin` is exported beside them for the composition root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -51,6 +52,7 @@ import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import admin = require('../admin-ui/admin');
 import consoleModel = require('./acme_console');
+import InstanceSlot = require('../common/instance_slot');
 
 const esc = admin.esc;
 const vz = validation.z;
@@ -90,6 +92,22 @@ class AcmeAdmin {
   constructor(private readonly deps: AcmeAdminDeps) {
     deps.log.debug("Entering AcmeAdmin.constructor().");
     deps.log.debug("Leaving AcmeAdmin.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): AcmeAdminDeps {
+    helpers.log.debug("Entering AcmeAdmin.defaultDeps().");
+    helpers.log.debug("Leaving AcmeAdmin.defaultDeps().");
+    return {
+      log: log,
+      parseBody: parseBody,
+      errorCodes: errorCodes,
+      validation: validation,
+      admin: admin,
+      consoleModel: consoleModel,
+      esc: esc
+    };
   }
 
   queryRefused(req, res) {
@@ -521,25 +539,32 @@ class AcmeAdmin {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const acmeAdmin = new AcmeAdmin({
-  log: log,
-  parseBody: parseBody,
-  errorCodes: errorCodes,
-  validation: validation,
-  admin: admin,
-  consoleModel: consoleModel,
-  esc: esc
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AcmeAdmin>(
+  'acme/acme_admin',
+  () => new AcmeAdmin(AcmeAdmin.defaultDeps()),
+  null,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => acmeAdmin.registerRoutes(target),
-  AcmeAdmin: AcmeAdmin
+  registerRoutes: slot.forward('registerRoutes'),
+  AcmeAdmin: AcmeAdmin,
+  installInstance: (instance: AcmeAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin()
 };

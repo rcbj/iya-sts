@@ -96,10 +96,14 @@
 // codes and the per-realm selection store through its constructor. The two
 // catalogue indexes and the store stay module-scope declarations (a store
 // becomes per realm at its declaration). The module still exports every old
-// name from a TRANSITIONAL instance, and that instance FILLS
-// `stats.setAttributeResolver()` at require time, at the same point the
-// original did — before the load line and before the exports (`export =` is
-// emitted last), and nothing calls this module's exports during the fill.
+// name. Since #50's R2 the composition root builds the instance
+// (`ClaimAttributes.defaultDeps()`) and installs it; the module's old export
+// names are FACADES that forward to it, for the JavaScript callers, and a
+// process without the root builds a default when this module finishes loading.
+// Its `wire()` FILLS `stats.setAttributeResolver()`; the load line reads no
+// instance state and stays at load, so it is now written just before the fill
+// rather than just after it. Nothing calls this module's exports during the
+// fill.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -120,6 +124,7 @@ import audit = require('./audit');
 // The registry of failure codes, a LEAF. A refused change carries its code on
 // the audit row and, NON-ENUMERABLY, on the result a caller serialises.
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 const { log } = helpers;
 
@@ -278,6 +283,29 @@ class ClaimAttributes {
   constructor(private readonly deps: ClaimAttributesDeps) {
     deps.log.debug("Entering ClaimAttributes.constructor().");
     deps.log.debug("Leaving ClaimAttributes.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ClaimAttributesDeps {
+    log.debug("Entering ClaimAttributes.defaultDeps().");
+    log.debug("Leaving ClaimAttributes.defaultDeps().");
+    return {
+      log: log,
+      stats: stats,
+      vcClaims: vcClaims,
+      audit: audit,
+      errorCodes: errorCodes,
+      selections: selections
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once
+  // for whichever instance is installed (#50, R2).
+  static wire(instance: ClaimAttributes): void {
+    log.debug("Entering ClaimAttributes.wire().");
+    instance.installResolver();
+    log.debug("Leaving ClaimAttributes.wire().");
   }
 
   private isKnownSet(setId: unknown): boolean {
@@ -904,10 +932,11 @@ class ClaimAttributes {
   // samlAttributes(), wraps them, and merges what comes back UNDER the typed
   // claims — see the note there about precedence.
   //
-  // Done at require time, at module scope, like every other inverted
-  // dependency here (the transitional code below calls this at the point the
-  // original filled the slot). A process that never loads this module simply
-  // has no attribute claims, which is a smaller service and not a broken one.
+  // Done at require time, like every other inverted dependency here: since
+  // #50's R2 `wire()` calls this when the root installs the instance (or,
+  // without the root, when this module finishes loading). A process that never
+  // loads this module simply has no attribute claims, which is a smaller
+  // service and not a broken one.
   // -------------------------------------------------------------------------
   installResolver(): void {
     const { log, stats } = this.deps;
@@ -930,20 +959,20 @@ class ClaimAttributes {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and set going in the original file's
-// order: the slot, then the load line, then the exports.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const attributes = new ClaimAttributes({
-  log: log,
-  stats: stats,
-  vcClaims: vcClaims,
-  audit: audit,
-  errorCodes: errorCodes,
-  selections: selections
-});
+const slot = new InstanceSlot<ClaimAttributes>(
+  'common/claim_attributes',
+  () => new ClaimAttributes(ClaimAttributes.defaultDeps()),
+  ClaimAttributes.wire,
+  log);
 
-attributes.installResolver();
 
 log.info('The claim-attribute selection is loaded: /admin/claims can now put ' +
          'LDAP attributes from the directory into an access token and an ID ' +
@@ -952,40 +981,31 @@ log.info('The claim-attribute selection is loaded: /admin/claims can now put ' +
          'one. Nothing is selected on a fresh start, so this changes no ' +
          'token until somebody asks it to.');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   ClaimAttributes: ClaimAttributes,
+  installInstance: (instance: ClaimAttributes): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   CATALOGUE: ClaimAttributes.CATALOGUE,
   SET_IDS: ClaimAttributes.SET_IDS,
-  selectedRows: attributes.selectedRows.bind(attributes) as
-    ClaimAttributes['selectedRows'],
-  selectedNames: attributes.selectedNames.bind(attributes) as
-    ClaimAttributes['selectedNames'],
-  isSelected: attributes.isSelected.bind(attributes) as
-    ClaimAttributes['isSelected'],
-  allNames: attributes.allNames.bind(attributes) as
-    ClaimAttributes['allNames'],
-  setSelection: attributes.setSelection.bind(attributes) as
-    ClaimAttributes['setSelection'],
-  selectAll: attributes.selectAll.bind(attributes) as
-    ClaimAttributes['selectAll'],
-  clearSelection: attributes.clearSelection.bind(attributes) as
-    ClaimAttributes['clearSelection'],
-  claimsFor: attributes.claimsFor.bind(attributes) as
-    ClaimAttributes['claimsFor'],
-  samlAttributesFor: attributes.samlAttributesFor.bind(attributes) as
-    ClaimAttributes['samlAttributesFor'],
-  previewFor: attributes.previewFor.bind(attributes) as
-    ClaimAttributes['previewFor'],
-  catalogueValuesFor: attributes.catalogueValuesFor.bind(attributes) as
-    ClaimAttributes['catalogueValuesFor'],
-  catalogueRows: attributes.catalogueRows.bind(attributes) as
-    ClaimAttributes['catalogueRows'],
+  selectedRows: slot.forward('selectedRows'),
+  selectedNames: slot.forward('selectedNames'),
+  isSelected: slot.forward('isSelected'),
+  allNames: slot.forward('allNames'),
+  setSelection: slot.forward('setSelection'),
+  selectAll: slot.forward('selectAll'),
+  clearSelection: slot.forward('clearSelection'),
+  claimsFor: slot.forward('claimsFor'),
+  samlAttributesFor: slot.forward('samlAttributesFor'),
+  previewFor: slot.forward('previewFor'),
+  catalogueValuesFor: slot.forward('catalogueValuesFor'),
+  catalogueRows: slot.forward('catalogueRows'),
   // OIDC Core 5.5's half. Read by oauth-oidc/oauth2.ts at the UserInfo
   // endpoint and by admin-ui/admin.ts for the page that documents it — one
   // resolver, so the vocabulary the console publishes cannot drift from the
   // one the endpoint answers.
-  requestedClaimsFor: attributes.requestedClaimsFor.bind(attributes) as
-    ClaimAttributes['requestedClaimsFor'],
-  requestableClaims: attributes.requestableClaims.bind(attributes) as
-    ClaimAttributes['requestableClaims']
+  requestedClaimsFor: slot.forward('requestedClaimsFor'),
+  requestableClaims: slot.forward('requestableClaims')
 };

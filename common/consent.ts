@@ -137,9 +137,12 @@
 // error-code table and the counters through `ConsentDeps`, and holds the
 // directory slot as a field. The module still exports every name it did —
 // `setDirectory` included, which `ldap/ldap_server.js` fills at its require
-// time — from an instance built with the real modules. That instance is
-// TRANSITIONAL: it goes when the composition root exists and hands a
-// `Consent` to its callers. `Consent` is exported beside it for that root.
+// time. Since #50's R2 the composition root builds the instance
+// (`Consent.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when this module finishes loading. Its `wire()`
+// writes the load line, which reads the instance. `Consent` is exported beside
+// them for that root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -153,6 +156,7 @@ import errorCodes = require('./error_codes');
 // admin_stats.js registers no route and does not require this file, so this
 // closes no cycle and moves nothing in the router.
 import stats = require('./admin_stats');
+import InstanceSlot = require('./instance_slot');
 
 // The attribute a person's agreement is written into, and the one an operator's
 // override is written into. Named here rather than spelled at each call site so
@@ -196,6 +200,34 @@ class Consent {
   constructor(private readonly deps: ConsentDeps) {
     deps.log.debug("Entering Consent.constructor().");
     deps.log.debug("Leaving Consent.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ConsentDeps {
+    log.debug("Entering Consent.defaultDeps().");
+    log.debug("Leaving Consent.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      applications: applications,
+      errorCodes: errorCodes,
+      stats: stats
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once
+  // for whichever instance is installed (#50, R2).
+  static wire(instance: Consent): void {
+    log.debug("Entering Consent.wire().");
+    log.info('The consent register is loaded. The authorization endpoint ' +
+             'asks a person before it issues anything for a scope they have ' +
+             'not agreed to for that application (oauth2.consentRequired, ' +
+             (instance.required() ? 'ON' : 'OFF') + '). Answers are ' +
+             'written to ' + USER_ATTRIBUTE + ' on the person\'s own entry; ' +
+             GLOBAL_ATTRIBUTE + ' on an application\'s entry consents a ' +
+             'scope for everybody without writing anything about anybody.');
+    log.debug("Leaving Consent.wire().");
   }
 
   // ---------------------------------------------------------------------------
@@ -839,48 +871,48 @@ class Consent {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const consent = new Consent({
-  log: helpers.log,
-  config: config,
-  applications: applications,
-  errorCodes: errorCodes,
-  stats: stats
-});
-
 const log = helpers.log;
-log.info('The consent register is loaded. The authorization endpoint asks a ' +
-         'person before it issues anything for a scope they have not agreed ' +
-         'to for that application (oauth2.consentRequired, ' +
-         (consent.required() ? 'ON' : 'OFF') + '). Answers are written to ' +
-         USER_ATTRIBUTE + ' on the person\'s own entry; ' + GLOBAL_ATTRIBUTE +
-         ' on an application\'s entry consents a scope for everybody without ' +
-         'writing anything about anybody.');
+
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Consent>(
+  'common/consent',
+  () => new Consent(Consent.defaultDeps()),
+  Consent.wire,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Consent: Consent,
+  installInstance: (instance: Consent): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   USER_ATTRIBUTE: USER_ATTRIBUTE,
   GLOBAL_ATTRIBUTE: GLOBAL_ATTRIBUTE,
-  setDirectory: consent.setDirectory.bind(consent) as Consent['setDirectory'],
-  storable: consent.storable.bind(consent) as Consent['storable'],
-  required: consent.required.bind(consent) as Consent['required'],
-  consentValueOf: consent.consentValueOf.bind(consent) as
-    Consent['consentValueOf'],
-  parseConsentValue: consent.parseConsentValue.bind(consent) as
-    Consent['parseConsentValue'],
-  scopesOf: consent.scopesOf.bind(consent) as Consent['scopesOf'],
-  identityOf: consent.identityOf.bind(consent) as Consent['identityOf'],
-  scopeProblem: consent.scopeProblem.bind(consent) as Consent['scopeProblem'],
-  globalConsentsOf: consent.globalConsentsOf.bind(consent) as
-    Consent['globalConsentsOf'],
-  grantGlobal: consent.grantGlobal.bind(consent) as Consent['grantGlobal'],
-  revokeGlobal: consent.revokeGlobal.bind(consent) as Consent['revokeGlobal'],
-  consentsOf: consent.consentsOf.bind(consent) as Consent['consentsOf'],
-  outstanding: consent.outstanding.bind(consent) as Consent['outstanding'],
-  record: consent.record.bind(consent) as Consent['record'],
-  revoke: consent.revoke.bind(consent) as Consent['revoke'],
-  forget: consent.forget.bind(consent) as Consent['forget'],
-  register: consent.register.bind(consent) as Consent['register'],
-  state: consent.state.bind(consent) as Consent['state']
+  setDirectory: slot.forward('setDirectory'),
+  storable: slot.forward('storable'),
+  required: slot.forward('required'),
+  consentValueOf: slot.forward('consentValueOf'),
+  parseConsentValue: slot.forward('parseConsentValue'),
+  scopesOf: slot.forward('scopesOf'),
+  identityOf: slot.forward('identityOf'),
+  scopeProblem: slot.forward('scopeProblem'),
+  globalConsentsOf: slot.forward('globalConsentsOf'),
+  grantGlobal: slot.forward('grantGlobal'),
+  revokeGlobal: slot.forward('revokeGlobal'),
+  consentsOf: slot.forward('consentsOf'),
+  outstanding: slot.forward('outstanding'),
+  record: slot.forward('record'),
+  revoke: slot.forward('revoke'),
+  forget: slot.forward('forget'),
+  register: slot.forward('register'),
+  state: slot.forward('state')
 };

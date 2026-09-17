@@ -79,10 +79,14 @@
 // codes, the cluster's claims and mode, and LOADERS for the persistence store
 // and a loaded `ldap_server.js` through its constructor, so both stay as lazy
 // as they were. The module still exports `active`, `claim`, `claimFor`,
-// `runClaimed`, `refusalMessage`, `CLAIM_TTL_MS` and `CLAIM_WAIT_MS` from a
-// TRANSITIONAL instance for the unconverted modules that require it
-// (`ldap/ldap_server.js`, `scim/`, the console and the management API).
-// `DirectoryCreateClaims` is exported beside them for the composition root.
+// `runClaimed`, `refusalMessage`, `CLAIM_TTL_MS` and `CLAIM_WAIT_MS`, for the
+// unconverted modules that require it (`ldap/ldap_server.js`, `scim/`, the
+// console and the management API). Since #50's R2 the composition root builds
+// the instance (`DirectoryCreateClaims.defaultDeps()`) and installs it; the
+// module's old export names are FACADES that forward to it, for the JavaScript
+// callers, and a process without the root builds a default when this module
+// finishes loading. `DirectoryCreateClaims` is exported beside them for the
+// composition root.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -90,6 +94,7 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import claims = require('../cluster/cluster_claims');
 import cluster = require('../cluster/cluster');
+import InstanceSlot = require('../common/instance_slot');
 
 const log = bunyan.createLogger({ name: 'sts-directory-create-claims' });
 config.registerLogger(log);
@@ -183,7 +188,25 @@ class DirectoryCreateClaims {
     deps.log.debug("Leaving DirectoryCreateClaims.constructor().");
   }
 
-  // The default `loadPersistence` for the transitional instance.
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): DirectoryCreateClaimsDeps {
+    log.debug("Entering DirectoryCreateClaims.defaultDeps().");
+    log.debug("Leaving DirectoryCreateClaims.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      errorCodes: errorCodes,
+      claims: claims,
+      isActiveActive: function () {
+        return cluster.isActiveActive();
+      },
+      loadPersistence: DirectoryCreateClaims.persistenceModule,
+      loadedDirectory: DirectoryCreateClaims.cachedDirectory
+    };
+  }
+
+  // The default `loadPersistence`, passed by `defaultDeps()`.
   static persistenceModule(): ClaimsPersistence {
     log.debug("Entering DirectoryCreateClaims.persistenceModule().");
     log.debug("Leaving DirectoryCreateClaims.persistenceModule().");
@@ -193,7 +216,7 @@ class DirectoryCreateClaims {
     return require('../persistence/persistence');
   }
 
-  // The default `loadedDirectory` for the transitional instance: the
+  // The default `loadedDirectory`, passed by `defaultDeps()`: the
   // directory module from the require CACHE, never required from here (see
   // `claimFor()`).
   static cachedDirectory(): ClaimingDirectory | null {
@@ -465,32 +488,34 @@ class DirectoryCreateClaims {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const createClaims = new DirectoryCreateClaims({
-  log: log,
-  config: config,
-  errorCodes: errorCodes,
-  claims: claims,
-  isActiveActive: function () {
-    return cluster.isActiveActive();
-  },
-  loadPersistence: DirectoryCreateClaims.persistenceModule,
-  loadedDirectory: DirectoryCreateClaims.cachedDirectory
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<DirectoryCreateClaims>(
+  'ldap/directory_create_claims',
+  () => new DirectoryCreateClaims(DirectoryCreateClaims.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   DirectoryCreateClaims: DirectoryCreateClaims,
-  active: createClaims.active.bind(createClaims) as
-    DirectoryCreateClaims['active'],
-  claim: createClaims.claim.bind(createClaims) as
-    DirectoryCreateClaims['claim'],
-  claimFor: createClaims.claimFor.bind(createClaims) as
-    DirectoryCreateClaims['claimFor'],
-  runClaimed: createClaims.runClaimed.bind(createClaims) as
-    DirectoryCreateClaims['runClaimed'],
-  refusalMessage: createClaims.refusalMessage.bind(createClaims) as
-    DirectoryCreateClaims['refusalMessage'],
+  installInstance: (instance: DirectoryCreateClaims): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  active: slot.forward('active'),
+  claim: slot.forward('claim'),
+  claimFor: slot.forward('claimFor'),
+  runClaimed: slot.forward('runClaimed'),
+  refusalMessage: slot.forward('refusalMessage'),
   CLAIM_TTL_MS: DirectoryCreateClaims.CLAIM_TTL_MS,
   CLAIM_WAIT_MS: DirectoryCreateClaims.CLAIM_WAIT_MS
 };

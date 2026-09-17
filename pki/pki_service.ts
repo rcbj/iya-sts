@@ -53,10 +53,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `PkiService` takes the modules it uses through its constructor
-// (`PkiServiceDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `PkiService` is exported beside them for the
-// composition root.
+// (`PkiServiceDeps`). Since #50's R2 the composition root builds the instance
+// (`PkiService.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when the module finishes loading.
+// `PkiService` is exported beside them for the composition root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -81,6 +82,7 @@ import errorCodes = require('../common/error_codes');
 // The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY, installed in
 // listen() like every TCP listener's.
 import proxyProtocol = require('../common/proxy_protocol');
+import InstanceSlot = require('../common/instance_slot');
 
 // What `PkiService` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -104,6 +106,25 @@ class PkiService {
   constructor(private readonly deps: PkiServiceDeps) {
     deps.log.debug("Entering PkiService.constructor().");
     deps.log.debug("Leaving PkiService.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): PkiServiceDeps {
+    helpers.log.debug("Entering PkiService.defaultDeps().");
+    helpers.log.debug("Leaving PkiService.defaultDeps().");
+    return {
+      http: http,
+      nodeCrypto: nodeCrypto,
+      app: app,
+      log: log,
+      config: config,
+      pki: pki,
+      revocation: revocation,
+      certificateHeader: certificateHeader,
+      errorCodes: errorCodes,
+      proxyProtocol: proxyProtocol
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -651,21 +672,20 @@ class PkiService {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const pkiService = new PkiService({
-  http: http,
-  nodeCrypto: nodeCrypto,
-  app: app,
-  log: log,
-  config: config,
-  pki: pki,
-  revocation: revocation,
-  certificateHeader: certificateHeader,
-  errorCodes: errorCodes,
-  proxyProtocol: proxyProtocol
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PkiService>(
+  'pki/pki_service',
+  () => new PkiService(PkiService.defaultDeps()),
+  null,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
@@ -724,17 +744,20 @@ let httpListening = false;
 let httpListenError = '';
 let httpBoundPort = 0;
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => pkiService.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   PkiService: PkiService,
+  installInstance: (instance: PkiService): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // `listen()` is what `server.js` calls. The other three are exported so a
   // caller can read the listener's state, the CRL cache policy and the path
   // filter without binding a socket; the URL shapes themselves are
   // `common/pki_revocation.js`'s `distributionPoints()`.
-  cacheSeconds: pkiService.cacheSeconds.bind(pkiService) as
-    PkiService['cacheSeconds'],
-  listen: pkiService.listen.bind(pkiService) as PkiService['listen'],
-  status: pkiService.status.bind(pkiService) as PkiService['status'],
-  revocationOnly: pkiService.revocationOnly.bind(pkiService) as
-    PkiService['revocationOnly']
+  cacheSeconds: slot.forward('cacheSeconds'),
+  listen: slot.forward('listen'),
+  status: slot.forward('status'),
+  revocationOnly: slot.forward('revocationOnly')
 };

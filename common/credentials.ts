@@ -68,11 +68,14 @@
 //   * **THE THREE PENDING STORES STAY MODULE-LEVEL `realms.map()`s**, declared
 //     at load as they always were, because a store becomes per realm (and
 //     persisted) at its declaration.
-//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, from ONE TRANSITIONAL
-//     instance built from the real modules at the bottom of the file, which
-//     also declares the three cluster capabilities at load, as the original
-//     did. It goes when the composition root exists; `Credentials` is exported
-//     beside it for that root.
+//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**. Since #50's R2 the
+//     composition root builds the instance (`Credentials.defaultDeps()`) and
+//     installs it; the module's old export names are FACADES that forward to
+//     it, for the JavaScript callers, and a process without the root builds a
+//     default when this module finishes loading. Its `wire()` declares the
+//     three cluster capabilities, still at require time: the root installs the
+//     instance as it loads the stack. `Credentials` is exported beside them for
+//     that root.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
@@ -150,6 +153,7 @@ import errorCodes = require('./error_codes');
 import claims = require('../cluster/cluster_claims');
 import counters = require('../cluster/cluster_counters');
 import capabilities = require('../cluster/cluster_capabilities');
+import InstanceSlot = require('./instance_slot');
 
 // What `Credentials` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -245,6 +249,44 @@ class Credentials {
   constructor(private readonly deps: CredentialsDeps) {
     deps.log.debug("Entering Credentials.constructor().");
     deps.log.debug("Leaving Credentials.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): CredentialsDeps {
+    helpers.log.debug("Entering Credentials.defaultDeps().");
+    helpers.log.debug("Leaving Credentials.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      crypto: crypto,
+      mode: mode,
+      realms: realms,
+      keystore: keystore,
+      totp: totp,
+      backupCodes: backupCodes,
+      passwordPolicy: passwordPolicy,
+      webauthnPolicy: webauthnPolicy,
+      webauthnVerifier: webauthnVerifier,
+      errorCodes: errorCodes,
+      claims: claims,
+      counters: counters,
+      capabilities: capabilities,
+      nodeCrypto: function () {
+        return require('crypto');
+      },
+      loadPersistence: function () {
+        return require('../persistence/persistence');
+      }
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once
+  // for whichever instance is installed (#50, R2).
+  static wire(instance: Credentials): void {
+    helpers.log.debug("Entering Credentials.wire().");
+    instance.provideCapabilities();
+    helpers.log.debug("Leaving Credentials.wire().");
   }
 
   private coded(code, verdict) {
@@ -4982,41 +5024,30 @@ class Credentials {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and the capabilities declared at load
-// as the original file declared them, after everything above.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const credentials = new Credentials({
-  log: helpers.log,
-  config: config,
-  crypto: crypto,
-  mode: mode,
-  realms: realms,
-  keystore: keystore,
-  totp: totp,
-  backupCodes: backupCodes,
-  passwordPolicy: passwordPolicy,
-  webauthnPolicy: webauthnPolicy,
-  webauthnVerifier: webauthnVerifier,
-  errorCodes: errorCodes,
-  claims: claims,
-  counters: counters,
-  capabilities: capabilities,
-  nodeCrypto: function () {
-    return require('crypto');
-  },
-  loadPersistence: function () {
-    return require('../persistence/persistence');
-  }
-});
+const slot = new InstanceSlot<Credentials>(
+  'common/credentials',
+  () => new Credentials(Credentials.defaultDeps()),
+  Credentials.wire,
+  helpers.log);
 
-credentials.provideCapabilities();
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Credentials: Credentials,
+  installInstance: (instance: Credentials): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---
   TOTP_ATTRIBUTE: Credentials.TOTP_ATTRIBUTE,
-  totpOf: credentials.totpOf.bind(credentials) as Credentials['totpOf'],
+  totpOf: slot.forward('totpOf'),
   // THE RECOVERY CODES (2026-09-10). `revealBackupCodes()` used to be the one
   // export here that handed back a live credential; since 2026-09-11 the set
   // is hashed and it only refuses — its own header says why it is kept.
@@ -5025,146 +5056,87 @@ export = {
   // a set as a side effect of enrolling a second factor, which cannot survive
   // hashing — a hash can only be made while the code is in the clear, and an
   // automatic issue would hash a list nobody was looking at.
-  beginBackupCodes: credentials.beginBackupCodes.bind(credentials) as
-    Credentials['beginBackupCodes'],
-  confirmBackupCodes: credentials.confirmBackupCodes.bind(credentials) as
-    Credentials['confirmBackupCodes'],
-  discardBackupCodes: credentials.discardBackupCodes.bind(credentials) as
-    Credentials['discardBackupCodes'],
-  pendingBackupCodesFor: credentials.pendingBackupCodesFor.bind(credentials) as
-    Credentials['pendingBackupCodesFor'],
-  backupCodeStatus: credentials.backupCodeStatus.bind(credentials) as
-    Credentials['backupCodeStatus'],
-  revealBackupCodes: credentials.revealBackupCodes.bind(credentials) as
-    Credentials['revealBackupCodes'],
-  verifyBackupCode: credentials.verifyBackupCode.bind(credentials) as
-    Credentials['verifyBackupCode'],
+  beginBackupCodes: slot.forward('beginBackupCodes'),
+  confirmBackupCodes: slot.forward('confirmBackupCodes'),
+  discardBackupCodes: slot.forward('discardBackupCodes'),
+  pendingBackupCodesFor: slot.forward('pendingBackupCodesFor'),
+  backupCodeStatus: slot.forward('backupCodeStatus'),
+  revealBackupCodes: slot.forward('revealBackupCodes'),
+  verifyBackupCode: slot.forward('verifyBackupCode'),
   // The door the sign-in screen uses. See its header: a wrong code is ten
   // scrypt hashes, which is 906ms of blocked event loop on one thread.
-  verifyBackupCodeAsync: credentials.verifyBackupCodeAsync.bind(credentials) as
-    Credentials['verifyBackupCodeAsync'],
-  removeBackupCodes: credentials.removeBackupCodes.bind(credentials) as
-    Credentials['removeBackupCodes'],
-  hasTotp: credentials.hasTotp.bind(credentials) as Credentials['hasTotp'],
-  beginTotpEnrolment: credentials.beginTotpEnrolment.bind(credentials) as
-    Credentials['beginTotpEnrolment'],
-  pendingTotpFor: credentials.pendingTotpFor.bind(credentials) as
-    Credentials['pendingTotpFor'],
-  abandonTotpEnrolment: credentials.abandonTotpEnrolment.bind(credentials) as
-    Credentials['abandonTotpEnrolment'],
-  confirmTotpEnrolment: credentials.confirmTotpEnrolment.bind(credentials) as
-    Credentials['confirmTotpEnrolment'],
-  verifyTotp: credentials.verifyTotp.bind(credentials) as
-    Credentials['verifyTotp'],
-  removeTotp: credentials.removeTotp.bind(credentials) as
-    Credentials['removeTotp'],
-  secondFactorHolders: credentials.secondFactorHolders.bind(credentials) as
-    Credentials['secondFactorHolders'],
-  issueActivation: credentials.issueActivation.bind(credentials) as
-    Credentials['issueActivation'],
-  checkActivation: credentials.checkActivation.bind(credentials) as
-    Credentials['checkActivation'],
-  consumeActivation: credentials.consumeActivation.bind(credentials) as
-    Credentials['consumeActivation'],
-  activationPending: credentials.activationPending.bind(credentials) as
-    Credentials['activationPending'],
+  verifyBackupCodeAsync: slot.forward('verifyBackupCodeAsync'),
+  removeBackupCodes: slot.forward('removeBackupCodes'),
+  hasTotp: slot.forward('hasTotp'),
+  beginTotpEnrolment: slot.forward('beginTotpEnrolment'),
+  pendingTotpFor: slot.forward('pendingTotpFor'),
+  abandonTotpEnrolment: slot.forward('abandonTotpEnrolment'),
+  confirmTotpEnrolment: slot.forward('confirmTotpEnrolment'),
+  verifyTotp: slot.forward('verifyTotp'),
+  removeTotp: slot.forward('removeTotp'),
+  secondFactorHolders: slot.forward('secondFactorHolders'),
+  issueActivation: slot.forward('issueActivation'),
+  checkActivation: slot.forward('checkActivation'),
+  consumeActivation: slot.forward('consumeActivation'),
+  activationPending: slot.forward('activationPending'),
   WEBAUTHN_ATTRIBUTE: Credentials.WEBAUTHN_ATTRIBUTE,
   ROLES: Credentials.ROLES,
-  keysOf: credentials.keysOf.bind(credentials) as Credentials['keysOf'],
-  addKey: credentials.addKey.bind(credentials) as Credentials['addKey'],
-  removeKey: credentials.removeKey.bind(credentials) as
-    Credentials['removeKey'],
+  keysOf: slot.forward('keysOf'),
+  addKey: slot.forward('addKey'),
+  removeKey: slot.forward('removeKey'),
   // THE TWO-STEP ENROLMENT (2026-09-10), which is what lets somebody hold a
   // BACKUP key. `/portal/keys` drives all four; the sign-in screen's
   // enrol-on-first-use path does not, because there the ceremony is part of a
   // sign-in and the pending record it binds to is `authn.js`'s.
-  beginKeyEnrolment: credentials.beginKeyEnrolment.bind(credentials) as
-    Credentials['beginKeyEnrolment'],
-  pendingKeyEnrolmentFor:
-    credentials.pendingKeyEnrolmentFor.bind(credentials) as
-      Credentials['pendingKeyEnrolmentFor'],
-  abandonKeyEnrolment: credentials.abandonKeyEnrolment.bind(credentials) as
-    Credentials['abandonKeyEnrolment'],
-  confirmKeyEnrolment: credentials.confirmKeyEnrolment.bind(credentials) as
-    Credentials['confirmKeyEnrolment'],
-  addKeyClaimed: credentials.addKeyClaimed.bind(credentials) as
-    Credentials['addKeyClaimed'],
-  noteKeyUsed: credentials.noteKeyUsed.bind(credentials) as
-    Credentials['noteKeyUsed'],
-  mechanismsFor: credentials.mechanismsFor.bind(credentials) as
-    Credentials['mechanismsFor'],
-  bootstrap: credentials.bootstrap.bind(credentials) as
-    Credentials['bootstrap'],
+  beginKeyEnrolment: slot.forward('beginKeyEnrolment'),
+  pendingKeyEnrolmentFor: slot.forward('pendingKeyEnrolmentFor'),
+  abandonKeyEnrolment: slot.forward('abandonKeyEnrolment'),
+  confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
+  addKeyClaimed: slot.forward('addKeyClaimed'),
+  noteKeyUsed: slot.forward('noteKeyUsed'),
+  mechanismsFor: slot.forward('mechanismsFor'),
+  bootstrap: slot.forward('bootstrap'),
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
-  setDirectory: credentials.setDirectory.bind(credentials) as
-    Credentials['setDirectory'],
+  setDirectory: slot.forward('setDirectory'),
   // The plaintext-password observer (2026-09-12) — see the block above it.
-  setPasswordObserver: credentials.setPasswordObserver.bind(credentials) as
-    Credentials['setPasswordObserver'],
-  storable: credentials.storable.bind(credentials) as Credentials['storable'],
-  verify: credentials.verify.bind(credentials) as Credentials['verify'],
-  verifyAsync: credentials.verifyAsync.bind(credentials) as
-    Credentials['verifyAsync'],
+  setPasswordObserver: slot.forward('setPasswordObserver'),
+  storable: slot.forward('storable'),
+  verify: slot.forward('verify'),
+  verifyAsync: slot.forward('verifyAsync'),
   // A PASSWORD THAT MUST BE CHANGED (2026-09-13) — see resetRefusal().
-  passwordResetRequired: credentials.passwordResetRequired.bind(credentials) as
-    Credentials['passwordResetRequired'],
-  setPasswordResetRequired:
-    credentials.setPasswordResetRequired.bind(credentials) as
-      Credentials['setPasswordResetRequired'],
-  setPassword: credentials.setPassword.bind(credentials) as
-    Credentials['setPassword'],
-  generatePassword: credentials.generatePassword.bind(credentials) as
-    Credentials['generatePassword'],
+  passwordResetRequired: slot.forward('passwordResetRequired'),
+  setPasswordResetRequired: slot.forward('setPasswordResetRequired'),
+  setPassword: slot.forward('setPassword'),
+  generatePassword: slot.forward('generatePassword'),
   // The password policy, for a door that wants to say so before it tries —
   // `passwordRules()` for a form to print, `passwordProblem()` for the shape of
   // one password, and `preparePassword()` for the LDAP handlers, which have to
   // apply a change inside an atomic modify rather than have it written for
   // them.
-  passwordProblem: credentials.passwordProblem.bind(credentials) as
-    Credentials['passwordProblem'],
-  passwordRules: credentials.passwordRules.bind(credentials) as
-    Credentials['passwordRules'],
-  preparePassword: credentials.preparePassword.bind(credentials) as
-    Credentials['preparePassword'],
-  passwordWritten: credentials.passwordWritten.bind(credentials) as
-    Credentials['passwordWritten'],
-  hasPassword: credentials.hasPassword.bind(credentials) as
-    Credentials['hasPassword'],
+  passwordProblem: slot.forward('passwordProblem'),
+  passwordRules: slot.forward('passwordRules'),
+  preparePassword: slot.forward('preparePassword'),
+  passwordWritten: slot.forward('passwordWritten'),
+  hasPassword: slot.forward('hasPassword'),
   // WHAT AN ADMINISTRATOR DOES FROM A PERSON'S /admin/users PAGE (2026-09-13)
   // — see the block above module.exports.
-  removePassword: credentials.removePassword.bind(credentials) as
-    Credentials['removePassword'],
-  issuePasswordReset: credentials.issuePasswordReset.bind(credentials) as
-    Credentials['issuePasswordReset'],
-  checkPasswordReset: credentials.checkPasswordReset.bind(credentials) as
-    Credentials['checkPasswordReset'],
-  consumePasswordReset: credentials.consumePasswordReset.bind(credentials) as
-    Credentials['consumePasswordReset'],
-  passwordResetPending: credentials.passwordResetPending.bind(credentials) as
-    Credentials['passwordResetPending'],
-  mfaRequirementFor: credentials.mfaRequirementFor.bind(credentials) as
-    Credentials['mfaRequirementFor'],
-  setMfaRequired: credentials.setMfaRequired.bind(credentials) as
-    Credentials['setMfaRequired'],
-  removePrimaryKeys: credentials.removePrimaryKeys.bind(credentials) as
-    Credentials['removePrimaryKeys'],
-  removeSecondFactors: credentials.removeSecondFactors.bind(credentials) as
-    Credentials['removeSecondFactors'],
+  removePassword: slot.forward('removePassword'),
+  issuePasswordReset: slot.forward('issuePasswordReset'),
+  checkPasswordReset: slot.forward('checkPasswordReset'),
+  consumePasswordReset: slot.forward('consumePasswordReset'),
+  passwordResetPending: slot.forward('passwordResetPending'),
+  mfaRequirementFor: slot.forward('mfaRequirementFor'),
+  setMfaRequired: slot.forward('setMfaRequired'),
+  removePrimaryKeys: slot.forward('removePrimaryKeys'),
+  removeSecondFactors: slot.forward('removeSecondFactors'),
   // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46) — each is argued above
   // its definition.
-  verifyTotpAsync: credentials.verifyTotpAsync.bind(credentials) as
-    Credentials['verifyTotpAsync'],
-  spendAssertion: credentials.spendAssertion.bind(credentials) as
-    Credentials['spendAssertion'],
-  reconcileBackupCodes: credentials.reconcileBackupCodes.bind(credentials) as
-    Credentials['reconcileBackupCodes'],
-  spendActivation: credentials.spendActivation.bind(credentials) as
-    Credentials['spendActivation'],
-  spendPasswordReset: credentials.spendPasswordReset.bind(credentials) as
-    Credentials['spendPasswordReset'],
-  releaseLink: credentials.releaseLink.bind(credentials) as
-    Credentials['releaseLink'],
-  bootstrapOnce: credentials.bootstrapOnce.bind(credentials) as
-    Credentials['bootstrapOnce']
+  verifyTotpAsync: slot.forward('verifyTotpAsync'),
+  spendAssertion: slot.forward('spendAssertion'),
+  reconcileBackupCodes: slot.forward('reconcileBackupCodes'),
+  spendActivation: slot.forward('spendActivation'),
+  spendPasswordReset: slot.forward('spendPasswordReset'),
+  releaseLink: slot.forward('releaseLink'),
+  bootstrapOnce: slot.forward('bootstrapOnce')
 };

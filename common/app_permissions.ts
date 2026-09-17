@@ -99,10 +99,11 @@
 // error-code table through `AppPermissionsDeps`. It holds no state: the
 // register is the directory, read through `applications.js`. The module still
 // exports `register`, `forApplication`, the five actions, `graph`, `clusters`
-// and `clusterFor`, bound to an instance built with the real modules. That
-// instance is TRANSITIONAL: it goes when the composition root exists and hands
-// an `AppPermissions` to its callers. `AppPermissions` is exported beside it
-// for that root.
+// and `clusterFor`. Since #50's R2 the composition root builds the instance
+// (`AppPermissions.defaultDeps()`) and installs it; the module's old export
+// names are FACADES that forward to it, for the JavaScript callers, and a
+// process without the root builds a default when this module finishes loading.
+// `AppPermissions` is exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -111,6 +112,7 @@ import applications = require('./applications');
 // NON-ENUMERABLY on the result, so what a caller serialises is unchanged; the
 // refusals `applications.updateApplication()` answers already carry theirs.
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 // What the delegated-permission register needs from the rest of the service.
 interface AppPermissionsDeps {
@@ -123,6 +125,18 @@ class AppPermissions {
   constructor(private readonly deps: AppPermissionsDeps) {
     deps.log.debug("Entering AppPermissions.constructor().");
     deps.log.debug("Leaving AppPermissions.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): AppPermissionsDeps {
+    helpers.log.debug("Entering AppPermissions.defaultDeps().");
+    helpers.log.debug("Leaving AppPermissions.defaultDeps().");
+    return {
+      log: helpers.log,
+      applications: applications,
+      errorCodes: errorCodes
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -962,31 +976,36 @@ class AppPermissions {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const permissions = new AppPermissions({
-  log: helpers.log,
-  applications: applications,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AppPermissions>(
+  'common/app_permissions',
+  () => new AppPermissions(AppPermissions.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AppPermissions: AppPermissions,
-  register: permissions.register.bind(permissions) as
-    AppPermissions['register'],
-  forApplication: permissions.forApplication.bind(permissions) as
-    AppPermissions['forApplication'],
-  setBaseUri: permissions.setBaseUri.bind(permissions) as
-    AppPermissions['setBaseUri'],
-  definePermission: permissions.definePermission.bind(permissions) as
-    AppPermissions['definePermission'],
-  removePermission: permissions.removePermission.bind(permissions) as
-    AppPermissions['removePermission'],
-  grant: permissions.grant.bind(permissions) as AppPermissions['grant'],
-  revoke: permissions.revoke.bind(permissions) as AppPermissions['revoke'],
-  graph: permissions.graph.bind(permissions) as AppPermissions['graph'],
-  clusters: permissions.clusters.bind(permissions) as
-    AppPermissions['clusters'],
-  clusterFor: permissions.clusterFor.bind(permissions) as
-    AppPermissions['clusterFor']
+  installInstance: (instance: AppPermissions): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  register: slot.forward('register'),
+  forApplication: slot.forward('forApplication'),
+  setBaseUri: slot.forward('setBaseUri'),
+  definePermission: slot.forward('definePermission'),
+  removePermission: slot.forward('removePermission'),
+  grant: slot.forward('grant'),
+  revoke: slot.forward('revoke'),
+  graph: slot.forward('graph'),
+  clusters: slot.forward('clusters'),
+  clusterFor: slot.forward('clusterFor')
 };

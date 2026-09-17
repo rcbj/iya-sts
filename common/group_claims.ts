@@ -103,11 +103,14 @@
 // shape: `GroupClaims` takes the logger, the settings, the application
 // registry, the claim-set registry (`admin_stats.js`) and the error codes
 // through its constructor, and holds the directory slot. The module still
-// exports every old name from a TRANSITIONAL instance — `setDirectory` among
-// them, the slot `ldap/ldap_server.js` fills — and that instance FILLS
-// `stats.setGroupResolver()` at require time, at the same point the original
-// did: before the load line and before the exports (`export =` is emitted
-// last), and nothing calls this module's exports during the fill.
+// exports every old name — `setDirectory` among them, the slot
+// `ldap/ldap_server.js` fills. Since #50's R2 the composition root builds the
+// instance (`GroupClaims.defaultDeps()`) and installs it; the module's old
+// export names are FACADES that forward to it, for the JavaScript callers, and
+// a process without the root builds a default when this module finishes
+// loading. Its `wire()` FILLS `stats.setGroupResolver()` and then writes the
+// load line, in the original order, and nothing calls this module's exports
+// during the fill.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -123,6 +126,7 @@ import applications = require('./applications');
 import stats = require('./admin_stats');
 // The registry of failure codes, a LEAF — see common/error_codes.js.
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 const { log } = helpers;
 
@@ -187,6 +191,35 @@ class GroupClaims {
   constructor(private readonly deps: GroupClaimsDeps) {
     deps.log.debug("Entering GroupClaims.constructor().");
     deps.log.debug("Leaving GroupClaims.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): GroupClaimsDeps {
+    log.debug("Entering GroupClaims.defaultDeps().");
+    log.debug("Leaving GroupClaims.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      applications: applications,
+      stats: stats,
+      errorCodes: errorCodes
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once
+  // for whichever instance is installed (#50, R2).
+  static wire(instance: GroupClaims): void {
+    log.debug("Entering GroupClaims.wire().");
+    instance.installResolver();
+    log.info('The group claim is loaded: an access token, an ID Token and ' +
+             'both SAML assertions will carry "' + instance.claimName() +
+             '" for anybody who is a member of a group in the embedded ' +
+             'directory. It is ' + (instance.enabled() ? 'ON' : 'OFF') +
+             ' (groups.claim), and the claim is omitted entirely for ' +
+             'somebody who is in no group. A group here still grants ' +
+             'nothing — no endpoint reads this claim.');
+    log.debug("Leaving GroupClaims.wire().");
   }
 
   // -------------------------------------------------------------------------
@@ -587,10 +620,11 @@ class GroupClaims {
   // the typed claims and the directory attributes — see the note on
   // precedence there.
   //
-  // Done at require time, at module scope, like every other inverted
-  // dependency here (the transitional code below calls this at the point the
-  // original filled the slot). A process that never loads this module simply
-  // has no groups claim, which is a smaller service and not a broken one.
+  // Done at require time, like every other inverted dependency here: since
+  // #50's R2 `wire()` calls this when the root installs the instance (or,
+  // without the root, when this module finishes loading). A process that never
+  // loads this module simply has no groups claim, which is a smaller service
+  // and not a broken one.
   // -------------------------------------------------------------------------
   installResolver(): void {
     const { log, stats } = this.deps;
@@ -604,43 +638,34 @@ class GroupClaims {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and set going in the original file's
-// order: the slot, then the load line, then the exports.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const groupClaims = new GroupClaims({
-  log: log,
-  config: config,
-  applications: applications,
-  stats: stats,
-  errorCodes: errorCodes
-});
+const slot = new InstanceSlot<GroupClaims>(
+  'common/group_claims',
+  () => new GroupClaims(GroupClaims.defaultDeps()),
+  GroupClaims.wire,
+  log);
 
-groupClaims.installResolver();
-
-log.info('The group claim is loaded: an access token, an ID Token and both ' +
-         'SAML assertions will carry "' + groupClaims.claimName() + '" for ' +
-         'anybody who is a member of a group in the embedded directory. It ' +
-         'is ' + (groupClaims.enabled() ? 'ON' : 'OFF') + ' (groups.claim), ' +
-         'and the claim is omitted entirely for somebody who is in no ' +
-         'group. A group here still grants nothing — no endpoint reads this ' +
-         'claim.');
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GroupClaims: GroupClaims,
-  setDirectory: groupClaims.setDirectory.bind(groupClaims) as
-    GroupClaims['setDirectory'],
-  enabled: groupClaims.enabled.bind(groupClaims) as GroupClaims['enabled'],
-  claimName: groupClaims.claimName.bind(groupClaims) as
-    GroupClaims['claimName'],
-  valueForm: groupClaims.valueForm.bind(groupClaims) as
-    GroupClaims['valueForm'],
-  memberOfCounts: groupClaims.memberOfCounts.bind(groupClaims) as
-    GroupClaims['memberOfCounts'],
-  groupsOf: groupClaims.groupsOf.bind(groupClaims) as GroupClaims['groupsOf'],
-  jwtClaimsFor: groupClaims.jwtClaimsFor.bind(groupClaims) as
-    GroupClaims['jwtClaimsFor'],
-  samlAttributesFor: groupClaims.samlAttributesFor.bind(groupClaims) as
-    GroupClaims['samlAttributesFor'],
-  state: groupClaims.state.bind(groupClaims) as GroupClaims['state']
+  installInstance: (instance: GroupClaims): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  setDirectory: slot.forward('setDirectory'),
+  enabled: slot.forward('enabled'),
+  claimName: slot.forward('claimName'),
+  valueForm: slot.forward('valueForm'),
+  memberOfCounts: slot.forward('memberOfCounts'),
+  groupsOf: slot.forward('groupsOf'),
+  jwtClaimsFor: slot.forward('jwtClaimsFor'),
+  samlAttributesFor: slot.forward('samlAttributesFor'),
+  state: slot.forward('state')
 };

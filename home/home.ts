@@ -94,8 +94,11 @@
 // shape: `Home` takes node's `fs` and `path`, the express app, helpers, the
 // realm registry, `config`, `mode`, `version` and the error-code registry
 // through its constructor, and its three routes are registered by
-// `registerRoutes(app)`. The TRANSITIONAL instance at the bottom is built at
-// load and registers NOTHING (#50, R1): the module exports its
+// `registerRoutes(app)`. Since #50's R2 the composition root builds the
+// instance (`Home.defaultDeps()`) and installs it; the module's old export
+// names are FACADES that forward to it, for the JavaScript callers, and a
+// process without the root builds a default when this module finishes loading.
+// The instance registers NOTHING (#50, R1): the module exports its
 // `registerRoutes(app)` beside the class, and `common/protocol_stack.ts` calls
 // it at the point in the route order where requiring this module used to
 // register the routes (rule 1). The logo is still read at require time, at
@@ -138,6 +141,7 @@ import version = require('../common/version');
 
 // The registry of failure codes, a LEAF — see common/error_codes.js.
 import errorCodes = require('../common/error_codes');
+import InstanceSlot = require('../common/instance_slot');
 
 const APP_VERSION = version.load();
 
@@ -228,6 +232,24 @@ class Home {
   constructor(private readonly deps: HomeDeps) {
     deps.helpers.log.debug("Entering Home.constructor().");
     deps.helpers.log.debug("Leaving Home.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): HomeDeps {
+    helpers.log.debug("Entering Home.defaultDeps().");
+    helpers.log.debug("Leaving Home.defaultDeps().");
+    return {
+      fs: fs,
+      path: path,
+      app: app,
+      helpers: helpers,
+      realms: realms,
+      config: config,
+      mode: mode,
+      version: version,
+      errorCodes: errorCodes
+    };
   }
 
   // The front page, the realm directory and the logo, in the order they were
@@ -470,18 +492,20 @@ class Home {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const home = new Home({
-  fs: fs,
-  path: path,
-  app: app,
-  helpers: helpers,
-  realms: realms,
-  config: config,
-  mode: mode,
-  version: version,
-  errorCodes: errorCodes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Home>(
+  'home/home',
+  () => new Home(Home.defaultDeps()),
+  null,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
@@ -493,7 +517,12 @@ const home = new Home({
 // the way every other converted route module here is, and the three URLs above
 // are this page's business alone. See rule 1 in the repository's CLAUDE.md.
 // The class is exported for the composition root, as the #50 section says.
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => home.registerRoutes(target),
-  Home: Home
+  registerRoutes: slot.forward('registerRoutes'),
+  Home: Home,
+  installInstance: (instance: Home): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin()
 };

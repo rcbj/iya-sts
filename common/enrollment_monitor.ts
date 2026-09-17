@@ -33,14 +33,17 @@
 // constructor. The stores are still declared at module scope, as
 // `realms.map()`, because a store becomes per realm at its declaration. The
 // module still exports `FAMILIES`, `RECENT`, `record`, `snapshot` and
-// `resetForTests` from a TRANSITIONAL instance for the unconverted modules
-// that require it; that instance goes when the composition root exists.
+// `resetForTests`. Since #50's R2 the composition root builds the instance
+// (`EnrollmentMonitor.defaultDeps()`) and installs it; the module's old export
+// names are FACADES that forward to it, for the JavaScript callers, and a
+// process without the root builds a default when this module finishes loading.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import realms = require('./realms');
 import replication = require('../persistence/persistence_replication');
+import InstanceSlot = require('./instance_slot');
 
 // One family's counters in one realm. `any` on the tables so a reader can add
 // them, as the page and the API do.
@@ -123,6 +126,25 @@ class EnrollmentMonitor {
   constructor(private readonly deps: EnrollmentMonitorDeps) {
     deps.log.debug("Entering EnrollmentMonitor.constructor().");
     deps.log.debug("Leaving EnrollmentMonitor.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): EnrollmentMonitorDeps {
+    helpers.log.debug("Entering EnrollmentMonitor.defaultDeps().");
+    helpers.log.debug("Leaving EnrollmentMonitor.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      stores: stores,
+      remoteRows: function (handle, realmId, key) {
+        return replication.remoteRows(handle, realmId, key);
+      },
+      currentRealmId: function () {
+        return realms.currentId();
+      },
+      startedAt: startedAt
+    };
   }
 
   private emptyRow(): CounterRow {
@@ -315,27 +337,32 @@ class EnrollmentMonitor {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const monitor = new EnrollmentMonitor({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  stores: stores,
-  remoteRows: function (handle, realmId, key) {
-    return replication.remoteRows(handle, realmId, key);
-  },
-  currentRealmId: function () {
-    return realms.currentId();
-  },
-  startedAt: startedAt
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<EnrollmentMonitor>(
+  'common/enrollment_monitor',
+  () => new EnrollmentMonitor(EnrollmentMonitor.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   EnrollmentMonitor: EnrollmentMonitor,
+  installInstance: (instance: EnrollmentMonitor): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FAMILIES: FAMILIES,
   RECENT: RECENT,
-  record: monitor.record.bind(monitor) as EnrollmentMonitor['record'],
-  snapshot: monitor.snapshot.bind(monitor) as EnrollmentMonitor['snapshot'],
-  resetForTests: monitor.resetForTests.bind(monitor) as
-    EnrollmentMonitor['resetForTests']
+  record: slot.forward('record'),
+  snapshot: slot.forward('snapshot'),
+  resetForTests: slot.forward('resetForTests')
 };

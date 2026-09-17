@@ -45,9 +45,12 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16). `PqcSupport` takes the logger, the
 // JOSE composite table and the vendored registry through its constructor, as
 // `PqcSupportDeps`. The module still exports `KINDS`, `ofAlgorithm`,
-// `ofCertificate`, `of` and `sentence` from ONE TRANSITIONAL instance built
-// with the real modules below, for the unconverted callers; it goes when the
-// composition root exists. The two helpers that were free functions are
+// `ofCertificate`, `of` and `sentence`, for the unconverted callers. Since
+// #50's R2 the composition root builds the instance
+// (`PqcSupport.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when this module finishes loading. The two
+// helpers that were free functions are
 // private static methods, logging through the logger they are handed.
 // ===========================================================================
 
@@ -66,6 +69,7 @@ import asn1js = require('asn1js');
 import pqJose = require('./pq_jose');
 // The vendored registry: every post-quantum algorithm by id, name and OID.
 import pqcX509 = require('./vendored/pqc_x509');
+import InstanceSlot = require('./instance_slot');
 
 type PqcKind = 'pq' | 'composite' | 'kem' | 'hybrid';
 
@@ -132,6 +136,18 @@ class PqcSupport {
   constructor(private readonly deps: PqcSupportDeps) {
     deps.log.debug("Entering PqcSupport.constructor().");
     deps.log.debug("Leaving PqcSupport.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): PqcSupportDeps {
+    log.debug("Entering PqcSupport.defaultDeps().");
+    log.debug("Leaving PqcSupport.defaultDeps().");
+    return {
+      log: log,
+      joseComposites: pqJose.COMPOSITES,
+      registry: pqcX509
+    };
   }
 
   private static describeTrad(log: Logger,
@@ -310,21 +326,31 @@ class PqcSupport {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const support = new PqcSupport({
-  log: log,
-  joseComposites: pqJose.COMPOSITES,
-  registry: pqcX509
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PqcSupport>(
+  'common/pqc_support',
+  () => new PqcSupport(PqcSupport.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PqcSupport: PqcSupport,
+  installInstance: (instance: PqcSupport): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   KINDS: PqcSupport.KINDS,
-  ofAlgorithm: support.ofAlgorithm.bind(support) as
-    PqcSupport['ofAlgorithm'],
-  ofCertificate: support.ofCertificate.bind(support) as
-    PqcSupport['ofCertificate'],
-  of: support.of.bind(support) as PqcSupport['of'],
-  sentence: support.sentence.bind(support) as PqcSupport['sentence']
+  ofAlgorithm: slot.forward('ofAlgorithm'),
+  ofCertificate: slot.forward('ofCertificate'),
+  of: slot.forward('of'),
+  sentence: slot.forward('sentence')
 };

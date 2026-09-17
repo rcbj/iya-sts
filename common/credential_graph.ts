@@ -95,17 +95,19 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16). `CredentialGraph` takes the
 // logger, `admin_stats.js`, `delegation.js` and the person's graph
 // (`user_graph.ts`) through its constructor (`CredentialGraphDeps`), and
-// reaches for no module on its own. The module still exports
-// `MAX_GENERATIONS`, `trailOf` and `lineageOf`, bound to ONE instance built
-// from the real modules; that instance is TRANSITIONAL and goes when the
-// composition root builds a `CredentialGraph` and hands it to the console.
-// `CredentialGraph` is exported beside them for that root.
+// reaches for no module on its own. The module still exports `MAX_GENERATIONS`,
+// `trailOf` and `lineageOf`. Since #50's R2 the composition root builds the
+// instance (`CredentialGraph.defaultDeps()`) and installs it; the module's old
+// export names are FACADES that forward to it, for the JavaScript callers, and
+// a process without the root builds a default when this module finishes
+// loading. `CredentialGraph` is exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
 import stats = require('./admin_stats');
 import delegation = require('./delegation');
 import userGraph = require('./user_graph');
+import InstanceSlot = require('./instance_slot');
 
 // How many generations to follow. Nothing here can produce a cycle — an
 // identifier is produced once and the walk marks what it has seen — so this is
@@ -134,6 +136,19 @@ class CredentialGraph {
   constructor(private readonly deps: CredentialGraphDeps) {
     deps.log.debug("Entering CredentialGraph.constructor().");
     deps.log.debug("Leaving CredentialGraph.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): CredentialGraphDeps {
+    helpers.log.debug("Entering CredentialGraph.defaultDeps().");
+    helpers.log.debug("Leaving CredentialGraph.defaultDeps().");
+    return {
+      log: helpers.log,
+      stats: stats,
+      delegation: delegation,
+      userGraph: userGraph
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -648,22 +663,31 @@ class CredentialGraph {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const credentialGraph = new CredentialGraph({
-  log: helpers.log,
-  stats: stats,
-  delegation: delegation,
-  userGraph: userGraph
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<CredentialGraph>(
+  'common/credential_graph',
+  () => new CredentialGraph(CredentialGraph.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   CredentialGraph: CredentialGraph,
+  installInstance: (instance: CredentialGraph): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   MAX_GENERATIONS: MAX_GENERATIONS,
   // Exported for the console's prose and for a test that wants the walk
   // without the drawing.
-  trailOf: credentialGraph.trailOf.bind(credentialGraph) as
-    CredentialGraph['trailOf'],
-  lineageOf: credentialGraph.lineageOf.bind(credentialGraph) as
-    CredentialGraph['lineageOf']
+  trailOf: slot.forward('trailOf'),
+  lineageOf: slot.forward('lineageOf')
 };

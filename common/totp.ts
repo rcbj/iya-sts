@@ -100,11 +100,13 @@
 //     error codes, node's `randomBytes` and a LAZY loader for `qrcode` (still
 //     required only when a QR code is drawn, for `qrSvgDataUri()`'s reason).
 //     Nothing inside the class reaches for a module on its own.
-//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, from ONE TRANSITIONAL
-//     instance built from the real modules at the bottom of this file, because
-//     `credentials.ts`, the portal, the sign-in screen and the console require
-//     it by those names. That instance goes when the composition root exists;
-//     `Totp` is exported beside it for that root.
+//   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, because `credentials.ts`,
+//     the portal, the sign-in screen and the console require it by those names.
+//     Since #50's R2 the composition root builds the instance
+//     (`Totp.defaultDeps()`) and installs it; the module's old export names are
+//     FACADES that forward to it, for the JavaScript callers, and a process
+//     without the root builds a default when this module finishes loading.
+//     `Totp` is exported beside them for that root.
 // ===========================================================================
 
 import nodeCrypto = require('crypto');
@@ -117,6 +119,7 @@ import realms = require('./realms');
 // under the Symbol `mark()` uses, so a caller reads it with `codeOf()` and
 // nothing that serialises the answer can send it anywhere.
 import errorCodes = require('./error_codes');
+import InstanceSlot = require('./instance_slot');
 
 // What an enrolment copied onto the record, and what `verify()` reads back.
 interface TotpRecord {
@@ -212,6 +215,26 @@ class Totp {
   constructor(private readonly deps: TotpDeps) {
     deps.log.debug("Entering Totp.constructor().");
     deps.log.debug("Leaving Totp.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): TotpDeps {
+    helpers.log.debug("Entering Totp.defaultDeps().");
+    helpers.log.debug("Leaving Totp.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      crypto: crypto as unknown as TotpDeps['crypto'],
+      realms: realms,
+      errorCodes: errorCodes as unknown as TotpDeps['errorCodes'],
+      randomBytes: function (size: number): Buffer {
+        return nodeCrypto.randomBytes(size);
+      },
+      loadQrcode: function () {
+        return require('qrcode');
+      }
+    };
   }
 
   base32Encode(buffer: Buffer | string): string {
@@ -631,7 +654,7 @@ class Totp {
     // this module is loaded by `credentials.ts` — which is on the path of
     // every password verification in the service, including the ones in `npm
     // test` where no QR code is ever drawn. (Since #50 the require is in the
-    // transitional instance's `loadQrcode`, still called only from here.)
+    // `loadQrcode` that `defaultDeps()` passes, still called only from here.)
     const qrcode = loadQrcode();
     log.debug("Leaving Totp.qrSvgDataUri().");
     return qrcode.toString(String(uri), {
@@ -675,36 +698,40 @@ class Totp {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const totp = new Totp({
-  log: helpers.log,
-  config: config,
-  crypto: crypto as unknown as TotpDeps['crypto'],
-  realms: realms,
-  errorCodes: errorCodes as unknown as TotpDeps['errorCodes'],
-  randomBytes: function (size: number): Buffer {
-    return nodeCrypto.randomBytes(size);
-  },
-  loadQrcode: function () {
-    return require('qrcode');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Totp>(
+  'common/totp',
+  () => new Totp(Totp.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Totp: Totp,
+  installInstance: (instance: Totp): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   BASE32_ALPHABET: Totp.BASE32_ALPHABET,
-  base32Encode: totp.base32Encode.bind(totp) as Totp['base32Encode'],
-  base32Decode: totp.base32Decode.bind(totp) as Totp['base32Decode'],
-  grouped: totp.grouped.bind(totp) as Totp['grouped'],
-  settings: totp.settings.bind(totp) as Totp['settings'],
-  offered: totp.offered.bind(totp) as Totp['offered'],
-  generateSecret: totp.generateSecret.bind(totp) as Totp['generateSecret'],
-  counterAt: totp.counterAt.bind(totp) as Totp['counterAt'],
-  codeAt: totp.codeAt.bind(totp) as Totp['codeAt'],
-  verify: totp.verify.bind(totp) as Totp['verify'],
-  issuerFor: totp.issuerFor.bind(totp) as Totp['issuerFor'],
-  otpauthUri: totp.otpauthUri.bind(totp) as Totp['otpauthUri'],
-  qrSvgDataUri: totp.qrSvgDataUri.bind(totp) as Totp['qrSvgDataUri'],
-  report: totp.report.bind(totp) as Totp['report']
+  base32Encode: slot.forward('base32Encode'),
+  base32Decode: slot.forward('base32Decode'),
+  grouped: slot.forward('grouped'),
+  settings: slot.forward('settings'),
+  offered: slot.forward('offered'),
+  generateSecret: slot.forward('generateSecret'),
+  counterAt: slot.forward('counterAt'),
+  codeAt: slot.forward('codeAt'),
+  verify: slot.forward('verify'),
+  issuerFor: slot.forward('issuerFor'),
+  otpauthUri: slot.forward('otpauthUri'),
+  qrSvgDataUri: slot.forward('qrSvgDataUri'),
+  report: slot.forward('report')
 };

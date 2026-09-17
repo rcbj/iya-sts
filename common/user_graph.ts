@@ -150,11 +150,12 @@
 // the three registers it unions — `admin_stats.js`, `delegation.js` and
 // `applications.js` — through its constructor (`UserGraphDeps`), and reaches
 // for no module on its own. The tables (`FLOWS` and the rest) stay module
-// constants and are static members as well. The module still exports every
-// name it did, bound to ONE instance built from the real modules; that
-// instance is TRANSITIONAL and goes when the composition root builds a
-// `UserGraph` and hands it to the console and to `credential_graph.ts`.
-// `UserGraph` is exported beside them for that root.
+// constants and are static members as well. The module still exports every name
+// it did, for the console and `credential_graph.ts`. Since #50's R2 the
+// composition root builds the instance (`UserGraph.defaultDeps()`) and installs
+// it; the module's old export names are FACADES that forward to it, for the
+// JavaScript callers, and a process without the root builds a default when this
+// module finishes loading. `UserGraph` is exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -166,6 +167,7 @@ import delegation = require('./delegation');
 // direction: no cycle to close, and it registers no route so there is none to
 // move. Rule 3e's test is not reached.
 import applications = require('./applications');
+import InstanceSlot = require('./instance_slot');
 
 // ---------------------------------------------------------------------------
 // THE GRANTS AND THE FLOWS, WHICH ARE THE ANSWER TO *WHAT WAS THIS TOKEN
@@ -376,6 +378,19 @@ class UserGraph {
   constructor(private readonly deps: UserGraphDeps) {
     deps.log.debug("Entering UserGraph.constructor().");
     deps.log.debug("Leaving UserGraph.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): UserGraphDeps {
+    helpers.log.debug("Entering UserGraph.defaultDeps().");
+    helpers.log.debug("Leaving UserGraph.defaultDeps().");
+    return {
+      log: helpers.log,
+      stats: stats,
+      delegation: delegation,
+      applications: applications
+    };
   }
 
   // The row for a recorded grant string. An UNKNOWN one comes back named after
@@ -1509,48 +1524,55 @@ class UserGraph {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const userGraph = new UserGraph({
-  log: helpers.log,
-  stats: stats,
-  delegation: delegation,
-  applications: applications
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<UserGraph>(
+  'common/user_graph',
+  () => new UserGraph(UserGraph.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   UserGraph: UserGraph,
+  installInstance: (instance: UserGraph): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FLOWS: FLOWS,
   FLOW_IDS: FLOW_IDS,
   FLOW_NOT_STATED: FLOW_NOT_STATED,
   ARTIFACT_FLOWS: ARTIFACT_FLOWS,
-  flowRow: userGraph.flowRow.bind(userGraph) as UserGraph['flowRow'],
-  artifactFlowRow: userGraph.artifactFlowRow.bind(userGraph) as
-    UserGraph['artifactFlowRow'],
+  flowRow: slot.forward('flowRow'),
+  artifactFlowRow: slot.forward('artifactFlowRow'),
   // WHO HOLDS A CREDENTIAL, and one line of detail about it. Exported for
   // `credential_graph.ts`, which draws one credential's ancestry and has to put
   // the same party at the end of the same line as this file does — two answers
   // to "whose token is this" would be two pictures of one issuance, on two
   // pages of one console, and the reader comparing them would have no way to
   // tell that from two parties that really are different.
-  holderOf: userGraph.holderOf.bind(userGraph) as UserGraph['holderOf'],
-  detailOf: userGraph.detailOf.bind(userGraph) as UserGraph['detailOf'],
+  holderOf: slot.forward('holderOf'),
+  detailOf: slot.forward('detailOf'),
   // WHAT A CREDENTIAL IS ADDRESSED TO. Exported for `credential_graph.ts` for
   // the same reason `holderOf()` is: that file draws one credential's ancestry
   // and puts the resource at the end of the same line this one does, and two
   // answers to "what is this token for" would be two pictures of one issuance
   // on two pages of one console.
-  audienceParties: userGraph.audienceParties.bind(userGraph) as
-    UserGraph['audienceParties'],
+  audienceParties: slot.forward('audienceParties'),
   // AND WHAT IT MAY DO THERE. Exported for `credential_graph.ts` beside the two
   // above and for exactly their reason: that file draws the SAME `reaches` line
   // for one credential that this one draws for one person, and two answers to
   // "which permissions does this token carry" would be two labels on one
   // relationship on two pages of one console.
-  permissionsAddressedTo: userGraph.permissionsAddressedTo.bind(userGraph) as
-    UserGraph['permissionsAddressedTo'],
-  userList: userGraph.userList.bind(userGraph) as UserGraph['userList'],
-  graphFor: userGraph.graphFor.bind(userGraph) as UserGraph['graphFor'],
-  activityFor: userGraph.activityFor.bind(userGraph) as
-    UserGraph['activityFor']
+  permissionsAddressedTo: slot.forward('permissionsAddressedTo'),
+  userList: slot.forward('userList'),
+  graphFor: slot.forward('graphFor'),
+  activityFor: slot.forward('activityFor')
 };

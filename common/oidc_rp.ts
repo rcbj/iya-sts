@@ -144,10 +144,12 @@
 // constructor as `OidcRelyingPartyDeps`. The flow store (`realms.map()`) and
 // the in-flight renewal map are still declared at module scope, because a
 // store becomes per realm at its declaration. The module still exports every
-// name it exported before, from a TRANSITIONAL instance built from the real
-// modules, for the unconverted surfaces and the tests that require it; that
-// instance goes when the composition root exists. `OidcRelyingParty` is
-// exported beside it for that root.
+// name it exported before, for the unconverted surfaces and the tests that
+// require it. Since #50's R2 the composition root builds the instance
+// (`OidcRelyingParty.defaultDeps()`) and installs it; the module's old export
+// names are FACADES that forward to it, for the JavaScript callers, and a
+// process without the root builds a default when this module finishes loading.
+// `OidcRelyingParty` is exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import https = require('https');
@@ -178,6 +180,7 @@ import errorCodes = require('./error_codes');
 // table and reach `persistence.js` only lazily, so neither closes a cycle.
 import clusterClaims = require('../cluster/cluster_claims');
 import clusterBarrier = require('../cluster/cluster_barrier');
+import InstanceSlot = require('./instance_slot');
 
 type SurfaceId = 'admin' | 'portal' | 'debugger';
 
@@ -426,6 +429,36 @@ class OidcRelyingParty {
   constructor(private readonly deps: OidcRelyingPartyDeps) {
     deps.log.debug("Entering OidcRelyingParty.constructor().");
     deps.log.debug("Leaving OidcRelyingParty.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): OidcRelyingPartyDeps {
+    helpers.log.debug("Entering OidcRelyingParty.defaultDeps().");
+    helpers.log.debug("Leaving OidcRelyingParty.defaultDeps().");
+    return {
+      log: helpers.log,
+      helpers: helpers,
+      PORT: helpers.PORT,
+      baseUrlOf: helpers.baseUrlOf,
+      config: config,
+      mode: mode,
+      realms: realms,
+      applications: applications,
+      stsCrypto: stsCrypto,
+      audit: audit,
+      authn: authn,
+      errorCodes: errorCodes,
+      clusterClaims: clusterClaims,
+      clusterBarrier: clusterBarrier,
+      http: http,
+      https: https,
+      loadTlsServer: function () {
+        return require('../tls/tls_server');
+      },
+      flows: flows,
+      renewing: renewing
+    };
   }
 
   private coded(code: string, answer: any, res?: any): any {
@@ -2398,83 +2431,57 @@ class OidcRelyingParty {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one. `PORT` and `baseUrlOf` are taken off
-// `helpers` here, at load, which is when this file always took them.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const relyingParty = new OidcRelyingParty({
-  log: helpers.log,
-  helpers: helpers,
-  PORT: helpers.PORT,
-  baseUrlOf: helpers.baseUrlOf,
-  config: config,
-  mode: mode,
-  realms: realms,
-  applications: applications,
-  stsCrypto: stsCrypto,
-  audit: audit,
-  authn: authn,
-  errorCodes: errorCodes,
-  clusterClaims: clusterClaims,
-  clusterBarrier: clusterBarrier,
-  http: http,
-  https: https,
-  loadTlsServer: function () {
-    return require('../tls/tls_server');
-  },
-  flows: flows,
-  renewing: renewing
-});
+const slot = new InstanceSlot<OidcRelyingParty>(
+  'common/oidc_rp',
+  () => new OidcRelyingParty(OidcRelyingParty.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   OidcRelyingParty: OidcRelyingParty,
+  installInstance: (instance: OidcRelyingParty): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SURFACES: SURFACES,
-  surfaceOf: relyingParty.surfaceOf.bind(relyingParty) as
-    OidcRelyingParty['surfaceOf'],
-  beginSignIn: relyingParty.beginSignIn.bind(relyingParty) as
-    OidcRelyingParty['beginSignIn'],
-  handleCallback: relyingParty.handleCallback.bind(relyingParty) as
-    OidcRelyingParty['handleCallback'],
-  sessionFor: relyingParty.sessionFor.bind(relyingParty) as
-    OidcRelyingParty['sessionFor'],
-  endSessionFor: relyingParty.endSessionFor.bind(relyingParty) as
-    OidcRelyingParty['endSessionFor'],
+  surfaceOf: slot.forward('surfaceOf'),
+  beginSignIn: slot.forward('beginSignIn'),
+  handleCallback: slot.forward('handleCallback'),
+  sessionFor: slot.forward('sessionFor'),
+  endSessionFor: slot.forward('endSessionFor'),
   // THE RENEWAL (2026-09-12): the middleware both surfaces register above
   // their routes, the function it calls, and — for
   // `tests/oidc_rp_renewal.js` — the two pure decisions no request can be
   // made to exercise on demand.
-  renewal: relyingParty.renewal.bind(relyingParty) as
-    OidcRelyingParty['renewal'],
-  renewIfDue: relyingParty.renewIfDue.bind(relyingParty) as
-    OidcRelyingParty['renewIfDue'],
-  renewalDecision: relyingParty.renewalDecision.bind(relyingParty) as
-    OidcRelyingParty['renewalDecision'],
-  checkRenewedClaims: relyingParty.checkRenewedClaims.bind(relyingParty) as
-    OidcRelyingParty['checkRenewedClaims'],
-  tokensFrom: relyingParty.tokensFrom.bind(relyingParty) as
-    OidcRelyingParty['tokensFrom'],
+  renewal: slot.forward('renewal'),
+  renewIfDue: slot.forward('renewIfDue'),
+  renewalDecision: slot.forward('renewalDecision'),
+  checkRenewedClaims: slot.forward('checkRenewedClaims'),
+  tokensFrom: slot.forward('tokensFrom'),
   // #34: the key and the proof, exported for `tests/oidc_rp_dpop.js` — which
   // puts a proof made here through `dpop.verifyProof()` there, so the one
   // place in this service that MAKES a DPoP proof is held to the same reading
   // as the one that checks them. Nothing else calls either.
-  dpopKey: relyingParty.dpopKey.bind(relyingParty) as
-    OidcRelyingParty['dpopKey'],
-  dpopProof: relyingParty.dpopProof.bind(relyingParty) as
-    OidcRelyingParty['dpopProof'],
+  dpopKey: slot.forward('dpopKey'),
+  dpopProof: slot.forward('dpopProof'),
   // For the two surfaces' own metadata pages and for the tests: which client
   // a surface is, so that nothing has to write the identifier down twice.
-  clientIdFor: relyingParty.clientIdFor.bind(relyingParty) as
-    OidcRelyingParty['clientIdFor'],
-  cookieFor: relyingParty.cookieFor.bind(relyingParty) as
-    OidcRelyingParty['cookieFor'],
+  clientIdFor: slot.forward('clientIdFor'),
+  cookieFor: slot.forward('cookieFor'),
   // For `tests/oidc_rp_addresses.js` (2026-09-12): the address rule and the
   // loopback origin are the two halves of this file no request can see
   // directly — one decides what is written onto an entry, the other where a
   // socket is opened.
-  ensureRedirectUri: relyingParty.ensureRedirectUri.bind(relyingParty) as
-    OidcRelyingParty['ensureRedirectUri'],
-  loopbackOrigin: relyingParty.loopbackOrigin.bind(relyingParty) as
-    OidcRelyingParty['loopbackOrigin'],
-  flowTtlMs: relyingParty.flowTtlMs.bind(relyingParty) as
-    OidcRelyingParty['flowTtlMs']
+  ensureRedirectUri: slot.forward('ensureRedirectUri'),
+  loopbackOrigin: slot.forward('loopbackOrigin'),
+  flowTtlMs: slot.forward('flowTtlMs')
 };
