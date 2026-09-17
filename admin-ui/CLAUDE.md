@@ -5831,6 +5831,32 @@ things are this console's.
 `tests/admin_credential_controls.js` drives the actions, the portal page and the
 enrolment step in a child process; no owned browser job presses the section yet.
 
+## `/admin/vc-status`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
+
+Verifiable Credentials → Credential status, drawn by `vc_status_admin.ts` from
+`oid4vc/vc_status.ts` (`oid4vc/CLAUDE.md`, rule 3as). It shows where the Token
+Status List, its aggregation and the two Bitstring Status List credentials are
+served, the list size, `bits` and lifetimes, the counts, and — paged, newest
+first — every live credential's index, format, configuration, effective status,
+the explicit status beside it, and who set it.
+
+Four decisions:
+
+* **A REALM'S PAGE, not a service page.** What it shows and changes is the
+  ambient realm's own lists, which is #32's rule: a realm's administrator runs
+  their realm's issuance. It is absent from `SERVICE_PAGES`.
+* **THE CONTROL IS PER ROW**: Suspend, Reinstate (from SUSPENDED only) and
+  Revoke. INVALID is final, as the draft means it, and the refusal says so
+  (`STS-VC-0082`).
+* **THE STATUS IS COMPUTED, AND THIS PAGE KEEPS NO SECOND ANSWER.** A
+  credential an administrator revoked on `/admin/tokens` reads INVALID here by
+  that act and a restore there clears it; a global sign-out's disown reads the
+  same way. One question, one answer — the thing rule 3m is about, applied to
+  a page rather than to a family.
+* **RULE 7**: `GET /admin-api/vc-status` answers `statusView()` and
+  `POST /admin-api/vc-status/{suspend|reinstate|revoke}` answers
+  `statusAction()`, the two functions the page itself calls.
+
 ## `/admin/caches`: EVERY CACHE AND REPLAY STORE, AND ONE STORE'S ENTRIES (#74, 2026-09-17)
 
 Monitoring → Caches, drawn by `caches_admin.ts` from

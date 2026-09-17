@@ -3940,6 +3940,23 @@ would be nothing to address its row by at all. It is deliberately kept apart fro
 one row of the issued register. `nums.artifactsRecorded` counts what has EVER
 been recorded and is not `artifacts.length`, which falls back as the cap shifts.
 
+### The handle, read back (#38's follow-ups, 2026-09-17)
+
+`artifactRevokedByKey(key)` answers the mark on one artifact by the HANDLE
+alone, for a caller that kept the handle and not the record: the wallet sign-in
+register (`oid4vc/vc_issued.ts`) asks it whether an administrator has disowned
+the credential a presentation carries, and the status lists ask it which bit to
+publish. The register of revocations outlives the row — it is a
+`realms.map({persist})` of its own, for the reason above it — so this needs
+nothing but the key.
+
+**And a credential artifact may name a PERSON as well as a subject.** An
+`ldp_vc`'s subject is the holder's `did:jwk` and says nothing about whose wallet
+it is, so `recordCredential()` takes `person` — the `urn:uuid:` subject of the
+verified access token the credential was issued on — and `userDetail()` files
+the row under them as well. Without it that credential was nobody's on
+`/admin/users` and out of reach of that person's global sign-out.
+
 ### And one ordering fix that is easy to read past
 
 `issuedList()` now stamps an ordinal before it sorts, and ties break on it.

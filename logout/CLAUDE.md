@@ -63,6 +63,7 @@ termination is a call into that same module:
 | Pre-authorized codes | `vc_offers.preAuthorizedCodes` | deleted there |
 | Directory connections | `ldap_server.boundConnections()` | `ldap_server.dropConnectionsFor()` — the only pair here that may be answering about another PROCESS's sockets; see the LDAP bullet below |
 | Kerberos tickets | `krb5_principals.signedOutAt()` | `krb5_principals.signOut()` |
+| Wallet credentials | `oid4vc/vc_issued.js`'s register | `vcIssued.disown()` — the one row here whose end this service ENFORCES, at `/authn/wallet` |
 | Everything already issued | `admin_stats.js`'s artifacts | **nothing can** |
 
 **A cache here would be a second answer to "is this still live", and the wrong
@@ -259,6 +260,34 @@ reason**: they carry no user. The Verifier does not know who will present until
 a presentation arrives, so a transaction cannot appear in a per-person inventory
 without inventing a link that is not there.
 
+**AND A WALLET CREDENTIAL IS PRESENT TOO, as `wallet-credential` (#38's
+follow-ups), which is the one family here whose termination this service can
+actually ENFORCE.** Everything in `issued` below is beyond recall because
+nothing consults this service when it is presented — and a wallet credential
+is the exception in one direction only: it is beyond recall EVERYWHERE ELSE,
+and at `/authn/wallet` this service is the party being presented to. So ending
+one is not only a statement:
+
+* it stamps the row in `oid4vc/vc_issued.ts`, and every credential issued to
+  that wallet key for this person UP TO THAT INSTANT stops signing anybody in
+  here — one issued afterwards, on a fresh token, signs in again, which is
+  what lets somebody who signed out everywhere enrol a wallet again;
+* it sets each one's status-list bit INVALID, so a verifier ELSEWHERE learns
+  it as well — the first thing on this page that reaches beyond this service
+  without a channel of its own (`oid4vc/CLAUDE.md`, *The status lists*).
+
+`endOrder` 26, with the other credentials and before the session; a row is a
+handle and never a credential, and the label says which format and how many.
+
+**AN ORDINARY SIGN-OUT DOES NOT REACH IT, AND THAT IS THE POINT.**
+`/oauth2/logout`, SAML Single Logout, `wsignout1.0` and the console's and the
+portal's Sign out end ONE session through `authn.dropSession()`, which never
+touches this register. A person who signs out of an application signs back in
+with the wallet they are holding; a person who signs out of EVERYTHING is
+asking for exactly what this family does. The three surfaces that reach it are
+the three that go through `terminate()`: `/logout`, `/admin/logout` and
+`/admin-api/logout`.
+
 **A WALLET SIGN-IN'S TRANSACTION IS PRESENT, as `wallet-signin` (2026-09-17,
 #38), and the sentence above is why it had to be argued rather than assumed.**
 Before the wallet answers it names nobody, exactly like the bar door's. Once the
@@ -292,7 +321,7 @@ acts on something other than the row it sits beside. The button therefore calls
 `terminate(key, [id])`, the same function a global logout goes through, with a
 selection of one — same audit row, same settings honoured, same refusals.
 
-**THREE OF THE ELEVEN FAMILIES HAVE A SESSION AND THE OTHER EIGHT DO NOT**, and the
+**THREE OF THE TWELVE FAMILIES HAVE A SESSION AND THE OTHER NINE DO NOT**, and the
 distinction is the page's whole subject rather than a simplification. A session
 is state THIS SERVICE holds that makes somebody currently authenticated; a
 token, an assertion, a code and an SVID are things it has HANDED OUT, they

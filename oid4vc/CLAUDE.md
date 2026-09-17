@@ -12,7 +12,10 @@ DID Core with DIF domain linkage.
 | `vc_issuer.ts` | The three credential endpoints. |
 | `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
 | `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
-| `vc_signin.ts` | Signing in with a wallet: `/authn/wallet` and `/authn/wallet/wait`. |
+| `vc_signin.ts` | Signing in with a wallet: `/authn/wallet`, `/authn/wallet/wait`, the Digital Credentials API answer at `/authn/wallet/dc-api` and the one script at `/authn/wallet.js`. |
+| `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
+| `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
+| `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
@@ -102,7 +105,8 @@ consumers of that definition, not co-owners of it.
   directory one step earlier and come back out as a `directory` value. Nothing reads a credential claim back either:
   no token, assertion or PAC carries one and no endpoint decides anything on one.
 * ~~**A presentation that VERIFIES is not a sign-on either.**~~ — **reversed
-  2026-09-17 (#38)** for one door and one kind of credential; *Signing in with
+  2026-09-17 (#38)** for one door, and for every credential format it mints
+  since the follow-ups; *Signing in with
   a wallet* below is the argument. **The bar door still is not one.** The
   OID4VP Verifier checks properly — issuer signature, every Disclosure digest
   against `_sd`, the Key Binding JWT including `sd_hash`, the nonce, the
@@ -199,19 +203,22 @@ that** — `scimActive: false` deactivates nobody, which is a root `CLAUDE.md`
 row of its own. **There is no status list**: the issuer publishes none, and the
 register's expiry and `forget()` are the closest thing.
 
-**Only `dc+sd-jwt` is asked for**: `jwt_vc_json`'s VP JWT has no freshness check
-here and discloses the whole credential, and `ldp_vc`'s derived proof has no
-holder key and is unlinkable to the credential by design. The request is always
-BY REFERENCE (signed, so a wallet can show where it is presenting), names this
-issuer's `vct` whatever `oid4vp.expectedVct` says (frozen on the transaction as
-`expectedVct`), and asks for `sub` only.
+~~**Only `dc+sd-jwt` is asked for**~~ — **reversed in the follow-ups; every
+format signs in now**, and the paragraph that was here is the argument for
+what each one had to grow: `jwt_vc_json`'s VP JWT had no freshness check and
+`ldp_vc`'s derived proof had no holder key at all. See *Every format signs in*
+below. The request is always BY REFERENCE (signed, so a wallet can show where
+it is presenting) and names this issuer's own credential whatever
+`oid4vp.expectedVct` says (frozen on the transaction as `expectedVct` for the
+SD-JWT query).
 
 **Another realm's credential** fails twice: its signature does not verify here,
 and this realm's partition of the register never held it.
 
 ### What the session says
 
-`amr ["pop"]`, `acr "1"`. RFC 8176's `pop` is proof of possession of a key
+`amr ["pop"]`, `acr "1"` — **unless a key attestation says more, and unless a
+second factor follows; see *A wallet is a factor* below.** RFC 8176's `pop` is proof of possession of a key
 whose storage is unspecified, which is exactly what is known — a JWK says
 nothing about hardware, and the issuer accepts no key attestation — so `hwk` or
 `swk` would claim knowledge nobody has, and `user` would claim a presence test
@@ -235,29 +242,224 @@ transaction lives `oid4vp.signInTtlS` — enforced at the response endpoint too,
 for a sign-in only (`STS-VC-0056`; the bar door's late answers are still
 verified as before) — and is answered once and finished once (above).
 
-**The cross-device relay is not prevented, and says so**: somebody who starts a
-sign-in and shows their own QR code to a victim holds the binding cookie. The
-signed request lets the wallet say where the presentation goes, the lifetime is
-five minutes, and `oid4vp.signInCrossDevice` drops the code.
+~~**The cross-device relay is not prevented, and says so**~~ — **answered in
+the follow-ups**: the plain QR code is the one path it works on, it is OFF by
+default in both modes now, and the Digital Credentials API path it was replaced
+by cannot be relayed. *The Digital Credentials API* below is the argument.
 
 **A browser holding a DIFFERENT person's session** has it replaced, not joined:
 `startSession()`'s `sameIdentity()` decides, as for every door
 (`tests/oid4vp_sign_in.js` 5b).
 
-### No script
+### The page has a script now, and it is the root `CLAUDE.md`'s exception
 
-The wait page reloads itself with `<meta http-equiv="refresh">` every
-`oid4vp.signInPollS` seconds and the QR code is an SVG drawn here, under the
-base policy's `img-src 'self' data:`. A polling page looks like the case for a
-script and is not: the reload is the poll and the answer is a page this server
-draws. The `meta` target is not an `href`, so `app.js` does not rewrite it for a
-realm and `vc_signin.ts` passes it through `realms.href()` itself.
+The wait page had none and argued that it needed none: a `<meta>` refresh was
+the poll, and the answer was a page this server drew. **What changed is the
+Digital Credentials API**, which is a browser API call
+(`navigator.credentials.get({ digital: … })`) and cannot be made by markup, a
+form or a link: nothing but a script can ask a wallet that way, and the answer
+arrives in the page and nowhere else. So the page CANNOT offer the one path
+that resists the relay without one, which is the test the root file sets, and
+the exception takes the same shape as every other:
+
+* `script-src 'self'` through `app.contentSecurityPolicy()`, so
+  `frame-ancestors` and `base-uri` cannot be lost; never `'unsafe-inline'`;
+* ONE static resource, `/authn/wallet.js`, which carries no transaction and is
+  the same bytes for everybody — everything it needs is a `data-request`
+  attribute on the form;
+* a REAL SUBMIT BUTTON. The form posts to `/authn/wallet/dc-api` whether the
+  script ran or not; with it blocked, that endpoint answers a page saying the
+  API did not run (`STS-VC-0081`) and offers the same-device link, which is a
+  plain `<a>`.
+
+**THE `<meta>` REFRESH MOVED TO THE QR PAGE** (`?qr=1`, drawn only where the QR
+code is on): a reload while the browser's credential dialog is open throws the
+dialog away. That page has no script, polls exactly as the wait page used to,
+and is the second half of the refused-script table's row — a polling page still
+does not need a script, which is why it did not get one.
+
+### The Digital Credentials API (rcbj's decision for the relay)
+
+`vc_verifier.ts`'s `dcApiRequest()` builds a SECOND request for the same
+transaction — one nonce, one DCQL query, answered once:
+
+* **`openid4vp-v1-signed`** (Appendix A.1), as `{ request: <JWS> }`: the signed
+  form, so the wallet can authenticate this Verifier and — with
+  **`expected_origins`** naming this service's origin, which a signed request
+  MUST carry (A.2) — refuse the request if a page on another origin hands it
+  over. That is the relay, refused at the victim's phone.
+* **`response_mode` `dc_api.jwt`** by default: the answer travels through the
+  page's script, so it is encrypted (section 8.3) to an ephemeral P-256
+  ECDH-ES key made for this transaction and published in `client_metadata`.
+  The private half lives on the transaction, SEALED under the key-encryption
+  key where there is one, and dies with it.
+  `oid4vp.signInDcApiResponseMode` asks for `dc_api` instead, for a wallet
+  that cannot encrypt.
+* **No `response_uri`, `redirect_uri` or `state`**, which A.2 does not define
+  for this API.
+* **THE AUDIENCE IS THE ORIGIN.** A.4 fixes it at `origin:<origin>` *even for
+  a signed request*, so the Key Binding JWT's `aud`, the VP JWT's `aud` and the
+  Data Integrity proof's `domain` are checked against that and not against the
+  Client Identifier. A presentation made for the `direct_post` path therefore
+  signs nobody in here, which `tests/oid4vp_dc_api.js` holds.
+
+`/authn/wallet/dc-api` takes what the page posts. It is admitted exactly as the
+wait page is — the binding cookie, the transaction, the pending record — and
+then: the `Origin` header must be this service's own (`STS-VC-0074`); the
+answer must be a `DigitalCredential` in the protocol the request named
+(`STS-VC-0073`); an encrypted one is opened with that transaction's key; and
+the sign-in is finished IN THAT REQUEST, because it is the browser's own — no
+poll, no `response_code`, nothing to collect.
+
+**What is not implemented**: the unsigned and multi-signed request forms
+(A.3.1, A.3.2.2) — this door always signs, and an unsigned request carries no
+`expected_origins` at all — and `transaction_data`.
+
+### Every format signs in
+
+The DCQL query carries one credential query per format in
+`oid4vp.signInFormats` and a `credential_sets` saying any ONE of them answers
+(section 6.2), so a wallet presents whichever it holds. Each format proves the
+holder in its own way, and the guarantee is the same one every time — a FRESH
+proof, by the key the credential is bound to, for THIS request's nonce and THIS
+audience:
+
+| Format | The holder proof | What the register is keyed by |
+|---|---|---|
+| `dc+sd-jwt` | a Key Binding JWT: `nonce`, `aud`, `iat` within `oid4vp.kbMaxAgeS`, `sd_hash` over exactly the bytes presented | the SHA-256 of the issuer-signed JWT |
+| `jwt_vc_json` | a VP JWT signed by the credential's `cnf` key, with `nonce`, `aud` and an `iat` held to the same bound (added here: without it a VP could be kept and replayed for the transaction's whole life) | the SHA-256 of the embedded credential JWT |
+| `ldp_vc` | a W3C `VerifiablePresentation` whose Data Integrity proof (`challenge` = the nonce, `domain` = the audience, B.1.3.2.5) is made by the `did:jwk` the credential names as its subject | the HOLDER KEY and the person |
+
+**`ldp_vc` IS THE ONE THAT NEEDED A DESIGN.** A bbs-2023 derived proof is
+unlinkable to the credential by design and has no holder secret at all: anyone
+holding the base credential can derive one, and it binds the nonce and nothing
+about who derived it. So the sign-in asks for a presentation AROUND it, and
+three of the credential's own statements with it — the subject (the holder's
+`did:jwk`), the `issuer` and the validity window:
+
+* the derived proof says THIS REALM SIGNED a credential whose subject is that
+  `did:jwk` (the BBS key is the service's, one for every realm, which is why
+  the `issuer` statement is what tells two realms apart);
+* the Data Integrity proof says the presenter HOLDS that key;
+* the register's row for that key and that person says this realm issued it on
+  a verified token, and the `(validFrom, validUntil)` pair says WHICH
+  credential of that person's it is — which is what a revocation needs, since
+  nothing in the proof itself identifies one.
+
+A holder key recorded for two people signs nobody in (`STS-VC-0066`): the proof
+shows the key and the key names both. A key no cryptosuite covers — RSA,
+secp256k1, Ed448, a composite — is refused AT ISSUANCE (`STS-VC-0080`), because
+a credential bound to it could never be presented.
+
+**The bar door still accepts a bare derived proof**, and its query now says so
+(`require_cryptographic_holder_binding: false`): that door admits nobody, so a
+proof that binds only the nonce is a fair thing to let it verify.
+
+**POST-QUANTUM, ON BOTH SIDES.** The issuer signature and every holder proof
+are checked asynchronously now, so `oid4vci.credentialSigningAlgorithm` may
+name ML-DSA, SLH-DSA or a composite and the Verifier accepts the result as this
+realm's (`verifyIssuerSignatureAsync()` finds the realm's AKP key by `alg` and
+`kid` and hands the check to the worker pool); a holder may bind a credential
+to an ML-DSA-44 key and prove a Key Binding JWT, a VP JWT or — through
+`mldsa44-jcs-2024`, the one quantum-resistant JCS suite the W3C draft defines —
+a Data Integrity proof with it. What is NOT possible: a trusted issuer
+CERTIFICATE with a post-quantum key (node reads no ML-DSA certificate into a
+`KeyObject` here), and an ldp_vc holder key of any other post-quantum kind,
+because no cryptosuite defines one.
+
+### A wallet is a factor
+
+A presentation proves possession of one key, and #38 answered that by
+WITHHOLDING the wallet from any request that demanded two factors. The
+follow-ups answer it properly, and `authn/CLAUDE.md` carries the mechanics:
+
+* **a wallet, then a second factor** — `authn.beginSecondFactorAfterWallet()`
+  is asked once a presentation has named somebody, and draws their
+  authenticator app, their security key or their PASSWORD
+  (`/authn/password-factor`, new, no script); the session then says
+  `amr ["pop","otp"]` (or `"pwd"`, or `"hwk"`) and `acr "mfa"`;
+* **a password, then a wallet** — every second-factor screen carries a *Use
+  your wallet instead* link, `/authn/wallet?mfa=<step>`, and
+  `authn.finishWithWallet()` finishes the step for a credential issued to THE
+  SAME PERSON and refuses anybody else's (`STS-VC-0084`);
+* **two factors in one act** — where the issuer verified a KEY ATTESTATION
+  (OpenID4VCI Appendix D) saying the key storage resists Moderate attack
+  potential, the session adds `hwk`; where the USER AUTHENTICATION guarding
+  the key is attested too, it adds `mfa` and `acr` is `"mfa"`, because the
+  wallet asked the person for something they know or are before it would sign.
+  Nothing a presentation says about itself is believed: only what the issuer
+  recorded at issuance (`vc_issued.ts`'s row).
+
+`oid4vci.keyAttestationRequired` requires an attestation of every proof and
+advertises it (`key_attestations_required`); `oid4vci.keyAttestationTrusted‑
+Certificates` is who may sign one. The `attestation` proof type (Appendix F.3)
+is accepted as well as the `jwt` proof's `key_attestation` header.
+
+### Disowned: what stops a credential signing in
+
+Three acts, all of them read through `vc_issued.disownedReason()`:
+
+* a GLOBAL sign-out — `/logout`, `/admin/logout`, `/admin-api/logout` — ending
+  the `wallet-credential` family (`logout/CLAUDE.md`). It stamps the row, and
+  every credential issued up to that instant stops signing in; one issued
+  AFTER, on a fresh token, signs in again;
+* an administrator's revocation of the credential on `/admin/tokens` (the
+  issued register's own mark, read by handle, so a restore undoes it);
+* a status-list entry that is not VALID — set by either of those, or by
+  `/admin/vc-status`.
+
+**An ordinary session sign-out disowns nothing.** `/oauth2/logout`, SAML Single
+Logout, `wsignout1.0` and the console's and portal's Sign out end one session
+through `authn.dropSession()`, which never reaches this register: a person who
+signs out of an application signs back in with the wallet they hold.
+
+**And the issuance-time check is the other half** (`signInSubjectOf()`): a
+credential minted on a DISOWNED access token gets no register row at all, so a
+sign-out cannot be undone by the token it was meant to cut off.
+
+### The status lists
+
+`vc_status.ts` publishes them and `vc_status_codec.ts` encodes them:
+
+* **Token Status List** (draft-ietf-oauth-status-list-21) for the JOSE
+  formats, at `/oid4vci/status-lists/1` — `application/statuslist+jwt`, or
+  `application/statuslist+cwt` (a COSE_Sign1, not CWT-tagged) when `Accept`
+  asks for it — two bits per credential, with `ttl` and `exp`, and an
+  aggregation endpoint at `/oid4vci/status-lists`. `?time=` answers 501: no
+  historical lists are kept.
+* **W3C Bitstring Status List** for the W3C formats, one list per purpose at
+  `/oid4vci/status-lists/bitstring/{revocation,suspension}`, each a
+  `BitstringStatusListCredential` secured as `application/vc+jwt`, 131,072
+  entries (the specification's minimum).
+
+**ONE INDEX PER CREDENTIAL, THE SAME IN EVERY LIST**, taken at random (the
+draft's linkability guidance) through a cluster claim, and free again when the
+credential expires. **A bit is COMPUTED**, never stored twice: the entry's own
+status, or INVALID because the issued register's mark says an administrator
+revoked it — so `/admin/tokens`, `/admin/vc-status`, a global sign-out and the
+sign-in door cannot disagree.
+
+**The Verifier CONSULTS it** for every presentation that otherwise verified
+(section 8.3's order): a credential this realm signed is read from this realm's
+own entries; one a TRUSTED FOREIGN issuer signed has its list fetched through
+`federation/federation_http.ts`'s `fetchPublished()` — the fourth outbound
+exception, argued in the root `CLAUDE.md` — verified against the same
+certificate that verified the credential, and cached for its `ttl` (bounded by
+`oid4vp.statusListMaxCacheS`). A list that cannot be fetched or verified means
+NO STATEMENT CAN BE MADE, and the credential is refused (`STS-VC-0072`) rather
+than let through.
 
 ### Settings
 
 `oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),
-`oid4vp.signInCrossDevice` (on) — group OID4VP, so `/admin/oid4vp` and
-`/admin-api/config` carry them. **On by default in both modes**: the screen
+`oid4vp.signInCrossDevice` (**OFF**, in both modes: the relayable path),
+`oid4vp.signInFormats` (all three), `oid4vp.signInDcApiResponseMode`
+(`dc_api.jwt`) and `oid4vp.statusListMaxCacheS` (3600) — group OID4VP; and
+`oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
+`oid4vci.keyAttestationRequired` (off) and
+`oid4vci.keyAttestationTrustedCertificates` (empty) — group OID4VCI. So
+`/admin/oid4vp`, `/admin/oid4vci` and `/admin-api/config` carry them, and
+`/admin/vc-status` is where the lists themselves are read and changed. **On by default in both modes**: the screen
 offers every mechanism the service supports, and this one signs in only an
 entry this realm issued a credential for on a token it verified — in product
 mode, a token from a person who signed in with a verified credential of their
@@ -272,10 +474,18 @@ list.
 
 ### What has no test
 
-The parent project's debugger wallet has not been driven against
-`/authn/wallet`: `tests/oid4vp_sign_in.js` is a wallet written for the test, and
-whether the debugger's `vc-presentation-1.html` answers a DCQL query naming only
-`sub` is not established here.
+**The parent project's wallet has not been RUN against this door**, and cannot
+be from here: its presentation code (`client/src/sd_jwt_vp.js`,
+`vc_presentation_*.js`) is not among the files vendored into `tests/vendored/`,
+so nothing in this repository can load it. What IS held
+(`tests/oid4vp_sign_in_formats.js` section 5) is its SHAPES, built with the
+vendored `tests/vendored/jws.js` that wallet signs with: its Key Binding JWT
+and its VP JWT sign in, and its `ldp_vc` envelope — a bare derived proof — is
+refused by name. Three things that wallet would need before it could drive
+this door are recorded here rather than guessed at: it reads only the FIRST
+DCQL credential query (so it answers the first format
+`oid4vp.signInFormats` names), it signs with ES256 only, and it speaks only
+`direct_post` — no Digital Credentials API, and no `ldp_vc` holder proof.
 
 ---
 

@@ -1180,7 +1180,11 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | The content encryption algorithms credential_response_encryption advertises and accepts. Same rule as the request row: A128GCM and A256GCM are implemented and nothing else is advertised. The key transport is RSA-OAEP-256, which is the only one implemented and is not a setting. |
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | When on, a credential request that does not ask for an encrypted response (credential_response_encryption) is refused, and the metadata says encryption_required: true. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every credential this issuer mints is valid — the `exp` of a dc+sd-jwt and a jwt_vc_json credential and the `validUntil` of an ldp_vc one. Thirty days by default. |
-| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm dc+sd-jwt and jwt_vc_json credentials are signed with, and the one the DID Configuration's Domain Linkage Credential and /did/generate's did:web credential use. The metadata's credential_signing_alg_values_supported names it, /oauth2/jwks and /.well-known/did.json publish the key, and the mock Verifier checks against it. ldp_vc is bbs-2023 and is not affected. A credential already issued keeps the algorithm it was signed with. |
+| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm dc+sd-jwt and jwt_vc_json credentials are signed with — the post-quantum ones (ML-DSA, SLH-DSA and the composites) included, signed in the worker pool — and the one this realm's status lists, the DID Configuration's Domain Linkage Credential and /did/generate's did:web credential use. The metadata's credential_signing_alg_values_supported names it, /oauth2/jwks and /.well-known/did.json publish the key, and the mock Verifier checks against it. ldp_vc is bbs-2023 and is not affected. A credential already issued keeps the algorithm it was signed with. |
+| `oid4vci.statusListTtlS` | `OID4VCI_STATUS_LIST_TTL_S` | `300` | yes | The `ttl` this realm's status lists carry, and the HTTP `max-age`: how long a verifier may keep one before fetching it again, and so how long a revocation can take to be seen elsewhere. |
+| `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long after it is signed a Status List Token says it is valid (its `exp`), and a Bitstring Status List credential's `validUntil`. |
+| `oid4vci.keyAttestationRequired` | `OID4VCI_KEY_ATTESTATION_REQUIRED` | `false` | yes | Require a key attestation (OpenID4VCI Appendix D) of every credential request — in a `jwt` proof's `key_attestation` header, or as the `attestation` proof type — and advertise it. Off, an attestation that is sent is still verified and recorded; what it attests is what a wallet sign-in may claim (`hwk`, `acr "mfa"`). |
+| `oid4vci.keyAttestationTrustedCertificates` | `OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, of the Wallet Providers whose key attestations this issuer believes: one must verify against such a key, or be signed by a certificate (its `x5c`) one of them issued. Empty trusts none. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a wallet's openid4vci-proof+jwt `iat` may be from now, either way. The c_nonce is what makes a proof single use; this is what stops one minted long ago being used at all. |
 | `oid4vci.cNonceTtlS` | `OID4VCI_C_NONCE_TTL_S` | `300` | yes | How long a c_nonce from the Nonce Endpoint may be quoted in a proof; `c_nonce_expires_in` says the same number. |
 | `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Mock Credential Issuer` | yes | The `display.name` of the credential issuer metadata — what a wallet shows as who is offering the credential. The credential configurations' own display names and colours are part of the catalogue in oid4vc/vc_issuer.ts and are not settings. |
@@ -1201,10 +1205,13 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, whose keys the mock Verifier accepts an SD-JWT VC or jwt_vc_json credential signature from IN ADDITION to this realm's own issuer. Empty — the default — trusts this issuer alone, which is what it always did. A certificate is used as a KEY: no chain is built and no revocation is checked. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` the Verifier requires of a presented SD-JWT VC. The default is the type this issuer mints; set it to accept a credential another issuer mints under its own type. |
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims /admin/vc-verifier-config lets the Verifier's request name. |
-| `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer "Sign in with a wallet" on /authn/login and answer /authn/wallet: a verified presentation of an SD-JWT VC this realm issued — Key Binding JWT included — starts a session for the directory entry the credential was issued for. Any other credential still verifies and signs nobody in. See *Signing in with a wallet*. |
+| `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer "Sign in with a wallet" on /authn/login and answer /authn/wallet: a verified presentation of a credential this realm issued — in any format `oid4vp.signInFormats` names, with a fresh holder proof — starts a session for the directory entry the credential was issued for. Any other credential still verifies and signs nobody in. See *Signing in with a wallet*. |
 | `oid4vp.signInTtlS` | `OID4VP_SIGN_IN_TTL_S` | `300` | yes | How long a wallet sign-in waits for the wallet, and for the browser that started it to collect the session. |
-| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the wallet sign-in page reloads itself (a `<meta>` refresh, not a script). |
-| `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `true` | yes | Draw a QR code on the wallet sign-in page for a wallet on another device. Only the browser that started the sign-in can be signed in by it. |
+| `oid4vp.signInPollS` | `OID4VP_SIGN_IN_POLL_S` | `3` | yes | How often the QR-code page reloads itself (a `<meta>` refresh, not a script). The Digital Credentials API page does not reload: a reload would close the browser's wallet dialog. |
+| `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain QR code on the wallet sign-in page, for a wallet the browser's Digital Credentials API cannot reach. **Off by default in both modes**: it is the one wallet path somebody can relay to a victim. |
+| `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The credential formats a wallet sign-in asks for, in order of preference: one DCQL credential query each, and a credential set saying any one will do. |
+| `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | How a wallet answers through the Digital Credentials API: encrypted to a key only that sign-in holds, or `dc_api` in the clear for a wallet that cannot encrypt. |
+| `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The most the Verifier keeps a status list a trusted foreign issuer published, whatever its `ttl` says. Never past the list's own `exp`; 0 fetches for every presentation. |
 
 #### Kerberos
 
@@ -4007,22 +4014,80 @@ deleted **still verifies** and is recorded as before — and the page says why i
 signed nobody in, with an error code (`STS-VC-0058` to `STS-VC-0061`,
 `STS-VC-0066`).
 
-**The session goes to the browser that started the sign-in and to no other.** The
-wallet answers this service directly (`direct_post`), so a `sts_wallet_binding`
-cookie set when the sign-in starts is what the wait page checks before it mints
-anything; a same-device wallet is also handed a one-time `response_code` it must
-bring back. A transaction is answered once and finished once (across a cluster
-too), and lives `oid4vp.signInTtlS` seconds. What no Verifier can prevent is
-somebody showing their own QR code to a victim; `oid4vp.signInCrossDevice` turns
-the code off for a deployment that would rather not offer it.
+**The session goes to the browser that started the sign-in and to no other.** A
+`sts_wallet_binding` cookie is set when the sign-in starts, and the wait page and
+the Digital Credentials API answer are accepted only from the browser holding it;
+a same-device wallet is also handed a one-time `response_code` it must bring
+back. A transaction is answered once and finished once (across a cluster too),
+and lives `oid4vp.signInTtlS` seconds.
+
+**The way in is the W3C Digital Credentials API, and the plain QR code is off.**
+The page asks the browser for a credential
+(`navigator.credentials.get({ digital: … })`) with a signed
+`openid4vp-v1-signed` request whose `expected_origins` is this service's origin
+and whose answer comes back — encrypted, by default — to the page that asked;
+a wallet on another device is reached by the platform over a transport that
+proves it is NEAR that browser, which is what a relayed QR code cannot be.
+`oid4vp.signInCrossDevice` adds the plain QR code for a wallet the browser
+cannot reach, and it is the one path where somebody showing their code to a
+victim still signs their own browser in — which is why it is off by default in
+both modes, and why the page says so where it is on.
+
+**That page carries one script** — `/authn/wallet.js`, under
+`script-src 'self'` — because no markup can make a browser ask a wallet. It has
+a real submit button: with the script blocked the form still posts, and the
+answer is a page saying the API did not run and offering the same-device link.
+The QR-code page has no script and polls with a `<meta>` refresh every
+`oid4vp.signInPollS` seconds.
+
+**Every credential format signs in**, each with the same guarantee — a fresh
+proof by the key the credential is bound to, for that request's nonce and
+audience: an SD-JWT VC's Key Binding JWT, a `jwt_vc_json` Verifiable
+Presentation JWT, or an `ldp_vc` presentation whose Data Integrity proof
+(`challenge` and `domain`) is made with the `did:jwk` the credential names.
+Post-quantum keys work on both sides: this realm may sign credentials with
+ML-DSA, and a wallet may bind one to an ML-DSA-44 key.
 
 **The session claims `amr ["pop"]` and `acr "1"`** — RFC 8176's proof of
-possession of a key whose storage nobody here knows, and one factor. The button
-is withheld from a request that demanded two. **The wait page runs no script**:
-a `<meta>` refresh every `oid4vp.signInPollS` seconds is the poll, and the QR
-code is an SVG this server draws. `oid4vp.signIn` turns the whole mechanism off;
-the Verifier at `/oid4vp/verifier` is unaffected either way and still signs
-nobody in, because nobody asked it to.
+possession of a key whose storage nobody here knows, and one factor. A request
+that demands two is answered by the presentation AND a second factor
+afterwards — an authenticator app, a security key, or the person's password at
+`/authn/password-factor` — and a wallet can be the SECOND factor after a
+password, from a link on every second-factor screen. Where the issuer verified
+a **key attestation** (OpenID4VCI Appendix D) saying the key storage resists
+ISO 18045 Moderate attack potential the session adds `hwk`, and where the user
+authentication guarding the key is attested too it says `acr "mfa"` on its own.
+
+**A credential this service has disowned signs nobody in.** A global sign-out
+(`/logout`, `/admin/logout`, `/admin-api/logout`), an administrator's
+revocation on `/admin/tokens` and a suspension on `/admin/vc-status` each stop
+it — and each sets its status-list bit, so other verifiers learn it too. An
+ordinary sign-out of one application disowns nothing: the wallet still works.
+`oid4vp.signIn` turns the whole mechanism off; the Verifier at
+`/oid4vp/verifier` is unaffected either way and still signs nobody in, because
+nobody asked it to.
+
+### Status lists — what this issuer publishes about what it issued
+
+Every credential carries a status reference: the JOSE formats an IETF **Token
+Status List** claim (`status.status_list`), the W3C formats a **Bitstring
+Status List** entry per purpose, and a `jwt_vc_json` credential both. This
+realm serves them at:
+
+| Document | Path | Media type |
+|---|---|---|
+| Status List Token | `/oid4vci/status-lists/1` | `application/statuslist+jwt`, or `application/statuslist+cwt` by `Accept` |
+| Status List Aggregation | `/oid4vci/status-lists` | `application/json` |
+| Bitstring Status List credential | `/oid4vci/status-lists/bitstring/revocation`, `…/suspension` | `application/vc+jwt` |
+
+`oid4vci.statusListTtlS` is how long a verifier may keep one (and the HTTP
+`max-age`), `oid4vci.statusListLifetimeS` how long it says it is valid.
+`/admin/vc-status` and `GET|POST /admin-api/vc-status` suspend, reinstate and
+revoke; a global sign-out and an administrator's revocation set the bit too.
+The Verifier here consults them for every presentation — this realm's from its
+own store, a trusted foreign issuer's by fetching the list and verifying it
+against the certificate that verified the credential — and refuses a credential
+whose status cannot be established.
 
 ### Signing out of everything — `/logout`
 

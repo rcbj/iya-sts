@@ -76,7 +76,7 @@ files did not change; the paths did.
 | `ssf/` | The Shared Signals Framework — the one family here that TALKS BACK — with CAEP and RISC as the two vocabularies over it and this service's own console and portal as registered receivers. `ssf/CLAUDE.md`. |
 | `spiffe/` | Six libraries, one server module and the vendored `protos/`: a trust domain per realm under the service Root, bound on an address of its own when turned on. `spiffe/CLAUDE.md`. |
 | `tls/` | The certificate three sockets share, the client truststore, the sighting on the main port and `GET /tls/sign-in`. **It owned the 8443 and 9443 listeners until 2026-09-16 and owns no socket now.** `tls/CLAUDE.md`. |
-| `oid4vc/` | OpenID4VCI, OpenID4VP and DID Core, and the wallet sign-in at `/authn/wallet` (`vc_signin.ts`). `oid4vc/CLAUDE.md`. |
+| `oid4vc/` | OpenID4VCI, OpenID4VP and DID Core, the wallet sign-in at `/authn/wallet` (`vc_signin.ts`, the W3C Digital Credentials API included), and the status lists every credential names (`vc_status.ts`). `oid4vc/CLAUDE.md`. |
 | `admin-core/` | What both admin surfaces DO, in a directory neither owns: `admin_actions.js`, `admin_views.js`, `certificate_views.js`. It requires route-registering modules, so it may be required at 18 or later and is not in `common/`. `admin-core/CLAUDE.md`. |
 | `admin-ui/` | The console at `/admin`, its gate and two roles, every setting drawn on its protocol's page (`SETTING_HOMES`), the two server-laid-out drawings, and the pages that report on this service itself — `/admin/crypto-metadata`, `/admin/pki`, `/admin/secrets`, `/admin/api-explorer`. `admin-ui/CLAUDE.md`. |
 | `mgmt-api/` | `/admin-api` — every console control, reachable by a machine (rule 7), gated by an OAuth 2.0 access token — its generated OpenAPI document, and the explorer's assets. `mgmt-api/CLAUDE.md`. |
@@ -402,7 +402,7 @@ is and the named file says why.
 | 10a | `saml/saml2_sso` | After `authn`; it has no sign-in screen of its own. | `saml/CLAUDE.md` |
 | 10b | `saml/saml11_sso` | After `authn` and after `saml2_sso` (`slugOf()`). | `saml/CLAUDE.md` |
 | 10c | `federation/federation_sp` | After `authn`; it calls `startSession()` directly. | `federation/CLAUDE.md` |
-| 11–14 | `oid4vc/*` | `vc_offers` before `vc_issuer` (rule 2). `vc_offers` is loaded by `oauth2` and so REGISTERED just before `oauth2`'s own routes, where its routes always landed. `vc_issued` (a library) is built before `vc_issuer`. | `oid4vc/CLAUDE.md` |
+| 11–14 | `oid4vc/*` | `vc_offers` before `vc_issuer` (rule 2). `vc_offers` is loaded by `oauth2` and so REGISTERED just before `oauth2`'s own routes, where its routes always landed. `vc_issued` (a library) is built before `vc_issuer`, and since 2026-09-17 so are `vc_status_codec`, `vc_data_integrity` and `vc_status` — the issuer allocates a status index while it builds a credential, and `vc_status` registers `/oid4vci/status-lists/*` here, ahead of it. | `oid4vc/CLAUDE.md` |
 | 14a | `oid4vc/vc_signin` | After `vc_verifier`, whose transactions it reads, and after `authn` (8), whose session it starts; `authn` declares its two paths and requires nothing here — `spnego_authn`'s arrangement (#38). | `oid4vc/CLAUDE.md` |
 | 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript, locked: their routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
 | 17 | `kerberos/spnego` | JavaScript, locked: registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
@@ -415,6 +415,7 @@ is and the named file says why.
 | 18e | `debugger/debugger_admin` | Beside the other report pages, before `mgmt-api/admin_api` which requires it. Reads the listener's status LAZILY, because `debugger_server` requires `tls/tls_server` (20). | `debugger/CLAUDE.md` |
 | 18f | `oauth-oidc/oauth2_monitor_admin` | Beside the other report pages and for 18a's reason: it requires the console's shell and libraries already loaded, and `oauth2.ts` (9) cannot require it without closing a cycle through the console. | `oauth-oidc/CLAUDE.md` |
 | 18g | `admin-ui/caches_admin` | 18a's placement and 18a's reason (#74): the console's shell and libraries already loaded, and `mgmt-api/admin_api` requires it. It reads `common/cache_registry.js` when drawn, so an owner registered later still appears. | `admin-ui/CLAUDE.md` |
+| 18h | `admin-ui/vc_status_admin` | 18a's placement and 18a's reason (2026-09-17): the console's shell and `oid4vc/vc_status` already loaded, and `mgmt-api/admin_api` requires it. | `admin-ui/CLAUDE.md` |
 | 19 | `mgmt-api/admin_api` | After `admin-ui/admin` (rule 7). | `mgmt-api/CLAUDE.md` |
 | 19a | `admin-ui/api_explorer` | After `admin-ui/admin` (the shell and gate) and `mgmt-api/admin_api` (the route table its OpenAPI document is built from); a file of its own so `admin.ts` never requires the API. | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 20 | `tls/tls_server` | JavaScript: registers its `/tls*` views at this require. Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |
@@ -478,7 +479,9 @@ in every file, including the ones in the source comments. This is the index.
 | 3ac | `error_codes.js`, the three ways a code is recorded, why a returned refusal carries its code under a Symbol, and the three changes it made to `audit.js` | `common/CLAUDE.md` |
 | 3ae | `used_assertions.js`, why an RFC 7523 or RFC 7522 assertion is accepted once EVER — one history for both uses, persisted in every store with one and in both modes, claimed atomically on postgres, and spent only when tokens are issued | `common/CLAUDE.md` |
 | 3ag | `cert_enrollment.js`, the core ACME, EST and SCEP issue through: the identity rule, the profiles, the proof of possession, names from the entry, storage on the entry, the two entry-bound credentials | `common/CLAUDE.md` |
-| 3ar | `vc_issued.ts`, the register of credentials this realm issued for a person on an access token it verified, and why a credential's own `sub` cannot say whom a presentation signs in | `oid4vc/CLAUDE.md` |
+| 3ar | `vc_issued.ts`, the register of credentials this realm issued for a person on an access token it verified, why a credential's own `sub` cannot say whom a presentation signs in, its two kinds of row, and the three acts that DISOWN one | `oid4vc/CLAUDE.md` |
+| 3as | `vc_status.ts` and `vc_status_codec.ts`, the Token Status List and the two Bitstring Status Lists a realm publishes: one index per credential, a bit that is COMPUTED rather than stored twice, and the Verifier's check against this realm's own entries and a trusted foreign issuer's fetched list | `oid4vc/CLAUDE.md` |
+| 3at | `vc_data_integrity.ts`, the holder's Data Integrity proof on a presentation (the three JCS cryptosuites, `did:jwk` and `did:key`), which is what gives `ldp_vc` a holder binding it had none of | `oid4vc/CLAUDE.md` |
 | 3ap | `cache_registry.js`, every cache and replay store describing itself to `/admin/caches`: why a leaf in JavaScript, why a row is five members, where a lookup is counted, and why valid is the owner's call | `common/CLAUDE.md` |
 | 3p | `user_graph.js`, and why the union of two registers is a library rather than a page | `common/CLAUDE.md` |
 | 3o | `federation.js`, why four modules may require it, and why `PATHS` is not beside the routes | `federation/CLAUDE.md` |
@@ -529,7 +532,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the seven scripted pages below, and others
+growing number of routes relax it — the eight scripted pages below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -554,11 +557,11 @@ Two rules come out of it:
 silently.
 
 
-## Seven pages here have a script on them, and each is the same exception
+## Eight pages here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Seven pages need a script and each takes the SAME shape of
+than merely unlikely. Eight pages need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
 and **each carries a REAL SUBMIT BUTTON as well**, because with the script
 blocked the button is the whole mechanism.
@@ -572,6 +575,7 @@ blocked the button is the whole mechanism.
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
+| `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
 this origin** (2026-09-13): `debugger/debugger_server.ts` serves them on a
@@ -590,6 +594,7 @@ refusals are what establish it. Each is argued in its own file:
 | the wallet sign-in's wait page `/authn/wallet/wait` | a `<meta>` refresh is the poll, and its QR code is a server-rendered SVG | `oid4vc/CLAUDE.md` |
 | the console's account menu | `<details>`/`<summary>`; the cost (it does not close on an outside click) is stated on the page | `admin-ui/CLAUDE.md` |
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |
+| the wallet sign-in's QR page (`?qr=1`) | a `<meta>` refresh is the poll and the code is a server-drawn SVG — the page next to it argued its own script from scratch | `oid4vc/CLAUDE.md` |
 
 **A new scripted page needs the argument made again from scratch, and "the same
 as the page next door" is not one.** The federation picture is the delegation
@@ -855,7 +860,7 @@ the file the row names.
 | Enforce anything by default — `oauth2.rfc9700` and `oauth2.oauth21` (which turns it on) are the modes, off unless set | `oauth-oidc/CLAUDE.md` |
 | Federate with anybody it was not CONFIGURED to federate with — the one place it refuses by default, and not a mode | `federation/CLAUDE.md` |
 | Decrypt an assertion a federation partner encrypted, consume a federated sign-out, or re-check a federated person after the session exists | `federation/CLAUDE.md` |
-| Dial a URL a CALLER supplied to fetch something FROM (`jwks_uri`, `wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| Dial a URL a CALLER supplied to fetch something FROM (`jwks_uri`, `wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it. **The fourth is a STATUS LIST (2026-09-17)** — an address inside a credential, which is a caller's kind of URL; what makes it the administrator's is where it sits, under a signature that verified against a certificate in `oid4vp.trustedIssuerCertificates`, and it is never fetched for a credential this realm signed (whose list is in its own store) | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | ~~Ask anybody's permission before it issues something~~ — **reversed 2026-09-01**: `/oauth2/consent`, with `oauth2.consentRequired` ON by default | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer (`Access-Control-Allow-Origin: *` until 2026-09-13) — unless the origin is this service's own or an application lists it in `appCorsOrigin`, per client where the request names one; in both modes, on every path | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** — product verifies every presented password; a Kerberos ticket, a TOTP code and a recovery code are verified in BOTH modes | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
@@ -872,7 +877,8 @@ the file the row names.
 | ~~Require DPoP — nonce mode makes proofs fresher, not mandatory~~ — **reversed 2026-09-15 (#34)**: five settings, all off by default because neither OAuth 2.1 nor RFC 9700 asks for any of them (rule 3ao) | `oauth-oidc/CLAUDE.md` |
 | ~~Turn a verified client certificate into a login~~ — **reversed 2026-09-05**, with revocation consulted first since 2026-09-12 | `tls/CLAUDE.md` |
 | Verify anything in an issued credential's values, which are invented | `oid4vc/CLAUDE.md` |
-| ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17 (#38)**: `/authn/wallet` signs in the entry a holder-bound SD-JWT VC this realm issued was issued for; any other presentation still verifies and signs nobody in | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
+| ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17 (#38)**: `/authn/wallet` signs in the entry a holder-bound credential this realm issued was issued for — in ANY format it mints since the follow-ups, through the W3C Digital Credentials API, as one factor or with a second after it; any other presentation still verifies and signs nobody in | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
+| ~~Publish a status for a credential it issued~~ — **reversed 2026-09-17**: a Token Status List and two Bitstring Status Lists per realm, a reference in every credential, and the Verifier consults them — this realm's from its own store, a trusted foreign issuer's by fetching the list | `oid4vc/CLAUDE.md` |
 | Deactivate anybody on SCIM `active: false` | `scim/CLAUDE.md` |
 | Attest a workload or a node | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one, which is a different claim | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |

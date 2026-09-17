@@ -7,7 +7,7 @@ Federation relationships: this service as either end of one, in five protocols.
 | `federation.js` | **The register.** The schema, the two conversions, the CRUD, the counters, the release filter, and the broker resolver (`identityProviderFor()` / `authenticationFor()` / `usableServiceProvider()`). A library (rule 3): it registers nothing. Directory-backed — `ou=federations` IS the store. |
 | `federation_map.ts` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.ts`**, which draws the picture — the near-collision is why that file is not called `federation_map.ts` too. |
 | `federation_graph.ts` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
-| `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. Since 2026-09-17 also `deliverForm()` (the back-channel Logout Token's POST) and the product-mode internal-address check every outbound requester shares. |
+| `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. Since 2026-09-17 also `deliverForm()` (the back-channel Logout Token's POST), `fetchPublished()` (a trusted issuer's status list) and the product-mode internal-address check every outbound requester shares. |
 | `federation_sp.ts` | The four endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued. |
 
 ---
@@ -764,6 +764,33 @@ URL comes off a record by an attribute name from its OWN list, `SENDABLE`**
 `fetchJson()` refuses one from `SENDABLE`: neither list borrows the other's
 names. It answers a `kind` rather than a code, so the caller names each
 failure in its own subsystem (`STS-OAUTH-0532..0540`).
+
+### `fetchPublished()`: the third function, and a URL a CALLER supplied (2026-09-17)
+
+`oid4vc/vc_status.ts` fetches a Token Status List or a Bitstring Status List
+credential to find out whether a presented credential has been revoked. **That
+address comes out of the credential**, which is the caller's kind of URL — the
+kind the header at the top of that file says this module will not dial. So
+this is a third argument, made in a third function, rather than a name added to
+either list:
+
+**WHAT MAKES IT THE ADMINISTRATOR'S IS WHERE IT SITS.** It is inside a document
+whose signature has already VERIFIED against a certificate an administrator
+wrote into `oid4vp.trustedIssuerCertificates`. The presenter cannot choose it;
+the issuer that administrator trusted did. And it is never dialled for a
+credential THIS REALM signed — that list is in this service's own store, and a
+credential of ours naming somebody else's list is refused rather than followed.
+What comes back is verified against the same certificate, so nothing that
+arrives is believed on its own say-so (point 5 above).
+
+It keeps every other rule here — the kill switch, https unless
+`federation.outboundAllowInsecure`, the internal-address check with the
+connection pinned in product mode, the body cap, the timeout — and it follows
+NO REDIRECT, which the status-list draft's section 8.2 says a client SHOULD do
+and its section 11.4 says is where the risk is: a list that has moved is a
+failure, and the credential is refused rather than the Location followed. It
+sends nothing but `Accept` and answers `{ ok, status, body, contentType, kind,
+why, url }`.
 
 ---
 

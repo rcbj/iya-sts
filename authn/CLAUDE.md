@@ -18,14 +18,16 @@ session it owns; every Kerberos module is #15 and below so that the KDC's routes
 are not dragged to the front of the router. A require from here to there would do
 exactly that AND close a cycle, since that module needs `startSession()`.
 
-**AND A FOURTH AND FIFTH (2026-09-17, #38): `/authn/wallet` and
-`/authn/wallet/wait`** — sign in with a wallet — are `oid4vc/vc_signin.ts`'s,
-for the same kind of reason: what they drive is the OpenID4VP Verifier, which is
+**AND A FOURTH, FIFTH, SIXTH AND SEVENTH (2026-09-17, #38 and its follow-ups):
+`/authn/wallet`, `/authn/wallet/wait`, `/authn/wallet/dc-api` and
+`/authn/wallet.js`** — sign in with a wallet — are `oid4vc/vc_signin.ts`'s, for
+the same kind of reason: what they drive is the OpenID4VP Verifier, which is
 required at 11–14, and this module requires nothing of that family. This module
-declares both paths (`WALLET_PATH`, `WALLET_WAIT_PATH`), draws the button
-(`walletOptionHtml()`, withheld under `forceMfa`, gone when `oid4vp.signIn` is
-off), and that door uses `pendingFor()` and `completeAuthentication()` exactly
-as the Kerberos door does. See *The wallet door* below; the design is argued in
+declares all four paths (`WALLET_PATH`, `WALLET_WAIT_PATH`,
+`WALLET_DCAPI_PATH`, `WALLET_SCRIPT_PATH`), draws the button
+(`walletOptionHtml()`, gone when `oid4vp.signIn` is off — **no longer withheld
+under `forceMfa`**), and that door uses `pendingFor()` and
+`completeAuthentication()` exactly as the Kerberos door does. See *The wallet door* below; the design is argued in
 `oid4vc/CLAUDE.md`, *Signing in with a wallet*.
 
 **It needed no inverted hook either**, which is worth saying because rule 3e's
@@ -326,12 +328,37 @@ agree with the rest of the screen:
   has two: a wallet sign-in has no use outside a browser waiting to be signed
   in, so a switch that hid the button and left the door open would describe a
   state nobody can use.
-* **It is withheld under `forceMfa`, and says so** (`id="wallet-withheld"`). A
-  presentation proves possession of ONE key, so the session claims
-  `amr ["pop"]` and `acr "1"`; offering it to a request that demanded two
-  factors would be the fake-`acr_values` problem every other one-factor
-  mechanism here refuses. The door refuses the same record (`STS-VC-0054`),
-  because a button is markup.
+* ~~**It is withheld under `forceMfa`, and says so**~~ — **REVERSED in the
+  follow-ups**, and what replaced it is below. A presentation still proves
+  possession of ONE key; what changed is that one factor may now be followed
+  by another, so the button says what will happen (`id="wallet-mfa-note"`)
+  instead of disappearing. `STS-VC-0054` is retired.
+* **A WALLET IS A FACTOR, AT EITHER END** (#38's follow-ups). Three functions
+  here, and `oid4vc/CLAUDE.md` carries the argument:
+  * `beginSecondFactorAfterWallet()` — asked by the wallet door once a
+    presentation has named somebody, and it answers whether a second factor
+    is needed (`forceMfa`, `authn.mfaRequired`, the person's own
+    `stsMfaRequired`, or a second factor they hold) and draws it: their
+    authenticator app, their security key, or their PASSWORD at
+    `/authn/password-factor` — a new screen with one field, no script, rate
+    limited on the sign-in bucket, for the many people who hold neither of the
+    other two. A presentation whose key attestation already claimed two
+    factors needs none.
+  * `finishWithWallet()` — a wallet finishing a PASSWORD sign-in's
+    second-factor step (`/authn/wallet?mfa=<step>`, linked from every one of
+    those screens as `id="wallet-second-factor"`). It refuses a credential
+    issued to anybody but the person the step names (`STS-VC-0084`), and
+    refuses a wallet twice: one key proved twice is one factor.
+  * `firstAmrOf(step)` — the first factor's own `amr`, carried on the step, so
+    a session says `["pop","otp"]` where a wallet came first and `["pwd","pop"]`
+    where a password did. Every second-factor door builds its list from it,
+    which is what stops a session claiming a password nobody typed.
+* **`amr` AND `acr` FOLLOW THE EVIDENCE, AND A KEY ATTESTATION IS EVIDENCE.**
+  A bare presentation is `amr ["pop"]`, `acr "1"`. Where the ISSUER verified a
+  key attestation (OpenID4VCI Appendix D) at ISO 18045 Moderate or better,
+  `hwk` is added; where the USER AUTHENTICATION guarding that key is attested
+  too, `mfa` is added and `acr` is `"mfa"` — two factors in one act, and the
+  only case here where a wallet answers `forceMfa` on its own.
 * **`methodPhraseFor()` has a `pop` branch**, asked first, for the reason the
   `otp` branch exists: the fall-through says *password*.
 * **A different person's session is replaced, the same person's is

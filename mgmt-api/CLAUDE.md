@@ -1598,3 +1598,15 @@ claiming gives the claim back and answers 500 (`STS-API-0113`). Everywhere else
 the handler runs synchronously as it did. The directory module is found in the
 require CACHE, never required: it is below this module in the route order. The
 design is `ldap/CLAUDE.md`'s, *Several nodes: a create claims its name*.
+
+## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
+
+Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions
+(rule 7): `GET /admin-api/vc-status` is what `/admin/vc-status?format=json`
+answers — where this realm's status lists are served, their size and
+lifetimes, the counts, and a page of every issued credential's index and
+status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
+`{ idx }` is the page's three buttons, through `statusAction()`. The action is
+a PATH SEGMENT, as every other action here is, so one operation per verb
+appears in the OpenAPI document with its own `operationId` and its own
+description of what it does to the lists.

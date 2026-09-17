@@ -76,6 +76,7 @@ history.
 | Tokens | the `jti` joins the same revocation set `/oauth2/revoke` writes to, so `/oauth2/introspect` reports it inactive immediately |
 | Authorization codes | discarded, so no more tokens come from that sign-on |
 | Credential Offer pre-authorized codes | the same |
+| Wallet credentials that can sign this person in | **disowned**: every credential this realm issued to that wallet key for this person up to now stops signing anybody in at `/authn/wallet`, and its status-list entry is set INVALID so other verifiers learn it too. The credential stays in the wallet and still verifies; one issued afterwards, on a fresh sign-in, works again. **Only a global sign-out does this** — `/logout`, `/admin/logout`, `/admin-api/logout` — and signing out of one application does not |
 | Wallet sign-ins not yet collected | withdrawn: a wallet has presented a credential for this person and the browser that started the sign-in has not come back for the session yet, so that browser is told a sign-out ended it and nobody is signed in |
 | Directory connections | the LDAP socket is closed — the bind is the state of a *connection* (RFC 4511 §4.2), so that is the only sign-out LDAP has |
 | Kerberos | a sign-out instant on the principal; a `TGS-REQ` presenting a ticket authenticated before it is refused `KDC_ERR_TGT_REVOKED` (20) |
