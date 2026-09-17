@@ -31,7 +31,10 @@ locals {
   pep_image_tag      = var.pep_image_tag != "" ? var.pep_image_tag : "pep-${var.image_tag}"
   reports_bucket     = "${var.name}-test-reports-${local.account_id}"
 
-  public_base_url = "https://${aws_lb.main.dns_name}"
+  # The name clients use: `public_hostname` when set (dns.tf), otherwise the
+  # load balancer's own DNS name.
+  public_host     = var.public_hostname != "" ? var.public_hostname : aws_lb.main.dns_name
+  public_base_url = "https://${local.public_host}"
   container_port  = 8081
 
   # EVERY PORT THE LOAD BALANCER PUBLISHES, and the node port behind it. The

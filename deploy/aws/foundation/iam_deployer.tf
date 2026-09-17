@@ -304,6 +304,76 @@ data "aws_iam_policy_document" "deploy_network" {
     ]
   }
 
+  # A PUBLIC CERTIFICATE (environment/dns.tf). An ACM certificate's ARN is a
+  # UUID, so it is scoped by the Project tag like EC2: created only with it,
+  # read, changed and deleted only with it.
+  statement {
+    sid       = "AcmCreateOnlyTagged"
+    actions   = ["acm:RequestCertificate", "acm:AddTagsToCertificate"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid = "AcmChangeOnlyTagged"
+    actions = [
+      "acm:DescribeCertificate", "acm:GetCertificate",
+      "acm:ListTagsForCertificate", "acm:AddTagsToCertificate",
+      "acm:RemoveTagsFromCertificate", "acm:DeleteCertificate",
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
+  statement {
+    sid       = "AcmList"
+    actions   = ["acm:ListCertificates"]
+    resources = ["*"]
+  }
+
+  # ITS NAME IN A PUBLIC ZONE: the zones in `public_dns` only, and in each only
+  # the names listed for it. The zone is not the project's and holds other
+  # records, which is why the names are the scope rather than the zone.
+  statement {
+    sid       = "Route53FindZones"
+    actions   = ["route53:ListHostedZones", "route53:ListHostedZonesByName"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "Route53ReadTheListedZones"
+    actions = [
+      "route53:GetHostedZone", "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource",
+    ]
+    resources = [for z in data.aws_route53_zone.public : z.arn]
+  }
+
+  statement {
+    sid       = "Route53WriteOnlyTheListedNames"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = [for z in data.aws_route53_zone.public : z.arn]
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "route53:ChangeResourceRecordSetsNormalizedRecordNames"
+      values   = distinct(flatten(values(var.public_dns)))
+    }
+  }
+
+  statement {
+    sid       = "Route53WaitForChanges"
+    actions   = ["route53:GetChange"]
+    resources = ["arn:${local.partition}:route53:::change/*"]
+  }
+
   statement {
     sid       = "ServiceLinkedRolesForElbEcsRds"
     actions   = ["iam:CreateServiceLinkedRole"]
@@ -607,10 +677,11 @@ resource "aws_iam_role_policy_attachment" "deployer" {
 
 # Everything the deployer does is confined to one region.
 data "aws_iam_policy_document" "region_fence" {
+  # Route53 is global, and its requests carry us-east-1.
   statement {
     sid         = "OnlyUsWest2ForRegionalServices"
     effect      = "Deny"
-    not_actions = ["iam:*", "sts:*", "s3:*"]
+    not_actions = ["iam:*", "sts:*", "s3:*", "route53:*"]
     resources   = ["*"]
     condition {
       test     = "StringNotEquals"
@@ -624,4 +695,10 @@ resource "aws_iam_role_policy" "region_fence" {
   name   = "region-fence"
   role   = aws_iam_role.deployer.name
   policy = data.aws_iam_policy_document.region_fence.json
+}
+
+data "aws_route53_zone" "public" {
+  for_each     = var.public_dns
+  name         = each.key
+  private_zone = false
 }

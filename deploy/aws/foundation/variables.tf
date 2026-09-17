@@ -50,3 +50,16 @@ variable "ci_user_name" {
   type        = string
   default     = "git_user6"
 }
+
+variable "public_dns" {
+  description = <<-EOT
+    The public Route53 zones an environment may write in, and the record names
+    it may write there (environment/dns.tf: a CNAME and the ACM validation
+    record, which is `_<random>.<name>`). The deployer may change nothing else
+    in those zones and nothing at all in any other.
+  EOT
+  type        = map(list(string))
+  default = {
+    "iyasec.io" = ["test-idp.iyasec.io", "*.test-idp.iyasec.io"]
+  }
+}
