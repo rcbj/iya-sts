@@ -33,6 +33,10 @@
 //   * `passInBrowser()` — for the Selenium jobs. It looks for the Allow button,
 //     presses it if it is there, and returns quietly if it is not.
 //
+//   * `passAllInBrowser()` — the same thing until there are no more screens.
+//     A FEDERATED sign-in meets two of them (the far realm's and the near
+//     realm's) and a caller that cannot know which it is should use this one.
+//
 // **NEITHER OF THEM ASSERTS THAT THE SCREEN APPEARED**, and that is deliberate
 // rather than lax. A scope under `oauthGlobalConsent`, a username that has
 // consented before in the same run, and `oauth2.consentRequired` turned off are
@@ -215,6 +219,71 @@ async function settleAuthorization(opts) {
 const STILL_AT_THE_IDENTITY_SERVICE =
   /\/(oauth2|authn|federation|wsfed|saml2|saml11|spnego|realm)\b/;
 
+// AND THE PATHS THAT ARE A HOP RATHER THAN A DESTINATION.
+//
+// A narrower set, used only to decide whether the short window below may be
+// extended. Every one of these is somewhere a browser passes THROUGH in the
+// middle of an authorization leg and never a page a finished flow rests on:
+// the authorization endpoint, the consent screen itself, and the two ends of a
+// federated hop — /federation/login on the way out and /federation/acs on the
+// way back, where the near realm redeems what the far realm issued before it
+// draws its own screen.
+//
+// /federation/acs IS THE ONE THAT WAS MISSING, and its absence is what took
+// the OIDC/OIDC/password point of the grid on 2026-09-03T08-01-08. A federated
+// sign-in draws TWO consent screens — the far realm asks whether the near realm
+// may act for this person, then the near realm asks whether the application may
+// — and between them the browser waits at /federation/acs while the near realm
+// redeems the code over a back channel. Past the four-second window that URL
+// was not recognised as mid-leg, so passInBrowser() returned false,
+// passAllInBrowser() stopped, and the near realm's screen was left standing.
+// It fails 100 seconds later in collectOauthArtifacts() as "the flow never came
+// back to the debugger", with that unanswered screen's own words quoted in it.
+const MID_AUTHORIZATION_LEG =
+  /\/(oauth2\/(authorize|consent)|federation\/(acs|login))\b/;
+
+// ---------------------------------------------------------------------------
+// A PRESSED BUTTON IS NOT A PASSED SCREEN UNTIL ITS PAGE HAS GONE.
+//
+// The Allow button submits a form, and `click()` returns once the click is
+// dispatched — not once the browser has left. Until the navigation replaces
+// the document the old page is still there, button and all, so the next
+// `passInBrowser()` finds the SAME button and "presses" it again. Four of
+// those in a hundred milliseconds is `passAllInBrowser()`'s whole bound, spent
+// on one screen, and the near realm's screen that the redirect chain draws a
+// moment later is left standing. That is what took the OAuth 2.0 / OIDC /
+// WebAuthn point of the federation grid on 2026-09-16T15-03-42: realm 2's
+// consent was recorded, realm 1's was drawn and never answered, and
+// signInAtIdp() had returned 117ms after the ceremony, which only repeated
+// successful clicks can do.
+//
+// So wait for the element to go STALE, which is WebDriver's own word for "the
+// document it belonged to has been replaced". Bounded, and quiet when the
+// bound is reached: a submit that has not navigated by then is left to the
+// caller's loop, which will find the button again and press it once more.
+// ---------------------------------------------------------------------------
+async function waitUntilGone(driver, element, maxMs) {
+  log.debug("Entering waitUntilGone().");
+  const until = Date.now() + maxMs;
+  while (Date.now() < until) {
+    try {
+      await element.getTagName();
+    } catch (e) {
+      if (e && e.name === "StaleElementReferenceError") {
+        log.debug("Leaving waitUntilGone(). The page was replaced.");
+        return true;
+      }
+      // Anything else — a navigation in flight answering a command with an
+      // error of its own — is retried; the bound still ends this loop.
+      log.debug("waitUntilGone(): " + e.message);
+    }
+    await driver.sleep(50);
+  }
+  log.debug("Leaving waitUntilGone(). The page was still there after " +
+            maxMs + "ms.");
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // THE BROWSER SURFACE.
 //
@@ -235,6 +304,18 @@ async function passInBrowser(driver, By, opts) {
   const decision = options.decision === "deny" ? "deny" : "allow";
   const id = decision === "deny" ? "consent-deny" : "consent-allow";
   const deadline = Date.now() + (options.timeoutMs || 4000);
+  // The cap on the extension below. Generous against the four-second window it
+  // extends, because what it is waiting out is a whole authorization leg, and
+  // bounded because a caller that is wrong about a screen coming must still
+  // return rather than hang.
+  const hardDeadline = Date.now() + (options.maxMs || 30000);
+  // THE MOVEMENT SIGNAL. `lastUrl` is what the browser said last time round
+  // this loop and `movedDeadline` is how long a change buys — one more window,
+  // renewed by the next change. A chain that is still redirecting therefore
+  // keeps its extension, and a page the flow has come to rest on loses it a
+  // window after it arrived.
+  let lastUrl = null;
+  let movedDeadline = 0;
   for (;;) {
     let url = "";
     try {
@@ -244,6 +325,12 @@ async function passInBrowser(driver, By, opts) {
       // below like any other unhelpful answer; the deadline ends this loop, not
       // the first stumble.
       log.debug("passInBrowser(): " + e.message);
+    }
+    if (url && url !== lastUrl) {
+      // The chain moved. Noted before anything below reads it, so that the
+      // extension at the bottom sees this pass's hop rather than the last.
+      lastUrl = url;
+      movedDeadline = Date.now() + (options.timeoutMs || 4000);
     }
     if (url && !STILL_AT_THE_IDENTITY_SERVICE.test(url)) {
       // THE BROWSER HAS ALREADY LANDED SOMEWHERE ELSE, which is what a flow
@@ -262,11 +349,66 @@ async function passInBrowser(driver, By, opts) {
       found = [];
     }
     if (found.length) {
-      await found[0].click();
-      log.debug("Leaving passInBrowser(). Pressed " + id + ".");
-      return true;
+      try {
+        await found[0].click();
+        await waitUntilGone(driver, found[0], options.maxMs || 30000);
+        log.debug("Leaving passInBrowser(). Pressed " + id + ".");
+        return true;
+      } catch (e) {
+        // FOUND AND THEN GONE, which is a hop in flight rather than a fault.
+        // `findElements()` and the click are two round trips, and the redirect
+        // chain this screen sits in the middle of can land between them — so
+        // the reference is stale by the time it is pressed
+        // (`StaleElementReferenceError`), and where the far realm's screen is
+        // being replaced by the near realm's, the button that arrives is a
+        // different one anyway. Retried on the next pass of this loop rather
+        // than reported: the deadline below still ends it, and a screen that
+        // is really there is found again in a tenth of a second.
+        log.debug("passInBrowser(): " + e.message);
+      }
     }
     if (Date.now() >= deadline) {
+      // THE WINDOW IS EXTENDED WHILE THE FLOW IS DEMONSTRABLY STILL RUNNING,
+      // and without that this gives up on a screen that is on its way.
+      //
+      // Returning false here means "no screen is coming", and the four-second
+      // window is sized for that ordinary case — a scope already agreed to
+      // draws nothing and the caller should not pay for asking. But a FEDERATED
+      // sign-in draws two screens with a whole authorization leg between them:
+      // press the far realm's Allow, and the browser goes back through the near
+      // realm's authorize endpoint, completes the federated leg and only then
+      // draws the near realm's screen. On a pool of four browsers, straight
+      // after a WebAuthn ceremony, that chain takes longer than four seconds —
+      // so passAllInBrowser() saw `false`, stopped, and left the second screen
+      // standing. What that failure says, four functions later, is "the flow
+      // never came back to the debugger", with the unanswered screen's own
+      // words quoted in it. It took the OAuth2/OIDC/WebAuthn point of the grid
+      // on 2026-09-03T07-28-00.
+      //
+      // The distinction that makes this safe is that the browser itself says
+      // which case it is, and it says it TWO WAYS — neither of which covers the
+      // chain alone.
+      //
+      // THE URL: one of MID_AUTHORIZATION_LEG's paths is a hop and never a
+      // destination, so sitting on one is the flow demonstrably mid-leg.
+      //
+      // MOVEMENT: a URL that has changed since the last look is a redirect
+      // chain still walking, wherever it happens to be at this instant. That
+      // covers a hop this file has not thought of — and it expires, so a page
+      // the flow has come to REST on stops extending anything one window after
+      // it arrived, which is what keeps the ordinary "no screen is coming"
+      // answer as cheap as it was.
+      //
+      // Both are capped by the hard deadline, so a service that is genuinely
+      // stuck still ends this loop rather than hanging the job.
+      const stillWorking = MID_AUTHORIZATION_LEG.test(url) ||
+          Date.now() < movedDeadline;
+      if (stillWorking && Date.now() < hardDeadline) {
+        log.debug("passInBrowser(): past the window but still at " + url +
+                  "; the flow is mid-leg, so waiting on.");
+        await driver.sleep(100);
+        continue;
+      }
       log.debug("Leaving passInBrowser(). No consent screen appeared within " +
                 "the window, which is the ordinary case for a scope already " +
                 "agreed to or globally consented.");
@@ -276,10 +418,51 @@ async function passInBrowser(driver, By, opts) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// EVERY SCREEN ON THE WAY OUT, rather than the first one.
+//
+// One authorization request draws at most one screen, and a FEDERATED sign-in
+// is two authorization requests: the far realm asks whether the near realm may
+// act for this person, and then the near realm asks whether the application
+// may. Both are answered by a browser walking one redirect chain, so a caller
+// that pressed Allow once and moved on is left sitting on the second screen —
+// which is how this failed before, reported four functions later as "the flow
+// never came back to the application".
+//
+// A caller that cannot know how many screens are coming should use this one.
+// It costs nothing extra in the ordinary case: pressing the last Allow puts the
+// browser on the application's own origin, which `passInBrowser()` recognises
+// and returns from at once.
+//
+// Returns how many screens were answered. The bound is a bound and not a
+// limit — four is far past anything correct, and stopping there is better than
+// a loop that a service answering its own consent screen with another one
+// could spin in for ever.
+// ---------------------------------------------------------------------------
+async function passAllInBrowser(driver, By, opts) {
+  log.debug("Entering passAllInBrowser().");
+  const options = opts || {};
+  const bound = options.bound || 4;
+  let screens = 0;
+  while (screens < bound) {
+    const pressed = await passInBrowser(driver, By, options);
+    if (!pressed) {
+      log.debug("Leaving passAllInBrowser(). " + screens + " screen(s) " +
+                "answered.");
+      return screens;
+    }
+    screens++;
+  }
+  log.debug("Leaving passAllInBrowser(). Stopped at the bound of " + bound +
+            " screen(s).");
+  return screens;
+}
+
 module.exports = {
   isConsentScreen: isConsentScreen,
   isAuthorizeEndpoint: isAuthorizeEndpoint,
   consentIdOf: consentIdOf,
   settleAuthorization: settleAuthorization,
-  passInBrowser: passInBrowser
+  passInBrowser: passInBrowser,
+  passAllInBrowser: passAllInBrowser
 };
