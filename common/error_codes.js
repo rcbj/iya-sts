@@ -3706,6 +3706,32 @@ const CODES = [
       'hashes) could not be sealed under the key-encryption key when it was ' +
       'rewritten, so the change was not stored.',
     spec: 'none — the spend that asked is refused (STS-AUTHN-0093)' },
+  { code: 'STS-AUTHN-0200',
+    summary: 'A password was presented for an account that is disabled ' +
+      '(pwdAccountLockedTime on its entry), and it was refused before it ' +
+      'was compared, in every mode.',
+    spec: 'the door\'s own refusal: "authentication failed" on the sign-in ' +
+      'screen, LDAP 49, invalid_grant, a SOAP fault, SCIM 401' },
+  { code: 'STS-AUTHN-0201',
+    summary: 'A session, or anything issued on a person\'s behalf, was ' +
+      'refused because the account is disabled — at authn.startSession(), ' +
+      'a live session presented again, or the issuance gate.',
+    spec: 'the door\'s own refusal (the sign-in screen again, a 403 page, ' +
+      'access_denied)' },
+  { code: 'STS-AUTHN-0202',
+    summary: 'Disabling or enabling an account could not write ' +
+      'pwdAccountLockedTime onto the person\'s entry.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-AUTHN-0203',
+    summary: 'An account was disabled and ending what the person held (the ' +
+      'global logout) failed; the lock stands and every door refuses them.',
+    spec: 'none — logged; the disable\'s reply says what failed' },
+  { code: 'STS-AUTHN-0204',
+    summary: 'A sign-in that demands a security key (a WS-Federation ' +
+      'HardwareToken wauth, or OAuth acr_values naming only key aliases) ' +
+      'was answered with something else — a one-time code, a recovery ' +
+      'code — or the account holds a second factor and no key to present.',
+    spec: 'HTTP 400 invalid_request, or the sign-in screen again' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -5506,74 +5532,109 @@ const CODES = [
     summary: 'A back-channel Logout Token was not sent because ' +
       'federation.outbound is off, so this service makes no outbound ' +
       'request.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0533',
     summary: 'A back-channel Logout Token was not sent because the ' +
       'client\'s backchannel_logout_uri cannot be dialled: not http(s), ' +
       'plain http with federation.outboundAllowInsecure off, or not a URL.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0534',
     summary: 'Product mode: a back-channel Logout Token was not sent because ' +
       'the backchannel_logout_uri resolves to a loopback, private, ' +
       'link-local or reserved address.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0535',
     summary: 'Product mode: a back-channel Logout Token was not sent because ' +
       'the backchannel_logout_uri\'s host could not be resolved.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0536',
     summary: 'A relying party answered a back-channel Logout Token with 400, ' +
       'which Back-Channel Logout 1.0 section 2.8 makes a final refusal; it ' +
       'is not retried.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0537',
     summary: 'A relying party answered a back-channel Logout Token with a ' +
       'status other than 200, 204 or 400 — after every attempt where the ' +
       'status is one worth retrying (5xx, 408, 429).',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0538',
     summary: 'A relying party did not answer a back-channel Logout Token ' +
       'within oauth2.backchannelLogoutTimeoutMs, on every attempt.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0539',
     summary: 'A back-channel Logout Token could not be delivered because the ' +
       'connection failed (DNS, refused, TLS), on every attempt.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0540',
     summary: 'A relying party answered a back-channel Logout Token with a ' +
       'redirect, which is not followed.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0541',
     summary: 'A back-channel Logout Token could not be signed — the client ' +
       'registered an id_token_signed_response_alg this service cannot use ' +
       'for it, or an HMAC algorithm with no client secret.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0542',
     summary: 'A back-channel Logout Token was not sent because the session ' +
       'did not record the issuer that client\'s ID Token was issued by (a ' +
       'session older than the feature), and no fallback was available.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0543',
     summary: 'A back-channel Logout Token request could not be built from ' +
       'its options.',
-    spec: 'none — a logout.backchannel audit row and a failed state on the ' +
-      'sign-out\'s delivery list' },
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
   { code: 'STS-OAUTH-0544',
     summary: 'A stored backchannel_logout_uri is not an http or https URL ' +
       'without a fragment, so the client was not sent a Logout Token.',
     spec: 'none — the delivery is listed with the reason, and the value is ' +
       'logged' },
+  { code: 'STS-OAUTH-0545',
+    summary: 'The periodic back-channel logout summary: Logout Token ' +
+      'deliveries were dead-lettered, or deferred because the claim store ' +
+      'could not be asked, since the last summary (counted by code).',
+    spec: 'none — one warning per realm per ' +
+      'oauth2.backchannelLogoutSummaryS; the rows are on /admin/logout' },
+  { code: 'STS-OAUTH-0546',
+    summary: 'A client registered id_token_encrypted_response_alg and its ' +
+      'ID Token (or back-channel Logout Token) could not be encrypted — ' +
+      'the registration is no longer one this service can honour, or its ' +
+      'jwks holds no key of the right type.',
+    spec: 'the ID Token is not issued (server_error with the sentence); ' +
+      'a Logout Token delivery is dead-lettered' },
+  { code: 'STS-OAUTH-0547',
+    summary: 'A back-channel Logout Token attempt was not made because the ' +
+      'cluster claim store could not be asked; the delivery stays pending ' +
+      'and the next sweep tries again.',
+    spec: 'none — counted in the STS-OAUTH-0545 summary' },
+  { code: 'STS-OAUTH-0548',
+    summary: 'A back-channel Logout Token delivery was still pending when ' +
+      'oauth2.backchannelLogoutRetentionS passed, and was dead-lettered.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0549',
+    summary: 'The back-channel logout delivery sweep failed in a realm.',
+    spec: 'none — logged; the next sweep runs as scheduled' },
+  { code: 'STS-OAUTH-0550',
+    summary: 'A retry of a back-channel Logout Token delivery was refused: ' +
+      'no delivery was named, it is unknown or not a dead letter, or the ' +
+      'client has no usable backchannel_logout_uri or recorded issuer.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-OAUTH-0551',
+    summary: 'A token request — any grant carrying a person, a refresh ' +
+      'token included — was refused because the account is disabled.',
+    spec: 'invalid_grant (HTTP 400)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -6909,6 +6970,10 @@ const CODES = [
       'stored key — was asked of a trust realm that has no KDC, so there is ' +
       'no principal for the key to belong to.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-KRB-0129',
+    summary: 'An AS-REQ, or an S4U2Self naming a person, was refused ' +
+      'because that person\'s account is disabled.',
+    spec: 'KDC_ERR_CLIENT_REVOKED (18)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -7201,6 +7266,12 @@ const CODES = [
     summary: 'Another node signed an identity out and this node could not ' +
       'close the directory connections bound as it; they may still be open.',
     spec: 'none — logged' },
+  { code: 'STS-LDAP-0097',
+    summary: 'An account lock (pwdAccountLockedTime) changed through a ' +
+      'directory write and handing the change to account_state.ts failed, ' +
+      'so what the person held may not have been ended.',
+    spec: 'none — logged; the write stands and every door refuses the ' +
+      'person' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -11016,6 +11087,14 @@ const CODES = [
     summary: 'Uploading a SAML 2.0 service provider\'s metadata document ' +
       'failed — none was sent, or consuming it was refused.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0792',
+    summary: 'Disabling or enabling an account named nobody, or named the ' +
+      'anonymous principal, which is not an account.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-ADMIN-0793',
+    summary: 'Disabling or enabling an account was refused and the ' +
+      'refusal carried no code of its own.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   // ===== API ===============================================================
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
@@ -11348,6 +11427,11 @@ const CODES = [
     summary: 'A DPoP proof presented at /admin-api did not verify, and the ' +
       'proof check reported no code of its own.',
     spec: 'invalid_dpop_proof (HTTP 401)' },
+  { code: 'STS-API-0122',
+    summary: 'A management API access token was refused because this ' +
+      'service has revoked or disowned it, or the person it was issued to ' +
+      'has a disabled account.',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -12015,6 +12099,17 @@ const CODES = [
     summary: 'A confirm or discard of a SAML service provider\'s observed ' +
       'signing certificate found none on the entry.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0164',
+    summary: 'An RFC 7591 registration or RFC 7592 update named an ' +
+      'id_token_encrypted_response_alg or _enc this service cannot honour ' +
+      '(a symmetric family, an unknown content encryption), or an enc ' +
+      'with no alg.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0165',
+    summary: 'A registration named id_token_encrypted_response_alg with no ' +
+      'inline jwks key of the right type to encrypt to (a jwks_uri is ' +
+      'never fetched).',
+    spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

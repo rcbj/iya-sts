@@ -2365,7 +2365,8 @@ already. `common/CLAUDE.md` 3ab carries the design.
 
 ## `stsMfaRequired` AND THE PASSWORD RESET LINK (2026-09-13)
 
-Three person flags, in `PERSON_FLAGS` and `OWN_NAMES`: `stsMfaRequired` (a
+Three person flags, in `PERSON_FLAGS` and `OWN_NAMES` (a fourth,
+`pwdAccountLockedTime`, joined them on 2026-09-17 — see below): `stsMfaRequired` (a
 second factor is required of this account), `stsPasswordResetToken` (a scrypt
 hash of a reset link's token — in `SECRET_ATTRIBUTES`, so never returned or
 matched over the socket) and `stsPasswordResetExpires`. The credentials slot
@@ -2377,6 +2378,38 @@ and `clearPassword`, which is `clearStoredPassword()`: it deletes
 stamps `pwdChangedTime` and calls `touchDirectory()`. **Removing the hash is
 also what retires the person's stored Kerberos keys**, because
 `krb5_person_keys.js` refuses keys whose password stamp no longer matches.
+
+## `pwdAccountLockedTime`: A DISABLED ACCOUNT (2026-09-17, #36 follow-up)
+
+A fourth person flag, and the first whose value is read by half the service.
+`common/CLAUDE.md` (3at) argues the attribute and the doors; what belongs here
+is what this directory does with it.
+
+* **The credentials slot gained `readAccountDisabled` / `writeAccountDisabled`**
+  — `readPersonFlags()` reports `accountLockedTime` and `writePersonFlag()`
+  writes the draft's `000001010000Z` or deletes the attribute. It is in
+  `PERSON_FLAGS` and in `OWN_NAMES`, so the console spells it as the draft
+  does.
+* **A LOCK THAT MOVES IS AN ACCOUNT CHANGE, AND IT IS HANDED ON.**
+  `noteAccountChange()` — the observer call every write door already reaches
+  (SCIM, an LDAP add or modify, the console's create) — compares the lock
+  before and after and hands a transition to
+  `common/account_state.ts`'s `directoryChanged()`, LAZILY required, which ends
+  everything the person holds. **After the write has been answered**
+  (`setImmediate`, in the entry's realm): an LDAP modify that ran a global
+  logout inline could close the very connection it was answering on, and the
+  logout family's `ldap` row closes connections by identity.
+* **`writePersonFlag()` calls the observer itself for this one flag**, with
+  `consequences: false`: `account_state.setDisabled()` is the caller there, and
+  it ends things and reports them itself — so RISC hears once and the sessions
+  end once, whichever of the two paths wrote the lock.
+* **A DELETE IS NOT AN ENABLE.** A deleted entry's `after` has no lock, which
+  read naively is "the lock was cleared"; the transition is ignored for a
+  `deleted:` kind, and `ssf/risc.ts`'s reading of the same attribute answers
+  `null` rather than `true` for an entry that is not there.
+* **The KDC reads it through `readPerson()`** — the Kerberos key source's
+  hook, which now reports `disabled` — so an AS-REQ is refused before a
+  development-mode KDC would create the principal.
 
 ## SEVERAL NODES: A CREATE CLAIMS ITS NAME (2026-09-14, #46 section 3)
 

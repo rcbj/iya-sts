@@ -25,7 +25,8 @@ libraries that decide things on its behalf.
 | `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`) — the check and the resolution moved INTO `federation_http.ts` on 2026-09-17, when the back-channel delivery needed them too, and this module keeps its own refusal codes; section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
-| `backchannel_logout.ts` | **OpenID Connect Back-Channel Logout 1.0 (#36, 2026-09-17).** Plans, signs and delivers a Logout Token to every relying party on an ending session that registered a `backchannel_logout_uri` — asynchronously, with bounded retry, through `federation_http.deliverForm()` — and keeps this process's register of the deliveries and their states. See 3aq. |
+| `backchannel_logout.ts` | **OpenID Connect Back-Channel Logout 1.0 (#36, 2026-09-17).** Plans, signs, encrypts and delivers a Logout Token to every relying party on an ending (or EXPIRING) session that registered a `backchannel_logout_uri`. Each delivery is a row of a persisted, replicated store: retried with backoff by any node across restarts, sent once through a claimed lease, dead-lettered on a final failure. See 3aq. |
+| `id_token_encryption.ts` | **The encrypted ID Token (OIDC Core 10.2, 2026-09-17)** — signed then encrypted to the key in the client's inline `jwks`, and the same protection on a back-channel Logout Token. See 3as. |
 | `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.ts` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
@@ -2257,13 +2258,14 @@ produced is one good for a day and renewable.
 ---
 
 3aq. **`backchannel_logout.ts` — OPENID CONNECT BACK-CHANNEL LOGOUT 1.0 (#36,
-   2026-09-17).** A library (rule 3): it registers no route and requires
-   `common/` libraries and `federation/federation_http.ts`, none of which
-   requires it back. `authn/authn.ts` requires it LAZILY, `oauth2.ts`,
-   `logout/logout.ts` and `admin-core/admin_views.ts` plainly. It REVERSED a
-   non-goal — the root index said "Perform back-channel logout" was not done —
-   and rcbj's direction on #36 was to take the row away. The file header argues
-   six things; the ones a maintainer changing anything must know:
+   2026-09-17; DURABLE AND COORDINATED the same day).** A library (rule 3): it
+   registers no route and requires `common/` libraries,
+   `federation/federation_http.ts`, `cluster/cluster_claims.js` and
+   `id_token_encryption.ts`, none of which requires it back. `authn/authn.ts`
+   requires it LAZILY, `oauth2.ts`, `logout/logout.ts` and
+   `admin-core/admin_views.ts` plainly. It REVERSED a non-goal — the root index
+   said "Perform back-channel logout" was not done. The file header argues
+   seven things; the ones a maintainer changing anything must know:
 
    **IT IS TRIGGERED WHERE A SESSION ENDS, NOT AT THE SIGN-OUT DOORS.**
    Front-channel logout is triggered at the three doors that draw a page,
@@ -2271,91 +2273,160 @@ produced is one good for a day and renewable.
    RFC 9700 refresh revocation and CAEP's `session-revoked` already go:
    `authn.dropSession()`, which every door reaches — `/oauth2/logout`,
    `wsignout1.0`, SAML Single Logout, `/logout`, `/admin/logout`,
-   `/admin/sessions`, `/admin-api`, and the console's own sign-out cascade. So
-   an OIDC relying party is told about a WS-Federation sign-out, which its
-   front-channel neighbour never was. The rows are PLANNED before the
-   `authn.session-end` claim and SENT inside the report the claim lets out.
-   The one other trigger is `logout/logout.ts`'s `oidc-rp` row, which forgets a
-   client — one, on a session that stays, or every one, ahead of the session,
-   in a global logout from `/logout`, `/admin/logout` or `/admin-api` — and
-   sends for it itself (`logout/CLAUDE.md`).
+   `/admin/sessions`, `/admin-api`, an account DISABLED
+   (`common/account_state.ts`) — and `authn.expireSession()`, which every
+   expiry reaches. The rows are PLANNED before the `authn.session-end` claim
+   and SENT inside the report the claim lets out. **A GLOBAL LOGOUT NO LONGER
+   SENDS FOR ITSELF**: `logout/logout.ts`'s `oidc-rp` row leaves a relying
+   party on a session that is ending in the same act, so the session's end
+   sends it under the claim — that row used to send from the request's
+   process, outside it. A relying party FORGOTTEN on a session that STAYS is
+   still sent for by the request, and the derived row id below makes that once
+   as well.
 
-   **AN EXPIRED SESSION SENDS NOTHING — a decision, not an omission.** The
-   specification's trigger is a person logging out, and a relying party's
-   session commonly outlives the provider's idle timeout on purpose; a Logout
-   Token per idle expiry would sign people out of applications they are using.
-   `expireSession()` does not come through `dropSession()`, and the setting's
-   description says so.
+   **AN EXPIRED SESSION SENDS TOO, AND IT IS A SETTING
+   (`oauth2.backchannelLogoutOnExpiry`, ON).** It read "an expired session
+   sends nothing — a decision, not an omission" until the follow-up, and the
+   decision was reversed: section 2.1 lets the provider notify whenever ITS
+   session ends, and a relying party never told of an expiry keeps a session
+   this service no longer vouches for. Off for a deployment whose relying
+   parties deliberately outlive the provider's idle timeout, or a test that
+   wants an expiry silent. **Front-channel logout cannot follow an expiry** —
+   it is an iframe and there is no browser on the sign-out page — and that
+   asymmetry is the reason the two are triggered differently in the first
+   place.
 
-   **ASYNCHRONOUS, BOUNDED RETRY, AND `pending` IS THE HONEST STATE.** The
-   sign-out answers first. Each delivery is signed ONCE (so a relying party can
-   deduplicate on `jti`) and POSTed up to `oauth2.backchannelLogoutAttempts`
-   times, `oauth2.backchannelLogoutBackoffMs` apart and doubling, each bounded
-   by `oauth2.backchannelLogoutTimeoutMs`. 200 and 204 are success (section
-   2.8 warns about the 204); 400 is final; a timeout, a connection failure,
-   5xx, 408 and 429 are retried; a redirect and every outbound-policy refusal
-   are final. `oauth2.backchannelLogoutTokenTtlS` (120, section 4's "at most
-   two minutes") must outlast the retries. ONE `logout.backchannel` audit row
-   per delivery, when it reaches `sent` or `failed` — never one per attempt —
-   with `STS-OAUTH-0532..0544` naming each failure. The sign-out results
-   (`/logout`, `/oauth2/logout` when it draws a page, `/admin/logout`,
-   `/admin-api/logout`) list the deliveries the act queued with their state at
-   that moment; `/admin/logout` and `GET /admin-api/logout` list the recent
-   ones with the state they reached.
+   **A DELIVERY IS A ROW OF A PERSISTED, REPLICATED STORE**
+   (`oauth2.backchannelDeliveries`, per realm, `tombstone: true` and a
+   `mergeRow`) — persisted and shared where this service persists what it
+   mints, which is product mode on postgres, and this process's own map in
+   development or on memory, where there is one process to be in. A stored row
+   is sealed under the key-encryption key like every minted row, which is what
+   lets it carry the signed token. The row IS the retry. Its state, attempts, next due time
+   and the signed token are on it, so a process that dies loses nothing and a
+   restart resumes. Every process sweeps (`oauth2.backchannelLogoutSweepS`,
+   `oauth2.backchannelLogoutConcurrency` at once); the process that planned a
+   delivery attempts it at once and schedules its own retries, so the sweep is
+   the safety net rather than the delay. Retention
+   (`oauth2.backchannelLogoutRetentionS`, `oauth2.backchannelLogoutMaxRows`)
+   removes finished rows and DEAD-LETTERS a row still pending past the window
+   (`STS-OAUTH-0548`), so nothing is pending for ever.
+
+   **EXACTLY ONE PROCESS SENDS EACH ATTEMPT, AND THE CLAIM TIME IS THE FENCING
+   TOKEN.** `cluster_claims.claim()` on (realm, delivery, generation, attempt)
+   for `oauth2.backchannelLogoutLeaseMs` — never less than a request timeout
+   and a second. The winner writes the row in flight (not due again until the
+   lease lapses), sends, and writes the outcome; a process that dies leaves the
+   claim to lapse and the next sweep ANYWHERE re-claims the SAME attempt
+   number, because an expired claim is re-claimable. The claim's database time
+   is the row's fence and `mergeRow` keeps the higher (generation, attempt,
+   fence), so a process that stalled past its lease and wakes to record its
+   outcome loses to the one that took over. What is NOT excluded is two POSTs —
+   HTTP is at-least-once when a sender can die between the request and the
+   record — and both carry the SAME token and `jti`, which section 2.6 tells
+   the relying party to deduplicate on. **`cluster.withLease()` was not used**:
+   it names a NODE-wide role with one row per name, and a lease per delivery
+   would be a `sts_cluster_leases` row per delivery, never expired and never
+   reused, where a claim row lapses and is swept.
+
+   **THE ROW'S ID IS DERIVED** — a digest of the session, the client and when
+   that client was first noted on the session — so two processes planning the
+   same delivery write ONE row (the store is registered on `/admin/caches` as a
+   REPLAY store for exactly that reason, rule 3ap) and the attempt claim does
+   the rest. A client that signs in again after being forgotten is a new
+   noting and a new row.
+
+   **A FINAL FAILURE IS A DEAD LETTER.** 200 and 204 are success (section 2.8
+   warns about the 204); 400 is final; a timeout, a connection failure, 5xx,
+   408 and 429 are retried up to `oauth2.backchannelLogoutAttempts` with
+   `oauth2.backchannelLogoutBackoffMs` doubling; a redirect and every
+   outbound-policy refusal are final. A dead letter carries its code
+   (`STS-OAUTH-0532..0548`), is listed on `/admin/logout` and `GET
+   /admin-api/logout?deliveryState=dead` — filtered, searched and paged, from
+   every node, because the store is shared — and is sent again only by
+   `retry-backchannel` (the console button and `POST
+   /admin-api/logout/retry-backchannel`), which is a NEW GENERATION: a new
+   `jti`, a fresh attempt budget and the client's CURRENT address, because the
+   commonest reason to retry is having corrected it.
+
+   **LOGGING IS A SUMMARY, NOT A LINE PER FAILURE.** One `logout.backchannel`
+   audit row per delivery when it reaches `sent` or `dead`, carrying its code
+   and marked `summarised` so `audit.js` writes no log line for it, and at most
+   one line per realm per `oauth2.backchannelLogoutSummaryS` counting what this
+   process sent, retried, took over and dead-lettered by code
+   (`STS-OAUTH-0545`). That is rcbj's standing rule, and the `summarised`
+   member on an audit row is new with it.
 
    **THE OUTBOUND POLICY IS `federation_http.ts`'s, THROUGH A FUNCTION OF ITS
    OWN.** `deliverForm()` reads the address off a record by an attribute name
    from its own `SENDABLE` list, keeps the kill switch, the https rule, no
    redirect and the cap, discards the body, and in product mode resolves once,
-   refuses an internal address and pins the connection. That module's header
-   argues why an address a client REGISTERED — through unauthenticated dynamic
-   registration, too — may be SENT to when a URL of that provenance may never
-   be fetched FROM. The internal-address check moved there from the RFC 9728
-   import for the same day.
-
-   **WHICH PROCESS SENDS.** The one that reports the session's end — the
-   winner of `authn.session-end` on a store that can claim — so two nodes or
-   two request workers ending one session do not both send; a loser marks its
-   planned rows `elsewhere`. **Not coordinated, and said where it is
-   declared:** the retries live in the sending process's memory, so a process
-   that dies mid-retry loses the delivery; on a store that cannot claim, two
-   processes ending one session at the same moment each send (CAEP's existing
-   duplicate); the register is per process, so another node's `/admin/logout`
-   does not show this node's deliveries — the shared audit rows do. The
-   `oidc-rp` row's send is made by the one process handling that request,
-   outside the claim.
+   refuses an internal address and pins the connection.
 
    **THE TOKEN.** `iss` is the issuer the client's ID Token was issued under,
-   recorded per client on the session by `frontchannel.noteClient()` (a
-   session older than that records none, and its deliveries fail
-   `STS-OAUTH-0542` rather than name a guessed issuer); `aud`, `iat`, `exp`,
-   `jti`, the one `events` member, `sub` AND `sid` always (so
-   `backchannel_logout_session_required` is honoured whatever it says), and no
-   `nonce`. `typ: logout+jwt`. Signed like the client's ID Token — its
-   registered `id_token_signed_response_alg`, RS256 by default, never `none` —
-   through `signJwtAsAsync()`, which records nothing in the token registry: a
-   Logout Token is not a credential anybody holds. Encrypted Logout Tokens are
-   not offered, because no ID Token here is encrypted either.
+   recorded per client on the session by `frontchannel.noteClient()` (a session
+   older than that records none, and its deliveries are dead-lettered
+   `STS-OAUTH-0542` rather than naming a guessed issuer); `aud`, `iat`, `exp`,
+   `jti`, the one `events` member, `sub` AND `sid` always, and no `nonce`.
+   `typ: logout+jwt`. Signed like the client's ID Token — its registered
+   `id_token_signed_response_alg`, the whole table including the post-quantum
+   and composite algorithms, never `none` — through `signJwtAsAsync()`, which
+   records nothing in the token registry: a Logout Token is not a credential
+   anybody holds. **AND ENCRYPTED LIKE IT** where the client registered
+   `id_token_encrypted_response_alg` (3as) — signed then encrypted, `cty:
+   "JWT"`, `typ: logout+jwt` on the outer header. Signed once per generation
+   and resent unchanged; a token that would expire before a retry is signed
+   again with the SAME `jti`, so the relying party's deduplication still holds.
 
    **`oauth2.backchannelLogout`** (ON) turns the two discovery members, the
    fan-out and this feature's half of the `sid` claim off together — the same
    one-switch argument as `oauth2.frontchannelLogout`.
 
-   **Tested by `tests/backchannel_logout.js`**: the registration members at
-   both write doors and read back; `plan()` off, with no issuer, and with a
-   hand-written bad address; the claims; the product-mode refusal through
-   `deliverForm()` and through a delivery; and, in a child process with a
-   relying party of its own, discovery under the setting, `sid`, the token
-   verified against the JWKS from `/oauth2/logout`, retry to success, 400
-   final, 500 to exhaustion, one audit row each, the console's result and
-   recent list, `wsignout1.0`, the selective row, and the setting off. Four
-   mutants (400 retried, a nonce added, discovery ignoring the setting, the
-   session end not sending) were each caught. **Not tested:** a timeout being
-   retried, the `elsewhere` hand-off through a real claim store (only
-   `abandon()` itself is), a delivery signed with a registered non-RS256
-   algorithm, and anything across two real nodes.
+   **Tested by `tests/backchannel_logout.js`** (the protocol: the registration
+   members, `plan()`, the claims, the product-mode refusal, and in a child
+   process the discovery members, `sid`, a token verified against the JWKS,
+   retry to success, 400 final, 5xx to exhaustion, one audit row each, the
+   console's result, `wsignout1.0`, the selective row and the setting off) and
+   **`tests/backchannel_durable.js`** (the follow-up: a timeout retried, a
+   process that dies mid-delivery taken over once its lease lapses and fenced
+   out when it wakes, the merge rule, two processes sending once, a global
+   logout through the session-end claim — held by another node, and free —
+   dead letters and the retry, a retry across a restart, retention, the
+   summary, ES256 and ML-DSA-44 Logout Tokens verified, two encrypted ones
+   decrypted, encrypted ID Tokens end to end, expiry, and the shared paged
+   list). **Not tested:** two REAL nodes against one postgres (the claim store
+   is faked to the shape postgres gives), and a delivery whose realm was
+   removed under it.
 
 ---
+
+3as. **`id_token_encryption.ts` — THE ENCRYPTED ID TOKEN, AND THE ENCRYPTED
+   LOGOUT TOKEN (OIDC Core section 10.2, 2026-09-17).** A library (rule 3):
+   `oauth2.ts`'s `idToken()` hands it the signed token, the registration
+   endpoint asks it whether a client that registered
+   `id_token_encrypted_response_alg` gave a key to encrypt to, and
+   `backchannel_logout.ts` asks for the same protection on a Logout Token —
+   section 2.4 of Back-Channel Logout says it is encrypted "the same way as ID
+   Tokens", which is the whole reason this exists now.
+
+   **NO ID TOKEN HERE WAS ENCRYPTED UNTIL THIS FILE**, and the discovery
+   document said so by leaving the two members out — while a UserInfo response
+   and an RFC 9701 introspection response had been encrypted to a client's own
+   key for weeks. Four decisions, each the one those two already made:
+   the ASYMMETRIC families only (`common/crypto.js`'s `JWE_ASYMMETRIC_ALGS`),
+   an INLINE `jwks` only (a `jwks_uri` is never fetched — the root CLAUDE.md's
+   non-goal), REFUSED rather than downgraded (at registration with
+   `invalid_client_metadata`, `STS-REG-0164` for the grammar and `-0165` for a
+   missing key; at issuance with `STS-OAUTH-0546`), and NO post-quantum key
+   encapsulation — the signature inside may be ML-DSA or SLH-DSA, the JWE
+   around it is what this service can encrypt with, and adding an ML-KEM family
+   would be a change to every encrypted surface at once rather than to this
+   one. `applications.js` owns the grammar (`idTokenEncryptionMetadataProblem()`,
+   the members live in `appRegistrationJson` beside
+   `id_token_signed_response_alg`, which has no attribute either); this file
+   owns the key and the envelope, taking `recipientKey()` from
+   `introspection_jwt.ts` so all three encrypted responses pick a key the same
+   way.
 
 ## A scope may name a PERMISSION, not just an application, and the token says both halves
 

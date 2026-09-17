@@ -486,7 +486,9 @@ in every file, including the ones in the source comments. This is the index.
 | 3q | `persistence.js`, the override-store slot in `config.js`, the directory slot it offers, and why `realms.onChange()` is an event rather than a third slot | `persistence/CLAUDE.md` |
 | 3m | `logout/logout.ts` holds no state, and the reading order is not the ending order | `logout/CLAUDE.md` |
 | 3n | `frontchannel_logout.js` | `oauth-oidc/CLAUDE.md` |
-| 3aq | `backchannel_logout.ts`, OpenID Connect Back-Channel Logout 1.0: triggered where a session ends, never on expiry, asynchronous with bounded retry through `federation_http.deliverForm()`, and which process sends | `oauth-oidc/CLAUDE.md` |
+| 3aq | `backchannel_logout.ts`, OpenID Connect Back-Channel Logout 1.0: triggered where a session ends OR EXPIRES, each delivery a persisted row sent once through a claimed lease whose time is the fence, retried by any node across restarts, dead-lettered and retried by hand | `oauth-oidc/CLAUDE.md` |
+| 3as | `id_token_encryption.ts`, OIDC Core 10.2's encrypted ID Token — and the Logout Token encrypted the same way | `oauth-oidc/CLAUDE.md` |
+| 3at | `account_state.ts`, a DISABLED account: the one place `pwdAccountLockedTime` is written, what ending everything it holds means, and the doors that ask | `common/CLAUDE.md`, `authn/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -873,7 +875,7 @@ the file the row names.
 | ~~Turn a verified client certificate into a login~~ — **reversed 2026-09-05**, with revocation consulted first since 2026-09-12 | `tls/CLAUDE.md` |
 | Verify anything in an issued credential's values, which are invented | `oid4vc/CLAUDE.md` |
 | ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17 (#38)**: `/authn/wallet` signs in the entry a holder-bound SD-JWT VC this realm issued was issued for; any other presentation still verifies and signs nobody in | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
-| Deactivate anybody on SCIM `active: false` | `scim/CLAUDE.md` |
+| ~~Deactivate anybody on SCIM `active: false`~~ — **reversed 2026-09-17**: it is `pwdAccountLockedTime` on the entry, the same DISABLED state an administrator writes from `/admin/users`, and every door refuses the person while it is set | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
 | Attest a workload or a node | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one, which is a different claim | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
 | Let a group grant anything BY BEING A GROUP — what a group grants is what a role or a roster names it for: the console rosters, REMOTE_PEPS and XACML_USER, and a configured role's group members; the groups claim grants nothing | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
@@ -890,8 +892,8 @@ the file the row names.
 | Dial its database in the clear — and it does not authenticate that server either | `persistence/CLAUDE.md` |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
 | Recall anything it has already ISSUED — it DISOWNS them, which is a different claim | `logout/CLAUDE.md`, `common/CLAUDE.md` |
-| ~~Perform back-channel logout. Front-channel IS implemented~~ — **reversed 2026-09-17 (#36)**: a signed Logout Token POSTed, after the answer and with bounded retry, to every relying party on a session any sign-out ends; an expiry sends none | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
-| ~~Fake WS-Federation's `wauth`~~ — **reversed 2026-09-17 (#36)**, as a step-up rather than a fake: an unmet demand sends the person to sign in again with the factor required, and is refused only if that fails | `ws-federation/CLAUDE.md` |
+| ~~Perform back-channel logout. Front-channel IS implemented~~ — **reversed 2026-09-17 (#36)**: a signed (and, where registered, encrypted) Logout Token POSTed to every relying party on a session any sign-out ends, an EXPIRY ends or a DISABLE ends — a persisted row per delivery, sent once for the cluster, retried by any node across restarts, dead-lettered and retried by hand. Front-channel still cannot follow an expiry: it needs the browser | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
+| ~~Fake WS-Federation's `wauth`~~ — **reversed 2026-09-17 (#36)**, as a step-up rather than a fake: an unmet demand sends the person to sign in again with what it asked for — a second factor, or a SECURITY KEY in either role — and is refused only if that fails | `ws-federation/CLAUDE.md`, `authn/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` — a URL in a query parameter to fetch the request from is a server-side request forgery | `ws-federation/CLAUDE.md` |
 | ~~Verify a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither checked~~ — **reversed 2026-09-17 (#37)**: a present signature is verified against the SP's registered certificate in every mode, an unsigned one refused where `saml2.requireSignedAuthnRequests` says, and consumed metadata registers the SP's endpoints and keys | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion to a service provider it holds no certificate for — it sends it in CLEAR and says so loudly | `saml/CLAUDE.md` |

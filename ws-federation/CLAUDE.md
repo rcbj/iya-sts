@@ -42,21 +42,29 @@ to the same session rather than replacing it (`../authn/CLAUDE.md`). rcbj's
 direction on #36 was to take the row off the list, so:
 
 * **A demand the session does not meet is a step-up, in every mode.** The
-  person is sent through `beginAuthentication({ forceMfa: true })` — the second
-  factor required and the opt-outs disabled, exactly what `acr_values=mfa`
-  does — and the return address carries `step_up.ts`'s `step_up_honoured=1`.
-  With no session at all, a demand makes the first sign-in require the factor
-  too. **One mechanism, not a second**: the flag and the marker are RFC 9470's.
+  person is sent through `beginAuthentication()` with what the demand asks for
+  — `step_up.screenDemand()` turns a multi-factor demand into `forceMfa` and a
+  HARDWARE demand into `forceKey` (2026-09-17) — and the return address
+  carries `step_up.ts`'s `step_up_honoured=1`. With no session at all, a
+  demand makes the first sign-in require it too. **One mechanism, not a
+  second**: both flags and the marker are RFC 9470's, and the authorization
+  endpoint reads the same function for `acr_values` naming only the RFC 8176
+  key aliases.
 * **The assertion reports what HAPPENED.** `authnMethodsFor()` reads the
   session after the step-up; a password and a one-time code is
   `multipleauthn`, a password and a key is `multipleauthn` too, a passwordless
   key alone is `HardwareToken`. Nothing about the request changes the answer.
 * **A HARDWARE demand is met by a key in EITHER role; a MULTI-FACTOR demand
   only by two real factors.** A passwordless key does not answer multi-factor,
-  however phishing-resistant it is. The screen under `forceMfa` cannot run a
-  key alone, so a hardware demand is met there by choosing the key as the
-  second factor — and a person who picks the one-time code instead has not
-  produced one.
+  however phishing-resistant it is. **THE SCREEN NOW OFFERS EXACTLY THOSE TWO
+  CHOICES (2026-09-17).** Under `forceMfa` alone it could not run a key by
+  itself, so a hardware demand went to a screen that accepted a one-time code
+  and produced a session this profile then refused on the way back — the
+  demand was answerable only by luck. `forceKey` fixes it at the screen: the
+  key alone or the key after a password, no code, no recovery code, no
+  Kerberos ticket and no wallet (`../authn/CLAUDE.md`, *`forceKey`*). A person
+  who holds a second factor and no key is told to enrol one rather than handed
+  a ceremony that would enrol one for whoever knows their password.
 * **ONE attempt, then the refusal.** A request carrying the marker whose
   session still does not meet the demand is refused with the codes it always
   had: `STS-WSFED-0009` or `STS-WSFED-0010`. That is the only place they are
@@ -155,8 +163,12 @@ is the whole mechanism. See the root `CLAUDE.md`.
 `tests/wsfed_wauth_step_up.js` (2026-09-17) pins the `wauth` step-up: a
 multi-factor demand on a one-factor session sent to sign in again with the
 factor required and the marker on the return, the assertion reporting
-`multipleauthn` after a one-time code, a hardware demand answered with a code
-refused `STS-WSFED-0009` after its one attempt, a forged marker refused
+`multipleauthn` after a one-time code, a hardware demand whose screen
+offers the key in both roles and refuses a one-time code (`STS-AUTHN-0204`),
+a person holding a code and no key told so, a session still keyless on the way
+back refused `STS-WSFED-0009`, a REAL WebAuthn ceremony (a software
+authenticator built in the test) meeting the demand passwordless AND as a
+second factor, a forged marker refused
 `STS-WSFED-0010`, and an unknown method still `STS-WSFED-0006`. Its mutant —
 the marker ignored, so every unmet demand is refused as before — turned eight
 of its assertions red. Nothing else here is
@@ -164,6 +176,5 @@ tested. The mock relying party makes the rest look covered — but a person has
 to click it and read the page. What a test would add is the other negatives:
 an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
 signature whose reference does not resolve because `AssertionID` was not
-named, and a hardware demand met by a real security key (which needs a
-WebAuthn ceremony the in-process test does not drive). A passive requestor that issues a good token to a
+named, A passive requestor that issues a good token to a
 working relying party looks finished and proves almost nothing.

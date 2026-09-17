@@ -36,6 +36,7 @@ more than one family needs it, not because it felt general.
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
+| `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -794,6 +795,20 @@ R2). **A process that requires a single converted route module and not this
 file gets no routes from it** — it has to call that module's
 `registerRoutes(app)` itself.
 
+**The root does not build or require ITSELF (2026-09-17).** R2's build list
+was recorded from the order modules finished loading, and this file finishes
+last, so `load()` ended with `build('common/protocol_stack',
+require('./protocol_stack'))`. `load()` runs inside this file's own require, so
+that was a module required from within its own load: node handed back the
+half-built exports and printed *Accessing non-existent property
+'installInstance' of module exports inside circular dependency* on every start,
+in every request worker and in every whole-stack test. The build skipped it
+anyway (`ProtocolStack` has no `installInstance()`), so the line was DELETED
+rather than made lazy — rule 3e's reasoning: a lazy require is for a cycle two
+modules need, and this cycle was needed by nothing. `tests/composition_root.js`
+now fails on any circular-dependency warning while the stack loads, in both
+its stack and worker orders.
+
 `server.js` loads that file and then binds the sockets. **`common/request_worker.ts`
 loads the SAME file and binds none of them** — it is a child process that runs
 the service and answers HTTP on a unix socket the front process proxies to. A
@@ -1214,6 +1229,68 @@ protocol pool until the re-fork. The setting's own default stays 0, because a
 non-zero one would require dispatch and read-your-write of every
 single-process run.
 
+
+## 3at. `account_state.ts` — A DISABLED ACCOUNT (2026-09-17, #36 follow-up)
+
+The directory had no disabled state. An administrator who wanted somebody OUT
+could remove their password (and their sign-in with a security key went on
+working), narrow the issuance policy (which is about an APPLICATION), or delete
+the entry (which loses everything about them). SCIM's `active: false` was
+recorded in an invented `scimActive` and read by nothing — the root
+`CLAUDE.md`'s longest-standing non-goal about this directory, and the one most
+likely to let somebody ship a deprovisioning path that had never worked.
+
+**THE ATTRIBUTE IS `pwdAccountLockedTime`** — draft-behera-ldap-password-
+policy section 5.3.3, whose value `000001010000Z` means "locked permanently,
+and only a password administrator can unlock it". That is exactly what an
+administrator disabling an account says. It was chosen over an invented
+`stsAccountDisabled` for one reason that is not taste: an LDAP client reading
+this directory already understands it (OpenLDAP's ppolicy overlay writes and
+reads that value), and `pwdReset` beside it comes from the same draft. **This
+service enforces it more widely than the draft asks** — the draft is about
+password binds; here EVERY door refuses the person — and that is the safe
+direction for a lock. Any value is a lock, which is the draft's own rule where
+no `pwdLockoutDuration` is configured, and none is here.
+
+**WHAT A DISABLE DOES, IN ORDER.** The lock is written
+(`credentials.setAccountDisabled()`, an eleventh directory hook); everything
+the person holds is ENDED through the same `logout.terminate()` a global
+logout calls — every session (and with each, `dropSession()`'s consequences:
+CAEP `session-revoked`, the back-channel Logout Tokens, the RFC 9700 refresh
+revocation), every revocable token, every outstanding code, every directory
+connection bound as them, a Kerberos sign-out instant, and the disowning of
+what cannot be revoked; and one `account.disable` audit row names who did it.
+Enabling clears the lock and ends nothing. RISC's `account-disabled` /
+`account-enabled` come from the directory's own account observer
+(`ssf/risc.ts` reads the lock where it read `scimActive`), so they are emitted
+once whichever door wrote it.
+
+**WHERE IT IS ASKED — the list is the feature.** A refusal that held at the
+sign-in screen and nowhere else would look exactly like this working:
+
+| Door | How |
+|---|---|
+| every password (the sign-in screen, an LDAP bind, the password grant, a WS-Trust UsernameToken, SCIM and SSF Basic, EST) | `credentials.verify()`, before the development-mode pass, so it holds in BOTH modes (`STS-AUTHN-0200`) |
+| every session (the screen and its second-factor steps, federation, SPNEGO, `GET /tls/sign-in`, the OID4VP wallet door, WS-Trust, the keyed API callers) | `authn.startSession()`, first, before the gate and before the keyed branch (`STS-AUTHN-0201`) |
+| a session they already hold | `authn.sessionOf()` ends it through `dropSession()` |
+| every issuance — any token grant carrying a person, an ID Token, a SAML or WS-Federation assertion, a WS-Trust token, a Kerberos TGS ticket, a session | `issuance_gate.check()`, BEFORE its three permissive early answers, because a disable is not a role decision (`STS-OAUTH-0551` at the token endpoint, as `invalid_grant`) |
+| a Kerberos AS-REQ, and an S4U2Self naming them | `krb5_principals.personDisabled()` → KDC_ERR_CLIENT_REVOKED (18), in both modes and before a development KDC would create the principal (`STS-KRB-0129`) |
+| the management API | its bearer check, which also learned to refuse a REVOKED token there (`STS-API-0122`) |
+
+**A WRITE THAT DID NOT COME THROUGH HERE still has the consequence**: the
+directory hands a lock that moved — SCIM, an `ldapmodify`, a console create —
+to `directoryChanged()`, which ends what the person holds AFTER the write has
+been answered (`ldap/CLAUDE.md`). So the effect does not depend on the door,
+and an `ldapmodify` cannot leave a disabled person with live sessions.
+
+**IT FINDS `logout/logout.ts` IN `require.cache` AND NEVER REQUIRES IT** —
+`ssf/account_signals.ts`'s arrangement, for its reason: this file is loaded
+long before that family, and a process that never loaded it (an in-process
+test, the parent project's Kerberos jobs) is told so in the answer rather than
+handed nine modules it did not ask for.
+
+`tests/account_disable.js` drives every door above that a single process can
+reach, with a control before each.
 
 ## `realms.js`: several logical copies of this service, in one process
 

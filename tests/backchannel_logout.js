@@ -12,9 +12,10 @@
 //           address without a fragment, at registration and at a console
 //           write, and read back by `clientConfigOf()` with the RFC 7591
 //           default;
-//        b. `plan()` with the setting off plans nothing; a stored address
-//           that is not usable, and a session that recorded no issuer, are
-//           planned as FAILED with their codes;
+//        b. `plan()` with the setting off plans nothing; planning a session
+//           twice is one row (the derived id); a stored address that is not
+//           usable, and a session that recorded no issuer, are planned as
+//           DEAD LETTERS with their codes;
 //        c. the Logout Token's claims: iss, aud, iat, exp two minutes on,
 //           jti, the one `events` member, sub AND sid, and no nonce;
 //        d. the outbound policy in product mode: an internal address is
@@ -32,8 +33,8 @@
 //        d. the console's global logout (the /admin-api door too) — its
 //           result lists the deliveries as `pending`, and the three relying
 //           parties then see: 503 twice then 200 (sent after three attempts),
-//           400 (failed at once, one POST, STS-OAUTH-0536), 500 every time
-//           (failed after three POSTs, STS-OAUTH-0537); one audit row each;
+//           400 (dead at once, one POST, STS-OAUTH-0536), 500 every time
+//           (dead after three POSTs, STS-OAUTH-0537); one audit row each;
 //           the recent list on /admin/logout's model shows the final states;
 //        e. WS-Federation's wsignout1.0 — a door front-channel logout never
 //           reached — sends one too;
@@ -139,7 +140,8 @@ async function library(t) {
   t.check(planned.length === 1 && planned[0].state === 'pending' &&
           planned[0].sid === 'sess-bcl-1' &&
           planned[0].iss === 'https://sts.example' &&
-          planned[0].sessionRequired === true,
+          planned[0].sessionRequired === true &&
+          planned[0].generation === 1 && planned[0].trigger === 'sign-out',
           '1b3. one pending delivery, carrying the session and the issuer ' +
           'the client was issued under', JSON.stringify(planned[0]));
   const listed = backchannel.deliveriesFor(['sess-bcl-1'], mark);
@@ -151,26 +153,30 @@ async function library(t) {
             backchannel.summarize(listed)),
           '1b5. the summary sentence counts it as pending',
           backchannel.summarize(listed));
-  backchannel.abandon(planned);
-  t.equal(backchannel.deliveriesFor(['sess-bcl-1'], mark)[0].state,
-          'elsewhere', '1b6. a delivery handed to another process is ' +
-          '"elsewhere", not left pending');
+  const again = backchannel.plan(session, { via: 'a second process' });
+  t.check(again.length === 1 && again[0].id === planned[0].id &&
+          backchannel.deliveriesFor(['sess-bcl-1'], mark).length === 1,
+          '1b6. planning the same session again is the SAME row — the id ' +
+          'is derived from the session and the client, so a second process ' +
+          'noticing the same end queues nothing more',
+          JSON.stringify([planned[0].id, again[0] && again[0].id]));
 
   const noIssuer = {
     id: 'sess-bcl-2', user: { username: 'bcl-alice', sub: 'urn:uuid:bcl' },
     oidcClients: { 'bcl-lib': { first: 1, last: 1, count: 1 } }
   };
   const orphan = backchannel.plan(noIssuer, {});
-  t.check(orphan.length === 1 && orphan[0].state === 'failed' &&
+  t.check(orphan.length === 1 && orphan[0].state === 'dead' &&
           orphan[0].errorCode === 'STS-OAUTH-0542',
-          '1b7. a session that recorded no issuer is FAILED (0542) rather ' +
-          'than sent a token naming the wrong one', JSON.stringify(orphan));
-  const withFallback = backchannel.plan(noIssuer,
+          '1b7. a session that recorded no issuer is a DEAD LETTER (0542) ' +
+          'rather than sent a token naming the wrong one',
+          JSON.stringify(orphan));
+  const withFallback = backchannel.plan(Object.assign({}, noIssuer,
+                                                      { id: 'sess-bcl-2b' }),
                                         { issuer: 'https://fallback' });
   t.check(withFallback[0].state === 'pending' &&
           withFallback[0].iss === 'https://fallback',
           '1b8. unless the caller supplies the issuer');
-  backchannel.abandon(withFallback);
 
   // A value `ldapmodify` could write, which no door would take.
   const store = require('../common/applications');
@@ -187,14 +193,15 @@ async function library(t) {
   };
   let handWritten = null;
   try {
-    handWritten = backchannel.plan(session, {});
+    handWritten = backchannel.plan(Object.assign({}, session,
+                                                 { id: 'sess-bcl-1b' }), {});
   } finally {
     store.clientConfigOf = loaded;
   }
-  t.check(handWritten.length === 1 && handWritten[0].state === 'failed' &&
+  t.check(handWritten.length === 1 && handWritten[0].state === 'dead' &&
           handWritten[0].errorCode === 'STS-OAUTH-0544',
           '1b9. a hand-written javascript: address is checked again when ' +
-          'read, and FAILED (0544)', JSON.stringify(handWritten));
+          'read, and dead-lettered (0544)', JSON.stringify(handWritten));
 
   // --- c. the token's claims -----------------------------------------------
   const claims = backchannel.claimsFor(Object.assign({}, planned[0]));
@@ -267,15 +274,16 @@ async function library(t) {
       };
       let rows = [];
       try {
-        rows = productBc.plan(productSession, {});
-        await productBc.dispatch(rows);
+        const planned3 = productBc.plan(productSession, {});
+        await productBc.dispatch(planned3);
+        rows = productBc.deliveriesFor(['sess-bcl-3'], 0);
       } finally {
         applications.clientConfigOf = stored;
       }
-      t.check(rows.length === 1 && rows[0].state === 'failed' &&
+      t.check(rows.length === 1 && rows[0].state === 'dead' &&
               rows[0].errorCode === 'STS-OAUTH-0534' && rows[0].attempts === 1,
-              '1d4. and a delivery in product mode fails with 0534 after ONE ' +
-              'attempt — a policy refusal is not retried',
+              '1d4. and a delivery in product mode is dead-lettered with 0534 ' +
+              'after ONE attempt — a policy refusal is not retried',
               JSON.stringify(rows));
       t.equal(hits, 1, '1d5. the listener saw only the development-mode ' +
               'control, never the refused product-mode requests');
@@ -601,17 +609,17 @@ function childMain() {
          '2d3. 503, 503, 204: retried and SENT on the third attempt (204 ' +
          'is success, section 2.8)', JSON.stringify(flaky));
     const refuse = byClient['bcl-refuse'] || {};
-    note(refuse.state === 'failed' && refuse.attempts === 1 &&
+    note(refuse.state === 'dead' && refuse.attempts === 1 &&
          refuse.errorCode === 'STS-OAUTH-0536' &&
          postsTo('/bc/refuse').length === 1,
-         '2d4. 400 is FINAL — one POST, failed with 0536',
+         '2d4. 400 is FINAL — one POST, a dead letter with 0536',
          JSON.stringify(refuse) + ' posts=' + postsTo('/bc/refuse').length);
     const down = byClient['bcl-down'] || {};
-    note(down.state === 'failed' && down.attempts === 3 &&
+    note(down.state === 'dead' && down.attempts === 3 &&
          down.errorCode === 'STS-OAUTH-0537' &&
          postsTo('/bc/down').length === 3,
          '2d5. 500 every time: three POSTs (the attempts setting), then ' +
-         'failed with 0537', JSON.stringify(down) + ' posts=' +
+         'a dead letter with 0537', JSON.stringify(down) + ' posts=' +
          postsTo('/bc/down').length);
     note(auditRows('bcl-flaky').length === 1 &&
          auditRows('bcl-refuse').length === 1 &&
@@ -625,7 +633,7 @@ function childMain() {
     const view = adminViews.logoutJson({ query: {}, headers: {} });
     const recent = (view.json && view.json.backchannelDeliveries) || [];
     note(recent.some(function (row) {
-           return row.clientId === 'bcl-down' && row.state === 'failed';
+           return row.clientId === 'bcl-down' && row.state === 'dead';
          }) && recent.some(function (row) {
            return row.clientId === 'bcl-flaky' && row.state === 'sent';
          }),

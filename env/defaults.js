@@ -333,10 +333,17 @@ var config = {
     stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
     frontchannelLogout: true,                    // OpenID Connect Front-Channel Logout
     backchannelLogout: true,                     // OpenID Connect Back-Channel Logout
+    backchannelLogoutOnExpiry: true,             // Back-channel logout on session expiry
     backchannelLogoutTokenTtlS: 120,             // Back-channel Logout Token lifetime (seconds)
     backchannelLogoutAttempts: 3,                // Back-channel logout delivery attempts
     backchannelLogoutTimeoutMs: 5000,            // Back-channel logout request timeout (ms)
-    backchannelLogoutBackoffMs: 1000             // Back-channel logout retry backoff (ms)
+    backchannelLogoutBackoffMs: 1000,            // Back-channel logout retry backoff (ms)
+    backchannelLogoutLeaseMs: 60000,             // Back-channel logout attempt lease (ms)
+    backchannelLogoutSweepS: 10,                 // Back-channel logout sweep interval (seconds)
+    backchannelLogoutRetentionS: 86400,          // Back-channel logout delivery retention (seconds)
+    backchannelLogoutMaxRows: 2000,              // Back-channel logout deliveries kept per realm
+    backchannelLogoutConcurrency: 8,             // Back-channel logout sweep concurrency
+    backchannelLogoutSummaryS: 60                // Back-channel logout summary interval (seconds)
   },
 
   // --- PKI -------------------------------------------------------------

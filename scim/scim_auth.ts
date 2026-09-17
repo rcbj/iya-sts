@@ -1811,7 +1811,7 @@ class ScimAuth {
   // have been the one credential in this service that nothing else could see.
   //
   // The value is `<kid> <base64 DER>` in a multi-valued `hobaPublicKey` — this
-  // service's own attribute name, like `scimActive` and the `x509*` ones,
+  // service's own attribute name, like `scimExternalId` and the `x509*` ones,
   // because nothing standard carries a HOBA client public key.
   //
   // **THE MERGE DROPS THE THREE OPERATIONAL ATTRIBUTES**, for the reason

@@ -5026,9 +5026,29 @@ const SETTINGS = [
                  '(federation.outbound, https unless ' +
                  'federation.outboundAllowInsecure, and no ' +
                  'internal address in product mode), and each outcome is an ' +
-                 'audit row. A session that EXPIRES sends nothing. Off, none ' +
+                 'audit row. A session that EXPIRES sends too while ' +
+                 'oauth2.backchannelLogoutOnExpiry is on, and so does one an ' +
+                 'administrator disables. Each delivery is a persisted row ' +
+                 'that exactly one process of the cluster sends, retried by ' +
+                 'any node across restarts and dead-lettered on a final ' +
+                 'failure (listed and retried on /admin/logout). Off, none ' +
                  'of it happens; `sid` stays while ' +
                  'oauth2.frontchannelLogout is on.' },
+  { key: 'oauth2.backchannelLogoutOnExpiry', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout on session expiry',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_ON_EXPIRY', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Send the Logout Tokens when a session EXPIRES — its ' +
+                 'lifetime ran out, or it went idle past ' +
+                 'authn.sessionIdleTimeoutS — as well as when somebody ' +
+                 'signs out. Back-Channel Logout 1.0 lets the provider tell ' +
+                 'its relying parties whenever its session ends, and a ' +
+                 'relying party never told of an expiry keeps a session this ' +
+                 'service no longer vouches for. Off for a deployment whose ' +
+                 'relying parties deliberately outlive the provider\'s idle ' +
+                 'timeout, or a test that wants an expiry to be silent. ' +
+                 'Front-channel logout cannot follow an expiry either way: ' +
+                 'it needs the person\'s browser on a sign-out page.' },
   { key: 'oauth2.backchannelLogoutTokenTtlS', group: 'OAuth 2.0 / OIDC',
     label: 'Back-channel Logout Token lifetime (seconds)',
     env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_TOKEN_TTL_S', type: 'int', dflt: 120,
@@ -5036,15 +5056,15 @@ const SETTINGS = [
     description: 'How far in the future a Logout Token\'s exp is. Section 4 ' +
                  'of the specification encourages "at most two minutes", ' +
                  'which is the default. A token is signed once and resent ' +
-                 'unchanged on a retry, so this must outlast the retries ' +
-                 '(attempts, timeout and backoff below) or the last try ' +
-                 'carries a token the relying party must refuse.' },
+                 'unchanged on a retry while it is good; one that would ' +
+                 'expire before a retry is signed again with the SAME jti, ' +
+                 'so a relying party still deduplicates on it.' },
   { key: 'oauth2.backchannelLogoutAttempts', group: 'OAuth 2.0 / OIDC',
     label: 'Back-channel logout delivery attempts',
     env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_ATTEMPTS', type: 'int', dflt: 3,
     min: 1, max: 10, runtime: true,
     description: 'How many times one Logout Token is POSTed before its ' +
-                 'delivery is recorded as failed. Only a failure worth ' +
+                 'delivery becomes a DEAD LETTER. Only a failure worth ' +
                  'repeating is retried — a timeout, a connection failure, a ' +
                  '5xx, 408 or 429. A 400 is final (section 2.8 makes it the ' +
                  'relying party\'s refusal), and so is a refusal by the ' +
@@ -5064,6 +5084,59 @@ const SETTINGS = [
     description: 'The wait before the second attempt; it doubles before ' +
                  'each one after. 0 retries at once, which is what a test ' +
                  'wants and a relying party that is down does not.' },
+  { key: 'oauth2.backchannelLogoutLeaseMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout attempt lease (ms)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_LEASE_MS', type: 'int', dflt: 60000,
+    min: 1000, max: 3600000, runtime: true,
+    description: 'How long one process holds its claim on one delivery ' +
+                 'attempt. A process that dies — or stalls — mid-attempt has ' +
+                 'the attempt taken over by another after this, and the ' +
+                 'claim time fences a late writer out. Never less than one ' +
+                 'request timeout and a second, whatever is set: signing a ' +
+                 'post-quantum Logout Token can take seconds, and the ' +
+                 'default leaves room for it.' },
+  { key: 'oauth2.backchannelLogoutSweepS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout sweep interval (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SWEEP_S', type: 'int', dflt: 10,
+    min: 1, max: 3600, runtime: true,
+    description: 'How often every process looks for deliveries that are due ' +
+                 '— a retry whose backoff has passed, a lease that lapsed, a ' +
+                 'row restored after a restart — and dead-letters any still ' +
+                 'pending past the retention. The process that planned a ' +
+                 'delivery attempts it at once and schedules its own ' +
+                 'retries; this is the safety net, not the delay.' },
+  { key: 'oauth2.backchannelLogoutRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout delivery retention (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_RETENTION_S', type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long a delivery is kept after it was queued — sent, ' +
+                 'dead or still pending. A row still pending when this ' +
+                 'passes is dead-lettered (STS-OAUTH-0548) so nothing is ' +
+                 'pending for ever; a finished row is removed.' },
+  { key: 'oauth2.backchannelLogoutMaxRows', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout deliveries kept per realm',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_MAX_ROWS', type: 'int', dflt: 2000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'The most deliveries one realm keeps. Past it the oldest ' +
+                 'FINISHED rows go first; a pending one is never removed ' +
+                 'for room.' },
+  { key: 'oauth2.backchannelLogoutConcurrency', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout sweep concurrency',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 256, runtime: true,
+    description: 'How many due deliveries one process attempts at once from ' +
+                 'its sweep. Per process: N nodes of P processes send up to ' +
+                 'N x P x this, each attempt claimed so no two send the ' +
+                 'same one.' },
+  { key: 'oauth2.backchannelLogoutSummaryS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout summary interval (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SUMMARY_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'At most one log line per realm per interval, counting ' +
+                 'what this process sent, retried, took over and ' +
+                 'dead-lettered since the last — never a line per attempt ' +
+                 'or per failure. A warning (STS-OAUTH-0545) when anything ' +
+                 'was dead-lettered.' },
 
   // --- The admin console ---------------------------------------------------
   //

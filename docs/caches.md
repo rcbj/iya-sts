@@ -185,6 +185,7 @@ something be used twice, which is why none of them has a control.
 | SCIM HOBA signatures | HOBA signatures already seen | per realm | `scim.maxHobaSeen` (5000) | oldest first |
 | OID4VCI nonces | `c_nonce` values issued to wallets | per realm, persisted | none | after `oid4vci.cNonceTtlS` (300), or when used |
 | Redeemed codes | each authorization code already exchanged, and the tokens it produced | per realm, persisted | none | one code lifetime (five minutes by default) after the code would have expired |
+| Back-channel Logout deliveries | one row per relying party told that a session ended: its state, its attempts, when it is next due and the signed Logout Token | per realm, persisted | `oauth2.backchannelLogoutMaxRows` (2000), oldest FINISHED first | `oauth2.backchannelLogoutRetentionS` (86400) after it was queued; a row still pending then becomes a dead letter |
 
 Two behaviours are worth knowing:
 

@@ -4370,6 +4370,80 @@ function introspectionAttributeProblem(attribute, value, fields) {
 }
 
 // ---------------------------------------------------------------------------
+// OPENID CONNECT REGISTRATION SECTION 2: WHAT A CLIENT MAY REGISTER ABOUT THE
+// ENCRYPTION OF ITS ID TOKENS (2026-09-17, #36 follow-up).
+//
+// `id_token_encrypted_response_alg` and `_enc`, which OpenID Connect Core
+// section 10.2 turns into a Nested JWT and Back-Channel Logout section 2.4
+// applies to a Logout Token too. The grammar is here for the introspection
+// members' reason — this module owns what a registration may say, and every
+// write door (`register()`, `updateRegistration()`, the registration endpoint's
+// own 400) asks it. Unlike those three members these two have NO ATTRIBUTE:
+// they live in `appRegistrationJson` beside `id_token_signed_response_alg`,
+// the member they qualify, which has none either. Whether the client's `jwks`
+// holds a key to encrypt to is asked by `oauth-oidc/id_token_encryption.ts`,
+// which owns the key selection and cannot be required from here.
+//
+// The lists are the introspection response's: the ASYMMETRIC families only,
+// every content encryption `common/crypto.js` has, A128CBC-HS256 by default,
+// and an `enc` with no `alg` refused (Registration section 2: "If
+// id_token_encrypted_response_enc is included,
+// id_token_encrypted_response_alg MUST also be provided").
+// ---------------------------------------------------------------------------
+const ID_TOKEN_DEFAULT_ENC = 'A128CBC-HS256';
+
+const ID_TOKEN_ENCRYPTION_ALGS = stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0);
+
+const ID_TOKEN_ENCRYPTION_ENCS = Object.keys(stsCrypto.JWE_ENCS);
+
+function idTokenEncryptionMetadataProblem(values) {
+  log.debug("Entering idTokenEncryptionMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0164', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const names = ['id_token_encrypted_response_alg',
+                 'id_token_encrypted_response_enc'];
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving idTokenEncryptionMetadataProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+  }
+  const alg = String(asked.id_token_encrypted_response_alg || '').trim();
+  const enc = String(asked.id_token_encrypted_response_enc || '').trim();
+  if (alg && ID_TOKEN_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving idTokenEncryptionMetadataProblem(). Encryption alg.");
+    return refusal(names[0], '"' + alg + '" is not an algorithm this ' +
+      'service encrypts an ID Token with. It encrypts with ' +
+      ID_TOKEN_ENCRYPTION_ALGS.join(', ') + ' (see ' +
+      'id_token_encryption_alg_values_supported). The symmetric families ' +
+      'are for a document encrypted TO this service; an ID Token is ' +
+      'encrypted to the key you registered in "jwks".');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving idTokenEncryptionMetadataProblem(). enc without alg.");
+    return refusal(names[1], 'OpenID Connect Dynamic Client Registration ' +
+      'section 2 says id_token_encrypted_response_alg MUST also be provided, ' +
+      'and none is.');
+  }
+  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving idTokenEncryptionMetadataProblem(). Content " +
+              "encryption.");
+    return refusal(names[1], '"' + enc + '" is not a content encryption ' +
+      'algorithm this service has. It has ' +
+      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + ' (see ' +
+      'id_token_encryption_enc_values_supported).');
+  }
+  log.debug("Leaving idTokenEncryptionMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // RFC 9101 AND OPENID CONNECT REGISTRATION: WHAT A CLIENT MAY REGISTER ABOUT
 // ITS REQUEST OBJECTS (2026-09-13).
 //
@@ -6351,6 +6425,7 @@ function register(clientId, registration, options) {
   // algorithm nothing would then check.
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
+                     idTokenEncryptionMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
@@ -6401,6 +6476,7 @@ function updateRegistration(clientId, registration, options) {
   // The same backstop as register().
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
+                     idTokenEncryptionMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
@@ -9762,6 +9838,10 @@ module.exports = {
   // attribute holds which member. `oauth-oidc/introspection_jwt.ts` and the
   // registration endpoint read them; nothing else should keep a copy.
   introspectionResponseProblem: introspectionResponseProblem,
+  idTokenEncryptionMetadataProblem: idTokenEncryptionMetadataProblem,
+  ID_TOKEN_DEFAULT_ENC: ID_TOKEN_DEFAULT_ENC,
+  ID_TOKEN_ENCRYPTION_ALGS: ID_TOKEN_ENCRYPTION_ALGS,
+  ID_TOKEN_ENCRYPTION_ENCS: ID_TOKEN_ENCRYPTION_ENCS,
   INTROSPECTION_ATTRIBUTES: INTROSPECTION_ATTRIBUTES,
   INTROSPECTION_DEFAULT_SIGNING_ALG: INTROSPECTION_DEFAULT_SIGNING_ALG,
   INTROSPECTION_DEFAULT_ENC: INTROSPECTION_DEFAULT_ENC,

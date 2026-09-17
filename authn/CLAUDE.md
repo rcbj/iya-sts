@@ -1679,18 +1679,93 @@ control), and an unreachable store still reports.
 every OIDC relying party on the session that registered a
 `backchannel_logout_uri` — synchronously, before the claim, so the door's
 answer can list them as `pending` — and the `emit` that `sessionEndOnce()`
-lets out DISPATCHES them; `onLost` hands them off (`elsewhere`), because the
-winner sends. It is the reason a Logout Token reaches a relying party from
-every door, `wsignout1.0` and SAML Single Logout included: this function is the
-one they share. The require is LAZY, like `frontchannel_logout.ts`'s require of
-this module, and is caught — a delivery that cannot be planned never stops a
-sign-out. **`expireSession()` plans nothing**: an expiry sends no Logout Token,
-by decision (`oauth-oidc/CLAUDE.md`, 3aq). **What an `authn.session-end` claim
-that REJECTS does to the planned rows** — the `.catch` above logs
-`STS-AUTHN-0192` and runs neither callback — is that they stay `pending` in
-this process's register; nothing is sent for them. It is the same case in
-which `session.end` is not written either, and it is recorded here rather than
-papered over.
+lets out DISPATCHES them. It is the reason a Logout Token reaches a relying
+party from every door, `wsignout1.0` and SAML Single Logout included: this
+function is the one they share. The require is LAZY, like
+`frontchannel_logout.ts`'s require of this module, and is caught — a delivery
+that cannot be planned never stops a sign-out.
+
+**AND `expireSession()` PLANS THEM TOO, SINCE THE FOLLOW-UP THE SAME DAY.** It
+read *an expiry sends no Logout Token, by decision* until then; the decision
+was reversed (`oauth-oidc/CLAUDE.md`, 3aq) and is now
+`oauth2.backchannelLogoutOnExpiry`, on by default. The plan and the dispatch
+sit either side of the same claim, so an expiry noticed on two nodes sends
+once. **Front-channel logout still cannot follow an expiry** — it is an iframe
+and there is no browser on a sign-out page — which is the asymmetry that made
+the two triggers different in the first place.
+
+**WHAT A LOST OR REJECTED CLAIM DOES TO THE PLANNED ROWS IS NOTHING, AND THAT
+IS THE POINT OF THE FOLLOW-UP.** A delivery is a row in a persisted, replicated
+store whose id is derived from the session and the client, so the loser of the
+claim planned the SAME rows the winner did and has nothing to hand off — the
+old `abandon()`/`elsewhere` state is gone. A row nobody dispatched (the claim
+was rejected, or only the loser's copy of the session named that client) is
+picked up by the next sweep in any process, and each ATTEMPT is claimed
+separately, so "sent once" holds even where `authn.session-end` could not be
+asked.
+
+## `forceKey`: A SIGN-IN THAT DEMANDS A SECURITY KEY (2026-09-17, #36 follow-up)
+
+`forceMfa` has been on the pending record since RFC 9470: a caller that was
+told two factors are required takes the opt-out away. It could not say WHICH
+second factor, and that made one demand unanswerable — a WS-Federation
+`wauth` asking for a HardwareToken forced `forceMfa`, under which the
+passwordless box is DISABLED, so the only way through the screen was a key as a
+second factor and a one-time code walked through it only to be refused on the
+way back.
+
+**`forceKey` is the second flag, and `oauth-oidc/step_up.ts` names the
+combinations** (`screenDemand()`, `screenDemandFor()`) rather than a second
+mechanism being invented per protocol:
+
+| | what the screen offers |
+|---|---|
+| `forceMfa` | a password and ANY second factor — unchanged |
+| `forceKey` | a security key ALONE (passwordless) or AFTER a password, and nothing else |
+| both | a password AND a key — what the RFC 8176 aliases `hwk`, `phr` and `phrh` ask for at the authorization endpoint |
+
+Under `forceKey` the screen ticks and disables the second-factor box, leaves
+the passwordless box ENABLED and says why; the Kerberos and wallet buttons are
+withheld with their own sentence (a ticket claims what its flags claim and a
+presentation proves one key, neither of which is a security key); the
+second-factor step is the KEY whatever the person is configured for; and
+`/authn/totp` and `/authn/backup-code` REFUSE the step (`STS-AUTHN-0204`) —
+the links to them are not drawn, and a link that is not drawn is still a URL.
+
+**THE ONE REFUSAL WORTH ARGUING is a person who holds a second factor and no
+key.** They are told to add one at `/portal/keys` rather than handed the
+enrolling ceremony: the security-key page enrols on first use, so anybody who
+knew that person's password could otherwise register a brand new authenticator
+and be signed in — which is the bypass `finishPasswordSignIn()` already argues
+about the checkbox, met again one demand along. Somebody who holds NO second
+factor still enrols one here, as they always did.
+
+## A DISABLED ACCOUNT IS REFUSED AT `startSession()` AND AT EVERY SESSION IT ALREADY HAS (2026-09-17)
+
+`common/account_state.ts` owns the state (`common/CLAUDE.md`, 3at); this module
+owns the two places it decides a SESSION.
+
+* **`startSession()` refuses one, FIRST** — before the browser's previous
+  session is ended, before the issuance gate (which the sign-in screen skips
+  with `gated: true`) and before the "a credential presented again" branch,
+  which would otherwise TOUCH a SCIM or SPIFFE caller's row rather than refuse
+  it. It answers `null`, as the gate's refusal does, and writes a
+  `session.refuse` row coded `STS-AUTHN-0201`. **Every door that makes a
+  session reaches this line**: the sign-in screen, its three second-factor
+  steps and the enrolment step, federation, SPNEGO, `GET /tls/sign-in`, the
+  OID4VP wallet door, WS-Trust, and the keyed API callers. An UNAUTHENTICATED
+  session names nobody's account and is not asked.
+* **`sessionOf()` ends a session whose account was disabled** since it was
+  made, through `dropSession()` — so it gets the audit row, CAEP and the
+  back-channel Logout Tokens a sign-out gets. Disabling ends every session at
+  once; this is the second half, for a session that act could not reach (a lock
+  written by an `ldapmodify` on a node whose copy of the session it did not
+  hold).
+* **The screens answer "Authentication failed"**, the same sentence a wrong
+  password gets, for the account-enumeration reason `credentials.verify()`'s
+  callers give — and `finishPasswordSignIn()` asks BEFORE any ceremony, so a
+  disabled person is not walked through a WebAuthn enrolment whose result would
+  be refused.
 
 ## SEVERAL NODES: THE THREE SECOND-FACTOR DOORS SPEND IN THE STORE (2026-09-14, #46)
 

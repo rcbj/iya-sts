@@ -6218,6 +6218,9 @@ class AdminViews {
       // different question from `mfaRequired` below, what they HOLD.
       passwordChangeRequired: credentials.passwordResetRequired(key),
       passwordResetLink: mech.passwordResetLink || null,
+      // A DISABLED ACCOUNT (2026-09-17): `pwdAccountLockedTime` on the entry,
+      // which every door refuses; `POST /admin-api/users/enable` clears it.
+      disabled: !!mech.disabled,
       mfaRequirement: mech.mfaRequirement ||
         { required: false, byUser: false, byRealm: false },
       usable: mech.usable,
@@ -6433,26 +6436,47 @@ class AdminViews {
   // on the third, which left the management API calling it twice to find out
   // which it had been given.
   //
-  // `backchannelDeliveries` (2026-09-17, #36) is on EVERY branch: the most
-  // recent back-channel Logout Token deliveries in this realm, newest first,
-  // with the state each reached. A sign-out answers before its deliveries
-  // are made, so this is where `pending` turns into `sent` or `failed`. It is
-  // THIS PROCESS's list — see `oauth-oidc/backchannel_logout.ts` — and the
-  // `logout.backchannel` audit rows are the record every node shares.
-  logoutJson(req) {
+  // `backchannelDeliveries` (2026-09-17, #36) is on EVERY branch: the
+  // back-channel Logout Token deliveries in this realm, newest first, with the
+  // state each reached — a sign-out answers before its deliveries are made,
+  // so this is where `pending` turns into `sent` or `dead`. SINCE THE
+  // FOLLOW-UP THE LIST IS THE CLUSTER'S: the deliveries are rows of a
+  // persisted, replicated store, so every node lists every node's. It is
+  // FILTERED (`deliveryState`, `deliveryq`) and PAGED
+  // (`backchannelDeliveriesPage`, `per` shared), with `backchannelCounts`
+  // beside it — the dead letters an operator retries are
+  // `deliveryState=dead`.
+  logoutJson(req): any {
     const { log, stats, backchannel } = this.deps;
     log.debug("Entering AdminViews.logoutJson().");
     const wantedUser = String((req.query || {}).user || '').trim();
     const gate = this.gateStateFor(req);
     const params = this.pageParamsOf(req.query);
     const families = this.logoutFamilies();
-    const backchannelDeliveries = backchannel.recent(25);
+    const q = req.query || {};
+    const deliveryState = backchannel.STATES.indexOf(
+      String(q.deliveryState || '')) >= 0 ? String(q.deliveryState) : '';
+    const deliveryQ = String(q.deliveryq || '').trim().slice(0, 256);
+    const allDeliveries = backchannel.list({ state: deliveryState,
+                                             q: deliveryQ });
+    const deliveriesPg = this.pagedRows(q, allDeliveries,
+      { name: 'backchannelDeliveries', noun: 'deliveries' });
+    const backchannelDeliveries = deliveriesPg.shown;
+    const backchannelBlock = {
+      backchannelDeliveries: backchannelDeliveries,
+      backchannelDeliveriesPaging: this.pagingJson(deliveriesPg.paging),
+      backchannelCounts: backchannel.counts(),
+      deliveryState: deliveryState,
+      deliveryq: deliveryQ
+    };
     if (!wantedUser) {
       log.debug("Leaving AdminViews.logoutJson(). Nobody was named.");
-      return { families: families,
-               backchannelDeliveries: backchannelDeliveries,
-               json: { user: '', known: false, families: families,
-                       backchannelDeliveries: backchannelDeliveries } };
+      return Object.assign({ families: families,
+                             deliveriesPg: deliveriesPg },
+                           backchannelBlock,
+                           { json: Object.assign({ user: '', known: false,
+                                                   families: families },
+                                                 backchannelBlock) });
     }
     const key = stats.identityKeyOf(wantedUser);
     const inventory = this.logoutInventoryFor(key);
@@ -6460,11 +6484,13 @@ class AdminViews {
     // this is only the answer half of that branch.
     if (!inventory) {
       log.debug("Leaving AdminViews.logoutJson(). No logout reader.");
-      return { inventory: null,
-               backchannelDeliveries: backchannelDeliveries,
-               json: { user: wantedUser, known: false,
-                       error: 'no logout reader is installed',
-                       backchannelDeliveries: backchannelDeliveries } };
+      return Object.assign({ inventory: null, deliveriesPg: deliveriesPg },
+                           backchannelBlock,
+                           { json: Object.assign({ user: wantedUser,
+                                                   known: false,
+                                                   error: 'no logout reader ' +
+                                                          'is installed' },
+                                                 backchannelBlock) });
     }
 
     // Flattened, because this table filters and pages ACROSS families — see the
@@ -6480,8 +6506,9 @@ class AdminViews {
     const wantedFamily = String(req.query.family || '').trim();
     const filtered = wantedFamily
       ? all.filter(function (r) { return r.family === wantedFamily; }) : all;
-    const pg = this.pagedRows(req.query, filtered,
-                              { name: 'page', noun: 'live items' });
+    // `page` itself (2026-09-17): this passed `name: 'page'`, which pagingOf()
+    // turns into `pagePage`, so the documented `?page=` moved nothing.
+    const pg = this.pagedRows(req.query, filtered, { noun: 'live items' });
 
     const canWrite = gate.write;
     log.debug("Leaving AdminViews.logoutJson(). " + inventory.total +
@@ -6490,12 +6517,17 @@ class AdminViews {
       wantedUser: wantedUser, gate: gate, params: params, families: families,
       key: key, inventory: inventory, all: all, wantedFamily: wantedFamily,
       filtered: filtered, pg: pg, canWrite: canWrite,
+      deliveriesPg: deliveriesPg,
       backchannelDeliveries: backchannelDeliveries,
+      backchannelDeliveriesPaging: backchannelBlock.backchannelDeliveriesPaging,
+      backchannelCounts: backchannelBlock.backchannelCounts,
+      deliveryState: deliveryState,
+      deliveryq: deliveryQ,
       json: Object.assign({ user: wantedUser, known: true, canWrite: canWrite },
                           inventory,
                           { rows: pg.shown,
-                            paging: this.pagingJson(pg.paging),
-                            backchannelDeliveries: backchannelDeliveries })
+                            paging: this.pagingJson(pg.paging) },
+                          backchannelBlock)
     };
   }
 

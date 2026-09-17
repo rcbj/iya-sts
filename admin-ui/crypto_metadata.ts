@@ -1688,9 +1688,9 @@ class CryptoMetadata {
                 'understands. Each is checked against the openssl this ' +
                 'process actually has, so a challenge never names an ' +
                 'algorithm the server cannot compute.',
-        whatItDoesNot: 'It deactivates nobody on `active: false`, and it ' +
-                       'stores no password of its own — the Digest password ' +
-                       'is a setting.',
+        whatItDoesNot: 'It stores no password of its own — the Digest ' +
+                       'password is a setting. (`active: false` DOES ' +
+                       'disable the account, since 2026-09-17.)',
         envelopes: ['digest', 'hoba', 'jws', 'dpop', 'mtls'],
         algorithms: function () {
           log.debug("Entering algorithms().");

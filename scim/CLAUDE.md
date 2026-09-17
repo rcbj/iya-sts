@@ -316,13 +316,10 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   foot of this file. What it buys is that a client's
   401, 403, challenge-response and scope handling can be exercised at all — none
   of which an open endpoint can produce. See rule 6a-ii and `scim_auth.ts`.
-  **`active: false` DEACTIVATES NOBODY**: it is
-  stored as `scimActive` and read by nothing, so no bind is refused, no token
-  withheld and no session ended. That is the same carrying-is-not-acting
-  distinction this service draws about a group, and it matters more here than
-  anywhere else because deprovisioning is the single most common thing a SCIM
-  client is built to do — a mock that pretended to disable an account would let
-  somebody ship a path that has never worked. There is no ETag and no
+  **`active: false` DISABLES THE ACCOUNT since 2026-09-17** — see the section
+  below; this row said *deactivates nobody* until then, and it was the one
+  non-goal here most likely to let somebody ship a deprovisioning path that had
+  never worked. There is no ETag and no
   `changePassword`, both ADVERTISED as unsupported rather than half-implemented
   (a version over a one-second timestamp is a concurrency control a client
   trusts and that is wrong; and in development mode no password here is
@@ -332,6 +329,40 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   still right — an anonymous caller, and POST. A member naming nothing is
   ACCEPTED, because refusing it would make the
   dangling-member state `/admin/groups` exists to report impossible to produce.
+
+## `active` IS THE ACCOUNT'S DISABLED STATE (2026-09-17, #36 follow-up)
+
+It was `scimActive`, an attribute this service invented and nothing read: no
+bind refused, no token withheld, no session ended — recorded, and that was all.
+Deprovisioning is the single most common thing a SCIM client is built to do, so
+that was the most expensive row on the non-goal list, and it is gone.
+
+* **The attribute is `pwdAccountLockedTime`**, draft-behera-ldap-password-
+  policy's administrative lock, with the draft's own "locked permanently"
+  value `000001010000Z`. `common/CLAUDE.md` (3at) argues the choice: it is a
+  standard-ish name an LDAP client already understands, it is the same name
+  `pwdReset` came from, and this service enforces it MORE widely than the draft
+  asks — every door, not only a password bind — which is the safe direction.
+* **`active: false` is the same act as the Disable button** on a person's
+  `/admin/users` page: `common/account_state.ts` refuses them at every door
+  from then on and ENDS everything they hold — sessions (with CAEP
+  `session-revoked` and the back-channel Logout Tokens), tokens, codes,
+  directory connections, a Kerberos sign-out instant. The directory hands the
+  transition to that module (`ldap/CLAUDE.md`), so it does not matter which
+  door wrote the lock; RISC reports `account-disabled` through the account
+  observer, as it always did for this member.
+* **`active: true` enables them**, and nothing they held before comes back.
+* **A resource that does not SAY `active` leaves the lock alone**, which is
+  the one place this mapping departs from "a PUT replaces the mapped
+  attributes". A client that never sends the member must not silently
+  re-enable an account an administrator disabled; RFC 7643 gives `active` no
+  default, and the reading that costs nothing is the one that cannot undo an
+  administrative act by omission. On the way OUT it is always present —
+  `true` unless the entry is locked — because absent would read as "not
+  stated" for a member a client tests with `eq false`.
+
+`tests/account_disable.js` drives it over HTTP (create, `active: false`, the
+sessions ended, `active: true`) and holds the "not stated" rule directly.
 
 ## The protocol test is the parent project's, and it is not vendored here
 

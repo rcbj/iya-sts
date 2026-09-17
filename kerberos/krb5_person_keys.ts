@@ -198,6 +198,7 @@ interface PrincipalDatabase {
   setKeySource?(source: {
     personKeys(name: string): Json;
     serviceKeys(spn: string): Json;
+    personDisabled?(name: string): boolean;
   }): unknown;
 }
 
@@ -783,6 +784,24 @@ class Krb5PersonKeys {
               ' previous version(s).');
     return { state: 'ok', kvno: record.kvno, salt: record.salt, keys: keys,
              retained: retained };
+  }
+
+  // A DISABLED ACCOUNT (2026-09-17): `pwdAccountLockedTime` on the person's
+  // entry, which the KDC refuses with KDC_ERR_CLIENT_REVOKED (18) in EVERY
+  // mode — so it is asked whether or not this directory holds the person's
+  // keys, and before a development-mode KDC would create the principal.
+  personDisabled(name: string): boolean {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Krb5PersonKeys.personDisabled(). name=' + name);
+    if (!directory || this.personNameProblem(name)) {
+      log.debug('Leaving Krb5PersonKeys.personDisabled(). Nothing to ask.');
+      return false;
+    }
+    const current = directory.readPerson(name);
+    log.debug('Leaving Krb5PersonKeys.personDisabled(). ' +
+              !!(current && current.disabled));
+    return !!(current && current.disabled);
   }
 
   serviceKeys(spn: string): Json {
@@ -1744,7 +1763,9 @@ class Krb5PersonKeys {
     }
     if (typeof principals.setKeySource === 'function') {
       principals.setKeySource({ personKeys: this.personKeys.bind(this),
-                                serviceKeys: this.serviceKeys.bind(this) });
+                                serviceKeys: this.serviceKeys.bind(this),
+                                personDisabled:
+                                  this.personDisabled.bind(this) });
     } else {
       log.warn('krb5-keys: kerberos/krb5_principals.js offers no ' +
                'setKeySource(), so stored Kerberos keys are never read. That ' +
@@ -1791,6 +1812,7 @@ export = {
   stampOf: slot.forward('stampOf'),
   deriveKey: slot.forward('deriveKey'),
   personKeys: slot.forward('personKeys'),
+  personDisabled: slot.forward('personDisabled'),
   serviceKeys: slot.forward('serviceKeys'),
   observePassword: slot.forward('observePassword'),
   idle: slot.forward('idle'),

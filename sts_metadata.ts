@@ -729,8 +729,10 @@ const SPECS: Spec[] = [
               'advertised as unsupported because a version built over a ' +
               'one-second timestamp would be a concurrency control a client ' +
               'trusts and that is wrong; and no changePassword, there being ' +
-              'no password here that is checked. active:false is stored and ' +
-              'DEACTIVATES NOBODY.' },
+              'no password here that is checked. active:false DISABLES the ' +
+              'account (pwdAccountLockedTime; every door then refuses the ' +
+              'person and what they held is ended) and active:true enables ' +
+              'it.' },
 
   // The four authentication schemes SCIM delegates to that are not already
   // described elsewhere in this list. RFC 6750 and RFC 9449 are further down
@@ -1752,8 +1754,14 @@ const SPECS: Spec[] = [
               '5.2 language tags. What it does NOT do there is enforce ' +
               '`value`/`values` or treat `essential` as more than a hint, ' +
               'which section 5.5.1 permits and /admin/userinfo-claims states ' +
-              'out loud. Section 6\'s request object and request_uri are ' +
-              'RFC 9101\'s row.' },
+              'out loud. Section 10.2\'s ENCRYPTED ID Token (2026-09-17): a ' +
+              'client that registered id_token_encrypted_response_alg (and ' +
+              '_enc, A128CBC-HS256 by default) with a key in an inline jwks ' +
+              'gets a Nested JWT — signed as registered, then encrypted with ' +
+              'RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW); the symmetric ' +
+              'families and a jwks_uri alone are refused at registration, ' +
+              'and no ML-KEM key encapsulation is offered. Section 6\'s ' +
+              'request object and request_uri are RFC 9101\'s row.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -1784,20 +1792,28 @@ const SPECS: Spec[] = [
               'and again when read), the sid claim, and a Logout Token — ' +
               'typ logout+jwt, iss, aud, iat, exp two minutes on, jti, the ' +
               'events member, sub and sid, no nonce, signed like the ' +
-              'client\'s ID Token and never with none — POSTed form-encoded ' +
-              'to every relying party on a session ended by ANY sign-out: ' +
-              '/oauth2/logout, /logout, wsignout1.0, SAML Single Logout, the ' +
-              'console and /admin-api. Asynchronous with bounded retry (a ' +
-              'timeout, a connection failure, 5xx, 408 and 429 retried; 200 ' +
-              'and 204 success; 400 final, section 2.8), through the ' +
+              'client\'s ID Token (any algorithm of the table, post-quantum ' +
+              'included) and never with none, and ENCRYPTED like it when the ' +
+              'client registered id_token_encrypted_response_alg — POSTed ' +
+              'form-encoded to every relying party on a session that ends by ' +
+              'ANY sign-out (/oauth2/logout, /logout, wsignout1.0, SAML ' +
+              'Single Logout, the console, /admin-api, an account disabled) ' +
+              'or by EXPIRY (oauth2.backchannelLogoutOnExpiry). Each ' +
+              'delivery is a row of a persisted, replicated store: sent once ' +
+              'for the cluster (the session-end claim, and a claimed lease ' +
+              'per attempt whose time fences a late writer), retried with ' +
+              'backoff by any node across restarts (a timeout, a connection ' +
+              'failure, 5xx, 408 and 429; 200 and 204 success; 400 final, ' +
+              'section 2.8), taken over when the node sending it dies, and ' +
+              'dead-lettered on a final failure — listed, paged and retried ' +
+              'from /admin/logout and /admin-api/logout. Through the ' +
               'outbound policy (https unless ' +
               'federation.outboundAllowInsecure, no internal address in ' +
-              'product mode), one audit row per ' +
-              'outcome and each delivery listed pending/sent/failed on the ' +
-              'sign-out result and on /admin/logout. A session that EXPIRES ' +
-              'sends nothing, by decision; encrypted Logout Tokens are not ' +
-              'offered. oauth2.backchannelLogout turns the members, the ' +
-              'claim contribution and the fan-out off together.' },
+              'product mode); one audit row per outcome and a periodic ' +
+              'summary line. Front-channel logout cannot follow an expiry: ' +
+              'it needs the browser. oauth2.backchannelLogout turns the ' +
+              'members, the claim contribution and the fan-out off ' +
+              'together.' },
   { id: 'oidc-discovery', name: 'OpenID Connect Discovery 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html',
@@ -2951,8 +2967,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'token with either scope, any password but "invalid" passes Basic ' +
           'and anybody can register a HOBA key (product mode verifies Basic, ' +
           'offers no Digest and lets only a signed-in owner register a key); ' +
-          'and active:false DEACTIVATES NOBODY — it is stored as scimActive ' +
-          'and read by nothing here. Add ?format=json.' },
+          'and active:false DISABLES THE ACCOUNT — the password-policy lock ' +
+          'every door refuses. Add ?format=json.' },
   { path: '/scim/v2/ServiceProviderConfig', group: 'SCIM',
     name: 'What this SCIM server supports',
     specs: ['rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616', 'rfc7486'],

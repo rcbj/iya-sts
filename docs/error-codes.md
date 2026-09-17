@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2738** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2757** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -61,14 +61,14 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 177
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 424
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 182
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 431
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 72
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 74
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 128
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 70
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 71
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
@@ -77,11 +77,11 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 168
-* [Management API (`STS-API`)](#sts-api) — 71
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 170
+* [Management API (`STS-API`)](#sts-api) — 72
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 96
+* [Registries (`STS-REG`)](#sts-reg) — 98
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
@@ -1007,6 +1007,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
 | `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
+| `STS-AUTHN-0200` | A password was presented for an account that is disabled (pwdAccountLockedTime on its entry), and it was refused before it was compared, in every mode. | the door's own refusal: "authentication failed" on the sign-in screen, LDAP 49, invalid_grant, a SOAP fault, SCIM 401 |
+| `STS-AUTHN-0201` | A session, or anything issued on a person's behalf, was refused because the account is disabled — at authn.startSession(), a live session presented again, or the issuance gate. | the door's own refusal (the sign-in screen again, a 403 page, access_denied) |
+| `STS-AUTHN-0202` | Disabling or enabling an account could not write pwdAccountLockedTime onto the person's entry. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-AUTHN-0203` | An account was disabled and ending what the person held (the global logout) failed; the lock stands and every door refuses them. | none — logged; the disable's reply says what failed |
+| `STS-AUTHN-0204` | A sign-in that demands a security key (a WS-Federation HardwareToken wauth, or OAuth acr_values naming only key aliases) was answered with something else — a one-time code, a recovery code — or the account holds a second factor and no key to present. | HTTP 400 invalid_request, or the sign-in screen again |
 
 ## STS-OAUTH
 
@@ -1427,19 +1432,26 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0529` | A DPoP-bound access token was presented with no proof while oauth2.accessTokenRequireDpop is on. | invalid_token (HTTP 401) |
 | `STS-OAUTH-0530` | An access token carrying no cnf x5t#S256 was presented at a resource while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
 | `STS-OAUTH-0531` | A certificate-bound access token was presented at a resource over a connection carrying no matching certificate, while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
-| `STS-OAUTH-0532` | A back-channel Logout Token was not sent because federation.outbound is off, so this service makes no outbound request. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0533` | A back-channel Logout Token was not sent because the client's backchannel_logout_uri cannot be dialled: not http(s), plain http with federation.outboundAllowInsecure off, or not a URL. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0534` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri resolves to a loopback, private, link-local or reserved address. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0535` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri's host could not be resolved. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0536` | A relying party answered a back-channel Logout Token with 400, which Back-Channel Logout 1.0 section 2.8 makes a final refusal; it is not retried. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0537` | A relying party answered a back-channel Logout Token with a status other than 200, 204 or 400 — after every attempt where the status is one worth retrying (5xx, 408, 429). | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0538` | A relying party did not answer a back-channel Logout Token within oauth2.backchannelLogoutTimeoutMs, on every attempt. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0539` | A back-channel Logout Token could not be delivered because the connection failed (DNS, refused, TLS), on every attempt. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0540` | A relying party answered a back-channel Logout Token with a redirect, which is not followed. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0541` | A back-channel Logout Token could not be signed — the client registered an id_token_signed_response_alg this service cannot use for it, or an HMAC algorithm with no client secret. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0542` | A back-channel Logout Token was not sent because the session did not record the issuer that client's ID Token was issued by (a session older than the feature), and no fallback was available. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
-| `STS-OAUTH-0543` | A back-channel Logout Token request could not be built from its options. | none — a logout.backchannel audit row and a failed state on the sign-out's delivery list |
+| `STS-OAUTH-0532` | A back-channel Logout Token was not sent because federation.outbound is off, so this service makes no outbound request. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0533` | A back-channel Logout Token was not sent because the client's backchannel_logout_uri cannot be dialled: not http(s), plain http with federation.outboundAllowInsecure off, or not a URL. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0534` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri resolves to a loopback, private, link-local or reserved address. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0535` | Product mode: a back-channel Logout Token was not sent because the backchannel_logout_uri's host could not be resolved. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0536` | A relying party answered a back-channel Logout Token with 400, which Back-Channel Logout 1.0 section 2.8 makes a final refusal; it is not retried. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0537` | A relying party answered a back-channel Logout Token with a status other than 200, 204 or 400 — after every attempt where the status is one worth retrying (5xx, 408, 429). | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0538` | A relying party did not answer a back-channel Logout Token within oauth2.backchannelLogoutTimeoutMs, on every attempt. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0539` | A back-channel Logout Token could not be delivered because the connection failed (DNS, refused, TLS), on every attempt. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0540` | A relying party answered a back-channel Logout Token with a redirect, which is not followed. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0541` | A back-channel Logout Token could not be signed — the client registered an id_token_signed_response_alg this service cannot use for it, or an HMAC algorithm with no client secret. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0542` | A back-channel Logout Token was not sent because the session did not record the issuer that client's ID Token was issued by (a session older than the feature), and no fallback was available. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0543` | A back-channel Logout Token request could not be built from its options. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
 | `STS-OAUTH-0544` | A stored backchannel_logout_uri is not an http or https URL without a fragment, so the client was not sent a Logout Token. | none — the delivery is listed with the reason, and the value is logged |
+| `STS-OAUTH-0545` | The periodic back-channel logout summary: Logout Token deliveries were dead-lettered, or deferred because the claim store could not be asked, since the last summary (counted by code). | none — one warning per realm per oauth2.backchannelLogoutSummaryS; the rows are on /admin/logout |
+| `STS-OAUTH-0546` | A client registered id_token_encrypted_response_alg and its ID Token (or back-channel Logout Token) could not be encrypted — the registration is no longer one this service can honour, or its jwks holds no key of the right type. | the ID Token is not issued (server_error with the sentence); a Logout Token delivery is dead-lettered |
+| `STS-OAUTH-0547` | A back-channel Logout Token attempt was not made because the cluster claim store could not be asked; the delivery stays pending and the next sweep tries again. | none — counted in the STS-OAUTH-0545 summary |
+| `STS-OAUTH-0548` | A back-channel Logout Token delivery was still pending when oauth2.backchannelLogoutRetentionS passed, and was dead-lettered. | none — a logout.backchannel audit row and a dead letter on /admin/logout |
+| `STS-OAUTH-0549` | The back-channel logout delivery sweep failed in a realm. | none — logged; the next sweep runs as scheduled |
+| `STS-OAUTH-0550` | A retry of a back-channel Logout Token delivery was refused: no delivery was named, it is unknown or not a dead letter, or the client has no usable backchannel_logout_uri or recorded issuer. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-OAUTH-0551` | A token request — any grant carrying a person, a refresh token included — was refused because the account is disabled. | invalid_grant (HTTP 400) |
 
 ## STS-SAML
 
@@ -1792,6 +1804,7 @@ Raised from: kerberos/.
 | `STS-KRB-0126` | The acceptor was presented a ticket for a Kerberos realm the trust realm it was reached in does not serve. | KRB_AP_ERR_NOT_US (35); over SPNEGO, HTTP 401 |
 | `STS-KRB-0127` | Two trust realms answer to one Kerberos realm name (a restored or replicated realm the registry did not re-judge), so the KDC routes that name to the first and not the second. | none (logged when the router finds it) |
 | `STS-KRB-0128` | A Kerberos key act — creating, rotating, deleting or clearing a stored key — was asked of a trust realm that has no KDC, so there is no principal for the key to belong to. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-KRB-0129` | An AS-REQ, or an S4U2Self naming a person, was refused because that person's account is disabled. | KDC_ERR_CLIENT_REVOKED (18) |
 
 ## STS-LDAP
 
@@ -1871,6 +1884,7 @@ Raised from: ldap/.
 | `STS-LDAP-0094` | A bind could not be completed after the shared rate limiter was asked; the bind is answered operationsError. | RFC 4511 section 4.1.9, operationsError (1) |
 | `STS-LDAP-0095` | This node's bound directory connections could not be read for, or committed to, the cluster connection table; other nodes list what it published last (a sign-out still reaches them by identity). | none — logged |
 | `STS-LDAP-0096` | Another node signed an identity out and this node could not close the directory connections bound as it; they may still be open. | none — logged |
+| `STS-LDAP-0097` | An account lock (pwdAccountLockedTime) changed through a directory write and handing the change to account_state.ts failed, so what the person held may not have been ended. | none — logged; the write stands and every door refuses the person |
 
 ## STS-SCIM
 
@@ -2839,6 +2853,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0789` | A new trust realm's bootstrap administrator could not be given its generated password in product mode. | none — logged |
 | `STS-ADMIN-0790` | The realm chooser in front of /admin was asked for a realm that is not defined. | HTTP 400 on /admin |
 | `STS-ADMIN-0791` | Uploading a SAML 2.0 service provider's metadata document failed — none was sent, or consuming it was refused. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0792` | Disabling or enabling an account named nobody, or named the anonymous principal, which is not an account. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0793` | Disabling or enabling an account was refused and the refusal carried no code of its own. | HTTP 400 { ok: false, errors } / 303 with error= |
 
 ## STS-API
 
@@ -2919,6 +2935,7 @@ Raised from: mgmt-api/.
 | `STS-API-0113` | A users or groups create that had claimed its name across nodes threw before it could answer; the claim was given back. | HTTP 500 |
 | `STS-API-0120` | A DPoP-bound access token (cnf.jkt) was presented at /admin-api as a Bearer token. | invalid_token (HTTP 401) |
 | `STS-API-0121` | A DPoP proof presented at /admin-api did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
+| `STS-API-0122` | A management API access token was refused because this service has revoked or disowned it, or the person it was issued to has a disabled account. | invalid_token (HTTP 401) |
 
 ## STS-PORTAL
 
@@ -3101,6 +3118,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0161` | Consuming SAML metadata tried to write an attribute that is not one of the metadata fields — a programming error, refused. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0162` | The application entry would not take the consumed SAML metadata (the directory refused the write). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0163` | A confirm or discard of a SAML service provider's observed signing certificate found none on the entry. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0164` | An RFC 7591 registration or RFC 7592 update named an id_token_encrypted_response_alg or _enc this service cannot honour (a symmetric family, an unknown content encryption), or an enc with no alg. | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0165` | A registration named id_token_encrypted_response_alg with no inline jwks key of the right type to encrypt to (a jwks_uri is never fetched). | invalid_client_metadata (HTTP 400) |
 
 ## STS-DBG
 

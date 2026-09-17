@@ -237,15 +237,15 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 // `ldap_server.js`'s store keys them. Naming them here rather than inline is
 // what keeps `identifierChanges()` from being four copies of one comparison.
 //
-// `scimactive` is `scimActive`, which is an attribute this service INVENTED —
-// there is no standard LDAP attribute for an account being active, and
-// `nsAccountLock` and `pwdAccountLockedTime` are vendor inventions meaning
-// something narrower. `scim_map.js` says so beside its own row, and adds the
-// sentence this file exists to qualify: **setting it to false deactivates
-// nobody here.** That is still true. What is new is that this service now SAYS
-// SO, over RISC, which is exactly the division the profile draws — a
-// transmitter reports and a receiver decides.
-const ACTIVE_ATTRIBUTE = 'scimactive';
+// `pwdaccountlockedtime` is draft-behera-ldap-password-policy's
+// `pwdAccountLockedTime`, and SINCE 2026-09-17 IT IS WHAT A DISABLED ACCOUNT
+// IS HERE: an administrator's disable writes it (`common/account_state.ts`),
+// SCIM's `active: false` writes it, and every door refuses the account while
+// it is set. It replaced `scimActive`, an attribute this service had invented
+// and nothing read — so an `account-disabled` sent over RISC used to report a
+// deprovisioning that disabled nobody, and now reports one that did. A
+// transmitter still only REPORTS; what the receiver does is the receiver's.
+const LOCK_ATTRIBUTE = 'pwdaccountlockedtime';
 const EMAIL_ATTRIBUTES = ['mail'];
 const PHONE_ATTRIBUTES = ['telephonenumber', 'mobile'];
 
@@ -1376,7 +1376,7 @@ class RiscRegister {
   //
   // **THIS IS THE READING, AND IT IS HERE RATHER THAN IN `ldap_server.js` ON
   // PURPOSE.** That file knows what a write is; it does not know that
-  // `scimActive` going false is an `account-disabled`, and a version of it that
+  // a lock appearing is an `account-disabled`, and a version of it that
   // did would be the vocabulary leaking into the store — which is the mistake
   // `ssf_events.js`'s header spends a paragraph warning about, and the third
   // vocabulary would have had to undo it.
@@ -1388,10 +1388,14 @@ class RiscRegister {
     const out = [];
     const was = this.activeIn(before);
     const now = this.activeIn(after);
+    // An entry CREATED locked is a disabled account a receiver may already
+    // know by another door; one created unlocked is nothing to report — an
+    // `account-enabled` for every person ever created would be noise that
+    // teaches a receiver to ignore the event.
     if (was !== now && now === false) {
       out.push({ act: 'disabled', values: { reason: 'hijacking' } });
     }
-    if (was !== now && now === true) {
+    if (was === false && now === true) {
       out.push({ act: 'enabled', values: {} });
     }
     // AN IDENTIFIER MOVED. The event's subject names the OLD value, so it is
@@ -1408,20 +1412,22 @@ class RiscRegister {
     return out;
   }
 
-  // `active` as this service stores it, which is the string "true"/"false" in
-  // an LDAP attribute rather than a boolean. An ABSENT attribute answers null
-  // and not false, because "nobody has ever said" and "somebody said no" are
-  // two different facts and treating the first as the second would emit an
-  // account-disabled for every person created without the attribute.
+  // Whether the account is ACTIVE, read from the lock: no
+  // `pwdAccountLockedTime` is active, any value is disabled. An entry that is
+  // not there at all — the `before` of a create, the `after` of a delete —
+  // answers null and not either, because "there was no account" is neither
+  // state, and reading it as active would make every delete of a disabled
+  // account look like an `account-enabled`.
   private activeIn(attributes?: Record<string, any>): boolean | null {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.activeIn().");
-    const values = (attributes || {})[ACTIVE_ATTRIBUTE];
-    if (!Array.isArray(values) || !values.length) {
-      log.debug("Leaving RiscRegister.activeIn(). Not stated.");
+    const attrs = attributes || {};
+    if (!Object.keys(attrs).length) {
+      log.debug("Leaving RiscRegister.activeIn(). No entry.");
       return null;
     }
-    const out = String(values[0]).toLowerCase() === 'true';
+    const values = attrs[LOCK_ATTRIBUTE];
+    const out = !(Array.isArray(values) && values.length);
     log.debug("Leaving RiscRegister.activeIn(). " + out);
     return out;
   }

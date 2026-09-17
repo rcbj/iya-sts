@@ -191,6 +191,12 @@ import clusterClaims = require('../cluster/cluster_claims');
 // libraries arrives carrying its own code non-enumerably, and this module
 // marks `codeOf(verdict)` so the specific reason reaches the audit row.
 import errorCodes = require('../common/error_codes');
+// A DISABLED ACCOUNT (2026-09-17, #36 follow-up). A library that requires
+// only `common/` modules loaded before this one, and nothing here: asked by
+// startSession() — the one place every session is created, so every door that
+// signs somebody in — and by sessionOf(), so a session that was live when the
+// account was disabled is not honoured again.
+import accountState = require('../common/account_state');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -972,6 +978,7 @@ interface AuthnDeps {
   audit: typeof audit;
   clusterClaims: typeof clusterClaims;
   errorCodes: typeof errorCodes;
+  accountState: typeof accountState;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnPolicy: typeof webauthnPolicy;
   totp: typeof totp;
@@ -1016,6 +1023,7 @@ class Authn {
       audit: audit,
       clusterClaims: clusterClaims,
       errorCodes: errorCodes,
+      accountState: accountState,
       webauthnVerifier: webauthnVerifier,
       webauthnPolicy: webauthnPolicy,
       totp: totp
@@ -1454,10 +1462,39 @@ class Authn {
                 "chosen yet.");
       return null;
     }
+    // A SESSION WHOSE ACCOUNT WAS DISABLED IS OVER (2026-09-17). Disabling
+    // ends every session at once through `common/account_state.ts`; this is
+    // the second half, for a session that act could not reach — a lock
+    // written where nothing was listening, another node's copy — and it ends
+    // the session through dropSession(), so its consequences (the audit row,
+    // CAEP, the back-channel Logout Tokens) are the ones a sign-out has.
+    if (this.sessionAccountDisabled(session)) {
+      this.dropSession(id, 'the account was disabled by an administrator',
+                       false, req);
+      log.debug("Leaving Authn.sessionOf(). The account is disabled; the " +
+                "session was ended.");
+      return null;
+    }
     this.noteSessionUsed(sessions.realmMap(), id, session);
     log.debug("Leaving Authn.sessionOf(). Signed in as " +
               session.user.username + ".");
     return session;
+  }
+
+  // Whether a signed-in session's person is disabled. The anonymous principal
+  // and an unauthenticated session are nobody's account.
+  sessionAccountDisabled(session) {
+    const { log, accountState } = this.deps;
+    log.debug("Entering Authn.sessionAccountDisabled().");
+    if (!session || !session.user || session.authenticated === false ||
+        session.chosen === false || session.credentialKey) {
+      log.debug("Leaving Authn.sessionAccountDisabled(). Not a person's.");
+      return false;
+    }
+    const disabled = accountState.isDisabled(session.user.sub ||
+                                             session.user.username);
+    log.debug("Leaving Authn.sessionAccountDisabled(). " + disabled);
+    return disabled;
   }
 
   // ---------------------------------------------------------------------------
@@ -2393,12 +2430,74 @@ class Authn {
     // tell somebody, and a receiver may treat them differently.
     const idle = why === 'idle';
     store.delete(id);
+    // THE BACK-CHANNEL LOGOUT TOKENS, ON AN EXPIRY TOO (2026-09-17, #36
+    // follow-up) — while `oauth2.backchannelLogoutOnExpiry` is on, which it is
+    // by default: Back-Channel Logout lets the provider notify whenever its
+    // session ends, and a relying party never told of an expiry keeps a
+    // session this service no longer vouches for. Planned and sent exactly as
+    // a sign-out's are, through the same claim. FRONT-CHANNEL LOGOUT CANNOT
+    // FOLLOW: it is an iframe in the person's browser, and an expiry — the
+    // sweep, an idle timeout noticed on a later request — has no page to
+    // draw one on.
+    const planned = this.backchannelOnExpiry()
+      ? this.planBackchannel(session, idle
+          ? 'the session went idle (authn.sessionIdleTimeoutS)'
+          : 'the session expired (authn.sessionLifetimeS)', 'expiry')
+      : [];
     // THE REPORT ONCE FOR THE CLUSTER; the delete above is this process's own.
     // See sessionEndOnce().
     this.sessionEndOnce(id, function () {
       self.reportExpiry(id, session, via, idle);
+      self.dispatchBackchannel(planned);
     });
     log.debug("Leaving Authn.expireSession().");
+  }
+
+  // The back-channel library, LAZILY (see dropSession()), or null in a
+  // process that cannot load it.
+  private backchannelLibrary() {
+    const { log } = this.deps;
+    log.debug("Entering Authn.backchannelLibrary().");
+    let library = null;
+    try {
+      library = require('../oauth-oidc/backchannel_logout');
+    } catch (e) {
+      log.debug("Caught in Authn.backchannelLibrary(): " +
+                ((e && e.message) || e));
+      library = null;
+    }
+    log.debug("Leaving Authn.backchannelLibrary().");
+    return library;
+  }
+
+  private backchannelOnExpiry() {
+    const { log } = this.deps;
+    log.debug("Entering Authn.backchannelOnExpiry().");
+    const library = this.backchannelLibrary();
+    log.debug("Leaving Authn.backchannelOnExpiry().");
+    return !!(library && library.onExpiry());
+  }
+
+  // Plan a session's Logout Tokens; never throws (the library's plan() does
+  // not, and a library that cannot be loaded plans nothing).
+  private planBackchannel(session, via, trigger) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.planBackchannel(). " + trigger);
+    const library = this.backchannelLibrary();
+    const planned = library && session
+      ? library.plan(session, { via: via, trigger: trigger }) : [];
+    log.debug("Leaving Authn.planBackchannel(). " + planned.length);
+    return planned;
+  }
+
+  private dispatchBackchannel(planned) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.dispatchBackchannel().");
+    const library = this.backchannelLibrary();
+    if (library && planned && planned.length) {
+      library.dispatch(planned);
+    }
+    log.debug("Leaving Authn.dispatchBackchannel().");
   }
 
   // The audit row and the event for an expiry — what sessionEndOnce() lets out
@@ -2848,6 +2947,34 @@ class Authn {
     log.debug("Entering Authn.startSession(). username=" + username + ", acr=" +
               acr);
     const extra = detail || {};
+    // -------------------------------------------------------------------------
+    // A DISABLED ACCOUNT GETS NO SESSION (2026-09-17, #36 follow-up), from any
+    // door, in any mode — FIRST, before the browser's previous session is
+    // touched, before the issuance gate (which the password screen skips with
+    // `gated: true`) and before the keyed "credential presented again" branch
+    // (which would otherwise touch a SCIM or SPIFFE caller's row rather than
+    // refuse it). Every door that creates a session reaches this line: the
+    // sign-in screen and its three second-factor steps, the enrolment step,
+    // federation, SPNEGO, `GET /tls/sign-in`, the wallet door, WS-Trust and
+    // the keyed API callers. A refusal is `null`, as the issuance gate's is.
+    // An unauthenticated session names nobody's account and is not asked.
+    // -------------------------------------------------------------------------
+    if (extra.authenticated !== false &&
+        this.deps.accountState.isDisabled(username)) {
+      log.info('authn: a session for "' + username + '" was REFUSED at the ' +
+               (via || 'sign-in') + ' door: the account is disabled.');
+      audit.audit({
+        action: 'session.refuse', actor: String(username || ''),
+        errorCode: 'STS-AUTHN-0201',
+        protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+        summary: 'a session for ' + username + ' was refused at the ' +
+                 (via || 'sign-in') + ' door: the account is disabled',
+        detail: { why: 'pwdAccountLockedTime is set on the entry',
+                  application: String(extra.application || '') }
+      });
+      log.debug("Leaving Authn.startSession(). The account is disabled.");
+      return null;
+    }
     // -------------------------------------------------------------------------
     // END WHATEVER SESSION THE BROWSER WAS ALREADY ON (2026-09-06). OWASP A07.
     //
@@ -3482,36 +3609,25 @@ class Authn {
     // #36). OpenID Connect Back-Channel Logout 1.0 is this function's kind of
     // consequence — every door ends a session here, so here is the one place
     // every relying party on it is told — and it rides the same claim, so a
-    // session's end sends them ONCE for the cluster: the process that reports
-    // the end sends, and one that loses the claim hands its planned rows off.
-    // They are PLANNED before the claim, synchronously, so the door's answer
-    // can list them as pending even where the claim is still being asked;
-    // they are SENT inside the report, after the delete. Required LAZILY, as
-    // `frontchannel_logout.ts` requires this module: it is a library that
-    // registers nothing, loaded long before any session ends, and a require
-    // at load would put an OAuth module in this file's dependency list for a
-    // call only a sign-out makes. An EXPIRY does not come through here and
-    // sends nothing — `backchannel_logout.ts` argues it.
+    // session's end is SENT by the process that reports it. The rows are
+    // PLANNED before the claim, synchronously, so the door's answer can list
+    // them as pending; they are rows of a persisted, replicated store with an
+    // id derived from the session and the client, so a process that loses the
+    // claim planned the SAME rows and has nothing to hand off — the winner
+    // sends them, and a row only the loser's copy of the session named is
+    // sent by the next sweep anywhere (`backchannel_logout.ts`, header points
+    // 3 and 4). Each attempt is claimed on its own, which is what makes "once"
+    // hold even where this claim cannot be asked. Required LAZILY, as
+    // `frontchannel_logout.ts` requires this module: a library loaded long
+    // before any session ends. An EXPIRY sends too, from expireSession().
     if (session) {
-      let planned = [];
-      let backchannel = null;
-      try {
-        backchannel = require('../oauth-oidc/backchannel_logout');
-        planned = backchannel.plan(session, { via: via || 'a sign-out' });
-      } catch (e) {
-        log.debug("Caught in Authn.dropSession(): " + ((e && e.message) || e));
-        planned = [];
-      }
+      const planned = this.planBackchannel(session, via || 'a sign-out',
+                                           'sign-out');
       this.sessionEndOnce(session.id, function () {
         self.reportSignOut(session, id, via, cookiePresented, req);
-        if (backchannel && planned.length) {
-          backchannel.dispatch(planned);
-        }
+        self.dispatchBackchannel(planned);
       }, function () {
         self.reportSignOutAlreadyEnded(session, via, cookiePresented);
-        if (backchannel && planned.length) {
-          backchannel.abandon(planned);
-        }
       });
     } else {
       this.reportSignOut(null, id, via, cookiePresented, req);
@@ -4115,6 +4231,12 @@ class Authn {
   //              whatever the next protocol calls its equivalent).
   //   forceMfa   the caller has been told a second factor is required, so the
   //              opt-out is taken away rather than offered.
+  //   forceKey   the caller has been told a SECURITY KEY is required
+  //              (2026-09-17): the screen offers the key alone
+  //              (passwordless) or after a password, and no other second
+  //              factor, Kerberos ticket or wallet. With `forceMfa` too it is
+  //              the key AFTER a password only. `step_up.screenDemand()`
+  //              names the combinations.
   //   protocol   what to record the sign-in AS, for the admin console — this
   //              service cannot tell, and "every sign-in is an OIDC one" is
   //              exactly the wrong answer once more than one protocol uses it.
@@ -4301,6 +4423,14 @@ class Authn {
     // half of that.
     // ---------------------------------------------------------------------
     let integrated = chosen.mechanism === 'spnego';
+    const forceKey = !!opts.forceKey;
+    if (integrated && forceKey && !forceMfa) {
+      log.info('authn: the configured mechanism for "' +
+               String(opts.application || '(none)') + '" is a Kerberos ' +
+               'ticket over SPNEGO, and this request demands a security key, ' +
+               'so the demand wins: the screen asks for the key.');
+      integrated = false;
+    }
     if (integrated && forceMfa) {
       log.info('authn: the configured mechanism for "' +
                String(opts.application || '(none)') + '" is a Kerberos ' +
@@ -4325,6 +4455,10 @@ class Authn {
       details: Array.isArray(opts.details) ? opts.details : [],
       hint: String(opts.hint || ''),
       forceMfa: forceMfa,
+      // A SECURITY KEY DEMANDED (2026-09-17) — alone or after a password; see
+      // the entry point's header. On the record for `forcePasswordless`'s
+      // reason: the POST at the other end is an answer, not the question.
+      forceKey: forceKey,
       // Set only by a relationship configuring `webauthn`. Nothing a protocol
       // module passes can turn it on: a caller asking for a passwordless
       // sign-in is a caller choosing somebody else's authenticator for them,
@@ -4431,6 +4565,49 @@ class Authn {
   // is named in `authn_error` and the CALLER decides what its protocol does
   // about it; a success carries nothing at all, because the session cookie is
   // the answer and a parameter saying so would be a second, weaker way to ask.
+  // A STEP WHOSE SIGN-IN DEMANDS A SECURITY KEY (2026-09-17) is answered by
+  // the key and by nothing else. The links to these two screens are not drawn
+  // under the demand; this is the check, because a link that is not drawn is
+  // still a URL. Refused BEFORE the code is checked, so a code is not spent
+  // on a step it could not finish. True when it answered.
+  private keyDemandRefuses(res, step, what) {
+    const { log, errorCodes, oauthError } = this.deps;
+    log.debug("Entering Authn.keyDemandRefuses().");
+    if (!step || !step.authn || !step.authn.forceKey) {
+      log.debug("Leaving Authn.keyDemandRefuses(). No key was demanded.");
+      return false;
+    }
+    log.info('authn: ' + what + ' was offered for "' + step.username + '" ' +
+             'where the sign-in demands a security key; refused.');
+    errorCodes.mark(res, 'STS-AUTHN-0204');
+    oauthError(res, 400, 'invalid_request',
+      'This sign-in demands a security key, and ' + what + ' does not ' +
+      'answer that. Use the security key on the previous screen.');
+    log.debug("Leaving Authn.keyDemandRefuses(). Refused.");
+    return true;
+  }
+
+  // A SESSION REFUSED BECAUSE THE ACCOUNT IS DISABLED (2026-09-17), at the
+  // end of a screen's ceremony: the account was disabled between the password
+  // and the second factor, or the passwordless key was presented for it. The
+  // sign-in screen again, saying only that authentication failed — the
+  // enumeration argument `verify()`'s callers make — rather than a return to
+  // the caller, whose request would send the browser straight back here.
+  // True when it answered.
+  private refusedAsDisabled(res, base, record, username, started) {
+    const { log, accountState, errorCodes } = this.deps;
+    log.debug("Entering Authn.refusedAsDisabled().");
+    if (started || !accountState.isDisabled(username)) {
+      log.debug("Leaving Authn.refusedAsDisabled(). Not refused as disabled.");
+      return false;
+    }
+    errorCodes.mark(res, 'STS-AUTHN-0201');
+    this.sendLoginPage(res, this.loginPage(base, record,
+      'Authentication failed for ' + username + '.'));
+    log.debug("Leaving Authn.refusedAsDisabled(). Answered.");
+    return true;
+  }
+
   private returnToCaller(res, record, error, description) {
     const { log } = this.deps;
     log.debug("Entering Authn.returnToCaller(). error=" + (error || '(none)'));
@@ -4693,6 +4870,12 @@ class Authn {
       log.debug("Leaving Authn.integratedOptionHtml(). Not offered.");
       return '';
     }
+    if (record.forceKey && !record.forceMfa) {
+      log.debug("Leaving Authn.integratedOptionHtml(). Withheld: a security " +
+                "key was demanded.");
+      return '<div class="fed"><p>Integrated Kerberos sign-in is not offered ' +
+        'for this request: it demands a security key.</p></div>';
+    }
     if (record.forceMfa) {
       log.debug("Leaving Authn.integratedOptionHtml(). Withheld: two factors " +
                 "were demanded.");
@@ -4736,6 +4919,13 @@ class Authn {
     if (!config.value('oid4vp.signIn')) {
       log.debug("Leaving Authn.walletOptionHtml(). Not offered.");
       return '';
+    }
+    if (record.forceKey && !record.forceMfa) {
+      log.debug("Leaving Authn.walletOptionHtml(). Withheld: a security key " +
+                "was demanded.");
+      return '<div class="fed"><p id="wallet-withheld">Signing in with a ' +
+        'wallet is not offered for this request: it demands a security ' +
+        'key.</p></div>';
     }
     if (record.forceMfa) {
       log.debug("Leaving Authn.walletOptionHtml(). Withheld: two factors " +
@@ -4819,14 +5009,20 @@ class Authn {
       (keyPolicy.enabled && keyPolicy.mfaAllowed
         ? '<label class="chk"><input type="checkbox" id="use_webauthn" ' +
           'name="use_webauthn" value="1"' +
-          (record.forceMfa ? ' checked disabled' : '') +
+          (record.forceMfa || record.forceKey ? ' checked disabled' : '') +
           (record.forcePasswordless ? ' disabled' : '') +
           '> Use a security key (WebAuthn) as a second factor' +
           (record.forcePasswordless
              ? ' — not available: this partner is configured for a ' +
                'passwordless key'
+             : '') +
+          (record.forceKey
+             ? ' — required after a password: this request demands a ' +
+               'security key' + (record.forceMfa ? ' as the second factor'
+                                                 : ', alone or as the ' +
+                                                   'second factor')
              : '') + '</label>' +
-          (record.forceMfa ?
+          (record.forceMfa || record.forceKey ?
            '<input type="hidden" name="use_webauthn" value="1">' : '')
         : (keyPolicy.enabled
             ? '<label class="chk"><input type="checkbox" disabled> ' +
@@ -4840,6 +5036,8 @@ class Authn {
           (record.forcePasswordless ? ' checked disabled' : '') +
           '> Sign in with the security key alone (passwordless — ' +
           'no password step, and the tokens will say one factor)' +
+          (record.forceKey && !record.forceMfa
+             ? ' — accepted: this request demands a security key' : '') +
           (record.forceMfa ?
            ' — not available: this request demands two factors' : '') +
           (record.forcePasswordless
@@ -5094,6 +5292,20 @@ class Authn {
       errorCodes } = this.deps;
     log.debug("Entering Authn.finishPasswordSignIn(). username=" + username);
 
+    // A DISABLED ACCOUNT, BEFORE ANY CEREMONY (2026-09-17). The password path
+    // has already been refused by `credentials.verify()`; this is the
+    // passwordless one, which presents no password, and it is asked here so
+    // that a disabled person is not walked through a security-key ceremony
+    // whose result would be refused. The same sentence as a wrong password.
+    if (this.deps.accountState.isDisabled(username)) {
+      log.info('authn: a sign-in for "' + username + '" was refused: the ' +
+               'account is disabled.');
+      errorCodes.mark(res, 'STS-AUTHN-0201');
+      log.debug("Leaving Authn.finishPasswordSignIn(). Disabled.");
+      return this.sendLoginPage(res, this.loginPage(base, record,
+        'Authentication failed for ' + username + '.'));
+    }
+
     // THE ROLE GATE, AND IT IS ASKED BEFORE THE SECOND FACTOR RATHER THAN AFTER
     // IT. A person who holds none of the roles this application requires is not
     // going to be signed in whatever their security key says, and asking them
@@ -5201,7 +5413,26 @@ class Authn {
     // standing at a machine the key is not plugged into.
     const enrolled = credentials.mechanismsFor(username);
     const configuredFactor = enrolled.mfaRequired ? enrolled.secondFactor : '';
-    const factor = passwordless
+    // A SECURITY KEY DEMANDED (2026-09-17): the second factor is the KEY
+    // whatever this person is configured for — a one-time code or a recovery
+    // code does not answer the demand, and the step that would ask for one is
+    // never drawn. What that must not become is the bypass the paragraph above
+    // closes: somebody who holds a second factor and NO key would be handed
+    // the enrolling ceremony, and a person who knows their password could
+    // register a key of their own. So that person is refused, and told where
+    // a key is added; somebody who holds no second factor at all enrols one
+    // here as always.
+    if (record.forceKey && !passwordless && enrolled.mfaKeys === 0 &&
+        enrolled.primaryKeys === 0 && enrolled.mfaRequired) {
+      log.info('authn: a security key was demanded of "' + username + '", ' +
+               'who holds a second factor and no key; refused.');
+      errorCodes.mark(res, 'STS-AUTHN-0204');
+      log.debug("Leaving Authn.finishPasswordSignIn(). No key to present.");
+      return this.sendLoginPage(res, this.loginPage(base, record,
+        'This request needs a security key, and this account holds none. ' +
+        'Add one at /portal/keys and sign in again.'));
+    }
+    const factor = passwordless || record.forceKey
       ? 'webauthn'
       : (configuredFactor || (secondFactor ? 'webauthn' : ''));
 
@@ -5295,7 +5526,9 @@ class Authn {
         // the *use a code instead* link is drawn from, and it is resolved HERE
         // rather than at the page so that the link cannot offer a factor the
         // person does not have.
-        alternate: (factor === 'webauthn' && enrolled.totp) ? 'totp'
+        // Under a demand for a key there is no other mechanism to offer.
+        alternate: record.forceKey ? ''
+          : (factor === 'webauthn' && enrolled.totp) ? 'totp'
           : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : ''),
         // THE WAY OUT WHEN NEITHER MECHANISM IS TO HAND (2026-09-10). Resolved
         // HERE, when the step is minted, for `alternate`'s reason and with a
@@ -5309,8 +5542,9 @@ class Authn {
         // nobody and stands in for whichever of the two they cannot produce.
         // One field carrying both would make *what is this person's second
         // factor* a question with a wrong answer.
-        backup: enrolled.backupCodes ? enrolled.backupCodes.remaining > 0 :
-                false,
+        // And no recovery code, which is not a key either.
+        backup: !record.forceKey && enrolled.backupCodes
+          ? enrolled.backupCodes.remaining > 0 : false,
         // Which role, carried on the pending record rather than re-read from
         // the POST at the other end: that POST is the browser's ceremony result
         // and nothing in it says what the person chose a screen ago. Everything
@@ -6186,8 +6420,13 @@ class Authn {
     // the one the password step already named. What the second factor adds to
     // the entry is a flag; see ldap_server.js's applyAuthenticationFactors(),
     // which reads the amr below.
-    this.startSession(res, step.username, amr, acr, step.authn.protocol,
-                      { request: req });
+    const started = this.startSession(res, step.username, amr, acr,
+                                      step.authn.protocol, { request: req });
+    if (this.refusedAsDisabled(res, base, step.authn, step.username,
+                               started)) {
+      log.debug("Leaving Authn.finishWebauthn(). Disabled.");
+      return;
+    }
     // Back to the caller, exactly as the password-only path returns: the
     // session now records what happened, and the request that was interrupted
     // runs again and sees it.
@@ -6367,8 +6606,13 @@ class Authn {
     // is never a first factor (see common/totp.ts), so `pwd` is always in the
     // list.
     const amr = ['pwd', 'otp'];
-    this.startSession(res, step.username, amr, 'mfa', step.authn.protocol,
-                      { request: req });
+    const started = this.startSession(res, step.username, amr, 'mfa',
+                                      step.authn.protocol, { request: req });
+    if (this.refusedAsDisabled(res, base, step.authn, step.username,
+                               started)) {
+      log.debug('Leaving Authn.finishTotp(). Disabled.');
+      return;
+    }
     this.returnToCaller(res, step.authn, null, null);
     log.debug('Leaving Authn.finishTotp(). ' + step.username +
               ' completed the second factor with a one-time code.');
@@ -6572,8 +6816,13 @@ class Authn {
     // There is no passwordless branch and there cannot be: a recovery code is
     // never a first factor, so `pwd` is always in the list.
     const amr = ['pwd', 'otp'];
-    this.startSession(res, step.username, amr, 'mfa', step.authn.protocol,
-                      { request: req });
+    const started = this.startSession(res, step.username, amr, 'mfa',
+                                      step.authn.protocol, { request: req });
+    if (this.refusedAsDisabled(res, base, step.authn, step.username,
+                               started)) {
+      log.debug('Leaving Authn.finishBackupCode(). Disabled.');
+      return;
+    }
     this.returnToCaller(res, step.authn, null, null);
     log.debug('Leaving Authn.finishBackupCode(). ' + step.username +
               ' completed the second factor with a recovery code; ' +
@@ -6934,8 +7183,11 @@ class Authn {
       // session on the way back; this makes the screen ask for the factor
       // instead of letting a sign-in finish that was always going to be
       // refused.
+      // And `record.forceKey` (2026-09-17) the same way: a demand for a
+      // security key that is not met passwordless is met by the key as the
+      // second factor, whatever the POST carried.
       const secondFactor = !passwordless &&
-                           (!!record.forceMfa ||
+                           (!!record.forceMfa || !!record.forceKey ||
                             String(body.use_webauthn || '') === '1');
 
       // ---------------------------------------------------------------------
@@ -7371,9 +7623,14 @@ class Authn {
                'at sign-in; signing them in with two factors.');
       // Two factors really were presented: the password, and a code from the
       // app enrolled a moment ago. `otp` and `mfa`, as at `/authn/totp`.
-      this.startSession(res, step.username, ['pwd', 'otp'], 'mfa',
-                        step.authn.protocol,
-                        { request: req });
+      const started = this.startSession(res, step.username, ['pwd', 'otp'],
+                                        'mfa', step.authn.protocol,
+                                        { request: req });
+      if (this.refusedAsDisabled(res, base, step.authn,
+                                 step.username, started)) {
+        log.debug('Leaving the second-factor set-up endpoint. Disabled.');
+        return undefined;
+      }
       this.returnToCaller(res, step.authn, null, null);
       log.debug('Leaving the second-factor set-up endpoint. Signed in.');
       return undefined;
@@ -7851,6 +8108,10 @@ class Authn {
           'This second-factor step has expired. Start the request again from ' +
           'the application that sent you here.');
       }
+      if (this.keyDemandRefuses(res, step, 'a one-time code')) {
+        log.debug('Leaving the one-time code screen. A key was demanded.');
+        return undefined;
+      }
       if (!credentials.mechanismsFor(step.username).totp) {
         log.info('authn: a one-time code screen was asked for "' +
                  step.username +
@@ -7911,6 +8172,10 @@ class Authn {
           'the application that sent you here.');
       }
 
+      if (this.keyDemandRefuses(res, step, 'a one-time code')) {
+        log.debug('Leaving the one-time code endpoint. A key was demanded.');
+        return undefined;
+      }
       const allowed = await websecurity.attemptShared('mfa-code', req,
                                                       step.username);
       if (!allowed.ok) {
@@ -8050,6 +8315,10 @@ class Authn {
           'the application that sent you here.');
       }
 
+      if (this.keyDemandRefuses(res, step, 'a recovery code')) {
+        log.debug('Leaving the recovery code endpoint. A key was demanded.');
+        return undefined;
+      }
       const allowed = await websecurity.attemptShared('mfa-code', req,
                                                       step.username);
       if (!allowed.ok) {

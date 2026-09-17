@@ -5831,6 +5831,43 @@ things are this console's.
 `tests/admin_credential_controls.js` drives the actions, the portal page and the
 enrolment step in a child process; no owned browser job presses the section yet.
 
+**AND THE ACCOUNT ITSELF, SINCE 2026-09-17 (#36 follow-up).** The state table's
+first row is *Account: enabled / DISABLED*, and the controls above the reset are
+**Disable the account** and **Enable the account** — `usersAction()`'s
+`disable` and `enable`, `common/account_state.ts`'s act. Disabling is drawn as
+the dangerous control it is and says what it does: every door refuses that
+person, and everything they hold ends at once, with the back-channel Logout
+Tokens and RISC `account-disabled` going out. It is the SAME act as SCIM's
+`active: false` — the page says so, because an operator who disables somebody
+here and sees their provisioning system re-enable them tomorrow should know
+which member did it.
+
+## `/admin/logout`'S DELIVERY LIST IS THE SERVICE'S, PAGED, WITH A RETRY (2026-09-17, #36 follow-up)
+
+The section `backchannelDeliveriesSection()` draws under both halves of
+`/admin/logout` listed *the last 25 this process made*, which was the honest
+sentence while the deliveries lived in one process's memory. They are rows of a
+persisted, replicated store now (`oauth-oidc/CLAUDE.md`, 3aq), so:
+
+* it lists the whole realm's, from every node, with the counts by state above
+  it (pending, sent, dead letters);
+* it is filtered by state and searched (`deliveryState`, `deliveryq`) and paged
+  on `backchannelDeliveriesPage` — the drill-down paging convention, with the
+  shared `per`, because this page already pages its live rows;
+* **a DEAD LETTER carries a Retry button** for Admin Write, posting
+  `retry-backchannel` — the same action `POST
+  /admin-api/logout/retry-backchannel` calls, so the two doors cannot drift
+  (rule 7). The row it queues is a new generation with a new Logout Token and
+  the client's CURRENT address;
+* the three filter parameters joined `'/admin/logout'`'s row in
+  `LIST_VIEW_PARAMS`, so the Retry button's `back` returns the reader to the
+  page they pressed it from.
+
+While fixing the list this page's own `?page=` was found not to work:
+`logoutJson()` asked `pagedRows()` for a parameter named `page`, and
+`pagingOf()` appends `Page` to a name, so the live rows paged on `pagePage`
+while the API documented `page`. It is the default name now.
+
 ## `/admin/caches`: EVERY CACHE AND REPLAY STORE, AND ONE STORE'S ENTRIES (#74, 2026-09-17)
 
 Monitoring → Caches, drawn by `caches_admin.ts` from
