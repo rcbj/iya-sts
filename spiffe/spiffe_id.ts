@@ -62,13 +62,15 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeId` takes the modules it uses through its constructor
-// (`SpiffeIdDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeId` is exported beside them for the
-// composition root.
+// (`SpiffeIdDeps`), and since #50's R2 the composition root builds the instance
+// and installs it here. The module still exports its old names as FACADES
+// forwarding to it, for the callers that are not converted; a process without
+// the root builds a default when this module loads. `SpiffeId` is exported for
+// the root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 
 // The scheme, written once. Compared case-insensitively when reading (a URI
@@ -105,6 +107,15 @@ class SpiffeId {
   constructor(private readonly deps: SpiffeIdDeps) {
     deps.log.debug("Entering SpiffeId.constructor().");
     deps.log.debug("Leaving SpiffeId.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeIdDeps {
+    helpers.log.debug("Entering SpiffeId.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeId.defaultDeps().");
+    return {
+      log: log
+    };
   }
 
   byteLength(text) {
@@ -446,34 +457,44 @@ class SpiffeId {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeId = new SpiffeId({
-  log: log
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeId>(
+  'spiffe/spiffe_id',
+  () => new SpiffeId(SpiffeId.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SpiffeId: SpiffeId,
+  installInstance: (instance: SpiffeId): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SCHEME: SCHEME,
   PREFIX: PREFIX,
   MAX_ID_BYTES: MAX_ID_BYTES,
   MAX_TRUST_DOMAIN_BYTES: MAX_TRUST_DOMAIN_BYTES,
   RESERVED_PREFIX: RESERVED_PREFIX,
-  parse: spiffeId.parse.bind(spiffeId) as SpiffeId['parse'],
-  isValid: spiffeId.isValid.bind(spiffeId) as SpiffeId['isValid'],
-  make: spiffeId.make.bind(spiffeId) as SpiffeId['make'],
-  trustDomainId: spiffeId.trustDomainId.bind(spiffeId) as
-    SpiffeId['trustDomainId'],
-  trustDomainOf: spiffeId.trustDomainOf.bind(spiffeId) as
-    SpiffeId['trustDomainOf'],
-  isMemberOf: spiffeId.isMemberOf.bind(spiffeId) as SpiffeId['isMemberOf'],
-  isReservedPath: spiffeId.isReservedPath.bind(spiffeId) as
-    SpiffeId['isReservedPath'],
-  serverId: spiffeId.serverId.bind(spiffeId) as SpiffeId['serverId'],
-  agentId: spiffeId.agentId.bind(spiffeId) as SpiffeId['agentId'],
-  isAgentId: spiffeId.isAgentId.bind(spiffeId) as SpiffeId['isAgentId'],
-  isServerId: spiffeId.isServerId.bind(spiffeId) as SpiffeId['isServerId'],
-  toProto: spiffeId.toProto.bind(spiffeId) as SpiffeId['toProto'],
-  fromProto: spiffeId.fromProto.bind(spiffeId) as SpiffeId['fromProto']
+  parse: slot.forward('parse'),
+  isValid: slot.forward('isValid'),
+  make: slot.forward('make'),
+  trustDomainId: slot.forward('trustDomainId'),
+  trustDomainOf: slot.forward('trustDomainOf'),
+  isMemberOf: slot.forward('isMemberOf'),
+  isReservedPath: slot.forward('isReservedPath'),
+  serverId: slot.forward('serverId'),
+  agentId: slot.forward('agentId'),
+  isAgentId: slot.forward('isAgentId'),
+  isServerId: slot.forward('isServerId'),
+  toProto: slot.forward('toProto'),
+  fromProto: slot.forward('fromProto')
 };

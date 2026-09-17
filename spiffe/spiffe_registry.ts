@@ -81,14 +81,16 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeRegistry` takes the modules it uses through its constructor
-// (`SpiffeRegistryDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeRegistry` is exported beside them for the
-// composition root.
+// (`SpiffeRegistryDeps`), and since #50's R2 the composition root builds the
+// instance and installs it here. The module still exports its old names as
+// FACADES forwarding to it, for the callers that are not converted; a process
+// without the root builds a default when this module loads. `SpiffeRegistry` is
+// exported for the root.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import config = require('../common/config');
 // For `seedsDemoData()` alone. A leaf (it requires only config), so it can join
@@ -140,6 +142,21 @@ class SpiffeRegistry {
   constructor(private readonly deps: SpiffeRegistryDeps) {
     deps.log.debug("Entering SpiffeRegistry.constructor().");
     deps.log.debug("Leaving SpiffeRegistry.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeRegistryDeps {
+    helpers.log.debug("Entering SpiffeRegistry.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeRegistry.defaultDeps().");
+    return {
+      crypto: crypto,
+      log: log,
+      config: config,
+      mode: mode,
+      audit: audit,
+      spiffeId: spiffeId,
+      stats: stats
+    };
   }
 
   maxEntries() {
@@ -1164,18 +1181,20 @@ class SpiffeRegistry {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeRegistry = new SpiffeRegistry({
-  crypto: crypto,
-  log: log,
-  config: config,
-  mode: mode,
-  audit: audit,
-  spiffeId: spiffeId,
-  stats: stats
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeRegistry>(
+  'spiffe/spiffe_registry',
+  () => new SpiffeRegistry(SpiffeRegistry.defaultDeps()),
+  null,
+  helpers.log);
 
 // ---------------------------------------------------------------------------
 // THE SCHEMA.
@@ -1394,62 +1413,40 @@ SCHEMA.attributes.forEach(function (a) {
 // ---------------------------------------------------------------------------
 let directory = null;
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   SpiffeRegistry: SpiffeRegistry,
+  installInstance: (instance: SpiffeRegistry): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SCHEMA: SCHEMA,
   EDITABLE: EDITABLE,
-  setDirectory: spiffeRegistry.setDirectory.bind(spiffeRegistry) as
-    SpiffeRegistry['setDirectory'],
-  parseSelector: spiffeRegistry.parseSelector.bind(spiffeRegistry) as
-    SpiffeRegistry['parseSelector'],
-  selectorText: spiffeRegistry.selectorText.bind(spiffeRegistry) as
-    SpiffeRegistry['selectorText'],
-  selectorsMatch: spiffeRegistry.selectorsMatch.bind(spiffeRegistry) as
-    SpiffeRegistry['selectorsMatch'],
-  checkRecord: spiffeRegistry.checkRecord.bind(spiffeRegistry) as
-    SpiffeRegistry['checkRecord'],
-  newEntryId: spiffeRegistry.newEntryId.bind(spiffeRegistry) as
-    SpiffeRegistry['newEntryId'],
-  generalizedTime: spiffeRegistry.generalizedTime.bind(spiffeRegistry) as
-    SpiffeRegistry['generalizedTime'],
-  agentCnFor: spiffeRegistry.agentCnFor.bind(spiffeRegistry) as
-    SpiffeRegistry['agentCnFor'],
-  allEntries: spiffeRegistry.allEntries.bind(spiffeRegistry) as
-    SpiffeRegistry['allEntries'],
-  entryById: spiffeRegistry.entryById.bind(spiffeRegistry) as
-    SpiffeRegistry['entryById'],
-  entriesForSpiffeId: spiffeRegistry.entriesForSpiffeId.bind(spiffeRegistry) as
-    SpiffeRegistry['entriesForSpiffeId'],
-  entriesForWorkload: spiffeRegistry.entriesForWorkload.bind(spiffeRegistry) as
-    SpiffeRegistry['entriesForWorkload'],
-  entriesAuthorizedFor:
-    spiffeRegistry.entriesAuthorizedFor.bind(spiffeRegistry) as
-      SpiffeRegistry['entriesAuthorizedFor'],
-  entryCount: spiffeRegistry.entryCount.bind(spiffeRegistry) as
-    SpiffeRegistry['entryCount'],
-  createEntry: spiffeRegistry.createEntry.bind(spiffeRegistry) as
-    SpiffeRegistry['createEntry'],
-  updateEntry: spiffeRegistry.updateEntry.bind(spiffeRegistry) as
-    SpiffeRegistry['updateEntry'],
-  deleteEntry: spiffeRegistry.deleteEntry.bind(spiffeRegistry) as
-    SpiffeRegistry['deleteEntry'],
-  noteSvidIssued: spiffeRegistry.noteSvidIssued.bind(spiffeRegistry) as
-    SpiffeRegistry['noteSvidIssued'],
-  allAgents: spiffeRegistry.allAgents.bind(spiffeRegistry) as
-    SpiffeRegistry['allAgents'],
-  agentById: spiffeRegistry.agentById.bind(spiffeRegistry) as
-    SpiffeRegistry['agentById'],
-  agentCount: spiffeRegistry.agentCount.bind(spiffeRegistry) as
-    SpiffeRegistry['agentCount'],
-  recordAttestation: spiffeRegistry.recordAttestation.bind(spiffeRegistry) as
-    SpiffeRegistry['recordAttestation'],
-  setAgentBanned: spiffeRegistry.setAgentBanned.bind(spiffeRegistry) as
-    SpiffeRegistry['setAgentBanned'],
-  deleteAgent: spiffeRegistry.deleteAgent.bind(spiffeRegistry) as
-    SpiffeRegistry['deleteAgent'],
-  seed: spiffeRegistry.seed.bind(spiffeRegistry) as SpiffeRegistry['seed'],
-  maxEntries: spiffeRegistry.maxEntries.bind(spiffeRegistry) as
-    SpiffeRegistry['maxEntries'],
-  maxAgents: spiffeRegistry.maxAgents.bind(spiffeRegistry) as
-    SpiffeRegistry['maxAgents']
+  setDirectory: slot.forward('setDirectory'),
+  parseSelector: slot.forward('parseSelector'),
+  selectorText: slot.forward('selectorText'),
+  selectorsMatch: slot.forward('selectorsMatch'),
+  checkRecord: slot.forward('checkRecord'),
+  newEntryId: slot.forward('newEntryId'),
+  generalizedTime: slot.forward('generalizedTime'),
+  agentCnFor: slot.forward('agentCnFor'),
+  allEntries: slot.forward('allEntries'),
+  entryById: slot.forward('entryById'),
+  entriesForSpiffeId: slot.forward('entriesForSpiffeId'),
+  entriesForWorkload: slot.forward('entriesForWorkload'),
+  entriesAuthorizedFor: slot.forward('entriesAuthorizedFor'),
+  entryCount: slot.forward('entryCount'),
+  createEntry: slot.forward('createEntry'),
+  updateEntry: slot.forward('updateEntry'),
+  deleteEntry: slot.forward('deleteEntry'),
+  noteSvidIssued: slot.forward('noteSvidIssued'),
+  allAgents: slot.forward('allAgents'),
+  agentById: slot.forward('agentById'),
+  agentCount: slot.forward('agentCount'),
+  recordAttestation: slot.forward('recordAttestation'),
+  setAgentBanned: slot.forward('setAgentBanned'),
+  deleteAgent: slot.forward('deleteAgent'),
+  seed: slot.forward('seed'),
+  maxEntries: slot.forward('maxEntries'),
+  maxAgents: slot.forward('maxAgents')
 };

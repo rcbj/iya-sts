@@ -52,10 +52,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeGrpc` takes the modules it uses through its constructor
-// (`SpiffeGrpcDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeGrpc` is exported beside them for the
-// composition root.
+// (`SpiffeGrpcDeps`), and since #50's R2 the composition root builds the
+// instance and installs it here. The module still exports its old names as
+// FACADES forwarding to it, for the callers that are not converted; a process
+// without the root builds a default when this module loads. `SpiffeGrpc` is
+// exported for the root.
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
@@ -63,6 +64,7 @@ import path = require('path');
 import grpc = require('@grpc/grpc-js');
 import loader = require('@grpc/proto-loader');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import config = require('../common/config');
 // THE REALM REGISTRY, for the one thing an operation has to carry that this
@@ -159,10 +161,75 @@ interface SpiffeGrpcDeps {
   loadRequestWorker(): typeof import('../common/request_worker');
 }
 
+// The services `SpiffeGrpc.wire()` names.
+type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
+  'trustdomain' | 'debug';
+
 class SpiffeGrpc {
   constructor(private readonly deps: SpiffeGrpcDeps) {
     deps.log.debug("Entering SpiffeGrpc.constructor().");
     deps.log.debug("Leaving SpiffeGrpc.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeGrpcDeps {
+    helpers.log.debug("Entering SpiffeGrpc.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeGrpc.defaultDeps().");
+    return {
+      fs: fs,
+      path: path,
+      grpc: grpc,
+      loader: loader,
+      log: log,
+      config: config,
+      realms: realms,
+      audit: audit,
+      errorCodes: errorCodes,
+      stats: stats,
+      auth: auth,
+      authn: authn,
+      accessGate: accessGate,
+      nodeCrypto: nodeCrypto,
+      spiffeId: spiffeId,
+      ca: ca,
+      loadRequestPool: function () {
+        return require('../common/request_pool');
+      },
+      loadRequestWorker: function () {
+        return require('../common/request_worker');
+      }
+    };
+  }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: loading the vendored protos and naming the services, and
+  // refusing to go on when one is missing.
+  static wire(instance: SpiffeGrpc): void {
+    helpers.log.debug("Entering SpiffeGrpc.wire().");
+    const DEFINITIONS = instance.loadDefinitions();
+    const services = {
+      workload: DEFINITIONS.workload['SpiffeWorkloadAPI'],
+      entry: DEFINITIONS.server['spire.api.server.entry.v1.Entry'],
+      agent: DEFINITIONS.server['spire.api.server.agent.v1.Agent'],
+      bundle: DEFINITIONS.server['spire.api.server.bundle.v1.Bundle'],
+      svid: DEFINITIONS.server['spire.api.server.svid.v1.SVID'],
+      trustdomain:
+        DEFINITIONS.server['spire.api.server.trustdomain.v1.TrustDomain'],
+      debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug']
+    };
+    SERVICES = services;
+    Object.keys(services).forEach(function (name) {
+      if (!services[name]) {
+        helpers.log.debug("Leaving SpiffeGrpc.wire(). " + name +
+                          " missing.");
+        throw new Error('spiffe: the ' + name + ' service is not in the ' +
+                        'vendored protos. This is a build problem rather ' +
+                        'than a runtime one — see protos/ and the note at ' +
+                        'the top of spiffe_grpc.js.');
+      }
+    });
+    helpers.log.debug("Leaving SpiffeGrpc.wire().");
   }
 
   loadDefinitions() {
@@ -1409,58 +1476,26 @@ class SpiffeGrpc {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeGrpc = new SpiffeGrpc({
-  fs: fs,
-  path: path,
-  grpc: grpc,
-  loader: loader,
-  log: log,
-  config: config,
-  realms: realms,
-  audit: audit,
-  errorCodes: errorCodes,
-  stats: stats,
-  auth: auth,
-  authn: authn,
-  accessGate: accessGate,
-  nodeCrypto: nodeCrypto,
-  spiffeId: spiffeId,
-  ca: ca,
-  loadRequestPool: function () {
-    return require('../common/request_pool');
-  },
-  loadRequestWorker: function () {
-    return require('../common/request_worker');
-  }
-});
-
-const DEFINITIONS = spiffeGrpc.loadDefinitions();
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeGrpc>(
+  'spiffe/spiffe_grpc',
+  () => new SpiffeGrpc(SpiffeGrpc.defaultDeps()),
+  SpiffeGrpc.wire,
+  helpers.log);
 
 // The service definitions, by the fully-qualified name the wire uses. Named
-// here, once, so that a typo in a service name is a `TypeError` at startup
-// rather than a method nothing ever routes to.
-const SERVICES = {
-  workload: DEFINITIONS.workload['SpiffeWorkloadAPI'],
-  entry: DEFINITIONS.server['spire.api.server.entry.v1.Entry'],
-  agent: DEFINITIONS.server['spire.api.server.agent.v1.Agent'],
-  bundle: DEFINITIONS.server['spire.api.server.bundle.v1.Bundle'],
-  svid: DEFINITIONS.server['spire.api.server.svid.v1.SVID'],
-  trustdomain:
-    DEFINITIONS.server['spire.api.server.trustdomain.v1.TrustDomain'],
-  debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug']
-};
-
-Object.keys(SERVICES).forEach(function (name) {
-  if (!SERVICES[name]) {
-    throw new Error('spiffe: the ' + name + ' service is not in the vendored ' +
-                    'protos. This is a build problem rather than a runtime ' +
-                    'one — see protos/ and the note at the top of ' +
-                    'spiffe_grpc.js.');
-  }
-});
+// in `SpiffeGrpc.wire()`, once, so that a typo in a service name is a
+// `TypeError` at startup rather than a method nothing ever routes to. Loaded
+// by the instance, so filled when the instance is installed (#50, R2).
+let SERVICES: Record<ServiceName, any> | null = null;
 
 // ---------------------------------------------------------------------------
 // THE ONE CHECK THE SPECIFICATION REQUIRES, AND WHY IT IS ON IN A SERVICE THAT
@@ -1596,43 +1631,43 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 const PUBLIC_DIRECTORY_MODE = 0o755;
 const PRIVATE_SOCKET_MODE = 0o600;
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   SpiffeGrpc: SpiffeGrpc,
+  installInstance: (instance: SpiffeGrpc): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   grpc: grpc,
-  SERVICES: SERVICES,
+  // Named by `SpiffeGrpc.wire()`, so read once the instance exists.
+  get SERVICES(): Record<ServiceName, any> {
+    log.debug("Entering SERVICES().");
+    slot.get();
+    log.debug("Leaving SERVICES().");
+    return SERVICES;
+  },
   SECURITY_HEADER: SECURITY_HEADER,
-  methodsOf: spiffeGrpc.methodsOf.bind(spiffeGrpc) as SpiffeGrpc['methodsOf'],
-  statusError: spiffeGrpc.statusError.bind(spiffeGrpc) as
-    SpiffeGrpc['statusError'],
-  invalidArgument: spiffeGrpc.invalidArgument.bind(spiffeGrpc) as
-    SpiffeGrpc['invalidArgument'],
-  notFound: spiffeGrpc.notFound.bind(spiffeGrpc) as SpiffeGrpc['notFound'],
-  permissionDenied: spiffeGrpc.permissionDenied.bind(spiffeGrpc) as
-    SpiffeGrpc['permissionDenied'],
-  unavailable: spiffeGrpc.unavailable.bind(spiffeGrpc) as
-    SpiffeGrpc['unavailable'],
-  unary: spiffeGrpc.unary.bind(spiffeGrpc) as SpiffeGrpc['unary'],
-  serverStream: spiffeGrpc.serverStream.bind(spiffeGrpc) as
-    SpiffeGrpc['serverStream'],
-  bidiStream: spiffeGrpc.bidiStream.bind(spiffeGrpc) as
-    SpiffeGrpc['bidiStream'],
-  prepareSocketPath: spiffeGrpc.prepareSocketPath.bind(spiffeGrpc) as
-    SpiffeGrpc['prepareSocketPath'],
-  restrictSocket: spiffeGrpc.restrictSocket.bind(spiffeGrpc) as
-    SpiffeGrpc['restrictSocket'],
-  buildServer: spiffeGrpc.buildServer.bind(spiffeGrpc) as
-    SpiffeGrpc['buildServer'],
-  bindOne: spiffeGrpc.bindOne.bind(spiffeGrpc) as SpiffeGrpc['bindOne'],
-  serverApiCredentials: spiffeGrpc.serverApiCredentials.bind(spiffeGrpc) as
-    SpiffeGrpc['serverApiCredentials'],
+  methodsOf: slot.forward('methodsOf'),
+  statusError: slot.forward('statusError'),
+  invalidArgument: slot.forward('invalidArgument'),
+  notFound: slot.forward('notFound'),
+  permissionDenied: slot.forward('permissionDenied'),
+  unavailable: slot.forward('unavailable'),
+  unary: slot.forward('unary'),
+  serverStream: slot.forward('serverStream'),
+  bidiStream: slot.forward('bidiStream'),
+  prepareSocketPath: slot.forward('prepareSocketPath'),
+  restrictSocket: slot.forward('restrictSocket'),
+  buildServer: slot.forward('buildServer'),
+  bindOne: slot.forward('bindOne'),
+  serverApiCredentials: slot.forward('serverApiCredentials'),
   // Exported for `tests/spire_api_access_policy.js`, which drives the two
   // decisions this function makes directly: the claim is about a DECISION and
   // not about an endpoint, so driving it over gRPC would mean standing up two
   // listeners and a certificate to assert one branch. That is the same
   // argument `tests/access_policy.js` makes at its own head.
-  policyRefusal: spiffeGrpc.policyRefusal.bind(spiffeGrpc) as
-    SpiffeGrpc['policyRefusal'],
-  enabled: spiffeGrpc.enabled.bind(spiffeGrpc) as SpiffeGrpc['enabled'],
+  policyRefusal: slot.forward('policyRefusal'),
+  enabled: slot.forward('enabled'),
   // ---------------------------------------------------------------------
   // THE OPERATION SEAM, EXPORTED FOR `tests/spiffe_operations.js` AND FOR
   // NOTHING ELSE IN THE SERVICE.
@@ -1655,14 +1690,10 @@ export = {
   localMethod: function (surface, method) {
     log.debug("Entering localMethod().");
     log.debug("Leaving localMethod().");
-    return LOCAL_METHODS.get(spiffeGrpc.methodKind(surface, method));
+    return LOCAL_METHODS.get(slot.get().methodKind(surface, method));
   },
-  methodKind: spiffeGrpc.methodKind.bind(spiffeGrpc) as
-    SpiffeGrpc['methodKind'],
-  methodRequest: spiffeGrpc.methodRequest.bind(spiffeGrpc) as
-    SpiffeGrpc['methodRequest'],
-  performMethod: spiffeGrpc.performMethod.bind(spiffeGrpc) as
-    SpiffeGrpc['performMethod'],
-  errorFromResult: spiffeGrpc.errorFromResult.bind(spiffeGrpc) as
-    SpiffeGrpc['errorFromResult']
+  methodKind: slot.forward('methodKind'),
+  methodRequest: slot.forward('methodRequest'),
+  performMethod: slot.forward('performMethod'),
+  errorFromResult: slot.forward('errorFromResult')
 };

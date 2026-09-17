@@ -91,10 +91,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeWorkload` takes the modules it uses through its constructor
-// (`SpiffeWorkloadDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeWorkload` is exported beside them for the
-// composition root.
+// (`SpiffeWorkloadDeps`), and since #50's R2 the composition root builds the
+// instance and installs it here. The module still exports its old names as
+// FACADES forwarding to it, for the callers that are not converted; a process
+// without the root builds a default when this module loads. `SpiffeWorkload` is
+// exported for the root.
 //
 // **THE TABLES WHOSE ENTRIES CALL THIS MODULE** (`fetchX509Svid`,
 // `fetchX509Bundles`, `fetchJwtSvid`, `fetchJwtBundles`, `validateJwtSvid`) are
@@ -103,6 +104,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 import config = require('../common/config');
 // For `autoCreates()`: whether an entry may be invented for a caller that
@@ -140,6 +142,25 @@ class SpiffeWorkload {
   constructor(private readonly deps: SpiffeWorkloadDeps) {
     deps.log.debug("Entering SpiffeWorkload.constructor().");
     deps.log.debug("Leaving SpiffeWorkload.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeWorkloadDeps {
+    helpers.log.debug("Entering SpiffeWorkload.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeWorkload.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      mode: mode,
+      audit: audit,
+      errorCodes: errorCodes,
+      stats: stats,
+      spiffeId: spiffeId,
+      ca: ca,
+      registry: registry,
+      rpc: rpc,
+      auth: auth
+    };
   }
 
   trustDomain() {
@@ -445,6 +466,48 @@ class SpiffeWorkload {
     arm();
     log.debug('Leaving SpiffeWorkload.pushOnRotation().');
     return handle;
+  }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: building the seven handlers, in the order loading this module
+  // registered them with `spiffe_grpc.ts`, and the table of them.
+  static wire(instance: SpiffeWorkload): void {
+    helpers.log.debug("Entering SpiffeWorkload.wire().");
+    const fetchX509Svid = instance.buildFetchX509Svid();
+
+    const fetchX509Bundles = instance.buildFetchX509Bundles();
+
+    const fetchJwtSvid = instance.buildFetchJwtSvid();
+
+    const fetchJwtBundles = instance.buildFetchJwtBundles();
+
+    const validateJwtSvid = instance.buildValidateJwtSvid();
+
+    // FetchWITSVID and FetchWITBundles — DELIBERATELY UNIMPLEMENTED; see the
+    // comment above `WIT_MESSAGE`.
+    const fetchWitSvid = rpc.serverStream('workload', 'FetchWITSVID',
+      async function (call) {
+        errorCodes.mark(call, 'STS-SPIFFE-0029');
+        throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
+      });
+
+    const fetchWitBundles = rpc.serverStream('workload', 'FetchWITBundles',
+      async function (call) {
+        errorCodes.mark(call, 'STS-SPIFFE-0029');
+        throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
+      });
+
+    HANDLERS = {
+      FetchX509SVID: fetchX509Svid,
+      FetchX509Bundles: fetchX509Bundles,
+      FetchJWTSVID: fetchJwtSvid,
+      FetchJWTBundles: fetchJwtBundles,
+      ValidateJWTSVID: validateJwtSvid,
+      FetchWITSVID: fetchWitSvid,
+      FetchWITBundles: fetchWitBundles
+    };
+    helpers.log.debug("Leaving SpiffeWorkload.wire().");
   }
 
   buildFetchX509Svid() {
@@ -821,32 +884,20 @@ class SpiffeWorkload {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeWorkload = new SpiffeWorkload({
-  log: log,
-  config: config,
-  mode: mode,
-  audit: audit,
-  errorCodes: errorCodes,
-  stats: stats,
-  spiffeId: spiffeId,
-  ca: ca,
-  registry: registry,
-  rpc: rpc,
-  auth: auth
-});
-
-const fetchX509Svid = spiffeWorkload.buildFetchX509Svid();
-
-const fetchX509Bundles = spiffeWorkload.buildFetchX509Bundles();
-
-const fetchJwtSvid = spiffeWorkload.buildFetchJwtSvid();
-
-const fetchJwtBundles = spiffeWorkload.buildFetchJwtBundles();
-
-const validateJwtSvid = spiffeWorkload.buildValidateJwtSvid();
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeWorkload>(
+  'spiffe/spiffe_workload',
+  () => new SpiffeWorkload(SpiffeWorkload.defaultDeps()),
+  SpiffeWorkload.wire,
+  helpers.log);
 
 // ---------------------------------------------------------------------------
 // FetchWITSVID and FetchWITBundles — DELIBERATELY UNIMPLEMENTED, and this is
@@ -880,32 +931,16 @@ const WIT_MESSAGE =
   'would work here and interoperate with nothing. X509-SVIDs and JWT-SVIDs ' +
   'are fully implemented.';
 
-const fetchWitSvid = rpc.serverStream('workload', 'FetchWITSVID',
-  async function (call) {
-    errorCodes.mark(call, 'STS-SPIFFE-0029');
-    throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
-  });
-
-const fetchWitBundles = rpc.serverStream('workload', 'FetchWITBundles',
-  async function (call) {
-    errorCodes.mark(call, 'STS-SPIFFE-0029');
-    throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
-  });
-
 // The handler map, keyed by the method names `@grpc/proto-loader` produced.
 // They are camelCase with the leading letter lowered — `fetchX509Svid`, not
 // `FetchX509SVID` — which is the loader's convention and is NOT what the
 // `.proto` says. Getting it wrong produces a server that starts, advertises the
 // service, and answers `Unimplemented` to everything, with nothing in the logs.
-const HANDLERS = {
-  FetchX509SVID: fetchX509Svid,
-  FetchX509Bundles: fetchX509Bundles,
-  FetchJWTSVID: fetchJwtSvid,
-  FetchJWTBundles: fetchJwtBundles,
-  ValidateJWTSVID: validateJwtSvid,
-  FetchWITSVID: fetchWitSvid,
-  FetchWITBundles: fetchWitBundles
-};
+//
+// Built by `SpiffeWorkload.wire()` when the instance is installed (#50, R2):
+// every handler is registered through `spiffe_grpc.ts`, whose instance the
+// root has installed by then.
+let HANDLERS: Record<string, any> | null = null;
 
 // What this surface implements, for the pages that describe it. `implemented`
 // is a claim rather than a count, and the two WIT methods say why they are not
@@ -936,9 +971,20 @@ const METHOD_NOTES = {
   FetchWITBundles: { implemented: false, what: WIT_MESSAGE }
 };
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   SpiffeWorkload: SpiffeWorkload,
-  HANDLERS: HANDLERS,
+  installInstance: (instance: SpiffeWorkload): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  // Built by `SpiffeWorkload.wire()`, so read once the instance exists.
+  get HANDLERS(): Record<string, any> {
+    log.debug("Entering HANDLERS().");
+    slot.get();
+    log.debug("Leaving HANDLERS().");
+    return HANDLERS;
+  },
   METHOD_NOTES: METHOD_NOTES,
   WIT_MESSAGE: WIT_MESSAGE,
   // Exported for the console's "what would this workload get" view, which asks
@@ -946,12 +992,9 @@ export = {
   // way. Called with NO caller there, which means no selector narrowing — the
   // console is looking at the registry rather than standing on a socket, and
   // "what is in here" is a different question from "what would I get".
-  entitledEntries: spiffeWorkload.entitledEntries.bind(spiffeWorkload) as
-    SpiffeWorkload['entitledEntries'],
+  entitledEntries: slot.forward('entitledEntries'),
   // For tests/ssf_spiffe_scim_hardening.js, which asserts the rotation period
   // follows the shortest lifetime served rather than the service default.
-  rotationPeriod: spiffeWorkload.rotationPeriod.bind(spiffeWorkload) as
-    SpiffeWorkload['rotationPeriod'],
-  buildX509Response: spiffeWorkload.buildX509Response.bind(spiffeWorkload) as
-    SpiffeWorkload['buildX509Response']
+  rotationPeriod: slot.forward('rotationPeriod'),
+  buildX509Response: slot.forward('buildX509Response')
 };
