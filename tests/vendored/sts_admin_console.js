@@ -2955,6 +2955,15 @@ async function theTokensPageRevokesWhatItDraws(driver) {
   await fillAndPress(driver, all, {});
   assert.strictEqual(await introspectActive(other.access), false,
     "`revoke everything` should now have reached it too.");
+
+  // AND THIS JOB'S OWN MANAGEMENT-API TOKEN WENT WITH EVERYTHING ELSE. The
+  // console itself runs on a session cookie and is unaffected, but the
+  // `/admin-api` calls further down (ensurePerson(), the page/API pairs) are
+  // presented with the token the shim holds, and `/admin-api` refuses a
+  // revoked one since #36's follow-ups (STS-API-0122). Mint a fresh one.
+  if (globalThis.stsAdminApiToken) {
+    await globalThis.stsAdminApiToken.refresh();
+  }
   checks += 1;
 
   // And the four `revoke-kind` buttons, which differ only in a hidden field —

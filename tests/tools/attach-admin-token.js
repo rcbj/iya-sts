@@ -35,9 +35,64 @@
 const log = require('bunyan').createLogger({ name: 'attach-admin-token',
   level: process.env.LOG_LEVEL || 'info' });
 
-const TOKEN = process.env.STS_ADMIN_API_TOKEN || '';
+// THE TOKEN IS A VARIABLE AND NOT A CONSTANT SINCE 2026-09-17, AND THAT IS
+// ABOUT REVOCATION RATHER THAN TIDINESS. `/admin-api` refuses a token a
+// sign-out or an administrator has REVOKED (STS-API-0122, #36's follow-ups),
+// and three jobs here revoke every token the service holds — `admin_api`,
+// `sts_admin_api_operations` and `sts_admin_console` all drive `revoke-all`,
+// which is the control under test. Until that check existed the run's one
+// token survived its own revocation and nothing noticed; now it dies, and
+// every management-API call after it — in that job and in every job after —
+// answers 401. So a job may MINT ITSELF A NEW ONE and hand it here:
+//
+//   await globalThis.stsAdminApiToken.refresh();
+//
+// Each job is also handed a token of its own (`run-report.js`), so one job's
+// revocation cannot reach the next even without this.
+let token = process.env.STS_ADMIN_API_TOKEN || '';
 
-if (TOKEN) {
+// The handle a job uses to replace it. `set()` is for a job that minted a
+// token by itself; `refresh()` mints one through the same file the runner
+// does, from the secret every job is handed.
+globalThis.stsAdminApiToken = {
+  get: function () {
+    log.debug("Entering stsAdminApiToken.get().");
+    log.debug("Leaving stsAdminApiToken.get().");
+    return token;
+  },
+  set: function (fresh) {
+    log.debug("Entering stsAdminApiToken.set().");
+    token = String(fresh || '');
+    log.debug("Leaving stsAdminApiToken.set().");
+    return token;
+  },
+  refresh: async function () {
+    log.debug("Entering stsAdminApiToken.refresh().");
+    const minter = require('./admin-api-token.js');
+    const base = process.env.STS_TEST_SERVICE_URL ||
+                 process.env.STS_URL || '';
+    try {
+      const fresh = await minter.tokenFor(base);
+      if (fresh) {
+        token = fresh;
+      }
+      log.debug("Leaving stsAdminApiToken.refresh(). " +
+                (fresh ? "Minted." : "Nothing came back."));
+      return token;
+    } catch (e) {
+      // NOT FATAL, and the job that called it is the one that finds out: a
+      // mint that fails leaves the old token in place, so the next call
+      // answers 401 and the job's own assertion says so. Throwing here would
+      // report a token problem as whatever that job was testing.
+      log.debug("Caught in stsAdminApiToken.refresh(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving stsAdminApiToken.refresh(). It threw.");
+      return token;
+    }
+  }
+};
+
+if (token) {
   const http = require('http');
   const https = require('https');
 
@@ -90,7 +145,7 @@ if (TOKEN) {
       const headers = Object.assign({}, (options.headers || {}));
       if (!hasAuth(init && init.headers) && !hasAuth(headers) &&
           !(typeof input === 'object' && input && hasAuth(input.headers))) {
-        headers.authorization = 'Bearer ' + TOKEN;
+        headers.authorization = 'Bearer ' + token;
       }
       options.headers = headers;
       log.debug("Leaving fetch().");
@@ -124,7 +179,7 @@ if (TOKEN) {
       }
       if (options && wants(path) && !hasAuth(options.headers)) {
         options.headers = Object.assign({}, options.headers || {},
-                                        { authorization: 'Bearer ' + TOKEN });
+                                        { authorization: 'Bearer ' + token });
       }
       log.debug("Leaving request().");
       return real.apply(this, arguments);

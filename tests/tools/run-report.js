@@ -1851,8 +1851,26 @@ async function main() {
       // coverage run sets its own, and losing that would silently measure
       // nothing.
       // -------------------------------------------------------------------
+      //
+      // A TOKEN OF ITS OWN PER JOB SINCE 2026-09-17, and that is about
+      // revocation. `/admin-api` refuses a REVOKED token since #36's
+      // follow-ups, and three jobs drive `revoke-all` — the control they
+      // exist to test — which revokes the run's token along with everything
+      // else. One token for the whole run therefore died partway through and
+      // every management-API job after it answered 401. Minting per job keeps
+      // one job's revocation inside that job; the job that revokes refreshes
+      // its own through `globalThis.stsAdminApiToken.refresh()`. A mint that
+      // fails falls back to the run's token, which is what this line was.
       if (process.env.STS_ADMIN_API_TOKEN) {
-        job.env.STS_ADMIN_API_TOKEN = process.env.STS_ADMIN_API_TOKEN;
+        let mine = '';
+        try {
+          mine = await adminApiToken.tokenFor(instance.url || '');
+        } catch (e) {
+          log.debug('Caught while minting a token for ' + job.name + ': ' +
+                    ((e && e.message) || e));
+          mine = '';
+        }
+        job.env.STS_ADMIN_API_TOKEN = mine || process.env.STS_ADMIN_API_TOKEN;
         const preload = '--require ' +
           path.join(__dirname, 'attach-admin-token.js');
         job.env.NODE_OPTIONS = job.env.NODE_OPTIONS

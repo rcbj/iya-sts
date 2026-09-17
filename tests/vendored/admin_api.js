@@ -970,6 +970,16 @@ async function theBulkRevocationsWorkAndAreUndone() {
   assert.strictEqual(all.status, 200, "revoke-all should be applied.");
   assert.ok(typeof all.body.revoked === "number",
     "and report how many it revoked; got " + JSON.stringify(all.body));
+  // THIS JOB'S OWN MANAGEMENT-API TOKEN WAS JUST REVOKED WITH EVERYTHING
+  // ELSE, and `/admin-api` refuses a revoked token since #36's follow-ups
+  // (STS-API-0122). Mint a fresh one before the next call, through the shim
+  // that presents it (`tests/tools/attach-admin-token.js`), or every
+  // assertion below this line fails as a 401 that says nothing about what it
+  // was testing.
+  if (globalThis.stsAdminApiToken) {
+    await globalThis.stsAdminApiToken.refresh();
+  }
+
   const nowRevoked = await allRevoked();
   assert.ok(nowRevoked.matched >= before.matched,
     "and the revoked list should not have shrunk.");

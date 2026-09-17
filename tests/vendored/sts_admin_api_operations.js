@@ -2989,6 +2989,16 @@ async function theTokenDoorsRoundTrip() {
     "`revoke-subject` should kill the token whose `sub` it named.");
 
   await ok("/tokens/revoke-all", {}, "revoked everything in this realm");
+  // THIS JOB'S OWN MANAGEMENT-API TOKEN WAS JUST REVOKED WITH EVERYTHING
+  // ELSE, and `/admin-api` refuses a revoked token since #36's follow-ups
+  // (STS-API-0122). Mint a fresh one before the next call, through the shim
+  // that presents it (`tests/tools/attach-admin-token.js`), or every
+  // assertion below this line fails as a 401 that says nothing about what it
+  // was testing.
+  if (globalThis.stsAdminApiToken) {
+    await globalThis.stsAdminApiToken.refresh();
+  }
+
   const listed = await get("/tokens");
   assert.ok(listed.body.revokedCount >= restoreThese.length,
     "`revoke-all` should leave everything this realm holds revoked; the " +
