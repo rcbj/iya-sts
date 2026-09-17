@@ -1974,8 +1974,9 @@ class Scim {
             'produce. ' +
             'Do not put this port on a public address on the strength of it.'
           : 'IT AUTHENTICATES, AND IN PRODUCT MODE IT CHECKS. A credential ' +
-            'is required' + (scimAuth.authRequired() ? '' : ' — except that it ' +
-            'is currently turned off here, so it is not') + ', and each ' +
+            'is required' +
+            (scimAuth.authRequired() ? '' : ' — except that it is ' +
+            'currently turned off here, so it is not') + ', and each ' +
             'scheme behind that requirement is verified: an access token ' +
             'must come from this service\'s own token endpoint with the ' +
             'scope, a Basic password is checked against the hashed ' +
