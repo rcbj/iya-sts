@@ -2241,6 +2241,34 @@ function personShaped(nameComponents, realm) {
          (realm || ctx.REALM) === ctx.REALM;
 }
 
+// ---------------------------------------------------------------------------
+// IS THIS PERSON'S ACCOUNT DISABLED? (2026-09-17). Asked by the KDC before an
+// AS-REQ or an S4U2Self is answered, in BOTH modes — a development KDC that
+// would create the principal on the spot still refuses a person an
+// administrator disabled. One component, this KDC's own realm; the source is
+// `krb5_person_keys.ts`, which reads `pwdAccountLockedTime` off the entry.
+// A source without the function (an older one, or none) disables nobody.
+// ---------------------------------------------------------------------------
+function personDisabled(nameComponents, realm) {
+  log.debug('Entering personDisabled().');
+  const ctx = current();
+  if (!keySource || typeof keySource.personDisabled !== 'function' ||
+      !Array.isArray(nameComponents) || nameComponents.length !== 1 ||
+      !nameComponents[0] || (realm || ctx.REALM) !== ctx.REALM) {
+    log.debug('Leaving personDisabled(). Not asked.');
+    return false;
+  }
+  let disabled = false;
+  try {
+    disabled = !!keySource.personDisabled(String(nameComponents[0]));
+  } catch (e) {
+    log.debug('Caught in personDisabled(): ' + ((e && e.message) || e));
+    disabled = false;
+  }
+  log.debug('Leaving personDisabled(). ' + disabled);
+  return disabled;
+}
+
 // The e-texts, one per state the source can report. No em dash and nothing
 // non-ASCII, for handleAsReq()'s reason: a KerberosString is a GeneralString
 // and a client decoding it as Latin-1 renders UTF-8 as mojibake in the one
@@ -3143,6 +3171,7 @@ module.exports = {
     return !!keySource;
   },
   lookupUser: lookupUser,
+  personDisabled: personDisabled,
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,

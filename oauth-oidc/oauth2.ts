@@ -235,6 +235,11 @@ import jwtAccessToken = require('./jwt_access_token');
 // a JWT and has it build and protect one, the metadata publishes its algorithm
 // lists, and the UserInfo response takes its recipient-key reading from it.
 import introspectionJwt = require('./introspection_jwt');
+// OPENID CONNECT CORE SECTION 10.2, THE ENCRYPTED ID TOKEN (2026-09-17, #36
+// follow-up). A LIBRARY that registers no route: idToken() hands it the signed
+// token, and the registration endpoint asks it whether a client that
+// registered `id_token_encrypted_response_alg` gave a key to encrypt to.
+import idTokenEncryption = require('./id_token_encryption');
 // RFC 9470 (2026-09-13): step-up authentication. A library (rule 3) — what an
 // authorization request's acr_values and max_age ask of a session, what meets
 // them, and the refusal when nothing can. See `step_up.ts`.
@@ -406,6 +411,7 @@ interface OAuth2ServerDeps {
   refreshTokenCrypto: typeof refreshTokenCrypto;
   jwtAccessToken: typeof jwtAccessToken;
   introspectionJwt: typeof introspectionJwt;
+  idTokenEncryption: typeof idTokenEncryption;
   stepUp: typeof stepUp;
   requestObject: typeof requestObject;
   richAuthorization: typeof richAuthorization;
@@ -1415,6 +1421,7 @@ class OAuth2Server {
       refreshTokenCrypto: refreshTokenCrypto,
       jwtAccessToken: jwtAccessToken,
       introspectionJwt: introspectionJwt,
+      idTokenEncryption: idTokenEncryption,
       stepUp: stepUp,
       requestObject: requestObject,
       richAuthorization: richAuthorization,
@@ -2208,7 +2215,13 @@ class OAuth2Server {
       // is what public MEANS. Claiming `pairwise` would be a claim about a
       // calculation this server does not perform.
       subject_types_supported: ['public'],
-      // The id_token is not encrypted, so there is no *_enc member.
+      // OIDC Core section 10.2 (2026-09-17): an ID Token is encrypted — signed
+      // first, then encrypted to the key in the client's inline `jwks` — when
+      // the client registered `id_token_encrypted_response_alg`. The lists
+      // are the UserInfo response's, for its reason; `id_token_encryption.ts`
+      // argues the rest. A Logout Token follows the same registration.
+      id_token_encryption_alg_values_supported: idTokenEncryption.ALGS,
+      id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
       // asymmetric algorithm in the table and can use a client's own secret for
@@ -3061,7 +3074,8 @@ class OAuth2Server {
   // console's count.
   async idToken(base: Json, opts: Json): Promise<Json> {
     const { log, nowSec, randomId, signJwt, signJwtAsAsync, userFor, stats,
-            config, frontchannel, backchannel, applications } = this.deps;
+            config, frontchannel, backchannel, applications,
+            idTokenEncryption } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.idToken().");
     const iat = nowSec();
@@ -3215,8 +3229,23 @@ class OAuth2Server {
       : await signJwtAsAsync(payloadWithCustom, idAlg, registered.client_secret,
                              { session: opts.user && opts.user.sub,
                                certificateHeader: 'id-token' });
-    log.debug("Leaving OAuth2Server.idToken(). alg=" + idAlg);
-    return token;
+    // OIDC Core section 10.2 (2026-09-17): SIGNED, THEN ENCRYPTED, when the
+    // client registered `id_token_encrypted_response_alg` — a Nested JWT with
+    // `cty: "JWT"`. The signature above is unchanged by it (any algorithm of
+    // the table, the post-quantum ones included); what is added is the JWE
+    // around it, to the key in the client's inline `jwks`. A registration
+    // that cannot be honoured any longer THROWS with the sentence, as an
+    // unusable signing algorithm does above: an ID Token sent in the clear to
+    // a client that asked for encryption is not a downgrade it can notice.
+    // The console's count was recorded by `signJwt()` on the inner token,
+    // which is the credential; the envelope is not a second one.
+    const protectedToken = idTokenEncryption.protect(token, registered);
+    log.debug("Leaving OAuth2Server.idToken(). alg=" + idAlg +
+              (protectedToken.encrypted
+                ? ', encrypted ' + protectedToken.alg + ' ' +
+                  protectedToken.enc
+                : ''));
+    return protectedToken.token;
   }
 
   // What a token response is about to mint, in the gate's own words. Derived
@@ -6524,7 +6553,13 @@ class OAuth2Server {
     // ordered preference list they are: `mfa 1` accepts one factor and does not
     // force a second, and a value is matched whole and case-sensitively, where
     // a regex used to find `mfa` inside any word.
-    const forceMfa = stepUp.demandsSecondFactor(stepUpNeed.acrValues);
+    //
+    // AND A REQUEST NAMING ONLY KEY ALIASES (`hwk`, `phr`, `phrh`) FORCES THE
+    // KEY TOO (2026-09-17): those are met by a password with a security key,
+    // so the screen offers exactly that and not a one-time code, which would
+    // only be refused on the way back. `step_up.screenDemandFor()`.
+    const screen = stepUp.screenDemandFor(stepUpNeed.acrValues);
+    const forceMfa = !!screen.forceMfa;
     if (stepUpReauth) {
       stepUp.record(q.client_id, 'stepup.reauth_' + stepUpAssessed.reason);
       log.info('oauth2: RFC 9470: the session does not meet the request ' +
@@ -6550,7 +6585,8 @@ class OAuth2Server {
     }
     res.redirect(302, authn.beginAuthentication({
       returnTo: returnTo, details: details, hint: q.login_hint || '',
-      forceMfa: forceMfa, protocol: 'OAuth 2.0 / OIDC',
+      forceMfa: forceMfa, forceKey: !!screen.forceKey,
+      protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
       // relationship sends the person to that partner instead of to the sign-in
       // screen. It is the raw client_id: the registry is keyed by the
@@ -7704,6 +7740,20 @@ class OAuth2Server {
                 "translate.");
       return answered;
     } catch (e) {
+      // A DISABLED ACCOUNT (2026-09-17): every grant carrying a person —
+      // a code, a refresh token, a password, an assertion, a token exchange,
+      // a pre-authorized code — reaches `checkIssuance()`, whose gate refuses
+      // it first. RFC 6749 section 5.2's `invalid_grant` ("revoked"), not the
+      // policy's `access_denied`: the grant is no longer good, whatever any
+      // policy would say.
+      if (e && e.name === 'IssuanceRefused' && e.issuance &&
+          e.issuance.disabled) {
+        log.debug("Leaving the token endpoint's refusal wrapper. The " +
+                  "account is disabled.");
+        errorCodes.mark(res, 'STS-OAUTH-0551');
+        log.debug("Leaving OAuth2Server.tokenEndpoint().");
+        return self.oauthError(res, 400, 'invalid_grant', e.message);
+      }
       if (e && e.name === 'IssuanceRefused') {
         log.debug("Leaving the token endpoint's refusal wrapper. The " +
                   "issuance " +
@@ -11454,7 +11504,7 @@ class OAuth2Server {
   private async registerClient(req: Req, res: Res): Promise<Json> {
     const { log, baseUrlOf, randomId, parseBody,
             softwareStatement, config, bcp, applications,
-            validation, errorCodes } = this.deps;
+            validation, errorCodes, idTokenEncryption } = this.deps;
     const self = this;
     log.debug("Entering the client registration endpoint.");
     const base = baseUrlOf(req);
@@ -11568,6 +11618,8 @@ class OAuth2Server {
     const addressProblem =
       applications.registrationUriProblem(metadata) ||
       applications.introspectionResponseProblem(metadata) ||
+      applications.idTokenEncryptionMetadataProblem(metadata) ||
+      idTokenEncryption.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
@@ -11678,7 +11730,8 @@ class OAuth2Server {
   // RFC 7592 section 2.2, after the registration access token has matched.
   private async updateClient(req: Req, res: Res, record: Json): Promise<Json> {
     const { log, baseUrlOf, parseBody, softwareStatement, bcp,
-            applications, validation, errorCodes } = this.deps;
+            applications, validation, errorCodes,
+            idTokenEncryption } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.updateClient(). client_id=" +
               record.client_id);
@@ -11730,6 +11783,8 @@ class OAuth2Server {
     const addressProblem =
       applications.registrationUriProblem(metadata) ||
       applications.introspectionResponseProblem(metadata) ||
+      applications.idTokenEncryptionMetadataProblem(metadata) ||
+      idTokenEncryption.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||

@@ -26,9 +26,9 @@
 //    the person testing their service provider that its signing works when it
 //    does not. It is refused (`STS-SAML-0061`), and so is one this service
 //    cannot check at all — an algorithm it has no verifier for, a reference
-//    that names something other than the request, inclusive canonicalization
-//    (`STS-SAML-0062`, `STS-SAML-0064`): a signature that cannot be checked is
-//    not accepted as though it were absent.
+//    that names something other than the request (`STS-SAML-0062`), or SHA-1
+//    while `saml.allowSha1Signatures` is off (`STS-SAML-0073`): a signature
+//    that cannot be accepted is not accepted as though it were absent.
 //
 // 2. **THE TRUST ANCHOR IS THE REGISTERED CERTIFICATE AND NEVER THE ONE IN THE
 //    REQUEST.** `samlSigningCertificate` on the entry — written by consuming
@@ -86,9 +86,14 @@
 // 3.4.4.1 says the XML signature is to be removed, and a service provider that
 // left it in has still signed the message.
 //
-// **SHA-1 IS ACCEPTED AND MARKED.** `mode.js` has no policy about weak
-// algorithms to ask, so a SHA-1 signature that verifies is `verified` in both
-// modes and the outcome says `weak`. Stated rather than implied.
+// **EVERY ALGORITHM `common/crypto.js` VERIFIES IS ACCEPTED** (its section
+// 1a: RSA, RSASSA-PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA), on both bindings,
+// with either canonicalization. **SHA-1 IS REFUSED** unless
+// `saml.allowSha1Signatures` is on — a plain default, off in both modes,
+// because rcbj asked for off — and with it on a SHA-1 signature is
+// `verified` and the outcome says `weak`. The policy lives in that file and
+// not here, so a service provider's request and a federation partner's
+// Response cannot disagree about it.
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3): it registers no route. It requires `helpers`, `config`,
@@ -324,6 +329,42 @@ class RequestSignature {
     return octets;
   }
 
+  // -------------------------------------------------------------------------
+  // THE OCTETS THE HTTP-POST-SimpleSign BINDING SIGNS (the OASIS "SAML V2.0
+  // HTTP POST 'SimpleSign' Binding" Version 1.0, as its signing rule reads):
+  // `SAMLRequest=<value>&RelayState=<value>&SigAlg=<value>` (or
+  // SAMLResponse), where each value is the FORM CONTROL VALUE — after the
+  // form encoding is undone, and NOT otherwise decoded, so the SAMLRequest is
+  // its base64 text — with RelayState present only when the form carried
+  // one. '' when a field it needs is missing or arrived more than once (a
+  // repeated control is the same hazard as a repeated query parameter).
+  // -------------------------------------------------------------------------
+  simpleSignOctets(params: Record<string, unknown>, messageField: string):
+      string {
+    const { log } = this.deps;
+    log.debug("Entering RequestSignature.simpleSignOctets().");
+    const p = params || {};
+    const single = function (name) {
+      log.debug("Entering single().");
+      const value = p[name];
+      log.debug("Leaving single().");
+      return Array.isArray(value) ? null
+        : (value === undefined || value === null ? undefined : String(value));
+    };
+    const message = single(messageField);
+    const sigAlg = single('SigAlg');
+    const relay = single('RelayState');
+    if (!message || !sigAlg || relay === null ||
+        single('Signature') === null) {
+      log.debug("Leaving RequestSignature.simpleSignOctets(). Incomplete.");
+      return '';
+    }
+    log.debug("Leaving RequestSignature.simpleSignOctets().");
+    return messageField + '=' + message +
+           (relay !== undefined ? '&RelayState=' + relay : '') +
+           '&SigAlg=' + sigAlg;
+  }
+
   // The root element's own ds:Signature, if it has one.
   private envelopedSignature(xml: string, rootLocalName: string): any {
     const { log } = this.deps;
@@ -350,6 +391,12 @@ class RequestSignature {
         const c14n = child.getElementsByTagNameNS(DS_NS,
                                                   'CanonicalizationMethod');
         const certs = child.getElementsByTagNameNS(DS_NS, 'X509Certificate');
+        const digests = child.getElementsByTagNameNS(DS_NS, 'DigestMethod');
+        const digestMethods: string[] = [];
+        for (let i = 0; i < digests.length; i++) {
+          digestMethods.push(String(digests[i].getAttribute('Algorithm') ||
+                                    ''));
+        }
         log.debug("Leaving RequestSignature.envelopedSignature(). Found.");
         return {
           sigAlg: methods.length ?
@@ -357,7 +404,8 @@ class RequestSignature {
           c14nAlg: c14n.length ?
                    String(c14n[0].getAttribute('Algorithm') || '') : '',
           keyInfoCertificate: certs.length ?
-            String(certs[0].textContent || '').replace(/\s+/g, '') : ''
+            String(certs[0].textContent || '').replace(/\s+/g, '') : '',
+          digestMethods: digestMethods
         };
       }
     }
@@ -379,13 +427,20 @@ class RequestSignature {
       this.valuesOf(spec.implicitCertificates).filter(function (one) {
         return self.registeredCertificates(spec.fields).indexOf(one) < 0;
       }));
-    const detached = spec.binding === 'redirect' && !!params.Signature;
+    // THE HTTP-POST-SimpleSign BINDING (#37 follow-up) is a POST carrying
+    // `Signature` and `SigAlg` form fields: a detached signature like the
+    // Redirect binding's, over different octets (`simpleSignOctets()`).
+    const simpleSign = spec.binding === 'post' && !!params.Signature &&
+                       !!spec.messageField;
+    const detached = (spec.binding === 'redirect' && !!params.Signature) ||
+                     simpleSign;
     const enveloped = detached ? null :
       this.envelopedSignature(spec.xml, spec.rootLocalName);
     const answer: Assessment = {
       signed: detached || !!enveloped,
       outcome: 'unsigned',
-      binding: detached ? 'redirect' : (enveloped ? 'post' : ''),
+      binding: detached ? (simpleSign ? 'simplesign' : 'redirect')
+                        : (enveloped ? 'post' : ''),
       sigAlg: detached ? String(params.SigAlg || '')
                        : (enveloped ? enveloped.sigAlg : ''),
       weak: false,
@@ -394,7 +449,12 @@ class RequestSignature {
       keyInfoCertificate: enveloped ? enveloped.keyInfoCertificate : '',
       registered: registered.length
     };
-    answer.weak = /sha1(?![0-9])/i.test(answer.sigAlg);
+    // WHAT IT WAS MADE WITH, before anything is verified — so a request
+    // nobody can check still says `weak` when it is. `common/crypto.js`
+    // (section 1a) is the one table.
+    const made = stsCrypto.xmlAlgorithmVerdict(answer.sigAlg,
+      enveloped ? enveloped.digestMethods : []);
+    answer.weak = made.weak;
     if (!answer.signed) {
       answer.why = 'the ' + spec.rootLocalName + ' carries no signature';
       log.debug("Leaving RequestSignature.assess(). Unsigned.");
@@ -408,26 +468,23 @@ class RequestSignature {
       log.debug("Leaving RequestSignature.assess(). Nothing registered.");
       return answer;
     }
-    if (enveloped && enveloped.c14nAlg &&
-        enveloped.c14nAlg.indexOf('xml-exc-c14n') < 0) {
-      answer.outcome = 'failed';
-      answer.errorCode = 'STS-SAML-0064';
-      answer.why = 'the signature uses ' + enveloped.c14nAlg + ', an ' +
-                   'INCLUSIVE canonicalization; this service verifies ' +
-                   'SAML signatures made with exclusive canonicalization ' +
-                   'only, which is what SAML specifies';
-      log.debug("Leaving RequestSignature.assess(). Inclusive c14n.");
-      return answer;
-    }
+    // INCLUSIVE CANONICALIZATION IS VERIFIED since the #37 follow-up: the
+    // signed element is the ROOT of the message, so there are no ancestors
+    // whose namespace declarations the verifier could fail to reproduce, and
+    // XML Signature makes inclusive c14n the one REQUIRED method.
+    // (`STS-SAML-0064`, which refused it, is retired.)
     let octets = '';
     if (detached) {
-      octets = this.redirectOctets(spec.rawQuery || '', spec.messageField);
+      octets = simpleSign
+        ? this.simpleSignOctets(params, spec.messageField)
+        : this.redirectOctets(spec.rawQuery || '', spec.messageField);
       if (!octets) {
         answer.outcome = 'failed';
         answer.errorCode = 'STS-SAML-0062';
         answer.why = 'a Signature parameter arrived without the ' +
-                     spec.messageField + ' and SigAlg it signs, so there ' +
-                     'is nothing to verify it over';
+                     spec.messageField + ' and SigAlg it signs (or with ' +
+                     'one of them repeated), so there is nothing to verify ' +
+                     'it over';
         log.debug("Leaving RequestSignature.assess(). Incomplete octets.");
         return answer;
       }
@@ -447,17 +504,26 @@ class RequestSignature {
         answer.sigAlg = verdict.signatureMethod || answer.sigAlg;
         answer.why = 'verified against registered certificate ' + (i + 1) +
                      ' of ' + registered.length +
-                     (answer.weak ? ' — with SHA-1, which is weak' : '');
+                     (answer.weak ? ' — with a WEAK hash (' +
+                                    answer.sigAlg + ')' : '');
         log.debug("Leaving RequestSignature.assess(). Verified.");
         return answer;
       }
       lastWhy = verdict.why || 'it did not verify';
       // A signature that is WRONG is one the next certificate might verify; one
       // that could not be CHECKED will not become checkable by trying another.
+      // SHA-1 WHILE `saml.allowSha1Signatures` IS OFF is its own refusal,
+      // and no other certificate will change it.
+      if (errorCodes.codeOf(verdict) === 'STS-KEYS-0062') {
+        answer.outcome = 'failed';
+        answer.errorCode = 'STS-SAML-0073';
+        answer.why = verdict.why;
+        log.debug("Leaving RequestSignature.assess(). SHA-1 refused.");
+        return answer;
+      }
       const wrong = detached
         ? verdict.usable
         : (verdict.present &&
-           !/needs a verifier/.test(String(verdict.why || '')) &&
            (errorCodes.codeOf(verdict) === 'STS-KEYS-0012' ||
             errorCodes.codeOf(verdict) === 'STS-KEYS-0013'));
       if (wrong) {
@@ -512,6 +578,87 @@ class RequestSignature {
                     : 'Have the service provider sign its requests.') };
   }
 
+  // -------------------------------------------------------------------------
+  // WHO IS CALLING A SOAP RESPONDER (#37 follow-up): the SAML 2.0 artifact
+  // resolution service and the SAML 1.1 SOAP responder, which hand an
+  // assertion to whoever presents the artifact. saml-bindings-2.0-os section
+  // 3.2.3.2 and saml-profiles-2.0-os section 4.1.4.3 (and saml-bindings-1.1
+  // section 3.1.3) ask for the requester to be AUTHENTICATED — by a signature
+  // on the message or by the TLS client certificate — and this is both, under
+  // the request policy above:
+  //
+  //   * an enveloped signature on the message that verifies against the
+  //     party's REGISTERED certificates authenticates it; one that does not
+  //     verify is refused in every mode (0061, 0062, 0073);
+  //   * otherwise a TLS client certificate that IS one of those registered
+  //     certificates authenticates it — the handshake proved possession of
+  //     the key, and the registration is the trust (metadata `use="signing"`
+  //     keys are what SAML metadata names for TLS client authentication, and
+  //     a self-signed one is the norm there, so no chain is asked for);
+  //   * otherwise the caller is anonymous, which is refused where signed
+  //     requests are required (`STS-SAML-0077`) and accepted, recorded, where
+  //     they are not.
+  //
+  // `{ refuse, errorCode, why, via, assessment }`, `via` being `signature`,
+  // `tls` or `none`.
+  // -------------------------------------------------------------------------
+  authenticateSoapCaller(spec: { xml: string; rootLocalName: string;
+                                 fields?: Record<string, unknown>;
+                                 tlsCertificate?: string;
+                                 implicitCertificates?: string[] }):
+      { refuse: boolean; errorCode: string; why: string; via: string;
+        assessment: Assessment } {
+    const { log } = this.deps;
+    log.debug("Entering RequestSignature.authenticateSoapCaller(). " +
+              spec.rootLocalName);
+    const assessment = this.assess({
+      binding: 'post', xml: spec.xml, rootLocalName: spec.rootLocalName,
+      messageField: '', fields: spec.fields,
+      implicitCertificates: spec.implicitCertificates
+    });
+    if (assessment.outcome === 'failed') {
+      log.debug("Leaving RequestSignature.authenticateSoapCaller(). Failed.");
+      return { refuse: true, errorCode: assessment.errorCode,
+               why: 'the ' + spec.rootLocalName + '\'s signature was ' +
+                    'refused: ' + assessment.why, via: 'signature',
+               assessment: assessment };
+    }
+    if (assessment.outcome === 'verified') {
+      log.debug("Leaving RequestSignature.authenticateSoapCaller(). Signed.");
+      return { refuse: false, errorCode: '', why: assessment.why,
+               via: 'signature', assessment: assessment };
+    }
+    const tls = String(spec.tlsCertificate || '').replace(/\s+/g, '');
+    const trusted = this.registeredCertificates(spec.fields).concat(
+      this.valuesOf(spec.implicitCertificates));
+    if (tls && trusted.indexOf(tls) >= 0) {
+      log.debug("Leaving RequestSignature.authenticateSoapCaller(). TLS.");
+      return { refuse: false, errorCode: '', via: 'tls',
+               why: 'the TLS client certificate is one of the party\'s ' +
+                    'registered signing certificates',
+               assessment: assessment };
+    }
+    const need = this.requiresSignedRequests(spec.fields);
+    if (need.required) {
+      log.debug("Leaving RequestSignature.authenticateSoapCaller(). " +
+                "Anonymous, and refused.");
+      return { refuse: true, errorCode: 'STS-SAML-0077', via: 'none',
+               why: 'the caller is not authenticated — ' + assessment.why +
+                    (tls ? ', and the TLS client certificate is not one of ' +
+                           'its registered certificates'
+                         : ', and no TLS client certificate was presented') +
+                    ' — and an authenticated caller is required here (' +
+                    need.why + ')',
+               assessment: assessment };
+    }
+    log.debug("Leaving RequestSignature.authenticateSoapCaller(). " +
+              "Anonymous, and allowed.");
+    return { refuse: false, errorCode: '', via: 'none',
+             why: 'the caller is not authenticated (' + assessment.why +
+                  '), which ' + need.why + ' allows',
+             assessment: assessment };
+  }
+
   // The one-line record written onto the entry and the audit row:
   // `<outcome> <binding> <sigAlg>`.
   summary(assessment: Assessment): string {
@@ -547,7 +694,9 @@ export = {
   registeredCertificates: slot.forward('registeredCertificates'),
   rawParameters: slot.forward('rawParameters'),
   redirectOctets: slot.forward('redirectOctets'),
+  simpleSignOctets: slot.forward('simpleSignOctets'),
   assess: slot.forward('assess'),
   refusal: slot.forward('refusal'),
-  summary: slot.forward('summary')
+  summary: slot.forward('summary'),
+  authenticateSoapCaller: slot.forward('authenticateSoapCaller')
 };

@@ -551,6 +551,19 @@ class Credentials {
                        'configured' }) };
     }
 
+    // BOTH MODES, AND BEFORE THE DEVELOPMENT-MODE PASS (2026-09-17): a
+    // disabled account is an administrator's act, not a credential check, so a
+    // mode that checks no password still refuses it — at the sign-in screen,
+    // an LDAP bind, the password grant, a UsernameToken, SCIM, SSF and EST
+    // Basic, and the portal's password change, which are every door that
+    // comes through here.
+    if (name && this.accountDisabled(name)) {
+      log.info('credentials: ' + name + ' is disabled and was refused (via ' +
+               via + ').');
+      log.debug('Leaving Credentials.verifyPrepare(). Disabled.');
+      return { done: this.disabledRefusal(name, via) };
+    }
+
     if (!mode.verifiesCredentials()) {
       log.debug('Leaving Credentials.verifyPrepare(). Development mode: ' +
                 'nothing is checked.');
@@ -3926,7 +3939,9 @@ class Credentials {
       // to enrol one.
       mfaRequirement: this.mfaRequirementFor(name),
       // A password reset link outstanding, as an expiry and never as a token.
-      passwordResetLink: this.passwordResetPending(name)
+      passwordResetLink: this.passwordResetPending(name),
+      // WHETHER THE ACCOUNT IS DISABLED (2026-09-17) — `accountDisabled()`.
+      disabled: this.accountDisabled(name)
     };
   }
 
@@ -4918,6 +4933,109 @@ class Credentials {
     return { ok: true, username: name, required: !!required };
   }
 
+  // ---------------------------------------------------------------------------
+  // A DISABLED ACCOUNT (2026-09-17, #36 follow-up).
+  //
+  // `pwdAccountLockedTime` on the person's entry — the same Internet-Draft
+  // `pwdReset` above comes from (draft-behera-ldap-password-policy section
+  // 5.3.3), whose value `000001010000Z` means "locked permanently, and only a
+  // password administrator can unlock it". That is what an administrator
+  // disabling an account says, and an LDAP client that already understands the
+  // draft (OpenLDAP's ppolicy overlay writes and reads it) reads it without
+  // being told about this service. ANY value is a lock here: the draft makes a
+  // timestamp a temporary lockout that ends after `pwdLockoutDuration`, and no
+  // policy in this service sets one, so the draft's own rule is that it lasts
+  // until an administrator clears it.
+  //
+  // **THIS SERVICE ENFORCES IT MORE WIDELY THAN THE DRAFT ASKS**, which is the
+  // safe direction: the draft talks about password binds, and a disabled
+  // account here is refused at EVERY door — a password (below, in both modes),
+  // a session (`authn.startSession()`), a live session (`authn.sessionOf()`),
+  // any issuance (`issuance_gate.check()`), a Kerberos AS-REQ, and the
+  // management API. `common/account_state.ts` is the one place that disables
+  // and enables, and it ends everything the person holds when it does.
+  //
+  // `accountDisabled()` answers false where nothing can be asked — no store, a
+  // store without the hook, no name — because a directory that does not exist
+  // has disabled nobody; every door that authenticates in product mode has
+  // already failed closed on the missing store for its own reason.
+  // ---------------------------------------------------------------------------
+  accountDisabled(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.accountDisabled().");
+    const name = String(username == null ? '' : username).trim();
+    if (!name || !directory ||
+        typeof directory.readAccountDisabled !== 'function') {
+      log.debug("Leaving Credentials.accountDisabled(). Nothing to ask.");
+      return false;
+    }
+    let disabled = false;
+    try {
+      disabled = !!directory.readAccountDisabled(name);
+    } catch (e) {
+      log.debug("Caught in Credentials.accountDisabled(): " +
+                ((e && e.message) || e));
+      disabled = false;
+    }
+    log.debug("Leaving Credentials.accountDisabled(). " + disabled);
+    return disabled;
+  }
+
+  // The refusal every door gives a disabled account, with its code. The detail
+  // is for the LOG; a door that answers a person says "authentication failed",
+  // for the account-enumeration reason `verify()`'s callers give.
+  disabledRefusal(username, via) {
+    const { log } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.disabledRefusal().");
+    log.debug("Leaving Credentials.disabledRefusal().");
+    return coded('STS-AUTHN-0200', { ok: false, reason: 'account-disabled',
+      detail: 'the account "' + String(username || '') + '" is disabled ' +
+              '(pwdAccountLockedTime is set on its entry), so it is refused ' +
+              'at ' + (via || 'every door') + ' in every mode until an ' +
+              'administrator enables it' });
+  }
+
+  // Writes or clears the lock. `common/account_state.ts` is the caller that
+  // also ends what the person holds; this is only the attribute.
+  setAccountDisabled(username, disabled) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.setAccountDisabled(). disabled=" +
+              !!disabled);
+    const name = String(username || '').trim();
+    if (!name || !directory ||
+        typeof directory.writeAccountDisabled !== 'function') {
+      log.debug("Leaving Credentials.setAccountDisabled(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                   'store is installed.'] });
+    }
+    if (!this.entryExists(name)) {
+      log.debug("Leaving Credentials.setAccountDisabled(). Nobody by that " +
+                "name.");
+      return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+          'called "' + name + '" in this realm\'s directory.'] });
+    }
+    let written = false;
+    try {
+      written = !!directory.writeAccountDisabled(name, !!disabled);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0202') + 'credentials: ' +
+                'pwdAccountLockedTime for ' + name + ' could not be ' +
+                'written: ' + e.message);
+      written = false;
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.setAccountDisabled(). Not written.");
+      return coded('STS-AUTHN-0202', { ok: false, errors: ['The account ' +
+          'lock could not be written onto ' + name + '\'s entry.'] });
+    }
+    log.debug("Leaving Credentials.setAccountDisabled(). Written.");
+    return { ok: true, username: name, disabled: !!disabled };
+  }
+
   // The keys that went, as a caller may describe them — never the public key.
   private keySummary(one) {
     const { log } = this.deps;
@@ -5164,6 +5282,9 @@ export = {
   consumePasswordReset: slot.forward('consumePasswordReset'),
   passwordResetPending: slot.forward('passwordResetPending'),
   mfaRequirementFor: slot.forward('mfaRequirementFor'),
+  accountDisabled: slot.forward('accountDisabled'),
+  disabledRefusal: slot.forward('disabledRefusal'),
+  setAccountDisabled: slot.forward('setAccountDisabled'),
   setMfaRequired: slot.forward('setMfaRequired'),
   removePrimaryKeys: slot.forward('removePrimaryKeys'),
   removeSecondFactors: slot.forward('removeSecondFactors'),

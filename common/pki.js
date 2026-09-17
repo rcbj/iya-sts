@@ -2650,8 +2650,10 @@ function oneLineName(name) {
 // every assertion it signs, somewhere else, later — so it is refused here,
 // naming what would work. The two lists differ because the two verifiers do:
 // RFC 7523's is JOSE (`common/crypto.js`'s JWS table, which has EdDSA and
-// ES256K), and RFC 7522's is XML Signature (the vendored `xmldsig.js`, which
-// has RSA and ECDSA and neither of those).
+// ES256K), and RFC 7522's is XML Signature (`common/crypto.js` section 1a
+// since the #37 follow-up: RSA, EC on any curve node knows, Ed25519, Ed448,
+// DSA, ML-DSA and SLH-DSA — it used to name ECDSA here, which nothing
+// actually verified).
 const UPLOAD_CURVES = { 'prime256v1': 'ES256', 'secp384r1': 'ES384',
                         'secp521r1': 'ES512', 'secp256k1': 'ES256K' };
 
@@ -2661,8 +2663,8 @@ function uploadedKeyProblem(publicKey, purposeId) {
   const details = publicKey.asymmetricKeyDetails || {};
   const saml = purposeId === 'saml';
   const accepted = saml
-    ? 'an RSA key of at least 2048 bits, or an ECDSA key on P-256, P-384 or ' +
-      'P-521'
+    ? 'an RSA key of at least 2048 bits, or an ECDSA, EdDSA, DSA, ML-DSA or ' +
+      'SLH-DSA key'
     : 'an RSA key of at least 2048 bits, an ECDSA key on P-256, P-384, P-521 ' +
       'or secp256k1, or an Ed25519 key';
   if (type === 'rsa') {
@@ -2674,9 +2676,17 @@ function uploadedKeyProblem(publicKey, purposeId) {
     log.debug("Leaving uploadedKeyProblem(). RSA.");
     return '';
   }
+  if (saml) {
+    const usable = stsCrypto.xmlSignatureKeyTypeUsable(type);
+    log.debug("Leaving uploadedKeyProblem(). XML Signature: " + usable);
+    return usable ? ''
+      : 'The certificate carries a "' + type + '" key, which the XML ' +
+        'Signature verifier behind this profile cannot check. This service ' +
+        'accepts ' + accepted + '.';
+  }
   if (type === 'ec') {
     const curve = String(details.namedCurve || '');
-    if (!UPLOAD_CURVES[curve] || (saml && curve === 'secp256k1')) {
+    if (!UPLOAD_CURVES[curve]) {
       log.debug("Leaving uploadedKeyProblem(). An unusable curve.");
       return 'The certificate carries an ECDSA key on "' + curve + '", which ' +
              'the ' + (saml ? 'XML Signature' : 'JWS') + ' verifier behind ' +

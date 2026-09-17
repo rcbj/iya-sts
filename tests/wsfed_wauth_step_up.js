@@ -19,13 +19,22 @@
 //      and the marker on the return; a one-time code there yields an
 //      assertion whose AuthenticationMethod is multipleauthn;
 //   c. a HARDWARE `wauth` on that two-factor session (a one-time code, no
-//      key) is sent to sign in again too, and when the person comes back
-//      with a code rather than a key it is REFUSED with STS-WSFED-0009;
+//      key) is sent to sign in again too — and since 2026-09-17 the screen
+//      DEMANDS THE KEY (`forceKey`): the one-time code door refuses
+//      (STS-AUTHN-0204), a person who holds a second factor and no key is
+//      told so, and a demand still unmet on the way back is STS-WSFED-0009;
+//   g. a real WebAuthn ceremony — a software authenticator built here, as
+//      `tests/webauthn_session.js` does — meets the demand BOTH ways: a
+//      passwordless key alone, and a key as the second factor after a
+//      password. `step_up.screenDemandFor()` is the same mechanism the
+//      authorization endpoint's key aliases use;
 //   d. a forged marker on a first request gets the refusal (0010), not a pass
 //      and not a loop;
 //   e. with no session at all the demand still requires the second factor
 //      and carries the marker;
-//   f. an unknown `wauth` is refused as before (0006).
+//   f. an unknown `wauth` is refused as before (0006);
+//   h. a one-time code posted at the second-factor door under the demand is
+//      refused; i. `step_up.screenDemandFor()` is what both protocols read.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -92,6 +101,111 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
+  // ---------------------------------------------------------------------
+  // A SOFTWARE AUTHENTICATOR, `tests/webauthn_session.js`'s, built here for
+  // the same reason it is built there: what is under test is the SERVER's
+  // half of the ceremony, and producing the bytes a real authenticator
+  // produces is the honest way to reach it. Enough CBOR for one attestation
+  // object and a P-256 signature.
+  // ---------------------------------------------------------------------
+  const nodeCrypto = require('crypto');
+  const sha256 = function (buf) {
+    return nodeCrypto.createHash('sha256').update(buf).digest();
+  };
+  const cborBytes = function (buf) {
+    const head = buf.length < 24 ? Buffer.from([0x40 + buf.length])
+      : Buffer.concat([Buffer.from([0x58]), Buffer.from([buf.length])]);
+    return Buffer.concat([head, buf]);
+  };
+  const cborText = function (text) {
+    const body = Buffer.from(text, 'utf8');
+    return Buffer.concat([Buffer.from([0x60 + body.length]), body]);
+  };
+  const cborMapHeader = function (n) {
+    return Buffer.from([0xa0 + n]);
+  };
+  const cborInt = function (n) {
+    return Buffer.from([n]);
+  };
+  const cborNegInt = function (n) {
+    return Buffer.from([0x20 + (Math.abs(n) - 1)]);
+  };
+  const coseKey = function (jwk) {
+    return Buffer.concat([
+      cborMapHeader(5),
+      cborInt(0x01), cborInt(0x02),
+      cborInt(0x03), cborNegInt(-7),
+      cborNegInt(-1), cborInt(0x01),
+      cborNegInt(-2), cborBytes(Buffer.from(jwk.x, 'base64url')),
+      cborNegInt(-3), cborBytes(Buffer.from(jwk.y, 'base64url'))
+    ]);
+  };
+  const makeAuthenticator = function (rpId, origin) {
+    const pair = nodeCrypto.generateKeyPairSync('ec',
+                                                { namedCurve: 'prime256v1' });
+    const jwk = pair.publicKey.export({ format: 'jwk' });
+    const credentialId = nodeCrypto.randomBytes(32);
+    let signCount = 0;
+    const authData = function (opts) {
+      const count = Buffer.alloc(4);
+      count.writeUInt32BE(opts.signCount >>> 0, 0);
+      const parts = [sha256(Buffer.from(rpId, 'utf8')),
+                     Buffer.from([opts.flags]), count];
+      if (opts.attested) {
+        const idLen = Buffer.alloc(2);
+        idLen.writeUInt16BE(credentialId.length, 0);
+        parts.push(Buffer.alloc(16), idLen, credentialId, coseKey(jwk));
+      }
+      return Buffer.concat(parts);
+    };
+    const clientData = function (type, challenge) {
+      return Buffer.from(JSON.stringify({ type: type, challenge: challenge,
+                                          origin: origin,
+                                          crossOrigin: false }), 'utf8');
+    };
+    return {
+      credentialId: credentialId.toString('base64url'),
+      register: function (challenge) {
+        const data = authData({ flags: 0x45, signCount: signCount,
+                                attested: true });
+        const length = Buffer.alloc(2);
+        length.writeUInt16BE(data.length, 0);
+        const attestationObject = Buffer.concat([
+          cborMapHeader(3),
+          cborText('fmt'), cborText('none'),
+          cborText('attStmt'), cborMapHeader(0),
+          cborText('authData'),
+          Buffer.concat([Buffer.from([0x59]), length, data])
+        ]);
+        return { id: credentialId.toString('base64url'),
+                 rawId: credentialId.toString('base64url'),
+                 type: 'public-key',
+                 response: {
+                   attestationObject: attestationObject.toString('base64url'),
+                   clientDataJSON: clientData('webauthn.create', challenge)
+                     .toString('base64url') } };
+      },
+      assert: function (challenge) {
+        signCount += 1;
+        const data = authData({ flags: 0x05, signCount: signCount });
+        const cdj = clientData('webauthn.get', challenge);
+        const signature = nodeCrypto.sign(
+          'sha256', Buffer.concat([data, sha256(cdj)]), pair.privateKey);
+        return { id: credentialId.toString('base64url'),
+                 rawId: credentialId.toString('base64url'),
+                 type: 'public-key',
+                 response: {
+                   authenticatorData: data.toString('base64url'),
+                   clientDataJSON: cdj.toString('base64url'),
+                   signature: signature.toString('base64url') } };
+      }
+    };
+  };
+  const dataAttribute = function (html, name) {
+    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(html);
+    return found ? found[1].replace(/&amp;/g, '&') : '';
+  };
+
   const hiddenFields = function (html) {
     const form = {};
     (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
@@ -215,23 +329,45 @@ function childMain() {
          'b6. the same demand on the two-factor session is now met at once',
          r.status);
 
-    // --- c. hardware: stepped up, and refused when no key came back ----------
+    // --- c. hardware: the screen demands the KEY -----------------------------
     first = await alice.go('GET', signInUrl({ wauth: KEY }));
     note(toSignIn(first),
          'c1. a HARDWARE wauth on a session that used a code and no key is ' +
          'sent to sign in again', first.status + ' ' + first.headers.location);
-    done = await signIn(alice, first, 'wa-alice',
-                        totp.codeAt(began.secret, t0 + 60000));
-    note(done.final.status === 400 &&
-         /No security key was used/.test(done.final.text),
-         'c2. coming back with a code and still no key is REFUSED — one ' +
-         'attempt, then the refusal', done.final.status + ' posted=' +
-         done.posted.status + ' back=' + done.back + ' totp=' +
-         !!done.totpPage + ' ' +
-         ((done.final.text.match(/<title>[^<]*/) || [''])[0]) + ' ' +
-         ((done.final.text.match(/class="err[^>]*>[^<]*/) || [''])[0]));
+    const keyScreen = await alice.go('GET', first.headers.location);
+    note(/id="use_webauthn"[^>]*checked disabled/.test(keyScreen.text) &&
+         /id="webauthn_only"/.test(keyScreen.text) &&
+         !/id="webauthn_only"[^>]*disabled/.test(keyScreen.text) &&
+         /demands a security key/.test(keyScreen.text),
+         'c2. and the screen offers EXACTLY the two choices that meet it — ' +
+         'the key alone (passwordless, not disabled) or the key after a ' +
+         'password (checked and disabled) — and says so',
+         (keyScreen.text.match(/<label class="chk">[\s\S]{0,240}/g) ||
+          []).join(' | ').slice(0, 400));
+    const keyForm = hiddenFields(keyScreen.text);
+    keyForm.username = 'wa-alice';
+    keyForm.password = 'anything';
+    keyForm.action = 'login';
+    const refusedNoKey = await alice.go('POST', '/authn/login',
+                                        { form: keyForm });
+    note(refusedNoKey.status === 200 &&
+         /This request needs a security key/.test(refusedNoKey.text),
+         'c3. a person who holds a SECOND FACTOR and no key is told so ' +
+         'rather than walked through a ceremony that would enrol one — the ' +
+         'bypass that would be', refusedNoKey.status + ' ' +
+         ((refusedNoKey.text.match(/class="err[^>]*>[^<]*/) || [''])[0]));
+    note(await refusedWith('STS-AUTHN-0204'),
+         'c4. with STS-AUTHN-0204');
+    const forgedKey = await alice.go('GET', signInUrl({
+      wauth: KEY, step_up_honoured: '1' }));
+    note(forgedKey.status === 400 &&
+         /No security key was used/.test(forgedKey.text),
+         'c5. and a session that comes back with the marker and still no ' +
+         'key is refused — one attempt, then the refusal',
+         forgedKey.status + ' ' +
+         ((forgedKey.text.match(/<title>[^<]*/) || [''])[0]));
     note(await refusedWith('STS-WSFED-0009'),
-         'c3. and the refusal carries STS-WSFED-0009 on its audit row');
+         'c6. with STS-WSFED-0009');
 
     // --- d. a forged marker ---------------------------------------------------
     const bob = browser(port);
@@ -261,6 +397,105 @@ function childMain() {
          'f1. an unknown wauth is still refused, and the list of what is ' +
          'accepted now names the hardware token too', r.status);
     note(await refusedWith('STS-WSFED-0006'), 'f2. with STS-WSFED-0006');
+
+    // --- g. a REAL ceremony meets the demand, both ways ----------------------
+    // The screen's own data attributes carry what a browser would be given;
+    // the authenticator below produces what one would produce.
+    const withKey = async function (username, passwordless) {
+      const b = browser(port);
+      const start = await b.go('GET', signInUrl({ wauth: KEY }));
+      const screen = await b.go('GET', start.headers.location);
+      const form = hiddenFields(screen.text);
+      form.username = username;
+      form.action = 'login';
+      if (passwordless) {
+        form.webauthn_only = '1';
+        form.password = '';
+      } else {
+        form.password = 'anything';
+      }
+      const step = await b.go('POST', '/authn/login', { form: form });
+      const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
+                     [])[1];
+      const challenge = dataAttribute(step.text, 'challenge');
+      const rpId = dataAttribute(step.text, 'rpid');
+      const mode = dataAttribute(step.text, 'mode');
+      const authenticator = makeAuthenticator(rpId,
+                                              'http://127.0.0.1:' + port);
+      const credential = mode === 'create'
+        ? authenticator.register(challenge) : authenticator.assert(challenge);
+      const done = await b.go('POST', '/authn/webauthn', { form: {
+        mfa_id: mfaId, mode: mode,
+        credential: JSON.stringify(credential) } });
+      const backTo = String(done.headers.location || '')
+        .replace(/^https?:\/\/[^/]+/, '');
+      const answer = backTo ? await b.go('GET', backTo) : done;
+      return { screen: screen, step: step, mode: mode, done: done,
+               answer: answer, browser: b };
+    };
+    const passwordlessKey = await withKey('wa-passkey', true);
+    note(passwordlessKey.mode === 'create' &&
+         (passwordlessKey.done.status === 302 ||
+          passwordlessKey.done.status === 303) &&
+         assertionSays(passwordlessKey.answer, KEY),
+         'g1. a PASSWORDLESS security key — one factor, amr ["hwk"] — meets ' +
+         'a hardware wauth, and the assertion says HardwareToken',
+         passwordlessKey.done.status + ' ' +
+         passwordlessKey.answer.status + ' ' +
+         passwordlessKey.answer.text.slice(0, 160));
+    const secondFactorKey = await withKey('wa-keypair', false);
+    note(secondFactorKey.mode === 'create' &&
+         assertionSays(secondFactorKey.answer, MFA),
+         'g2. and so does a password AND a key — two factors, so the ' +
+         'assertion says multipleauthn, which is what happened',
+         secondFactorKey.answer.status + ' ' +
+         secondFactorKey.answer.text.slice(0, 160));
+    const again = await secondFactorKey.browser.go('GET',
+      signInUrl({ wauth: KEY }));
+    note(assertionSays(again, MFA),
+         'g3. and the demand is met at once on that session afterwards',
+         again.status);
+
+    // --- h. the code door is shut while a key is demanded ---------------------
+    const codeAttempt = await (async function () {
+      const b = browser(port);
+      const start = await b.go('GET', signInUrl({ wauth: KEY }));
+      const screen = await b.go('GET', start.headers.location);
+      const form = hiddenFields(screen.text);
+      // Somebody who holds NO second factor: the demand takes them to the
+      // key ceremony, which is the step a code is posted at below.
+      form.username = 'wa-codeless';
+      form.password = 'anything';
+      form.action = 'login';
+      const step = await b.go('POST', '/authn/login', { form: form });
+      const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
+                     [])[1];
+      return b.go('POST', '/authn/totp', { form: {
+        mfa_id: mfaId || 'none',
+        code: totp.codeAt(began.secret, Date.now() + 90000) } });
+    })();
+    note(codeAttempt.status === 400 &&
+         /demands a security key/.test(codeAttempt.text),
+         'h1. a ONE-TIME CODE posted at the second-factor door while a key ' +
+         'is demanded is refused — the link is not drawn, and a link that ' +
+         'is not drawn is still a URL',
+         codeAttempt.status + ' ' + codeAttempt.text.slice(0, 200));
+
+    // --- i. one mechanism, named in step_up.ts --------------------------------
+    const stepUp = require(ROOT + '/oauth-oidc/step_up');
+    note(JSON.stringify(stepUp.screenDemandFor(['hwk'])) ===
+           JSON.stringify({ forceMfa: true, forceKey: true }) &&
+         JSON.stringify(stepUp.screenDemandFor(['mfa'])) ===
+           JSON.stringify({ forceMfa: true, forceKey: false }) &&
+         JSON.stringify(stepUp.screenDemandFor(['mfa', '1'])) ===
+           JSON.stringify({ forceMfa: false, forceKey: false }) &&
+         JSON.stringify(stepUp.screenDemand('key')) ===
+           JSON.stringify({ forceMfa: false, forceKey: true }),
+         'i1. the same mechanism answers for the authorization endpoint: ' +
+         'acr_values naming only RFC 8176 key aliases forces the key too, ' +
+         'while `mfa` forces a second factor and `mfa 1` forces nothing',
+         JSON.stringify([stepUp.screenDemandFor(['hwk']),
+                         stepUp.screenDemandFor(['mfa', '1'])]));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

@@ -147,6 +147,31 @@ function deciderInstalled() {
 function check(request) {
   log.debug('Entering check(). kind=' + (request || {}).kind);
   const asked = request || {};
+  // ---------------------------------------------------------------------
+  // A DISABLED ACCOUNT IS ISSUED NOTHING (2026-09-17, #36 follow-up), and it
+  // is asked FIRST — before the three early "allowed" answers below, none of
+  // which is about the person: no decider loaded, enforcement off, no
+  // application named. A disable is not a role decision, so it holds whatever
+  // `roles.enforceIssuance` says, and it is here because this function is the
+  // one every issuance site calls — a token of any grant, an ID Token, a
+  // SAML or WS-Federation assertion, a WS-Trust token, a Kerberos ticket, a
+  // session. `common/account_state.ts` is the reader, required LAZILY: this
+  // file is a leaf loaded by modules that load before it, and the question is
+  // only ever asked of a running service.
+  // ---------------------------------------------------------------------
+  const subject = asked.subject || {};
+  if (subject.kind === 'user' && subject.name &&
+      disabledSubject(String(subject.name))) {
+    log.info('issuance_gate: ' + subject.name + ' is disabled; ' +
+             String(asked.kind || 'issuance') + ' is refused.');
+    log.debug('Leaving check(). The account is disabled.');
+    return errorCodes.mark({
+      allowed: false, decision: 'Deny', disabled: true,
+      why: 'The account "' + subject.name + '" is disabled, so nothing is ' +
+           'issued on its behalf.',
+      roles: [], required: [], policy: null
+    }, 'STS-AUTHN-0201');
+  }
   if (!decider) {
     log.debug('Leaving check(). No decider is installed, so nothing is gated.');
     return allow('The XACML role subsystem is not loaded in this process, ' +
@@ -185,6 +210,22 @@ function check(request) {
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
+}
+
+// Whether a subject name is a disabled account. Never throws: a reader that
+// cannot be loaded disables nobody, which is what a process without the
+// directory has always meant.
+function disabledSubject(name) {
+  log.debug("Entering disabledSubject().");
+  let disabled = false;
+  try {
+    disabled = !!require('./account_state').isDisabled(name);
+  } catch (e) {
+    log.debug("Caught in disabledSubject(): " + ((e && e.message) || e));
+    disabled = false;
+  }
+  log.debug("Leaving disabledSubject(). " + disabled);
+  return disabled;
 }
 
 function allow(why) {

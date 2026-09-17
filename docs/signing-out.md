@@ -175,9 +175,11 @@ carries `iss`, `aud`, `iat`, `exp`, `jti`, `sub`, `sid` and the
 What to expect:
 
 * **It happens after the sign-out answers.** The result page lists each
-  delivery as `pending`; `/admin/logout` shows whether it was `sent` or
-  `failed`, and every final outcome is a `logout.backchannel` row on the audit
-  log.
+  delivery as `pending`; `/admin/logout` shows whether it was `sent` or became
+  a **dead letter**, and every final outcome is a `logout.backchannel` row on
+  the audit log. The list is the whole service's — every node's deliveries,
+  because they are rows in the shared store — and it is filtered by state,
+  searched and paged.
 * **Answer 200 (or 204).** A 400 is taken as your final refusal and is not
   retried. A timeout, a refused connection, a 5xx, 408 or 429 is retried a few
   times with a growing pause — see `oauth2.backchannelLogoutAttempts`,
@@ -187,7 +189,24 @@ What to expect:
   `federation.outboundAllowInsecure` is on (the ordinary case on localhost),
   nothing at all with `federation.outbound` off, and — in product mode — never
   a loopback, private or link-local address.
-* **A session that simply expires sends nothing.** Only a sign-out does.
+* **A session that simply EXPIRES sends one too**, while
+  `oauth2.backchannelLogoutOnExpiry` is on (it is by default): the
+  specification lets the provider tell its relying parties whenever its own
+  session ends. Front-channel logout cannot follow an expiry — it needs the
+  browser that is no longer there — so an idle timeout reaches your
+  `backchannel_logout_uri` and nothing else.
+* **A delivery that never lands becomes a DEAD LETTER**, kept with its reason.
+  An administrator sends it again with **Retry** on `/admin/logout`, or `POST
+  /admin-api/logout/retry-backchannel` — a new Logout Token, and your current
+  `backchannel_logout_uri`, which is the point of retrying after correcting
+  it.
+* **A restart or a node failing does not lose it.** The delivery is a row, not
+  a timer: whichever process gets there next picks it up, and exactly one sends
+  each attempt (each is claimed with a lease of its own).
+* **It is ENCRYPTED if you asked for that**: register
+  `id_token_encrypted_response_alg` (and `_enc`) with a public key in an inline
+  `jwks`, and the Logout Token arrives as a Nested JWT, encrypted to that key
+  exactly as your ID Tokens are.
 
 ## The Sign out button on the console and the portal
 

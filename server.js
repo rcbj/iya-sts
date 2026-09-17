@@ -168,6 +168,11 @@ const tlsServer = stack.tlsServer;
 const ldapServer = stack.ldapServer;
 const spiffeServer = stack.spiffeServer;
 const debuggerServer = stack.debuggerServer;
+// THE SERVICE PROVIDER METADATA REFRESHER (#37 follow-up): a library the
+// stack already loaded (this require is a cache hit and moves no route), whose
+// timer is started from announce() — this process's listen path, never a
+// request worker's.
+const spMetadata = require('./saml/sp_metadata');
 
 // ---------------------------------------------------------------------------
 // THE MAIN LISTENER, and the one decision made about it before it binds.
@@ -446,6 +451,10 @@ function announce() {
   // same day the sockets went; it binds nothing, and still restores the stored
   // trust anchors and re-applies the context to the registered listeners.
   tlsServer.listen();
+  // A timer and not a socket, started here for the same reason: a process
+  // that answers requests is the one that keeps what it answers WITH current.
+  // One per cluster refreshes a given document (a claim; see sp_metadata.ts).
+  spMetadata.startRefresher();
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +
            'GET /tls/sign-in signs the holder of a verified one in; the token ' +

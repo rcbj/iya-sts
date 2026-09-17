@@ -223,8 +223,9 @@ function run(t) {
   t.log.info('C. ONE directory write, TWO events');
   // -----------------------------------------------------------------------
   const both = risc.observe(wrote('alice',
-    { scimactive: ['true'], mail: ['alice@example.com'] },
-    { scimactive: ['false'], mail: ['alice.roe@example.com'] }));
+    { mail: ['alice@example.com'] },
+    { pwdaccountlockedtime: ['000001010000Z'],
+      mail: ['alice.roe@example.com'] }));
   t.equal(both.length, 2,
           'a PUT that disables an account AND changes its mail address is ' +
           'TWO RISC events about one write. An observer that answered with ' +
@@ -267,6 +268,22 @@ function run(t) {
           '"Nobody has ever said" and "somebody said no" are two different ' +
           'facts, and reading the first as the second would emit an ' +
           'account-disabled for every person created without the attribute');
+
+  // THE LOCK (2026-09-17): `pwdAccountLockedTime` is what a disabled account
+  // is, so its removal is an account-enabled — and a delete, whose `after` is
+  // empty, is neither.
+  const unlocked = risc.actsFor(
+    { pwdaccountlockedtime: ['000001010000Z'], mail: ['x@example.com'] },
+    { mail: ['x@example.com'] });
+  t.equal(unlocked.map(function (one) { return one.act; }).join(','),
+          'enabled', 'a lock removed is ONE account-enabled');
+  t.equal(risc.actsFor(
+    { pwdaccountlockedtime: ['000001010000Z'], mail: ['x@example.com'] },
+    {}).length, 0,
+          'and a locked entry DELETED is not an account-enabled');
+  t.equal(risc.actsFor({}, { mail: ['x@example.com'] }).filter(
+    function (one) { return one.act === 'enabled'; }).length, 0,
+          'nor is an unlocked entry CREATED');
 
   const added = risc.actsFor({}, { mail: ['new@example.com'] });
   t.equal(added.length, 0,

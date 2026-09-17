@@ -105,19 +105,23 @@
 // disagreeing with an `ldapmodify` about which of somebody's two mail values is
 // the real one.
 //
-// **`active` AND `externalId` ARE THIS SERVICE'S OWN ATTRIBUTES AND NOTHING
-// READS THEM.** There is no standard LDAP attribute for either —
-// `nsAccountLock` and `pwdAccountLockedTime` are vendor inventions and mean
-// something narrower — so they are stored as `scimActive` and `scimExternalId`,
-// named the way every other invention here is. Setting `active` to false
-// DEACTIVATES NOBODY: no endpoint in this service reads it, no bind is refused
-// because of it and no token is withheld. That is the same distinction this
-// service already draws about a group (carrying a fact is not acting on one),
-// it is stated on /admin/scim and in the ServiceProviderConfig's own
-// documentation link, and it matters more here than for a group because
-// deprovisioning is the single most common thing a SCIM client is built to do.
-// A mock that silently pretended to disable an account would teach a
-// provisioning client that its deprovisioning path works.
+// **`active` IS THE ACCOUNT'S DISABLED STATE (2026-09-17, #36 follow-up)**
+// — it read "deactivates nobody" until then, stored as an invented
+// `scimActive` that nothing read. It now maps onto draft-behera-ldap-password-
+// policy's `pwdAccountLockedTime`, the lock `common/account_state.ts` writes
+// when an administrator disables somebody: `active: false` writes
+// `000001010000Z` (a lock already there is kept as it is), `active: true`
+// removes it, and a resource that does not SAY `active` leaves the lock as it
+// was — a PUT from a client that never sends the member must not re-enable an
+// account an administrator disabled. On the way out `active` is always
+// present, `true` unless the entry is locked. A disable by SCIM has the
+// consequences a disable anywhere has: the directory hands the transition to
+// `account_state.directoryChanged()`, which ends everything the person holds,
+// and RISC reports `account-disabled`.
+//
+// **`externalId` IS THIS SERVICE'S OWN ATTRIBUTE AND NOTHING READS IT.** There
+// is no standard LDAP attribute for it, so it is stored as `scimExternalId`,
+// named the way every other invention here is.
 //
 // **EVERY PERSON UNDER `ou=users` MAPS, INCLUDING THE ONES WITH NO `uid`.**
 // `userName` is RFC 7643's one required User attribute and scimmy enforces it
@@ -218,13 +222,14 @@ const ENTERPRISE_SCHEMA =
 //
 // Merged into ldap_server.js's canonical-name table through learnName(), which
 // is the ONE door into it, so that /admin/users and /admin/ldap/directory show
-// `scimActive` rather than the `scimactive` the store lower-cases it to. Both
-// are `stsApplication`-style inventions: nothing standard carries them, and
-// saying so beside them is cheaper than leaving a reader to search RFC 4519 for
-// an attribute that is not in it.
+// `scimExternalId` rather than the `scimexternalid` the store lower-cases it
+// to. It is an `stsApplication`-style invention: nothing standard carries it,
+// and saying so beside it is cheaper than leaving a reader to search RFC 4519
+// for an attribute that is not in it. (`scimActive` was the second until
+// 2026-09-17; `active` is `pwdAccountLockedTime` now, which the directory
+// learns from its own list.)
 // ---------------------------------------------------------------------------
 const OWN_NAMES = [
-  'scimActive',
   'scimExternalId'
 ];
 
@@ -238,6 +243,8 @@ const OWN_NAMES = [
 //
 //   'single'   one SCIM value, one LDAP value
 //   'bool'     as above, stored as the LDAP boolean strings TRUE / FALSE
+//   'lock'     `active`: a boolean on the SCIM side, the PRESENCE of the
+//              password-policy lock on the LDAP side, inverted (2026-09-17)
 //   'multi'    a SCIM array of complex values, one LDAP attribute per `type`
 //   'complex'  a SCIM complex value whose sub-attributes are separate LDAP types
 //   'derived'  read-only: computed rather than stored (`groups`, the meta block)
@@ -274,11 +281,11 @@ const USER_ATTRIBUTES: MapRow[] = [
     schema: 'RFC 2798 2.10' },
   { scim: 'profileUrl', ldap: 'labeledURI', kind: 'single',
     schema: 'RFC 2079 2' },
-  { scim: 'active', ldap: 'scimActive', kind: 'bool',
-    schema: "this service's own (no standard type)",
-    note: 'DEACTIVATES NOBODY. Nothing in this service reads it: no bind is ' +
-          'refused, no token is withheld and no session ends. It is recorded ' +
-          'and that is all.' },
+  { scim: 'active', ldap: 'pwdAccountLockedTime', kind: 'lock',
+    schema: 'draft-behera-ldap-password-policy 5.3.3 (inverted)',
+    note: 'DISABLES THE ACCOUNT. false writes the administrative lock ' +
+          '000001010000Z and ends everything the person holds; every door ' +
+          'then refuses them. true removes it. Not sent: unchanged.' },
 
   { scim: 'emails', ldap: 'mail', kind: 'multi', type: 'work',
     schema: 'RFC 4524 2.16' },
@@ -759,6 +766,12 @@ class ScimMap {
         return;
       }
       const values = self.valuesOf(attributes, row.ldap);
+      // `active` is ALWAYS said: an absent lock is an active account, and a
+      // resource that left the member out would read as "not stated".
+      if (row.kind === 'lock') {
+        self.setPath(resource, self.egressPath(row), values.length === 0);
+        return;
+      }
       if (!values.length) {
         return;
       }
@@ -886,7 +899,8 @@ class ScimMap {
     // what makes this a PUT and not a PATCH, and doing it as a separate pass
     // is what makes it true for the rows the resource does not mention at all.
     USER_ATTRIBUTES.forEach(function (row) {
-      if (row.kind === 'derived' || row.readOnly) {
+      // The lock is REPLACED only when the resource says `active` — below.
+      if (row.kind === 'derived' || row.readOnly || row.kind === 'lock') {
         return;
       }
       Object.keys(out).forEach(function (name) {
@@ -902,6 +916,24 @@ class ScimMap {
 
     USER_ATTRIBUTES.forEach(function (row) {
       if (row.kind === 'derived' || row.readOnly) {
+        return;
+      }
+      if (row.kind === 'lock') {
+        const said = self.getPath(resource, self.ingressPath(row));
+        if (said === undefined || said === null || String(said) === '') {
+          return;
+        }
+        const active = said === true || String(said).toLowerCase() === 'true';
+        const held = Object.keys(out).filter(function (name) {
+          return name.toLowerCase() === String(row.ldap).toLowerCase();
+        });
+        if (active) {
+          held.forEach(function (name) {
+            delete out[name];
+          });
+        } else if (!held.length) {
+          out[row.ldap] = ['000001010000Z'];
+        }
         return;
       }
       if (row.kind === 'single' || row.kind === 'bool') {

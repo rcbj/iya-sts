@@ -232,22 +232,30 @@ because every door that ends a session goes through that function —
 `/oauth2/logout`, `wsignout1.0` and SAML Single Logout as much as this module.
 What this module does is two smaller things:
 
-* **The `oidc-rp` row sends one itself.** Forgetting one relying party leaves
-  the session alive, so `dropSession()` will never send for it; the row plans
-  and dispatches a delivery for that one client before it is forgotten, and
-  the session end that may follow no longer lists it — so no client is told
-  twice. **In a GLOBAL logout that row is ended for every relying party**,
-  ahead of the session (`endOrder` 10 against 90), so it is this row, not
-  `dropSession()`, that sends for them — from the one process handling the
-  request, outside the `authn.session-end` claim. The claim still decides for
-  every other door, and for a client added to the session between the
-  inventory and the drop.
+* **The `oidc-rp` row sends one itself ONLY WHERE THE SESSION STAYS.**
+  Forgetting one relying party leaves the session alive, so `dropSession()`
+  will never send for it; the row plans and dispatches a delivery for that one
+  client before it is forgotten, and the session end that may follow no longer
+  lists it — so no client is told twice. **IN A GLOBAL LOGOUT IT SENDS
+  NOTHING, SINCE 2026-09-17.** It used to: the row runs ahead of the session
+  (`endOrder` 10 against 90), so a global logout's Logout Tokens went out from
+  the process handling the request, OUTSIDE the `authn.session-end` claim —
+  the one send in the service that was not coordinated, and the one a second
+  node ending the same session could duplicate. `contextFor()` now carries
+  `endingSessions` (filled by `terminate()` before any family runs: every
+  session in a global logout, the ticked ones in a selective one), and a
+  relying party on a session that is ending is LEFT ON IT and told by the
+  session's end, under the claim. Its result row says so. A relying party
+  forgotten on a session that stays is still sent for here — once, because the
+  delivery's row id is derived from the session and the client and each attempt
+  is claimed (`oauth-oidc/CLAUDE.md`, 3aq).
 * **`terminate()` lists what the act queued** — `result.backchannel`, read
   with `backchannel.deliveriesFor(sessions, mark)` for every session the act
   started from, and the result page draws it. The state is the one it has AT
   THAT MOMENT: `pending` for nearly every row, because they are sent after the
-  answer, and `/admin/logout` lists the recent deliveries with the state they
-  reached. The message counts them.
+  answer, and `/admin/logout` lists the deliveries of the whole SERVICE — the
+  rows are in the shared store now — filtered, searched and paged, with a
+  Retry on each dead letter. The message counts them.
 
 **SPIFFE is deliberately absent from `FAMILIES` and that is an answer rather
 than a gap.** A SPIFFE identity is a WORKLOAD, attested per call and holding no

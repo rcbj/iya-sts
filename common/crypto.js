@@ -305,6 +305,526 @@ function signXml(xml, opts) {
   return signed;
 }
 
+// ===========================================================================
+// SECTION 1a — WHICH XML SIGNATURE ALGORITHMS ARE VERIFIED, AND WITH WHAT
+// (2026-09-17, #37 follow-up).
+//
+// **UNTIL THIS SECTION EVERY XML SIGNATURE THIS SERVICE CHECKED HAD TO BE
+// RSA.** The vendored engine implements RSA itself and takes everything else
+// through an injected `verifier` (its own header says why: the curves belong
+// in the browser page that has them loaded, not in the SAML bundle). Nothing
+// here ever injected one, so an ECDSA, EdDSA or post-quantum signature from a
+// service provider, a federation partner or a WS-Trust client was refused as
+// "cannot be checked", and an EC certificate could not even be registered.
+//
+// **THE VERIFIER IS NOW ALWAYS INJECTED, AND IT IS NODE'S OWN OPENSSL.** One
+// table below names every SignatureMethod this process verifies and how; the
+// vendored engine still does everything else — the canonicalization, the
+// transform chain, the reference resolution and the digests — so both ends
+// of an exchange with the debugger still canonicalize with the same code,
+// which was the whole argument for using it.
+//
+// **THE TABLE IS ALSO REGISTERED INTO THE VENDORED MODULE'S OWN TABLES**, and
+// that is the one thing here that reaches into another file's state. It is
+// ADDITIVE ONLY — a URI the vendored table already names is never touched —
+// and it is required because the engine refuses a SignatureMethod or a
+// DigestMethod it has no row for before it ever calls a verifier. The
+// alternative was a second canonicalizing verifier in this file, which is
+// exactly the drift section 1's header exists to prevent; editing the
+// vendored file is forbidden (`common/vendored/CLAUDE.md`). A registered
+// digest row's `md` is a node hash dressed as forge's, because that is the
+// shape the engine calls.
+//
+// WHAT IS VERIFIED (XMLDSig core names RSA-SHA1 and DSA-SHA1, XMLDSig 1.1
+// DSA-SHA256, the post-quantum draft its own rows, RFC 9231 the rest):
+//
+//   RSA PKCS#1 v1.5    SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, RIPEMD-160
+//   RSASSA-PSS         SHA-1, SHA-224, SHA-256, SHA-384, SHA-512,
+//                      SHA3-224..512, RIPEMD-160 with MGF1 (section 2.3.10),
+//                      and `rsa-pss` WITH RSAPSSParams (section 2.3.9)
+//   ECDSA              SHA-1, SHA-224, SHA-256, SHA-384, SHA-512,
+//                      SHA3-224..512, RIPEMD-160; any curve node accepts —
+//                      P-256, P-384, P-521 in practice. The value is r||s
+//                      (XMLDSig 1.1 section 4.4.2.2), with a DER value
+//                      accepted too, because the encoding is not what makes a
+//                      signature genuine
+//   EdDSA              Ed25519 and Ed448 (section 2.3.12, pure)
+//   DSA                SHA-1 (XMLDSig core) and SHA-256 (XMLDSig 1.1)
+//   ML-DSA, SLH-DSA    every parameter set in the vendored registry's
+//                      post-quantum rows (draft-eastlake-rfc9231bis-xmlsec-
+//                      uris — an individual DRAFT, no W3C or IETF standard
+//                      names an XML identifier for either yet), pure, empty
+//                      context, with the key from an X.509 certificate
+//                      (RFC 9881 for ML-DSA; the LAMPS profile for SLH-DSA)
+//
+// WHAT IS NOT, BY NAME, and each refusal says which of these it is:
+//
+//   MD5 and MD2, in any family   broken; RFC 9231 says MUST NOT
+//   HMAC, Poly1305, SipHash      a MAC needs a secret shared with the signer,
+//                                and a SAML party registers a certificate
+//   Whirlpool, RIPEMD-128        not in node's OpenSSL default provider
+//   ESIGN                        no implementation in OpenSSL
+//   Ed25519ph, Ed25519ctx,       node exposes pure EdDSA only
+//   Ed448ph
+//   HSS/LMS, XMSS, XMSS^MT       stateful hash-based schemes: OpenSSL 3.5
+//                                (node 24) verifies none of them
+//
+// SHA-1 IS A POLICY, NOT A GAP: `saml.allowSha1Signatures`, off by default,
+// decides whether a signature whose SignatureMethod or any DigestMethod is
+// SHA-1 is accepted at all — on EVERY path through this file, because every
+// XML signature this service checks comes through it. With it on, SHA-1 is
+// accepted and the verdict still says `weak` (as it does for RIPEMD-160,
+// whose 160-bit output is SHA-1's, and which no setting refuses).
+// ===========================================================================
+const XMLDSIG_MORE = 'http://www.w3.org/2001/04/xmldsig-more#';
+const XMLDSIG_MORE_2007 = 'http://www.w3.org/2007/05/xmldsig-more#';
+const XMLDSIG_MORE_2021 = 'http://www.w3.org/2021/04/xmldsig-more#';
+const XMLDSIG11 = 'http://www.w3.org/2009/xmldsig11#';
+const PSS_PARAMS_NS = XMLDSIG_MORE_2007;
+
+// uri -> { family, hash, keyTypes, label, weak, sha1 }
+const XML_SIGNATURE_METHODS = {};
+// uri -> why it is not verified
+const XML_SIGNATURE_REFUSED = {};
+// uri -> { hash, label, weak, sha1 }
+const XML_DIGEST_METHODS = {};
+const XML_DIGEST_REFUSED = {};
+
+// The node digest names, and the ones that are weak. SHA-1 is the one a
+// setting governs; RIPEMD-160 is recorded as weak and accepted.
+const WEAK_HASHES = ['sha1', 'ripemd160'];
+
+// `sha3-256` -> `SHA3-256`, the spelling the method names use; a digest's
+// own label (`digest` true) spells SHA-1 and SHA-256 with the hyphen.
+function hashLabel(hash, digest) {
+  log.debug("Entering hashLabel().");
+  const upper = String(hash).toUpperCase();
+  log.debug("Leaving hashLabel().");
+  return digest ? upper.replace(/^SHA(\d+)$/, 'SHA-$1')
+    .replace('RIPEMD160', 'RIPEMD-160') : upper;
+}
+
+function addSignatureMethod(uri, family, hash, keyTypes, label) {
+  log.debug("Entering addSignatureMethod().");
+  XML_SIGNATURE_METHODS[uri] = {
+    family: family, hash: hash, keyTypes: keyTypes, label: label,
+    weak: WEAK_HASHES.indexOf(String(hash)) >= 0,
+    sha1: hash === 'sha1'
+  };
+  log.debug("Leaving addSignatureMethod().");
+}
+
+[['sha1', DS_NS + 'rsa-sha1'],
+ ['sha224', XMLDSIG_MORE + 'rsa-sha224'],
+ // RFC 6931's spelling, which Apache Santuario still uses; the same method.
+ ['sha224', XMLDSIG_MORE_2007 + 'rsa-sha224'],
+ ['sha256', XMLDSIG_MORE + 'rsa-sha256'],
+ ['sha384', XMLDSIG_MORE + 'rsa-sha384'],
+ ['sha512', XMLDSIG_MORE + 'rsa-sha512'],
+ ['ripemd160', XMLDSIG_MORE + 'rsa-ripemd160']].forEach(function (row) {
+  addSignatureMethod(row[1], 'rsa', row[0], ['rsa'],
+                     'RSA-' + hashLabel(row[0]));
+});
+['sha1', 'sha224', 'sha256', 'sha384', 'sha512', 'sha3-224', 'sha3-256',
+ 'sha3-384', 'sha3-512', 'ripemd160'].forEach(function (hash) {
+  addSignatureMethod(XMLDSIG_MORE_2007 + hash + '-rsa-MGF1', 'rsa-pss', hash,
+                     ['rsa', 'rsa-pss'],
+                     'RSASSA-PSS ' + hashLabel(hash) + ' with MGF1');
+});
+addSignatureMethod(XMLDSIG_MORE_2007 + 'rsa-pss', 'rsa-pss', 'sha256',
+                   ['rsa', 'rsa-pss'],
+                   'RSASSA-PSS with parameters (RFC 9231 section 2.3.9)');
+[['sha1', XMLDSIG_MORE + 'ecdsa-sha1'],
+ ['sha224', XMLDSIG_MORE + 'ecdsa-sha224'],
+ ['sha256', XMLDSIG_MORE + 'ecdsa-sha256'],
+ ['sha384', XMLDSIG_MORE + 'ecdsa-sha384'],
+ ['sha512', XMLDSIG_MORE + 'ecdsa-sha512'],
+ ['sha3-224', XMLDSIG_MORE_2021 + 'ecdsa-sha3-224'],
+ ['sha3-256', XMLDSIG_MORE_2021 + 'ecdsa-sha3-256'],
+ ['sha3-384', XMLDSIG_MORE_2021 + 'ecdsa-sha3-384'],
+ ['sha3-512', XMLDSIG_MORE_2021 + 'ecdsa-sha3-512'],
+ ['ripemd160', XMLDSIG_MORE_2007 + 'ecdsa-ripemd160']].forEach(function (row) {
+  addSignatureMethod(row[1], 'ecdsa', row[0], ['ec'],
+                     'ECDSA-' + hashLabel(row[0]));
+});
+addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed25519', 'eddsa', null,
+                   ['ed25519'], 'EdDSA Ed25519 (RFC 9231)');
+addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed448', 'eddsa', null,
+                   ['ed448'], 'EdDSA Ed448 (RFC 9231)');
+addSignatureMethod(DS_NS + 'dsa-sha1', 'dsa', 'sha1', ['dsa'], 'DSA-SHA1');
+addSignatureMethod(XMLDSIG11 + 'dsa-sha256', 'dsa', 'sha256', ['dsa'],
+                   'DSA-SHA256 (XMLDSig 1.1)');
+// The post-quantum rows come from the vendored registry, so the two cannot
+// disagree about an identifier. Only the stateless families: HSS/LMS has a
+// row there and no verifier in node.
+Object.keys(xmldsig.SIG_METHODS).forEach(function (uri) {
+  const spec = xmldsig.SIG_METHODS[uri];
+  if (spec.postQuantum && (spec.family === 'mldsa' ||
+                           spec.family === 'slhdsa')) {
+    addSignatureMethod(uri, 'pq', null, [String(spec.alg).toLowerCase()],
+                       spec.label);
+  }
+});
+
+['rsa-md5', 'hmac-md5'].forEach(function (name) {
+  XML_SIGNATURE_REFUSED[XMLDSIG_MORE + name] = 'MD5 is broken and RFC 9231 ' +
+    'says it MUST NOT be used';
+});
+['md2-rsa-MGF1', 'md5-rsa-MGF1'].forEach(function (name) {
+  XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2007 + name] = 'MD2 and MD5 are broken';
+});
+['rsa-whirlpool', 'ecdsa-whirlpool', 'whirlpool-rsa-MGF1',
+ 'ripemd128-rsa-MGF1'].forEach(function (name) {
+  XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2007 + name] = 'Whirlpool and ' +
+    'RIPEMD-128 are not in node\'s OpenSSL default provider';
+});
+['sha1', 'sha224', 'sha256', 'sha384', 'sha512'].forEach(function (hash) {
+  XML_SIGNATURE_REFUSED[XMLDSIG_MORE + 'esign-' + hash] = 'ESIGN has no ' +
+    'implementation in OpenSSL';
+});
+['eddsa-ed25519ph', 'eddsa-ed25519ctx', 'eddsa-ed448ph'].forEach(
+  function (name) {
+    XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2021 + name] = 'node verifies pure ' +
+      'EdDSA only, not the pre-hashed or context variants';
+  });
+XML_SIGNATURE_REFUSED[xmldsig.HSS_LMS_URI] = 'HSS/LMS is a stateful ' +
+  'hash-based scheme and OpenSSL 3.5 (node 24) has no verifier for it';
+
+[['sha1', DS_NS + 'sha1'],
+ ['sha224', XMLDSIG_MORE + 'sha224'],
+ ['sha256', XENC_NS + 'sha256'],
+ ['sha384', XMLDSIG_MORE + 'sha384'],
+ ['sha512', XENC_NS + 'sha512'],
+ ['sha3-224', XMLDSIG_MORE_2007 + 'sha3-224'],
+ ['sha3-256', XMLDSIG_MORE_2007 + 'sha3-256'],
+ ['sha3-384', XMLDSIG_MORE_2007 + 'sha3-384'],
+ ['sha3-512', XMLDSIG_MORE_2007 + 'sha3-512'],
+ ['ripemd160', XENC_NS + 'ripemd160']].forEach(function (row) {
+  XML_DIGEST_METHODS[row[1]] = {
+    hash: row[0], label: hashLabel(row[0], true),
+    weak: WEAK_HASHES.indexOf(row[0]) >= 0, sha1: row[0] === 'sha1'
+  };
+});
+XML_DIGEST_REFUSED[XMLDSIG_MORE + 'md5'] = 'MD5 is broken';
+XML_DIGEST_REFUSED[XMLDSIG_MORE_2007 + 'whirlpool'] = 'Whirlpool is not in ' +
+  'node\'s OpenSSL default provider';
+
+// A node hash with the three members of a forge message digest the vendored
+// engine calls: `create()`, `update(binaryString)`, `digest().getBytes()`.
+// The three inner methods are a HOT PATH — called for every block of every
+// reference digest — so they carry no Entering/Leaving pair, which would
+// drown the log; the factory that builds them does.
+function forgeShapedDigest(hash) {
+  log.debug("Entering forgeShapedDigest(). " + hash);
+  log.debug("Leaving forgeShapedDigest().");
+  return {
+    create: function () {
+      const h = nodeCrypto.createHash(hash);
+      const md = {
+        update: function (bytes) {
+          h.update(Buffer.from(String(bytes), 'binary'));
+          return md;
+        },
+        digest: function () {
+          const out = h.digest('binary');
+          return {
+            getBytes: function () {
+              return out;
+            }
+          };
+        }
+      };
+      return md;
+    }
+  };
+}
+
+// THE REGISTRATION — additive, see the section header.
+Object.keys(XML_SIGNATURE_METHODS).forEach(function (uri) {
+  if (xmldsig.SIG_METHODS[uri]) {
+    return;
+  }
+  const row = XML_SIGNATURE_METHODS[uri];
+  xmldsig.SIG_METHODS[uri] = {
+    family: row.family, hash: row.hash, keyKind: row.keyTypes[0],
+    digestUri: XENC_NS + 'sha256', label: row.label,
+    registeredBy: 'common/crypto.js'
+  };
+});
+Object.keys(XML_DIGEST_METHODS).forEach(function (uri) {
+  if (xmldsig.DIGEST_METHODS[uri]) {
+    return;
+  }
+  const row = XML_DIGEST_METHODS[uri];
+  xmldsig.DIGEST_METHODS[uri] = {
+    md: forgeShapedDigest(row.hash),
+    label: row.label + (row.weak ? ' (weak)' : ''),
+    registeredBy: 'common/crypto.js'
+  };
+});
+
+// Whether SHA-1 signatures are accepted. Read on every call: runtime.
+function sha1Allowed() {
+  log.debug("Entering sha1Allowed().");
+  const on = config.value('saml.allowSha1Signatures') === true;
+  log.debug("Leaving sha1Allowed(). " + on);
+  return on;
+}
+
+// What a SignatureMethod and a set of DigestMethods amount to, before any
+// cryptography: `{ problem, code, weak, sha1 }`. `problem` is '' when the
+// algorithms are ones this file verifies and policy allows.
+function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
+  log.debug("Entering xmlAlgorithmVerdict(). " + signatureMethod);
+  const sig = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
+  const out = { problem: '', code: '', weak: false, sha1: false,
+                label: sig ? sig.label : String(signatureMethod || '') };
+  if (!sig) {
+    const why = XML_SIGNATURE_REFUSED[String(signatureMethod || '')];
+    out.problem = 'the SignatureMethod ' +
+      (signatureMethod ? '"' + signatureMethod + '"' : '(none)') +
+      ' is not one this service verifies' + (why ? ': ' + why : '');
+    out.code = 'STS-KEYS-0061';
+    log.debug("Leaving xmlAlgorithmVerdict(). Unknown SignatureMethod.");
+    return out;
+  }
+  out.weak = sig.weak;
+  out.sha1 = sig.sha1;
+  const digests = digestMethods || [];
+  for (let i = 0; i < digests.length; i++) {
+    const uri = String(digests[i] || '');
+    const dig = XML_DIGEST_METHODS[uri];
+    if (!dig) {
+      out.problem = 'the DigestMethod "' + uri + '" is not one this ' +
+        'service computes' + (XML_DIGEST_REFUSED[uri]
+          ? ': ' + XML_DIGEST_REFUSED[uri] : '');
+      out.code = 'STS-KEYS-0061';
+      log.debug("Leaving xmlAlgorithmVerdict(). Unknown DigestMethod.");
+      return out;
+    }
+    out.weak = out.weak || dig.weak;
+    out.sha1 = out.sha1 || dig.sha1;
+  }
+  if (out.sha1 && !sha1Allowed()) {
+    out.problem = 'the signature uses SHA-1 (' + out.label +
+      (digests.some(function (d) {
+        return (XML_DIGEST_METHODS[String(d)] || {}).sha1;
+      }) ? ', or a SHA-1 DigestMethod' : '') + '), which is weak and ' +
+      'refused while saml.allowSha1Signatures is off';
+    out.code = 'STS-KEYS-0062';
+    log.debug("Leaving xmlAlgorithmVerdict(). SHA-1 refused.");
+    return out;
+  }
+  log.debug("Leaving xmlAlgorithmVerdict(). Usable, weak=" + out.weak);
+  return out;
+}
+
+// A public key to verify with, from a certificate (PEM or base64 DER) or a
+// public key PEM. `{ key, subject }` or `{ problem }`; never throws.
+function verificationKeyFrom(certPem, publicKeyPem) {
+  log.debug("Entering verificationKeyFrom().");
+  try {
+    if (certPem) {
+      const text = String(certPem).trim();
+      const cert = text.indexOf('-----BEGIN') === 0
+        ? new nodeCrypto.X509Certificate(text)
+        : new nodeCrypto.X509Certificate(
+          Buffer.from(text.replace(/\s+/g, ''), 'base64'));
+      const cn = /(?:^|\n)CN=([^\n]*)/.exec(cert.subject || '');
+      log.debug("Leaving verificationKeyFrom(). A certificate.");
+      return { key: cert.publicKey, subject: cn ? cn[1] : '',
+               certificate: cert };
+    }
+    if (publicKeyPem) {
+      log.debug("Leaving verificationKeyFrom(). A public key.");
+      return { key: nodeCrypto.createPublicKey(String(publicKeyPem)),
+               subject: '' };
+    }
+  } catch (e) {
+    log.debug("Caught in verificationKeyFrom(): " + ((e && e.message) || e));
+    log.debug("Leaving verificationKeyFrom(). Unreadable.");
+    return { problem: 'the ' + (certPem ? 'certificate' : 'public key') +
+             ' could not be read: ' + ((e && e.message) || e) };
+  }
+  log.debug("Leaving verificationKeyFrom(). Nothing given.");
+  return { problem: 'no certificate or public key was given' };
+}
+
+// Whether a key TYPE (node's `asymmetricKeyType`) makes an XML signature
+// this file verifies.
+function xmlSignatureKeyTypeUsable(type) {
+  log.debug("Entering xmlSignatureKeyTypeUsable(). " + type);
+  const usable = Object.keys(XML_SIGNATURE_METHODS).some(function (uri) {
+    return XML_SIGNATURE_METHODS[uri].keyTypes.indexOf(String(type)) >= 0;
+  });
+  log.debug("Leaving xmlSignatureKeyTypeUsable(). " + usable);
+  return usable;
+}
+
+// Whether a certificate's key can make an XML signature this file verifies —
+// the question a registration asks before trusting one. '' when it can.
+function xmlSignatureKeyProblem(certificate) {
+  log.debug("Entering xmlSignatureKeyProblem().");
+  const found = verificationKeyFrom(certificate, null);
+  if (found.problem) {
+    log.debug("Leaving xmlSignatureKeyProblem(). Unreadable.");
+    return found.problem;
+  }
+  const type = String(found.key.asymmetricKeyType || '');
+  const usable = xmlSignatureKeyTypeUsable(type);
+  log.debug("Leaving xmlSignatureKeyProblem(). " + type + " usable=" + usable);
+  return usable ? '' : 'its public key is ' + (type || 'of an unknown type') +
+    ', which makes no XML signature this service verifies';
+}
+
+// The RSAPSSParams of a `rsa-pss` SignatureMethod element, with RFC 9231
+// section 2.3.9's defaults. `{ hash, saltLength }` or `{ problem }`.
+function pssParameters(methodElement) {
+  log.debug("Entering pssParameters().");
+  const out = { hash: 'sha256', saltLength: -1, problem: '' };
+  const params = methodElement
+    ? methodElement.getElementsByTagNameNS(PSS_PARAMS_NS, 'RSAPSSParams')[0]
+    : null;
+  if (params) {
+    const digest = params.getElementsByTagNameNS(DS_NS, 'DigestMethod')[0];
+    if (digest) {
+      const row = XML_DIGEST_METHODS[digest.getAttribute('Algorithm') || ''];
+      if (!row) {
+        out.problem = 'its RSAPSSParams names a DigestMethod this service ' +
+          'does not compute';
+        log.debug("Leaving pssParameters(). Unknown digest.");
+        return out;
+      }
+      out.hash = row.hash;
+    }
+    const mgf = params.getElementsByTagNameNS(PSS_PARAMS_NS,
+                                              'MaskGenerationFunction')[0];
+    if (mgf) {
+      const mgfDigest = mgf.getElementsByTagNameNS(DS_NS, 'DigestMethod')[0];
+      const mgfRow = mgfDigest
+        ? XML_DIGEST_METHODS[mgfDigest.getAttribute('Algorithm') || '']
+        : XML_DIGEST_METHODS[XENC_NS + 'sha256'];
+      if (String(mgf.getAttribute('Algorithm') || '') !==
+            XMLDSIG_MORE_2007 + 'MGF1' ||
+          !mgfRow || mgfRow.hash !== out.hash) {
+        // Node's PSS verifier hashes MGF1 with the message digest; a
+        // different MGF digest is a parameter set it cannot express.
+        out.problem = 'its RSAPSSParams asks for a mask generation function ' +
+          'other than MGF1 with the message digest, which node cannot verify';
+        log.debug("Leaving pssParameters(). MGF mismatch.");
+        return out;
+      }
+    }
+    const salt = params.getElementsByTagNameNS(PSS_PARAMS_NS, 'SaltLength')[0];
+    if (salt) {
+      out.saltLength = parseInt(String(salt.textContent || '').trim(), 10);
+      if (!(out.saltLength >= 0)) {
+        out.problem = 'its RSAPSSParams SaltLength is not a number';
+        log.debug("Leaving pssParameters(). Bad salt.");
+        return out;
+      }
+    }
+    const trailer = params.getElementsByTagNameNS(PSS_PARAMS_NS,
+                                                  'TrailerField')[0];
+    if (trailer && String(trailer.textContent || '').trim() !== '1') {
+      out.problem = 'its RSAPSSParams TrailerField is not 1';
+      log.debug("Leaving pssParameters(). Bad trailer.");
+      return out;
+    }
+  }
+  if (out.saltLength < 0) {
+    out.saltLength = nodeCrypto.createHash(out.hash).digest().length;
+  }
+  log.debug("Leaving pssParameters(). " + out.hash + "/" + out.saltLength);
+  return out;
+}
+
+// THE ONE PRIMITIVE: does `signature` verify over `octets` under
+// `signatureMethod` with `key`? A key of the wrong type for the method is
+// `false` — another registered certificate may be the right one — and never a
+// throw. `pss` is pssParameters()'s answer for `rsa-pss`.
+function verifyXmlSignatureValue(signatureMethod, key, octets, signature, pss) {
+  log.debug("Entering verifyXmlSignatureValue(). " + signatureMethod);
+  const row = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
+  if (!row) {
+    log.debug("Leaving verifyXmlSignatureValue(). Unknown method.");
+    throw new Error('no verifier for ' + signatureMethod);
+  }
+  const type = String((key && key.asymmetricKeyType) || '');
+  if (row.keyTypes.indexOf(type) < 0) {
+    log.debug("Leaving verifyXmlSignatureValue(). A " + type + " key.");
+    return false;
+  }
+  let ok = false;
+  try {
+    if (row.family === 'rsa') {
+      ok = nodeCrypto.verify(row.hash, octets, {
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PADDING }, signature);
+    } else if (row.family === 'rsa-pss') {
+      const params = pss || { hash: row.hash,
+        saltLength: nodeCrypto.createHash(row.hash).digest().length };
+      ok = nodeCrypto.verify(params.hash, octets, {
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: params.saltLength }, signature);
+    } else if (row.family === 'ecdsa' || row.family === 'dsa') {
+      ok = nodeCrypto.verify(row.hash, octets,
+        { key: key, dsaEncoding: 'ieee-p1363' }, signature);
+      if (!ok && signature.length && signature[0] === 0x30) {
+        // A DER Ecdsa-Sig-Value where XMLDSig 1.1 asks for r||s.
+        ok = nodeCrypto.verify(row.hash, octets,
+          { key: key, dsaEncoding: 'der' }, signature);
+      }
+    } else {
+      // EdDSA and the post-quantum schemes hash internally.
+      ok = nodeCrypto.verify(null, octets, key, signature);
+    }
+  } catch (e) {
+    // A malformed value (wrong length, not DER) is a signature that does not
+    // verify, which is what the caller reports.
+    log.debug("Caught in verifyXmlSignatureValue(): " +
+              ((e && e.message) || e));
+    ok = false;
+  }
+  log.debug("Leaving verifyXmlSignatureValue(). " + ok);
+  return !!ok;
+}
+
+// A description of every method, for the crypto metadata page and the tests.
+function xmlSignatureAlgorithms() {
+  log.debug("Entering xmlSignatureAlgorithms().");
+  log.debug("Leaving xmlSignatureAlgorithms().");
+  return {
+    verified: Object.keys(XML_SIGNATURE_METHODS).map(function (uri) {
+      const row = XML_SIGNATURE_METHODS[uri];
+      return { uri: uri, label: row.label, family: row.family,
+               hash: row.hash || '', keyTypes: row.keyTypes.slice(0),
+               weak: row.weak, sha1: row.sha1 };
+    }),
+    refused: Object.keys(XML_SIGNATURE_REFUSED).map(function (uri) {
+      return { uri: uri, why: XML_SIGNATURE_REFUSED[uri] };
+    }),
+    digests: Object.keys(XML_DIGEST_METHODS).map(function (uri) {
+      const row = XML_DIGEST_METHODS[uri];
+      return { uri: uri, label: row.label, weak: row.weak, sha1: row.sha1 };
+    }),
+    refusedDigests: Object.keys(XML_DIGEST_REFUSED).map(function (uri) {
+      return { uri: uri, why: XML_DIGEST_REFUSED[uri] };
+    }),
+    sha1Allowed: sha1Allowed()
+  };
+}
+
+// Every X509Certificate element's text emptied, in a serialized signature —
+// what the vendored engine is handed when the key comes from here, so that it
+// never tries to read (with forge, RSA only) a certificate this file already
+// decided about. Only the text: the element and KeyInfo stay where they are.
+function withoutCertificateText(signatureXml) {
+  log.debug("Entering withoutCertificateText().");
+  log.debug("Leaving withoutCertificateText().");
+  return String(signatureXml).replace(
+    /(<(?:[A-Za-z_][\w.-]*:)?X509Certificate\b[^>]*>)[^<]*(<\/)/g, '$1$2');
+}
+
 // ---------------------------------------------------------------------------
 // VERIFY THE SIGNATURE ON ONE NAMED ELEMENT, AND ON NO OTHER.
 //
@@ -345,7 +865,9 @@ function signXml(xml, opts) {
 // here uses — that is exactly right, because exclusive c14n renders only
 // visibly-utilized prefixes and deliberately ignores inherited ones. Under
 // INCLUSIVE c14n it would not be, so that case is detected and reported below
-// rather than being quietly wrong.
+// rather than being quietly wrong. **A ROOT element under inclusive c14n IS
+// verified since 2026-09-17** — see the SignedInfo note further down, where
+// the in-scope namespace declarations are put back before the engine reads it.
 // ---------------------------------------------------------------------------
 function verifyXmlSignature(xml, opts) {
   log.debug("Entering verifyXmlSignature().");
@@ -445,18 +967,120 @@ function verifyXmlSignature(xml, opts) {
                            'STS-KEYS-0010');
   }
 
+  // THE ALGORITHMS, BEFORE ANY CRYPTOGRAPHY (section 1a): one this file
+  // does not verify, or SHA-1 while `saml.allowSha1Signatures` is off, is
+  // refused here with its own code — a signature that cannot be checked is
+  // not reported as one that was checked and found wrong.
+  const methodEl = signedInfo
+    ? signedInfo.getElementsByTagNameNS('*', 'SignatureMethod')[0] : null;
+  const signatureMethod = methodEl
+    ? String(methodEl.getAttribute('Algorithm') || '') : '';
+  const digestMethods = [];
+  const referenceEls = signedInfo
+    ? signedInfo.getElementsByTagNameNS('*', 'Reference') : [];
+  for (let i = 0; i < referenceEls.length; i++) {
+    const digestEl = referenceEls[i]
+      .getElementsByTagNameNS('*', 'DigestMethod')[0];
+    digestMethods.push(digestEl
+      ? String(digestEl.getAttribute('Algorithm') || '') : '');
+  }
+  const algorithms = xmlAlgorithmVerdict(signatureMethod, digestMethods);
+  const pss = !algorithms.problem &&
+    (XML_SIGNATURE_METHODS[signatureMethod] || {}).family === 'rsa-pss' &&
+    signatureMethod === XMLDSIG_MORE_2007 + 'rsa-pss'
+    ? pssParameters(methodEl) : null;
+  if (algorithms.problem || (pss && pss.problem)) {
+    log.debug('Leaving verifyXmlSignature(). Algorithm refused: ' +
+              (algorithms.problem || pss.problem));
+    return errorCodes.mark({ ok: false, present: true,
+             why: algorithms.problem ||
+                  'the RSASSA-PSS signature cannot be checked: ' + pss.problem,
+             signatureMethod: signatureMethod, digestMethods: digestMethods,
+             weak: algorithms.weak, sha1: algorithms.sha1 },
+                           algorithms.code || 'STS-KEYS-0061');
+  }
+
+  // THE KEY, IN THE ORDER A CALLER MEANT: the certificate it named, else the
+  // public key it named, else — only when it named neither — the document's
+  // own certificate. (The vendored engine preferred the document's
+  // certificate to a named public key; nothing here relies on that.) Read by
+  // node, so an EC, EdDSA or post-quantum certificate is a key like any other.
+  const certEl = sigEl.getElementsByTagNameNS('*', 'X509Certificate')[0];
+  const keyInfoCert = certEl
+    ? String(certEl.textContent || '').replace(/\s+/g, '') : '';
+  const named = options.certPem || options.publicKeyPem;
+  const found = named || keyInfoCert
+    ? verificationKeyFrom(options.certPem ||
+                          (options.publicKeyPem ? '' : keyInfoCert),
+                          options.publicKeyPem)
+    : null;
+  if (found && found.problem) {
+    log.debug('Leaving verifyXmlSignature(). No usable key: ' +
+              found.problem);
+    return errorCodes.mark({ ok: false, present: true,
+             why: 'the signature cannot be checked: ' + found.problem,
+             signatureMethod: signatureMethod, digestMethods: digestMethods,
+             weak: algorithms.weak, sha1: algorithms.sha1,
+             signerCertB64: keyInfoCert }, 'STS-KEYS-0014');
+  }
+
+  // INCLUSIVE CANONICALIZATION OF THE SIGNEDINFO (#37 follow-up). The
+  // SignedInfo is always nested — inside the Signature, inside the signed
+  // element — and inclusive c14n renders every namespace declaration IN
+  // SCOPE there, including the ancestors'. The engine canonicalizes it from
+  // the Signature serialized on its own, which drops those, so an inclusive
+  // signature on even a ROOT element never verified. The in-scope
+  // declarations are therefore copied onto the Signature before it is
+  // serialized: inclusive c14n puts all of them on the SignedInfo either way,
+  // so the octets are the signer's. (Exclusive c14n ignores them, and is left
+  // alone.)
+  if (c14nAlg && c14nAlg.indexOf('xml-exc-c14n') === -1) {
+    const declared = {};
+    for (let node = sigEl.parentNode; node && node.nodeType === 1;
+         node = node.parentNode) {
+      for (let i = 0; i < node.attributes.length; i++) {
+        const attr = node.attributes[i];
+        const name = String(attr.name || '');
+        if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
+            !Object.prototype.hasOwnProperty.call(declared, name)) {
+          declared[name] = attr.value;
+        }
+      }
+    }
+    Object.keys(declared).forEach(function (name) {
+      if (!sigEl.hasAttribute(name)) {
+        sigEl.setAttribute(name, declared[name]);
+      }
+    });
+  }
+
   const serializer = new xmldom.XMLSerializer();
-  const signatureXml = serializer.serializeToString(sigEl);
+  // With a key from here, the engine is not shown the certificate text: it
+  // would try to read it with forge, which reads RSA only.
+  const signatureXml = found
+    ? withoutCertificateText(serializer.serializeToString(sigEl))
+    : serializer.serializeToString(sigEl);
   sigEl.parentNode.removeChild(sigEl);
   const referencedXml = serializer.serializeToString(target);
 
   let result;
   try {
-    result = xmldsig.verifyXml(signatureXml, {
-      certPem: options.certPem,
-      publicKeyPem: options.publicKeyPem,
+    result = xmldsig.verifyXml(signatureXml, found ? {
+      referencedXml: referencedXml,
+      verifier: function (octets, signatureBytes) {
+        return verifyXmlSignatureValue(signatureMethod, found.key,
+          Buffer.from(String(octets), 'binary'),
+          Buffer.from(String(signatureBytes), 'binary'), pss);
+      }
+    } : {
+      // NO KEY ANYWHERE BUT, PERHAPS, AN RSAKeyValue — the engine's own RSA
+      // path, which is what it always was.
       referencedXml: referencedXml
     });
+    if (found) {
+      result.signerSubject = found.subject;
+      result.signerCertB64 = keyInfoCert;
+    }
   } catch (e) {
     // The engine throws rather than answering for a malformed signature
     // element or an algorithm it cannot name, and the message says WHICH — an
@@ -502,7 +1126,12 @@ function verifyXmlSignature(xml, opts) {
     canonicalization: result.canonicalization || '',
     signerSubject: result.signerSubject || '',
     signerCertB64: result.signerCertB64 || '',
-    referenceUri: firstRef.uri === undefined ? referenceUri : firstRef.uri
+    referenceUri: firstRef.uri === undefined ? referenceUri : firstRef.uri,
+    // WHAT THE SIGNATURE WAS MADE WITH (section 1a): every DigestMethod, and
+    // whether any of it is weak or SHA-1 — accepted SHA-1 is still `weak`.
+    digestMethods: digestMethods,
+    weak: algorithms.weak,
+    sha1: algorithms.sha1
   };
   if (whyCode) {
     errorCodes.mark(verdict, whyCode);
@@ -552,10 +1181,10 @@ function signQueryString(queryString, privateKeyPem, sigAlg) {
 // **THE CERTIFICATE IS REQUIRED.** A detached signature carries no KeyInfo, so
 // there is nothing to fall back to, and the vendored verifier says so — but
 // this wrapper refuses before asking it, because a verifier that could be
-// called with no key is one somebody will call with no key. The key is RSA:
-// the vendored engine implements RSA (PKCS#1 v1.5 and PSS) and nothing else,
-// and an ECDSA `SigAlg` is refused by name rather than reported as a signature
-// that failed.
+// called with no key is one somebody will call with no key. The key is any
+// section 1a verifies — RSA, ECDSA (r||s), EdDSA, DSA, ML-DSA, SLH-DSA — and
+// a `SigAlg` it does not verify, or SHA-1 while that is off, is refused by
+// name rather than reported as a signature that failed.
 //
 // It ANSWERS RATHER THAN THROWS, like `verifyXmlSignature()`, and `ok` is
 // separate from `usable`: "this signature is wrong" and "this could not be
@@ -580,12 +1209,44 @@ function verifyQueryString(queryString, opts) {
                              why: 'there is no Signature parameter' },
                            'STS-KEYS-0060');
   }
+  // The algorithm and the policy first (section 1a). A binding signature
+  // has no DigestMethod: the SigAlg is the whole of it.
+  const algorithms = xmlAlgorithmVerdict(sigAlg, []);
+  if (algorithms.problem) {
+    log.debug('Leaving verifyQueryString(). ' + algorithms.problem);
+    return errorCodes.mark({ ok: false, usable: false,
+                             signatureMethod: sigAlg, weak: algorithms.weak,
+                             sha1: algorithms.sha1,
+                             why: algorithms.problem }, algorithms.code);
+  }
+  const found = verificationKeyFrom(options.certPem, null);
+  if (found.problem) {
+    log.debug('Leaving verifyQueryString(). ' + found.problem);
+    return errorCodes.mark({ ok: false, usable: false,
+                             signatureMethod: sigAlg,
+                             why: found.problem }, 'STS-KEYS-0060');
+  }
+  const signature = String(options.signature).replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(signature)) {
+    log.debug('Leaving verifyQueryString(). Not base64.');
+    return errorCodes.mark({ ok: false, usable: false,
+                             signatureMethod: sigAlg,
+                             why: 'the Signature parameter is not base64' },
+                           'STS-KEYS-0060');
+  }
+  // THE VENDORED ENGINE STILL DISPATCHES — it decodes the value and hands the
+  // octets to the verifier, which is node (section 1a). No certificate is
+  // passed to it: it would read one with forge, which reads RSA only.
   let result;
   try {
     result = xmldsig.verifyQueryString(String(queryString), {
-      signature: String(options.signature).replace(/\s+/g, ''),
+      signature: signature,
       sigAlg: sigAlg,
-      certPem: options.certPem
+      verifier: function (octets, signatureBytes) {
+        return verifyXmlSignatureValue(sigAlg, found.key,
+          Buffer.from(String(octets), 'binary'),
+          Buffer.from(String(signatureBytes), 'binary'), null);
+      }
     });
   } catch (e) {
     // The vendored verifier answers rather than throws for everything it
@@ -600,29 +1261,23 @@ function verifyQueryString(queryString, opts) {
   }
   if (result.valid) {
     log.debug('Leaving verifyQueryString(). Verified.');
-    return { ok: true, usable: true,
-             signatureMethod: result.signatureMethod || sigAlg,
-             signerSubject: result.signerSubject || '', why: '' };
+    return { ok: true, usable: true, signatureMethod: sigAlg,
+             signerSubject: found.subject || '', why: '',
+             weak: algorithms.weak, sha1: algorithms.sha1 };
   }
-  // `error` is set when the check could not be made — an unknown or non-RSA
-  // SigAlg, an unreadable certificate, a Signature that is not base64 — AND
-  // when the RSA verification itself threw, which forge does for a signature
-  // made with a different key ("Encryption block is invalid"). The vendored
-  // verifier reports the second with `signerSubject` beside the error, having
-  // read the certificate, and that one is a signature that is WRONG — unless
-  // what threw was the engine saying it has no verifier for the family.
-  const threwVerifying = result.error &&
-    Object.prototype.hasOwnProperty.call(result, 'signerSubject') &&
-    !/needs a verifier|No RSA public key/.test(String(result.error));
-  if (result.error && !threwVerifying) {
+  if (result.error) {
     log.debug('Leaving verifyQueryString(). Not checkable: ' + result.error);
     return errorCodes.mark({ ok: false, usable: false,
-                             signatureMethod: result.signatureMethod || sigAlg,
+                             signatureMethod: sigAlg,
                              why: result.error }, 'STS-KEYS-0060');
   }
+  // A key of another type than the SigAlg names is reported here too, as a
+  // signature that does not verify against THIS certificate: another
+  // registered certificate may be the one that made it.
   log.debug('Leaving verifyQueryString(). It did not verify.');
   return errorCodes.mark({ ok: false, usable: true,
-                           signatureMethod: result.signatureMethod || sigAlg,
+                           signatureMethod: sigAlg,
+                           weak: algorithms.weak, sha1: algorithms.sha1,
                            why: 'the Signature parameter does not verify ' +
                                 'against the certificate over the ' +
                                 'parameters as they arrived' },
@@ -3974,6 +4629,14 @@ module.exports = {
   signQueryString: signQueryString,
   verifyQueryString: verifyQueryString,
   idOf: idOf,
+  // Section 1a: which XML signature algorithms are verified, the one
+  // primitive, and the two questions a registration or a caller asks.
+  xmlSignatureAlgorithms: xmlSignatureAlgorithms,
+  xmlAlgorithmVerdict: xmlAlgorithmVerdict,
+  xmlSignatureKeyProblem: xmlSignatureKeyProblem,
+  xmlSignatureKeyTypeUsable: xmlSignatureKeyTypeUsable,
+  verifyXmlSignatureValue: verifyXmlSignatureValue,
+  sha1SignaturesAllowed: sha1Allowed,
   // --- XML encryption ---
   encryptElement: encryptElement,
   encryptAssertion: encryptAssertion,

@@ -999,7 +999,12 @@ function record(event) {
   };
   events.push(row);
   trimToCap();
-  if (errorCode) {
+  // `summarised: true` (2026-09-17, #36 follow-up): the caller logs a
+  // PERIODIC SUMMARY of these rows by code instead — the standing rule that a
+  // storm of one kind of failure (a relying party that is down, and every
+  // Logout Token to it dead-lettered) is a line a minute, not a line an event.
+  // The row still carries its code and is still filterable on /admin/audit.
+  if (errorCode && info.summarised !== true) {
     logFailure(row);
   }
   log.debug("Leaving record().");

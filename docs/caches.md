@@ -145,7 +145,7 @@ console, `/admin-api`, SCIM or LDAP on port 389.
 | SPIFFE authorities | a realm's X.509 SVID authorities, unpacked | per process | until the stored authorities change | — |
 | Kerberos keys | long-term keys derived for each principal | per trust realm, in the realm's own principal database | until the principal changes; never persisted | — |
 | SAML 1.1 assertions | issued assertions, kept so a Browser/Artifact request can be answered | per realm, persisted | the oldest is dropped past the limit | `saml11.assertionCacheMax` (500) |
-| SAML SP metadata | a service provider's metadata, stored as received, and what consuming it registered | the application entry | until refreshed from the application's page or re-uploaded on `/admin/saml2`; its `validUntil` and `cacheDuration` are shown and not enforced | — |
+| SAML SP metadata | a service provider's metadata, stored as received, and what consuming it registered | the application entry | until refreshed (the application's page, an upload on `/admin/saml2`, an MDQ import, or the background refresher once its `cacheDuration` has elapsed); past its effective `validUntil` it is EXPIRED and every request from that service provider is refused | — |
 | Dead-letter counts | an estimate of each Shared Signals stream's dead letters | per realm | recounted at each sweep | — |
 | Remote PEP policy | the policy set a remote PEP last pulled | the PEP container | until the next successful pull | — |
 | Debugger files | the embedded debugger's files with this service's address filled in | per process | until the file changes (400 entries) | — |
@@ -190,6 +190,7 @@ something be used twice, which is why none of them has a control.
 | OpenID4VP transactions | every presentation request the Verifier is waiting on — the bar door's, and a wallet sign-in's with its Digital Credentials API request and the key its answer is encrypted to | per realm, persisted | none | `oid4vp.presentationRequestTtlS`, or `oid4vp.signInTtlS` for a sign-in |
 | Wallet sign-in register | the credentials this realm issued for a person on an access token it verified, which are the only ones a wallet may sign in with | per realm, persisted | none | until the last credential on the row expires |
 | Credential status entries | each issued credential's index in this realm's status lists, and the status set for it | per realm, persisted | 131,072 | as long as the credential it describes |
+| Back-channel Logout deliveries | one row per relying party told that a session ended: its state, its attempts, when it is next due and the signed Logout Token | per realm, persisted | `oauth2.backchannelLogoutMaxRows` (2000), oldest FINISHED first | `oauth2.backchannelLogoutRetentionS` (86400) after it was queued; a row still pending then becomes a dead letter |
 
 Two behaviours are worth knowing:
 

@@ -729,8 +729,10 @@ const SPECS: Spec[] = [
               'advertised as unsupported because a version built over a ' +
               'one-second timestamp would be a concurrency control a client ' +
               'trusts and that is wrong; and no changePassword, there being ' +
-              'no password here that is checked. active:false is stored and ' +
-              'DEACTIVATES NOBODY.' },
+              'no password here that is checked. active:false DISABLES the ' +
+              'account (pwdAccountLockedTime; every door then refuses the ' +
+              'person and what they held is ended) and active:true enables ' +
+              'it.' },
 
   // The four authentication schemes SCIM delegates to that are not already
   // described elsewhere in this list. RFC 6750 and RFC 9449 are further down
@@ -1065,16 +1067,24 @@ const SPECS: Spec[] = [
               'encoding and the detached query-string signature of 3.4.4.1, ' +
               'HTTP POST (3.5), HTTP Artifact (3.6) with the type 0x0004 ' +
               'artifact and the one-shot rule of 3.6.4.1, and SOAP over HTTP ' +
-              '(3.2.3) for the artifact resolution back channel. NOT here: ' +
-              'PAOS (3.3), which is refused by name rather than quietly ' +
-              'answered over POST, the URI binding (3.7) and ' +
-              'POST-SimpleSign. A service provider\'s request signature — ' +
-              'the 3.4.4.1 query signature over the parameters as received, ' +
-              'or an enveloped one on POST — IS VERIFIED since 2026-09-17 ' +
+              '(3.2.3) for the artifact resolution back channel, whose ' +
+              'caller is AUTHENTICATED (a signed ArtifactResolve or its ' +
+              'registered certificate as the TLS client certificate) and ' +
+              'must be the service provider the artifact was issued to; ' +
+              'and HTTP-POST-SimpleSign (the OASIS SimpleSign binding) in ' +
+              'both directions, published in the metadata. NOT here: PAOS ' +
+              '(3.3), which is refused by name rather than quietly answered ' +
+              'over POST, and the URI binding (3.7). A service provider\'s ' +
+              'request signature — the 3.4.4.1 query signature over the ' +
+              'parameters as received, the SimpleSign signature over the ' +
+              'form values, or an enveloped one on POST — IS VERIFIED ' +
               'against its REGISTERED certificate (never its KeyInfo), in ' +
-              'every mode, RSA only, exclusive c14n only; an unsigned one is ' +
-              'refused where saml2.requireSignedAuthnRequests (on in ' +
-              'product) or its metadata requires a signature.' },
+              'every mode, in every family common/crypto.js verifies (RSA, ' +
+              'RSASSA-PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA), with either ' +
+              'canonicalization; SHA-1 only with saml.allowSha1Signatures; ' +
+              'an unsigned one is refused where ' +
+              'saml2.requireSignedAuthnRequests (on in product) or its ' +
+              'metadata requires a signature.' },
   { id: 'saml2-profiles', name: 'SAML 2.0 Profiles',
     where: 'OASIS saml-profiles-2.0-os',
     url:
@@ -1109,16 +1119,22 @@ const SPECS: Spec[] = [
               'enforced. It is minted for any entityID asked for. A service ' +
               'provider\'s metadata IS CONSUMED since 2026-09-17, by an ' +
               'explicit refresh of its samlSpMetadataUrl or an uploaded ' +
-              'document and never while issuing: the SPSSODescriptor\'s ' +
+              'document, by the Metadata Query Protocol ' +
+              '(draft-young-md-query, saml2.mdqBaseUrl) and by a ' +
+              'background refresher — never while issuing: the ' +
+              'SPSSODescriptor\'s ' +
               'AssertionConsumerService and SingleLogoutService endpoints ' +
               'become its registered return addresses, its signing and ' +
               'encryption KeyDescriptors, NameIDFormats, AuthnRequestsSigned ' +
               'and WantAssertionsSigned are applied, the document\'s own ' +
-              'signature is verified when samlSpMetadataSigningCertificate ' +
-              'is set, and an already expired validUntil is refused. NOT ' +
-              'here: an EntitiesDescriptor (one entity per document), ' +
-              'enforcing validUntil or cacheDuration after consumption ' +
-              '(recorded and shown only), and any role but ' +
+              'signature is verified against ' +
+              'samlSpMetadataSigningCertificate or the realm\'s ' +
+              'saml2.metadataTrustAnchors, an EntitiesDescriptor aggregate ' +
+              'is read for the one entity asked for, the EFFECTIVE ' +
+              'validUntil (the earliest in the chain) is ENFORCED after ' +
+              'consumption — the service provider\'s requests are refused ' +
+              'once it passes — and a document past its cacheDuration is ' +
+              'fetched again in the background. NOT here: any role but ' +
               'SPSSODescriptor. <md:Organization> is saml.organizationName ' +
               'and its siblings, and is omitted when the name is emptied.' },
   { id: 'saml11', name: 'SAML 1.1 Core',
@@ -1196,7 +1212,16 @@ const SPECS: Spec[] = [
               'canonicalization, RSA-SHA256 by default and RSA-SHA384/512 or ' +
               'the broken RSA-SHA1 by saml.signatureAlgorithm (2026-09-12); ' +
               'AES-GCM or AES-CBC content encryption with an RSA-OAEP or ' +
-              'RSA-1_5 wrapped key.' },
+              'RSA-1_5 wrapped key. VERIFIES (since 2026-09-17) every ' +
+              'SignatureMethod of RFC 9231 and XMLDSig 1.1 node\'s OpenSSL ' +
+              'implements — RSA PKCS#1 v1.5 and RSASSA-PSS (with and without ' +
+              'RSAPSSParams), ECDSA, EdDSA Ed25519/Ed448, DSA — and the ' +
+              'ML-DSA and SLH-DSA identifiers of the draft ' +
+              'draft-eastlake-rfc9231bis-xmlsec-uris; SHA-224, SHA-2, SHA-3 ' +
+              'and RIPEMD-160 digests; SHA-1 only with ' +
+              'saml.allowSha1Signatures. NOT verified, and refused by name: ' +
+              'MD5, the MACs, Whirlpool, ESIGN, pre-hashed EdDSA and the ' +
+              'stateful HSS/LMS and XMSS.' },
   { id: 'rfc6749', name: 'RFC 6749 — OAuth 2.0',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc6749',
@@ -1770,8 +1795,14 @@ const SPECS: Spec[] = [
               '5.2 language tags. What it does NOT do there is enforce ' +
               '`value`/`values` or treat `essential` as more than a hint, ' +
               'which section 5.5.1 permits and /admin/userinfo-claims states ' +
-              'out loud. Section 6\'s request object and request_uri are ' +
-              'RFC 9101\'s row.' },
+              'out loud. Section 10.2\'s ENCRYPTED ID Token (2026-09-17): a ' +
+              'client that registered id_token_encrypted_response_alg (and ' +
+              '_enc, A128CBC-HS256 by default) with a key in an inline jwks ' +
+              'gets a Nested JWT — signed as registered, then encrypted with ' +
+              'RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW); the symmetric ' +
+              'families and a jwks_uri alone are refused at registration, ' +
+              'and no ML-KEM key encapsulation is offered. Section 6\'s ' +
+              'request object and request_uri are RFC 9101\'s row.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -1802,20 +1833,28 @@ const SPECS: Spec[] = [
               'and again when read), the sid claim, and a Logout Token — ' +
               'typ logout+jwt, iss, aud, iat, exp two minutes on, jti, the ' +
               'events member, sub and sid, no nonce, signed like the ' +
-              'client\'s ID Token and never with none — POSTed form-encoded ' +
-              'to every relying party on a session ended by ANY sign-out: ' +
-              '/oauth2/logout, /logout, wsignout1.0, SAML Single Logout, the ' +
-              'console and /admin-api. Asynchronous with bounded retry (a ' +
-              'timeout, a connection failure, 5xx, 408 and 429 retried; 200 ' +
-              'and 204 success; 400 final, section 2.8), through the ' +
+              'client\'s ID Token (any algorithm of the table, post-quantum ' +
+              'included) and never with none, and ENCRYPTED like it when the ' +
+              'client registered id_token_encrypted_response_alg — POSTed ' +
+              'form-encoded to every relying party on a session that ends by ' +
+              'ANY sign-out (/oauth2/logout, /logout, wsignout1.0, SAML ' +
+              'Single Logout, the console, /admin-api, an account disabled) ' +
+              'or by EXPIRY (oauth2.backchannelLogoutOnExpiry). Each ' +
+              'delivery is a row of a persisted, replicated store: sent once ' +
+              'for the cluster (the session-end claim, and a claimed lease ' +
+              'per attempt whose time fences a late writer), retried with ' +
+              'backoff by any node across restarts (a timeout, a connection ' +
+              'failure, 5xx, 408 and 429; 200 and 204 success; 400 final, ' +
+              'section 2.8), taken over when the node sending it dies, and ' +
+              'dead-lettered on a final failure — listed, paged and retried ' +
+              'from /admin/logout and /admin-api/logout. Through the ' +
               'outbound policy (https unless ' +
               'federation.outboundAllowInsecure, no internal address in ' +
-              'product mode), one audit row per ' +
-              'outcome and each delivery listed pending/sent/failed on the ' +
-              'sign-out result and on /admin/logout. A session that EXPIRES ' +
-              'sends nothing, by decision; encrypted Logout Tokens are not ' +
-              'offered. oauth2.backchannelLogout turns the members, the ' +
-              'claim contribution and the fan-out off together.' },
+              'product mode); one audit row per outcome and a periodic ' +
+              'summary line. Front-channel logout cannot follow an expiry: ' +
+              'it needs the browser. oauth2.backchannelLogout turns the ' +
+              'members, the claim contribution and the fan-out off ' +
+              'together.' },
   { id: 'oidc-discovery', name: 'OpenID Connect Discovery 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html',
@@ -3014,8 +3053,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'token with either scope, any password but "invalid" passes Basic ' +
           'and anybody can register a HOBA key (product mode verifies Basic, ' +
           'offers no Digest and lets only a signed-in owner register a key); ' +
-          'and active:false DEACTIVATES NOBODY — it is stored as scimActive ' +
-          'and read by nothing here. Add ?format=json.' },
+          'and active:false DISABLES THE ACCOUNT — the password-policy lock ' +
+          'every door refuses. Add ?format=json.' },
   { path: '/scim/v2/ServiceProviderConfig', group: 'SCIM',
     name: 'What this SCIM server supports',
     specs: ['rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616', 'rfc7486'],
@@ -7311,8 +7350,10 @@ const ENDPOINTS: EndpointEntry[] = [
     effect: 'starts a browser sign-on session — the SAME session OAuth 2.0 / ' +
             'OIDC and WS-Federation use',
     what: 'GET is the HTTP Redirect binding and POST is the HTTP POST ' +
-          'binding; the RESPONSE goes back on whichever the AuthnRequest\'s ' +
-          'ProtocolBinding asked for, HTTP POST by default. It has NO ' +
+          'binding, or HTTP-POST-SimpleSign when the form carries SigAlg and ' +
+          'Signature; the RESPONSE goes back on whichever the ' +
+          'AuthnRequest\'s ProtocolBinding asked for, HTTP POST by ' +
+          'default. It has NO ' +
           'SIGN-IN SCREEN OF ITS OWN: a POST-binding request is held and ' +
           'turned into a GET so the SameSite=Lax session cookie is visible, ' +
           'and the screen is /authn/login. ANY entityID is accepted, and the ' +
@@ -7321,7 +7362,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'registered certificate and refused when it does not verify; an ' +
           'unsigned request is refused where ' +
           'saml2.requireSignedAuthnRequests (on in product) or the service ' +
-          'provider\'s metadata requires a signature.' },
+          'provider\'s metadata requires a signature, and every request is ' +
+          'refused once that metadata has expired.' },
   { path: '/saml2/sso/:sp', group: 'SAML 2.0',
     name: 'Single Sign-On service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
@@ -7336,7 +7378,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'POST a SOAP 1.1 envelope carrying an ArtifactResolve and get one ' +
           'back carrying the message. A BACK CHANNEL: the browser never ' +
           'touches it, which is the whole point of the artifact profile — ' +
-          'the assertion never passes through the user agent. AN ARTIFACT ' +
+          'the assertion never passes through the user agent. The caller ' +
+          'must be the service provider the artifact was issued to, and ' +
+          'authenticated as it — a signature on the ArtifactResolve or its ' +
+          'registered certificate as the TLS client certificate — where ' +
+          'signed requests are required (product, by default). AN ARTIFACT ' +
           'RESOLVES EXACTLY ONCE (section 3.6.4.1): resolving destroys it, ' +
           'and the second attempt is refused with a status naming the ' +
           'reason. GET describes the endpoint and shows the curl.' },
@@ -7456,9 +7502,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'AssertionIDReference (NOT one-shot; a reference is not a ' +
           'credential), AttributeQuery and AuthenticationQuery. The last two ' +
           'are SAML 1.1\'s ATTRIBUTE AUTHORITY, which is the half Shibboleth ' +
-          'deployments leaned on. NOTHING AUTHENTICATES A CALLER: anybody ' +
-          'who can reach this port can ask it about anybody, by name, and ' +
-          'every query is logged saying so. GET describes the endpoint.' },
+          'deployments leaned on. NOTHING AUTHENTICATES A QUERY in ' +
+          'development — anybody who can reach this port can ask it about ' +
+          'anybody, by name, every query is logged saying so, and product ' +
+          'refuses both. An ARTIFACT is resolved only for the relying party ' +
+          'it was issued to, authenticated by a signed Request or its ' +
+          'registered certificate as the TLS client certificate where ' +
+          'signed requests are required. GET describes the endpoint.' },
   { path: '/saml11/responder/:rp', group: 'SAML 1.1',
     name: 'SAML responder for ONE relying party',
     specs: ['saml11', 'saml11-bindings'],

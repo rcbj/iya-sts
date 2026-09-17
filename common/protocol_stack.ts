@@ -227,6 +227,8 @@ class ProtocolStack {
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     this.build('common/credentials', require('./credentials'), 'Credentials');
+    this.build('common/account_state', require('./account_state'),
+               'AccountState');
     this.build('cluster/cluster_secrets', require('../cluster/cluster_secrets'),
                'ClusterSecrets');
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
@@ -345,6 +347,9 @@ class ProtocolStack {
     this.build('oauth-oidc/introspection_jwt',
                require('../oauth-oidc/introspection_jwt'),
                'IntrospectionJwt');
+    this.build('oauth-oidc/id_token_encryption',
+               require('../oauth-oidc/id_token_encryption'),
+               'IdTokenEncryption');
     this.build('oauth-oidc/request_object',
                require('../oauth-oidc/request_object'),
                'RequestObject');
@@ -1213,8 +1218,20 @@ class ProtocolStack {
     require('../sts_metadata');
     this.build('sts_metadata', require('../sts_metadata'), 'StsMetadata');
     this.register(app, require('../sts_metadata'), 'sts_metadata');
-    this.build('common/protocol_stack', require('./protocol_stack'),
-               'ProtocolStack');
+    // NO `build()` OF THIS FILE (2026-09-17, #36 follow-up). There was one
+    // here — R2's build list was recorded from the order modules FINISHED
+    // loading, and this file finishes last — and it was the one line in the
+    // service that required a module from inside its own load: `load()` runs
+    // at this file's require, so `require('./protocol_stack')` answered the
+    // half-built `module.exports` and node printed "Accessing non-existent
+    // property 'installInstance' of module exports inside circular
+    // dependency" on every start, every worker and every whole-stack test.
+    // It built nothing — `ProtocolStack` exports no `installInstance()` and
+    // `build()` skipped it — so the line is removed rather than made lazy:
+    // the root is not a module the root installs, and a lazy require of
+    // itself would still be a cycle, only a quieter one.
+    // `tests/composition_root.js` fails if any circular-dependency warning is
+    // printed while the stack loads.
     this.checkOrigins();
     helpers.log.debug("Leaving ProtocolStack.load(). " +
                       this.registered.length + " route module(s), " +

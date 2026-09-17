@@ -169,6 +169,11 @@ import signals = require('../ssf/ssf_receivers');
 // requires only the logger and reads `ssf/ssf.ts` out of the require cache when
 // an event is due, so requiring it here moves no route — see its header.
 import accountSignals = require('../ssf/account_signals');
+// A DISABLED ACCOUNT, and the back-channel delivery a dead letter is retried
+// on (2026-09-17, #36 follow-up). Two libraries loaded long before this file,
+// neither of which requires anything back.
+import accountState = require('../common/account_state');
+import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
 import consent = require('../common/consent');
@@ -303,7 +308,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // credentials from their page (2026-09-13).
                        'reset-password', 'issue-password-reset',
                        'disable-primary-keys', 'disable-mfa',
-                       'require-mfa', 'stop-requiring-mfa'];
+                       'require-mfa', 'stop-requiring-mfa',
+                       // A disabled account (2026-09-17).
+                       'disable', 'enable'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -712,6 +719,8 @@ interface AdminActionsDeps {
   spiffeIdLib: typeof spiffeIdLib;
   signals: typeof signals;
   accountSignals: typeof accountSignals;
+  accountState: typeof accountState;
+  backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
   consent: typeof consent;
@@ -761,6 +770,8 @@ class AdminActions {
       spiffeIdLib: spiffeIdLib,
       signals: signals,
       accountSignals: accountSignals,
+      accountState: accountState,
+      backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
       consent: consent,
@@ -1311,6 +1322,27 @@ class AdminActions {
                                                                  '(none)'));
     const action = String(body.action || '');
     const user = String(body.user || body.username || '').trim();
+    // RETRY A DEAD BACK-CHANNEL DELIVERY (2026-09-17, #36 follow-up). It names
+    // a delivery rather than a person — the list it is pressed from is every
+    // delivery in the realm — so it is answered before the person is asked
+    // for. A new generation, a new Logout Token, the client's current address;
+    // `backchannel_logout.ts`'s retry() argues it.
+    if (action === 'retry-backchannel') {
+      const { backchannel } = this.deps;
+      const id = String(body.delivery || body.id || '').trim();
+      if (!id) {
+        log.debug("Leaving AdminActions.logoutAction(). No delivery named.");
+        return this.refused('STS-OAUTH-0550', { ok: false, errors: ['Name ' +
+            'the dead delivery to retry in `delivery`.'] });
+      }
+      const answer = backchannel.retry(id, String(body.actor || user || ''));
+      log.debug("Leaving AdminActions.logoutAction(). retry-backchannel " +
+                (answer.ok ? 'queued.' : 'refused.'));
+      return answer.ok
+        ? { ok: true, delivery: answer.row, message: answer.message }
+        : this.refused(errorCodes.codeOf(answer) || 'STS-OAUTH-0550',
+                       { ok: false, errors: [answer.message] });
+    }
     if (!logoutReader) {
       log.debug("Leaving AdminActions.logoutAction(). No logout reader is " +
                 "installed.");
@@ -1424,8 +1456,9 @@ class AdminActions {
     log.debug("Leaving AdminActions.logoutAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'There are four: global, end, ' +
-                                      'restore-token, restore-kerberos.'] });
+                                 'There are five: global, end, ' +
+                                      'restore-token, restore-kerberos, ' +
+                                      'retry-backchannel.'] });
   }
 
   permissionsAction(body) {
@@ -1937,6 +1970,35 @@ class AdminActions {
     const ctx = { via: (context || {}).via || 'console',
                   actor: (context || {}).actor || String(body.actor || ''),
                   base: String((context || {}).base || '') };
+
+    // DISABLE OR ENABLE AN ACCOUNT (2026-09-17, #36 follow-up). One call into
+    // `common/account_state.ts`, which writes the lock and — for a disable —
+    // ends everything the person holds through the global logout, so the
+    // console, the API and a SCIM `active: false` have the same consequence.
+    if (action === 'disable' || action === 'enable') {
+      const { accountState } = this.deps;
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+            'the person in `user`.'] });
+      }
+      const answer = accountState.setDisabled(who, action === 'disable', {
+        actor: ctx.actor, via: ctx.via,
+        reason: String(body.reason || '') });
+      if (!answer.ok) {
+        log.debug("Leaving AdminActions.usersAction(). The " + action +
+                  " was refused.");
+        return this.refused(errorCodes.codeOf(answer) || 'STS-ADMIN-0793',
+                            { ok: false, errors: answer.errors ||
+                              ['The account could not be ' + action + 'd.'] });
+      }
+      log.debug("Leaving AdminActions.usersAction(). " + action + "d " + who +
+                ".");
+      return { ok: true, username: who, disabled: answer.disabled,
+               changed: answer.changed, ended: answer.ended || null,
+               message: answer.message };
+    }
 
     const credentialAnswer = this.credentialAdminAction(action, body, ctx);
     if (credentialAnswer) {
@@ -3047,8 +3109,9 @@ class AdminActions {
   // see the header — so this function decides nothing except which attribute
   // and which mode, and the registry refuses an attribute that is derived
   // rather than declared without being asked twice.
-  saml2Action(body) {
+  saml2Action(body): any {
     const { log, applications, saml2 } = this.deps;
+    const self = this;
     log.debug("Entering AdminActions.saml2Action(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
@@ -3104,8 +3167,8 @@ class AdminActions {
     // meant while the attribute held one value; `remove-signing-certificate`
     // takes one off by value. Both go through `updateApplication()`, which
     // strips PEM armour and whitespace — the schema holds base64 DER, what a
-    // ds:X509Certificate carries — and refuses a value that is not an RSA
-    // certificate before anything is written.
+    // ds:X509Certificate carries — and refuses a certificate whose key signs
+    // nothing `common/crypto.js` verifies before anything is written.
     // ---------------------------------------------------------------------
     if (action === 'set-signing-certificate') {
       const result = this.replaceSigningCertificates(identifier,
@@ -3164,10 +3227,28 @@ class AdminActions {
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0791', result);
     }
+    // THE TWO THAT DIAL OUT (#37 follow-up), and so answer with a PROMISE,
+    // as `applicationsAction()`'s `refresh-metadata` does: fetch this service
+    // provider's metadata again now (its URL, or the MDQ responder), and
+    // import one from the MDQ responder by entityID, creating its entry.
+    if (action === 'refresh-metadata') {
+      log.debug("Leaving AdminActions.saml2Action(). refresh-metadata.");
+      return spMetadata.refresh(identifier, { actor: body.actor || '' })
+        .then(function (result) {
+          return self.refusedBy('STS-ADMIN-0532', result);
+        });
+    }
+    if (action === 'mdq-import') {
+      log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
+      return spMetadata.mdqImport(identifier, { actor: body.actor || '' })
+        .then(function (result) {
+          return self.refusedBy('STS-ADMIN-0532', result);
+        });
+    }
     log.debug("Leaving AdminActions.saml2Action(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The nine are: register, ' +
+                                 'The eleven are: register, ' +
                                       'set-logout-service, ' +
                                       'remove-logout-service, ' +
                                       'set-signing-certificate, ' +
@@ -3175,7 +3256,8 @@ class AdminActions {
                                       'confirm-signing-certificate, ' +
                                       'discard-signing-certificate, ' +
                                       'set-metadata-signing-certificate, ' +
-                                      'upload-metadata.'] });
+                                      'upload-metadata, refresh-metadata, ' +
+                                      'mdq-import.'] });
   }
 
   // Replace a service provider's registered signing certificates with one —

@@ -167,6 +167,10 @@ import errorCodes = require('../common/error_codes');
 // The one assertion writer. See decision 4.
 import saml2 = require('./saml2');
 import spMetadata = require('./sp_metadata');
+// The TLS client certificate a SOAP caller presented (#37 follow-up), read the
+// one way the service reads it. A library of `helpers`, `config` and
+// `crypto`, so this require closes no cycle.
+import mtls = require('../oauth-oidc/mtls');
 // Whether a service provider's request is signed by it (#37). A library that
 // registers nothing and requires only leaves.
 import requestSignature = require('./request_signature');
@@ -221,6 +225,15 @@ const BINDING_REDIRECT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect';
 const BINDING_POST = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST';
 
 const BINDING_ARTIFACT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact';
+
+// THE HTTP-POST-SimpleSign BINDING (#37 follow-up; OASIS "SAML V2.0 HTTP POST
+// 'SimpleSign' Binding"): the POST binding's form, with the message NOT
+// enveloped-signed and a detached `Signature`/`SigAlg` pair over the form
+// values instead — the Redirect binding's signature without its length limit.
+// Accepted for AuthnRequest, LogoutRequest and LogoutResponse, answered on
+// when a request or a consumed endpoint asks for it, and published.
+const BINDING_SIMPLESIGN =
+  'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign';
 
 const BINDING_SOAP = 'urn:oasis:names:tc:SAML:2.0:bindings:SOAP';
 
@@ -415,6 +428,7 @@ interface Saml2SsoDeps {
   errorCodes: typeof errorCodes;
   saml2: typeof saml2;
   spMetadata: typeof spMetadata;
+  mtls: typeof mtls;
   requestSignature: typeof requestSignature;
   audit: typeof audit;
   authn: typeof authn;
@@ -453,6 +467,7 @@ class Saml2Sso {
       errorCodes: errorCodes,
       saml2: saml2,
       spMetadata: spMetadata,
+      mtls: mtls,
       requestSignature: requestSignature,
       audit: audit,
       authn: authn,
@@ -972,10 +987,53 @@ class Saml2Sso {
   // Assess one message's signature, write the audit row, and say whether to
   // refuse. `what` is the root element's local name.
   private checkSignature(req, base, opts): any {
-    const { audit, requestSignature } = this.deps;
+    const { audit, requestSignature, spMetadata } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.checkSignature(). " + opts.what);
     const fields = this.fieldsOf(opts.spEntityId);
+    // EXPIRED METADATA FIRST (#37 follow-up): a service provider whose
+    // consumed metadata is past its effective validUntil is not believed
+    // about anything — its keys and endpoints are the expired document's —
+    // so its messages are refused, in every mode, before the signature is
+    // looked at. A stale document still works; the refresher replaces it.
+    // A service provider with NO consumed metadata starts an MDQ lookup the
+    // request never waits on (`sp_metadata.ts`).
+    const fresh = spMetadata.freshness(fields);
+    if (fresh.state === 'none' && opts.spEntityId &&
+        !fields.samlSpMetadataUrl &&
+        !this.implicitCertificatesFor(base, opts.spEntityId).length) {
+      spMetadata.queueMdqLookup(opts.spEntityId);
+    }
+    if (fresh.state === 'expired') {
+      const expired = {
+        signed: false, outcome: 'metadata-expired', binding: '',
+        sigAlg: '', weak: false, why: fresh.why, errorCode: 'STS-SAML-0074',
+        keyInfoCertificate: '', registered: 0
+      };
+      audit.audit({
+        action: 'saml2.request.signature', outcome: 'refused',
+        errorCode: 'STS-SAML-0074', protocol: 'SAML 2.0', channel: 'http',
+        target: String(opts.spEntityId || ''),
+        summary: 'The ' + opts.what + ' from "' + opts.spEntityId + '" was ' +
+                 'refused: ' + fresh.why,
+        detail: { message: opts.what, outcome: expired.outcome,
+                  expiresAt: fresh.expiresAt }
+      });
+      log.warn('saml2: refused the ' + opts.what + ' from "' +
+               opts.spEntityId + '": ' + fresh.why + '.');
+      log.debug("Leaving Saml2Sso.checkSignature(). Metadata expired.");
+      return { assessment: expired, observed: '',
+               summary: 'metadata-expired - -',
+               refusal: { refuse: true, errorCode: 'STS-SAML-0074',
+                          title: 'This service provider\'s metadata has ' +
+                                 'expired',
+                          why: 'The metadata registered for "' +
+                               opts.spEntityId + '" expired at ' +
+                               fresh.expiresAt + ' (its validUntil), so ' +
+                               'nothing it sends is accepted until it is ' +
+                               'refreshed — press Refresh or upload a newer ' +
+                               'document on the SAML 2.0 page.' } };
+    }
     const assessment = requestSignature.assess({
       binding: req.method === 'POST' ? 'post' : 'redirect',
       rawQuery: this.rawQueryOf(req),
@@ -1075,7 +1133,7 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.deliverable().");
     log.debug("Leaving Saml2Sso.deliverable().");
     return binding === BINDING_POST || binding === BINDING_REDIRECT ||
-           binding === BINDING_ARTIFACT;
+           binding === BINDING_ARTIFACT || binding === BINDING_SIMPLESIGN;
   }
 
   // ---------------------------------------------------------------------------
@@ -1611,7 +1669,7 @@ class Saml2Sso {
       return { binding: BINDING_POST, stated: false };
     }
     if (asked === BINDING_POST || asked === BINDING_REDIRECT ||
-        asked === BINDING_ARTIFACT) {
+        asked === BINDING_ARTIFACT || asked === BINDING_SIMPLESIGN) {
       log.debug("Leaving Saml2Sso.responseBindingFor(). " + asked);
       return { binding: asked, stated: true };
     }
@@ -1699,14 +1757,27 @@ class Saml2Sso {
       return { pem: spMetadata.toPem(configured),
                source: 'samlEncryptionCertificate' };
     }
-    const signing = first(fields.samlSigningCertificate);
+    // THE FIRST REGISTERED SIGNING CERTIFICATE THAT CAN BE ENCRYPTED TO:
+    // since the #37 follow-up a service provider may sign with EC, EdDSA or a
+    // post-quantum key, and key transport here wraps to RSA.
+    const rsaOnly = function (value) {
+      log.debug("Entering rsaOnly().");
+      const list = Array.isArray(value) ? value : (value ? [value] : []);
+      log.debug("Leaving rsaOnly().");
+      return list.map(function (one) {
+        return String(one).trim();
+      }).filter(function (one) {
+        return one && !spMetadata.certificateProblem(one);
+      })[0] || '';
+    };
+    const signing = rsaOnly(fields.samlSigningCertificate);
     if (signing) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). Its signing " +
                 "certificate.");
       return { pem: spMetadata.toPem(signing),
                source: 'samlSigningCertificate' };
     }
-    const observed = first(fields.samlObservedSigningCertificate);
+    const observed = rsaOnly(fields.samlObservedSigningCertificate);
     if (observed && mode.encryptsToObservedCertificates()) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). The observed " +
                 "certificate, in development.");
@@ -2067,7 +2138,8 @@ class Saml2Sso {
     return false;
   }
 
-  private postBindingPage(destination, field, message, relayState, note) {
+  private postBindingPage(destination, field, message, relayState, note,
+                          extra?) {
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.postBindingPage(). destination=" +
               destination);
@@ -2079,6 +2151,10 @@ class Saml2Sso {
         (relayState !== undefined && relayState !== null && relayState !== ''
           ? '<input type="hidden" name="RelayState" value="' +
             xmlEscape(relayState) + '">' : '') +
+        (extra || []).map(function (pair) {
+          return '<input type="hidden" name="' + pair[0] + '" value="' +
+                 xmlEscape(pair[1]) + '">';
+        }).join('') +
         '<div class="row"><button type="submit">Continue to ' +
       xmlEscape(note.who) +
         '</button></div>' +
@@ -2139,6 +2215,34 @@ class Saml2Sso {
     log.debug("Leaving Saml2Sso.redirectUrlFor(). " + url.length +
               " characters.");
     return url;
+  }
+
+  // THE SimpleSign FORM (#37 follow-up): the message base64'd as the POST
+  // binding does it, with its enveloped signature taken OFF — the binding
+  // signs the form values, and says the XML signature is to be removed — and,
+  // where `saml2.signResponse` holds for this service provider, `SigAlg` and
+  // `Signature` over `SAMLResponse=<b64>[&RelayState=<rs>]&SigAlg=<alg>`, the
+  // octets `request_signature.ts`'s `simpleSignOctets()` checks.
+  private simpleSignFields(field, xml, relayState, spEntityId) {
+    const { documentSettings } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.simpleSignFields().");
+    const bare = String(xml).replace(
+      /^(<[^>]*>(?:\s*<(?:[A-Za-z_][\w.-]*:)?Issuer\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?Issuer>)?)\s*<(?:[A-Za-z_][\w.-]*:)?Signature\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?Signature>/,
+      '$1');
+    const message = this.encodePost(bare);
+    const extra = [];
+    if (this.settingFor(spEntityId || '', 'saml2.signResponse')) {
+      const sigAlg = documentSettings.signatureOptions().sigAlg;
+      const octets = field + '=' + message +
+        (relayState ? '&RelayState=' + relayState : '') +
+        '&SigAlg=' + sigAlg;
+      extra.push(['SigAlg', sigAlg]);
+      extra.push(['Signature', this.signQueryString(octets, sigAlg)]);
+    }
+    log.debug("Leaving Saml2Sso.simpleSignFields(). signed=" +
+              (extra.length > 0));
+    return { message: message, extra: extra };
   }
 
   // The artifact of section 3.6.4: a four-byte header and two twenty-byte
@@ -2250,6 +2354,16 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.deliver(). By redirect.");
       return;
     }
+    if (opts.binding === BINDING_SIMPLESIGN) {
+      const form = this.simpleSignFields(opts.field, opts.xml,
+                                         opts.relayState, opts.spEntityId);
+      this.sendPostBinding(res, opts.note.title,
+                           this.postBindingPage(opts.destination, opts.field,
+                                                form.message, opts.relayState,
+                                                opts.note, form.extra));
+      log.debug("Leaving Saml2Sso.deliver(). By SimpleSign.");
+      return;
+    }
     this.sendPostBinding(res, opts.note.title,
                          this.postBindingPage(opts.destination, opts.field,
                                               this.encodePost(opts.xml),
@@ -2306,10 +2420,14 @@ class Saml2Sso {
 
     const relayState = held ? held.relayState : (params.RelayState || '');
     const arrivedBy = held ? held.arrivedBy :
-                      (req.method === 'POST' ? BINDING_POST : BINDING_REDIRECT);
+                      (req.method !== 'POST' ? BINDING_REDIRECT
+                        : (params.Signature ? BINDING_SIMPLESIGN
+                                            : BINDING_POST));
     const xml = this.decodeMessage(encoded);
     logArtifact('SAML 2.0 AuthnRequest', 'as received on the ' +
-                (arrivedBy === BINDING_POST ? 'HTTP POST' : 'HTTP Redirect') +
+                (arrivedBy === BINDING_REDIRECT ? 'HTTP Redirect'
+                  : (arrivedBy === BINDING_SIMPLESIGN ? 'HTTP POST SimpleSign'
+                                                      : 'HTTP POST')) +
                     ' ' +
                     'binding', xml);
     const request: any = this.readAuthnRequest(xml);
@@ -2356,8 +2474,8 @@ class Saml2Sso {
         errorCodes.mark(res, checked.refusal.errorCode || 'STS-SAML-0061');
         log.debug("Leaving Saml2Sso.singleSignOn(). The signature was " +
                   "refused.");
-        return this.samlError(res, 403, 'That AuthnRequest\'s signature is ' +
-                                        'not accepted',
+        return this.samlError(res, 403, checked.refusal.title ||
+                              'That AuthnRequest\'s signature is not accepted',
                               checked.refusal.why);
       }
       verification = {
@@ -2385,7 +2503,8 @@ class Saml2Sso {
     // which Lax does carry. This is the difference from ws-federation/wsfed.ts,
     // which answers the same problem with a sign-in screen of its own; see
     // decision 2.
-    if (!held && arrivedBy === BINDING_POST) {
+    if (!held && (arrivedBy === BINDING_POST ||
+                  arrivedBy === BINDING_SIMPLESIGN)) {
       const record = {
         id: randomId(18), samlRequest: String(encoded),
         relayState: String(relayState || ''),
@@ -2917,8 +3036,14 @@ class Saml2Sso {
     // and signing the ciphertext would produce a document that verifies without
     // anybody being able to say what was signed. buildAssertionFor() has
     // already signed it by the time it gets here.
+    // WANTED by the setting, or by the service provider itself: consumed
+    // metadata that publishes a use="encryption" key (#37 follow-up) is
+    // encrypted to in every mode, which is the one reading of that key the
+    // interoperability profiles give.
     const wantsEncryption = !!this.settingFor(ctx.spEntityId,
-                                              'saml2.encryptAssertion');
+                                              'saml2.encryptAssertion') ||
+      String(this.fieldsOf(ctx.spEntityId).samlSpWantAssertionsEncrypted ||
+             '') === 'TRUE';
     const sealed: any = wantsEncryption
       ? this.encryptFor(ctx.spEntityId, built, 'saml:EncryptedAssertion',
                         'assertion')
@@ -3042,10 +3167,12 @@ class Saml2Sso {
   // agent carried. That is the whole reason the profile exists — the assertion
   // never passes through the browser at all.
   //
-  // It is not authenticated, and on a service that authenticates nobody that is
-  // the ordinary state of affairs rather than a decision about this endpoint.
-  // What stands in for authentication is the MessageHandle, which is twenty
-  // random bytes, and the one-shot rule of decision 6.
+  // IT AUTHENTICATES ITS CALLER since the #37 follow-up — a signature on the
+  // ArtifactResolve, or the service provider's registered certificate as the
+  // TLS client certificate, required where signed requests are — and answers
+  // only the service provider the artifact was minted for; see
+  // `authenticateArtifactCaller()`. The MessageHandle's twenty random bytes
+  // and the one-shot rule of decision 6 still stand behind that.
   // ---------------------------------------------------------------------------
   private soapEnvelope(inner) {
     const { log } = this.deps.helpers;
@@ -3148,6 +3275,20 @@ class Saml2Sso {
                     '', inResponseTo);
     }
     const held = artifacts.get(artifact);
+    if (held) {
+      // WHO IS ASKING, BEFORE ANYTHING IS SPENT (#37 follow-up): a caller that
+      // is not the service provider the artifact was minted for — or cannot
+      // show that it is — is refused, and the artifact stays resolvable by
+      // the one it was issued to.
+      const caller = this.authenticateArtifactCaller(req, resolve,
+                                                     spEntityId, held);
+      if (caller.refuse) {
+        log.debug("Leaving Saml2Sso.resolveArtifact(). The caller was " +
+                  "refused: " + caller.errorCode);
+        errorCodes.mark(res, caller.errorCode || 'STS-SAML-0077');
+        return answer(STATUS_REQUESTER, caller.why, '', inResponseTo);
+      }
+    }
     if (!held) {
       // The one refusal in this file that is worth making loudly, because it is
       // the same answer for three different mistakes and a service provider
@@ -3200,6 +3341,89 @@ class Saml2Sso {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ARTIFACT RESOLUTION SERVICE'S CALLER (#37 follow-up). Three checks, in
+  // every mode, and each refuses WITHOUT spending the artifact:
+  //
+  //   1. the ArtifactResolve's <Issuer> must be the service provider the
+  //      artifact was minted for (`STS-SAML-0078`) — saml-bindings-2.0-os
+  //      section 3.6.4.1: the artifact is to be given only to its intended
+  //      recipient. Until this follow-up that was logged and answered anyway;
+  //   2. that service provider's consumed metadata must not have expired
+  //      (`STS-SAML-0074`);
+  //   3. the caller must be AUTHENTICATED as it — a signature on the
+  //      ArtifactResolve or its registered certificate as the TLS client
+  //      certificate — under the request policy
+  //      (`request_signature.ts`'s `authenticateSoapCaller()`).
+  //
+  // This service's own mock service provider resolves in process
+  // (`resolveForMockSp()`) and never reaches here.
+  // ---------------------------------------------------------------------------
+  private authenticateArtifactCaller(req, resolve, spEntityId, held): any {
+    const { audit, mtls, requestSignature, spMetadata } = this.deps;
+    const { baseUrlOf, log } = this.deps.helpers;
+    const { XMLSerializer } = this.deps.xmldom;
+    log.debug("Entering Saml2Sso.authenticateArtifactCaller().");
+    const intended = String(held.spEntityId || '');
+    const refuse = function (code, why, via) {
+      log.debug("Entering refuse().");
+      audit.audit({
+        action: 'saml2.artifact.resolve', outcome: 'refused',
+        errorCode: code, protocol: 'SAML 2.0', channel: 'http',
+        target: String(spEntityId || ''),
+        summary: 'An ArtifactResolve from "' + (spEntityId || '(unnamed)') +
+                 '" was refused: ' + why,
+        detail: { intended: intended, via: via || '' }
+      });
+      log.warn('saml2: refused an ArtifactResolve from "' +
+               (spEntityId || '(unnamed)') + '": ' + why + '.');
+      log.debug("Leaving refuse().");
+      return { refuse: true, errorCode: code, why: why };
+    };
+    if (intended && String(spEntityId || '') !== intended) {
+      log.debug("Leaving Saml2Sso.authenticateArtifactCaller(). Wrong SP.");
+      return refuse('STS-SAML-0078', 'that artifact was issued to another ' +
+                    'service provider, and an artifact is resolved only by ' +
+                    'the one it was issued to (section 3.6.4.1)' +
+                    (spEntityId ? '' : ' — this ArtifactResolve names no ' +
+                                       '<Issuer>'), '');
+    }
+    const fields = this.fieldsOf(spEntityId);
+    const fresh = spMetadata.freshness(fields);
+    if (fresh.state === 'expired') {
+      log.debug("Leaving Saml2Sso.authenticateArtifactCaller(). Expired.");
+      return refuse('STS-SAML-0074', fresh.why, '');
+    }
+    const peer = mtls.peerCertificate(req);
+    const revoked = req.certificateRevocation &&
+                    req.certificateRevocation.refused;
+    const caller = requestSignature.authenticateSoapCaller({
+      xml: new XMLSerializer().serializeToString(resolve),
+      rootLocalName: 'ArtifactResolve', fields: fields,
+      tlsCertificate: peer && !revoked
+        ? Buffer.from(peer.raw).toString('base64') : '',
+      implicitCertificates: this.implicitCertificatesFor(baseUrlOf(req),
+                                                         spEntityId)
+    });
+    if (caller.refuse) {
+      log.debug("Leaving Saml2Sso.authenticateArtifactCaller(). " +
+                caller.errorCode);
+      return refuse(caller.errorCode, caller.why, caller.via);
+    }
+    audit.audit({
+      action: 'saml2.artifact.resolve', outcome: 'success',
+      protocol: 'SAML 2.0', channel: 'http', target: String(spEntityId || ''),
+      summary: 'An ArtifactResolve from "' + (spEntityId || '(unnamed)') +
+               '": caller ' + (caller.via === 'none'
+                 ? 'NOT authenticated, which the policy allows'
+                 : 'authenticated by ' + caller.via),
+      detail: { via: caller.via, why: caller.why }
+    });
+    log.debug("Leaving Saml2Sso.authenticateArtifactCaller(). via=" +
+              caller.via);
+    return { refuse: false, via: caller.via };
+  }
+
   private spendArtifact(artifact, held) {
     const { clusterClaims, errorCodes } = this.deps;
     const { log } = this.deps.helpers;
@@ -3244,21 +3468,8 @@ class Saml2Sso {
   private answerResolved(held, spEntityId, artifact, inResponseTo, answer) {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.answerResolved().");
-    if (spEntityId && held.spEntityId && spEntityId !== held.spEntityId) {
-      // Recorded rather than refused, which is this service's posture
-      // everywhere: the artifact was minted for one service provider and
-      // another is resolving it. A real identity provider refuses this. The log
-      // says so, the artifact is spent either way, and the message is returned
-      // — because what a mock is for is letting somebody SEE that their service
-      // provider did this.
-      log.warn('saml2: artifact ' + String(artifact).slice(0, 12) + '… was ' +
-          'minted for "' +
-               held.spEntityId + '" and is being resolved by "' + spEntityId +
-          '". ' +
-               'A real identity provider refuses that; this one records it ' +
-               'and answers, which is what a mock is for. The artifact is ' +
-               'spent either way.');
-    }
+    // A resolver that is not the artifact's service provider was refused
+    // before the artifact was spent — `authenticateArtifactCaller()`.
     log.debug("Leaving Saml2Sso.answerResolved(). Resolved and destroyed.");
     return answer(STATUS_SUCCESS, '', held.xml, inResponseTo);
   }
@@ -3514,8 +3725,9 @@ class Saml2Sso {
                                'STS-SAML-0061');
           log.debug("Leaving Saml2Sso.singleLogout(). A LogoutResponse's " +
                     "signature was refused.");
-          return this.samlError(res, 403, 'That LogoutResponse\'s signature ' +
-                                          'is not accepted',
+          return this.samlError(res, 403, checkedAnswer.refusal.title ||
+                                'That LogoutResponse\'s signature is not ' +
+                                'accepted',
                                 checkedAnswer.refusal.why);
         }
       }
@@ -3584,8 +3796,8 @@ class Saml2Sso {
       errorCodes.mark(res, checkedLogout.refusal.errorCode || 'STS-SAML-0061');
       log.debug("Leaving Saml2Sso.singleLogout(). The signature was " +
                 "refused.");
-      return this.samlError(res, 403, 'That LogoutRequest\'s signature is ' +
-                                      'not accepted',
+      return this.samlError(res, 403, checkedLogout.refusal.title ||
+                            'That LogoutRequest\'s signature is not accepted',
                             checkedLogout.refusal.why + ' The session was ' +
                             'NOT ended.');
     }
@@ -3646,7 +3858,8 @@ class Saml2Sso {
                          (nameIdEl.getAttribute('Format') || '') : '';
     const sessionIndex = textByLocal(root, 'SessionIndex');
     const idpEntityId = this.idpEntityIdFor(spEntityId);
-    const arrivedBy = req.method === 'POST' ? BINDING_POST : BINDING_REDIRECT;
+    const arrivedBy = req.method !== 'POST' ? BINDING_REDIRECT
+      : (params.Signature ? BINDING_SIMPLESIGN : BINDING_POST);
 
     // The session ends here. `endSession()` returns what it dropped, which is
     // how the page below can name the other service providers that were signed
@@ -3919,11 +4132,13 @@ class Saml2Sso {
               'index="0" isDefault="true"') +
           service('SingleLogoutService', BINDING_REDIRECT, where.slo) +
           service('SingleLogoutService', BINDING_POST, where.slo) +
+          service('SingleLogoutService', BINDING_SIMPLESIGN, where.slo) +
           NAMEID_FORMATS.map(function (format) {
             return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
           }).join('') +
           service('SingleSignOnService', BINDING_REDIRECT, where.sso) +
           service('SingleSignOnService', BINDING_POST, where.sso) +
+          service('SingleSignOnService', BINDING_SIMPLESIGN, where.sso) +
           // The artifact SSO endpoint. It is the same URL as the other two,
           // which is correct and looks wrong: HTTP-Artifact as a REQUEST
           // binding means the AuthnRequest arrives as an artifact this service
@@ -4509,6 +4724,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   BINDING_REDIRECT: BINDING_REDIRECT,
   BINDING_POST: BINDING_POST,
+  BINDING_SIMPLESIGN: BINDING_SIMPLESIGN,
   BINDING_ARTIFACT: BINDING_ARTIFACT,
   BINDING_SOAP: BINDING_SOAP,
   NAMEID_FORMATS: NAMEID_FORMATS,

@@ -2077,8 +2077,9 @@ class VcVerifier {
   // What it does not ask is whether the person is ALLOWED a session. That is
   // the issuance policy's question, and `startSession()` asks it for every
   // door (STS-VC-0064 on the page when it refuses). The directory has no
-  // "disabled" flag for it to consult beyond that: `scimActive: false`
-  // deactivates nobody here, a row of the root `CLAUDE.md` of its own.
+  // "disabled" flag for it to consult beyond that — until 2026-09-17, when
+  // one arrived: `startSession()` refuses a disabled account
+  // (`common/account_state.ts`), so this door does too.
   //
   // **`amr` IS `["pop"]` AND `acr` IS `"1"`.** RFC 8176's `pop` is "proof of
   // possession of a key" where it is unspecified whether the key is hardware-

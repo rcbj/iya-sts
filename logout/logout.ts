@@ -546,17 +546,40 @@ class Logout {
             return one.clientId === clientId;
           })[0];
           if (note) ctx.notifications.push(note);
-          // THE BACK-CHANNEL HALF, planned before the client is forgotten for
-          // the same reason, and sent from here because the session may
-          // STAY: `dropSession()` sends for the clients still on a session it
-          // ends, and this one will no longer be. Sent by the process that
-          // handled this request, outside the session-end claim — a relying
-          // party row is ended by one request, so it is sent once.
+          // THE BACK-CHANNEL HALF (2026-09-17, #36 follow-up), and it depends
+          // on whether the SESSION is ending in this act too.
+          //
+          //   * It is (a global logout, or the session's own row ticked): the
+          //     client is LEFT on the session and nothing is sent from here.
+          //     `dropSession()` sends for every client still on the session
+          //     it ends, through the session-end claim, so the session's end
+          //     is told once for the cluster — and a client forgotten here
+          //     first would have been told outside that claim.
+          //   * It is not (the session stays): planned before the client is
+          //     forgotten, because the list it is planned from is the thing
+          //     about to be removed, and sent from here. The row's id is
+          //     derived from the session and the client, and each attempt is
+          //     claimed, so a second request forgetting the same client — on
+          //     this node or another — queues and sends nothing more.
+          if (ctx.endingSessions[session.id]) {
+            log.debug("Leaving oidc-rp.terminate(). The session ends in " +
+                      "this act and tells the client itself.");
+            return { ok: true,
+                     message: clientId + ' on session ' + session.id +
+                              (note && note.url
+                                ? ' is notified at ' + note.uri
+                                : ' has nowhere to be notified in a browser') +
+                              ', and is sent a back-channel Logout Token by ' +
+                              'the end of the session itself' };
+          }
           const told = backchannel.plan(session, {
             via: ctx.by || 'the protocol-independent logout',
-            clients: [clientId], issuer: ctx.issuer });
+            clients: [clientId], issuer: ctx.issuer, trigger: 'forget' });
           backchannel.dispatch(told);
-          if (session.oidcClients) delete session.oidcClients[clientId];
+          if (session.oidcClients) {
+            delete session.oidcClients[clientId];
+            authn.noteSessionChanged(session);
+          }
           log.debug("Leaving oidc-rp.terminate().");
           return { ok: true,
                    message: clientId + ' was forgotten on session ' +
@@ -1372,7 +1395,14 @@ class Logout {
       // this process does.
       notifications: [],
       cleanups: [],
-      logoutRequests: []
+      logoutRequests: [],
+      // THE SESSIONS THIS ACT WILL END (2026-09-17, #36 follow-up), filled by
+      // terminate() before any family runs. The `oidc-rp` family reads it: a
+      // relying party on a session that is ending is told by the session's
+      // end — `authn.dropSession()`, through the session-end claim — and not
+      // by this request, which is what made a global logout's Logout Tokens
+      // the one send outside that claim.
+      endingSessions: {}
     };
   }
 
@@ -2002,6 +2032,15 @@ class Logout {
     const skipped = [];
     const unknown = {};
     wanted.forEach((id) => { unknown[id] = true; });
+
+    // WHICH SESSIONS THIS ACT ENDS, before any family runs — see
+    // `endingSessions` in contextFor(). Every live session in a global logout;
+    // in a selective one, the sessions whose own row was ticked.
+    ctx.sessions.forEach((session) => {
+      if (global || wantedSet['session:' + session.id]) {
+        ctx.endingSessions[session.id] = true;
+      }
+    });
 
     // See the block above: the ending order is not the reading order, and a
     // copy is sorted rather than FAMILIES itself — the table's own order is

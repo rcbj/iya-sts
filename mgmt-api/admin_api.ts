@@ -223,6 +223,9 @@ import rbac = require('../admin-ui/admin_rbac');
 // taking the ids from it moves no route and cannot let this document offer a
 // set the service does not have.
 import stats = require('../common/admin_stats');
+// A DISABLED ACCOUNT (2026-09-17): the gate refuses a person's token once
+// their account is disabled. A library loaded long before this file.
+import accountState = require('../common/account_state');
 // The applications registry, for the `enum` of protocol family ids on the
 // create body. A library too — it registers nothing and admin.js required it
 // long before this line — so this moves no route, and taking the ids from the
@@ -372,6 +375,7 @@ interface AdminApiDeps {
   config: typeof config;
   rbac: typeof rbac;
   stats: typeof stats;
+  accountState: typeof accountState;
   applications: typeof applications;
   resourceMetadata: typeof resourceMetadata;
   spec: typeof spec;
@@ -433,6 +437,7 @@ class AdminApi {
       config: config,
       rbac: rbac,
       stats: stats,
+      accountState: accountState,
       applications: applications,
       resourceMetadata: resourceMetadata,
       spec: spec,
@@ -3137,6 +3142,75 @@ class AdminApi {
             },
             responseDescription: 'The requirement as it now stands.' },
 
+          { action: 'disable', operationId: 'disableUserAccount',
+            summary: 'Disable somebody\'s account, and end everything ' +
+                     'they hold',
+            description: 'Sets `pwdAccountLockedTime` (draft-behera-ldap-' +
+                         'password-policy\'s administrative lock, ' +
+                         '`000001010000Z`) on the person\'s entry. From then ' +
+                         'on EVERY door refuses them, in every mode: a ' +
+                         'password anywhere (the sign-in screen, an LDAP ' +
+                         'bind, the password grant, WS-Trust, SCIM and SSF ' +
+                         'Basic, EST), a session from any sign-in (a ' +
+                         'security key, federation, SPNEGO, a TLS client ' +
+                         'certificate, the wallet), a Kerberos AS-REQ ' +
+                         '(KDC_ERR_CLIENT_REVOKED), every token grant made ' +
+                         'on their behalf (`invalid_grant`, a refresh token ' +
+                         'included), every assertion, and this API.' +
+                         '\n\n**Everything they hold is ended at once**, by ' +
+                         'the same global logout `POST ' +
+                         '/admin-api/logout/global` performs: sessions (with ' +
+                         'CAEP `session-revoked` and back-channel Logout ' +
+                         'Tokens to their relying parties), tokens, codes, ' +
+                         'directory connections and Kerberos tickets. RISC ' +
+                         'receivers are sent `account-disabled`. ' +
+                         'Front-channel notifications need the person\'s ' +
+                         'own browser and are not sent. SCIM\'s ' +
+                         '`active: false` is the same act.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                reason: { type: 'string',
+                          description: 'Recorded on the audit row.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'mallory', reason: 'left the company' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and in `ended` ' +
+                                 'what the global logout ended.' },
+
+          { action: 'enable', operationId: 'enableUserAccount',
+            summary: 'Enable a disabled account again',
+            description: 'Clears `pwdAccountLockedTime`. The person signs ' +
+                         'in afresh — nothing ended by the disable comes ' +
+                         'back — and RISC receivers are sent ' +
+                         '`account-enabled`. SCIM\'s `active: true` is the ' +
+                         'same act.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                reason: { type: 'string',
+                          description: 'Recorded on the audit row.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'mallory' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed.' },
+
           { action: 'clear-key', operationId: 'clearUserSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
             description: 'Goes through the same `removeKey()` the person\'s ' +
@@ -3366,7 +3440,22 @@ class AdminApi {
             description: 'Only rows of this family. The `families` member of ' +
                          'the reply says which values there are; it is read ' +
                          'off the same table the endpoint acts on, so a ' +
-                         'family that cannot occur is never offered.' }
+                         'family that cannot occur is never offered.' },
+          { name: 'deliveryState', in: 'query', required: false,
+            schema: { type: 'string', enum: ['pending', 'sent', 'dead'] },
+            description: 'Only back-channel Logout Token deliveries in this ' +
+                         'state. `dead` is the dead-letter list, whose rows ' +
+                         '`POST /admin-api/logout/retry-backchannel` sends ' +
+                         'again.' },
+          { name: 'deliveryq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'Only deliveries whose client, session, address, ' +
+                         'error code or person contains this.' },
+          { name: 'backchannelDeliveriesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the deliveries. Clamped, like every ' +
+                         'page parameter here; `per` is shared with the ' +
+                         'live rows.' }
         ].concat(this.pagingParameters()),
         responseDescription: 'The family list, or one identity\'s live state.',
         responseSchema: { $ref: '#/components/schemas/LogoutInventory' },
@@ -3467,6 +3556,35 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The act, in `result`.' },
+          { action: 'retry-backchannel',
+            operationId: 'retryBackchannelDelivery',
+            summary: 'Send a dead back-channel Logout Token delivery again',
+            description: 'A delivery that ended as a DEAD LETTER — refused ' +
+                         'with 400, refused by the outbound policy, or still ' +
+                         'failing after `oauth2.backchannelLogoutAttempts` — ' +
+                         'is queued again as a new generation: a new Logout ' +
+                         'Token with a new `jti`, a fresh attempt budget, and ' +
+                         'the client\'s CURRENT `backchannel_logout_uri`, ' +
+                         'because the commonest reason to retry is having ' +
+                         'corrected it. The attempt is made after this reply, ' +
+                         'claimed like every other, so exactly one node sends ' +
+                         'it. Refused for a delivery that is not dead, one ' +
+                         'retention has removed, and a client with no usable ' +
+                         'address. `GET /admin-api/logout?deliveryState=dead` ' +
+                         'lists the dead letters.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                delivery: { type: 'string',
+                            description: 'The delivery\'s `id`, from ' +
+                                         '`backchannelDeliveries`.' }
+              },
+              required: ['delivery'],
+              examples: [{ delivery: 'no-such-delivery' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The delivery as it now stands, pending.' },
           { action: 'restore-token', operationId: 'restoreLoggedOutToken',
             summary: 'NON-SPEC: un-revoke a token a logout revoked',
             description: '**No authorization server could offer this.** RFC ' +
@@ -6585,11 +6703,19 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API SAML 2.0 action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.saml2Action(self.withAction(req, body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0047');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
+          // Two actions dial out and answer with a promise (#37 follow-up).
+          Promise.resolve(adminActions.saml2Action(self.withAction(req, body)))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0047');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+            }, function (e) {
+              errorCodes.mark(res, 'STS-API-0047');
+              self.sendJson(res, 400, { ok: false, errors: [
+                'The action failed: ' + ((e && e.message) || e)] });
+            });
           log.debug("Leaving the management API SAML 2.0 action endpoint.");
         },
         actions: [
@@ -6694,10 +6820,12 @@ class AdminApi {
                          '\n\nBase64 DER or PEM — the armour and whitespace ' +
                          'are stripped, because what the attribute holds is ' +
                          'what a `ds:X509Certificate` carries. A value that ' +
-                         'is not an RSA certificate is refused and nothing ' +
-                         'changes: the verifier here is RSA, and an ' +
-                         'unusable certificate would make every signature ' +
-                         'from this service provider fail. Public key ' +
+                         'is not a certificate whose key makes an XML ' +
+                         'signature this service verifies (RSA, EC, EdDSA, ' +
+                         'DSA, ML-DSA, SLH-DSA) is refused and nothing ' +
+                         'changes: an unusable certificate would make every ' +
+                         'signature from this service provider fail. Public ' +
+                         'key ' +
                          'material, worth nothing to whoever reads the ' +
                          'directory.',
             requestBodyRequired: true,
@@ -6757,7 +6885,8 @@ class AdminApi {
                          'onto `samlSigningCertificate`, so this service ' +
                          'provider\'s signatures are verified against it ' +
                          'from the next request. Refused when nothing is ' +
-                         'observed, and for a certificate that is not RSA. ' +
+                         'observed, and for a certificate whose key signs ' +
+                         'nothing this service verifies. ' +
                          'Confirm only a key you know is the service ' +
                          'provider\'s: this is the registration.',
             requestBodyRequired: true,
@@ -6801,7 +6930,9 @@ class AdminApi {
                          'signed document is consumed and recorded as ' +
                          '`signed-not-verified`: the trust act is then the ' +
                          'administrator\'s choice of URL or document. ' +
-                         'Base64 DER or PEM, RSA; empty clears it.',
+                         'Base64 DER or PEM, any key an XML signature is ' +
+                         'verified with here; empty clears it. The realm\'s ' +
+                         '`saml2.metadataTrustAnchors` are accepted as well.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -6815,6 +6946,50 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'refresh-metadata',
+            operationId: 'refreshSaml2Metadata',
+            summary: 'Fetch a service provider\'s metadata again, now',
+            description: 'Fetches the document from the entry\'s ' +
+                         '`samlSpMetadataUrl` — or, for an entry with ' +
+                         'none, from the realm\'s Metadata Query responder ' +
+                         '(`saml2.mdqBaseUrl`) — through the federation ' +
+                         'outbound policy, and CONSUMES it exactly as ' +
+                         '`upload-metadata` does. The background refresher ' +
+                         'does the same once a document is past its ' +
+                         'cacheDuration. A failure changes nothing.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed, or why nothing was.' },
+
+          { action: 'mdq-import',
+            operationId: 'importSaml2MetadataFromMdq',
+            summary: 'Import a service provider from the MDQ responder',
+            description: 'Asks `saml2.mdqBaseUrl` for ' +
+                         '`<base>/entities/<percent-encoded entityID>` ' +
+                         '(the Metadata Query Protocol), and — when the ' +
+                         'answer describes that entity — creates the ' +
+                         'application entry if it does not exist and ' +
+                         'consumes the document, held to the realm\'s ' +
+                         '`saml2.metadataTrustAnchors`. Refused with no ' +
+                         'responder configured; an entry it created is ' +
+                         'removed again if the document is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed (with `created`), or why ' +
+                                 'nothing was.' },
 
           { action: 'upload-metadata',
             operationId: 'uploadSaml2Metadata',
@@ -6835,19 +7010,26 @@ class AdminApi {
                          'certificate, its NameIDFormats (a NameIDPolicy ' +
                          'naming another is then InvalidNameIDPolicy), and ' +
                          'AuthnRequestsSigned and WantAssertionsSigned. ' +
-                         'validUntil and cacheDuration are recorded and ' +
-                         'shown.\n\nREFUSED, changing nothing, for: a ' +
-                         'document that is not a single EntityDescriptor ' +
-                         'with a SAML 2.0 SPSSODescriptor; an entityID that ' +
+                         'The EFFECTIVE validUntil (earliest in the chain) ' +
+                         'is enforced — past it every request from the ' +
+                         'service provider is refused — and past the ' +
+                         'cacheDuration a document with a URL is fetched ' +
+                         'again in the background. An EntitiesDescriptor ' +
+                         'is read for this entity.\n\nREFUSED, changing ' +
+                         'nothing, for: a document that is not an ' +
+                         'EntityDescriptor (or an aggregate holding exactly ' +
+                         'one for this entity) with a SAML 2.0 ' +
+                         'SPSSODescriptor; an entityID that ' +
                          'is not this service provider\'s; a validUntil ' +
                          'already passed; an encryption certificate this ' +
                          'service cannot encrypt to; a signature that does ' +
                          'not verify against ' +
-                         '`samlSpMetadataSigningCertificate` when one is set ' +
-                         '(or no signature then); and a ' +
-                         'document over `saml2.spMetadataMaxBytes`. A ' +
-                         'signing certificate that is not RSA is skipped and ' +
-                         'named in `skipped`.',
+                         '`samlSpMetadataSigningCertificate` or a realm ' +
+                         'trust anchor when any is set (or no signature ' +
+                         'then); and a document over ' +
+                         '`saml2.spMetadataMaxBytes`. A signing certificate ' +
+                         'no XML signature method uses is skipped and named ' +
+                         'in `skipped`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15523,6 +15705,24 @@ class AdminApi {
           return self.sendJson(res, 401, { error: 'invalid_token', errors: [
             'That access token expired at ' +
             new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
+        }
+        // A TOKEN THIS SERVICE HAS SINCE REVOKED OR DISOWNED, AND ONE MADE FOR
+        // A PERSON WHOSE ACCOUNT IS DISABLED (2026-09-17, #36 follow-up). This
+        // gate checked neither, so an administrator's token went on working
+        // until it expired after a global logout — or after their account was
+        // disabled, which is the one case the disable exists for.
+        // `invalid_token` for both: RFC 6750 section 3.1's "revoked".
+        const { accountState } = self.deps;
+        const person = String(claims.sub || '');
+        if ((claims.jti && self.deps.stats.isRevoked(String(claims.jti))) ||
+            (person && person !== String(claims.client_id || '') &&
+             accountState.isDisabled(person))) {
+          errorCodes.mark(res, 'STS-API-0122');
+          res.set('WWW-Authenticate',
+                  'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+          return self.sendJson(res, 401, { error: 'invalid_token', errors: [
+            'That access token has been revoked, or the account it was ' +
+            'issued to is disabled.'] });
         }
         // RFC 9068 SECTION 4, STEPS 1 AND 3, in its order: the TYPE before the
         // issuer, and both before the audience. Every token this service signs

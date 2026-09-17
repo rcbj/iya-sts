@@ -333,10 +333,17 @@ var config = {
     stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
     frontchannelLogout: true,                    // OpenID Connect Front-Channel Logout
     backchannelLogout: true,                     // OpenID Connect Back-Channel Logout
+    backchannelLogoutOnExpiry: true,             // Back-channel logout on session expiry
     backchannelLogoutTokenTtlS: 120,             // Back-channel Logout Token lifetime (seconds)
     backchannelLogoutAttempts: 3,                // Back-channel logout delivery attempts
     backchannelLogoutTimeoutMs: 5000,            // Back-channel logout request timeout (ms)
-    backchannelLogoutBackoffMs: 1000             // Back-channel logout retry backoff (ms)
+    backchannelLogoutBackoffMs: 1000,            // Back-channel logout retry backoff (ms)
+    backchannelLogoutLeaseMs: 60000,             // Back-channel logout attempt lease (ms)
+    backchannelLogoutSweepS: 10,                 // Back-channel logout sweep interval (seconds)
+    backchannelLogoutRetentionS: 86400,          // Back-channel logout delivery retention (seconds)
+    backchannelLogoutMaxRows: 2000,              // Back-channel logout deliveries kept per realm
+    backchannelLogoutConcurrency: 8,             // Back-channel logout sweep concurrency
+    backchannelLogoutSummaryS: 60                // Back-channel logout summary interval (seconds)
   },
 
   // --- PKI -------------------------------------------------------------
@@ -477,6 +484,7 @@ var config = {
     clockSkewS: 0,                                          // Assertion clock skew (s)
     signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
     canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
+    allowSha1Signatures: false,                             // Accept SHA-1 XML signatures
     organizationName: "sts",                                // Metadata OrganizationName
     organizationDisplayName: "Mock security token service", // Metadata OrganizationDisplayName
     organizationUrl: ""                                     // Metadata OrganizationURL
@@ -501,7 +509,11 @@ var config = {
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
-    spMetadataMaxBytes: 524288                                             // Largest SP metadata document fetched (bytes)
+    spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
+    spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
+    spMetadataRefreshIntervalS: 300,                                       // Metadata refresher interval (seconds)
+    metadataTrustAnchors: "",                                              // Metadata signing trust anchors
+    mdqBaseUrl: ""                                                         // Metadata Query (MDQ) responder
   },
 
   // --- SAML 1.1 --------------------------------------------------------

@@ -1022,10 +1022,15 @@ class WsFederation {
     //   * MULTI-FACTOR is met only by two factors, so a passwordless key does
     //     not answer it, however phishing-resistant it is.
     //
-    // Either unmet: the person is sent to sign in again with the second
-    // factor required (the screen cannot run a key alone under `forceMfa`, so
-    // a hardware demand is met there by choosing the key as the second
-    // factor). Still unmet on the way back — the marker is on the request —
+    // Either unmet: the person is sent to sign in again, and the screen
+    // demands what the relying party did — `step_up.screenDemand()`. A
+    // MULTI-FACTOR demand is `forceMfa`: a password and a second factor, any
+    // second factor. A HARDWARE demand is `forceKey` (2026-09-17): the screen
+    // offers a security key ALONE or AFTER A PASSWORD and nothing else — no
+    // one-time code, no recovery code, no Kerberos ticket, no wallet — since
+    // it used to be `forceMfa`, which could not take a key on its own and
+    // let a one-time code through only to be refused here on the way back.
+    // Still unmet on the way back — the marker is on the request —
     // and the request is REFUSED, with the two codes this profile always had:
     // ONE sign-in attempt, then a refusal, which is `step_up.ts`'s rule and
     // for its reason (a demand the screen cannot meet would otherwise loop).
@@ -1047,14 +1052,12 @@ class WsFederation {
         log.debug("Leaving WsFederation.signIn().");
         return this.wsfedError(res, 400, 'No security key was used',
           'wauth asked for "' + wauth + '". You were asked to sign in again ' +
-          'with a second factor, and the session that came back still used ' +
-          'no security key — a one-time code answers a demand for a second ' +
-          'factor, not for a key. This service will not claim a key that ' +
-          'was never presented.',
+          'with a security key, and the session that came back still used ' +
+          'none. This service will not claim a key that was never ' +
+          'presented.',
           '<h2>Two ways forward</h2><ul><li>Start the sign-in again and ' +
-          'choose the SECURITY KEY as the second factor — or sign in ' +
-          'passwordless with it at <code>/oauth2/authorize</code> first; the ' +
-          'session is shared. The assertion then says <code>' +
+          'use the SECURITY KEY — on its own, passwordless, or after your ' +
+          'password. The assertion then says <code>' +
           xmlEscape(AM_MULTIFACTOR) + '</code> (with a password) or <code>' +
           xmlEscape(AM_HARDWARE_SAML11) + '</code> (passwordless). A person ' +
           'with no key enrolled can add one at <code>/portal/keys</code>.' +
@@ -1150,9 +1153,11 @@ class WsFederation {
     // `requeryString()` gives: it has been honoured by this pass and carrying
     // it back would demand a fresh authentication on every pass, forever.
     //
-    // A `wauth` DEMANDING A FACTOR (2026-09-17, #36) makes the second factor
-    // REQUIRED on the screen — whether there was a session that lacked it (the
-    // step-up above) or no session at all — and puts the step-up marker on
+    // A `wauth` DEMANDING A FACTOR (2026-09-17, #36) makes it REQUIRED on the
+    // screen — a second factor for a multi-factor demand, a security key in
+    // either role for a hardware one — whether there was a session that
+    // lacked it (the step-up above) or no session at all — and puts the
+    // step-up marker on
     // the return address, so the pass that comes back refuses a demand still
     // unmet rather than sending the person round again.
     // ---------------------------------------------------------------------
@@ -1165,10 +1170,13 @@ class WsFederation {
                'by the session, so the person is sent to sign in again with ' +
                'a second factor required.');
     }
+    const screen = stepUp.screenDemand(demand === 'hardware' ? 'key'
+                                       : demand);
     const where = beginAuthentication({
       returnTo: returnTo,
       protocol: 'WS-Federation',
-      forceMfa: !!demand,
+      forceMfa: !!screen.forceMfa,
+      forceKey: !!screen.forceKey,
       // WHICH RELYING PARTY, so that an entry naming a federation relationship
       // sends the person to that partner instead of to the sign-in screen. It
       // is the raw wtrealm: the registry is keyed by the identifier a protocol
@@ -1196,10 +1204,11 @@ class WsFederation {
         ? [{ label: 'wauth', value: wauth,
              note: stepUpNow
                ? 'the authentication method this relying party asked for, ' +
-                 'which your session does not have — so a second factor is ' +
-                 'required this time' +
-                 (demand === 'hardware' ? ', and it has to be a security ' +
-                                          'key.' : '.')
+                 'which your session does not have — so ' +
+                 (demand === 'hardware'
+                   ? 'a security key is required this time, on its own or ' +
+                     'after your password.'
+                   : 'a second factor is required this time.')
                : 'the authentication method this relying party asked ' +
                  'for.' }]
         : []).concat(params.whr

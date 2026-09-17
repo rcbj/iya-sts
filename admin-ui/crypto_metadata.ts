@@ -1394,7 +1394,11 @@ class CryptoMetadata {
           return [
             ['Outbound request signature',
              ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']],
-            ['Inbound signature, any of', Object.keys(xmldsig.SIG_METHODS)],
+            ['Inbound signature, any of',
+             stsCrypto.xmlSignatureAlgorithms().verified.map(
+               function (row) {
+                 return row.uri;
+               })],
             ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS]
           ];
         } },
@@ -1409,13 +1413,15 @@ class CryptoMetadata {
                'DETACHED signature over the octets of the query string, with ' +
                '`SigAlg` naming the algorithm as a parameter.',
         verifies: 'A service provider\'s AuthnRequest, LogoutRequest and ' +
-                  'LogoutResponse signatures (since 2026-09-17) — the ' +
-                  'Redirect binding\'s detached query signature or an ' +
-                  'enveloped one — against the service provider\'s ' +
-                  'REGISTERED RSA certificates, never the one in the ' +
-                  'request, exclusive canonicalization only; a consumed ' +
-                  'metadata document\'s own signature when a certificate ' +
-                  'for it is set; and its own artifacts. A service ' +
+                  'LogoutResponse and ArtifactResolve signatures (since ' +
+                  '2026-09-17) — the Redirect binding\'s detached query ' +
+                  'signature, the SimpleSign binding\'s over the form ' +
+                  'values, or an enveloped one — against the service ' +
+                  'provider\'s REGISTERED certificates (RSA, EC, EdDSA, ' +
+                  'DSA, ML-DSA, SLH-DSA), never the one in the request; a ' +
+                  'consumed metadata document\'s own signature against the ' +
+                  'entry\'s certificate or the realm\'s trust anchors; and ' +
+                  'its own artifacts. A service ' +
                   'provider\'s `<EncryptedID>` is decrypted rather than ' +
                   'verified.',
         encrypts: 'The assertion in a Response, as `<EncryptedAssertion>`, ' +
@@ -1429,13 +1435,14 @@ class CryptoMetadata {
         hashes: 'SHA-256 for the Reference digest; SHA-1 inside ' +
                 'RSA-OAEP-MGF1P, because that is what the URI MEANS rather ' +
                 'than a choice this service made.',
-        whatItDoesNot: 'It does not verify an ECDSA request signature — ' +
-                       'the verifier here is RSA — and it does not enforce a ' +
-                       'consumed metadata document\'s validUntil or ' +
-                       'cacheDuration after consuming it. A service provider ' +
-                       'it holds no certificate for gets the assertion IN ' +
-                       'CLEAR, loudly, in development, and is refused in ' +
-                       'product.',
+        whatItDoesNot: 'It does not accept a SHA-1 signature unless ' +
+                       'saml.allowSha1Signatures is on, nor MD5, a MAC or ' +
+                       'a stateful hash-based signature at all. A service ' +
+                       'provider it holds no certificate for, with ' +
+                       'encryption turned on, gets the assertion IN CLEAR, ' +
+                       'loudly, in development, and is refused in product; ' +
+                       'one whose metadata publishes an encryption key is ' +
+                       'encrypted to in both.',
         envelopes: ['xmldsig', 'xmlenc', 'c14n'],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -1443,6 +1450,11 @@ class CryptoMetadata {
           return [
             ['Signature',
              ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']],
+            ['Inbound signature, any of',
+             stsCrypto.xmlSignatureAlgorithms().verified.map(
+               function (row) {
+                 return row.uri;
+               })],
             ['Block cipher (saml2.encryptionAlgorithm)',
              [String(config.value('saml2.encryptionAlgorithm'))]],
             ['Key transport (saml2.keyTransportAlgorithm)',
@@ -1688,9 +1700,9 @@ class CryptoMetadata {
                 'understands. Each is checked against the openssl this ' +
                 'process actually has, so a challenge never names an ' +
                 'algorithm the server cannot compute.',
-        whatItDoesNot: 'It deactivates nobody on `active: false`, and it ' +
-                       'stores no password of its own — the Digest password ' +
-                       'is a setting.',
+        whatItDoesNot: 'It stores no password of its own — the Digest ' +
+                       'password is a setting. (`active: false` DOES ' +
+                       'disable the account, since 2026-09-17.)',
         envelopes: ['digest', 'hoba', 'jws', 'dpop', 'mtls'],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -2767,6 +2779,10 @@ class CryptoMetadata {
             scimAuth } = this.deps;
     log.debug("Entering CryptoMetadata.signatures().");
     const composites = Object.keys(pqJose.COMPOSITES || {});
+    const verifiedXml = stsCrypto.xmlSignatureAlgorithms().verified.map(
+      function (row) {
+        return row.uri;
+      });
     const out = {
       jws: stsCrypto.JWS_SIGNING_ALGS.map(function (alg) {
         const spec = stsCrypto.JWS_ALGS[alg];
@@ -2786,6 +2802,10 @@ class CryptoMetadata {
         const spec = xmldsig.SIG_METHODS[uri];
         return { uri: uri, label: spec.label, family: spec.family,
                  hash: spec.hash, keyKind: spec.keyKind,
+                 // WHETHER AN INBOUND SIGNATURE MADE WITH IT IS VERIFIED
+                 // (common/crypto.js section 1a, #37 follow-up) — the table
+                 // names families only a browser page can sign with.
+                 verifiedHere: verifiedXml.indexOf(uri) >= 0,
                  // What this service will SIGN with, as opposed to verify. One
                  // row, and it is worth saying which: six signers used to type
                  // this URI out separately.

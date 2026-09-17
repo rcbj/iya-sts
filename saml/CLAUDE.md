@@ -9,8 +9,8 @@ provider for each of them**.
 | `saml11.ts` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
 | `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
 | `saml11_sso.ts` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
-| `sp_metadata.ts` | A service provider's metadata: parsing it, fetching it by an explicit refresh — through `../federation/federation_http.ts`'s outbound policy since 2026-09-12 — and, since 2026-09-17 (#37), CONSUMING it (`consume()`, for a refreshed or an uploaded document). Registers nothing. |
-| `request_signature.ts` | **Whether a service provider's request is signed by that service provider** (2026-09-17, #37): the verification policy for an AuthnRequest, LogoutRequest or LogoutResponse on either binding, and whether a signature may be absent. Registers nothing. |
+| `sp_metadata.ts` | A service provider's metadata: parsing it (an EntitiesDescriptor aggregate included), fetching it — through `../federation/federation_http.ts`'s outbound policy, product-mode address check included — by an explicit refresh, the Metadata Query Protocol or the BACKGROUND REFRESHER, CONSUMING it (`consume()`, against the realm's trust anchors), and saying how current it is (`freshness()`: fresh, stale, expired). Registers nothing; its timer is started from `server.js`'s `announce()`. |
+| `request_signature.ts` | **Whether a service provider's request is signed by that service provider** (2026-09-17, #37): the verification policy for an AuthnRequest, LogoutRequest or LogoutResponse on the Redirect, POST and POST-SimpleSign bindings, whether a signature may be absent, and who is calling a SOAP responder that hands out an artifact (`authenticateSoapCaller()`). Registers nothing. |
 | `authn_context.ts` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
 | `document_settings.ts` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
@@ -87,19 +87,19 @@ change was mostly a prose sweep.
   refresh writes.~~ **REVERSED 2026-09-17 (#37)** — the same section. The
   SPSSODescriptor's endpoints, keys, NameIDFormats and the two flags are
   consumed by the refresh and by an upload, and used.
-* **No ECDSA request signature is verified**: the XML signature engine here
-  (`common/vendored/xmldsig.js`) implements RSA and nothing else, so an EC
-  signing certificate is refused when it is registered and skipped (and named)
-  when metadata carries one.
-* **A consumed document's `validUntil` and `cacheDuration` are not ENFORCED
-  after it was consumed** — they are recorded and shown, and a document that has
-  already expired is refused when it is consumed. Nothing here refetches on its
-  own, which is the point of the next item.
-* **No POST-SimpleSign binding**, whose signature this service would neither
-  produce nor check.
-* **No service provider's metadata URL is dialled WHILE ISSUING** — the fetch is
-  an explicit action that writes the certificate onto the entry, so no sign-in
-  waits on somebody else's web server.
+* ~~**No ECDSA request signature is verified**~~ **REVERSED 2026-09-17 (#37
+  follow-up)** — every family `common/crypto.js` section 1a verifies, EC,
+  EdDSA and the post-quantum ones included; see *THE #37 FOLLOW-UP* below.
+* ~~**A consumed document's `validUntil` and `cacheDuration` are not
+  ENFORCED**~~ **REVERSED 2026-09-17 (#37 follow-up)** — past the effective
+  validUntil the service provider's requests are refused, and past the
+  cacheDuration the background refresher fetches the document again.
+* ~~**No POST-SimpleSign binding**~~ **REVERSED 2026-09-17 (#37 follow-up)** —
+  accepted and sent, and published.
+* **No service provider's metadata URL is dialled WHILE ISSUING** — a fetch is
+  an operator's action, the background refresher's, or an MDQ lookup a request
+  STARTS and never waits on, so no sign-in waits on somebody else's web
+  server.
 * **No identity-provider-initiated SSO**, no ECP profile and its PAOS binding, no
   Name Identifier Management, and no Assertion Query and Request profile. PAOS is
   refused BY NAME rather than quietly answered over HTTP POST — a service
@@ -366,14 +366,18 @@ third was the second: the request's own certificate was written straight onto
 `samlSigningCertificate`, and product encrypted to a key anybody could have put
 in a request.
 
-**AND "NOTHING" IS THE CASE THE DESIGN TURNS ON.** With no certificate the
-document goes out IN CLEAR and is logged at WARN, every time, naming the
-application and what to do. It is not refused, because a mock that stopped
-issuing when a key was missing is useless exactly when somebody is setting this
-up; and it is not silent, because silently sending plaintext while a console
-page says "encrypted" would have the person testing their client believe the
-wrong thing about what their client accepted. Of the three possible behaviours
-that is the one worth arguing for, and it is the one to preserve.
+**AND "NOTHING" IS THE CASE THE DESIGN TURNS ON, AND IT IS A MODE.** In
+DEVELOPMENT, with encryption turned on and no certificate, the document goes out
+IN CLEAR and is logged at WARN, every time, naming the application and what to
+do — a mock that stopped issuing when a key was missing is useless exactly when
+somebody is setting this up, and silently sending plaintext would be worse. In
+PRODUCT (since 2026-09-12) it is REFUSED: a Response carrying Responder and no
+assertion (`STS-SAML-0011`). **WHEN ENCRYPTION IS WANTED is the setting OR the
+service provider** (#37 follow-up): consumed metadata that publishes a
+`use="encryption"` KeyDescriptor sets `samlSpWantAssertionsEncrypted`, and the
+assertion is encrypted to that key in both modes whatever
+`saml2.encryptAssertion` says — SAML 2.0 metadata has no attribute for the
+request, and the key is how the interoperability profiles read it.
 
 ### The algorithms are a choice, and one of them is broken on purpose
 
@@ -832,8 +836,9 @@ What follows is what a reader needs before changing either.
 |---|---|---|
 | signed, and verifies against a REGISTERED certificate | accepted, `verified` | accepted, `verified` |
 | signed, and verifies against none of them | **refused**, `STS-SAML-0061` | **refused**, `STS-SAML-0061` |
-| signed, and not checkable (non-RSA, wrapping, no octets) | **refused**, `STS-SAML-0062` | **refused**, `STS-SAML-0062` |
-| signed with inclusive c14n | **refused**, `STS-SAML-0064` | **refused**, `STS-SAML-0064` |
+| signed, and not checkable (an algorithm nothing verifies, wrapping, no octets) | **refused**, `STS-SAML-0062` | **refused**, `STS-SAML-0062` |
+| signed with SHA-1, `saml.allowSha1Signatures` off (the default) | **refused**, `STS-SAML-0073` | **refused**, `STS-SAML-0073` |
+| from a service provider whose consumed metadata has EXPIRED | **refused**, `STS-SAML-0074` | **refused**, `STS-SAML-0074` |
 | signed, and nothing registered | accepted, `no-certificate` | **refused**, `STS-SAML-0063` |
 | unsigned | accepted, `unsigned` | **refused**, `STS-SAML-0063` |
 
@@ -864,10 +869,12 @@ forged LogoutRequest can end somebody's session.
   present. The check runs ONCE, on the first arrival — the only moment the raw
   query exists — and its outcome rides on the held request (`pendingRequests`),
   which is the server's copy.
-* **SHA-1 is accepted and marked `weak`**, in both modes: `mode.js` has no
-  weak-algorithm policy to ask, and inventing one for this family alone would be
-  a second answer to a question the service has not asked. RSA only; exclusive
-  c14n only.
+* **SHA-1 is a setting, `saml.allowSha1Signatures`, off in both modes**, and it
+  is enforced in `common/crypto.js` rather than here, so this family and every
+  other XML signature path give one answer; with it on, SHA-1 verifies and is
+  marked `weak`. Every family that file verifies is accepted, with either
+  canonicalization (`STS-SAML-0064`, which refused inclusive c14n, is retired:
+  the signed element is the message root).
 * **The outcome is recorded three ways**: `samlAuthnRequestVerification` on the
   entry (`<outcome> <binding> <SigAlg> [weak]`, AuthnRequests only), an audit
   row `saml2.request.signature` for EVERY checked message (with the code on a
@@ -895,12 +902,6 @@ can see.
 zero-configuration encryption fallback in DEVELOPMENT; product encrypts to it
 only once it is confirmed (`mode.encryptsToObservedCertificates()`).
 
-**What this cannot fix**: a `samlSigningCertificate` written before 2026-09-17
-was captured off a request and carries no provenance, and it is now TRUSTED. It
-can only make a request that used to be accepted fail (a service provider that
-rotated its key) — before this, nothing was checked at all — but a realm switched
-to product should review those values, exactly as it reviews unmarked return
-addresses.
 
 ### Consuming the metadata, and why an operator's refresh is the trust act
 
@@ -923,18 +924,22 @@ upload is a document an administrator chose. That is what pasting a certificate
 into the entry is, and what every identity provider's "import metadata" is. No
 request reaches `consume()`, and nothing issuing dials anything.
 
-**A metadata signature is verified only against `samlSpMetadataSigningCertificate`**
-— and with that set, an unsigned document is refused too. Without it a signed
-document is recorded `signed-not-verified`: verifying it against a key inside
-the same document would be the decoration the request check refuses.
+**A metadata signature is verified only against a TRUST ANCHOR** — the entry's
+`samlSpMetadataSigningCertificate` or the realm's `saml2.metadataTrustAnchors`
+(a federation operator's keys, since the #37 follow-up) — and with any anchor
+set, an unsigned document is refused too. Without one a signed document is
+recorded `signed-not-verified`: verifying it against a key inside the same
+document would be the decoration the request check refuses.
 
-**Refused, writing nothing**: not a single EntityDescriptor with a SAML 2.0
+**Refused, writing nothing**: not an EntityDescriptor (or an
+EntitiesDescriptor holding exactly one for this entity) with a SAML 2.0
 SPSSODescriptor; an entityID that is not this application's (`STS-SAML-0066`); a
 passed validUntil (`0068`); an unusable encryption certificate (`0053`, as
 before); a metadata signature that does not verify (`0065`); an upload over
 `saml2.spMetadataMaxBytes` (`0067`). **A document with no encryption certificate
 is no longer refused** — it was, while the encryption certificate was the only
-thing a refresh wrote — and it leaves `samlEncryptionCertificate` as it was.
+thing a refresh wrote — and it leaves `samlEncryptionCertificate` as it was; an UNQUALIFIED key that
+is not RSA is a signing key and is simply not used for encryption.
 
 ### What the SSO and SLO services do with it
 
@@ -972,3 +977,143 @@ NameIDPolicy refusal, and a LogoutRequest's signature. No parent-owned vendored
 job signs an AuthnRequest or relies on the KeyInfo certificate:
 `sts_saml_encryption.js` sets `samlEncryptionCertificate` directly and sends
 unsigned requests, which development still accepts.
+
+---
+
+## THE #37 FOLLOW-UP (2026-09-17): EVERY ALGORITHM, SHA-1, METADATA OVER TIME, THE ARTIFACT'S CALLER, SIMPLESIGN
+
+rcbj's review of #37 found three gaps — RSA-only verification, SHA-1 accepted,
+and metadata expiry unenforced after consumption — and widened the change to
+five more. What each is, and what to keep:
+
+### Every signature family, and SHA-1 as a setting
+
+`common/crypto.js` section 1a (argued in `common/CLAUDE.md`, rule 3r) verifies
+RSA PKCS#1 v1.5 and PSS, ECDSA, EdDSA Ed25519/Ed448, DSA, ML-DSA and SLH-DSA
+with node's OpenSSL, behind the vendored canonicalizer; this directory only
+reads its answer. So a registered or consumed signing certificate may carry any
+of those keys (`applications.samlCertificateProblem()` asks that file), and the
+Redirect, POST and SimpleSign signatures, the metadata signature and the
+ArtifactResolve signature all verify in every family. **The post-quantum
+identifiers are a DRAFT's** (draft-eastlake-rfc9231bis-xmlsec-uris, as the
+vendored registry names them); no W3C or IETF standard has any. **HSS/LMS, XMSS,
+the MACs, MD5, Whirlpool, ESIGN and pre-hashed EdDSA are not verified** and are
+refused as not checkable (`STS-SAML-0062`), each with its reason.
+
+`saml.allowSha1Signatures` (off, both modes) refuses a SHA-1 SignatureMethod or
+DigestMethod before any cryptography — `STS-SAML-0073` here, `STS-KEYS-0062`
+underneath — on every XML signature path in the service, because the rule is in
+the one verifier. The setting is in the `SAML` group, so it is drawn on both
+this directory's console pages.
+
+### Metadata over time
+
+`sp_metadata.ts`'s `freshness()` is the one reading: **expired** (the effective
+validUntil — the earliest on every enclosing EntitiesDescriptor, the
+EntityDescriptor and the SPSSODescriptor — has passed), **stale** (the
+effective cacheDuration, the shortest in the chain, has elapsed since
+consumption; with none, halfway to validUntil), or **fresh**.
+
+* **Expired refuses, in every mode** (`STS-SAML-0074`): `saml2_sso.ts`'s
+  `checkSignature()` asks first, so an AuthnRequest, a LogoutRequest, a
+  LogoutResponse and an ArtifactResolve are all refused on a page (or a SOAP
+  Requester status) that says the metadata expired. The console and
+  `GET /admin-api/saml2?sp=` show `state`.
+* **Stale is refreshed in the background** where it can be — a
+  `samlSpMetadataUrl`, or an entry imported by MDQ — by a timer
+  `server.js`'s `announce()` starts (`saml2.spMetadataRefresh`,
+  `saml2.spMetadataRefreshIntervalS`); one process per cluster refreshes a
+  given document, through a `cluster_claims` claim keyed by realm, entity and
+  the consumption it replaces. **A failed refresh changes nothing**, so the old
+  document works until it expires; the failure is a STATE
+  (`refreshStatus()`, drawn on the page), logged on the change and summarised
+  hourly (`STS-SAML-0076`) — never a line per attempt. An UPLOADED stale
+  document is shown stale and keeps working.
+* **Nothing is dialled while a request is answered.** A request from a
+  service provider with no consumed metadata STARTS an MDQ lookup on the next
+  turn of the event loop and is answered with what is known now; one lookup
+  per entity at a time, and a failure is not retried inside the interval.
+
+### Whose signature a metadata document may carry, and where it comes from
+
+* **Realm trust anchors** (`saml2.metadataTrustAnchors`, per realm): with any
+  set, every consumed document must verify against one of them or the entry's
+  own `samlSpMetadataSigningCertificate` (`STS-SAML-0065`).
+* **Aggregates**: an EntitiesDescriptor is read for the ONE entity the
+  application is (refused when it holds none or several), verified by its own
+  signature where it has one and otherwise by the entity's — never by
+  whichever signed entity comes first.
+* **MDQ** (draft-young-md-query and its SAML profile): `saml2.mdqBaseUrl`;
+  `<base>/entities/<percent-encoded entityID>`; the `mdq-import` action on the
+  console and `/admin-api/saml2/mdq-import` creates the entry only when the
+  answer describes that entity, and removes it again if consuming fails; an
+  entry with no URL refreshes from MDQ.
+* **The address rule now applies here too**: every fetch asks
+  `federation_http.ts`'s `vetHost()`, so product mode refuses a host that
+  resolves to an internal address (`STS-SAML-0079`) and pins the connection to
+  the address it checked. The SP-metadata fetcher had never asked.
+
+### The artifact's caller (SAML 2.0 and 1.1)
+
+`/saml2/ars` and `/saml11/responder` hand an assertion to whoever presents the
+artifact, and until the follow-up they asked nobody who that was — and SAML 2.0
+logged, then ANSWERED, a resolver that was not the service provider the
+artifact was minted for. Now, before the artifact is spent (a refused caller
+leaves it resolvable by the right one):
+
+* the resolver must be the artifact's party — the ArtifactResolve's Issuer,
+  or for SAML 1.1 (whose Request names nobody) any responder path segment —
+  in every mode (`STS-SAML-0078`);
+* its metadata must not have expired (`STS-SAML-0074`, SAML 2.0);
+* it must be AUTHENTICATED where signed requests are required
+  (`saml2.requireSignedAuthnRequests`; product by default) — an enveloped
+  signature on the message verifying against its registered certificates, or
+  one of those certificates as the TLS client certificate (the handshake is the
+  proof of possession, and metadata `use="signing"` keys are what SAML names
+  for TLS client authentication, self-signed as a rule, so no chain is asked
+  for; a revoked chain counts as none) — else `STS-SAML-0077`. A signature
+  that is present and wrong is refused in every mode.
+
+### HTTP-POST-SimpleSign
+
+Accepted for AuthnRequest, LogoutRequest and LogoutResponse — detected by a
+POST carrying `Signature` and `SigAlg`, verified over
+`SAMLRequest=<value>[&RelayState=<value>]&SigAlg=<value>` built from the FORM
+VALUES (form-decoded, not base64-decoded), a repeated control making it
+uncheckable — and SENT when a request's ProtocolBinding or a consumed ACS
+endpoint names it: the POST form, the Response's own enveloped signature taken
+off, and `SigAlg`/`Signature` over the same octets where
+`saml2.signResponse` holds. Published for SingleSignOnService and
+SingleLogoutService in `/saml2/metadata`. The optional `KeyInfo` form field is
+ignored: it is a key the message brought with it, which is exactly what this
+service never trusts.
+
+### The tests
+
+Three in-process files, sharing `tests/tools/saml_signing_kit.js` (keys and
+hand-built certificates in every family, a signer written independently of the
+verifier's table, and the route plumbing):
+
+* `tests/saml_signature_algorithms.js` — every family on POST and Redirect,
+  single logout for a subset, metadata signatures, registration and
+  consumption of the certificate; SHA-1 by method and by digest, refused then
+  accepted-and-weak, in both modes; the other paths (federation ACS, RFC 7522
+  with EC, Ed25519 and ML-DSA certificates this realm issued, and WS-Trust,
+  WS-Federation, SAML 1.1 and GNAP for SHA-1 — those four verify against this
+  service's own RSA key, so a non-RSA signature cannot be theirs to accept);
+  and the refusals by name.
+* `tests/saml_metadata_lifecycle.js` — expiry (SSO, SLO, product, the chain
+  minimum, the view), the background refresh against a local HTTP server
+  (success, failure recorded and harmless, the switch), uploaded stale
+  documents, realm anchors and aggregates, MDQ (success, 404, the product
+  address refusal, the lazy lookup and its deduplication), and encryption by
+  mode and by metadata.
+* `tests/saml_artifact_and_simplesign.js` — the artifact's caller on both
+  profiles (unsigned, wrong key, SHA-1, wrong party, no Issuer, TLS mapped and
+  not, expired, development and product defaults, not spent by a refusal) and
+  SimpleSign both ways and in the metadata.
+
+`tests/saml_request_signatures.js` changed where the behaviour did: an ECDSA
+SigAlg swapped onto an RSA signature is now a WRONG signature (0061), RSA-MD5 is
+the not-checkable case, SHA-1 is refused unless the setting is on, and an
+inclusive-c14n signature verifies.

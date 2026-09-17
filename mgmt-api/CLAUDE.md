@@ -224,6 +224,19 @@ got a 404 naming an endpoint of this service's own. It is an arm of
 `usersAction()` now, so the console and this API reach one function, and it is
 the third action on that resource.
 
+**AND TWO MORE ON THAT RESOURCE SINCE 2026-09-17 (#36 follow-up):** `disable`
+and `enable`, the console's Disable and Enable buttons on a person's page.
+`disableUserAccount` is the one operation in this API that ends things as a
+side effect — every session, token, code, directory connection and Kerberos
+ticket the person holds, exactly as `POST /admin-api/logout/global` would —
+and its description says so, because a caller reading only the summary would
+take it for a flag. The reply carries `ended`, which is what the global logout
+answered. **`POST /admin-api/logout/retry-backchannel` is the fifth action on
+the sign-out resource**: it names a DELIVERY rather than a person (the list it
+is read from is every delivery in the realm), so it is answered before the
+`user` check the other four make, and `GET /admin-api/logout` grew
+`deliveryState`, `deliveryq` and `backchannelDeliveriesPage` to find one.
+
 ### `/admin-api/applications/new` is a GET WITH NO POST BESIDE IT, and that is rule 7 read exactly
 
 `/admin/applications/new` arrived on 2026-08-25 — a console page whose one

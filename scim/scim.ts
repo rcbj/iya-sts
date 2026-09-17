@@ -110,14 +110,16 @@
 // The whole of that lives in `scim_auth.ts`; what is in THIS file is one call
 // in `handle()` and a `need` on each route.
 //
-// **`active: false` DEACTIVATES NOBODY.** It is stored on the entry as
-// `scimActive` and read by nothing: no bind is refused, no token withheld, no
-// session ended. This is the same distinction this service already draws about
-// a group — carrying a fact is not acting on one — and it matters more here
-// than anywhere else, because deprovisioning is the single most common thing a
-// SCIM client is built to do, and a mock that pretended to disable an account
-// would let somebody ship a deprovisioning path that has never actually worked.
-// It is on /admin/scim and on GET /scim in those words.
+// **`active: false` DISABLES THE ACCOUNT (2026-09-17, #36 follow-up).** It
+// read "deactivates nobody" until then — stored as an invented `scimActive`
+// that nothing read. It is now draft-behera-ldap-password-policy's
+// `pwdAccountLockedTime` (`scim_map.ts` argues the mapping), and a disable
+// through SCIM is the disable an administrator makes: every door refuses the
+// person from then on, and everything they hold is ended
+// (`common/account_state.ts`), with RISC `account-disabled` to the receivers.
+// `active: true` enables them again. Deprovisioning is the single most common
+// thing a SCIM client is built to do, which is why a mock that only RECORDED it
+// was the defect it was.
 //
 // **THERE IS NO ETag AND NO `changePassword`.** Both are advertised as
 // unsupported rather than half-implemented. An ETag over an entry whose
@@ -1993,11 +1995,12 @@ class Scim {
         'another scheme. Each scheme has a switch of its own for exactly ' +
         'that reason.',
 
-        'active: false DEACTIVATES NOBODY. It is stored on the entry as ' +
-        'scimActive and read by nothing here: no bind is refused, no token ' +
-        'is withheld and no session ends. Deprovisioning is the commonest ' +
-        'thing a SCIM client does, so a mock that pretended to disable an ' +
-        'account would let somebody ship a path that has never worked.',
+        'active: false DISABLES THE ACCOUNT (since 2026-09-17). It is the ' +
+        'password-policy lock pwdAccountLockedTime on the entry, and every ' +
+        'door refuses the person while it is set — a password, a session, a ' +
+        'token grant, a Kerberos AS-REQ — and everything they held is ended ' +
+        'when it is written. active: true enables them again; a resource ' +
+        'that leaves active out leaves the account as it was.',
 
         'NO ETag AND NO changePassword, both advertised as unsupported ' +
         'rather than half-implemented. A version built over a timestamp with ' +
@@ -2575,11 +2578,11 @@ class Scim {
         'can register a HOBA key for any name. A turnstile, not a lock — ' +
         'what it buys is that a client\'s 401, 403 and challenge-response ' +
         'paths can be run at all. <strong>And <code>active: false</code> ' +
-        'deactivates nobody</strong> — it is stored as ' +
-        '<code>scimActive</code> and read by nothing: no bind refused, no ' +
-        'token withheld, no session ended. Deprovisioning is the commonest ' +
-        'thing a SCIM client does, so that one is worth reading ' +
-        'twice.</div><h2>What it provisions ' +
+        'disables the account</strong> — it writes the password-policy lock ' +
+        '<code>pwdAccountLockedTime</code>, every door then refuses the ' +
+        'person, and everything they held is ended, exactly as the Disable ' +
+        'button on their <code>/admin/users</code> page does.</div><h2>What ' +
+        'it provisions ' +
         'into</h2><p>' + xmlEscape(info.store.what) + '</p>' +
         '<ul><li>People: <code>' + xmlEscape(info.store.users) + '</code> — ' +
         info.store.userCount + ' entry/entries</li>' +
@@ -2648,7 +2651,8 @@ class Scim {
   // "what it does not do" sentences and the reachable negatives are written
   // ONCE — in the module that implements them — and the console page shows the
   // same thing GET /scim?format=json does. A page carrying its own copy of
-  // "active: false deactivates nobody" would be the copy that stops being true.
+  // what `active: false` does would be the copy that stops being true — as
+  // "deactivates nobody" did on 2026-09-17.
   //
   // The direction is inverted for the reason ldap_server.js's readers are, and
   // it passes rule 3e's test on both grounds: a require from admin.js into this
@@ -2687,8 +2691,8 @@ class Scim {
              (scimAuth.permissive()
                ? ' and every scheme offered is permissive'
                : ' and each scheme offered is verified') +
-             '; active:false still ' +
-             'deactivates nobody. GET /scim says what else it will not do.');
+             '; active:false disables the account. GET /scim says what it ' +
+             'will not do.');
     log.debug("Leaving Scim.announce().");
   }
 

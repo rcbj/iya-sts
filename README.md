@@ -119,7 +119,7 @@ is written down in
 | **Federation, in five of those protocols** | this service as **either end** of a relationship with a foreign identity service — SAML 2.0, SAML 1.1, WS-Federation 1.2, OpenID Connect and OAuth 2.0. As a **service provider** it sends the request, consumes what comes back at `/federation/acs/{id}`, **verifies it against a certificate configured on that relationship**, maps the attributes onto an entry under `ou=users` and starts a session — the SAME session every other protocol here reads, which is what lets a federated identity satisfy an OAuth 2.0 authorization request, a WS-Federation `wsignin1.0` or a SAML `AuthnRequest` without any of those knowing federation exists. `/authn/login` grows a button per usable partner for exactly that reason. As an **identity provider** it marks a partner as a federation partner rather than a test client and decides **which attributes are released to it**. **It is the one feature here that has to be configured before it will do anything, and the one that refuses by default** — see *Federation* below, where that inversion is argued rather than assumed: "accept any SAML Response" is not a permissive mock, it is an authentication bypass for every protocol in the process. It is also the only thing here that makes an **outbound** request, and `jwks_uri` on an application entry and WS-Federation's `wreqptr` are still never followed — the difference is a URL an administrator configured against a URL a caller supplied |
 | **OAuth 2.0** | a full authorization server: RFC 8414 metadata plus every endpoint it advertises — authorize (which redirects to the authentication service when nobody is signed in), token, userinfo, introspect, revoke, register (RFC 7591 with software statements — verified against this realm's key or a declared publisher's, and issued from the console — and the RFC 7592 read/update/delete operations), jwks. Introspection answers as RFC 7662 JSON or, when asked, as an **RFC 9701 JWT** signed and optionally encrypted for the resource server that asked. Authorization requests may be **JWT-secured (RFC 9101)** — a signed, optionally encrypted request object by value or from a `request_uri` the client registered — or **pushed first (RFC 9126)** to `/oauth2/par`, authenticated as at the token endpoint, for a one-time `request_uri`. PKCE (RFC 7636), **Rich Authorization Requests (RFC 9396)** — `authorization_details` of every type a resource application declares, with JSON Schemas, consent drawn per detail and the token addressed to that resource — the `iss` authorization response parameter (RFC 9207), and every one of the seven grant types its metadata advertises — including **Token Exchange (RFC 8693)**. It is permissive by design, and it can be told not to be: `oauth2.rfc9700` puts the authorization flow into **RFC 9700** mode — exact-string redirect URI matching with RFC 8252's loopback port exception, no open redirector at either redirecting endpoint, PKCE required of public clients with S256 only, the PKCE downgrade and value reuse refused, and no response type that issues an access token from the authorization endpoint, refresh token rotation with replay detection that revokes the whole chain, no password grant, no CORS at the authorization endpoint, and the one client credential this service checks — and it turns port 8081 itself into an **HTTPS** listener, on the certificate LDAPS 636 and the embedded debugger's listener already share, so the issuer and every endpoint in every metadata document follow. Off by default; `GET /oauth2/rfc9700` says what it does and does not enforce |
 | **Consent, at `/oauth2/consent`** | **The one policy in this service that is ON by default.** The first time a given username signs in to a given `client_id` for a given scope, a screen lists the scopes that are new and nothing is issued until they answer; Allow writes one `oauthConsent` value per scope onto that person's own entry under `ou=users`, so the second sign-in is silent and an `ldapsearch` can read what somebody agreed to, and Deny returns `access_denied` to the client and records nothing at all. A delegated permission is recorded by its **whole identifier** and never by the bare permission name, because two resources may each expose a `read`. `oauthGlobalConsent` on an APPLICATION's entry consents a scope for everybody who signs in to it and **writes nothing about anybody** — an override rather than a record, so removing it asks everybody again, including the people who would have said yes. `prompt=consent` asks again and takes nothing away; `prompt=none` with something outstanding is `consent_required`. It carries no script, so the service-wide `script-src 'none'` is untouched. Off with `oauth2.consentRequired`, and OFF means nothing asked and nothing recorded rather than everybody consented |
-| **OpenID Connect 1.0** | `id_token` with `nonce`, `at_hash` and `c_hash` across all three flows, the section 5.3 UserInfo endpoint, **Discovery 1.0** at all three URLs a client may look at, RP-Initiated Logout, and **Front-Channel Logout 1.0** — the provider's side of it: the two discovery members, the two per-client registration members, the `sid` claim on an ID Token issued on a browser session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out; and **Back-Channel Logout 1.0** — a signed `logout+jwt` POSTed, with bounded retry, to every registered `backchannel_logout_uri` on a session any sign-out ends |
+| **OpenID Connect 1.0** | `id_token` with `nonce`, `at_hash` and `c_hash` across all three flows — **encrypted to the client's own key where it registered `id_token_encrypted_response_alg`** (section 10.2's Nested JWT, 2026-09-17), the section 5.3 UserInfo endpoint, **Discovery 1.0** at all three URLs a client may look at, RP-Initiated Logout, and **Front-Channel Logout 1.0** — the provider's side of it: the two discovery members, the two per-client registration members, the `sid` claim on an ID Token issued on a browser session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out; and **Back-Channel Logout 1.0** — a signed (and, where the client registered encryption, encrypted) `logout+jwt` POSTed to every registered `backchannel_logout_uri` on a session any sign-out ends, an account disable ends or an expiry ends, as a persisted delivery sent once for the cluster, retried across restarts and dead-lettered when it never lands |
 | **A protocol-independent sign-out** | `GET /logout` lists **everything this service is still holding for one identity across every family** — sessions, relying parties, realms, service providers, revocable tokens, outstanding authorization and pre-authorized codes, directory connections bound as them, and the Kerberos ticket position — with a checkbox against each, and a POST that ticks nothing ends all of it. Two of those mechanisms are new: a **Kerberos sign-out instant**, after which a `TGS-REQ` carrying an older ticket is refused KDC_ERR_TGT_REVOKED (20), and closing the **LDAP connections** bound as that person, which is the only sign-out RFC 4511 has. **What cannot be ended is listed anyway, with the reason** — an assertion, a service ticket or an SVID already issued is beyond recall because nothing consults this service when one is presented, and hiding those would make a global logout look complete when it is not |
 | **WebAuthn Level 3** | the relying party's half, on the login screen, in **both roles**: a second factor after the password, or the **primary credential** with no password at all. Registration and assertion are verified either way, and `amr` / `acr` in the tokens that follow say which happened — `["pwd","hwk"]`/`mfa` for two factors, `["hwk"]`/`1` for a passwordless sign-in, which is one factor however phishing-resistant it is |
 | **TOTP (RFC 6238 over RFC 4226)** | the **other second factor** on that same login screen, and the only credential this service verifies besides a Kerberos ticket. A person enrols an authenticator app from `/portal/mfa` or while spending an activation link: a **QR code this server rendered** (an SVG data: URI — every page of the portal is `script-src 'none'`) and the same secret in base32 beside it, because the phone is often the browser showing the page. **Two steps, and the first writes nothing**: an unconfirmed secret on somebody's entry would be a second factor they cannot produce. Once enrolled, **a password alone stops signing them in** — the sign-in screen asks for a code without being told to — and the session says `amr ["pwd","otp"]` / `acr mfa`, `otp` being RFC 8176's value for exactly this. **Codes are checked FOR REAL in both modes**: all three digests, a settable step and digit count, a symmetric skew window, and section 5.2's accept-once rule enforced against the step last accepted, so the code that set the app up cannot also sign anybody in. It can never be a first factor — this service holds the same shared secret the app does — and there is no self-service reset, because one anybody can use is no second factor: an operator's Clear on that person's row under `/admin/users` is the way back for a lost phone |
@@ -140,7 +140,7 @@ is written down in
 | **Certificate enrollment: ACME (RFC 8555), EST (RFC 7030), SCEP (RFC 8894)** | three ways for a client, a device or a person to get a **certificate from this realm's own certificate authority** — each protocol has an Issuing CA of its own under the realm's Intermediate. **Who a certificate is for is one rule for all three**: yourself, or — for a holder of Admin Write — any person or application in the realm, and every certificate names that directory entry (`urn:sts:person:` / `urn:sts:application:`) and is kept on it. ACME at `/enroll/acme/directory` binds an account to an entry with an **External Account Binding** key; EST at `/.well-known/est` takes a directory password, a client secret or a certificate this realm issued, and can generate the key (`/serverkeygen`, the only path that keeps a private key, sealed, on the entry); SCEP at `/enroll/scep` takes a **single-use challenge password** issued for one entry and one profile. The nine leaf profiles of `/admin/pki` are issued; Root, Intermediate and Issuing CA, OCSP Responder and Kerberos KDC are refused. A DNS name or address is issued only when it is registered on the entry — nothing is ever dialled to prove control. A person makes their own EAB key and challenge on `/portal/certificates`. See [docs/acme.md](docs/acme.md), [docs/est.md](docs/est.md) and [docs/scep.md](docs/scep.md) |
 | **GNAP (RFC 9635, RFC 9767)** | an **authorization server for the Grant Negotiation and Authorization Protocol**, per trust realm, at `/gnap`: grant requests with every access, subject, client and user member; all four interaction start modes (redirect, app, user code, user code URI) and both finish methods (redirect, push) with the interaction hash; continuation, modification and revocation; token rotation and **client key rotation**; all four key proofing methods — **RFC 9421 HTTP message signatures** with RFC 9530 Content-Digest, mutual TLS, detached and attached JWS; and the **five token formats RFC 9767 registers** — signed JWT, encrypted JWT, macaroon, biscuit and ZCAP-LD. The RS half is there too: discovery at `/.well-known/gnap-as-rs`, introspection, resource set registration and token derivation. Every request body is held to a JSON Schema, a GNAP client is an application entry with its shared keys sealed at rest, and a revoked grant or token is a CAEP `session-revoked` to a stream a GNAP web application owns — which hears only about people who approved it. See [docs/gnap.md](docs/gnap.md) |
 | **Shared Signals (OpenID SSF 1.0)** | a **transmitter**, and the one family here that TALKS BACK: every other answers a request, and this one agrees a **stream** with a receiver and then delivers a **Security Event Token** (RFC 8417) at the moment something happens. The stream management API at `/ssf/stream` — one path, five methods — with the status, subject and verification endpoints beside it, every one of them DISCOVERED from `/.well-known/ssf-configuration` because SSF fixes no paths. Subjects in all eight **RFC 9493** formats plus SSF's **complex subject**, whose `user`/`device`/`session` members are what make *"this session was revoked"* expressible at all; each format's member set is CLOSED and a subject carrying an extra member is REFUSED BY NAME, because a conforming receiver must reject one and it looks perfectly fine in a log. Delivery by **RFC 8935 push** or **RFC 8936 poll**, and a **receiver of its own** at `/ssf/receive` so that a client can be the transmitter. **AND SINCE 2026-09-10 THIS SERVICE'S OWN ADMIN CONSOLE AND USER PORTAL ARE REGISTERED RECEIVERS**, each with a stream seeded per trust realm asking for every CAEP and every RISC event type, each taking delivery over a REAL RFC 8935 push at an endpoint of its own — this service dials itself, on the loopback interface, with its own certificate pinned — and each drawing what arrived at `/admin/signals` and `/portal/signals`. Handing the event to the page in process would have been a receiver that never parses a body, checks a media type, presents a credential or verifies a signature, so those two pages are the only surfaces here that go EMPTY when delivery is broken and therefore the only ones that can report that it is; the portal shows each person only the events whose subject is THEM, and that filter fails closed. **SSF is the pipe and not the vocabulary**: it defines two event types, both about the pipe, and **both vocabularies over it are implemented** — CAEP's eight about a SESSION and RISC's fourteen about an ACCOUNT. Two things here therefore send a Security Event Token with nobody having asked, watching two different registers: a sign-in, a single sign-on or a sign-out (CAEP), and a change to the embedded directory — a person deleted, an account marked inactive, a mail address moved (RISC). Eleven of RISC's fourteen carry no payload members at all, so the SUBJECT is the entire message; one of them is deprecated by its own specification in favour of a CAEP event; and RISC section 3.1's own compatibility note — a production transmitter that spells the subject discriminator `subject_type` rather than `format` — is reproducible at `risc.googleSubjectType`, which makes it the only deliberate defect here that a specification asks for by name. Every SET is signed through the same signer everything else here uses, so `ssf.signingAlgorithm` reaches the whole table including ML-DSA and SLH-DSA — which matters more for this document than for any other, because RFC 8417 forbids a SET to expire and it is therefore read long after it was written |
-| **SCIM 2.0 (RFC 7642, 7643, 7644)** | a provisioning endpoint at `/scim/v2`, and **the only family here whose purpose is to write**: create, read, list, replace, PATCH (section 3.5.2 in full, `emails[type eq "work"].value` paths included), delete, both shapes of `.search`, bulk, filtering, sorting, pagination, attribute projection, and the three discovery documents. **What it provisions into is the LDAP directory above — the same entries, no second store and no cache** — so a `POST /scim/v2/Users` and an `ldapadd` create the same entry, and somebody provisioned over SCIM turns up on `/admin/users`, in an `ldapsearch`, in whatever group a client puts them in, and in the attributes their next access token carries. The SCIM `id` **is** the entry's DN, because that already is the opaque server-assigned identifier RFC 7643 asks for. **It is the one family here that requires a credential** — all six schemes RFC 7644 section 2 names are offered (OAuth 2.0 bearer and DPoP tokens with `scim:read` / `scim:write`, HTTP Basic, HTTP Digest, HOBA, the session cookie and a TLS client certificate), and every one of them is permissive, so it is a turnstile rather than a lock. `active: false` **deactivates nobody**: it is stored as `scimActive` and read by nothing, which is worth reading twice, because deprovisioning is the commonest thing a SCIM client is built to do |
+| **SCIM 2.0 (RFC 7642, 7643, 7644)** | a provisioning endpoint at `/scim/v2`, and **the only family here whose purpose is to write**: create, read, list, replace, PATCH (section 3.5.2 in full, `emails[type eq "work"].value` paths included), delete, both shapes of `.search`, bulk, filtering, sorting, pagination, attribute projection, and the three discovery documents. **What it provisions into is the LDAP directory above — the same entries, no second store and no cache** — so a `POST /scim/v2/Users` and an `ldapadd` create the same entry, and somebody provisioned over SCIM turns up on `/admin/users`, in an `ldapsearch`, in whatever group a client puts them in, and in the attributes their next access token carries. The SCIM `id` **is** the entry's DN, because that already is the opaque server-assigned identifier RFC 7643 asks for. **It is the one family here that requires a credential** — all six schemes RFC 7644 section 2 names are offered (OAuth 2.0 bearer and DPoP tokens with `scim:read` / `scim:write`, HTTP Basic, HTTP Digest, HOBA, the session cookie and a TLS client certificate), and every one of them is permissive, so it is a turnstile rather than a lock. `active: false` **disables the account** (since 2026-09-17): the password-policy lock every door refuses, with everything the person holds ended at once — `active: true` enables them again |
 
 `GET /admin/sts-metadata` is the authoritative list — every endpoint read from the running
 router, so it cannot go stale, and fifty specifications with how far each one
@@ -893,11 +893,18 @@ unedited service behaves exactly as it did.
 | `oauth2.refreshIdleSeconds` | `STS_OAUTH2_REFRESH_IDLE_SECONDS` | `86400` | yes | In RFC 9700 mode, how long a refresh CHAIN may go unused before it stops working — section 2.2.2 says a refresh token SHOULD expire after a period of client inactivity, and says the period is deployment-dependent, which is why this is a setting rather than a constant. |
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In RFC 9700 mode, end a browser sign-on session and every refresh token issued ON that session is revoked — the section MAY that names logout and a password change as the examples. |
 | `oauth2.frontchannelLogout` | `STS_OAUTH2_FRONTCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Front-Channel Logout 1.0: the two discovery members, the `sid` claim on an ID Token issued on a browser sign-on session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out — with `iss` and `sid` where the client registered `frontchannel_logout_session_required`. Off, none of the three happens; `sid` stays while `oauth2.backchannelLogout` is on, so only both off restores the tokens issued before either feature existed. |
-| `oauth2.backchannelLogout` | `STS_OAUTH2_BACKCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Back-Channel Logout 1.0: `backchannel_logout_supported` and `backchannel_logout_session_supported` in discovery, the `sid` claim, and — whenever a session is signed out, by any door — a signed Logout Token POSTed to every relying party on it that registered a `backchannel_logout_uri`. Asynchronous with bounded retry, through the outbound policy (`federation.outbound`, https unless `federation.outboundAllowInsecure`, no internal address in product mode). An EXPIRED session sends nothing. |
-| `oauth2.backchannelLogoutTokenTtlS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_TOKEN_TTL_S` | `120` | yes | How far in the future a Logout Token's `exp` is — the specification's "at most two minutes". A token is signed once and resent unchanged, so it must outlast the retries. |
-| `oauth2.backchannelLogoutAttempts` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_ATTEMPTS` | `3` | yes | How many times one Logout Token is POSTed. Only a timeout, a connection failure, a 5xx, 408 or 429 is retried; a 400 is final (section 2.8), and so is an outbound-policy refusal. |
+| `oauth2.backchannelLogout` | `STS_OAUTH2_BACKCHANNEL_LOGOUT` | `true` | yes | OpenID Connect Back-Channel Logout 1.0: `backchannel_logout_supported` and `backchannel_logout_session_supported` in discovery, the `sid` claim, and — whenever a session ends, by any door, by an account being disabled, or by EXPIRY — a signed (and where registered encrypted) Logout Token POSTed to every relying party on it that registered a `backchannel_logout_uri`. Each delivery is a persisted row sent once for the cluster and retried by any node; through the outbound policy (`federation.outbound`, https unless `federation.outboundAllowInsecure`, no internal address in product mode). |
+| `oauth2.backchannelLogoutOnExpiry` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_ON_EXPIRY` | `true` | yes | Send the Logout Tokens when a session EXPIRES — its lifetime ran out, or it went idle — as well as when somebody signs out. Off for a deployment whose relying parties deliberately outlive the provider's idle timeout, or a test that wants an expiry silent. Front-channel logout cannot follow an expiry either way: it needs the browser. |
+| `oauth2.backchannelLogoutTokenTtlS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_TOKEN_TTL_S` | `120` | yes | How far in the future a Logout Token's `exp` is — the specification's "at most two minutes". A token is signed once and resent unchanged while it is good; one that would expire before a retry is signed again with the same `jti`. |
+| `oauth2.backchannelLogoutAttempts` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_ATTEMPTS` | `3` | yes | How many times one Logout Token is POSTed before the delivery becomes a dead letter. Only a timeout, a connection failure, a 5xx, 408 or 429 is retried; a 400 is final (section 2.8), and so is an outbound-policy refusal. |
 | `oauth2.backchannelLogoutTimeoutMs` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_TIMEOUT_MS` | `5000` | yes | How long one POST may take. Nobody waits on it — the sign-out has already answered. |
 | `oauth2.backchannelLogoutBackoffMs` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_BACKOFF_MS` | `1000` | yes | The wait before the second attempt, doubling before each one after. |
+| `oauth2.backchannelLogoutLeaseMs` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_LEASE_MS` | `60000` | yes | How long one process holds its claim on one delivery attempt. A process that dies mid-attempt has it taken over after this, and the claim's time fences the stalled process out when it wakes. Never less than one request timeout and a second. |
+| `oauth2.backchannelLogoutSweepS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_SWEEP_S` | `10` | yes | How often every process looks for deliveries that are due — a retry whose backoff has passed, a lease that lapsed, a row restored after a restart. |
+| `oauth2.backchannelLogoutConcurrency` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_CONCURRENCY` | `8` | yes | How many due deliveries one process attempts at once. Per process, like every other cap here. |
+| `oauth2.backchannelLogoutRetentionS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_RETENTION_S` | `86400` | yes | How long a delivery is kept after it was queued. A row still pending when this passes is dead-lettered, so nothing is pending for ever. |
+| `oauth2.backchannelLogoutMaxRows` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_MAX_ROWS` | `2000` | yes | The most deliveries one realm keeps; past it the oldest FINISHED rows go first. |
+| `oauth2.backchannelLogoutSummaryS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_SUMMARY_S` | `60` | yes | At most one log line per realm per interval, counting what was sent, retried, taken over and dead-lettered — never a line per attempt. |
 | `oauth2.eddsaCurve` | `STS_OAUTH2_EDDSA_CURVE` | `Ed25519` | yes | Which Edwards curve an `EdDSA` signature is made on (`Ed25519` or `Ed448`). RFC 8037 registers ONE algorithm value for both curves and puts the curve in the key itself, so a client registering `id_token_signed_response_alg="EdDSA"` has no way to say which it wants — this is that way. BOTH keys are published in the JWKS whatever this is set to, with different kids, so a verifier follows the kid and needs to know nothing about this setting. |
 | `oauth2.clientAssertionSkewS` | `STS_OAUTH2_CLIENT_ASSERTION_SKEW_S` | `60` | yes | How far out an assertion's exp, nbf and iat may be and still be accepted (RFC 7523 section 3). It applies to BOTH halves of that profile — the `client_assertion` of section 2.2 and the `assertion` of the section 2.1 grant — because it answers "how far out may somebody else's clock be" and this service has no reason to hold two opinions about that. Sixty seconds is the usual allowance for two machines that are not synchronised. |
 | `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Whether the token endpoint performs `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` (RFC 7523 section 2.1). The metadata advertises the grant only while it is on, because a `grant_types_supported` member is a promise. It does NOT affect section 2.2 — client authentication by assertion — which is a different feature sharing a document format. |
@@ -1065,6 +1072,7 @@ what its api may dial.
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | How far to widen the validity window of every assertion this service ISSUES, at both ends: Conditions/NotBefore is backdated by this many seconds and NotOnOrAfter is extended by it. Both builders apply it, so it reaches SAML 2.0, SAML 1.1, WS-Trust and WS-Federation alike. IssueInstant and the authentication instant are NOT moved — those state when something happened. 0 to 300; 0 is what this service always did. It is NOT `oauth2.clockSkewS`, which is the tolerance applied when this service READS a document back. |
 | `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The SignatureMethod of every XML signature this service makes on a SAML assertion, response, LogoutRequest/Response, SAML or WS-Federation metadata and a signed federated AuthnRequest, and the Redirect binding's `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`. Inclusive c14n is not offered: an assertion is signed standalone and embedded, and inclusive c14n would fail at every relying party. |
+| `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service VERIFIES may use SHA-1 (SignatureMethod or any DigestMethod). Off in both modes: refused before any cryptography, on every path (SAML 2.0 and 1.1, federation, RFC 7522, WS-Trust, WS-Federation). On: verified and recorded `weak`. |
 | `saml.organizationName` | `STS_SAML_ORGANIZATION_NAME` | `sts` | yes | `<md:OrganizationName>` in `/saml2/metadata` and `/saml11/metadata`. Empty omits the whole `<md:Organization>`, in either mode. |
 | `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Mock security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the element. |
 | `saml.organizationUrl` | `STS_SAML_ORGANIZATION_URL` | *(empty)* | yes | `<md:OrganizationURL>`; empty means this service's own base URL. |
@@ -1096,6 +1104,10 @@ identity provider in a browser profile.
 | `saml2.mockSpContextTtlMin` | `STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock service provider at /saml2/sp remembers a RelayState it minted. |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Response on the HTTP Redirect binding longer than this is logged at WARN (and still sent). |
 | `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The cap on a service provider's metadata fetched by the refresh action or uploaded on the SAML 2.0 page. |
+| `saml2.spMetadataRefresh` | `STS_SAML2_SP_METADATA_REFRESH` | `true` | yes | Whether the background refresher fetches a stale service provider metadata document again (past its `cacheDuration`, or halfway to `validUntil`) from its URL or the MDQ responder. A failed fetch changes nothing. Expiry is enforced either way. |
+| `saml2.spMetadataRefreshIntervalS` | `STS_SAML2_SP_METADATA_REFRESH_INTERVAL_S` | `300` | yes | How often the refresher looks; one node per cluster refreshes each document. Also how long a failed MDQ lookup is remembered. |
+| `saml2.metadataTrustAnchors` | `STS_SAML2_METADATA_TRUST_ANCHORS` | *(empty)* | yes | Base64 DER certificates, comma-separated, a consumed metadata document may be signed with (a federation operator's keys). Set, every document must verify against one of them or the entry's own certificate. |
+| `saml2.mdqBaseUrl` | `STS_SAML2_MDQ_BASE_URL` | *(empty)* | yes | A Metadata Query Protocol responder: `<base>/entities/<entityID>`, asked by the `mdq-import` action, by the refresh of an entry with no URL, by the refresher, and — never awaited — for a service provider with no metadata. |
 
 #### SAML 1.1
 
@@ -4260,24 +4272,41 @@ any sign-out ->  POST https://rp.example/bc-logout
   client's ID Token came from), `aud`, `iat`, `exp` two minutes on, `jti`, the
   `http://schemas.openid.net/event/backchannel-logout` event, `sub` and `sid`
   — and no `nonce`. It is signed exactly like that client's ID Token.
-* **It is sent after the sign-out has answered, with bounded retry.** 200 and
-  204 are success; **400 is final** (section 2.8); a timeout, a connection
-  failure, 5xx, 408 and 429 are retried `oauth2.backchannelLogoutAttempts`
-  times with a doubling backoff. So a sign-out's result lists each delivery as
-  `pending`, and `/admin/logout` (and `GET /admin-api/logout`) lists where each
-  one got to. Every final outcome is one `logout.backchannel` audit row, a
-  failure with its `STS-OAUTH-05xx` code.
+  It is ENCRYPTED to the client's own key as well where it registered
+  `id_token_encrypted_response_alg` — a Nested JWT, exactly as its ID Token
+  would be.
+* **It is sent after the sign-out has answered, and the delivery is written
+  down.** Each one is a persisted row: 200 and 204 are success; **400 is
+  final** (section 2.8); a timeout, a connection failure, 5xx, 408 and 429 are
+  retried `oauth2.backchannelLogoutAttempts` times with a doubling backoff —
+  **by any node, and across a restart**, because the row carries the state and
+  the token rather than the sending process's memory. A sign-out's result
+  lists each delivery as `pending`, and `/admin/logout` (and `GET
+  /admin-api/logout`) lists where each one got to, filtered and paged, from
+  every node. Every final outcome is one `logout.backchannel` audit row, a
+  failure with its `STS-OAUTH-05xx` code, and the log gets a periodic summary
+  rather than a line per failure.
+* **A delivery that never succeeds becomes a DEAD LETTER** — refused with 400,
+  refused by the outbound policy, or out of attempts — kept with its reason and
+  sent again only when somebody presses **Retry** on `/admin/logout` (`POST
+  /admin-api/logout/retry-backchannel`), which mints a new token and uses the
+  client's current address.
 * **It goes out through the outbound policy**: nothing at all with
   `federation.outbound` off, https unless `federation.outboundAllowInsecure`,
   no redirect followed, and **in product mode no loopback, private or
   link-local address** — the name is resolved once and the connection pinned
   to the address that was checked.
-* **A session that expires sends nothing.** The specification's trigger is a
-  person logging out, and a relying party's session commonly outlives the
-  provider's idle timeout on purpose.
+* **A session that EXPIRES sends too** (`oauth2.backchannelLogoutOnExpiry`,
+  on): the specification lets the provider tell its relying parties whenever
+  its own session ends, and one never told of an expiry keeps a session this
+  service no longer vouches for. Front-channel logout cannot follow an expiry —
+  it is an iframe and there is no browser on a sign-out page. An account
+  DISABLED from `/admin/users` sends them too, because that ends every session.
 * **Several processes send it once**: the process that reports the session's
-  end sends, under the same claim that reports it once. The retries live in
-  that process's memory, so a process that dies mid-retry loses the delivery.
+  end sends, under the same claim that reports it once, and each ATTEMPT is
+  claimed with a lease of its own — so a process that dies mid-delivery has its
+  attempt taken over by another once the lease lapses, and the one that stalled
+  cannot overwrite the outcome when it wakes.
 
 `oauth2.backchannelLogout` turns the members, the fan-out and this feature's
 half of `sid` off together.
@@ -4505,8 +4534,10 @@ type code `0x0004`, an endpoint index, the SHA-1 of the issuer's entityID as a
 
 **Where a `LogoutResponse` goes is a guess unless you declare it.** A
 `<samlp:LogoutRequest>` carries no return address — only SP metadata has one, in a
-`SingleLogoutService` element, and this service publishes metadata and does not
-consume it. So the address is looked for in three places in order: the
+`SingleLogoutService` element. So the address is looked for in four places in
+order: the `SingleLogoutService` endpoints of the service provider's consumed
+metadata (its `ResponseLocation` for a response, on the binding the request
+arrived on where it publishes one), then the
 `samlSingleLogoutService` attribute on the application's directory entry, then
 `saml2.defaultSingleLogoutService`, then the assertion consumer service URL that
 service provider last used — **which is a guess, and it is logged as one**. It is
@@ -4525,8 +4556,12 @@ federation-wide logout it cannot observe.
 
 **A service provider's signatures are verified** (2026-09-17, #37). A signed
 AuthnRequest, LogoutRequest or LogoutResponse — the HTTP Redirect binding's
-query-string signature over the parameters as they arrived, or an enveloped one
-on HTTP POST — is checked in every mode against the service provider's
+query-string signature over the parameters as they arrived, the
+HTTP-POST-SimpleSign binding's over the form values, or an enveloped one on
+HTTP POST — in any family this service verifies (RSA PKCS#1 v1.5 and PSS,
+ECDSA, EdDSA, DSA, ML-DSA and SLH-DSA; SHA-1 only with
+`saml.allowSha1Signatures`) — is checked in every mode against the service
+provider's
 **registered** signing certificates (`samlSigningCertificate`, from its consumed
 metadata or the console), never against the certificate the request carries,
 and refused when it does not verify. The certificate a request carries is
@@ -4537,23 +4572,36 @@ metadata says `AuthnRequestsSigned="true"`, and the metadata this identity
 provider publishes says `WantAuthnRequestsSigned` accordingly. The mock service
 provider at `/saml2/sp` signs its requests with this service's key.
 
-**A service provider's metadata is consumed** — by the explicit refresh, or an
-uploaded document, never while a flow runs: its AssertionConsumerService and
+**A service provider's metadata is consumed** — by the explicit refresh, an
+uploaded document, the Metadata Query Protocol (`saml2.mdqBaseUrl`) or the
+background refresher, never while a flow runs, and an EntitiesDescriptor is read
+for the one entity asked for: its AssertionConsumerService and
 SingleLogoutService endpoints become its registered return addresses (a request
 is then answered only at one of them, by index, by URL or by default, in every
 mode), its signing and encryption certificates are registered, a NameIDPolicy
 naming a format its metadata does not declare is answered `InvalidNameIDPolicy`,
-and `WantAssertionsSigned` is honoured in product. `validUntil` and
-`cacheDuration` are recorded and shown, and an already expired document is
-refused.
+and `WantAssertionsSigned` is honoured in product; a published encryption key
+means its assertions are encrypted in every mode. **The effective `validUntil`
+is enforced** — past it every request from that service provider is refused
+until newer metadata is consumed — and **a document past its `cacheDuration` is
+fetched again in the background** (`saml2.spMetadataRefresh`), a failed fetch
+leaving the last good one in force. A document must verify against a trust
+anchor — the entry's `samlSpMetadataSigningCertificate` or the realm's
+`saml2.metadataTrustAnchors` — whenever one is set.
+
+**The artifact resolution service authenticates its caller**: the resolver must
+be the service provider the artifact was issued to, and — where signed requests
+are required — show it, by signing the `ArtifactResolve` or by presenting its
+registered certificate as the TLS client certificate. `/saml11/responder` does
+the same for an artifact.
 
 **What it does not do**, stated rather than left to be discovered: there is no
 identity-provider-initiated SSO with an unsolicited Response, no ECP profile and
 its PAOS binding (refused **by name** rather than quietly answered over HTTP POST
 — a service provider that asked for PAOS and got a form post would conclude that
 PAOS worked), no Name Identifier Management and no Assertion Query and Request
-profile; an ECDSA request signature is not verified (RSA only); and a consumed
-metadata document's `validUntil` is not enforced after it was consumed.
+profile; and no MAC, MD5 or stateful hash-based (HSS/LMS, XMSS) signature is
+verified.
 
 `/admin/saml2` is the console page for it, and it answers the one question
 nothing else here can: **which metadata document do I configure this service
@@ -5686,8 +5734,9 @@ Where there is no entry the section says **which** of the five reasons it is, be
 
 **A username that is already there is refused**, naming the entry that holds it — the same refusal an `ldapadd` gets as `LDAP_ENTRY_ALREADY_EXISTS` (68), because both call one function in `ldap_server.js` and the console is not a second definition of what a user is. `POST /admin-api/users/create` is the same act without a browser and takes the same attributes; `GET /admin-api/users/new` publishes the catalogue it validates them against, so a caller learns what it may send from the service rather than from a copy of the list in a document. One thing the page says outright rather than leaving to be discovered: **the new person does not appear in the table above** until they authenticate somewhere — that list is who this service has *seen*, and the entry is what the directory *holds*. It is the same distinction `/admin/groups` draws when it marks a member *never here*.
 
-**A person's page has a *Password and second factors* section (2026-09-13)**, drawn for a holder of Admin Write, with six controls — each an action on `POST /admin/users` and on `POST /admin-api/users/{action}`:
+**A person's page has a *Password and second factors* section (2026-09-13)**, drawn for a holder of Admin Write, with eight controls — each an action on `POST /admin/users` and on `POST /admin-api/users/{action}`:
 
+* **Disable the account** / **Enable the account** (2026-09-17) writes the password-policy lock `pwdAccountLockedTime` on the entry — the state the table above the controls reports as *Account: DISABLED*. While it is set **every door refuses that person**: a password anywhere (the sign-in screen, an LDAP bind, the OAuth password grant, a WS-Trust UsernameToken, SCIM and SSF Basic, EST), a session from any sign-in (a security key, federation, SPNEGO, a client certificate, a wallet), a Kerberos AS-REQ (`KDC_ERR_CLIENT_REVOKED`), every token grant made on their behalf including a refresh token, every assertion, and this service's own management API. Disabling also **ends everything they hold at once**, exactly as a global logout does: their sessions (with the back-channel Logout Tokens to their relying parties and CAEP `session-revoked`), their tokens, their outstanding codes, their directory connections and their Kerberos tickets — and RISC receivers are told `account-disabled`. **SCIM's `active: false` is the same act**, and `active: true` the enable.
 * **Reset password** generates a password this realm's policy accepts, stores it, marks it for change at the next sign-in (`pwdReset`), withdraws any reset link, signs the person out everywhere, and shows the password **once**, on the page that comes back. The administrator passes it on.
 * **Send a reset link** removes the current password (it goes into the history, so it cannot be set again), signs the person out everywhere, and shows a single-use link to `/portal/reset-password` once. The link lasts `security.passwordResetTtlMinutes`; issuing another replaces it. This service sends no mail: the administrator passes the link on. The person chooses a new password there without signing in.
 * **Disable passkeys** removes every security key that could sign the person in on its own, and leaves their password and second factors alone. It is offered only while they have a password, so it cannot lock anybody out.
@@ -7015,12 +7064,17 @@ because the endpoint would also have accepted nobody.
   It is a turnstile rather than a lock. What it buys is that a client's 401, 403,
   challenge-response and scope-handling paths can be exercised at all, none of which an
   open endpoint can produce.
-* **`active: false` deactivates nobody.** It is stored on the entry as `scimActive` and
-  read by nothing here: no bind is refused, no token withheld, no session ended. This is
-  the same distinction this service draws about a group — carrying a fact is not acting on
-  one — and it matters more here than anywhere else, because deprovisioning is the single
-  most common thing a SCIM client is built to do and a mock that pretended to disable an
-  account would let somebody ship a path that has never worked.
+* **`active: false` DISABLES the account (2026-09-17).** It read *deactivates nobody* until
+  then — stored as an invented `scimActive` that nothing consulted — and deprovisioning is
+  the single most common thing a SCIM client is built to do, so that was the one non-goal
+  most likely to let somebody ship a path that had never worked. It is now the password
+  policy draft's `pwdAccountLockedTime` on the entry, which is the same DISABLED state the
+  **Disable** button on `/admin/users` writes: every door refuses that person — a password
+  anywhere, a session from any sign-in, a Kerberos AS-REQ, every token grant made on their
+  behalf, this service's own management API — and everything they hold is ended at once,
+  with back-channel Logout Tokens to their relying parties and RISC `account-disabled` to
+  the receivers. `active: true` enables them again; a resource that does not mention
+  `active` leaves the account as it was.
 * **No ETag and no `changePassword`**, both advertised as unsupported rather than
   half-implemented. A version built over a `modifyTimestamp` with one-second resolution
   would be a concurrency control a client *trusts* and that is wrong, which is worse than

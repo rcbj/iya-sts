@@ -198,9 +198,10 @@ signed it, not a certificate in `oid4vp.trustedIssuerCertificates`
 (`STS-VC-0058`); the register holds it (`STS-VC-0059`); its subject and holder
 key agree with the row (`STS-VC-0066`); the subject still names an entry with
 that subject (`STS-VC-0060`). The issuance policy is asked by `startSession()`
-as at every door (`STS-VC-0064`). **There is no disabled flag to ask beyond
-that** — `scimActive: false` deactivates nobody, which is a root `CLAUDE.md`
-row of its own. **There is no status list**: the issuer publishes none, and the
+as at every door (`STS-VC-0064`). **A DISABLED ACCOUNT IS REFUSED THERE TOO (2026-09-17)**:
+`startSession()` asks `common/account_state.ts` before anything else, so a
+wallet presentation for somebody an administrator disabled — or a SCIM
+`active: false` did — signs nobody in. **There is no status list**: the issuer publishes none, and the
 register's expiry and `forget()` are the closest thing.
 
 ~~**Only `dc+sd-jwt` is asked for**~~ — **reversed in the follow-ups; every
