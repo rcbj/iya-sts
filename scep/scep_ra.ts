@@ -51,10 +51,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `ScepRa` takes the modules it uses through its constructor
-// (`ScepRaDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `ScepRa` is exported beside them for the
-// composition root.
+// (`ScepRaDeps`). Since #50's R2 the composition root builds the instance
+// (`ScepRa.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `ScepRa` is
+// exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -67,6 +68,7 @@ import pki = require('../common/pki');
 import core = require('../common/cert_enrollment');
 // The table active-active mode is held to, for the row this file provides.
 import capabilities = require('../cluster/cluster_capabilities');
+import InstanceSlot = require('../common/instance_slot');
 
 const SLOT = 'scep-ra';
 
@@ -102,6 +104,24 @@ class ScepRa {
   constructor(private readonly deps: ScepRaDeps) {
     deps.log.debug("Entering ScepRa.constructor().");
     deps.log.debug("Leaving ScepRa.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ScepRaDeps {
+    log.debug("Entering ScepRa.defaultDeps().");
+    log.debug("Leaving ScepRa.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      log: log,
+      config: config,
+      errorCodes: errorCodes,
+      pki: pki,
+      core: core,
+      loadPkiRevocation: function () {
+        return require('../common/pki_revocation');
+      }
+    };
   }
 
   wantedBits() {
@@ -328,30 +348,35 @@ class ScepRa {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const scepRa = new ScepRa({
-  nodeCrypto: nodeCrypto,
-  log: log,
-  config: config,
-  errorCodes: errorCodes,
-  pki: pki,
-  core: core,
-  loadPkiRevocation: function () {
-    return require('../common/pki_revocation');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ScepRa>(
+  'scep/scep_ra',
+  () => new ScepRa(ScepRa.defaultDeps()),
+  null,
+  log);
 
 // DECLARED AT REQUIRE TIME (cluster/CLAUDE.md): every node presents the RA
 // certificate one node issued — `issueInTheCluster()` above.
 capabilities.provide('scep.ra-agreement');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   ScepRa: ScepRa,
+  installInstance: (instance: ScepRa): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SLOT: SLOT,
   RENEW_WITHIN_MS: RENEW_WITHIN_MS,
-  ensure: scepRa.ensure.bind(scepRa) as ScepRa['ensure'],
-  describe: scepRa.describe.bind(scepRa) as ScepRa['describe'],
-  staleness: scepRa.staleness.bind(scepRa) as ScepRa['staleness']
+  ensure: slot.forward('ensure'),
+  describe: slot.forward('describe'),
+  staleness: slot.forward('staleness')
 };

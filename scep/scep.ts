@@ -79,10 +79,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `Scep` takes the modules it uses through its constructor
-// (`ScepDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `Scep` is exported beside them for the
-// composition root.
+// (`ScepDeps`). Since #50's R2 the composition root builds the instance
+// (`Scep.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `Scep` is
+// exported beside them for the composition root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -107,6 +108,7 @@ import monitor = require('../common/enrollment_monitor');
 import claims = require('../cluster/cluster_claims');
 import cms = require('./scep_cms');
 import ra = require('./scep_ra');
+import InstanceSlot = require('../common/instance_slot');
 
 const vz = validation.z;
 const vt = validation.types;
@@ -205,6 +207,33 @@ class Scep {
   constructor(private readonly deps: ScepDeps) {
     deps.log.debug("Entering Scep.constructor().");
     deps.log.debug("Leaving Scep.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ScepDeps {
+    log.debug("Entering Scep.defaultDeps().");
+    log.debug("Leaving Scep.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      log: log,
+      audit: audit,
+      config: config,
+      errorCodes: errorCodes,
+      realms: realms,
+      validation: validation,
+      core: core,
+      monitor: monitor,
+      claims: claims,
+      cms: cms,
+      ra: ra,
+      loadPersistence: function () {
+        return require('../persistence/persistence');
+      },
+      loadPkiRevocation: function () {
+        return require('../common/pki_revocation');
+      }
+    };
   }
 
   persistenceModule() {
@@ -1218,38 +1247,32 @@ class Scep {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const scep = new Scep({
-  nodeCrypto: nodeCrypto,
-  log: log,
-  audit: audit,
-  config: config,
-  errorCodes: errorCodes,
-  realms: realms,
-  validation: validation,
-  core: core,
-  monitor: monitor,
-  claims: claims,
-  cms: cms,
-  ra: ra,
-  loadPersistence: function () {
-    return require('../persistence/persistence');
-  },
-  loadPkiRevocation: function () {
-    return require('../common/pki_revocation');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Scep>(
+  'scep/scep',
+  () => new Scep(Scep.defaultDeps()),
+  null,
+  log);
 
 const FAIL_NAMES = {};
 Object.keys(cms.FAIL_INFO).forEach(function (name) {
   FAIL_NAMES[cms.FAIL_INFO[name]] = name;
 });
 
-const HANDLERS = { 19: scep.pkcsReq.bind(scep), 17: scep.renewalReq.bind(scep),
-                   20: scep.certPoll.bind(scep), 21: scep.getCert.bind(scep),
-                   22: scep.getCrl.bind(scep) };
+// FACADES since #50's R2: each resolves the installed instance when called.
+const HANDLERS = { 19: slot.forward('pkcsReq'),
+                   17: slot.forward('renewalReq'),
+                   20: slot.forward('certPoll'),
+                   21: slot.forward('getCert'),
+                   22: slot.forward('getCrl') };
 
 // `pkiclient.exe` BEFORE `:profile`, so the literal CGI name every SCEP client
 // appends is never read as a profile called "pkiclient.exe".
@@ -1278,13 +1301,18 @@ const PATHS = ['/enroll/scep', '/enroll/scep/pkiclient.exe',
 // load would be handed an empty object, which is the hazard this note is for.
 require('./scep_admin');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => scep.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   Scep: Scep,
+  installInstance: (instance: Scep): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   OPERATIONS: OPERATIONS,
   CAPABILITIES: CAPABILITIES,
   PATHS: PATHS,
   TRANSACTION_TTL_MS: TRANSACTION_TTL_MS,
   MAX_TRANSACTIONS: MAX_TRANSACTIONS,
-  failInfoForCore: scep.failInfoForCore.bind(scep) as Scep['failInfoForCore']
+  failInfoForCore: slot.forward('failInfoForCore')
 };

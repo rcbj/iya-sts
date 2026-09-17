@@ -27,10 +27,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `ScepAdmin` takes the modules it uses through its constructor
-// (`ScepAdminDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `ScepAdmin` is exported beside them for the
-// composition root.
+// (`ScepAdminDeps`). Since #50's R2 the composition root builds the instance
+// (`ScepAdmin.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when the module finishes loading.
+// `ScepAdmin` is exported beside them for the composition root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -45,6 +46,7 @@ import errorCodes = require('../common/error_codes');
 import admin = require('../admin-ui/admin');
 import core = require('../common/cert_enrollment');
 import consoleModel = require('./scep_console');
+import InstanceSlot = require('../common/instance_slot');
 
 const esc = admin.esc;
 
@@ -67,6 +69,22 @@ class ScepAdmin {
   constructor(private readonly deps: ScepAdminDeps) {
     deps.log.debug("Entering ScepAdmin.constructor().");
     deps.log.debug("Leaving ScepAdmin.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): ScepAdminDeps {
+    helpers.log.debug("Entering ScepAdmin.defaultDeps().");
+    helpers.log.debug("Leaving ScepAdmin.defaultDeps().");
+    return {
+      log: log,
+      parseBody: parseBody,
+      errorCodes: errorCodes,
+      admin: admin,
+      core: core,
+      consoleModel: consoleModel,
+      esc: esc
+    };
   }
 
   queryRefused(req, res) {
@@ -500,25 +518,32 @@ class ScepAdmin {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const scepAdmin = new ScepAdmin({
-  log: log,
-  parseBody: parseBody,
-  errorCodes: errorCodes,
-  admin: admin,
-  core: core,
-  consoleModel: consoleModel,
-  esc: esc
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ScepAdmin>(
+  'scep/scep_admin',
+  () => new ScepAdmin(ScepAdmin.defaultDeps()),
+  null,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => scepAdmin.registerRoutes(target),
-  ScepAdmin: ScepAdmin
+  registerRoutes: slot.forward('registerRoutes'),
+  ScepAdmin: ScepAdmin,
+  installInstance: (instance: ScepAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin()
 };
