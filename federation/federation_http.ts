@@ -52,6 +52,31 @@
 // If that ever needs to change, it is a SEPARATE argument in a SEPARATE
 // function, never a fourth name quietly added to `DIALLABLE`.
 //
+// **`deliverForm()` IS THAT SEPARATE FUNCTION, FOR THE SECOND KIND OF URL
+// (2026-09-17, #36).** OpenID Connect Back-Channel Logout 1.0 has this service
+// POST a signed Logout Token to each relying party's registered
+// `backchannel_logout_uri`. That address can arrive through
+// `POST /oauth2/register`, which is unauthenticated — so it is NOT the
+// administrator's kind of URL, and the argument above does not cover it. What
+// covers it is the other distinction the root CLAUDE.md's non-goal index
+// draws: **a URL somebody asked to be SENT something at is not a URL to fetch
+// something FROM.** Nothing this service reads comes back from it — the
+// status code is the whole answer, the body is drained and discarded — and
+// what goes out is a token saying one of that client's own sessions ended.
+// The request-forwarder risk is what is left, and it is bounded the way the
+// RFC 9728 import bounds it: in product mode the name is resolved ONCE, every
+// address it resolves to is checked against the internal ranges below, and
+// the connection is pinned to the address that was checked
+// (`mode.dialsInternalAddresses()`). It keeps every other rule here — the kill
+// switch, https unless `federation.outboundAllowInsecure`, no redirect, the
+// body cap, a timeout — and it reads its URL off a record by an attribute
+// name from its OWN list, `SENDABLE`, never from `DIALLABLE`.
+//
+// **AND THE INTERNAL-ADDRESS CHECK MOVED HERE WITH IT.** It was written for
+// the RFC 9728 import inside `oauth-oidc/protected_resource_metadata.ts`; a
+// second outbound requester needing it made this module — the one that owns
+// the outbound policy — the place it lives, and that module now asks this one.
+//
 // ---------------------------------------------------------------------------
 // FIVE MORE THINGS ARE ENFORCED HERE, AND EACH IS A DIFFERENT FAILURE.
 //
@@ -90,11 +115,12 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers nothing and requires `helpers.js`,
-// `config.js`, `error_codes.js` and `version.js` — plus node's own `https`,
-// `http` and `url` — so it cannot join a cycle. `federation.js` is NOT
-// required from here, deliberately: this module is handed a relationship
-// record and reads two attributes off it, which keeps the dependency pointing
-// one way and lets a test drive this file with a plain object.
+// `config.js`, `mode.js`, `error_codes.js` and `version.js` — plus node's own
+// `https`, `http`, `url`, `dns` and `net` — so it cannot join a cycle.
+// `federation.js` is NOT required from here, deliberately: this module is
+// handed a relationship record and reads two attributes off it, which keeps
+// the dependency pointing one way and lets a test drive this file with a
+// plain object.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -112,7 +138,12 @@
 import https = require('https');
 import http = require('http');
 import url = require('url');
+import dns = require('dns');
+import net = require('net');
 import config = require('./../common/config');
+// Whether an internal address may be dialled: development yes, product no.
+// A LEAF that requires only `config`.
+import mode = require('./../common/mode');
 import helpers = require('./../common/helpers');
 import InstanceSlot = require('./../common/instance_slot');
 // THE ERROR CODES. Every way a request fails carries its code as `errorCode` on
@@ -140,6 +171,66 @@ const USER_AGENT = version.userAgent('federation');
 // a new argument, not a new line.
 const DIALLABLE = ['fedTokenUrl', 'fedUserinfoUrl', 'fedJwksUri'];
 
+// THE ATTRIBUTES `deliverForm()` MAY SEND TO (2026-09-17, #36), and they are a
+// list of their own for the header's reason: an address something is SENT to
+// is a different argument from one something is fetched from, and neither
+// list may borrow the other's names.
+const SENDABLE = ['oauthBackchannelLogoutUri'];
+
+// ---------------------------------------------------------------------------
+// WHICH ADDRESSES ARE INTERNAL. Moved from
+// `oauth-oidc/protected_resource_metadata.ts` on 2026-09-17, unchanged.
+//
+// Loopback, the RFC 1918 and RFC 6598 private ranges, link-local (the cloud
+// instance-metadata address among them), unique-local IPv6, "this network",
+// multicast and the reserved blocks — every range whose address a request from
+// inside this process's network would reach something that network did not
+// mean to publish. The documentation ranges are included because nothing
+// legitimate lives there. A NAT64 prefix is included because it embeds an IPv4
+// address that may be any of the above.
+// ---------------------------------------------------------------------------
+const INTERNAL = (function () {
+  const list = new net.BlockList();
+  [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
+   ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24],
+   ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15],
+   ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4],
+   ['240.0.0.0', 4]].forEach(function (row) {
+    list.addSubnet(row[0] as string, row[1] as number, 'ipv4');
+  });
+  [['::', 128], ['::1', 128], ['64:ff9b::', 96], ['100::', 64],
+   ['2001:db8::', 32], ['fc00::', 7], ['fe80::', 10],
+   ['ff00::', 8]].forEach(function (row) {
+    list.addSubnet(row[0] as string, row[1] as number, 'ipv6');
+  });
+  return list;
+})();
+
+// What `vetHost()` answers: an address to pin the connection to (empty in
+// development, where nothing is pinned), or the reason it may not be dialled.
+// `kind` is `internal` or `unresolved` on a refusal, so each caller can name
+// the refusal with a code of its own.
+interface VettedHost {
+  ok: boolean;
+  address: string;
+  family: number;
+  kind?: string;
+  why?: string;
+}
+
+// What `deliverForm()` answers. It never rejects. `kind` names the failure
+// for a caller that codes it in its own vocabulary: `outbound-off`, `url`,
+// `internal`, `unresolved`, `redirect`, `status`, `timeout`, `network`,
+// `build`, `attribute` — or '' on success.
+interface DeliveryResult {
+  ok: boolean;
+  status: number;
+  kind: string;
+  why: string;
+  url: string;
+  cacheControl: string;
+}
+
 // What `fetchJson()` answers. It never rejects.
 interface FetchResult {
   ok: boolean;
@@ -166,10 +257,16 @@ interface FederationHttpDeps {
   http: typeof http;
   https: typeof https;
   userAgent: string;
+  // Since 2026-09-17: the name resolution and the address test the product
+  // mode check needs, and the predicate that decides whether it applies.
+  dns?: typeof dns;
+  net?: typeof net;
+  mode?: { dialsInternalAddresses(): boolean };
 }
 
 class FederationHttp {
   static readonly DIALLABLE = DIALLABLE;
+  static readonly SENDABLE = SENDABLE;
 
   constructor(private readonly deps: FederationHttpDeps) {
     deps.log.debug("Entering FederationHttp.constructor().");
@@ -187,7 +284,10 @@ class FederationHttp {
       errorCodes: errorCodes,
       http: http,
       https: https,
-      userAgent: USER_AGENT
+      userAgent: USER_AGENT,
+      dns: dns,
+      net: net,
+      mode: mode
     };
   }
 
@@ -271,6 +371,458 @@ class FederationHttp {
     return 'its scheme is "' + parsed.protocol.replace(':', '') + '", and ' +
            'only https (or http, with federation.outboundAllowInsecure on) ' +
            'is dialled';
+  }
+
+  // -------------------------------------------------------------------------
+  // WHY AN ADDRESS MAY NOT BE DIALLED IN PRODUCT MODE, or ''. An IPv4-mapped
+  // IPv6 address is judged as the IPv4 address inside it, whichever of its
+  // two spellings arrived, because `::ffff:127.0.0.1` reaches loopback
+  // exactly as `127.0.0.1` does. Moved from the RFC 9728 import, unchanged.
+  // -------------------------------------------------------------------------
+  internalAddressProblem(address: unknown): string {
+    const { log } = this.deps;
+    const netModule = this.deps.net || net;
+    log.debug("Entering FederationHttp.internalAddressProblem(). address=" +
+              address);
+    let text = String(address || '').replace(/^\[|\]$/g, '');
+    const mappedDotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(text);
+    const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(text);
+    if (mappedDotted) {
+      text = mappedDotted[1];
+    } else if (mappedHex) {
+      const high = parseInt(mappedHex[1], 16);
+      const low = parseInt(mappedHex[2], 16);
+      text = [high >> 8, high & 255, low >> 8, low & 255].join('.');
+    }
+    const family = netModule.isIP(text);
+    if (!family) {
+      log.debug("Leaving FederationHttp.internalAddressProblem(). Not an " +
+                "address.");
+      return '"' + address + '" is not an IP address';
+    }
+    const internal = INTERNAL.check(text, family === 4 ? 'ipv4' : 'ipv6');
+    log.debug("Leaving FederationHttp.internalAddressProblem(). internal=" +
+              internal);
+    return internal
+      ? text + ' is a loopback, private, link-local or reserved address'
+      : '';
+  }
+
+  // -------------------------------------------------------------------------
+  // RESOLVE ONCE, AND SAY WHICH ADDRESS THE CONNECTION MAY USE.
+  //
+  // In development (`mode.dialsInternalAddresses()`) the name is resolved by
+  // the connection itself and nothing is pinned. In product every address
+  // the name resolves to is checked and the first is what the request
+  // connects to — resolving twice is how a name that answered a public
+  // address to the check answers a private one to the connection. Never
+  // rejects.
+  // -------------------------------------------------------------------------
+  vetHost(hostname: unknown): Promise<VettedHost> {
+    const { log } = this.deps;
+    const self = this;
+    const netModule = this.deps.net || net;
+    const dnsModule = this.deps.dns || dns;
+    const modeModule = this.deps.mode || mode;
+    log.debug("Entering FederationHttp.vetHost(). hostname=" + hostname);
+    const host = String(hostname || '').replace(/^\[|\]$/g, '');
+    if (modeModule.dialsInternalAddresses()) {
+      log.debug("Leaving FederationHttp.vetHost(). Development: not pinned.");
+      return Promise.resolve({ ok: true, address: '', family: 0 });
+    }
+    const judge = function (addresses): VettedHost {
+      log.debug("Entering judge().");
+      const bad = addresses.map(function (one) {
+        return self.internalAddressProblem(one.address);
+      }).filter(function (one) { return !!one; });
+      if (bad.length || !addresses.length) {
+        log.debug("Leaving judge(). Refused.");
+        return { ok: false, address: '', family: 0,
+                 kind: bad.length ? 'internal' : 'unresolved',
+                 why: '"' + host + '" resolves to ' +
+                      (bad.length ? bad.join('; ') : 'no address') +
+                      '. This service is running as a product ' +
+                      '(global.mode=product), so an outbound request may ' +
+                      'not reach an address inside this service\'s own ' +
+                      'network.' };
+      }
+      log.debug("Leaving judge(). ok.");
+      return { ok: true, address: addresses[0].address,
+               family: addresses[0].family };
+    };
+    const literal = netModule.isIP(host);
+    if (literal) {
+      log.debug("Leaving FederationHttp.vetHost(). A literal address.");
+      return Promise.resolve(judge([{ address: host, family: literal }]));
+    }
+    log.debug("Leaving FederationHttp.vetHost(). Resolving.");
+    return new Promise<VettedHost>(function (resolve) {
+      dnsModule.lookup(host, { all: true }, function (error, addresses) {
+        if (error) {
+          log.debug("Caught in FederationHttp.vetHost(): " +
+                    ((error && error.message) || error));
+          resolve({ ok: false, address: '', family: 0, kind: 'unresolved',
+                    why: '"' + host + '" could not be resolved: ' +
+                         error.message });
+          return;
+        }
+        resolve(judge(addresses || []));
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // SEND A FORM TO AN ADDRESS SOMEBODY REGISTERED TO BE SENT IT AT
+  // (2026-09-17, #36). See the header for why this is a function of its own.
+  //
+  //   record     an object carrying the address under `attribute`, and `id`
+  //              for the log — the application entry's fields, as the caller
+  //              read them.
+  //   attribute  one of SENDABLE, checked.
+  //   form       the name/value pairs, sent
+  //              application/x-www-form-urlencoded.
+  //   options    { timeoutMs }
+  //
+  // The body of the answer is drained, capped and DISCARDED: nothing that
+  // comes back is used, which is the property that makes this a delivery
+  // rather than a fetch. The status and the `Cache-Control` header are the
+  // whole result. It NEVER rejects.
+  // -------------------------------------------------------------------------
+  deliverForm(record: any, attribute: string, form: Record<string, string>,
+              options?: { timeoutMs?: number }): Promise<DeliveryResult> {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    const opts = options || {};
+    const id = (record && (record.id || record.fedId)) || '?';
+    log.debug("Entering FederationHttp.deliverForm(). id=" + id +
+              ', attribute=' + attribute);
+    const refused = function (kind: string, why: string,
+                              raw?: string): Promise<DeliveryResult> {
+      log.debug("Entering refused(). " + kind);
+      log.debug("Leaving refused().");
+      return Promise.resolve({ ok: false, status: 0, kind: kind, why: why,
+                               url: raw || '', cacheControl: '' });
+    };
+    if (SENDABLE.indexOf(String(attribute)) === -1) {
+      // A programming error, and loud for DIALLABLE's reason.
+      log.error(errorCodes.tag('STS-FED-0046') + 'federation: something ' +
+                'asked to send to "' + attribute + '" on ' + id + ', which ' +
+                'is not one of the attributes this service will deliver to (' +
+                SENDABLE.join(', ') + '). Refused. This is a bug in the ' +
+                'caller — see the header of federation_http.ts.');
+      log.debug("Leaving FederationHttp.deliverForm(). Not sendable.");
+      return refused('attribute', 'this service will not send to a URL ' +
+                     'from "' + attribute + '"');
+    }
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.deliverForm(). Outbound is off.");
+      return refused('outbound-off', 'federation.outbound is off, so this ' +
+                     'service makes no outbound request at all');
+    }
+    const raw = String((record && record[attribute]) || '');
+    const problem = this.urlProblem(raw);
+    if (problem) {
+      log.debug("Leaving FederationHttp.deliverForm(). " + problem);
+      return refused('url', attribute + ' cannot be dialled: ' + problem, raw);
+    }
+    const target = new URL(raw);
+    const secure = target.protocol === 'https:';
+    if (!secure) {
+      // Every insecure request, not just the setting. See the header.
+      log.warn('outbound: sending to ' + target.origin + ' over plain http ' +
+               'for ' + id + ' because federation.outboundAllowInsecure is ' +
+               'ON.');
+    }
+    const body = new URLSearchParams(form).toString();
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
+                                                 : this.timeoutMs();
+    const cap = this.maxBodyBytes();
+    const transport = secure ? this.deps.https : this.deps.http;
+    log.debug("Leaving FederationHttp.deliverForm(). Vetting the host.");
+    return this.vetHost(target.hostname).then(function (vetted) {
+      if (!vetted.ok) {
+        return { ok: false, status: 0, kind: vetted.kind || 'internal',
+                 why: vetted.why || '', url: raw, cacheControl: '' };
+      }
+      return new Promise<DeliveryResult>(function (resolve) {
+        let settled = false;
+        const done = function (result) {
+          log.debug("Entering done().");
+          if (!settled) {
+            settled = true;
+            resolve(Object.assign({ url: raw, cacheControl: '', why: '',
+                                    kind: '' }, result));
+          }
+          log.debug("Leaving done().");
+        };
+        const requestOptions: any = {
+          protocol: target.protocol,
+          hostname: target.hostname,
+          port: target.port || (secure ? 443 : 80),
+          path: target.pathname + target.search,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(body),
+            'User-Agent': self.deps.userAgent
+          },
+          rejectUnauthorized: secure && !self.allowInsecure()
+        };
+        if (vetted.address) {
+          // PINNED to the address that was checked. The Host header and the
+          // TLS server name still come from the URL, so a certificate is
+          // checked against the name that was registered.
+          requestOptions.servername = target.hostname;
+          requestOptions.lookup = function (hostname, lookupOptions,
+                                            callback) {
+            log.debug("Entering lookup().");
+            log.debug("Leaving lookup().");
+            if (lookupOptions && lookupOptions.all) {
+              callback(null, [{ address: vetted.address,
+                                family: vetted.family }]);
+              return;
+            }
+            callback(null, vetted.address, vetted.family);
+          };
+        }
+        let request = null;
+        try {
+          request = transport.request(requestOptions, function (response) {
+            const status = response.statusCode || 0;
+            const cacheControl = String(response.headers['cache-control'] ||
+                                        '');
+            if (status >= 300 && status < 400) {
+              // Header point 3: a redirect is not followed. The token would
+              // go wherever the Location pointed.
+              response.destroy();
+              done({ ok: false, status: status, kind: 'redirect',
+                     cacheControl: cacheControl,
+                     why: 'it answered ' + status + ' redirecting to "' +
+                          (response.headers.location || '(no Location)') +
+                          '", and a redirect is not followed' });
+              return;
+            }
+            let bytes = 0;
+            response.on('data', function (chunk) {
+              bytes += chunk.length;
+              if (bytes > cap) {
+                // Drained to the cap and no further: the body is discarded
+                // anyway, and a relying party that answers forever is this
+                // process's memory.
+                response.destroy();
+              }
+            });
+            const finish = function () {
+              log.debug("Entering finish().");
+              const ok = status >= 200 && status < 300;
+              done({ ok: ok, status: status, kind: ok ? '' : 'status',
+                     cacheControl: cacheControl,
+                     why: ok ? '' : 'it answered ' + status });
+              log.debug("Leaving finish().");
+            };
+            response.on('end', finish);
+            response.on('close', finish);
+            response.on('error', function (e) {
+              log.debug("Caught in a callback in deliverForm(): " +
+                        ((e && e.message) || e));
+              finish();
+            });
+          });
+        } catch (e) {
+          log.debug("Caught in FederationHttp.deliverForm(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'build',
+                 why: 'the request could not be built: ' + e.message });
+          return;
+        }
+        request.setTimeout(timeoutMs, function () {
+          request.destroy();
+          done({ ok: false, status: 0, kind: 'timeout',
+                 why: 'it did not answer within ' + timeoutMs + 'ms' });
+        });
+        request.on('error', function (e) {
+          log.debug("Caught in a request callback in deliverForm(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'network',
+                 why: 'the request failed: ' +
+                      (e.code ? e.code + ' — ' : '') + e.message });
+        });
+        request.write(body);
+        request.end();
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // A DOCUMENT A TRUSTED ISSUER PUBLISHED (2026-09-17, #38's follow-ups): a
+  // Token Status List (draft-ietf-oauth-status-list) or a Bitstring Status
+  // List credential, fetched by `oid4vc/vc_status.ts` for a credential a
+  // presentation carried.
+  //
+  // THE THIRD ARGUMENT, AND IT IS NOT EITHER OF THE OTHER TWO. The URL comes
+  // out of a CREDENTIAL, which a presenter handed over — the caller's kind of
+  // URL, which the header says this module will not dial. What makes this one
+  // different is where it sits inside that credential: under a signature that
+  // has already VERIFIED against a certificate an ADMINISTRATOR put in
+  // `oid4vp.trustedIssuerCertificates`. The presenter cannot choose it; the
+  // issuer the administrator trusted did. `vc_status.ts` calls this only after
+  // that verification, and never for a credential this realm signed (whose
+  // list it reads from its own store). What is fetched is then verified
+  // against that same certificate, so nothing that arrives is believed on
+  // its own say-so (header point 5).
+  //
+  // Everything else here still applies: the kill switch, https unless
+  // `federation.outboundAllowInsecure`, the internal-address check in product
+  // mode with the connection pinned, the body cap, the timeout — and NO
+  // REDIRECT, which the draft's section 8.2 says a client SHOULD follow and
+  // its section 11.4 says is where the risk is; a list that has moved is a
+  // failure, and the verifier refuses the credential rather than follow it.
+  // It sends nothing but `Accept`. It NEVER rejects: `{ ok, status, body,
+  // contentType, kind, why, url }`.
+  // -------------------------------------------------------------------------
+  fetchPublished(raw: string, options?: { accept?: string;
+                                          timeoutMs?: number }):
+      Promise<{ ok: boolean; status: number; body: Buffer;
+                contentType: string; kind: string; why: string;
+                url: string }> {
+    const { log } = this.deps;
+    const self = this;
+    const opts = options || {};
+    log.debug("Entering FederationHttp.fetchPublished().");
+    const empty = Buffer.alloc(0);
+    const refused = function (kind: string, why: string): Promise<any> {
+      log.debug("Entering refused(). " + kind);
+      log.debug("Leaving refused().");
+      return Promise.resolve({ ok: false, status: 0, body: empty,
+                               contentType: '', kind: kind, why: why,
+                               url: String(raw || '') });
+    };
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.fetchPublished(). Outbound is off.");
+      return refused('outbound-off', 'federation.outbound is off, so this ' +
+                     'service makes no outbound request at all');
+    }
+    const problem = this.urlProblem(raw);
+    if (problem) {
+      log.debug("Leaving FederationHttp.fetchPublished(). " + problem);
+      return refused('url', 'the URL cannot be dialled: ' + problem);
+    }
+    const target = new URL(String(raw));
+    const secure = target.protocol === 'https:';
+    if (!secure) {
+      log.warn('outbound: fetching ' + target.origin + ' over plain http ' +
+               'because federation.outboundAllowInsecure is ON.');
+    }
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
+                                                 : this.timeoutMs();
+    const cap = this.maxBodyBytes();
+    const transport = secure ? this.deps.https : this.deps.http;
+    log.debug("Leaving FederationHttp.fetchPublished(). Vetting the host.");
+    return this.vetHost(target.hostname).then(function (vetted) {
+      if (!vetted.ok) {
+        return { ok: false, status: 0, body: empty, contentType: '',
+                 kind: vetted.kind || 'internal', why: vetted.why || '',
+                 url: String(raw) };
+      }
+      return new Promise<any>(function (resolve) {
+        let settled = false;
+        const done = function (result) {
+          log.debug("Entering done().");
+          if (!settled) {
+            settled = true;
+            resolve(Object.assign({ body: empty, contentType: '', why: '',
+                                    kind: '', url: String(raw) }, result));
+          }
+          log.debug("Leaving done().");
+        };
+        const requestOptions: any = {
+          protocol: target.protocol,
+          hostname: target.hostname,
+          port: target.port || (secure ? 443 : 80),
+          path: target.pathname + target.search,
+          method: 'GET',
+          headers: {
+            'Accept': String(opts.accept || '*/*'),
+            'User-Agent': self.deps.userAgent
+          },
+          rejectUnauthorized: secure && !self.allowInsecure()
+        };
+        if (vetted.address) {
+          requestOptions.servername = target.hostname;
+          requestOptions.lookup = function (hostname, lookupOptions,
+                                            callback) {
+            log.debug("Entering lookup().");
+            log.debug("Leaving lookup().");
+            if (lookupOptions && lookupOptions.all) {
+              callback(null, [{ address: vetted.address,
+                                family: vetted.family }]);
+              return;
+            }
+            callback(null, vetted.address, vetted.family);
+          };
+        }
+        let request = null;
+        try {
+          request = transport.request(requestOptions, function (response) {
+            const status = response.statusCode || 0;
+            const contentType = String(response.headers['content-type'] ||
+                                       '');
+            if (status >= 300 && status < 400) {
+              response.destroy();
+              done({ ok: false, status: status, kind: 'redirect',
+                     why: 'it answered ' + status + ' redirecting to "' +
+                          (response.headers.location || '(no Location)') +
+                          '", and a redirect is not followed' });
+              return;
+            }
+            const chunks: Buffer[] = [];
+            let bytes = 0;
+            response.on('data', function (chunk) {
+              bytes += chunk.length;
+              if (bytes > cap) {
+                response.destroy();
+                done({ ok: false, status: status, kind: 'too-large',
+                       why: 'it answered with more than ' + cap +
+                            ' bytes (federation.maxResponseBytes)' });
+                return;
+              }
+              chunks.push(chunk);
+            });
+            response.on('end', function () {
+              const ok = status >= 200 && status < 300;
+              done({ ok: ok, status: status, body: Buffer.concat(chunks),
+                     contentType: contentType, kind: ok ? '' : 'status',
+                     why: ok ? '' : 'it answered ' + status });
+            });
+            response.on('error', function (e) {
+              log.debug("Caught in a callback in fetchPublished(): " +
+                        ((e && e.message) || e));
+              done({ ok: false, status: status, kind: 'network',
+                     why: 'the response failed: ' + e.message });
+            });
+          });
+        } catch (e) {
+          log.debug("Caught in FederationHttp.fetchPublished(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'build',
+                 why: 'the request could not be built: ' + e.message });
+          return;
+        }
+        request.setTimeout(timeoutMs, function () {
+          request.destroy();
+          done({ ok: false, status: 0, kind: 'timeout',
+                 why: 'it did not answer within ' + timeoutMs + 'ms' });
+        });
+        request.on('error', function (e) {
+          log.debug("Caught in a request callback in fetchPublished(): " +
+                    ((e && e.message) || e));
+          done({ ok: false, status: 0, kind: 'network',
+                 why: 'the request failed: ' +
+                      (e.code ? e.code + ' — ' : '') + e.message });
+        });
+        request.end();
+      });
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -531,6 +1083,11 @@ export = {
   installInstance: (instance: FederationHttp): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   DIALLABLE: FederationHttp.DIALLABLE,
+  SENDABLE: FederationHttp.SENDABLE,
+  internalAddressProblem: slot.forward('internalAddressProblem'),
+  vetHost: slot.forward('vetHost'),
+  deliverForm: slot.forward('deliverForm'),
+  fetchPublished: slot.forward('fetchPublished'),
   maxBodyBytes: slot.forward('maxBodyBytes'),
   urlProblem: slot.forward('urlProblem'),
   fetchJson: slot.forward('fetchJson'),

@@ -2430,12 +2430,14 @@ function audienceOf(jwt) {
 // THE TWO SAML REGISTRIES. They are SEPARATE IMPLEMENTATIONS rather than one
 // with a version flag — SAML 1.1 has no request message, no Single Logout and a
 // different spelling for almost every shared element — which is why /saml2 has
-// four actions and /saml11 has one, and why a walk that treated them as one
-// resource would be asserting the thing that is not true.
+// nine actions and /saml11 has one, and why a walk that treated them as one
+// resource would be asserting the thing that is not true. (The metadata upload
+// and the metadata signing certificate are replayed from the document's own
+// examples and exercised in process by tests/saml_request_signatures.js.)
 // ---------------------------------------------------------------------------
 async function theSamlRegistriesRoundTrip() {
   log.debug("Entering theSamlRegistriesRoundTrip().");
-  log.info("=== SAML 2.0 (four actions) and SAML 1.1 (one) ===");
+  log.info("=== SAML 2.0 (nine actions) and SAML 1.1 (one) ===");
   const sp = "urn:test:" + REALM + ":sp";
   // **`acs` USED TO BE IN THIS BODY AND WAS ALWAYS IGNORED (removed
   // 2026-09-06).** `saml2Action()`'s register branch reads `sp` and nothing
@@ -2497,17 +2499,50 @@ async function theSamlRegistriesRoundTrip() {
   // handler reads `value`, and a body naming the field anything else answers
   // 200 with `changed: false` and stores nothing. So the assertion is on the
   // ENTRY, and it is deliberately made through the documented name.
-  const certificate = "MIIBtest" + "A".repeat(40);
+  //
+  // **A REAL RSA CERTIFICATE SINCE 2026-09-17 (#37)**: the registered signing
+  // certificates are what a service provider's request signatures are
+  // verified against now, so a value that is not an RSA certificate is
+  // refused at the door — which is asserted too.
+  const credentials = require("../tools/pep-credential.js");
+  const minted = await credentials.mint({
+    rootSubject: "CN=admin-api-operations saml2 " + REALM +
+                 ",O=mock-sts tests",
+    subject: "CN=admin-api-operations-saml2-sp,O=mock-sts tests" });
+  const certificate = String(minted.anchorPem)
+    .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  await refused("/saml2/set-signing-certificate",
+    { sp: sp, value: "MIIBtest" + "A".repeat(40) },
+    // WAS /RSA certificate|…/ until 2026-09-17. This service verifies XML
+    // signatures made with EC, EdDSA and post-quantum keys now (#37's
+    // follow-ups), so the refusal no longer says RSA — it names X.509 and
+    // what the key has to be good for. The point of the pattern is unchanged:
+    // a caller must be able to tell WHICH refusal it met.
+    /X\.509 certificate|not an X\.509|not base64/i,
+    "a signing certificate that is not a certificate");
   const set = await ok("/saml2/set-signing-certificate",
-    { sp: sp, value: certificate }, "recorded a signing certificate");
+    { sp: sp, value: minted.anchorPem }, "recorded a signing certificate");
   assert.strictEqual(set.changed, true,
     "`set-signing-certificate` should report that it CHANGED something. This " +
     "handler answers 200 with `changed: false` when the body named a field " +
     "it does not read — which is what a caller following a stale document " +
     "gets, silently, for ever — so the reply's own account of itself is the " +
     "assertion worth making here.");
-  assert.ok(JSON.stringify(await serviceProvider(sp)).indexOf(certificate) > 0,
-    "and the certificate should be on the entry afterwards.");
+  const held = await serviceProvider(sp);
+  assert.deepStrictEqual(held.signingCertificates, [certificate],
+    "and the certificate should be on the entry afterwards, as base64 DER " +
+    "with the PEM armour gone; the entry lists " +
+    JSON.stringify(held.signingCertificates));
+  await ok("/saml2/remove-signing-certificate",
+    { sp: sp, value: certificate }, "removed the signing certificate");
+  assert.deepStrictEqual((await serviceProvider(sp)).signingCertificates, [],
+    "and it should be gone from the entry.");
+  await refused("/saml2/confirm-signing-certificate", { sp: sp },
+    /no observed signing certificate/i,
+    "confirming when no request carried a certificate");
+  await refused("/saml2/discard-signing-certificate", { sp: sp },
+    /no observed signing certificate/i,
+    "discarding when no request carried a certificate");
 
   const rp = "urn:test:" + REALM + ":rp";
   // `target` was here and `saml11Action()` never read it — the third ignored
@@ -2521,7 +2556,8 @@ async function theSamlRegistriesRoundTrip() {
       JSON.stringify(parties.map(function (r) {
         return r.identifier || r.rp || r.entityId;
       })));
-  log.info("[saml] OK — SAML 2.0's four actions and SAML 1.1's one " +
+  log.info("[saml] OK — SAML 2.0's certificate and logout actions and " +
+           "SAML 1.1's one " +
            "round-tripped, and the metadata URL carries this realm and the " +
            "entityID's slug.");
   log.debug("Leaving theSamlRegistriesRoundTrip().");
@@ -2958,6 +2994,16 @@ async function theTokenDoorsRoundTrip() {
     "`revoke-subject` should kill the token whose `sub` it named.");
 
   await ok("/tokens/revoke-all", {}, "revoked everything in this realm");
+  // THIS JOB'S OWN MANAGEMENT-API TOKEN WAS JUST REVOKED WITH EVERYTHING
+  // ELSE, and `/admin-api` refuses a revoked token since #36's follow-ups
+  // (STS-API-0122). Mint a fresh one before the next call, through the shim
+  // that presents it (`tests/tools/attach-admin-token.js`), or every
+  // assertion below this line fails as a 401 that says nothing about what it
+  // was testing.
+  if (globalThis.stsAdminApiToken) {
+    await globalThis.stsAdminApiToken.refresh();
+  }
+
   const listed = await get("/tokens");
   assert.ok(listed.body.revokedCount >= restoreThese.length,
     "`revoke-all` should leave everything this realm holds revoked; the " +

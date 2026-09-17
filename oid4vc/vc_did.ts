@@ -63,6 +63,7 @@ interface VcDidDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
   bbsKeyPair: typeof helpers.bbsKeyPair;
   signingKeyFor: typeof helpers.signingKeyFor;
+  signingKeyForAsync: typeof helpers.signingKeyForAsync;
   stsKeysFor: typeof helpers.stsKeysFor;
   stats: typeof stats;
   config: typeof config;
@@ -145,6 +146,7 @@ class VcDid {
       baseUrlOf: helpers.baseUrlOf,
       bbsKeyPair: helpers.bbsKeyPair,
       signingKeyFor: helpers.signingKeyFor,
+      signingKeyForAsync: helpers.signingKeyForAsync,
       stsKeysFor: helpers.stsKeysFor,
       stats: stats,
       config: config,
@@ -234,6 +236,24 @@ class VcDid {
     return { alg: alg, key: signer.key, kid: signer.kid };
   }
 
+  // The same answer, with a post-quantum key set generated in the worker pool
+  // rather than on this thread (#38's follow-ups: credentials may be signed
+  // with ML-DSA, and the DID document must publish that key).
+  private async didSignerAsync(): Promise<{ alg: string; key: any;
+                                            kid: string }> {
+    const { log, config, STS, signingKeyForAsync } = this.deps;
+    log.debug("Entering VcDid.didSignerAsync().");
+    const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
+                       'RS256');
+    if (alg === 'RS256') {
+      log.debug("Leaving VcDid.didSignerAsync(). RS256.");
+      return { alg: 'RS256', key: STS.privateKey, kid: STS.kid };
+    }
+    const signer = await signingKeyForAsync(alg);
+    log.debug("Leaving VcDid.didSignerAsync(). " + alg + ".");
+    return { alg: alg, key: signer.key, kid: signer.kid };
+  }
+
   // The DID Document. At least two verification methods, because this issuer
   // signs two quite different things: JWTs (RS256 for every token, and for the
   // SD-JWT VCs unless `oid4vci.credentialSigningAlgorithm` names another key —
@@ -273,11 +293,13 @@ class VcDid {
     // /oauth2/jwks publishes — so the two documents cannot describe different
     // keys. Nothing is added for RS256, which keeps the document exactly as it
     // was.
-    const signer = this.didSigner();
+    const signer = await this.didSignerAsync();
     if (signer.alg !== 'RS256' && signer.kid !== STS.kid) {
-      const extra = (stsKeysFor().extraKeys || []).filter(function (one) {
-        return one.publicJwk && one.publicJwk.kid === signer.kid;
-      })[0];
+      const held = stsKeysFor();
+      const extra = (held.extraKeys || []).concat(held.pqKeys || [])
+        .filter(function (one) {
+          return one.publicJwk && one.publicJwk.kid === signer.kid;
+        })[0];
       if (extra) {
         methods.push({ id: did + '#' + signer.kid, type: 'JsonWebKey2020',
                        controller: did,

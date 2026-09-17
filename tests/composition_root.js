@@ -28,6 +28,9 @@
 //      stack, stayed green. It now requires `service_state` lazily, after
 //      the stack, so requiring it and then the stack must leave every
 //      instance the root's.
+//   5. Neither load order prints a circular-dependency warning. The root
+//      used to `build()` itself with a require of its own file from inside
+//      its own load (2026-09-17: `common/CLAUDE.md`, *protocol_stack.ts*).
 //
 // IN A CHILD PROCESS for `spiffe_join_token.js`'s reason: loading the whole
 // stack builds a certificate authority and registers every route on the shared
@@ -76,10 +79,24 @@ function childScript(mode) {
       "out.reading = context.forSession({ amr: ['pwd'] }).kind;"
     ];
   log.debug("Leaving childScript().");
-  return ["delete process.env.CONFIG_FILE;", "const out = {};"]
+  // EVERY PROCESS WARNING IS RECORDED (2026-09-17): node's "Accessing
+  // non-existent property ... inside circular dependency" is a warning and
+  // not an error, so nothing else would notice one coming back.
+  //
+  // **AND THE REPORT WAITS A TICK FOR THEM.** `process.emitWarning()` delivers
+  // on the next turn of the loop, so a child that wrote its file immediately
+  // after the require reported NO warnings however many it had earned — which
+  // is how the first version of this check passed against the very defect it
+  // was written for.
+  return ["delete process.env.CONFIG_FILE;", "const out = { warnings: [] };",
+          "process.on('warning', function (w) {",
+          "  out.warnings.push(String(w && w.message));",
+          "});"]
     .concat(lines)
-    .concat(["require('fs').writeFileSync(process.env.PROBE_OUT, " +
-             "JSON.stringify(out));", "process.exit(0);"])
+    .concat(["setTimeout(function () {",
+             "  require('fs').writeFileSync(process.env.PROBE_OUT, " +
+             "JSON.stringify(out));",
+             "  process.exit(0);", "}, 50);"])
     .join('\n');
 }
 
@@ -127,6 +144,11 @@ function run(t) {
             'and every one of them says root (' + origins.length + ')');
     t.check(/already installed/.test(String(stack.secondInstall)),
             'a second installInstance() is refused', stack.secondInstall);
+    t.equal((stack.warnings || []).filter(function (one) {
+      return /circular dependency/i.test(one);
+    }).join(' | '), '',
+            'loading the stack prints no circular-dependency warning (the ' +
+            'root no longer requires itself)');
   }
 
   t.log.info('=== a request worker: required first, then the stack ===');
@@ -138,6 +160,11 @@ function run(t) {
     t.check((worker.origins || []).length > 0 && early.length === 0,
             'in a worker\'s load order every instance is the root\'s too',
             JSON.stringify(early));
+    t.equal((worker.warnings || []).filter(function (one) {
+      return /circular dependency/i.test(one);
+    }).join(' | '), '',
+            'and a worker\'s load order prints no circular-dependency ' +
+            'warning either');
   }
 
   t.log.info('=== one module alone: it builds its own default ===');

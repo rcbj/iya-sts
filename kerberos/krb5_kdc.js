@@ -811,6 +811,20 @@ async function resolveS4u(ctx) {
     // not involved and never proves anything. A reserved name still fails,
     // which is the only way to see what a service gets back when it
     // impersonates somebody who does not exist.
+    // A DISABLED ACCOUNT CANNOT BE IMPERSONATED (2026-09-17) either: an
+    // S4U2Self ticket is a ticket FOR that person.
+    if (typeof principals.personDisabled === 'function' &&
+        principals.personDisabled(forUser.userName.name, forUser.userRealm)) {
+      log.debug("Leaving resolveS4u(). The named account is disabled.");
+      return refuseS4u(intent, 18, {
+        errorCode: 'STS-KRB-0129',
+        crealm: ticketPart.crealm, cname: ticketPart.cname,
+        realm: ctx.answeringRealm,
+        sname: body.sname,
+        eText: 'S4U2Self named ' + forUser.userName.name.join('/') + '@' +
+               forUser.userRealm + ', whose account is disabled'
+      });
+    }
     const user = principals.findOrCreateUser(forUser.userName.name,
                                              forUser.userRealm);
     if (!user) {
@@ -1422,6 +1436,21 @@ async function handleAsReq(request) {
   // hands back the REASON beside a refusal, because "no such principal" is the
   // wrong sentence for somebody who exists and simply has no keys yet: that
   // person is told to sign in once, which is the thing that derives them.
+  // A DISABLED ACCOUNT (2026-09-17), in both modes and before the lookup —
+  // which in development mode would create the principal. RFC 4120's
+  // KDC_ERR_CLIENT_REVOKED (18), the code the `locked` fixture below already
+  // answers with.
+  if (typeof principals.personDisabled === 'function' &&
+      principals.personDisabled(body.cname.name, asRealm)) {
+    log.info('krb5: ' + body.cname.name.join('/') + '@' + asRealm + ' is ' +
+             'disabled; the AS-REQ is refused.');
+    log.debug("Leaving handleAsReq(). Disabled.");
+    return errorReply(18, {
+      errorCode: 'STS-KRB-0129',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: 'the account is disabled'
+    });
+  }
   const lookup = principals.lookupUser(body.cname.name, asRealm);
   const client = lookup.principal;
   if (!client && lookup.refusal) {

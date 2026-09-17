@@ -1146,6 +1146,14 @@ const SECTIONS = [
                    'selection also populates the directory, so an LDAP ' +
                    'client and a wallet describe one person. It applies to ' +
                    'all five OID4VCI configurations at once.' },
+          { path: '/admin/vc-status', label: 'Credential status',
+            blurb: 'This realm\'s status lists — the Token Status List every ' +
+                   'JOSE credential names and the two Bitstring Status ' +
+                   'Lists the W3C ones name — where they are served, and ' +
+                   'every issued credential\'s index and status, with ' +
+                   'Suspend, Reinstate and Revoke. A revoked or suspended ' +
+                   'credential is refused by every verifier that reads the ' +
+                   'list, this one included, and signs nobody in.' },
           { path: '/admin/oid4vp', label: 'OpenID4VP',
             blurb: 'The verifier\'s own settings: the client identifier it ' +
                    'presents as, where it sends a holder to present, how ' +
@@ -2272,8 +2280,9 @@ const SECTIONS = [
                'as them, and the Kerberos sign-out instant — and to end any ' +
                'of it. It is <a href="/logout">/logout</a> done to somebody ' +
                'else: the same nine stores through the same functions, ' +
-               'except that the notifications cannot be delivered from ' +
-               'here.' },
+               'except that the front-channel notifications cannot be ' +
+               'delivered from here. The back-channel Logout Tokens are, and ' +
+               'the page lists where each got to.' },
       // AFTER the traffic pages and BEFORE the audit log, and the order is
       // the same widening-detail argument the rest of this section follows:
       // Metrics says how much, the pages between say what came out, this says
@@ -7445,6 +7454,110 @@ class AdminConsole {
       '<td>' + button + '</td></tr>';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE BACK-CHANNEL LOGOUT DELIVERIES AND THEIR DEAD LETTERS (2026-09-17,
+  // #36; the cluster-wide, paged list and the retry the same day).
+  //
+  // A sign-out answers before its Logout Tokens are sent, so every result
+  // says `pending`; this is where each one is seen to have been accepted or
+  // not. On both halves of the page — the lookup and one person — because a
+  // delivery is not only one person's: an operator asking "is the relying
+  // party getting these?" has nobody in particular in mind. The rows are the
+  // SHARED store's (`oauth-oidc/backchannel_logout.ts`, header point 3), so
+  // this node lists every node's deliveries. Filtered by state and a search,
+  // paged on `backchannelDeliveriesPage`; a DEAD row carries a Retry button
+  // for a holder of Admin Write, which posts `retry-backchannel` — the same
+  // action `POST /admin-api/logout/retry-backchannel` calls.
+  // ---------------------------------------------------------------------------
+  backchannelDeliveriesSection(view, canWrite?, back?, wantedUser?) {
+    const { log, queryWith, pageParamsOf } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.backchannelDeliveriesSection().");
+    const v = view || {};
+    const list = Array.isArray(v.backchannelDeliveries)
+      ? v.backchannelDeliveries : [];
+    const counts = v.backchannelCounts || { pending: 0, sent: 0, dead: 0 };
+    const state = String(v.deliveryState || '');
+    const heading = '<h2 id="backchannel">Back-channel Logout Tokens</h2>' +
+      this.note('<strong>' + counts.pending + '</strong> pending, <strong>' +
+        counts.sent + '</strong> sent, <strong>' + counts.dead + '</strong> ' +
+        'dead letter(s) in this realm, across every node. A relying party ' +
+        'that is down is retried with backoff by whichever node gets there ' +
+        'first, across restarts; one that never accepts — or answers 400, ' +
+        'or is refused by the outbound policy — is a DEAD LETTER, sent again ' +
+        'only when somebody presses Retry. Each final outcome is also a ' +
+        '<code>logout.backchannel</code> row on <a href="/admin/audit">the ' +
+        'audit log</a>.') +
+      '<form method="get" action="/admin/logout#backchannel"><div ' +
+      'class="formrow">' +
+      (wantedUser ? '<input type="hidden" name="user" value="' +
+                    this.esc(wantedUser) + '">' : '') +
+      '<label for="deliveryState">State</label><select id="deliveryState" ' +
+      'name="deliveryState"><option value="">any</option>' +
+      ['pending', 'sent', 'dead'].map(function (one) {
+        return '<option value="' + one + '"' +
+               (one === state ? ' selected' : '') + '>' +
+               (one === 'dead' ? 'dead letters' : one) + '</option>';
+      }).join('') + '</select><label for="deliveryq">Search</label>' +
+      '<input id="deliveryq" name="deliveryq" value="' +
+      this.esc(v.deliveryq || '') + '" placeholder="client, session, code">' +
+      '<button class="secondary">Filter</button></div></form>';
+    if (!list.length) {
+      log.debug("Leaving AdminConsole.backchannelDeliveriesSection(). None.");
+      return heading + this.note(state || v.deliveryq
+        ? 'No delivery matches.'
+        : 'None yet. A sign-out — or an expiry, while ' +
+          '<code>oauth2.backchannelLogoutOnExpiry</code> is on — sends one to ' +
+          'every relying party on the ending session that registered a ' +
+          '<code>backchannel_logout_uri</code>, while ' +
+          '<code>oauth2.backchannelLogout</code> is on.');
+    }
+    const paging = (v.deliveriesPg && v.deliveriesPg.paging) || null;
+    const params = Object.assign({}, pageParamsOf({}), wantedUser
+      ? { user: wantedUser } : {}, { deliveryState: state,
+                                     deliveryq: v.deliveryq || '' });
+    const nav = paging
+      ? this.pageNavPair('/admin/logout', params, paging) : { head: '' };
+    log.debug("Leaving AdminConsole.backchannelDeliveriesSection(). " +
+              list.length + " row(s).");
+    return heading + nav.head +
+      '<table><thead><tr><th>Queued</th><th>Client</th><th>Session</th>' +
+      '<th>State</th><th>Why</th><th></th></tr></thead><tbody>' +
+      list.map(function (row) {
+        const retry = row.state === 'dead' && canWrite
+          ? '<form method="post" action="/admin/logout" ' +
+            'style="display:inline">' +
+            '<input type="hidden" name="action" value="retry-backchannel">' +
+            '<input type="hidden" name="delivery" value="' +
+            self.esc(row.id) + '">' +
+            '<input type="hidden" name="user" value="' +
+            self.esc(wantedUser || '') + '">' +
+            self.logoutBackField(back || queryWith(params, {})) +
+            '<button type="submit">Retry</button></form>'
+          : '';
+        return '<tr><td class="sub">' + self.esc(row.queuedAt) + '</td>' +
+          '<td><code>' + self.esc(row.clientId) + '</code><br><span ' +
+          'class="sub">' + self.esc(row.uri) + '</span></td>' +
+          '<td class="sub">' + self.esc(row.sessionId) +
+          (row.trigger && row.trigger !== 'sign-out'
+            ? '<br>' + self.esc(row.trigger) : '') + '</td>' +
+          '<td>' + self.esc(row.state === 'dead' ? 'dead letter' : row.state) +
+          (row.attempts ? '<br><span class="sub">' + row.attempts +
+                          ' attempt(s)' +
+                          (row.status ? ', HTTP ' + row.status : '') +
+                          (row.generation > 1
+                            ? ', retry ' + (row.generation - 1) : '') +
+                          '</span>' : '') +
+          (row.encrypted ? '<br><span class="sub">encrypted ' +
+                           self.esc(row.encrypted) + '</span>' : '') +
+          '</td>' +
+          '<td class="sub">' + (row.errorCode
+            ? '<code>' + self.esc(row.errorCode) + '</code> ' : '') +
+          self.esc(row.why || row.via || '') + '</td><td>' + retry +
+          '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
   // One route, two answers, and the choice is here rather than in the route so
   // that /admin-api/logout makes the same one — the rule every view in this
   // file follows.
@@ -7500,7 +7613,10 @@ class AdminConsole {
         '<code>/logout</code>, which needs no console role and is where the ' +
         'front-channel notifications actually load: those are iframes in the ' +
         'signed-out person\'s own browser, and this console is not that ' +
-        'browser.') +
+        'browser. The back-channel Logout Tokens are different — this ' +
+        'service sends them, whichever door the sign-out came through — and ' +
+        'the list below is where each one ended up.') +
+        this.backchannelDeliveriesSection(view, gate.write, back, '') +
         // ON THE LOOKUP PAGE AND NOT ON THE PER-PERSON ONE. These four decide
         // what a logout REACHES, which is a question about the feature; the
         // drill-down is about one person, and a form there would invite
@@ -7508,8 +7624,8 @@ class AdminConsole {
         // them.
         this.configFormsFor('/admin/logout');
       log.debug("Leaving AdminConsole.logoutView(). The lookup form.");
-      return { json: { user: '', known: false, families: families,
-                       settings: this.configSettingsJson('/admin/logout') },
+      return { json: Object.assign({}, view.json, {
+                 settings: this.configSettingsJson('/admin/logout') }),
                inner: inner, title: 'Sign-out' };
     }
 
@@ -7603,7 +7719,8 @@ class AdminConsole {
           'placeholder="jti"></label> <button type="submit">Restore</button> ' +
           '<span class="sub">RFC 7009 has no such operation: a resource ' +
           'server may already have cached the refusal.</span></p></form>'
-        : '');
+        : '') +
+      this.backchannelDeliveriesSection(view, canWrite, back, wantedUser);
 
     log.debug("Leaving AdminConsole.logoutView(). " + inventory.total +
               " live item(s).");
@@ -11805,6 +11922,10 @@ class AdminConsole {
     const holdsSecond = factors.totp || factors.mfaKeys > 0 ||
       !!(factors.backupCodes && factors.backupCodes.present);
     const state = '<table class="key"><tr><th>What</th><th>Now</th></tr>' +
+      '<tr><th>Account</th><td>' + (factors.disabled
+        ? '<strong class="state-expired">DISABLED</strong> — every door ' +
+          'refuses them (<code>pwdAccountLockedTime</code>)'
+        : '<span class="state-valid">enabled</span>') + '</td></tr>' +
       '<tr><th>Password</th><td>' + (factors.password
         ? '<span class="state-valid">set</span>'
         : '<span class="state-none">none</span>') +
@@ -11917,8 +12038,31 @@ class AdminConsole {
           form('require-mfa', 'Require MFA for this person',
                'They must use a second factor, and enrol one at their next ' +
                'sign-in if they hold none.', false));
+    // THE ACCOUNT ITSELF (2026-09-17, #36 follow-up): disable, which ends
+    // everything the person holds, and enable. `common/account_state.ts`.
+    const account = '<h3>The account</h3>' + (factors.disabled
+      ? this.note('The account is <strong>disabled</strong>. Enabling it ' +
+                  'lets them sign in again; nothing ended by the disable ' +
+                  'comes back, and RISC receivers are told ' +
+                  '<code>account-enabled</code>.') +
+        form('enable', 'Enable the account',
+             'Clears pwdAccountLockedTime; they sign in afresh.', false)
+      : this.note('<strong>Disable the account</strong> refuses them at ' +
+                  'every door — every sign-in, every token grant (a refresh ' +
+                  'token included), a Kerberos AS-REQ, an LDAP bind, this ' +
+                  'console and the management API — and ends everything ' +
+                  'they hold now, as a global logout does: back-channel ' +
+                  'Logout Tokens go to their relying parties, CAEP ' +
+                  '<code>session-revoked</code> and RISC ' +
+                  '<code>account-disabled</code> to the receivers. ' +
+                  'Front-channel notifications need their own browser and ' +
+                  'are not sent from here. SCIM <code>active: false</code> ' +
+                  'is the same act.') +
+        form('disable', 'Disable the account',
+             'Sets pwdAccountLockedTime and signs them out of everything.',
+             true));
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
-    return heading + state + signalsNote + reset + passkeys + mfa;
+    return heading + state + signalsNote + account + reset + passkeys + mfa;
   }
 
   userDetailPage(req, key) {
@@ -12150,7 +12294,8 @@ class AdminConsole {
       // it is what `/oauth2/revoke` does — so it stayed, renamed to say what it
       // does. What was ADDED is the act the old label promised, and it is the
       // SAME one `/admin/logout` performs: `logoutReader.terminate()` with an
-      // empty selection, which walks all ten families in `endOrder` so the
+      // empty selection, which walks every family (eleven since #38) in
+      // `endOrder` so the
       // front-channel notifications are built before the session they hang off
       // is destroyed. A second implementation here would be a second answer to
       // "what is a live session", which is the thing rule 3m exists to prevent.
@@ -12164,7 +12309,9 @@ class AdminConsole {
       '">the sign-out page</a> performs, through the same function: it ends ' +
       'every browser sign-on session, notifies every OpenID Connect relying ' +
       'party, WS-Federation realm and SAML 2.0 service provider they signed ' +
-      'into, invalidates their authorization codes and OID4VCI ' +
+      'into (an OpenID Connect relying party with a ' +
+      '<code>backchannel_logout_uri</code> is POSTed a Logout Token by this ' +
+      'service), invalidates their authorization codes and OID4VCI ' +
       'pre-authorized codes, closes their bound LDAP connections, stamps the ' +
       'Kerberos sign-out instant on their principal, and revokes their ' +
       'tokens. In that order — the notifications are built off the session, ' +
@@ -12175,7 +12322,8 @@ class AdminConsole {
       'loaded in the signed-out person\'s OWN browser, and this console is ' +
       'not that browser — so what happens here is that the relying party is ' +
       'forgotten and the notification is reported rather than sent; ' +
-      '<code>/logout</code> is where those actually load. And ' +
+      '<code>/logout</code> is where those actually load (the back-channel ' +
+      'Logout Token is not one of these: it is sent). And ' +
       '<strong>nothing recalls a SAML assertion, a Kerberos service ticket ' +
       'or an SVID</strong>: each is valid because somebody else can verify ' +
       'it without asking this service, so the only thing that ends one is ' +
@@ -15708,22 +15856,28 @@ class AdminConsole {
         ? '<h2>Service provider metadata</h2>' +
           this.note('Fetches <code>' +
                     this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
-          '</code> and stores what it finds: the document on ' +
-          '<code>samlSpMetadata</code> and the <code>use="encryption"</code> ' +
-          'certificate on <code>samlEncryptionCertificate</code>, which is ' +
-          'what an assertion for this service provider is then encrypted to. ' +
-          'A fetch that fails changes NOTHING, so whatever certificate is in ' +
-          'force stays in force. The endpoints in the document are reported ' +
-          'and not applied — a response still goes where the request asks.') +
+          '</code> and CONSUMES it: the document on ' +
+          '<code>samlSpMetadata</code>, its AssertionConsumerService and ' +
+          'SingleLogoutService endpoints as REGISTERED return addresses, its ' +
+          'signing certificates as what its requests are verified against, ' +
+          'its <code>use="encryption"</code> certificate on ' +
+          '<code>samlEncryptionCertificate</code>, and its NameIDFormats, ' +
+          'AuthnRequestsSigned and WantAssertionsSigned. A fetch that fails ' +
+          'changes NOTHING, so whatever is registered stays in force. <a ' +
+          'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
+          '">The SAML 2.0 page</a> shows what was consumed and takes an ' +
+          'uploaded document.') +
           '<form method="post" action="/admin/applications">' + carryBack +
           '<div class="formrow">' +
           '<input type="hidden" name="action" value="refresh-metadata">' +
           '<input type="hidden" name="application" value="' +
           this.esc(row.identifier) + '"><button ' +
           'type="submit">Refresh the metadata</button><span class="sub">' +
-          (this.firstFieldValue(row, 'samlEncryptionCertificate')
-            ? 'It already holds an encryption certificate; this replaces it.'
-            : 'It holds no encryption certificate yet.') +
+          (this.firstFieldValue(row, 'samlSpMetadataConsumedAt')
+            ? 'Metadata was last consumed ' +
+              this.esc(this.firstFieldValue(row, 'samlSpMetadataConsumedAt')) +
+              '; this replaces what it registered.'
+            : 'No metadata has been consumed yet.') +
           ' This is one of two places in this service that dials anything at ' +
           'all.</span></div></form>'
         : '') +
@@ -16165,12 +16319,14 @@ class AdminConsole {
       '<h3>Where SAML 2.0 encryption gets this service provider\'s key</h3>' +
       this.note('Encrypting an assertion needs the RECIPIENT\'S certificate, ' +
       'and this service does not consume metadata unless it is told to. It ' +
-      'looks in two places, most specific first: ' +
-      '<code>samlEncryptionCertificate</code> below, then ' +
-      '<code>samlSigningCertificate</code> — which is captured off a SIGNED ' +
-      'AuthnRequest, so a service provider that signs its requests needs ' +
-      'nothing here at all. With neither, an assertion that was meant to be ' +
-      'encrypted goes out <strong>in clear</strong> and says so in the log.') +
+      'looks in three places, most specific first: ' +
+      '<code>samlEncryptionCertificate</code> below, then a REGISTERED ' +
+      '<code>samlSigningCertificate</code>, then — in development mode only ' +
+      '— the certificate a signed AuthnRequest carried, which is recorded as ' +
+      'observed and not trusted. With none, an assertion that was meant to ' +
+      'be encrypted goes out <strong>in clear</strong> in development and ' +
+      'says so in the log, and is refused in product. A metadata document ' +
+      'pasted below is CONSUMED when the application is created.') +
       '<table><tr><th>Attribute</th><th>What</th><th>Value</th><th>Notes</th>' +
       '</tr>' +
       rows + '</table></div>';
@@ -17275,6 +17431,9 @@ class AdminConsole {
         '<td>' + (slo ? self.codeList(Array.isArray(slo) ? slo : [slo])
                       : '<span class="sub">not declared &mdash; ' +
                         'guessed</span>') +
+        '</td><td>' +
+        self.esc(String(row.fields.samlAuthnRequestVerification || '')
+                   .split(' ')[0] || '—') +
         '</td><td>' + self.esc(String(row.authentications)) + '</td><td>' +
         self.esc(row.lastSeen ? row.lastSeen.replace('T', ' ').slice(0, 19) :
                  '') +
@@ -17315,7 +17474,8 @@ class AdminConsole {
       (rows
         ? '<table><thead><tr><th>Service provider (entityID)</th><th>Its ' +
           'metadata</th><th>Assertion consumer service</th><th>Single logout ' +
-          'service</th><th>Responses</th><th>Last ' +
+          'service</th><th>Last request\'s signature</th><th>Responses</th>' +
+          '<th>Last ' +
           'seen</th></tr></thead><tbody>' + rows + '</tbody></table>' + nav.foot
         : this.note('No service provider has used this profile yet' +
           (needle ? ' under that filter' : '') + '. Start one at <a ' +
@@ -17331,6 +17491,18 @@ class AdminConsole {
       'placeholder="https://sp.example.com/saml"><button>Register</button>' +
       '<span class="note">The same thing a request or a metadata fetch would ' +
       'do.</span></div></form>' +
+      '<h2>Import one from the Metadata Query responder</h2><p ' +
+      'class="sub">Asks <code>saml2.mdqBaseUrl</code> for the entity by ' +
+      'name (<code>&lt;base&gt;/entities/&lt;entityID&gt;</code>), creates ' +
+      'the entry if the answer describes it, and consumes the document — ' +
+      'held to the realm\'s metadata trust anchors when it has any. A ' +
+      'request from a service provider with no metadata starts the same ' +
+      'lookup in the background.</p><form method="post" ' +
+      'action="/admin/saml2"><div class="formrow"><input type="hidden" ' +
+      'name="action" value="mdq-import"><label for="mdq_sp">entityID</label>' +
+      '<input type="text" id="mdq_sp" name="sp" ' +
+      'placeholder="https://sp.example.com/saml"><button>Import</button>' +
+      '</div></form>' +
       this.configFormsFor('/admin/saml2') +
       this.note('These decide the SHAPE of an assertion — who issued it, how ' +
       'long it is good for, what is signed. <a ' +
@@ -17363,6 +17535,8 @@ class AdminConsole {
     const fields = view.fields;
     const acs = view.acs;
     const slo = view.slo;
+    const verification = view.json.lastRequestVerification;
+    const required = view.json.signedRequestsRequired;
     const listView = this.listViewOf('/admin/saml2', req.query);
     const carryBack = '<input type="hidden" name="back" value="' +
       this.esc(queryWith(listView, {})) + '">';
@@ -17425,24 +17599,37 @@ class AdminConsole {
           ? this.codeList(valuesFor(fields.samlResponseBinding)) : '<span ' +
               'class="sub">none</span>') +
         '</td></tr>' +
-      '<tr><td>Its last AuthnRequest was signed</td><td>' +
-        (fields.samlAuthnRequestSigned === 'TRUE' ? 'yes' :
-          (fields.samlAuthnRequestSigned === 'FALSE' ? 'no' : '<span ' +
-              'class="sub">unknown</span>')) +
-        ' <span class="sub">&mdash; RECORDED AND NOT CHECKED. This service ' +
-        'verifies no request signature, which is the same posture it takes ' +
-        'to every credential; the certificate below is what a verification ' +
-        'would read.</span></td></tr><tr><td>Responses issued to ' +
+      '<tr><td>Its last AuthnRequest\'s signature</td><td>' +
+        (verification.outcome
+          ? '<strong>' + this.esc(verification.outcome) + '</strong>' +
+            (verification.binding
+              ? ' <span class="sub">(' + this.esc(verification.binding) +
+                ' binding, ' + this.esc(verification.signatureMethod ||
+                                        'no SigAlg') +
+                (verification.weak ? ', SHA-1 — weak' : '') + ')</span>'
+              : '')
+          : '<span class="sub">unknown</span>') +
+        ' <span class="sub">&mdash; VERIFIED against the registered signing ' +
+        'certificates below, never against the one a request carries. ' +
+        '<code>no-certificate</code> means it was signed and nothing is ' +
+        'registered to check it against.</span></td></tr>' +
+        '<tr><td>Signed requests required</td><td>' +
+        (required.required ? '<strong>yes</strong>' : 'no') +
+        ' <span class="sub">&mdash; ' + this.esc(required.why) +
+        '. An unsigned AuthnRequest or LogoutRequest is refused when this ' +
+        'is yes; a signature that does not verify is refused ' +
+        'always.</span></td></tr><tr><td>Responses issued to ' +
         'it</td><td>' + this.esc(String((row && row.authentications) || 0)) +
         '</td></tr>' +
       '</tbody></table>' +
       '<h2>Where its LogoutResponse goes</h2>' +
       this.note('A <code>&lt;samlp:LogoutRequest&gt;</code> carries no ' +
-      'return address — only SP metadata does, and this service does not ' +
-      'consume SP metadata. So with nothing declared here the profile falls ' +
-      'back to <code>saml2.defaultSingleLogoutService</code> and then to the ' +
-      'assertion consumer service URL this service provider last used, ' +
-      '<strong>which is a guess and is logged as one</strong>. Declaring it ' +
+      'return address — only SP metadata does. The SingleLogoutService ' +
+      'endpoints of its CONSUMED metadata (below) are used first; with none, ' +
+      'what is declared here; then <code>saml2.defaultSingleLogoutService' +
+      '</code>; and then the assertion consumer service URL this service ' +
+      'provider last used, <strong>which is a guess and is logged as ' +
+      'one</strong>. Consuming its metadata, or declaring an address here, ' +
       'removes the guess.') +
       (slo.length
         ? '<table><thead><tr><th>Declared</th><th></th></tr></thead><tbody>' +
@@ -17470,26 +17657,11 @@ class AdminConsole {
       '<span ' +
       'class="note">Writes <code>samlSingleLogoutService</code> on the ' +
       'entry. An <code>ldapmodify</code> of the same attribute does exactly ' +
-      'this.</span></div></form><h2>Its signing certificate</h2><p ' +
-      'class="sub">Taken off the <code>ds:KeyInfo</code> of a signed ' +
-      'AuthnRequest when one carries it, and settable here. It is public key ' +
-      'material, so unlike a client secret it is worth nothing to whoever ' +
-      'reads this directory — and nothing reads it today, because no request ' +
-      'signature is verified. It is here so that a verification has ' +
-      'somewhere to read from the day one is wanted.</p>' +
-      (fields.samlSigningCertificate
-        ? '<pre>' +
-          this.esc(String(fields.samlSigningCertificate)
-            .replace(/(.{72})/g, '$1\n')) +
-          '</pre>'
-        : '<p>None recorded.</p>') +
-      '<form method="post" action="/admin/saml2">' + carryBack + '<div ' +
-      'class="formrow"><input type="hidden" name="action" ' +
-      'value="set-signing-certificate"><input type="hidden" name="sp" ' +
-      'value="' + this.esc(identifier) + '"><label ' +
-      'for="cert">Set it</label><input type="text" id="cert" name="value" ' +
-      'placeholder="base64 DER, no PEM header"><button>Set</button><span ' +
-      'class="note">Empty clears it.</span></div></form><p class="sub"><a ' +
+      'this.</span></div></form>' +
+      this.saml2SigningCertificatesSection(identifier, view.json,
+                                           carryBack) +
+      this.saml2MetadataSection(identifier, view.json, carryBack) +
+      '<p class="sub"><a ' +
       'href="' + this.esc(facts.metadataUrl) + '">its ' +
       'metadata</a> &middot; <a href="/saml2">the profile</a>' +
       (row ? ' &middot; <a href="/admin/applications?application=' +
@@ -17502,6 +17674,241 @@ class AdminConsole {
       inner: inner,
       json: view.json
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGNING CERTIFICATES (#37): what this service provider's signatures
+  // are verified against, and the one a request carried that nobody has
+  // vouched for. Each registered value has a Remove; the observed one has
+  // Confirm and Discard. Values on ONE entry, bounded by what a person or a
+  // metadata document registered, so the list is drawn whole — the same as
+  // the endpoint lists above it.
+  // ---------------------------------------------------------------------------
+  saml2SigningCertificatesSection(identifier, json, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.saml2SigningCertificatesSection().");
+    const hidden = function (action) {
+      log.debug("Entering hidden().");
+      log.debug("Leaving hidden().");
+      return '<form method="post" action="/admin/saml2">' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="sp" value="' + self.esc(identifier) +
+        '">';
+    };
+    const certs = json.signingCertificates || [];
+    const shown = function (der) {
+      log.debug("Entering shown().");
+      log.debug("Leaving shown().");
+      return '<pre>' + self.esc(String(der).replace(/(.{72})/g, '$1\n')) +
+             '</pre>';
+    };
+    const html = '<h2>Its signing certificates</h2>' +
+      this.note('What this service provider\'s AuthnRequests, ' +
+      'LogoutRequests and LogoutResponses are <strong>VERIFIED</strong> ' +
+      'against, in every mode — a signature that verifies against none of ' +
+      'them is refused. Written by consuming its metadata, by the form ' +
+      'below, or by confirming an observed certificate. The certificate a ' +
+      'request carries in its <code>ds:KeyInfo</code> is never trusted by ' +
+      'arriving: it is shown as OBSERVED until you confirm it. RSA ' +
+      'certificates only, because the verifier here is RSA.') +
+      (certs.length
+        ? '<table><thead><tr><th>Registered</th><th></th></tr></thead>' +
+          '<tbody>' + certs.map(function (der) {
+            return '<tr><td>' + shown(der) + '</td><td>' +
+              hidden('remove-signing-certificate') +
+              '<input type="hidden" name="value" value="' + self.esc(der) +
+              '"><button class="secondary">Remove</button></form></td></tr>';
+          }).join('') + '</tbody></table>'
+        : this.note('None registered, so a signed request from this service ' +
+                    'provider is recorded as <code>no-certificate</code> ' +
+                    'and not verified.')) +
+      hidden('set-signing-certificate') + '<div class="formrow"><label ' +
+      'for="cert">Replace them with</label><input type="text" id="cert" ' +
+      'name="value" placeholder="base64 DER or PEM"><button>Set</button>' +
+      '<span class="note">The list becomes this one certificate; empty ' +
+      'clears it.</span></div></form>' +
+      '<h3>Observed</h3>' +
+      (json.observedSigningCertificate
+        ? this.note('The last signed request carried this certificate, and ' +
+          'it is not registered. It verifies <strong>nothing</strong>. ' +
+          'Development mode encrypts an assertion to it when nothing else ' +
+          'is on the entry; product does not. Confirm it only if it is ' +
+          'genuinely this service provider\'s.') +
+          shown(json.observedSigningCertificate) +
+          '<div class="formrow">' + hidden('confirm-signing-certificate') +
+          '<button>Confirm — trust it</button></form> ' +
+          hidden('discard-signing-certificate') +
+          '<button class="secondary">Discard</button></form></div>'
+        : this.note('No request has carried a certificate that is not ' +
+                    'already registered.'));
+    log.debug("Leaving AdminConsole.saml2SigningCertificatesSection().");
+    return html;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONSUMED METADATA (#37): what the last refresh or upload registered,
+  // and the upload form. The refresh button is on the application's own page,
+  // beside the URL it dials, and this links there rather than drawing a second
+  // copy of it.
+  // ---------------------------------------------------------------------------
+  saml2MetadataSection(identifier, json, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.saml2MetadataSection().");
+    const meta = json.metadata || {};
+    const yes = function (flag) {
+      log.debug("Entering yes().");
+      log.debug("Leaving yes().");
+      return flag ? 'true' : 'false';
+    };
+    const acsRows = (meta.assertionConsumerServices || []).map(function (e) {
+      return '<tr><td>' + self.esc(e.index || '—') + '</td><td>' +
+        (e.isDefault === true ? 'yes' : (e.isDefault === false ? 'no' : '—')) +
+        '</td><td><code>' + self.esc(e.binding) + '</code></td><td><code>' +
+        self.esc(e.location) + '</code></td></tr>';
+    }).join('');
+    const sloRows = (meta.singleLogoutServices || []).map(function (e) {
+      return '<tr><td><code>' + self.esc(e.binding) + '</code></td><td><code>' +
+        self.esc(e.location) + '</code></td><td>' +
+        (e.responseLocation ? '<code>' + self.esc(e.responseLocation) +
+                              '</code>' : '—') + '</td></tr>';
+    }).join('');
+    const facts = meta.consumed
+      ? '<table><tbody>' +
+        '<tr><td>Consumed</td><td>' + self.esc(meta.consumedAt) + ' (' +
+          self.esc(meta.how) + ')' +
+          (meta.url ? ' from <code>' + self.esc(meta.url) + '</code>' : '') +
+          '</td></tr>' +
+        '<tr><td>The document\'s own signature</td><td>' +
+          self.esc(meta.signature || 'unknown') + '</td></tr>' +
+        '<tr><td>State</td><td><strong>' +
+          self.esc(String(meta.state || '').toUpperCase()) + '</strong>' +
+          (meta.stateWhy ? ' <span class="sub">— ' + self.esc(meta.stateWhy) +
+                           '</span>' : '') +
+          (meta.state === 'expired'
+            ? ' <span class="sub">Every request from this service provider ' +
+              'is REFUSED until a newer document is consumed.</span>' : '') +
+          '</td></tr>' +
+        '<tr><td>validUntil (effective)</td><td>' +
+          (meta.validUntil
+            ? self.esc(meta.validUntil) + ' <span class="sub">— enforced: ' +
+              'past it this service provider\'s requests are refused</span>'
+            : '<span class="sub">none stated</span>') + '</td></tr>' +
+        '<tr><td>cacheDuration (effective)</td><td>' +
+          (meta.cacheDuration ? self.esc(meta.cacheDuration) : '<span ' +
+           'class="sub">none stated</span>') +
+          (meta.staleAt ? ' <span class="sub">— stale from ' +
+                          self.esc(meta.staleAt) + '</span>' : '') +
+          '</td></tr>' +
+        '<tr><td>Background refresh</td><td>' +
+          (!meta.refreshable
+            ? '<span class="sub">not possible: the document was ' +
+              'uploaded, and a stale one keeps working until its ' +
+              'validUntil</span>'
+            : (meta.refresherEnabled ? 'on' : '<strong>off</strong> ' +
+               '(saml2.spMetadataRefresh)') +
+              (meta.refresh
+                ? ' — last attempt ' + self.esc(meta.refresh.lastAttemptAt) +
+                  (meta.refresh.ok ? ', succeeded'
+                    : ', <strong>FAILING</strong> since ' +
+                      self.esc(meta.refresh.failingSince) + ' (' +
+                      self.esc(String(meta.refresh.failures)) +
+                      ' attempt(s)): ' + self.esc(meta.refresh.why))
+                : ' <span class="sub">— not attempted in this ' +
+                  'process</span>')) +
+          '</td></tr>' +
+        '<tr><td>AuthnRequestsSigned</td><td>' +
+          yes(meta.authnRequestsSigned) + '</td></tr>' +
+        '<tr><td>WantAssertionsSigned</td><td>' +
+          yes(meta.wantAssertionsSigned) + '</td></tr>' +
+        '<tr><td>Encrypted assertions wanted</td><td>' +
+          yes(meta.wantAssertionsEncrypted) + ' <span class="sub">— true ' +
+          'when the document publishes a use="encryption" key; the ' +
+          'assertion is then encrypted to it in every mode</span></td></tr>' +
+        '<tr><td>NameIDFormats</td><td>' +
+          ((meta.nameIdFormats || []).length
+            ? this.codeList(meta.nameIdFormats) + ' <span class="sub">— a ' +
+              'NameIDPolicy asking for another is answered ' +
+              'InvalidNameIDPolicy</span>'
+            : '<span class="sub">none declared — any format asked for is ' +
+              'answered</span>') + '</td></tr>' +
+        '<tr><td>Encryption certificate</td><td>' +
+          (meta.encryptionCertificate ? 'on the entry' : 'none') +
+          '</td></tr>' +
+        '</tbody></table>' +
+        '<h3>Registered assertion consumer services</h3>' +
+        (acsRows
+          ? '<table><thead><tr><th>index</th><th>isDefault</th>' +
+            '<th>Binding</th><th>Location</th></tr></thead><tbody>' +
+            acsRows + '</tbody></table>'
+          : this.note('The document registered none.')) +
+        '<h3>Registered single logout services</h3>' +
+        (sloRows
+          ? '<table><thead><tr><th>Binding</th><th>Location</th>' +
+            '<th>ResponseLocation</th></tr></thead><tbody>' + sloRows +
+            '</tbody></table>'
+          : this.note('The document registered none.'))
+      : this.note('No metadata has been consumed for this service provider, ' +
+                  'so its return addresses and signing certificates are ' +
+                  'whatever was recorded or declared above.');
+    const html = '<h2>Its metadata</h2>' +
+      this.note('Consuming a service provider\'s metadata REGISTERS what it ' +
+      'says: its AssertionConsumerService endpoints (a request is answered ' +
+      'only at one of them, in every mode), its SingleLogoutService ' +
+      'endpoints, its signing certificates, its encryption certificate, its ' +
+      'NameIDFormats, AuthnRequestsSigned and WantAssertionsSigned. It ' +
+      'happens only when you refresh the URL on <a ' +
+      'href="/admin/applications?application=' +
+      encodeURIComponent(identifier) + '">its application page</a> or ' +
+      'upload a document here — never while somebody is signing in.') +
+      facts +
+      '<form method="post" action="/admin/saml2" ' +
+      'enctype="multipart/form-data">' + carryBack +
+      '<input type="hidden" name="action" value="upload-metadata">' +
+      '<input type="hidden" name="sp" value="' + self.esc(identifier) + '">' +
+      '<div class="formrow"><label for="md-doc">Upload a document</label>' +
+      '<textarea id="md-doc" name="document" rows="4" cols="60" ' +
+      'placeholder="paste &lt;md:EntityDescriptor&gt;…"></textarea></div>' +
+      '<div class="formrow"><label for="md-file">or a file</label>' +
+      '<input type="file" id="md-file" name="file" accept=".xml,' +
+      'application/samlmetadata+xml,application/xml,text/xml">' +
+      '<button>Consume it</button><span class="note">Its entityID must be ' +
+      'this service provider\'s. Nothing changes if it is refused.</span>' +
+      '</div></form>' +
+      '<form method="post" action="/admin/saml2">' + carryBack +
+      '<div class="formrow"><input type="hidden" name="action" ' +
+      'value="refresh-metadata"><input type="hidden" name="sp" value="' +
+      self.esc(identifier) + '"><button>Refresh it now</button>' +
+      '<span class="note">From its samlSpMetadataUrl, or — with none — ' +
+      (meta.mdqUrl ? 'from the MDQ responder, <code>' +
+                     self.esc(meta.mdqUrl) + '</code>'
+                   : 'from the MDQ responder (saml2.mdqBaseUrl, not set ' +
+                     'here)') + '.</span></div></form>' +
+      '<h3>The certificate its metadata must be signed with</h3>' +
+      this.note((meta.signingCertificateConfigured
+        ? 'Set: a document that is unsigned, or not signed with this key ' +
+          'or a realm trust anchor, is refused.'
+        : (meta.trustAnchors
+          ? 'Not set on the entry, and this realm has ' + meta.trustAnchors +
+            ' metadata trust anchor(s) (saml2.metadataTrustAnchors): a ' +
+            'document that verifies against none of them is refused.'
+          : 'Not set, and no realm trust anchor: a signed document is ' +
+            'consumed and recorded as <code>signed-not-verified</code>, and ' +
+            'the trust act is your choice of URL or document.')) +
+        ((meta.trustAnchorProblems || []).length
+          ? ' <strong>' + self.esc(meta.trustAnchorProblems.join('; ')) +
+            '.</strong>' : '')) +
+      '<form method="post" action="/admin/saml2">' + carryBack +
+      '<div class="formrow"><input type="hidden" name="action" ' +
+      'value="set-metadata-signing-certificate"><input type="hidden" ' +
+      'name="sp" value="' + self.esc(identifier) + '"><label ' +
+      'for="md-cert">Metadata signing certificate</label><input type="text" ' +
+      'id="md-cert" name="value" placeholder="base64 DER or PEM">' +
+      '<button>Set</button><span class="note">Empty clears it.</span>' +
+      '</div></form>';
+    log.debug("Leaving AdminConsole.saml2MetadataSection().");
+    return html;
   }
 
   saml2View(req) {
@@ -25365,9 +25772,10 @@ class AdminConsole {
         'actually stops existing. <a href="/admin/logout">/admin/logout</a> ' +
         'calls them; so does <a href="/logout">/logout</a>, which is the ' +
         'same act without a console role. What this console still cannot do ' +
-        'is DELIVER the notifications — a front-channel logout is an iframe ' +
-        'in the signed-out person\'s own browser, and this is not that ' +
-        'browser.') +
+        'is DELIVER the front-channel notifications — each is an iframe in ' +
+        'the signed-out person\'s own browser, and this is not that ' +
+        'browser. The back-channel Logout Tokens need no browser, and this ' +
+        'service sends them whichever door ended the session.') +
         self.bullet('<strong>It does not keep the tokens ' +
         'themselves</strong>, only their claims. A page listing a thousand ' +
         'live bearer credentials in a form a browser will render is a page ' +
@@ -25460,7 +25868,8 @@ class AdminConsole {
         'reading. <a href="/admin/scim">SCIM</a> is the exception and it is ' +
         'a whole protocol rather than a button — a <code>DELETE ' +
         '/scim/v2/Users/{id}</code> really does remove the entry, while its ' +
-        '<code>active: false</code> deactivates nobody at all.') +
+        '<code>active: false</code> DISABLES the account (2026-09-17), which is ' +
+        'the same act as Disable on a person\'s page.') +
         self.bullet('<strong>It shows ONE trust realm at a time, and it ' +
         'writes the one it is read in.</strong> Every page here reports the ' +
         'realm in the path it was reached by, and the switcher above the nav ' +
@@ -30403,16 +30812,29 @@ class AdminConsole {
     app.post('/admin/saml2', function (req, res) {
       log.debug("Entering the admin SAML 2.0 action endpoint.");
       const body = parseBody(req);
-      const result = saml2Action(body);
       const identifier = String(body.sp || body.serviceProvider || '').trim();
       // The list state the form carried, REBUILT rather than echoed — see
       // listViewFromBack(), and the note in admin-ui/CLAUDE.md about a new form
       // on a drill-down needing `carryBack` in it.
       const listView = self.listViewFromBack('/admin/saml2', body.back);
-      const back = identifier && result.ok !== false
-        ? '/admin/saml2' + queryWith(listView, { sp: identifier })
-        : '/admin/saml2' + queryWith(listView, {});
-      self.respondToAction(req, res, back, result);
+      const answer = function (result) {
+        log.debug("Entering answer().");
+        const back = identifier && result.ok !== false
+          ? '/admin/saml2' + queryWith(listView, { sp: identifier })
+          : '/admin/saml2' + queryWith(listView, {});
+        self.respondToAction(req, res, back, result);
+        log.debug("Leaving answer().");
+      };
+      // `refresh-metadata` and `mdq-import` dial out and answer with a
+      // promise (#37 follow-up); everything else answers with the object.
+      Promise.resolve(saml2Action(body)).then(answer, function (e) {
+        log.error(errorCodes.tag('STS-ADMIN-0724') + 'admin: the SAML 2.0 ' +
+                  'action "' + String(body.action || '') + '" failed: ' +
+                  ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-ADMIN-0724');
+        answer({ ok: false, errors: ['The action failed: ' +
+                                     ((e && e.message) || e)] });
+      });
       log.debug("Leaving the admin SAML 2.0 action endpoint.");
     });
 
@@ -31887,9 +32309,12 @@ class AdminConsole {
         'does not exist on the wire.') +
 
         self.warn('<strong>This asks; it does not admit anybody.</strong> A ' +
-        'presentation that verifies here starts no session, issues no token ' +
+        'presentation made to this door starts no session, issues no token ' +
         'and grants no access — the door says yes and that is the whole of ' +
-        'it. Nothing else in this service reads what was presented. The two ' +
+        'it. Signing in with a wallet is a different door, <code>' +
+        '/authn/wallet</code>, which asks for a credential this realm ' +
+        'issued with a request of its own and is not configured here ' +
+        '(<a href="/admin/oid4vp">OpenID4VP</a> has its switch). The two ' +
         'settings are also deliberately separate: this page decides what is ' +
         'ASKED FOR and <a href="/admin/vc">/admin/vc</a> decides what is ' +
         'ISSUED, so that asking for a claim the issuer does not mint stays ' +
@@ -31928,7 +32353,9 @@ class AdminConsole {
         'flight, which keeps the claims it was built with. Not the ' +
         '<code>vct</code> or the type array a credential is identified by. ' +
         'And not what a verified presentation is worth: nothing here turns ' +
-        'one into a credential of any kind.');
+        'one into a credential of any kind, and nothing here decides whether ' +
+        'one signs anybody in — that is <code>/authn/wallet</code>\'s ' +
+        'question, asked only of a credential this realm issued.');
 
       self.respond(req, res, vpConfigJson(), 'Verifier request',
                    '/admin/vc-verifier-config', inner);
@@ -32593,11 +33020,11 @@ class AdminConsole {
         'scheme below is permissive, so this is a turnstile rather than a ' +
         'lock. What it buys is that a client\'s 401, 403 and ' +
         'challenge-response paths can be exercised at all. <strong>And ' +
-        '<code>active: false</code> deactivates nobody</strong> — it is ' +
-        'stored on the entry as <code>scimActive</code> and read by nothing ' +
-        'here: no bind is refused, no token withheld, no session ended. ' +
-        'Deprovisioning is the commonest thing a SCIM client does, so that ' +
-        'one is worth reading twice.') +
+        '<code>active: false</code> disables the account</strong> (since ' +
+        '2026-09-17) — it writes the password-policy lock ' +
+        '<code>pwdAccountLockedTime</code>, every door then refuses the ' +
+        'person, and everything they held is ended, as the Disable button ' +
+        'on their <code>/admin/users</code> page does.') +
 
         tiles +
 
@@ -35245,14 +35672,14 @@ class AdminConsole {
         'href="/admin/ldap">LDAP</a> and from the console alike, because the ' +
         'observer sits on the WRITE rather than on any one door.') +
 
-        self.note('<strong>Setting <code>active</code> to false still ' +
-        'deactivates nobody here</strong>, and that has not changed. No ' +
-        'endpoint reads the attribute, no bind is refused and no token is ' +
-        'withheld &mdash; <a href="/admin/scim">the SCIM page</a> says so, ' +
-        'because a mock that silently pretended would teach a provisioning ' +
-        'client that its deprovisioning path works. What is new is that this ' +
-        'service now SAYS so, over RISC, which is exactly the division the ' +
-        'profile draws: a transmitter reports and a receiver decides.') +
+        self.note('<strong>Setting <code>active</code> to false DISABLES ' +
+        'the account</strong> since 2026-09-17 — it read "deactivates ' +
+        'nobody" until then. It writes the password-policy lock ' +
+        '<code>pwdAccountLockedTime</code>, every door refuses that person ' +
+        'while it is set, and everything they hold is ended at once. The ' +
+        'RISC event is unchanged and is what it always was: a transmitter ' +
+        'reports and a receiver decides — what changed is that this service ' +
+        'now acts on it too.') +
 
         '<div class="tiles">' +
         self.tile(json.tracked || 0, 'accounts tracked') +
@@ -36686,7 +37113,10 @@ const LIST_PARAMS = {
   // The Kerberos principals' two lists (2026-09-12), paged separately and
   // sharing one `per`. Spent by every row button's `back`.
   '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],
-  '/admin/logout': ['family', 'per', 'page'],
+  // The back-channel deliveries' filter, search and paging (2026-09-17),
+  // spent by the Retry button's `back`.
+  '/admin/logout': ['family', 'per', 'page', 'deliveryState', 'deliveryq',
+                    'backchannelDeliveriesPage'],
   '/admin/realms': ['per', 'page'],
   '/admin/federation': ['q', 'role', 'per', 'page'],
   // TWO lists on one page — the global overrides and the recorded answers —
@@ -37374,8 +37804,8 @@ let directoryPages = null;
 // rather than a second account of the same feature: the endpoint list, what
 // SCIM deliberately does not do, and the reachable negatives are written ONCE,
 // in the module that implements them, and this page renders them. A console
-// page carrying its own copy of "active: false deactivates nobody" would be the
-// copy that stops being true.
+// page carrying its own copy of what "active: false" does would be the copy
+// that stops being true — as "deactivates nobody" did on 2026-09-17.
 let scimReader = null;
 
 // And the one that WRITES, which is the third of these and the only one of the
@@ -37668,15 +38098,17 @@ const SAML_KEY_SOURCE_FIELDS = [
           'fetched until you press Refresh on the entry — an assertion never ' +
           'waits on somebody else\'s web server.' },
   { attribute: 'samlEncryptionCertificate', label: 'Encryption certificate',
-    what: 'The certificate an assertion is encrypted to, base64 or PEM. The ' +
-          'metadata refresh writes this; set it by hand for a service ' +
-          'provider whose metadata cannot be reached. With none here the ' +
-          'SIGNING certificate off a signed AuthnRequest is used, and with ' +
-          'neither the assertion goes out in clear.' },
+    what: 'The certificate an assertion is encrypted to, base64 or PEM. ' +
+          'Consuming the metadata writes this; set it by hand for a service ' +
+          'provider whose metadata cannot be reached. With none here a ' +
+          'registered signing certificate is used, then (development only) ' +
+          'the one a signed AuthnRequest carried.' },
   { attribute: 'samlSpMetadata', label: 'Metadata document', multi: true,
-    what: 'The metadata itself, cached by the refresh or pasted here. ' +
-          'Pasting it is the way to configure an air-gapped service ' +
-          'provider, or one behind a proxy this service cannot dial.' }
+    what: 'The metadata itself. Pasted here, it is CONSUMED when the ' +
+          'application is created — endpoints, signing and encryption ' +
+          'certificates, NameIDFormats — exactly as a refresh would, which ' +
+          'is the way to configure an air-gapped service provider, or one ' +
+          'behind a proxy this service cannot dial.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -37835,11 +38267,14 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
     '<code>oauth2.redirectUris</code> setting, which is most of the reason ' +
     'to create an entry before the application connects. ' +
     '<code>samlAssertionConsumerService</code> and ' +
-    '<code>wsfedReplyUrl</code> are RECORDED AND NOT CHECKED: a SAML ' +
-    'response goes wherever the AuthnRequest asked and a ' +
+    '<code>wsfedReplyUrl</code> are checked in PRODUCT mode only: in ' +
+    'development a SAML response goes wherever the AuthnRequest asked and a ' +
     '<code>wsignin1.0</code> response goes to whatever <code>wreply</code> ' +
     'named, because a mock that refused would remove a test case rather than ' +
-    'add one. The SAML one is READ for something else &mdash; it is the ' +
+    'add one &mdash; unless the SAML service provider\'s metadata has been ' +
+    'consumed, when a request is answered only at an endpoint it ' +
+    'registered, in every mode. The SAML one is READ for something else ' +
+    '&mdash; it is the ' +
     'fallback used when a Single Logout has nowhere else to go, which is why ' +
     'WS-Federation\'s <code>wreply</code> stopped being written into it on ' +
     '2026-08-25 and has a ' +
@@ -38743,7 +39178,21 @@ const PROTOCOL_SETTINGS_PAGES = [
           'authorization server the credential endpoint will take a token ' +
           'from, how big a batch may be, and how long a deferred issuance ' +
           'pretends to take.',
-    also: ['<strong>The two DID settings change what a VERIFIER has to ' +
+    also: ['<strong>Every credential names its status.</strong> A ' +
+           'dc+sd-jwt and a jwt_vc_json credential carry a Token Status ' +
+           'List reference and a jwt_vc_json and an ldp_vc a Bitstring ' +
+           'Status List entry, served at <code>/oid4vci/status-lists</code> ' +
+           'and signed with the credential key — which may be post-quantum. ' +
+           '<code>oid4vci.statusListTtlS</code> is how long a verifier may ' +
+           'keep a list; <a href="/admin/vc-status">Credential status</a> ' +
+           'suspends and revokes.',
+           '<strong>Key attestations.</strong> A wallet may say how its key ' +
+           'is kept (OpenID4VCI Appendix D); one signed by a certificate in ' +
+           '<code>oid4vci.keyAttestationTrustedCertificates</code> is ' +
+           'recorded, and decides whether a wallet sign-in claims ' +
+           '<code>hwk</code> and <code>acr "mfa"</code>. ' +
+           '<code>oid4vci.keyAttestationRequired</code> requires one.',
+           '<strong>The two DID settings change what a VERIFIER has to ' +
            'resolve, and they are restart-only.</strong> With ' +
            '<code>oid4vci.sdJwtIssuerDid</code> or ' +
            '<code>oid4vci.ldpVcIssuerDid</code> on, the issuer names itself ' +
@@ -38768,15 +39217,41 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the settings around its request.</strong> The DCQL query — which ' +
           'credential, which claims — is ' +
           '<a href="/admin/vc-verifier-config">Verifier request</a> next ' +
-          'door; these four are the client identifier it presents as, where ' +
-          'it sends a holder to present, how fresh a Key Binding JWT has to ' +
-          'be, and the claims it asks for when nothing else has been chosen.',
-    also: ['<strong>A verified presentation does not sign anybody ' +
-           'in.</strong> This verifier checks the presentation, reports what ' +
-           'it found and stops there: no session is started, no token is ' +
-           'issued, and nothing about the holder is written to the ' +
-           'directory. OpenID4VP is a presentation protocol here and not a ' +
-           'second front door.'],
+          'door; these settings are the client identifier it presents as, ' +
+          'where it sends a holder to present, how fresh a Key Binding JWT ' +
+          'has to be, the claims it asks for when nothing else has been ' +
+          'chosen — the settings that govern signing in with a wallet, and ' +
+          'how long a status list another issuer published is kept.',
+    also: ['<strong>A presentation can sign somebody in, at <code>' +
+           '/authn/wallet</code>.</strong> <code>oid4vp.signIn</code> offers ' +
+           '"Sign in with a wallet" on the sign-in screen: a holder-bound ' +
+           'credential <em>this realm</em> issued — in any format ' +
+           '<code>oid4vp.signInFormats</code> names: SD-JWT VC, JWT VC or ' +
+           'LDP VC — on an access token it verified and nobody has ' +
+           'disowned since, presented with a fresh holder proof, signs in ' +
+           'the directory entry it was issued for, with <code>amr ' +
+           '["pop"]</code> (and <code>hwk</code>, and <code>acr ' +
+           '"mfa"</code>, where a verified key attestation says so). A ' +
+           'credential from a trusted foreign issuer, another realm or a ' +
+           'foreign access token still verifies, is recorded on ' +
+           '<a href="/admin/users">/admin/users</a> as a presentation, and ' +
+           'signs nobody in. The bar door at <code>/oid4vp/verifier</code> ' +
+           'signs nobody in whatever it is shown: nobody there asked to be ' +
+           'signed in.',
+           '<strong>The Digital Credentials API is the default way in, and ' +
+           'the plain QR code is off.</strong> A browser that has the API ' +
+           'asks a wallet on this device or a nearby one, which the browser ' +
+           'checks is near it; <code>oid4vp.signInDcApiResponseMode</code> ' +
+           'decides whether the answer is encrypted. <code>' +
+           'oid4vp.signInCrossDevice</code> adds a plain QR code for a ' +
+           'wallet the browser cannot reach — the one path somebody can ' +
+           'relay to a victim, which is why it is off.',
+           '<strong>Every credential\'s status is consulted.</strong> One ' +
+           'this realm issued is read from <a href="/admin/vc-status">' +
+           'Credential status</a>; one a trusted foreign issuer signed has ' +
+           'its status list fetched, kept for its ttl and at most <code>' +
+           'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
+           'cannot be read is refused.'],
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 
@@ -39047,11 +39522,13 @@ const PROTOCOL_SETTINGS_PAGES = [
            'authorization server so that both read one session: sign in at ' +
            '<code>/oauth2/authorize</code> and <code>/wsfed</code> knows it, ' +
            'and the other way round.',
-           '<strong><code>wauth</code> is recorded and not honoured, and ' +
+           '<strong><code>wauth</code> is honoured, and ' +
            '<code>wreqptr</code> is never dereferenced.</strong> A relying ' +
-           'party that demands a stronger factor gets whatever the session ' +
-           'already had, and this service dials no URL that did not come off ' +
-           'a federation relationship.'],
+           'party that demands a security key or two factors the session ' +
+           'does not have sends the person to sign in again with the second ' +
+           'factor required (a step-up, since 2026-09-17), and is refused ' +
+           'only if that one attempt still does not produce it. And this ' +
+           'service fetches nothing from a URL a request names.'],
     links: [['/wsfed', 'the profile, for a person'],
             ['/wsfed/rp', 'the mock relying party'],
             ['/FederationMetadata/2007-06/FederationMetadata.xml', 'its ' +

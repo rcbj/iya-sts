@@ -729,8 +729,10 @@ const SPECS: Spec[] = [
               'advertised as unsupported because a version built over a ' +
               'one-second timestamp would be a concurrency control a client ' +
               'trusts and that is wrong; and no changePassword, there being ' +
-              'no password here that is checked. active:false is stored and ' +
-              'DEACTIVATES NOBODY.' },
+              'no password here that is checked. active:false DISABLES the ' +
+              'account (pwdAccountLockedTime; every door then refuses the ' +
+              'person and what they held is ended) and active:true enables ' +
+              'it.' },
 
   // The four authentication schemes SCIM delegates to that are not already
   // described elsewhere in this list. RFC 6750 and RFC 9449 are further down
@@ -1043,9 +1045,13 @@ const SPECS: Spec[] = [
               '2026-08-24 in a <samlp:Response> of its own — THERE IS A WEB ' +
               'BROWSER SSO PROFILE NOW, at /saml2, and the three rows below ' +
               'cover its bindings, profiles and metadata. What is still ' +
-              'absent: no AuthnRequest signature is verified, and no ' +
-              '<samlp:AttributeQuery> is answered (assertions ARE encrypted ' +
-              'since 2026-08-27). The AuthnContextClassRef names how the ' +
+              'absent: no <samlp:AttributeQuery> is answered (assertions ' +
+              'ARE encrypted since 2026-08-27, and a service provider\'s ' +
+              'AuthnRequest signature IS verified since 2026-09-17 — ' +
+              'against its registered certificate, in every mode). A ' +
+              'NameIDPolicy naming a Format the service provider\'s ' +
+              'consumed metadata does not declare is InvalidNameIDPolicy. ' +
+              'The AuthnContextClassRef names how the ' +
               'session really authenticated — a certificate is TLSClient, a ' +
               'SPNEGO ticket Kerberos, the unauthenticated session ' +
               'unspecified — where until 2026-09-12 all of those were ' +
@@ -1061,10 +1067,24 @@ const SPECS: Spec[] = [
               'encoding and the detached query-string signature of 3.4.4.1, ' +
               'HTTP POST (3.5), HTTP Artifact (3.6) with the type 0x0004 ' +
               'artifact and the one-shot rule of 3.6.4.1, and SOAP over HTTP ' +
-              '(3.2.3) for the artifact resolution back channel. NOT here: ' +
-              'PAOS (3.3), which is refused by name rather than quietly ' +
-              'answered over POST, and the URI binding (3.7). A request ' +
-              'signature is recorded and never verified.' },
+              '(3.2.3) for the artifact resolution back channel, whose ' +
+              'caller is AUTHENTICATED (a signed ArtifactResolve or its ' +
+              'registered certificate as the TLS client certificate) and ' +
+              'must be the service provider the artifact was issued to; ' +
+              'and HTTP-POST-SimpleSign (the OASIS SimpleSign binding) in ' +
+              'both directions, published in the metadata. NOT here: PAOS ' +
+              '(3.3), which is refused by name rather than quietly answered ' +
+              'over POST, and the URI binding (3.7). A service provider\'s ' +
+              'request signature — the 3.4.4.1 query signature over the ' +
+              'parameters as received, the SimpleSign signature over the ' +
+              'form values, or an enveloped one on POST — IS VERIFIED ' +
+              'against its REGISTERED certificate (never its KeyInfo), in ' +
+              'every mode, in every family common/crypto.js verifies (RSA, ' +
+              'RSASSA-PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA), with either ' +
+              'canonicalization; SHA-1 only with saml.allowSha1Signatures; ' +
+              'an unsigned one is refused where ' +
+              'saml2.requireSignedAuthnRequests (on in product) or its ' +
+              'metadata requires a signature.' },
   { id: 'saml2-profiles', name: 'SAML 2.0 Profiles',
     where: 'OASIS saml-profiles-2.0-os',
     url:
@@ -1082,7 +1102,12 @@ const SPECS: Spec[] = [
               'AssertionConsumerServiceURL is accepted as sent in ' +
               'development mode and must be registered on the service ' +
               'provider\'s entry in PRODUCT mode (2026-09-12), with no ' +
-              'fallback to the mock service provider.' },
+              'fallback to the mock service provider — and, once its ' +
+              'metadata has been consumed, must be one of the endpoints it ' +
+              'registered in EVERY mode, with AssertionConsumerServiceIndex ' +
+              'and the default endpoint honoured. A LogoutRequest from a ' +
+              'service provider is authenticated by its signature (4.4.3.1) ' +
+              'under the same policy as an AuthnRequest.' },
   { id: 'saml2-metadata', name: 'SAML 2.0 Metadata',
     where: 'OASIS saml-metadata-2.0-os',
     url:
@@ -1090,16 +1115,28 @@ const SPECS: Spec[] = [
     coverage: 'partial: a signed EntityDescriptor holding one ' +
               'IDPSSODescriptor, and ONE PER SERVICE PROVIDER — a distinct ' +
               'entityID and its own endpoints, which is what Okta and Ping ' +
-              'publish. It is minted for any entityID asked for. This ' +
-              'service PUBLISHES metadata and does not CONSUME it: there is ' +
-              'no SPSSODescriptor ingest, which is why a service provider\'s ' +
-              'logout return address has to be declared and why an assertion ' +
-              'consumer service URL is taken from the request rather than ' +
-              'looked up — in development mode; in product mode it must be ' +
-              'one registered on the entry. The certificate in a service ' +
-              'provider\'s metadata IS consumed, by an explicit refresh, for ' +
-              'encryption. <md:Organization> is saml.organizationName and ' +
-              'its siblings, and is omitted when the name is emptied.' },
+              'publish, with WantAuthnRequestsSigned following what is ' +
+              'enforced. It is minted for any entityID asked for. A service ' +
+              'provider\'s metadata IS CONSUMED since 2026-09-17, by an ' +
+              'explicit refresh of its samlSpMetadataUrl or an uploaded ' +
+              'document, by the Metadata Query Protocol ' +
+              '(draft-young-md-query, saml2.mdqBaseUrl) and by a ' +
+              'background refresher — never while issuing: the ' +
+              'SPSSODescriptor\'s ' +
+              'AssertionConsumerService and SingleLogoutService endpoints ' +
+              'become its registered return addresses, its signing and ' +
+              'encryption KeyDescriptors, NameIDFormats, AuthnRequestsSigned ' +
+              'and WantAssertionsSigned are applied, the document\'s own ' +
+              'signature is verified against ' +
+              'samlSpMetadataSigningCertificate or the realm\'s ' +
+              'saml2.metadataTrustAnchors, an EntitiesDescriptor aggregate ' +
+              'is read for the one entity asked for, the EFFECTIVE ' +
+              'validUntil (the earliest in the chain) is ENFORCED after ' +
+              'consumption — the service provider\'s requests are refused ' +
+              'once it passes — and a document past its cacheDuration is ' +
+              'fetched again in the background. NOT here: any role but ' +
+              'SPSSODescriptor. <md:Organization> is saml.organizationName ' +
+              'and its siblings, and is omitted when the name is emptied.' },
   { id: 'saml11', name: 'SAML 1.1 Core',
     where: 'OASIS oasis-sstc-saml-core-1.1',
     url: 'https://www.oasis-open.org/committees/download.php/3406/oasis-sstc-saml-core-1.1.pdf',
@@ -1175,7 +1212,16 @@ const SPECS: Spec[] = [
               'canonicalization, RSA-SHA256 by default and RSA-SHA384/512 or ' +
               'the broken RSA-SHA1 by saml.signatureAlgorithm (2026-09-12); ' +
               'AES-GCM or AES-CBC content encryption with an RSA-OAEP or ' +
-              'RSA-1_5 wrapped key.' },
+              'RSA-1_5 wrapped key. VERIFIES (since 2026-09-17) every ' +
+              'SignatureMethod of RFC 9231 and XMLDSig 1.1 node\'s OpenSSL ' +
+              'implements — RSA PKCS#1 v1.5 and RSASSA-PSS (with and without ' +
+              'RSAPSSParams), ECDSA, EdDSA Ed25519/Ed448, DSA — and the ' +
+              'ML-DSA and SLH-DSA identifiers of the draft ' +
+              'draft-eastlake-rfc9231bis-xmlsec-uris; SHA-224, SHA-2, SHA-3 ' +
+              'and RIPEMD-160 digests; SHA-1 only with ' +
+              'saml.allowSha1Signatures. NOT verified, and refused by name: ' +
+              'MD5, the MACs, Whirlpool, ESIGN, pre-hashed EdDSA and the ' +
+              'stateful HSS/LMS and XMSS.' },
   { id: 'rfc6749', name: 'RFC 6749 — OAuth 2.0',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc6749',
@@ -1206,6 +1252,24 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7519',
     coverage: 'full: every token this service issues is an RS256 JWT that ' +
               'verifies against the published JWKS.' },
+  { id: 'rfc7516', name: 'RFC 7516 — JSON Web Encryption',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7516',
+    coverage: 'partial: compact serialization, RSA-OAEP, ECDH-ES and the ' +
+              'key-wrapping and direct algorithms common/crypto.js ' +
+              'implements; no JSON serialization, no compression.' },
+  { id: 'rfc8176', name: 'RFC 8176 — Authentication Method Reference ' +
+                          'Values',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8176',
+    coverage: 'partial: pwd, otp, hwk, pop and mfa are asserted, each where ' +
+              'the evidence says so, and no value is invented.' },
+  { id: 'rfc8392', name: 'RFC 8392 — CBOR Web Token',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8392',
+    coverage: 'partial: the Status List Token in CWT form is the one CWT ' +
+              'this service issues.' },
+  { id: 'rfc9052', name: 'RFC 9052 — CBOR Object Signing and Encryption',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9052',
+    coverage: 'partial: COSE_Sign1 with the JOSE algorithms this service ' +
+              'signs with and ML-DSA; no COSE encryption or MAC.' },
   { id: 'rfc7591', name: 'RFC 7591 — Dynamic Client Registration',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7591',
     coverage: 'full: registers a client, returns its credentials and a ' +
@@ -1731,8 +1795,14 @@ const SPECS: Spec[] = [
               '5.2 language tags. What it does NOT do there is enforce ' +
               '`value`/`values` or treat `essential` as more than a hint, ' +
               'which section 5.5.1 permits and /admin/userinfo-claims states ' +
-              'out loud. Section 6\'s request object and request_uri are ' +
-              'RFC 9101\'s row.' },
+              'out loud. Section 10.2\'s ENCRYPTED ID Token (2026-09-17): a ' +
+              'client that registered id_token_encrypted_response_alg (and ' +
+              '_enc, A128CBC-HS256 by default) with a key in an inline jwks ' +
+              'gets a Nested JWT — signed as registered, then encrypted with ' +
+              'RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW); the symmetric ' +
+              'families and a jwks_uri alone are refused at registration, ' +
+              'and no ML-KEM key encapsulation is offered. Section 6\'s ' +
+              'request object and request_uri are RFC 9101\'s row.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -1750,11 +1820,41 @@ const SPECS: Spec[] = [
               'succeeded, so every URL is printed as a link beside its ' +
               'iframe rather than reported as sent. ' +
               'oauth2.frontchannelLogout turns all of it off, including the ' +
-              'claim and the advertisement, which is the only honest way to ' +
-              'switch it — a document advertising a capability whose claim ' +
-              'is off would be a document that lies. BACK-CHANNEL logout is ' +
-              'a different specification and is NOT implemented; the ' +
-              'metadata says so.' },
+              'advertisement, which is the only honest way to switch it — a ' +
+              'document advertising a capability that is off would be a ' +
+              'document that lies; the sid claim stays while back-channel ' +
+              'logout, which needs it too, is on.' },
+  { id: 'oidc-bclogout', name: 'OpenID Connect Back-Channel Logout 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-backchannel-1_0.html',
+    coverage: 'full for the provider (2026-09-17): the two discovery ' +
+              'members, the two per-client registration members (http or ' +
+              'https, no fragment, at registration, the console, /admin-api ' +
+              'and again when read), the sid claim, and a Logout Token — ' +
+              'typ logout+jwt, iss, aud, iat, exp two minutes on, jti, the ' +
+              'events member, sub and sid, no nonce, signed like the ' +
+              'client\'s ID Token (any algorithm of the table, post-quantum ' +
+              'included) and never with none, and ENCRYPTED like it when the ' +
+              'client registered id_token_encrypted_response_alg — POSTed ' +
+              'form-encoded to every relying party on a session that ends by ' +
+              'ANY sign-out (/oauth2/logout, /logout, wsignout1.0, SAML ' +
+              'Single Logout, the console, /admin-api, an account disabled) ' +
+              'or by EXPIRY (oauth2.backchannelLogoutOnExpiry). Each ' +
+              'delivery is a row of a persisted, replicated store: sent once ' +
+              'for the cluster (the session-end claim, and a claimed lease ' +
+              'per attempt whose time fences a late writer), retried with ' +
+              'backoff by any node across restarts (a timeout, a connection ' +
+              'failure, 5xx, 408 and 429; 200 and 204 success; 400 final, ' +
+              'section 2.8), taken over when the node sending it dies, and ' +
+              'dead-lettered on a final failure — listed, paged and retried ' +
+              'from /admin/logout and /admin-api/logout. Through the ' +
+              'outbound policy (https unless ' +
+              'federation.outboundAllowInsecure, no internal address in ' +
+              'product mode); one audit row per outcome and a periodic ' +
+              'summary line. Front-channel logout cannot follow an expiry: ' +
+              'it needs the browser. oauth2.backchannelLogout turns the ' +
+              'members, the claim contribution and the fan-out off ' +
+              'together.' },
   { id: 'oidc-discovery', name: 'OpenID Connect Discovery 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html',
@@ -1773,9 +1873,8 @@ const SPECS: Spec[] = [
     coverage: 'mock: end_session_endpoint really does end the session, but ' +
               'id_token_hint is neither required nor checked and ' +
               'post_logout_redirect_uri is not validated against any ' +
-              'registration. Front-channel and back-channel logout are not ' +
-              'implemented and the discovery document says so rather than ' +
-              'staying silent.' },
+              'registration. Front-channel and back-channel logout are ' +
+              'implemented beside it and are rows of their own.' },
   { id: 'oid4vci', name: 'OpenID for Verifiable Credential Issuance 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html',
@@ -1784,14 +1883,32 @@ const SPECS: Spec[] = [
               'Offers (Appendix H.1/H.2/H.3), the pre-authorized code grant ' +
               'with tx_code, credential_identifiers, request and response ' +
               'encryption (section 10), and the Notification Endpoint ' +
-              '(section 11).' },
+              '(section 11). Key attestations (Appendix D) in a jwt ' +
+              'proof\'s header and as the attestation proof type, ' +
+              'verified against configured certificates; status lists for ' +
+              'every credential; credentials signed with post-quantum ' +
+              'algorithms. No wallet attestation (Appendix E).' },
   { id: 'oid4vp', name: 'OpenID for Verifiable Presentations 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-presentations-1_0.html',
     coverage: 'partial: Authorization Requests by value and as a signed ' +
               'Request Object by reference, response_mode=direct_post, a ' +
-              'DCQL query, and full verification of what comes back. No ' +
-              'presentation_definition (DIF PE) — DCQL only.' },
+              'DCQL query (credential_sets included), and full verification ' +
+              'of what comes back in all three formats — a Key Binding JWT, ' +
+              'a VP JWT with nonce, aud and iat, a VerifiablePresentation ' +
+              'with a Data Integrity proof (B.1.3.2.5) — and each ' +
+              'credential\'s status. Since 2026-09-17 a presentation can ' +
+              'SIGN SOMEBODY IN at /authn/wallet — through the Digital ' +
+              'Credentials API (Appendix A: openid4vp-v1-signed, ' +
+              'expected_origins, dc_api.jwt or dc_api, the origin: ' +
+              'audience), same-device with the section 8.2 response_code, ' +
+              'and by a plain QR code only where oid4vp.signInCrossDevice is ' +
+              'on — but only a holder-bound credential this realm issued, ' +
+              'in any of the three formats, and only as the directory entry ' +
+              'it was issued for; anything else verifies and signs nobody ' +
+              'in. No presentation_definition (DIF PE) — DCQL only; no ' +
+              'unsigned or multi-signed DC API request; no mso_mdoc; no ' +
+              'wallet attestation; no transaction_data.' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +
@@ -1810,6 +1927,39 @@ const SPECS: Spec[] = [
     where: 'W3C', url: 'https://www.w3.org/TR/vc-data-model-2.0/',
     coverage: 'partial: the VC-JWT encoding of VCDM 1.1 (jwt_vc_json) and ' +
               'VCDM 2.0 credentials with an embedded proof (ldp_vc).' },
+  { id: 'di-jcs', name: 'W3C Data Integrity — ecdsa-jcs-2019, ' +
+                        'eddsa-jcs-2022 and mldsa44-jcs-2024',
+    where: 'W3C', url: 'https://www.w3.org/TR/vc-di-ecdsa/',
+    coverage: 'partial: verification (and signing, for tests) of a ' +
+              'holder\'s proof on a VerifiablePresentation — P-256 and ' +
+              'P-384, Ed25519, and ML-DSA-44 from the Quantum-Resistant ' +
+              'Cryptosuites draft — with did:jwk and did:key verification ' +
+              'methods. No RDF-canonicalized suites, no proof chains.' },
+  { id: 'token-status-list',
+    name: 'Token Status List (draft-ietf-oauth-status-list-21)',
+    where: 'IETF',
+    url: 'https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/',
+    coverage: 'partial: a list per realm, two bits per credential (VALID, ' +
+              'INVALID, SUSPENDED), served as a Status List Token in JWT and ' +
+              'CWT form by Accept, with ttl and exp, an aggregation ' +
+              'endpoint, and the status claim in every SD-JWT VC and ' +
+              'jwt_vc_json credential; the Verifier resolves a trusted ' +
+              'foreign issuer\'s list and refuses when no statement can be ' +
+              'made. No historical resolution (501), no redirects followed, ' +
+              'no mdoc (none is issued).' },
+  { id: 'bitstring-status-list', name: 'W3C Bitstring Status List v1.0',
+    where: 'W3C', url: 'https://www.w3.org/TR/vc-bitstring-status-list/',
+    coverage: 'partial: revocation and suspension lists per realm, served ' +
+              'as a BitstringStatusListCredential secured as a JWT, and a ' +
+              'BitstringStatusListEntry for each purpose in every ' +
+              'jwt_vc_json and ldp_vc credential; the Verifier reads them. ' +
+              'statusSize 1 only; no statusMessage.' },
+  { id: 'dc-api', name: 'W3C Digital Credentials API',
+    where: 'W3C', url: 'https://www.w3.org/TR/digital-credentials/',
+    coverage: 'partial: the wallet sign-in page calls ' +
+              'navigator.credentials.get({ digital }) with one signed ' +
+              'OpenID4VP request and posts the answer; nothing else here ' +
+              'uses it.' },
   { id: 'di-bbs', name: 'W3C Data Integrity — bbs-2023 cryptosuite',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-bbs/',
     coverage: 'full for base proofs and derived proofs over BLS12-381, ' +
@@ -2903,8 +3053,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'token with either scope, any password but "invalid" passes Basic ' +
           'and anybody can register a HOBA key (product mode verifies Basic, ' +
           'offers no Digest and lets only a signed-in owner register a key); ' +
-          'and active:false DEACTIVATES NOBODY — it is stored as scimActive ' +
-          'and read by nothing here. Add ?format=json.' },
+          'and active:false DISABLES THE ACCOUNT — the password-policy lock ' +
+          'every door refuses. Add ?format=json.' },
   { path: '/scim/v2/ServiceProviderConfig', group: 'SCIM',
     name: 'What this SCIM server supports',
     specs: ['rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616', 'rfc7486'],
@@ -4925,6 +5075,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'single connection the page borrows. Empty with a sentence saying ' +
           'WHICH of three reasons unless persistence.mode is postgres. Add ' +
           '?format=json, or GET /admin-api/database.' },
+  { path: '/admin/vc-status', group: 'Admin',
+    name: 'Credential status',
+    specs: ['token-status-list', 'bitstring-status-list'],
+    effect: 'suspends, reinstates or revokes one issued credential',
+    what: 'NON-SPEC. This realm\'s status lists: where each is served, the ' +
+          'list size and ttl, and every issued credential\'s index, format ' +
+          'and status — computed from what was set here, an administrator\'s ' +
+          'revocation on /admin/tokens and a global sign-out\'s disown — ' +
+          'with Suspend, Reinstate and Revoke. Add ?format=json.' },
   { path: '/admin/caches', group: 'Admin',
     name: 'Every cache this service holds, and one cache\'s entries',
     specs: [],
@@ -5307,7 +5466,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // ---------------------------------------------------------------------------
   { path: '/admin/oauth2', group: 'Admin', name: 'OAuth 2.0 / OIDC settings',
     specs: ['rfc6749', 'oidc', 'rfc9700', 'oauth21', 'oidc-fclogout',
-            'rfc7523', 'rfc7522'],
+            'oidc-bclogout', 'rfc7523', 'rfc7522'],
     effect: 'changes what the authorization server will accept and what it ' +
             'puts into what it issues',
     what: 'NON-SPEC. The oauth2.* settings, on the page for the ' +
@@ -5340,8 +5499,12 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The oid4vp.* settings: the verifier\'s client_id, ' +
           'the wallet it sends a holder to (which falls back to the OID4VCI ' +
           'one, since it is the same wallet in every arrangement this ' +
-          'service is used in), the Key Binding JWT\'s maximum age, and the ' +
-          'claims asked for by default. The DCQL query itself is ' +
+          'service is used in), the Key Binding JWT\'s maximum age, the ' +
+          'claims asked for by default, the ones that govern signing in ' +
+          'with a wallet at /authn/wallet (oid4vp.signIn, its lifetime, the ' +
+          'QR page\'s refresh, the QR code, the formats and the Digital ' +
+          'Credentials API response mode), and how long a fetched status ' +
+          'list is kept. The DCQL query itself is ' +
           '/admin/vc-verifier-config. Add ?format=json.' },
   { path: '/admin/kerberos', group: 'Admin', name: 'Kerberos settings',
     specs: ['rfc4120', 'rfc3961', 'rfc4178', 'rfc4559', 'ms-kkdcp', 'ms-sfu'],
@@ -5423,9 +5586,9 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The one wsfed.* setting, and where the rest of what a ' +
           'relying party receives is configured — the assertion is a SAML ' +
           '1.1 one, so saml.issuer and /admin/saml-attributes decide its ' +
-          'issuer and its contents. The page also states the two things this ' +
-          'profile deliberately does not do: wauth is recorded and not ' +
-          'honoured, and wreqptr is never dereferenced. Add ?format=json.' },
+          'issuer and its contents. The page also states how wauth is ' +
+          'answered — a demand the session cannot meet is a step-up — and ' +
+          'that wreqptr is never dereferenced. Add ?format=json.' },
   { path: '/admin/tls', group: 'Admin', name: 'TLS / mutual TLS settings',
     specs: ['rfc8446', 'rfc5280', 'rfc8705'],
     effect: 'changes the certificate both sockets share, on the next start',
@@ -5511,8 +5674,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'PATH DIFFERS BY FORMAT and the page shows which: top level for ' +
           'dc+sd-jwt, under credentialSubject for jwt_vc_json, and under the ' +
           'vendored JSON-LD context\'s own term for ldp_vc, which cannot ' +
-          'carry every claim at all. This page ASKS and admits nobody: a ' +
-          'presentation that verifies starts no session and issues no token. ' +
+          'carry every claim at all. This page configures the BAR DOOR, ' +
+          'whose presentations admit nobody; the wallet sign-in at ' +
+          '/authn/wallet asks for a request of its own. ' +
           'Add ?format=json; POST {"action":"select","claims":[...]} for the ' +
           'same thing without a browser.' },
 
@@ -5702,6 +5866,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'and `why` says which of three reasons. No connection string is in ' +
           'the reply and nothing here changes anything. Mirrors GET ' +
           '/admin/database.' },
+  { path: '/admin-api/vc-status', group: 'Management API',
+    name: 'Credential status', specs: ['token-status-list', 'openapi'],
+    what: 'NON-SPEC. GET /admin/vc-status over JSON.' },
+  { path: '/admin-api/vc-status/:action', group: 'Management API',
+    name: 'Credential status actions', specs: ['openapi'],
+    what: 'NON-SPEC. suspend, reinstate and revoke, with { idx }: the ' +
+          'console\'s three buttons.' },
   { path: '/admin-api/caches', group: 'Management API',
     name: 'Caches', specs: [],
     what: 'NON-SPEC (#74). Everything /admin/caches draws, as JSON: every ' +
@@ -5920,7 +6091,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'and paged with ?page= and ?per=. It is a SEPARATE resource from ' +
           '/admin-api/logout rather than a shape of it: that one answers ' +
           '"what is alice still signed into", keyed on one identity across ' +
-          'ten families, and this one answers "who is signed in at all", ' +
+          'eleven families, and this one answers "who is signed in at all", ' +
           'which has no user in it. Both read logout/logout.ts, the one ' +
           'model of what a live session is. Every row carries the key and id ' +
           'the revoke takes, the sessionId that GET ' +
@@ -6794,9 +6965,9 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/wsfed', group: 'Management API', name: 'WS-Federation ' +
       'settings',
     specs: ['ws-federation', 'openapi'],
-    what: 'GET /admin/wsfed over JSON: the one wsfed.* setting, and the two ' +
-          'things this profile deliberately does not do — wauth is recorded ' +
-          'and not honoured, wreqptr is never dereferenced. Read-only.' },
+    what: 'GET /admin/wsfed over JSON: the one wsfed.* setting, how wauth ' +
+          'is answered (a step-up where the session cannot meet it) and that ' +
+          'wreqptr is never dereferenced. Read-only.' },
   { path: '/admin-api/tls', group: 'Management API', name: 'TLS / mutual TLS ' +
       'settings',
     specs: ['rfc8446', 'rfc5280', 'openapi'],
@@ -7097,7 +7268,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'request to every relying party it signed into; wsignoutcleanup1.0 ' +
           'ends it without fanning out. Reads wtrealm (required, and the ' +
           'audience), wreply (optional — defaults to /wsfed/rp), wctx ' +
-          '(echoed byte for byte), wct, wfresh (MINUTES), wauth, whr and a ' +
+          '(echoed byte for byte), wct, wfresh (MINUTES), wauth (a hardware ' +
+          'or multi-factor demand the session does not meet is a step-up ' +
+          'through the sign-in, refused only if that fails), whr and a ' +
           'wreq RST by value. The token is a SAML 1.1 assertion by default ' +
           'because that is what AD FS issues; ?tokenType=saml2 and ' +
           '?trust=1.3 are NON-SPEC switches for the other token type and the ' +
@@ -7177,14 +7350,20 @@ const ENDPOINTS: EndpointEntry[] = [
     effect: 'starts a browser sign-on session — the SAME session OAuth 2.0 / ' +
             'OIDC and WS-Federation use',
     what: 'GET is the HTTP Redirect binding and POST is the HTTP POST ' +
-          'binding; the RESPONSE goes back on whichever the AuthnRequest\'s ' +
-          'ProtocolBinding asked for, HTTP POST by default. It has NO ' +
+          'binding, or HTTP-POST-SimpleSign when the form carries SigAlg and ' +
+          'Signature; the RESPONSE goes back on whichever the ' +
+          'AuthnRequest\'s ProtocolBinding asked for, HTTP POST by ' +
+          'default. It has NO ' +
           'SIGN-IN SCREEN OF ITS OWN: a POST-binding request is held and ' +
           'turned into a GET so the SameSite=Lax session cookie is visible, ' +
           'and the screen is /authn/login. ANY entityID is accepted, and the ' +
           'first valid request from one creates its application entry. A ' +
-          'request signature is RECORDED AND NOT CHECKED, like every ' +
-          'credential here.' },
+          'request signature is VERIFIED against the service provider\'s ' +
+          'registered certificate and refused when it does not verify; an ' +
+          'unsigned request is refused where ' +
+          'saml2.requireSignedAuthnRequests (on in product) or the service ' +
+          'provider\'s metadata requires a signature, and every request is ' +
+          'refused once that metadata has expired.' },
   { path: '/saml2/sso/:sp', group: 'SAML 2.0',
     name: 'Single Sign-On service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
@@ -7199,7 +7378,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'POST a SOAP 1.1 envelope carrying an ArtifactResolve and get one ' +
           'back carrying the message. A BACK CHANNEL: the browser never ' +
           'touches it, which is the whole point of the artifact profile — ' +
-          'the assertion never passes through the user agent. AN ARTIFACT ' +
+          'the assertion never passes through the user agent. The caller ' +
+          'must be the service provider the artifact was issued to, and ' +
+          'authenticated as it — a signature on the ArtifactResolve or its ' +
+          'registered certificate as the TLS client certificate — where ' +
+          'signed requests are required (product, by default). AN ARTIFACT ' +
           'RESOLVES EXACTLY ONCE (section 3.6.4.1): resolving destroys it, ' +
           'and the second attempt is refused with a status naming the ' +
           'reason. GET describes the endpoint and shows the curl.' },
@@ -7217,10 +7400,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'session and is answered with a LogoutResponse on the binding it ' +
           'arrived on; a bare GET ends the session and NAMES every service ' +
           'provider it signed into, with a LogoutRequest built for each. ' +
-          'WHERE THE LogoutResponse GOES IS A GUESS unless it was declared — ' +
-          'a LogoutRequest carries no return address, only SP metadata does, ' +
-          'and this service does not consume SP metadata. Declare it on ' +
-          '/admin/saml2 or with saml2.defaultSingleLogoutService.' },
+          'A LogoutRequest\'s or LogoutResponse\'s signature is verified ' +
+          'under the same policy as an AuthnRequest\'s, and one that is ' +
+          'refused ends no session. The LogoutResponse goes to the ' +
+          'SingleLogoutService of the service provider\'s consumed ' +
+          'metadata, else a declared one, else ' +
+          'saml2.defaultSingleLogoutService — and is otherwise a GUESS, ' +
+          'said out loud.' },
   { path: '/saml2/slo/:sp', group: 'SAML 2.0',
     name: 'Single Logout service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles'],
@@ -7316,9 +7502,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'AssertionIDReference (NOT one-shot; a reference is not a ' +
           'credential), AttributeQuery and AuthenticationQuery. The last two ' +
           'are SAML 1.1\'s ATTRIBUTE AUTHORITY, which is the half Shibboleth ' +
-          'deployments leaned on. NOTHING AUTHENTICATES A CALLER: anybody ' +
-          'who can reach this port can ask it about anybody, by name, and ' +
-          'every query is logged saying so. GET describes the endpoint.' },
+          'deployments leaned on. NOTHING AUTHENTICATES A QUERY in ' +
+          'development — anybody who can reach this port can ask it about ' +
+          'anybody, by name, every query is logged saying so, and product ' +
+          'refuses both. An ARTIFACT is resolved only for the relying party ' +
+          'it was issued to, authenticated by a signed Request or its ' +
+          'registered certificate as the TLS client certificate where ' +
+          'signed requests are required. GET describes the endpoint.' },
   { path: '/saml11/responder/:rp', group: 'SAML 1.1',
     name: 'SAML responder for ONE relying party',
     specs: ['saml11', 'saml11-bindings'],
@@ -7437,7 +7627,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'identifier carries a path.' },
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
-    specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'rfc8414',
+    specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
+            'rfc8414',
                                                    'rfc9207', 'rfc9449'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
@@ -7527,8 +7718,8 @@ const ENDPOINTS: EndpointEntry[] = [
   // and deliberately not under any protocol, which is the whole point of it.
   // ---------------------------------------------------------------------
   { path: '/logout', group: 'Authentication', name: 'Sign out of everything',
-    specs: ['oidc-fclogout', 'rfc7009', 'ws-federation', 'saml2', 'rfc4120',
-            'rfc4511'],
+    specs: ['oidc-fclogout', 'oidc-bclogout', 'rfc7009', 'ws-federation',
+            'saml2', 'rfc4120', 'rfc4511'],
     what: 'THE PROTOCOL-INDEPENDENT SIGN-OUT, and the only endpoint here ' +
           'that is about all sixteen families at once. GET lists everything ' +
           'this service is still holding for one identity — every browser ' +
@@ -7635,6 +7826,77 @@ const ENDPOINTS: EndpointEntry[] = [
           'because a bare 401 Negotiate is a dead end in every browser not ' +
           'configured for this host. krb5.spnegoAuthentication turns it off, ' +
           'and it then answers 403 saying so rather than 404.' },
+  { path: '/authn/wallet', group: 'Authentication',
+    name: 'Sign in with a wallet',
+    specs: ['oid4vp', 'dc-api', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'oidc'],
+    effect: 'builds an OpenID4VP request bound to the pending sign-in (or to ' +
+            'a second-factor step), sets the browser-binding cookie and ' +
+            'redirects to the wait page',
+    what: 'A VERIFIED PRESENTATION AS A SIGN-IN (2026-09-17). Offered on ' +
+          '/authn/login to every flow in progress, like the Kerberos ' +
+          'button: it takes ?authn= (or ?mfa=, a wallet as the second ' +
+          'factor after a password) and NEVER a returnTo. The request is ' +
+          'always signed, asks for this issuer\'s credential in every ' +
+          'format oid4vp.signInFormats names (a credential query each and ' +
+          'a credential set), and is offered through the Digital ' +
+          'Credentials API as well (openid4vp-v1-signed, expected_origins). ' +
+          'Only a credential THIS REALM issued, on an access token it ' +
+          'verified and nobody disowned, for a person, not disowned since, ' +
+          'with a status of VALID, and presented with a fresh holder proof ' +
+          'signs anybody in — as the directory entry it was issued for. ' +
+          'amr ["pop"] and acr "1", or hwk and acr "mfa" where a verified ' +
+          'key attestation says so; a request demanding two factors is ' +
+          'asked for a second after the wallet. appAuthnMechanism: wallet ' +
+          'sends an application\'s people straight here. oid4vp.signIn ' +
+          'turns it off, and it then answers 403 saying so.' },
+  { path: '/authn/wallet/wait', group: 'Authentication',
+    name: 'Wallet sign-in: wait, and finish',
+    specs: ['oid4vp', 'dc-api', 'oidc'],
+    effect: 'once the wallet has answered, establishes the browser session ' +
+            '(or asks for a second factor) and returns to whatever was ' +
+            'interrupted',
+    what: 'The page the browser waits on: a Digital Credentials API button ' +
+          '— the one scripted exception on this path, /authn/wallet.js — ' +
+          'the same-device wallet link, and, only where ' +
+          'oid4vp.signInCrossDevice is on (off by default), a link to a ' +
+          'server-drawn QR code page (?qr=1) that polls with a <meta> ' +
+          'refresh. Once the wallet has answered it either signs the ' +
+          'browser in or says why nobody was: the presentation did not ' +
+          'verify, the credential was a trusted foreign issuer\'s, this ' +
+          'realm has no record of issuing it to a person on a token it ' +
+          'verified, it was disowned or its status is not VALID, or the ' +
+          'entry is gone. It finishes ONLY in the browser that started the ' +
+          'sign-in (a hashed binding cookie), ONLY with the right ' +
+          'response_code where one is carried (OpenID4VP section 8.2), and ' +
+          'ONCE — across a cluster too; the transaction lives ' +
+          'oid4vp.signInTtlS.' },
+  { path: '/authn/wallet/dc-api', group: 'Authentication',
+    name: 'Wallet sign-in: the Digital Credentials API answer',
+    specs: ['oid4vp', 'dc-api', 'rfc7516', 'di-jcs'],
+    effect: 'verifies the wallet\'s answer and signs the posting browser in',
+    what: 'What the wait page\'s script posts: the DigitalCredential ' +
+          'navigator.credentials.get() returned (OpenID4VP Appendix A.4), ' +
+          'decrypted where the request asked for dc_api.jwt, verified with ' +
+          'origin:<origin> as the audience, and answered once. Accepted only ' +
+          'from the browser that started the sign-in and from this ' +
+          'service\'s own origin (STS-VC-0074). An empty form — the ' +
+          'script did not run — is answered with the same-device link ' +
+          '(STS-VC-0081).' },
+  { path: '/authn/wallet.js', group: 'Authentication',
+    name: 'Wallet sign-in script',
+    specs: ['dc-api'],
+    what: 'NON-SPEC. The one static script the wait page loads under ' +
+          'script-src \'self\': it calls the Digital Credentials API with ' +
+          'the request on the page and submits the answer in a real form.' },
+  { path: '/authn/password-factor', group: 'Authentication',
+    name: 'Password as the second factor',
+    specs: ['oidc', 'rfc8176'],
+    effect: 'establishes the sign-on session once the password verifies',
+    what: 'After a wallet sign-in on a request that demands two factors, ' +
+          'for a person who holds no authenticator app or security key: ' +
+          'their password, checked as the sign-in screen checks one and ' +
+          'rate limited on the same bucket. The session records amr ' +
+          '["pop","pwd"] and acr "mfa". No script.' },
   { path: '/authn/webauthn', group: 'Authentication', name: 'WebAuthn ' +
       'security-key step',
     specs: ['oidc', 'webauthn'],
@@ -8157,9 +8419,31 @@ const ENDPOINTS: EndpointEntry[] = [
              'rfc7800', 'rfc7515',
              'rfc6750'],
     what: 'Mints dc+sd-jwt, jwt_vc_json or ldp_vc per the configuration ' +
-          'asked for. Verifies the wallet\'s proof, supports batch issuance, ' +
-          'and accepts an encrypted request and/or returns an encrypted ' +
-          'response.' },
+          'asked for, each carrying its status-list reference. Verifies the ' +
+          'wallet\'s proof — a jwt proof, with a key attestation in its ' +
+          'header where one is sent or required, or the attestation proof ' +
+          'type — supports batch issuance, and accepts an encrypted request ' +
+          'and/or returns an encrypted response.' },
+  { path: '/oid4vci/status-lists/1', group: 'VC Issuance (OID4VCI)',
+    name: 'Token Status List',
+    specs: ['token-status-list', 'rfc7519', 'rfc8392', 'rfc9052'],
+    what: 'This realm\'s Status List Token: application/statuslist+jwt, or ' +
+          'application/statuslist+cwt when Accept asks for it (a ' +
+          'COSE_Sign1, not CWT-tagged). Two bits per credential; ttl ' +
+          'oid4vci.statusListTtlS, exp oid4vci.statusListLifetimeS, signed ' +
+          'with the credential key. ?time= answers 501: no historical ' +
+          'lists are kept.' },
+  { path: '/oid4vci/status-lists', group: 'VC Issuance (OID4VCI)',
+    name: 'Status List Aggregation',
+    specs: ['token-status-list'],
+    what: 'The status_lists this realm publishes (section 9.3): one.' },
+  { path: '/oid4vci/status-lists/bitstring/:purpose',
+    group: 'VC Issuance (OID4VCI)',
+    name: 'Bitstring Status List credential',
+    specs: ['bitstring-status-list', 'vcdm', 'rfc7519'],
+    what: 'This realm\'s BitstringStatusListCredential for revocation or ' +
+          'suspension, as application/vc+jwt: a GZIP bitstring of 131,072 ' +
+          'entries, index 0 first, signed with the credential key.' },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +
@@ -8257,11 +8541,18 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oid4vp/response', group: 'VC Presentation (OID4VP)',
     name: 'Response ' +
       'URI',
-    specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'di-bbs', 'rdf-c14n', 'vcdm'],
+    specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'di-bbs', 'rdf-c14n', 'vcdm',
+             'di-jcs'],
     what: 'Where the wallet POSTs the vp_token, and where it is really ' +
-          'verified: issuer signature, every Disclosure digest against _sd, ' +
-          'the Key Binding JWT including sd_hash, the validity window, and ' +
-          'whether the claims asked for arrived.' },
+          'verified: issuer signature (post-quantum included), every ' +
+          'Disclosure digest against _sd, the Key Binding JWT including ' +
+          'sd_hash — or the VP JWT, or the Data Integrity holder proof — ' +
+          'the validity window, the credential\'s status list, and ' +
+          'whether the claims asked for arrived. For a transaction started ' +
+          'at /authn/wallet it also decides WHOM the presentation signs in, ' +
+          'answers once, and sends a same-device wallet back with a ' +
+          'response_code; the session itself is set on the browser\'s next ' +
+          'request, never on this one, which is the wallet\'s.' },
   { path: '/oid4vp/result/:state', group: 'VC Presentation (OID4VP)',
     name: 'Verification verdict (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
@@ -8896,12 +9187,18 @@ const PROTOCOLS: Protocol[] = [
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
              'Decentralized Identifiers'],
-    specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core'],
+    specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core',
+            'token-status-list', 'bitstring-status-list', 'dc-api',
+            'di-jcs'],
     what: 'Both sides of it: an issuer (three credential formats, Credential ' +
           'Offers, pre-authorized codes, deferred and batch issuance, ' +
-          'notifications) and a verifier that checks a presentation properly ' +
-          '— every disclosure digest, the key binding, and whether what was ' +
-          'asked for arrived.' }
+          'notifications, status lists, key attestations) and a verifier ' +
+          'that checks a presentation properly — every disclosure digest, ' +
+          'the holder proof, the status, and whether what was asked for ' +
+          'arrived — and, at /authn/wallet, signs in the holder of a ' +
+          'credential this realm issued, in any of the three formats and ' +
+          'through the Digital Credentials API (the Authentication ' +
+          'group).' }
 ];
 // Groups of endpoints that are NOT a protocol family, and so are not expected
 // to be claimed by a row above. Four, and each is the service talking about

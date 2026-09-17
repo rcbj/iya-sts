@@ -1027,9 +1027,9 @@ the half a reader cannot discover from a protocol trace.
   *nobody asked for that type* looks like. All four call it now, each from the
   branch that HONOURS the session rather than from `sessionOf()` (which runs
   several times per request, so an event there would be several events for one
-  act) and below the branches that refuse — a `wauth` this session cannot
-  satisfy, an `authn_error`, an IsPassive with nothing usable — since those end
-  in a refusal and nothing was honoured. `tests/caep_presented_every_protocol.js`
+  act) and below the branches that refuse or step up — a `wauth` this session
+  cannot satisfy, an `authn_error`, an IsPassive with nothing usable — since
+  those end in a refusal or a new sign-in and nothing was honoured. `tests/caep_presented_every_protocol.js`
   holds all four to it. `caep.autoEmit` puts the old behaviour back rather
   than leaving it only in the history of this file. `credential-change`
   (2026-09-13) and `assurance-level-change` (2026-09-14) have automatic

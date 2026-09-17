@@ -201,6 +201,8 @@ import databaseAdmin = require('../admin-ui/database_admin');
 import secretsAdmin = require('../admin-ui/secrets_admin');
 // 18g (#74), the same ordinary-direction require and the same reason.
 import cachesAdmin = require('../admin-ui/caches_admin');
+// THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
+import vcStatusAdmin = require('../admin-ui/vc_status_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -221,6 +223,9 @@ import rbac = require('../admin-ui/admin_rbac');
 // taking the ids from it moves no route and cannot let this document offer a
 // set the service does not have.
 import stats = require('../common/admin_stats');
+// A DISABLED ACCOUNT (2026-09-17): the gate refuses a person's token once
+// their account is disabled. A library loaded long before this file.
+import accountState = require('../common/account_state');
 // The applications registry, for the `enum` of protocol family ids on the
 // create body. A library too — it registers nothing and admin.js required it
 // long before this line — so this moves no route, and taking the ids from the
@@ -365,10 +370,12 @@ interface AdminApiDeps {
   databaseAdmin: typeof databaseAdmin;
   secretsAdmin: typeof secretsAdmin;
   cachesAdmin: typeof cachesAdmin;
+  vcStatusAdmin: typeof vcStatusAdmin;
   debuggerAdmin: typeof debuggerAdmin;
   config: typeof config;
   rbac: typeof rbac;
   stats: typeof stats;
+  accountState: typeof accountState;
   applications: typeof applications;
   resourceMetadata: typeof resourceMetadata;
   spec: typeof spec;
@@ -425,10 +432,12 @@ class AdminApi {
       databaseAdmin: databaseAdmin,
       secretsAdmin: secretsAdmin,
       cachesAdmin: cachesAdmin,
+      vcStatusAdmin: vcStatusAdmin,
       debuggerAdmin: debuggerAdmin,
       config: config,
       rbac: rbac,
       stats: stats,
+      accountState: accountState,
       applications: applications,
       resourceMetadata: resourceMetadata,
       spec: spec,
@@ -1096,11 +1105,15 @@ class AdminApi {
       { path: '/oid4vp-settings', console: '/admin/oid4vp', tag: 'OpenID4VP',
         operationId: 'getOid4vpSettings',
         summary: 'The mock Verifier\'s own settings',
-        description: 'The four `oid4vp.*` settings: the client identifier ' +
+        description: 'The `oid4vp.*` settings: the client identifier ' +
                      'the verifier presents as, where it sends a holder to ' +
-                     'present, the Key Binding JWT\'s maximum age, and the ' +
-                     'claims asked for when nothing else has been ' +
-                     'chosen.\n\n`oid4vp.walletUrl` is DERIVED: with no ' +
+                     'present, the Key Binding JWT\'s maximum age, the ' +
+                     'claims asked for when nothing else has been chosen, ' +
+                     'and — since 2026-09-17 — the four that govern signing ' +
+                     'in with a wallet at `/authn/wallet` (`oid4vp.signIn`, ' +
+                     '`signInTtlS`, `signInPollS`, `signInCrossDevice`), ' +
+                     'set like every setting with `POST /config/set`.' +
+                     '\n\n`oid4vp.walletUrl` is DERIVED: with no ' +
                      'value of its own it is the OID4VCI wallet, since it is ' +
                      'the same wallet in every arrangement this service is ' +
                      'used in. Its `source` is `default` ' +
@@ -1362,10 +1375,11 @@ class AdminApi {
                      'response.\n\nThe assertion it carries is a SAML 1.1 ' +
                      'one, so its Issuer is `saml.issuer` (on `GET /saml2` ' +
                      'and `GET /saml11`) and its contents are `GET ' +
-                     '/saml-attributes`. `wauth` is recorded and not ' +
-                     'honoured and `wreqptr` is never dereferenced; ' +
-                     'neither is a setting, and the page ' +
-                     'says so rather than implying a missing one.' },
+                     '/saml-attributes`. A `wauth` the session cannot meet ' +
+                     'is a step-up through the sign-in screen, and ' +
+                     '`wreqptr` is never dereferenced; neither is a ' +
+                     'setting, and the page says so rather than implying a ' +
+                     'missing one.' },
       { path: '/tls', console: '/admin/tls', tag: 'TLS',
         operationId: 'getTlsSettings',
         summary: 'The TLS certificate\'s own settings',
@@ -1744,6 +1758,83 @@ class AdminApi {
       // parameters, so the list and one cache's paged entries are one
       // operation, as `/admin/caches` and `/admin/caches?cache=` are one page.
       // ---------------------------------------------------------------------
+      // THE STATUS LISTS (#38's follow-ups): `vcStatusAdmin.statusView()`
+      // and `statusAction()`, the two functions `/admin/vc-status` answers.
+      { method: 'GET', path: BASE + '/vc-status', tag: 'Credential status',
+        operationId: 'getCredentialStatus',
+        summary: 'This realm\'s credential status lists',
+        description: 'Where this realm\'s Token Status List ' +
+                     '(`tokenStatusList`, draft-ietf-oauth-status-list), its ' +
+                     '`aggregation` and its two Bitstring Status List ' +
+                     'credentials (`bitstring`) are served, the list `size` ' +
+                     'and `bits`, `ttlS` and `lifetimeS`, the counts ' +
+                     '(`allocated`, `valid`, `suspended`, `invalid`), and a ' +
+                     'page of `rows` — each issued credential\'s `idx`, ' +
+                     '`format`, `configId`, effective `status` (VALID, ' +
+                     'INVALID or SUSPENDED), the `explicit` status set here, ' +
+                     '`via`, `changedAt`, `allocatedAt` and `expiresAt` — ' +
+                     'answered in `rowsPaging`.',
+        mirrors: 'GET /admin/vc-status',
+        parameters: [].concat(self.pagingParameters()),
+        responseDescription: 'The lists and their credentials.',
+        responseSchema: { type: 'object',
+          description: 'The lists, the counts and a page of `rows`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API credential status " +
+                    "endpoint.");
+          self.sendJson(res, 200, vcStatusAdmin.statusView(req,
+                                                           req.query).json);
+          log.debug("Leaving the management API credential status " +
+                    "endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/vc-status/:action',
+        tag: 'Credential status',
+        mirrors: 'POST /admin/vc-status',
+        handler: function (req, res) {
+          log.debug("Entering the management API credential status action.");
+          const result = vcStatusAdmin.statusAction(
+            self.withAction(req, parseBody(req)),
+            'the management API at /admin-api/vc-status');
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-VC-0082');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API credential status action.");
+        },
+        actions: ['suspend', 'reinstate', 'revoke'].map(function (action) {
+          return {
+            action: action,
+            operationId: action + 'Credential',
+            summary: action === 'suspend'
+              ? 'Suspend one issued credential (SUSPENDED)'
+              : action === 'reinstate'
+                ? 'Reinstate a suspended credential (VALID)'
+                : 'Revoke one issued credential (INVALID, final)',
+            description: 'Sets the status-list entry `idx` names, in this ' +
+                         'realm\'s Token Status List and Bitstring Status ' +
+                         'Lists at once. A credential that is not VALID is ' +
+                         'refused by every verifier reading the list and ' +
+                         'signs nobody in at `/authn/wallet`. `reinstate` ' +
+                         'applies to a SUSPENDED credential only; INVALID ' +
+                         'is final. A refusal is 400 with `errors`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                idx: { type: 'integer', minimum: 0,
+                       description: 'The index, as GET /admin-api/vc-status ' +
+                                    'lists it.' }
+              },
+              required: ['idx'],
+              examples: [{ idx: 4711 }],
+              additionalProperties: false
+            },
+            responseDescription: 'The index and its new status.'
+          };
+        })
+      },
+
       { method: 'GET', path: BASE + '/caches', tag: 'Service',
         operationId: 'getCaches',
         summary: 'Every cache this service holds, or one cache\'s entries',
@@ -3051,6 +3142,75 @@ class AdminApi {
             },
             responseDescription: 'The requirement as it now stands.' },
 
+          { action: 'disable', operationId: 'disableUserAccount',
+            summary: 'Disable somebody\'s account, and end everything ' +
+                     'they hold',
+            description: 'Sets `pwdAccountLockedTime` (draft-behera-ldap-' +
+                         'password-policy\'s administrative lock, ' +
+                         '`000001010000Z`) on the person\'s entry. From then ' +
+                         'on EVERY door refuses them, in every mode: a ' +
+                         'password anywhere (the sign-in screen, an LDAP ' +
+                         'bind, the password grant, WS-Trust, SCIM and SSF ' +
+                         'Basic, EST), a session from any sign-in (a ' +
+                         'security key, federation, SPNEGO, a TLS client ' +
+                         'certificate, the wallet), a Kerberos AS-REQ ' +
+                         '(KDC_ERR_CLIENT_REVOKED), every token grant made ' +
+                         'on their behalf (`invalid_grant`, a refresh token ' +
+                         'included), every assertion, and this API.' +
+                         '\n\n**Everything they hold is ended at once**, by ' +
+                         'the same global logout `POST ' +
+                         '/admin-api/logout/global` performs: sessions (with ' +
+                         'CAEP `session-revoked` and back-channel Logout ' +
+                         'Tokens to their relying parties), tokens, codes, ' +
+                         'directory connections and Kerberos tickets. RISC ' +
+                         'receivers are sent `account-disabled`. ' +
+                         'Front-channel notifications need the person\'s ' +
+                         'own browser and are not sent. SCIM\'s ' +
+                         '`active: false` is the same act.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                reason: { type: 'string',
+                          description: 'Recorded on the audit row.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'mallory', reason: 'left the company' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and in `ended` ' +
+                                 'what the global logout ended.' },
+
+          { action: 'enable', operationId: 'enableUserAccount',
+            summary: 'Enable a disabled account again',
+            description: 'Clears `pwdAccountLockedTime`. The person signs ' +
+                         'in afresh — nothing ended by the disable comes ' +
+                         'back — and RISC receivers are sent ' +
+                         '`account-enabled`. SCIM\'s `active: true` is the ' +
+                         'same act.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                reason: { type: 'string',
+                          description: 'Recorded on the audit row.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'mallory' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed.' },
+
           { action: 'clear-key', operationId: 'clearUserSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
             description: 'Goes through the same `removeKey()` the person\'s ' +
@@ -3088,7 +3248,8 @@ class AdminApi {
       //
       // It is a SEPARATE resource from /logout rather than a shape of it, and
       // the two questions are why: that one is *what is alice still signed
-      // into*, keyed on one identity and reaching ten families; this one is
+      // into*, keyed on one identity and reaching eleven families (ten until
+      // the wallet sign-in of 2026-09-17, #38); this one is
       // *who is signed in at all*, across everybody, in the three families that
       // have a session. A `user` parameter on the one below could not have
       // answered it, because the answer has no user in it.
@@ -3279,7 +3440,22 @@ class AdminApi {
             description: 'Only rows of this family. The `families` member of ' +
                          'the reply says which values there are; it is read ' +
                          'off the same table the endpoint acts on, so a ' +
-                         'family that cannot occur is never offered.' }
+                         'family that cannot occur is never offered.' },
+          { name: 'deliveryState', in: 'query', required: false,
+            schema: { type: 'string', enum: ['pending', 'sent', 'dead'] },
+            description: 'Only back-channel Logout Token deliveries in this ' +
+                         'state. `dead` is the dead-letter list, whose rows ' +
+                         '`POST /admin-api/logout/retry-backchannel` sends ' +
+                         'again.' },
+          { name: 'deliveryq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'Only deliveries whose client, session, address, ' +
+                         'error code or person contains this.' },
+          { name: 'backchannelDeliveriesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the deliveries. Clamped, like every ' +
+                         'page parameter here; `per` is shared with the ' +
+                         'live rows.' }
         ].concat(this.pagingParameters()),
         responseDescription: 'The family list, or one identity\'s live state.',
         responseSchema: { $ref: '#/components/schemas/LogoutInventory' },
@@ -3322,7 +3498,14 @@ class AdminApi {
                          'is something this process performs. They come back ' +
                          'in `notifications` and `cleanups` so a caller ' +
                          'can load them, and `/logout` is the page where ' +
-                         'a browser does it by itself.',
+                         'a browser does it by itself.\n\n**The ' +
+                         'back-channel Logout Tokens ARE sent from here** ' +
+                         '(OpenID Connect Back-Channel Logout 1.0), to every ' +
+                         'relying party on an ended session that registered ' +
+                         'a `backchannel_logout_uri` — after this reply, so ' +
+                         '`backchannel` lists each with the state it has ' +
+                         'now, nearly always `pending`, and `GET ' +
+                         '/admin-api/logout` lists where each got to.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -3337,8 +3520,10 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The act, in `result`: `terminated`, ' +
-                                 '`skipped`, `unknown`, and the three ' +
-                                 'fan-outs a browser has to perform.' },
+                                 '`skipped`, `unknown`, the three ' +
+                                 'fan-outs a browser has to perform, and ' +
+                                 '`backchannel`, the one this service ' +
+                                 'performs itself.' },
           { action: 'end', operationId: 'endLiveSessions',
             summary: 'End named items and nothing else',
             description: 'The selective half. `select` carries row ids from ' +
@@ -3371,6 +3556,35 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The act, in `result`.' },
+          { action: 'retry-backchannel',
+            operationId: 'retryBackchannelDelivery',
+            summary: 'Send a dead back-channel Logout Token delivery again',
+            description: 'A delivery that ended as a DEAD LETTER — refused ' +
+                         'with 400, refused by the outbound policy, or still ' +
+                         'failing after `oauth2.backchannelLogoutAttempts` — ' +
+                         'is queued again as a new generation: a new Logout ' +
+                         'Token with a new `jti`, a fresh attempt budget, and ' +
+                         'the client\'s CURRENT `backchannel_logout_uri`, ' +
+                         'because the commonest reason to retry is having ' +
+                         'corrected it. The attempt is made after this reply, ' +
+                         'claimed like every other, so exactly one node sends ' +
+                         'it. Refused for a delivery that is not dead, one ' +
+                         'retention has removed, and a client with no usable ' +
+                         'address. `GET /admin-api/logout?deliveryState=dead` ' +
+                         'lists the dead letters.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                delivery: { type: 'string',
+                            description: 'The delivery\'s `id`, from ' +
+                                         '`backchannelDeliveries`.' }
+              },
+              required: ['delivery'],
+              examples: [{ delivery: 'no-such-delivery' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The delivery as it now stands, pending.' },
           { action: 'restore-token', operationId: 'restoreLoggedOutToken',
             summary: 'NON-SPEC: un-revoke a token a logout revoked',
             description: '**No authorization server could offer this.** RFC ' +
@@ -6455,7 +6669,15 @@ class AdminApi {
                      'what has been recorded about it — and answers 200 with ' +
                      '`found: false` for an entityID that is not registered, ' +
                      'whose metadata is still served and whose AuthnRequest ' +
-                     'would still be answered.',
+                     'would still be answered.\n\nThe `?sp=` reply also ' +
+                     'says what checking its requests\' signatures found ' +
+                     '(`lastRequestVerification`), what they are verified ' +
+                     'against (`signingCertificates`), the certificate a ' +
+                     'request carried that nobody has confirmed ' +
+                     '(`observedSigningCertificate`), whether signed ' +
+                     'requests are required of it and why ' +
+                     '(`signedRequestsRequired`), and everything consuming ' +
+                     'its metadata registered (`metadata`).',
         mirrors: 'GET /admin/saml2',
         parameters: [
           { name: 'sp', in: 'query', required: false,
@@ -6481,11 +6703,19 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API SAML 2.0 action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.saml2Action(self.withAction(req, body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0047');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
+          // Two actions dial out and answer with a promise (#37 follow-up).
+          Promise.resolve(adminActions.saml2Action(self.withAction(req, body)))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0047');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+            }, function (e) {
+              errorCodes.mark(res, 'STS-API-0047');
+              self.sendJson(res, 400, { ok: false, errors: [
+                'The action failed: ' + ((e && e.message) || e)] });
+            });
           log.debug("Leaving the management API SAML 2.0 action endpoint.");
         },
         actions: [
@@ -6522,9 +6752,11 @@ class AdminApi {
             summary:
               'Declare where this service provider\'s LogoutResponse goes',
             description: 'A `<samlp:LogoutRequest>` CARRIES NO RETURN ' +
-                         'ADDRESS — only SP metadata does, and this service ' +
-                         'does not consume SP metadata. With nothing ' +
-                         'declared the profile falls back to ' +
+                         'ADDRESS — only SP metadata does. The ' +
+                         'SingleLogoutService endpoints of the service ' +
+                         'provider\'s CONSUMED metadata are used first; ' +
+                         'with none, what is declared here; then the ' +
+                         'profile falls back to ' +
                          '`saml2.defaultSingleLogoutService` and then to the ' +
                          'assertion consumer service URL that service ' +
                          'provider last used, WHICH IS A GUESS and is logged ' +
@@ -6572,36 +6804,265 @@ class AdminApi {
 
           { action: 'set-signing-certificate',
             operationId: 'setSaml2SigningCertificate',
-            summary: 'Record the certificate this service provider signs with',
-            description: 'Base64 DER — PEM armour and whitespace are ' +
-                         'stripped, because what the attribute holds is what ' +
-                         'a `ds:X509Certificate` carries, and a PEM stored ' +
-                         'there would be something no reader of it expects ' +
-                         'with nothing to say so until the day one tried to ' +
-                         'use it.\n\n**IT IS NOT CHECKED AGAINST ANYTHING.** ' +
-                         'This service records whether an AuthnRequest was ' +
-                         'signed and verifies no signature, which is the ' +
-                         'same posture it takes to every credential — see ' +
-                         '`saml/CLAUDE.md`. This is the material a ' +
-                         'verification would read the day one is wanted, and ' +
-                         'it is public key material, so unlike a client ' +
-                         'secret it is worth nothing to whoever reads ' +
-                         'this directory. An empty value clears it.',
+            summary: 'Replace the certificates this service provider\'s ' +
+                     'signatures are verified against',
+            description: '**THE TRUST ANCHOR FOR THIS SERVICE PROVIDER\'S ' +
+                         'SIGNATURES** (2026-09-17). A signed AuthnRequest, ' +
+                         'LogoutRequest or LogoutResponse from it is ' +
+                         'VERIFIED against `samlSigningCertificate` in every ' +
+                         'mode, and refused when it verifies against none — ' +
+                         'never against the certificate the request ' +
+                         'carries. The attribute is a LIST (a metadata ' +
+                         'rollover publishes two keys); this REPLACES it ' +
+                         'with the one certificate given, and an empty ' +
+                         '`value` clears it. Consuming the service ' +
+                         'provider\'s metadata writes the same list.' +
+                         '\n\nBase64 DER or PEM — the armour and whitespace ' +
+                         'are stripped, because what the attribute holds is ' +
+                         'what a `ds:X509Certificate` carries. A value that ' +
+                         'is not a certificate whose key makes an XML ' +
+                         'signature this service verifies (RSA, EC, EdDSA, ' +
+                         'DSA, ML-DSA, SLH-DSA) is refused and nothing ' +
+                         'changes: an unusable certificate would make every ' +
+                         'signature from this service provider fail. Public ' +
+                         'key ' +
+                         'material, worth nothing to whoever reads the ' +
+                         'directory.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: {
                 sp: { type: 'string' },
                 value: { type: 'string',
-                         description: 'Base64 DER, or a PEM to ' +
-                                                      'be stripped.' }
+                         description: 'Base64 DER or PEM; empty clears ' +
+                                      'the list.' }
               },
               required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml', value: '' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'remove-signing-certificate',
+            operationId: 'removeSaml2SigningCertificate',
+            summary: 'Take one registered signing certificate off a service ' +
+                     'provider',
+            description: 'By value — the base64 DER exactly as `GET ' +
+                         '/admin-api/saml2?sp=` lists it in ' +
+                         '`signingCertificates` (a PEM is accepted and ' +
+                         'normalised). Signatures made with that key stop ' +
+                         'verifying from the next request. Removing the ' +
+                         'last one leaves this service provider\'s ' +
+                         'signatures recorded as `no-certificate` and not ' +
+                         'verified.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                sp: { type: 'string' },
+                value: { type: 'string',
+                         description: 'The certificate to remove.' }
+              },
+              required: ['sp', 'value'],
               examples: [{ sp: 'https://sp.example.com/saml',
                            value: 'MIIC...' }],
               additionalProperties: false
             },
-            responseDescription: 'The application entry as it now stands.' }
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'confirm-signing-certificate',
+            operationId: 'confirmSaml2SigningCertificate',
+            summary: 'Trust the certificate a signed request carried',
+            description: 'A signed request\'s `ds:KeyInfo` certificate that ' +
+                         'is not registered is recorded as OBSERVED ' +
+                         '(`observedSigningCertificate` on `GET ' +
+                         '/admin-api/saml2?sp=`, the attribute ' +
+                         '`samlObservedSigningCertificate`) and verifies ' +
+                         'NOTHING — anybody can sign a request and attach ' +
+                         'the key that verifies it. Development mode still ' +
+                         'encrypts an assertion to it when nothing else is ' +
+                         'on the entry; product does not.\n\nThis MOVES it ' +
+                         'onto `samlSigningCertificate`, so this service ' +
+                         'provider\'s signatures are verified against it ' +
+                         'from the next request. Refused when nothing is ' +
+                         'observed, and for a certificate whose key signs ' +
+                         'nothing this service verifies. ' +
+                         'Confirm only a key you know is the service ' +
+                         'provider\'s: this is the registration.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'discard-signing-certificate',
+            operationId: 'discardSaml2SigningCertificate',
+            summary: 'Discard the certificate a signed request carried',
+            description: 'The opposite answer to ' +
+                         '`confirm-signing-certificate`: the observed ' +
+                         'certificate is taken off the entry. It was never ' +
+                         'trusted; a signed request carrying it again ' +
+                         'records it again. Refused when nothing is ' +
+                         'observed.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'set-metadata-signing-certificate',
+            operationId: 'setSaml2MetadataSigningCertificate',
+            summary: 'Require this service provider\'s metadata to be ' +
+                     'signed with one key',
+            description: 'Writes `samlSpMetadataSigningCertificate`. With it ' +
+                         'set, consuming a metadata document — a refresh ' +
+                         'or an upload — REFUSES one that is unsigned or ' +
+                         'whose signature does not verify against this ' +
+                         'certificate, and changes nothing. Without it a ' +
+                         'signed document is consumed and recorded as ' +
+                         '`signed-not-verified`: the trust act is then the ' +
+                         'administrator\'s choice of URL or document. ' +
+                         'Base64 DER or PEM, any key an XML signature is ' +
+                         'verified with here; empty clears it. The realm\'s ' +
+                         '`saml2.metadataTrustAnchors` are accepted as well.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                sp: { type: 'string' },
+                value: { type: 'string',
+                         description: 'Base64 DER or PEM; empty clears it.' }
+              },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml', value: '' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'refresh-metadata',
+            operationId: 'refreshSaml2Metadata',
+            summary: 'Fetch a service provider\'s metadata again, now',
+            description: 'Fetches the document from the entry\'s ' +
+                         '`samlSpMetadataUrl` — or, for an entry with ' +
+                         'none, from the realm\'s Metadata Query responder ' +
+                         '(`saml2.mdqBaseUrl`) — through the federation ' +
+                         'outbound policy, and CONSUMES it exactly as ' +
+                         '`upload-metadata` does. The background refresher ' +
+                         'does the same once a document is past its ' +
+                         'cacheDuration. A failure changes nothing.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed, or why nothing was.' },
+
+          { action: 'mdq-import',
+            operationId: 'importSaml2MetadataFromMdq',
+            summary: 'Import a service provider from the MDQ responder',
+            description: 'Asks `saml2.mdqBaseUrl` for ' +
+                         '`<base>/entities/<percent-encoded entityID>` ' +
+                         '(the Metadata Query Protocol), and — when the ' +
+                         'answer describes that entity — creates the ' +
+                         'application entry if it does not exist and ' +
+                         'consumes the document, held to the realm\'s ' +
+                         '`saml2.metadataTrustAnchors`. Refused with no ' +
+                         'responder configured; an entry it created is ' +
+                         'removed again if the document is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed (with `created`), or why ' +
+                                 'nothing was.' },
+
+          { action: 'upload-metadata',
+            operationId: 'uploadSaml2Metadata',
+            summary: 'Consume a service provider\'s metadata document',
+            description: 'The same CONSUMPTION `POST ' +
+                         '/admin-api/applications/refresh-metadata` ' +
+                         'performs on a fetched document, for a document ' +
+                         'given here — a service provider whose metadata ' +
+                         'this service cannot reach. It REGISTERS what the ' +
+                         '`<md:SPSSODescriptor>` says: every ' +
+                         'AssertionConsumerService (binding, location, ' +
+                         'index, isDefault) as a return address — an ' +
+                         'AuthnRequest is then answered only at one of ' +
+                         'them, by index, by URL or by default, in every ' +
+                         'mode — every SingleLogoutService, every signing ' +
+                         'certificate (`use="signing"` or no `use`) as what ' +
+                         'its requests are verified against, the encryption ' +
+                         'certificate, its NameIDFormats (a NameIDPolicy ' +
+                         'naming another is then InvalidNameIDPolicy), and ' +
+                         'AuthnRequestsSigned and WantAssertionsSigned. ' +
+                         'The EFFECTIVE validUntil (earliest in the chain) ' +
+                         'is enforced — past it every request from the ' +
+                         'service provider is refused — and past the ' +
+                         'cacheDuration a document with a URL is fetched ' +
+                         'again in the background. An EntitiesDescriptor ' +
+                         'is read for this entity.\n\nREFUSED, changing ' +
+                         'nothing, for: a document that is not an ' +
+                         'EntityDescriptor (or an aggregate holding exactly ' +
+                         'one for this entity) with a SAML 2.0 ' +
+                         'SPSSODescriptor; an entityID that ' +
+                         'is not this service provider\'s; a validUntil ' +
+                         'already passed; an encryption certificate this ' +
+                         'service cannot encrypt to; a signature that does ' +
+                         'not verify against ' +
+                         '`samlSpMetadataSigningCertificate` or a realm ' +
+                         'trust anchor when any is set (or no signature ' +
+                         'then); and a document over ' +
+                         '`saml2.spMetadataMaxBytes`. A signing certificate ' +
+                         'no XML signature method uses is skipped and named ' +
+                         'in `skipped`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                sp: { type: 'string',
+                      description: 'The service provider\'s entityID — ' +
+                                   'which the document must name.' },
+                document: { type: 'string',
+                            description: 'The metadata document, as XML.' }
+              },
+              required: ['sp', 'document'],
+              examples: [{
+                sp: 'https://sp.example.com/saml',
+                document: '<md:EntityDescriptor ' +
+                  'xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" ' +
+                  'entityID="https://sp.example.com/saml">' +
+                  '<md:SPSSODescriptor ' +
+                  'protocolSupportEnumeration=' +
+                  '"urn:oasis:names:tc:SAML:2.0:protocol">' +
+                  '<md:NameIDFormat>' +
+                  'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress' +
+                  '</md:NameIDFormat>' +
+                  '<md:AssertionConsumerService index="0" isDefault="true" ' +
+                  'Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" ' +
+                  'Location="https://sp.example.com/saml/acs"/>' +
+                  '</md:SPSSODescriptor></md:EntityDescriptor>'
+              }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed: `signature`, the ' +
+                                 'endpoint locations, how many signing ' +
+                                 'certificates were registered, and ' +
+                                 '`skipped`.' }
         ] },
 
       { method: 'GET', path: BASE + '/saml11', tag: 'SAML 1.1',
@@ -7681,15 +8142,19 @@ class AdminApi {
 
           { action: 'refresh-metadata',
             operationId: 'refreshApplicationMetadata',
-            summary: 'Fetch this service provider\'s SAML metadata and store ' +
-                     'its encryption certificate',
+            summary: 'Fetch this service provider\'s SAML metadata and ' +
+                     'consume it',
             description: 'Dials the `samlSpMetadataUrl` ON THE ENTRY — never ' +
-                         'a URL in the request body — parses the document, ' +
-                         'and writes `samlSpMetadata` and ' +
-                         '`samlEncryptionCertificate` back. That certificate ' +
-                         'is what an assertion for this service provider is ' +
-                         'encrypted to when `saml2.encryptAssertion` (or ' +
-                         '`saml2EncryptAssertion` on the entry) is on.\n\nIT ' +
+                         'a URL in the request body — and CONSUMES the ' +
+                         'document exactly as `POST ' +
+                         '/admin-api/saml2/upload-metadata` does: its ' +
+                         'endpoints become REGISTERED return addresses, its ' +
+                         'signing certificates what its requests are ' +
+                         'verified against, its encryption certificate what ' +
+                         'an assertion is encrypted to, and its ' +
+                         'NameIDFormats, AuthnRequestsSigned and ' +
+                         'WantAssertionsSigned are applied. That operation ' +
+                         'lists what is refused.\n\nIT ' +
                          'IS THE ONLY OPERATION IN THIS API THAT MAKES AN ' +
                          'OUTBOUND REQUEST, and the second surface in this ' +
                          'service that makes one at all — federation is the ' +
@@ -7703,14 +8168,11 @@ class AdminApi {
                          'FAILURE CHANGES NOTHING — not the document, not ' +
                          'the certificate — so an application that was ' +
                          'working does not stop working because a metadata ' +
-                         'host was down.\n\nThe `use="encryption"` ' +
-                         'KeyDescriptor ' +
-                         'is taken, falling back to ' +
-                         'one with no `use` at all; a ' +
-                         '`use="signing"` descriptor is deliberately NOT ' +
-                         'taken. ' +
-                         'The endpoints in the document are REPORTED and not ' +
-                         'applied.',
+                         'host was down.\n\nFor ENCRYPTION the ' +
+                         '`use="encryption"` KeyDescriptor is taken, falling ' +
+                         'back to one with no `use` at all; a ' +
+                         '`use="signing"` descriptor is never an encryption ' +
+                         'key, and is registered as a signing certificate.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15243,6 +15705,24 @@ class AdminApi {
           return self.sendJson(res, 401, { error: 'invalid_token', errors: [
             'That access token expired at ' +
             new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
+        }
+        // A TOKEN THIS SERVICE HAS SINCE REVOKED OR DISOWNED, AND ONE MADE FOR
+        // A PERSON WHOSE ACCOUNT IS DISABLED (2026-09-17, #36 follow-up). This
+        // gate checked neither, so an administrator's token went on working
+        // until it expired after a global logout — or after their account was
+        // disabled, which is the one case the disable exists for.
+        // `invalid_token` for both: RFC 6750 section 3.1's "revoked".
+        const { accountState } = self.deps;
+        const person = String(claims.sub || '');
+        if ((claims.jti && self.deps.stats.isRevoked(String(claims.jti))) ||
+            (person && person !== String(claims.client_id || '') &&
+             accountState.isDisabled(person))) {
+          errorCodes.mark(res, 'STS-API-0122');
+          res.set('WWW-Authenticate',
+                  'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+          return self.sendJson(res, 401, { error: 'invalid_token', errors: [
+            'That access token has been revoked, or the account it was ' +
+            'issued to is disabled.'] });
         }
         // RFC 9068 SECTION 4, STEPS 1 AND 3, in its order: the TYPE before the
         // issuer, and both before the audience. Every token this service signs

@@ -145,6 +145,7 @@ by construction rather than by six call sites remembering to do it. The callers:
 | The same screen reached from a SAML 2.0 `AuthnRequest` | `SAML 2.0` |
 | The same screen reached from a SAML 1.1 inter-site transfer | `SAML 1.1` |
 | A Kerberos ticket spent at `/authn/spnego` — integrated authentication, no screen | `Kerberos v5 (SPNEGO)` |
+| A wallet's presentation, collected at `/authn/wallet/wait` by the browser that started the sign-in (since 2026-09-17) | `OpenID4VP (a wallet)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person signed in at a *foreign* identity provider | `Federation (SAML 2.0)`, and the same for the other four federation protocols |
 
 A re-authentication is a *new* session and therefore a new
@@ -210,9 +211,11 @@ Per-protocol edges:
   demand, never reach the answer step. `IsPassive` with nothing usable, and a
   sign-in that came back carrying an authentication error, answer with a status
   `Response` and emit nothing.
-- **WS-Federation** — the call sits *below* the two `wauth` refusals, because
-  those end in a 400 and nothing was honoured; a `wfresh` too old never reaches
-  it and re-authenticates instead.
+- **WS-Federation** — the call sits in the branch that answers from the
+  session, which a `wauth` the session cannot meet never reaches: that request
+  is sent to sign in again (a re-authentication, which reports itself), or
+  refused if the one attempt did not produce the factor. A `wfresh` too old
+  never reaches it either and re-authenticates instead.
 - **SAML 1.1** — that profile has no `ForceAuthn` and no
   `RequestedAuthnContext`, so every arrival with a session is either single
   sign-on or that session's own sign-in coming back — exactly the pair the rule
@@ -482,7 +485,10 @@ session in CAEP's sense:
   expiring;
 - an **LDAP** bind or unbind, though the connection *is* a session in RFC 4511's
   sense (`/admin/sessions` lists it as one);
-- **WS-Trust**, **SCIM**, **SPIFFE**, **OpenID4VCI** and **OpenID4VP** requests;
+- **WS-Trust**, **SCIM**, **SPIFFE**, **OpenID4VCI** and **OpenID4VP** requests
+  — a presentation at the Verifier's own pages included. A wallet sign-in at
+  `/authn/wallet` is the exception, because it ends in a browser sign-on
+  session like any other door;
 - the **token, refresh, introspection, revocation and UserInfo** endpoints —
   including revoking every token a person holds;
 - reading the **admin console**, which presents the same session on every page

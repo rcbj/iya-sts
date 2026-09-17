@@ -169,6 +169,11 @@ import signals = require('../ssf/ssf_receivers');
 // requires only the logger and reads `ssf/ssf.ts` out of the require cache when
 // an event is due, so requiring it here moves no route — see its header.
 import accountSignals = require('../ssf/account_signals');
+// A DISABLED ACCOUNT, and the back-channel delivery a dead letter is retried
+// on (2026-09-17, #36 follow-up). Two libraries loaded long before this file,
+// neither of which requires anything back.
+import accountState = require('../common/account_state');
+import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
 import consent = require('../common/consent');
@@ -303,7 +308,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // credentials from their page (2026-09-13).
                        'reset-password', 'issue-password-reset',
                        'disable-primary-keys', 'disable-mfa',
-                       'require-mfa', 'stop-requiring-mfa'];
+                       'require-mfa', 'stop-requiring-mfa',
+                       // A disabled account (2026-09-17).
+                       'disable', 'enable'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -712,6 +719,8 @@ interface AdminActionsDeps {
   spiffeIdLib: typeof spiffeIdLib;
   signals: typeof signals;
   accountSignals: typeof accountSignals;
+  accountState: typeof accountState;
+  backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
   consent: typeof consent;
@@ -761,6 +770,8 @@ class AdminActions {
       spiffeIdLib: spiffeIdLib,
       signals: signals,
       accountSignals: accountSignals,
+      accountState: accountState,
+      backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
       consent: consent,
@@ -1311,6 +1322,27 @@ class AdminActions {
                                                                  '(none)'));
     const action = String(body.action || '');
     const user = String(body.user || body.username || '').trim();
+    // RETRY A DEAD BACK-CHANNEL DELIVERY (2026-09-17, #36 follow-up). It names
+    // a delivery rather than a person — the list it is pressed from is every
+    // delivery in the realm — so it is answered before the person is asked
+    // for. A new generation, a new Logout Token, the client's current address;
+    // `backchannel_logout.ts`'s retry() argues it.
+    if (action === 'retry-backchannel') {
+      const { backchannel } = this.deps;
+      const id = String(body.delivery || body.id || '').trim();
+      if (!id) {
+        log.debug("Leaving AdminActions.logoutAction(). No delivery named.");
+        return this.refused('STS-OAUTH-0550', { ok: false, errors: ['Name ' +
+            'the dead delivery to retry in `delivery`.'] });
+      }
+      const answer = backchannel.retry(id, String(body.actor || user || ''));
+      log.debug("Leaving AdminActions.logoutAction(). retry-backchannel " +
+                (answer.ok ? 'queued.' : 'refused.'));
+      return answer.ok
+        ? { ok: true, delivery: answer.row, message: answer.message }
+        : this.refused(errorCodes.codeOf(answer) || 'STS-OAUTH-0550',
+                       { ok: false, errors: [answer.message] });
+    }
     if (!logoutReader) {
       log.debug("Leaving AdminActions.logoutAction(). No logout reader is " +
                 "installed.");
@@ -1340,10 +1372,12 @@ class AdminActions {
       log.debug("Leaving AdminActions.logoutAction(). A global logout ended " +
                 result.terminated.length + ".");
       return { ok: true, result: result, message: result.message +
-               ' The relying parties that had to be NOTIFIED cannot be ' +
-               'reached from here: a front-channel notification is an iframe ' +
-               'in the signed-out person\'s browser, and this console is not ' +
-               'that browser. /logout is where those load.' };
+               ' The FRONT-CHANNEL notifications cannot be sent from here: ' +
+               'each is an iframe in the signed-out person\'s browser, and ' +
+               'this console is not that browser — /logout is where those ' +
+               'load. The BACK-CHANNEL Logout Tokens need no browser and are ' +
+               'sent by this service; the list below this form shows where ' +
+               'each got to.' };
     }
 
     if (action === 'end') {
@@ -1422,8 +1456,9 @@ class AdminActions {
     log.debug("Leaving AdminActions.logoutAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'There are four: global, end, ' +
-                                      'restore-token, restore-kerberos.'] });
+                                 'There are five: global, end, ' +
+                                      'restore-token, restore-kerberos, ' +
+                                      'retry-backchannel.'] });
   }
 
   permissionsAction(body) {
@@ -1935,6 +1970,35 @@ class AdminActions {
     const ctx = { via: (context || {}).via || 'console',
                   actor: (context || {}).actor || String(body.actor || ''),
                   base: String((context || {}).base || '') };
+
+    // DISABLE OR ENABLE AN ACCOUNT (2026-09-17, #36 follow-up). One call into
+    // `common/account_state.ts`, which writes the lock and — for a disable —
+    // ends everything the person holds through the global logout, so the
+    // console, the API and a SCIM `active: false` have the same consequence.
+    if (action === 'disable' || action === 'enable') {
+      const { accountState } = this.deps;
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+            'the person in `user`.'] });
+      }
+      const answer = accountState.setDisabled(who, action === 'disable', {
+        actor: ctx.actor, via: ctx.via,
+        reason: String(body.reason || '') });
+      if (!answer.ok) {
+        log.debug("Leaving AdminActions.usersAction(). The " + action +
+                  " was refused.");
+        return this.refused(errorCodes.codeOf(answer) || 'STS-ADMIN-0793',
+                            { ok: false, errors: answer.errors ||
+                              ['The account could not be ' + action + 'd.'] });
+      }
+      log.debug("Leaving AdminActions.usersAction(). " + action + "d " + who +
+                ".");
+      return { ok: true, username: who, disabled: answer.disabled,
+               changed: answer.changed, ended: answer.ended || null,
+               message: answer.message };
+    }
 
     const credentialAnswer = this.credentialAdminAction(action, body, ctx);
     if (credentialAnswer) {
@@ -2632,8 +2696,29 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0530', result);
       }
       const declared = result.application.allowedProtocols || [];
+      // A METADATA DOCUMENT GIVEN WITH THE CREATE IS CONSUMED (#37), exactly
+      // as an upload on the SAML 2.0 page is, so the form's promise — paste
+      // it here to configure a service provider this service cannot reach —
+      // is kept. A document that is refused leaves the entry created and says
+      // why; the create itself is not undone.
+      const created = this.applicationFieldsFrom(body);
+      const pasted = String(created.samlSpMetadata || '');
+      let consumed = null;
+      if (pasted.trim()) {
+        consumed = spMetadata.consume(result.application.identifier, pasted,
+                                      'upload');
+      }
+      const consumedSentence = !consumed ? ''
+        : consumed.ok
+          ? ' ' + consumed.message
+          : ' The metadata document given with it was stored and NOT ' +
+            'consumed: ' + (consumed.errors || []).join(' ');
       log.debug("Leaving AdminActions.applicationsAction().");
-      return { ok: true, application: result.application,
+      return { ok: true,
+               application: consumed && consumed.ok
+                 ? (applications.get(result.application.identifier) ||
+                    result.application)
+                 : result.application,
                message: '"' + result.application.identifier + '" is in the ' +
                         'registry. It has authenticated nothing yet — the ' +
                         'counters are zero and the entry says it was created ' +
@@ -2660,7 +2745,8 @@ class AdminActions {
                             'mode will judge it against them; without them a ' +
                             'redirect_uri is judged against the ' +
                             'oauth2.redirectUris setting instead — and in ' +
-                            'OAuth 2.1 mode it is refused.') };
+                            'OAuth 2.1 mode it is refused.') +
+                        consumedSentence };
     }
 
     if (action === 'set' || action === 'add' || action === 'remove') {
@@ -3023,8 +3109,9 @@ class AdminActions {
   // see the header — so this function decides nothing except which attribute
   // and which mode, and the registry refuses an attribute that is derived
   // rather than declared without being asked twice.
-  saml2Action(body) {
+  saml2Action(body): any {
     const { log, applications, saml2 } = this.deps;
+    const self = this;
     log.debug("Entering AdminActions.saml2Action(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
@@ -3070,29 +3157,174 @@ class AdminActions {
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0531', result);
     }
+    // ---------------------------------------------------------------------
+    // THE SIGNING CERTIFICATES (#37). `samlSigningCertificate` is what a
+    // service provider's request signatures are VERIFIED against since
+    // 2026-09-17, and it is a list — a rollover publishes two keys.
+    //
+    // `set-signing-certificate` REPLACES the list with the one certificate
+    // given (and an empty value clears it), which is what the action always
+    // meant while the attribute held one value; `remove-signing-certificate`
+    // takes one off by value. Both go through `updateApplication()`, which
+    // strips PEM armour and whitespace — the schema holds base64 DER, what a
+    // ds:X509Certificate carries — and refuses a certificate whose key signs
+    // nothing `common/crypto.js` verifies before anything is written.
+    // ---------------------------------------------------------------------
     if (action === 'set-signing-certificate') {
-      const result = applications.updateApplication(identifier, {
-        attribute: 'samlSigningCertificate', mode: 'set',
-        // Whitespace and any PEM armour stripped, because what the schema holds
-        // is base64 DER — which is what a ds:X509Certificate carries and what
-        // the metadata publishes. A PEM pasted in here would be stored as
-        // something no reader of that attribute expects, and nothing would say
-        // so until the day something tried to use it.
-        value: String(body.value || '').replace(/-----[^-]+-----/g, '')
-                                       .replace(/\s+/g, '')
-      });
+      const result = this.replaceSigningCertificates(identifier,
+                                                     String(body.value || ''));
       log.debug("Leaving AdminActions.saml2Action(). set-signing-certificate " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0531', result);
     }
+    if (action === 'remove-signing-certificate') {
+      const result = applications.updateApplication(identifier, {
+        attribute: 'samlSigningCertificate', mode: 'remove',
+        value: String(body.value || '')
+      });
+      log.debug("Leaving AdminActions.saml2Action(). " +
+                "remove-signing-certificate " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0531', result);
+    }
+    // THE OBSERVED CERTIFICATE — the one a signed request carried, which
+    // verifies nothing until an operator says it is the service provider's.
+    // `confirm-address`'s pair, for a key rather than an address.
+    if (action === 'confirm-signing-certificate' ||
+        action === 'discard-signing-certificate') {
+      const result = action === 'confirm-signing-certificate'
+        ? applications.confirmSigningCertificate(identifier)
+        : applications.discardSigningCertificate(identifier);
+      log.debug("Leaving AdminActions.saml2Action(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0531', result);
+    }
+    // The certificate the service provider's METADATA must be signed with.
+    if (action === 'set-metadata-signing-certificate') {
+      const result = applications.updateApplication(identifier, {
+        attribute: 'samlSpMetadataSigningCertificate', mode: 'set',
+        value: String(body.value || '')
+      });
+      log.debug("Leaving AdminActions.saml2Action(). " +
+                "set-metadata-signing-certificate " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0531', result);
+    }
+    // AN UPLOADED METADATA DOCUMENT, consumed exactly as a refresh consumes a
+    // fetched one — `sp_metadata.ts`'s `consume()`. `document` is a pasted
+    // document; `file` is what the console's file input carries, as text.
+    if (action === 'upload-metadata') {
+      const text = String(body.document || '') ||
+                   (typeof body.file === 'string' ? body.file :
+                     String((body.file && body.file.text) || ''));
+      if (!text.trim()) {
+        log.debug("Leaving AdminActions.saml2Action(). No document.");
+        return this.refused('STS-ADMIN-0791', { ok: false, errors: ['Send ' +
+                            'the metadata document in `document`.'] });
+      }
+      const result = spMetadata.upload(identifier, text, body.actor || '');
+      log.debug("Leaving AdminActions.saml2Action(). upload-metadata " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0791', result);
+    }
+    // THE TWO THAT DIAL OUT (#37 follow-up), and so answer with a PROMISE,
+    // as `applicationsAction()`'s `refresh-metadata` does: fetch this service
+    // provider's metadata again now (its URL, or the MDQ responder), and
+    // import one from the MDQ responder by entityID, creating its entry.
+    if (action === 'refresh-metadata') {
+      log.debug("Leaving AdminActions.saml2Action(). refresh-metadata.");
+      return spMetadata.refresh(identifier, { actor: body.actor || '' })
+        .then(function (result) {
+          return self.refusedBy('STS-ADMIN-0532', result);
+        });
+    }
+    if (action === 'mdq-import') {
+      log.debug("Leaving AdminActions.saml2Action(). mdq-import.");
+      return spMetadata.mdqImport(identifier, { actor: body.actor || '' })
+        .then(function (result) {
+          return self.refusedBy('STS-ADMIN-0532', result);
+        });
+    }
     log.debug("Leaving AdminActions.saml2Action(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The four are: register, ' +
+                                 'The eleven are: register, ' +
                                       'set-logout-service, ' +
                                       'remove-logout-service, ' +
-                                      'set-signing-certificate.'] });
+                                      'set-signing-certificate, ' +
+                                      'remove-signing-certificate, ' +
+                                      'confirm-signing-certificate, ' +
+                                      'discard-signing-certificate, ' +
+                                      'set-metadata-signing-certificate, ' +
+                                      'upload-metadata, refresh-metadata, ' +
+                                      'mdq-import.'] });
   }
+
+  // Replace a service provider's registered signing certificates with one —
+  // or with none, for an empty value. The NEW one is added first, so a
+  // refused certificate leaves the old list exactly as it was.
+  private replaceSigningCertificates(identifier, value) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.replaceSigningCertificates().");
+    const row = applications.get(identifier);
+    if (!row) {
+      log.debug("Leaving AdminActions.replaceSigningCertificates(). No " +
+                "such application.");
+      return this.refused('STS-REG-0021', { ok: false, errors: ['There is ' +
+        'no application called "' + identifier + '" in this registry. ' +
+        'Register the service provider first.'] });
+    }
+    const wanted = applications.samlCertificateBase64(value);
+    const before = row.fields ? row.fields.samlSigningCertificate : [];
+    const current = (Array.isArray(before) ? before : (before ? [before] : []))
+      .map(function (one) { return String(one); });
+    let last = null;
+    let changed = false;
+    if (wanted) {
+      last = applications.updateApplication(identifier, {
+        attribute: 'samlSigningCertificate', mode: 'add', value: wanted
+      });
+      if (!last.ok) {
+        log.debug("Leaving AdminActions.replaceSigningCertificates(). " +
+                  "Refused.");
+        return last;
+      }
+      changed = !!last.changed;
+    }
+    let removed = 0;
+    current.forEach(function (one) {
+      if (one === wanted) {
+        return;
+      }
+      last = applications.updateApplication(identifier, {
+        attribute: 'samlSigningCertificate', mode: 'remove', value: one
+      });
+      removed++;
+      changed = true;
+    });
+    if (!last) {
+      log.debug("Leaving AdminActions.replaceSigningCertificates(). Nothing " +
+                "to change.");
+      return { ok: true, changed: false, application: row,
+               message: 'Nothing changed: samlSigningCertificate was ' +
+                        'already empty.' };
+    }
+    log.debug("Leaving AdminActions.replaceSigningCertificates().");
+    return Object.assign({}, last, {
+      changed: changed,
+      message: !changed
+        ? 'Nothing changed: samlSigningCertificate already held exactly ' +
+          'this certificate.'
+        : wanted
+          ? 'samlSigningCertificate now holds exactly this certificate' +
+            (removed ? ' (' + removed + ' other(s) removed)' : '') +
+            '. This service provider\'s signatures are verified against it.'
+          : 'samlSigningCertificate was cleared (' + removed + ' removed). ' +
+            'This service provider\'s signatures are now recorded and not ' +
+            'verified.'
+    });
+  }
+
 
   // ONE action, where /admin/saml2 has four, and the three it does not have are
   // the three SAML 1.1 has no protocol for: a logout service to declare, a

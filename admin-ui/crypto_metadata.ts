@@ -870,8 +870,9 @@ class CryptoMetadata {
   //
   // An empty string for a verb means this service does not do it in that
   // family, and every one of those is a documented non-goal rather than an
-  // oversight — `saml/CLAUDE.md` on verifying an AuthnRequest signature,
-  // `federation/CLAUDE.md` on decrypting a partner's assertion. The page prints
+  // oversight — `federation/CLAUDE.md` on decrypting a partner's assertion
+  // (`saml/CLAUDE.md` on verifying an AuthnRequest signature was the other,
+  // until #37 reversed it on 2026-09-17). The page prints
   // them as "—" and the `whatItDoesNot` line beside them says which.
   // ---------------------------------------------------------------------------
   private buildFamilies(): Family[] {
@@ -1259,6 +1260,8 @@ class CryptoMetadata {
         signs: 'Every access token and refresh token, and the ID Token, with ' +
                'the realm\'s RSA key as RS256. A client that registers ' +
                '`id_token_signed_response_alg` gets that algorithm instead, ' +
+               'for its ID Token and its back-channel Logout Token alike ' +
+               '(section 2.4: the same keys as ID Tokens), ' +
                'out of the shared JWS table — every curve, both Edwards ' +
                'curves, and the post-quantum and composite ones. A signed ' +
                'UserInfo response the same way, plus the HMAC family (signed ' +
@@ -1391,7 +1394,11 @@ class CryptoMetadata {
           return [
             ['Outbound request signature',
              ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']],
-            ['Inbound signature, any of', Object.keys(xmldsig.SIG_METHODS)],
+            ['Inbound signature, any of',
+             stsCrypto.xmlSignatureAlgorithms().verified.map(
+               function (row) {
+                 return row.uri;
+               })],
             ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS]
           ];
         } },
@@ -1405,8 +1412,18 @@ class CryptoMetadata {
                'specification\'s doing rather than this service\'s: it is a ' +
                'DETACHED signature over the octets of the query string, with ' +
                '`SigAlg` naming the algorithm as a parameter.',
-        verifies: 'Its own artifacts, and a service provider\'s ' +
-                  '`<EncryptedID>` is decrypted rather than verified.',
+        verifies: 'A service provider\'s AuthnRequest, LogoutRequest and ' +
+                  'LogoutResponse and ArtifactResolve signatures (since ' +
+                  '2026-09-17) — the Redirect binding\'s detached query ' +
+                  'signature, the SimpleSign binding\'s over the form ' +
+                  'values, or an enveloped one — against the service ' +
+                  'provider\'s REGISTERED certificates (RSA, EC, EdDSA, ' +
+                  'DSA, ML-DSA, SLH-DSA), never the one in the request; a ' +
+                  'consumed metadata document\'s own signature against the ' +
+                  'entry\'s certificate or the realm\'s trust anchors; and ' +
+                  'its own artifacts. A service ' +
+                  'provider\'s `<EncryptedID>` is decrypted rather than ' +
+                  'verified.',
         encrypts: 'The assertion in a Response, as `<EncryptedAssertion>`, ' +
                   'and the NameID in a LogoutRequest as `<EncryptedID>` — ' +
                   'per application, to the certificate held on its entry. ' +
@@ -1418,11 +1435,14 @@ class CryptoMetadata {
         hashes: 'SHA-256 for the Reference digest; SHA-1 inside ' +
                 'RSA-OAEP-MGF1P, because that is what the URI MEANS rather ' +
                 'than a choice this service made.',
-        whatItDoesNot: 'It does not verify an AuthnRequest\'s signature and ' +
-                       'it does not consume service provider metadata — both ' +
-                       'are recorded, neither is checked. A service provider ' +
-                       'it holds no certificate for gets the assertion IN ' +
-                       'CLEAR, loudly, rather than being refused.',
+        whatItDoesNot: 'It does not accept a SHA-1 signature unless ' +
+                       'saml.allowSha1Signatures is on, nor MD5, a MAC or ' +
+                       'a stateful hash-based signature at all. A service ' +
+                       'provider it holds no certificate for, with ' +
+                       'encryption turned on, gets the assertion IN CLEAR, ' +
+                       'loudly, in development, and is refused in product; ' +
+                       'one whose metadata publishes an encryption key is ' +
+                       'encrypted to in both.',
         envelopes: ['xmldsig', 'xmlenc', 'c14n'],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -1430,6 +1450,11 @@ class CryptoMetadata {
           return [
             ['Signature',
              ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']],
+            ['Inbound signature, any of',
+             stsCrypto.xmlSignatureAlgorithms().verified.map(
+               function (row) {
+                 return row.uri;
+               })],
             ['Block cipher (saml2.encryptionAlgorithm)',
              [String(config.value('saml2.encryptionAlgorithm'))]],
             ['Key transport (saml2.keyTransportAlgorithm)',
@@ -1480,7 +1505,10 @@ class CryptoMetadata {
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
-        whatItDoesNot: 'It fakes no `wauth` and dereferences no `wreqptr` — ' +
+        whatItDoesNot: 'It fakes no `wauth` — a demand the session cannot ' +
+                       'meet is a step-up, and an AuthenticationMethod is ' +
+                       'what the session did — and dereferences no ' +
+                       '`wreqptr` — ' +
                        'fetching a URL somebody registered is a server-side ' +
                        'request forgery with a citation attached.',
         envelopes: ['xmldsig', 'c14n', 'wss'],
@@ -1672,9 +1700,9 @@ class CryptoMetadata {
                 'understands. Each is checked against the openssl this ' +
                 'process actually has, so a challenge never names an ' +
                 'algorithm the server cannot compute.',
-        whatItDoesNot: 'It deactivates nobody on `active: false`, and it ' +
-                       'stores no password of its own — the Digest password ' +
-                       'is a setting.',
+        whatItDoesNot: 'It stores no password of its own — the Digest ' +
+                       'password is a setting. (`active: false` DOES ' +
+                       'disable the account, since 2026-09-17.)',
         envelopes: ['digest', 'hoba', 'jws', 'dpop', 'mtls'],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -2093,8 +2121,11 @@ class CryptoMetadata {
         hashes: 'SHA-256 for every SD-JWT disclosure digest, and inside the ' +
                 'BBS ciphersuite for the message mapping.',
         whatItDoesNot: 'It verifies nothing in a credential\'s VALUES, which ' +
-                       'are invented, and it turns a verified presentation ' +
-                       'into a sign-on nowhere.',
+                       'are invented, and a verified presentation signs ' +
+                       'somebody in only at /authn/wallet, only for a ' +
+                       'holder-bound SD-JWT VC this realm issued — never ' +
+                       'at the bar door, and never on a foreign issuer\'s ' +
+                       'signature.',
         envelopes: ['jws', 'sdjwt', 'dataintegrity', 'did'],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -2748,6 +2779,10 @@ class CryptoMetadata {
             scimAuth } = this.deps;
     log.debug("Entering CryptoMetadata.signatures().");
     const composites = Object.keys(pqJose.COMPOSITES || {});
+    const verifiedXml = stsCrypto.xmlSignatureAlgorithms().verified.map(
+      function (row) {
+        return row.uri;
+      });
     const out = {
       jws: stsCrypto.JWS_SIGNING_ALGS.map(function (alg) {
         const spec = stsCrypto.JWS_ALGS[alg];
@@ -2767,6 +2802,10 @@ class CryptoMetadata {
         const spec = xmldsig.SIG_METHODS[uri];
         return { uri: uri, label: spec.label, family: spec.family,
                  hash: spec.hash, keyKind: spec.keyKind,
+                 // WHETHER AN INBOUND SIGNATURE MADE WITH IT IS VERIFIED
+                 // (common/crypto.js section 1a, #37 follow-up) — the table
+                 // names families only a browser page can sign with.
+                 verifiedHere: verifiedXml.indexOf(uri) >= 0,
                  // What this service will SIGN with, as opposed to verify. One
                  // row, and it is worth saying which: six signers used to type
                  // this URI out separately.

@@ -12,6 +12,8 @@
 export interface ClaimResult {
   ok: boolean;
   handle?: any;
+  // When the claim was taken, by the store's clock (ms) — a fencing token.
+  claimedAt?: number;
   reason?: 'used' | 'store' | string;
   why?: string;
   existing?: any;

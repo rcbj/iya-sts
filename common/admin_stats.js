@@ -623,6 +623,21 @@ function artifactRevocation(record) {
   return revokedArtifacts.get(record.key) || null;
 }
 
+// THE MARK BY HANDLE ALONE (2026-09-17, #38), for a caller that kept the
+// handle an artifact was recorded under and not the record: the OpenID4VP
+// sign-in register (`oid4vc/vc_issued.ts`) asks it whether an administrator
+// disowned the credential a presentation carries, and the status lists
+// (`oid4vc/vc_status.ts`) ask it which bit to publish. The record may have
+// been forgotten to MAX_ARTIFACTS since; the register keeps the mark, and
+// that is the only half this question needs.
+function artifactRevokedByKey(key) {
+  log.debug("Entering artifactRevokedByKey().");
+  const mark = key ? artifactRevocation({ key: String(key) }) : null;
+  log.debug("Leaving artifactRevokedByKey(). " + (mark ? "Revoked." :
+                                                  "Not revoked."));
+  return mark;
+}
+
 // One artifact with the revocation overlaid, so that a row from another
 // process's segment says who revoked it and when rather than only that it is
 // in the revoked state.
@@ -973,6 +988,12 @@ function recordCredential(format, detail) {
   log.debug("Entering recordCredential(). format=" + format);
   const record = recordArtifact('Credential (' + format + ')', {
     subject: detail.subject || '',
+    // THE PERSON IT WAS ISSUED FOR, when that is not its subject (#38). An
+    // ldp_vc names its HOLDER KEY as a did:jwk and says nothing about whose
+    // wallet that is, so without this the credential was nobody's on
+    // /admin/users and beyond the reach of that person's global sign-out.
+    // Set only where the issuer verified the access token that named them.
+    person: detail.person || '',
     configId: detail.configId || '',
     expiresAt: detail.expiresAt || 0
   });
@@ -3760,7 +3781,8 @@ function userDetail(key) {
   // revocation. The SAML assertions beside it revoked correctly, which is what
   // made it look like a Kerberos problem for a day.
   const theirArtifacts = allArtifacts().filter(function (record) {
-    return identityKeyOf(record.subject) === wanted;
+    return identityKeyOf(record.subject) === wanted ||
+           (!!record.person && identityKeyOf(record.person) === wanted);
   }).map(function (one) {
     const record = withRevocation(one);
     return Object.assign({ state: artifactStateOf(record, nowMs) }, record);
@@ -4162,6 +4184,7 @@ module.exports = {
   restoreArtifact: restoreArtifact,
   artifactByKey: artifactByKey,
   revokeArtifactsWhere: revokeArtifactsWhere,
+  artifactRevokedByKey: artifactRevokedByKey,
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,

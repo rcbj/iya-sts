@@ -1082,6 +1082,19 @@ function frontchannelUriProblem(value) {
   return problem;
 }
 
+// OpenID Connect Back-Channel Logout 1.0's `backchannel_logout_uri`
+// (2026-09-17, #36). Section 2.2: an absolute URI, http or https, with no
+// fragment. It is not framed — this service POSTs to it — so the reason
+// http(s) is required is a different one from the front-channel URI's: the
+// outbound policy dials nothing else. `redirectUriProblem()` already refuses a
+// fragment, which is the other half of section 2.2.
+function backchannelUriProblem(value) {
+  log.debug("Entering backchannelUriProblem().");
+  const problem = redirectUriProblem(value, { privateUse: false });
+  log.debug("Leaving backchannelUriProblem().");
+  return problem;
+}
+
 // ---------------------------------------------------------------------------
 // AN ORIGIN, AS CORS COMPARES ONE (2026-09-13).
 //
@@ -1359,6 +1372,7 @@ module.exports = {
   redirectUriProblem: redirectUriProblem,
   isPrivateUseRedirect: isPrivateUseRedirect,
   frontchannelUriProblem: frontchannelUriProblem,
+  backchannelUriProblem: backchannelUriProblem,
   // CORS origins: the refusal and the serialisation, from one parse.
   originProblem: originProblem,
   normaliseOrigin: normaliseOrigin,

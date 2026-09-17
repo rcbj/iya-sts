@@ -1493,6 +1493,29 @@ const CODES = [
     summary: 'A signing-key or certificate-authority row another process ' +
       'wrote could not be decrypted or parsed, so it was not adopted.',
     spec: '' },
+  { code: 'STS-KEYS-0059',
+    summary: 'A detached HTTP Redirect binding signature does not verify ' +
+      'against the certificate it was checked with.',
+    spec: 'the caller\'s own refusal' },
+  { code: 'STS-KEYS-0060',
+    summary: 'A detached HTTP Redirect binding signature could not be ' +
+      'checked: no certificate, no Signature, an unreadable certificate, a ' +
+      'Signature that is not base64, or an unreadable certificate. (An ' +
+      'algorithm this service does not verify is STS-KEYS-0061 since ' +
+      '2026-09-17; SHA-1 refused by policy is STS-KEYS-0062.)',
+    spec: 'the caller\'s own refusal' },
+  { code: 'STS-KEYS-0061',
+    summary: 'An XML signature (enveloped, or an HTTP binding\'s detached ' +
+      'one) names a SignatureMethod or DigestMethod this service does not ' +
+      'verify — MD5, a MAC, Whirlpool, ESIGN, pre-hashed EdDSA, HSS/LMS or ' +
+      'an unknown URI — or RSASSA-PSS parameters node cannot express. ' +
+      'Refused as not checkable, on every XML signature path.',
+    spec: 'refusal by the calling protocol' },
+  { code: 'STS-KEYS-0062',
+    summary: 'An XML signature uses SHA-1 (its SignatureMethod or a ' +
+      'DigestMethod) and saml.allowSha1Signatures is off (the default), so ' +
+      'it was refused before any cryptography, on every XML signature path.',
+    spec: 'refusal by the calling protocol' },
   // ===== PKI ===============================================================
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -3696,6 +3719,36 @@ const CODES = [
       'hashes) could not be sealed under the key-encryption key when it was ' +
       'rewritten, so the change was not stored.',
     spec: 'none — the spend that asked is refused (STS-AUTHN-0093)' },
+  { code: 'STS-AUTHN-0196',
+    summary: 'A password presented as the second factor after a wallet ' +
+      'sign-in was refused.',
+    spec: 'HTTP 200 page at /authn/password-factor, with the reason' },
+  { code: 'STS-AUTHN-0200',
+    summary: 'A password was presented for an account that is disabled ' +
+      '(pwdAccountLockedTime on its entry), and it was refused before it ' +
+      'was compared, in every mode.',
+    spec: 'the door\'s own refusal: "authentication failed" on the sign-in ' +
+      'screen, LDAP 49, invalid_grant, a SOAP fault, SCIM 401' },
+  { code: 'STS-AUTHN-0201',
+    summary: 'A session, or anything issued on a person\'s behalf, was ' +
+      'refused because the account is disabled — at authn.startSession(), ' +
+      'a live session presented again, or the issuance gate.',
+    spec: 'the door\'s own refusal (the sign-in screen again, a 403 page, ' +
+      'access_denied)' },
+  { code: 'STS-AUTHN-0202',
+    summary: 'Disabling or enabling an account could not write ' +
+      'pwdAccountLockedTime onto the person\'s entry.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-AUTHN-0203',
+    summary: 'An account was disabled and ending what the person held (the ' +
+      'global logout) failed; the lock stands and every door refuses them.',
+    spec: 'none — logged; the disable\'s reply says what failed' },
+  { code: 'STS-AUTHN-0204',
+    summary: 'A sign-in that demands a security key (a WS-Federation ' +
+      'HardwareToken wauth, or OAuth acr_values naming only key aliases) ' +
+      'was answered with something else — a one-time code, a recovery ' +
+      'code — or the account holds a second factor and no key to present.',
+    spec: 'HTTP 400 invalid_request, or the sign-in screen again' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -5488,6 +5541,117 @@ const CODES = [
       'over a connection carrying no matching certificate, while ' +
       'oauth2.accessTokenRequireMtls is on.',
     spec: 'invalid_token (HTTP 401)' },
+  // OpenID Connect Back-Channel Logout 1.0 (2026-09-17, #36). Each is the
+  // FINAL outcome of one delivery — a retried failure is recorded once, when
+  // the attempts run out — on a `logout.backchannel` audit row. None is sent
+  // to anybody: the sign-out that caused the delivery answered before it.
+  { code: 'STS-OAUTH-0532',
+    summary: 'A back-channel Logout Token was not sent because ' +
+      'federation.outbound is off, so this service makes no outbound ' +
+      'request.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0533',
+    summary: 'A back-channel Logout Token was not sent because the ' +
+      'client\'s backchannel_logout_uri cannot be dialled: not http(s), ' +
+      'plain http with federation.outboundAllowInsecure off, or not a URL.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0534',
+    summary: 'Product mode: a back-channel Logout Token was not sent because ' +
+      'the backchannel_logout_uri resolves to a loopback, private, ' +
+      'link-local or reserved address.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0535',
+    summary: 'Product mode: a back-channel Logout Token was not sent because ' +
+      'the backchannel_logout_uri\'s host could not be resolved.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0536',
+    summary: 'A relying party answered a back-channel Logout Token with 400, ' +
+      'which Back-Channel Logout 1.0 section 2.8 makes a final refusal; it ' +
+      'is not retried.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0537',
+    summary: 'A relying party answered a back-channel Logout Token with a ' +
+      'status other than 200, 204 or 400 — after every attempt where the ' +
+      'status is one worth retrying (5xx, 408, 429).',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0538',
+    summary: 'A relying party did not answer a back-channel Logout Token ' +
+      'within oauth2.backchannelLogoutTimeoutMs, on every attempt.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0539',
+    summary: 'A back-channel Logout Token could not be delivered because the ' +
+      'connection failed (DNS, refused, TLS), on every attempt.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0540',
+    summary: 'A relying party answered a back-channel Logout Token with a ' +
+      'redirect, which is not followed.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0541',
+    summary: 'A back-channel Logout Token could not be signed — the client ' +
+      'registered an id_token_signed_response_alg this service cannot use ' +
+      'for it, or an HMAC algorithm with no client secret.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0542',
+    summary: 'A back-channel Logout Token was not sent because the session ' +
+      'did not record the issuer that client\'s ID Token was issued by (a ' +
+      'session older than the feature), and no fallback was available.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0543',
+    summary: 'A back-channel Logout Token request could not be built from ' +
+      'its options.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0544',
+    summary: 'A stored backchannel_logout_uri is not an http or https URL ' +
+      'without a fragment, so the client was not sent a Logout Token.',
+    spec: 'none — the delivery is listed with the reason, and the value is ' +
+      'logged' },
+  { code: 'STS-OAUTH-0545',
+    summary: 'The periodic back-channel logout summary: Logout Token ' +
+      'deliveries were dead-lettered, or deferred because the claim store ' +
+      'could not be asked, since the last summary (counted by code).',
+    spec: 'none — one warning per realm per ' +
+      'oauth2.backchannelLogoutSummaryS; the rows are on /admin/logout' },
+  { code: 'STS-OAUTH-0546',
+    summary: 'A client registered id_token_encrypted_response_alg and its ' +
+      'ID Token (or back-channel Logout Token) could not be encrypted — ' +
+      'the registration is no longer one this service can honour, or its ' +
+      'jwks holds no key of the right type.',
+    spec: 'the ID Token is not issued (server_error with the sentence); ' +
+      'a Logout Token delivery is dead-lettered' },
+  { code: 'STS-OAUTH-0547',
+    summary: 'A back-channel Logout Token attempt was not made because the ' +
+      'cluster claim store could not be asked; the delivery stays pending ' +
+      'and the next sweep tries again.',
+    spec: 'none — counted in the STS-OAUTH-0545 summary' },
+  { code: 'STS-OAUTH-0548',
+    summary: 'A back-channel Logout Token delivery was still pending when ' +
+      'oauth2.backchannelLogoutRetentionS passed, and was dead-lettered.',
+    spec: 'none — a logout.backchannel audit row and a dead letter on ' +
+      '/admin/logout' },
+  { code: 'STS-OAUTH-0549',
+    summary: 'The back-channel logout delivery sweep failed in a realm.',
+    spec: 'none — logged; the next sweep runs as scheduled' },
+  { code: 'STS-OAUTH-0550',
+    summary: 'A retry of a back-channel Logout Token delivery was refused: ' +
+      'no delivery was named, it is unknown or not a dead letter, or the ' +
+      'client has no usable backchannel_logout_uri or recorded issuer.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-OAUTH-0551',
+    summary: 'A token request — any grant carrying a person, a refresh ' +
+      'token included — was refused because the account is disabled.',
+    spec: 'invalid_grant (HTTP 400)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -5750,6 +5914,116 @@ const CODES = [
     summary: 'An artifact resolution (2.0 or 1.1) failed while its answer ' +
       'was being built or sent, after the artifact had been spent.',
     spec: 'StatusCode Responder (HTTP 200) when nothing was sent yet' },
+  { code: 'STS-SAML-0061',
+    summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest or ' +
+      'LogoutResponse carried a signature (the Redirect binding\'s query ' +
+      'signature or an enveloped one) that does not verify against any of ' +
+      'its registered signing certificates. Refused in every mode.',
+    spec: 'an HTTP 403 page; no Response is sent and no session ends' },
+  { code: 'STS-SAML-0062',
+    summary: 'A SAML 2.0 service provider\'s request signature could not be ' +
+      'checked at all — an algorithm common/crypto.js does not verify (MD5, ' +
+      'a MAC, HSS/LMS…), an unreadable key, a ' +
+      'reference naming something other than the message (signature ' +
+      'wrapping), a malformed signature, or a Signature parameter without ' +
+      'the SAMLRequest and SigAlg it signs. Refused in every mode.',
+    spec: 'an HTTP 403 page; no Response is sent and no session ends' },
+  { code: 'STS-SAML-0063',
+    summary: 'An unsigned SAML 2.0 AuthnRequest, LogoutRequest or ' +
+      'LogoutResponse — or a signed one with no registered certificate to ' +
+      'verify it — was refused because signed requests are required ' +
+      '(saml2.requireSignedAuthnRequests, on in product by default, or the ' +
+      'service provider\'s metadata saying AuthnRequestsSigned).',
+    spec: 'an HTTP 403 page; no Response is sent and no session ends' },
+  { code: 'STS-SAML-0064',
+    summary: 'A SAML 2.0 service provider\'s request was signed with an ' +
+      'inclusive canonicalization, which this service did not verify. ' +
+      'Retired 2026-09-17: the signed element is the message root, so ' +
+      'inclusive c14n is verified like exclusive.',
+    spec: 'an HTTP 403 page', retired: true },
+  { code: 'STS-SAML-0065',
+    summary: 'A service provider\'s metadata document was not consumed: ' +
+      'samlSpMetadataSigningCertificate is set and the document is unsigned ' +
+      'or its signature does not verify against that certificate.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0066',
+    summary: 'A service provider\'s metadata document was not consumed: its ' +
+      'entityID is not the application it was refreshed or uploaded for.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0067',
+    summary: 'An uploaded service provider metadata document exceeded ' +
+      'saml2.spMetadataMaxBytes and was not read.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0068',
+    summary: 'A service provider\'s metadata document was not consumed: its ' +
+      'validUntil has already passed.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0069',
+    summary: 'An AuthnRequest named an AssertionConsumerServiceIndex that no ' +
+      'endpoint in the service provider\'s consumed metadata has, or whose ' +
+      'endpoint is on a binding this identity provider does not deliver on.',
+    spec: 'an HTTP 400 page; no Response is sent' },
+  { code: 'STS-SAML-0070',
+    summary: 'An AuthnRequest named an AssertionConsumerServiceURL that is ' +
+      'not one of the endpoints in the service provider\'s consumed ' +
+      'metadata (in every mode).',
+    spec: 'an HTTP 400 page; no Response is sent' },
+  { code: 'STS-SAML-0071',
+    summary: 'An AuthnRequest\'s NameIDPolicy asked for a Format the service ' +
+      'provider\'s consumed metadata does not declare.',
+    spec: 'a Response with StatusCode Requester / InvalidNameIDPolicy' },
+  { code: 'STS-SAML-0072',
+    summary: 'An AuthnRequest named no assertion consumer service, and no ' +
+      'endpoint in the service provider\'s consumed metadata is on a binding ' +
+      'this identity provider delivers on (or on the ProtocolBinding asked ' +
+      'for).',
+    spec: 'an HTTP 400 page; no Response is sent' },
+  { code: 'STS-SAML-0073',
+    summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest, ' +
+      'LogoutResponse or ArtifactResolve was signed with SHA-1 (its ' +
+      'SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is ' +
+      'off, the default. Refused in every mode.',
+    spec: 'an HTTP 403 page (a SOAP ArtifactResponse with StatusCode ' +
+      'Requester for ArtifactResolve); no Response is sent' },
+  { code: 'STS-SAML-0074',
+    summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest, ' +
+      'LogoutResponse or ArtifactResolve was refused because the metadata ' +
+      'consumed for it has EXPIRED — its effective validUntil (the ' +
+      'earliest on the EntitiesDescriptor, EntityDescriptor and ' +
+      'SPSSODescriptor) has passed. Refused in every mode until a newer ' +
+      'document is consumed.',
+    spec: 'an HTTP 403 page (a SOAP ArtifactResponse with StatusCode ' +
+      'Requester for ArtifactResolve); no Response is sent' },
+  { code: 'STS-SAML-0075',
+    summary: 'A Metadata Query (MDQ) import was asked for and ' +
+      'saml2.mdqBaseUrl is not set in the realm.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0076',
+    summary: 'The background refresh of a service provider\'s stale ' +
+      'metadata failed (the fetch, or consuming what it fetched). Recorded ' +
+      'when the state changes and summarised hourly while it persists; the ' +
+      'last good document stays in force until its validUntil.',
+    spec: '' },
+  { code: 'STS-SAML-0077',
+    summary: 'A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came ' +
+      'from a caller that is not authenticated — no signature verifying ' +
+      'against the party\'s registered certificates and no TLS client ' +
+      'certificate that is one of them — where authenticated callers are ' +
+      'required (saml2.requireSignedAuthnRequests, on in product by ' +
+      'default). The artifact is not spent.',
+    spec: 'a SOAP response with StatusCode Requester (HTTP 200)' },
+  { code: 'STS-SAML-0078',
+    summary: 'An artifact was asked for by a party other than the one it ' +
+      'was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 ' +
+      'responder path, names another). Refused in every mode; the artifact ' +
+      'is not spent.',
+    spec: 'a SOAP response with StatusCode Requester (HTTP 200)' },
+  { code: 'STS-SAML-0079',
+    summary: 'A service provider metadata fetch (a refresh, the background ' +
+      'refresher or an MDQ lookup) was refused because the host resolves to ' +
+      'a loopback, private, link-local or reserved address, or did not ' +
+      'resolve, in product mode (federation_http.ts vetHost()).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -5865,12 +6139,14 @@ const CODES = [
     summary: 'wfresh is not a non-negative number of minutes.',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0009',
-    summary: 'wauth demanded a hardware token and the existing browser ' +
-      'session used no security key.',
+    summary: 'wauth demanded a hardware token, the person was sent to sign ' +
+      'in again with a second factor required (a step-up), and the session ' +
+      'that came back still used no security key.',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0010',
-    summary: 'wauth demanded multi-factor authentication and the existing ' +
-      'browser session had only one factor.',
+    summary: 'wauth demanded multi-factor authentication, the person was ' +
+      'sent to sign in again with a second factor required (a step-up), and ' +
+      'the session that came back still had only one factor.',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0011',
     summary: 'The issuance policy (the role gate) refused a token for the ' +
@@ -6760,6 +7036,10 @@ const CODES = [
       'stored key — was asked of a trust realm that has no KDC, so there is ' +
       'no principal for the key to belong to.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-KRB-0129',
+    summary: 'An AS-REQ, or an S4U2Self naming a person, was refused ' +
+      'because that person\'s account is disabled.',
+    spec: 'KDC_ERR_CLIENT_REVOKED (18)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -7052,6 +7332,12 @@ const CODES = [
     summary: 'Another node signed an identity out and this node could not ' +
       'close the directory connections bound as it; they may still be open.',
     spec: 'none — logged' },
+  { code: 'STS-LDAP-0097',
+    summary: 'An account lock (pwdAccountLockedTime) changed through a ' +
+      'directory write and handing the change to account_state.ts failed, ' +
+      'so what the person held may not have been ended.',
+    spec: 'none — logged; the write stands and every door refuses the ' +
+      'person' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -8006,6 +8292,160 @@ const CODES = [
       'Code attempt — so the request was refused rather than accepted ' +
       'unproven.',
     spec: 'invalid_grant or invalid_proof (HTTP 400)' },
+  // --- signing in with a wallet, /authn/wallet (2026-09-17, #38) -----------
+  { code: 'STS-VC-0052',
+    summary: 'A wallet sign-in was refused because oid4vp.signIn is off.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0053',
+    summary: 'A wallet sign-in named no pending authentication — never ' +
+      'started, expired, or already used — so there was nothing to sign in ' +
+      'to.',
+    spec: 'HTTP 400 page' },
+  // Retired 2026-09-17 (#38's follow-ups): a wallet sign-in under a demand
+  // for two factors is now followed by a second factor rather than refused.
+  // Kept, because a code is never reused.
+  { code: 'STS-VC-0054',
+    summary: 'A wallet sign-in was refused for a request that demanded two ' +
+      'factors (retired: it is now followed by a second factor).',
+    spec: 'HTTP 403 page', retired: true },
+  { code: 'STS-VC-0055',
+    summary: 'A wallet sign-in was asked about by a browser that did not ' +
+      'start it (no binding cookie, or the wrong one), so it was not ' +
+      'finished there.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0056',
+    summary: 'A wallet sign-in\'s transaction is unknown, has expired, or ' +
+      'belongs to a different pending authentication.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0057',
+    summary: 'A second OpenID4VP response arrived for a sign-in\'s ' +
+      'transaction, which is answered once.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-VC-0058',
+    summary: 'A presentation verified and signed nobody in: the credential ' +
+      'was signed by a certificate in oid4vp.trustedIssuerCertificates, not ' +
+      'by this realm\'s issuer.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0059',
+    summary: 'A presentation verified and signed nobody in: this realm has ' +
+      'no record of issuing the credential for a person on an access token ' +
+      'it verified (another realm\'s, a foreign token\'s, or unknown).',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0060',
+    summary: 'A presentation verified and signed nobody in: the directory ' +
+      'entry the credential was issued for no longer exists.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0061',
+    summary: 'A presentation made to sign in did not verify (or was not a ' +
+      'presentation at all), so nobody was signed in.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0062',
+    summary: 'A wallet sign-in was already finished — here or on another ' +
+      'node — and was not finished again.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0063',
+    summary: 'The cluster claim store could not be asked whether a wallet ' +
+      'sign-in was already finished, so it was refused rather than finished ' +
+      'unproven.',
+    spec: 'HTTP 503 page' },
+  { code: 'STS-VC-0064',
+    summary: 'A presentation verified and mapped to a person, and the ' +
+      'issuance policy refused them a session.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0065',
+    summary: 'A wallet sign-in was returned to with a response_code that is ' +
+      'not the one given to the wallet.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-VC-0066',
+    summary: 'A presentation verified and signed nobody in: its subject or ' +
+      'holder key disagrees with what this realm recorded when it issued ' +
+      'the credential.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0067',
+    summary: 'An unexpected failure inside the wallet sign-in door.',
+    spec: 'HTTP 500 page' },
+  { code: 'STS-VC-0068',
+    summary: 'An issued credential could not be recorded as one that may ' +
+      'sign its subject in; the credential was issued anyway.',
+    spec: '' },
+  { code: 'STS-VC-0069',
+    summary: 'A wallet sign-in request carried a malformed query parameter.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-VC-0070',
+    summary: 'A wallet sign-in was withdrawn by a sign-out after the wallet ' +
+      'had presented and before the browser collected the session.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  // --- #38's follow-ups: disowning, status lists, the Digital Credentials
+  // API, every format, key attestations -------------------------------------
+  { code: 'STS-VC-0071',
+    summary: 'A presentation verified and signed nobody in: the credential ' +
+      'was disowned — by a global sign-out, an administrator\'s revocation, ' +
+      'or its status-list entry.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0072',
+    summary: 'A presented credential\'s status list says it is revoked or ' +
+      'suspended, or no statement about its status could be made (the list ' +
+      'could not be fetched or verified, or the credential names none).',
+    spec: 'invalid_request (HTTP 400); HTTP 403 page at a sign-in' },
+  { code: 'STS-VC-0073',
+    summary: 'A Digital Credentials API answer was not a ' +
+      'openid4vp-v1-signed DigitalCredential, was not in the response mode ' +
+      'the request asked for, or its encrypted response could not be ' +
+      'opened.',
+    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0074',
+    summary: 'A Digital Credentials API answer was posted from a page on an ' +
+      'origin other than the one the request named in expected_origins.',
+    spec: 'HTTP 403 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0075',
+    summary: 'No status-list index could be allocated for a credential: the ' +
+      'claim store could not be asked, or the list is full.',
+    spec: 'server_error (HTTP 500) at the credential endpoint' },
+  { code: 'STS-VC-0076',
+    summary: 'A status list (Token Status List or Bitstring Status List ' +
+      'credential) could not be built or signed.',
+    spec: 'HTTP 500' },
+  { code: 'STS-VC-0077',
+    summary: 'A historical status list was asked for (the time parameter), ' +
+      'which this issuer does not keep.',
+    spec: 'HTTP 501' },
+  { code: 'STS-VC-0078',
+    summary: 'A Bitstring Status List was asked for a purpose this issuer ' +
+      'does not publish.',
+    spec: 'HTTP 404' },
+  { code: 'STS-VC-0079',
+    summary: 'A credential could not be built (its status index, its ' +
+      'signature, or its proof).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-VC-0080',
+    summary: 'An ldp_vc credential was asked for a holder key no Data ' +
+      'Integrity cryptosuite here can prove (RSA, secp256k1, Ed448, a ' +
+      'composite).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0081',
+    summary: 'The Digital Credentials API form was submitted with no answer ' +
+      '— the page\'s script did not run — and the same-device link was ' +
+      'offered instead.',
+    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0082',
+    summary: 'A status-list entry could not be changed from the console or ' +
+      'the management API: no such index, an unknown status, or an ' +
+      'INVALID entry asked to become valid again.',
+    spec: 'HTTP 400 / HTTP 404' },
+  { code: 'STS-VC-0083',
+    summary: 'A Digital Credentials API answer arrived for a sign-in that ' +
+      'was not offered through the Digital Credentials API.',
+    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0084',
+    summary: 'A wallet could not be the second factor: the step had ' +
+      'expired, its first factor was already a wallet, or the credential ' +
+      'was issued to somebody other than the person whose password was ' +
+      'entered.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0085',
+    summary: 'A certificate in oid4vci.keyAttestationTrustedCertificates ' +
+      'could not be read and was ignored.',
+    spec: '' },
   // ===== SSF ===============================================================
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
@@ -10783,6 +11223,18 @@ const CODES = [
     summary: 'The realm chooser in front of /admin was asked for a realm ' +
       'that is not defined.',
     spec: 'HTTP 400 on /admin' },
+  { code: 'STS-ADMIN-0791',
+    summary: 'Uploading a SAML 2.0 service provider\'s metadata document ' +
+      'failed — none was sent, or consuming it was refused.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0792',
+    summary: 'Disabling or enabling an account named nobody, or named the ' +
+      'anonymous principal, which is not an account.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-ADMIN-0793',
+    summary: 'Disabling or enabling an account was refused and the ' +
+      'refusal carried no code of its own.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   // ===== API ===============================================================
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
@@ -11115,6 +11567,11 @@ const CODES = [
     summary: 'A DPoP proof presented at /admin-api did not verify, and the ' +
       'proof check reported no code of its own.',
     spec: 'invalid_dpop_proof (HTTP 401)' },
+  { code: 'STS-API-0122',
+    summary: 'A management API access token was refused because this ' +
+      'service has revoked or disowned it, or the person it was issued to ' +
+      'has a disabled account.',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -11596,14 +12053,15 @@ const CODES = [
   // Reserved block STS-REG-0070..0079 (2026-09-13).
   { code: 'STS-REG-0070',
     summary: 'A client registration (RFC 7591 or 7592) named a redirect_uri, ' +
-      'post_logout_redirect_uri or frontchannel_logout_uri that is not a ' +
-      'usable address — not http(s) with a host, not a private-use scheme ' +
-      'named for a domain, or (for the front-channel URI) not http(s).',
+      'post_logout_redirect_uri, frontchannel_logout_uri or ' +
+      'backchannel_logout_uri that is not a usable address — not http(s) ' +
+      'with a host, not a private-use scheme named for a domain, or (for ' +
+      'the two logout URIs) not http(s).',
     spec: 'invalid_redirect_uri or invalid_client_metadata (HTTP 400)' },
   { code: 'STS-REG-0071',
     summary: 'A console or /admin-api write put an unusable address on ' +
-      'oauthRedirectUri, oauthPostLogoutRedirectUri or ' +
-      'oauthFrontchannelLogoutUri.',
+      'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
+      'oauthFrontchannelLogoutUri or oauthBackchannelLogoutUri.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0072',
     summary: 'An RFC 7591 registration or RFC 7592 update named an RFC 9701 ' +
@@ -11764,6 +12222,36 @@ const CODES = [
       'that is not an exact origin — a path, a wildcard, null, a user name, ' +
       'or no host.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0160',
+    summary: 'A SAML signing certificate (samlSigningCertificate or ' +
+      'samlSpMetadataSigningCertificate, or an observed one being ' +
+      'confirmed) is not an X.509 certificate whose key makes an XML ' +
+      'signature this service verifies (RSA, EC, EdDSA, DSA, ML-DSA, ' +
+      'SLH-DSA), so nothing was written.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0161',
+    summary: 'Consuming SAML metadata tried to write an attribute that is ' +
+      'not one of the metadata fields — a programming error, refused.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0162',
+    summary: 'The application entry would not take the consumed SAML ' +
+      'metadata (the directory refused the write).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0163',
+    summary: 'A confirm or discard of a SAML service provider\'s observed ' +
+      'signing certificate found none on the entry.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0164',
+    summary: 'An RFC 7591 registration or RFC 7592 update named an ' +
+      'id_token_encrypted_response_alg or _enc this service cannot honour ' +
+      '(a symmetric family, an unknown content encryption), or an enc ' +
+      'with no alg.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0165',
+    summary: 'A registration named id_token_encrypted_response_alg with no ' +
+      'inline jwks key of the right type to encrypt to (a jwks_uri is ' +
+      'never fetched).',
+    spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

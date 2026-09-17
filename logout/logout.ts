@@ -157,6 +157,11 @@ import oauth2 = require('../oauth-oidc/oauth2');
 // The front-channel fan-out, shared with /oauth2/logout so that both sign-outs
 // notify the same relying parties in the same way.
 import frontchannel = require('../oauth-oidc/frontchannel_logout');
+// The back-channel deliveries (2026-09-17, #36): a session this module ends
+// sends its Logout Tokens from `authn.dropSession()`, and this module lists
+// them on the result — and sends one itself when a single relying party is
+// forgotten on a session that stays.
+import backchannel = require('../oauth-oidc/backchannel_logout');
 // The two federated lists that live ON the session, each built by the module
 // that wrote it. See their own headers for why the builder is not here.
 import wsfed = require('../ws-federation/wsfed');
@@ -164,6 +169,12 @@ import saml2Sso = require('../saml/saml2_sso');
 // The pre-authorized codes a Credential Offer minted. Exported as Maps by that
 // module, which is what rule 2 made it for.
 import vcOffers = require('../oid4vc/vc_offers');
+// The wallet sign-ins a wallet has answered and no browser has collected yet
+// (#38). A cache hit, like every require here — `vc_verifier` is at 11-14.
+import vcVerifier = require('../oid4vc/vc_verifier');
+// The wallet sign-in register (#38's follow-ups), for the credentials a
+// global sign-out DISOWNS. A library; a cache hit here.
+import vcIssued = require('../oid4vc/vc_issued');
 // The principal database, for the sign-out instant that stops an older
 // ticket-granting ticket at the KDC.
 import krb5Principals = require('../kerberos/krb5_principals');
@@ -202,9 +213,11 @@ interface LogoutDeps {
   authn: typeof authn;
   oauth2: typeof oauth2;
   frontchannel: typeof frontchannel;
+  backchannel: typeof backchannel;
   wsfed: typeof wsfed;
   saml2Sso: typeof saml2Sso;
   vcOffers: typeof vcOffers;
+  vcVerifier: typeof vcVerifier;
   krb5Principals: typeof krb5Principals;
   ldapServer: typeof ldapServer;
 }
@@ -250,9 +263,11 @@ class Logout {
       authn: authn,
       oauth2: oauth2,
       frontchannel: frontchannel,
+      backchannel: backchannel,
       wsfed: wsfed,
       saml2Sso: saml2Sso,
       vcOffers: vcOffers,
+      vcVerifier: vcVerifier,
       krb5Principals: krb5Principals,
       ldapServer: ldapServer
     };
@@ -393,8 +408,9 @@ class Logout {
   // the header: those rows are the honest half of this page.
   // ---------------------------------------------------------------------------
   private buildFamilies() {
-    const { log, authn, config, frontchannel, krb5Principals, ldapServer,
-      oauth2, saml2Sso, stats, vcOffers, wsfed } = this.deps;
+    const { log, authn, config, frontchannel, backchannel, krb5Principals,
+      ldapServer, oauth2, saml2Sso, stats, vcOffers, vcVerifier,
+      wsfed } = this.deps;
     log.debug("Entering Logout.buildFamilies().");
     log.debug("Leaving Logout.buildFamilies().");
     return [
@@ -477,13 +493,16 @@ class Logout {
       { id: 'oidc-rp', endOrder: 10,
         label: 'OpenID Connect relying parties',
         protocol: 'OAuth 2.0 / OIDC',
-        spec: 'OpenID Connect Front-Channel Logout 1.0',
+        spec: 'OpenID Connect Front-Channel Logout 1.0 and Back-Channel ' +
+              'Logout 1.0',
         what: 'The clients this session was issued an authorization ' +
               'response for. Ending one sends that relying party a ' +
               'front-channel notification at its registered ' +
-              'frontchannel_logout_uri and forgets it here; the tokens it ' +
-              'already holds are a separate row, because a notified relying ' +
-              'party that kept a live refresh token is not signed out.',
+              'frontchannel_logout_uri, POSTs a signed Logout Token to its ' +
+              'registered backchannel_logout_uri, and forgets it here; the ' +
+              'tokens it already holds are a separate row, because a ' +
+              'notified relying party that kept a live refresh token is not ' +
+              'signed out.',
         collect: (ctx) => {
           log.debug("Entering oidc-rp.collect().");
           const rows = [];
@@ -527,14 +546,50 @@ class Logout {
             return one.clientId === clientId;
           })[0];
           if (note) ctx.notifications.push(note);
-          if (session.oidcClients) delete session.oidcClients[clientId];
+          // THE BACK-CHANNEL HALF (2026-09-17, #36 follow-up), and it depends
+          // on whether the SESSION is ending in this act too.
+          //
+          //   * It is (a global logout, or the session's own row ticked): the
+          //     client is LEFT on the session and nothing is sent from here.
+          //     `dropSession()` sends for every client still on the session
+          //     it ends, through the session-end claim, so the session's end
+          //     is told once for the cluster — and a client forgotten here
+          //     first would have been told outside that claim.
+          //   * It is not (the session stays): planned before the client is
+          //     forgotten, because the list it is planned from is the thing
+          //     about to be removed, and sent from here. The row's id is
+          //     derived from the session and the client, and each attempt is
+          //     claimed, so a second request forgetting the same client — on
+          //     this node or another — queues and sends nothing more.
+          if (ctx.endingSessions[session.id]) {
+            log.debug("Leaving oidc-rp.terminate(). The session ends in " +
+                      "this act and tells the client itself.");
+            return { ok: true,
+                     message: clientId + ' on session ' + session.id +
+                              (note && note.url
+                                ? ' is notified at ' + note.uri
+                                : ' has nowhere to be notified in a browser') +
+                              ', and is sent a back-channel Logout Token by ' +
+                              'the end of the session itself' };
+          }
+          const told = backchannel.plan(session, {
+            via: ctx.by || 'the protocol-independent logout',
+            clients: [clientId], issuer: ctx.issuer, trigger: 'forget' });
+          backchannel.dispatch(told);
+          if (session.oidcClients) {
+            delete session.oidcClients[clientId];
+            authn.noteSessionChanged(session);
+          }
           log.debug("Leaving oidc-rp.terminate().");
           return { ok: true,
                    message: clientId + ' was forgotten on session ' +
                             session.id + (note && note.url ?
                                           ' and notified at ' + note.uri
                                               : ' (there was nowhere to ' +
-                                                'notify it)') };
+                                                'notify it)') +
+                            (told.length ? '; a back-channel Logout Token ' +
+                                           'was queued for ' + told[0].uri
+                                         : '') };
         } },
 
       // -----------------------------------------------------------------------
@@ -825,6 +880,137 @@ class Logout {
           return { ok: true, message: 'a pre-authorized code was discarded; ' +
                                       'the Credential Offer it came from ' +
                                       'can no longer be redeemed' };
+        } },
+
+      // -----------------------------------------------------------------------
+      // A WALLET SIGN-IN NOBODY HAS COLLECTED YET (2026-09-17, #38). This
+      // file said OpenID4VP transactions carry no user, and for the bar door
+      // they still do not. A sign-in's transaction does, from the moment the
+      // wallet's presentation is accepted until the browser that started it
+      // comes back for the session — a window of one poll, and a session
+      // that would begin after a sign-out that could not see it.
+      { id: 'wallet-signin', endOrder: 25,
+        label: 'Wallet sign-ins not yet collected',
+        protocol: 'OpenID4VP',
+        spec: 'OpenID for Verifiable Presentations 1.0 section 8.2',
+        what: 'A wallet has presented a credential for this person to sign ' +
+              'a browser in, and that browser has not yet come back for ' +
+              'the session. Ending it means the browser is told a sign-out ' +
+              'withdrew it and nobody is signed in.',
+        collect: (ctx) => {
+          log.debug("Entering wallet-signin.collect().");
+          const rows = vcVerifier.signInsAwaitingCollection()
+            .filter((one) => {
+              return stats.holderKeyOf(one.username, one.subject) === ctx.key;
+            }).map((one) => {
+              return this.row('wallet-signin', 'wallet sign-in',
+                              this.handleFor(one.state), {
+                label: 'a wallet sign-in waiting for its browser',
+                detail: 'presentation accepted ' + (one.decidedAt || ''),
+                expiresAt: one.expires || 0,
+                secret: one.state
+              });
+            });
+          log.debug("Leaving wallet-signin.collect().");
+          return rows;
+        },
+        terminate: (r, ctx) => {
+          log.debug("Entering wallet-signin.terminate().");
+          const match = vcVerifier.signInsAwaitingCollection()
+            .filter((one) => {
+              return stats.holderKeyOf(one.username, one.subject) ===
+                ctx.key && this.handleFor(one.state) === r.handle;
+            })[0];
+          if (!match || !vcVerifier.withdrawSignIn(match.state,
+                                                   'a sign-out')) {
+            log.debug("Leaving wallet-signin.terminate(). Nothing left.");
+            return { ok: false, message: 'that wallet sign-in has already ' +
+                                         'been collected or has expired, so ' +
+                                         'there is nothing left to end' };
+          }
+          log.debug("Leaving wallet-signin.terminate().");
+          return { ok: true, message: 'a wallet sign-in was withdrawn before ' +
+                                      'its browser collected it' };
+        } },
+
+      // -----------------------------------------------------------------------
+      // THE WALLET CREDENTIALS THAT CAN SIGN THIS PERSON IN (#38's follow-ups).
+      //
+      // A credential in a wallet is not a session, and nothing here can take
+      // it back — the `issued` family below lists it as issued and beyond
+      // recall. But THIS SERVICE is the only party a wallet signs in to with
+      // it, so here the mark is not only a statement: ending a row stops
+      // every credential on it signing anybody in at `/authn/wallet`
+      // (`vc_issued.ts`'s `disown()`), and sets each one's status-list bit so
+      // a verifier elsewhere learns it too.
+      //
+      // **A GLOBAL SIGN-OUT ENDS THEM; AN ORDINARY ONE DOES NOT.** This family
+      // is reached from `/logout`, `/admin/logout` and `/admin-api/logout`;
+      // the per-session sign-outs — `/oauth2/logout`, SAML Single Logout,
+      // `wsignout1.0`, the console's and the portal's Sign out — go through
+      // `authn.dropSession()` and never here, so a person who signs out of one
+      // application signs back in with the wallet they hold.
+      //
+      // `endOrder` 26: a credential, with the other credentials, and before
+      // the session, on which nothing here depends.
+      { id: 'wallet-credential', endOrder: 26,
+        label: 'Wallet credentials that can sign this person in',
+        protocol: 'OpenID4VP',
+        spec: 'draft-ietf-oauth-status-list (the bit a disown sets); ' +
+              'W3C Bitstring Status List',
+        what: 'Verifiable credentials this realm issued for this person, ' +
+              'which their wallet can present at /authn/wallet to sign in. ' +
+              'Ending one DISOWNS it: every credential issued to that ' +
+              'wallet key for this person up to now stops signing anybody ' +
+              'in here, and its status list entry is set INVALID so other ' +
+              'verifiers can learn it. The credential itself stays in the ' +
+              'wallet and still verifies; a credential issued after the ' +
+              'sign-out, on a fresh sign-in, signs in again.',
+        collect: (ctx) => {
+          log.debug("Entering wallet-credential.collect().");
+          const rows = [];
+          const seen = {};
+          this.walletRowsFor(ctx.key).forEach((row) => {
+            const handle = this.handleFor('wallet-credential|' + row.key);
+            if (seen[handle]) {
+              return;
+            }
+            seen[handle] = true;
+            rows.push(this.row('wallet-credential', 'wallet credential',
+                               handle, {
+              label: row.format + ' credential' +
+                     (row.credentials.length > 1 ?
+                       's (' + row.credentials.length + ')' : ''),
+              detail: 'bound to key ' + String(row.jkt).slice(0, 12) +
+                      '…, issued ' + new Date(row.issuedAt).toISOString(),
+              startedAt: row.issuedAt || 0,
+              expiresAt: row.expiresAt || 0,
+              secret: row.key,
+              why: 'ending this stops it signing anybody in at ' +
+                   '/authn/wallet and sets its status INVALID. The ' +
+                   'credential stays in the wallet.'
+            }));
+          });
+          log.debug("Leaving wallet-credential.collect(). " + rows.length +
+                    ".");
+          return rows;
+        },
+        terminate: (r, ctx) => {
+          log.debug("Entering wallet-credential.terminate().");
+          const match = this.walletRowsFor(ctx.key).filter((row) => {
+              return this.handleFor('wallet-credential|' + row.key) ===
+                r.handle;
+            })[0];
+          if (!match || !vcIssued.disown(match.key, ctx.by ||
+                                         'a global sign-out')) {
+            log.debug("Leaving wallet-credential.terminate(). Gone.");
+            return { ok: false, message: 'that wallet credential has already ' +
+                                         'been disowned or has expired' };
+          }
+          log.debug("Leaving wallet-credential.terminate().");
+          return { ok: true, message: 'a wallet credential was disowned: it ' +
+                                      'no longer signs anybody in here, and ' +
+                                      'its status is INVALID' };
         } },
 
       // -----------------------------------------------------------------------
@@ -1173,6 +1359,20 @@ class Logout {
   // argument `gateStateFor()` in admin.js makes about the console's banner and
   // its guard, which were written separately and disagreed within the hour.
   // ---------------------------------------------------------------------------
+  // The wallet credential rows one identity holds (#38's follow-ups): every
+  // live, undisowned row whose subject files under this key, by the
+  // normalisation `sessionsForKey()` uses.
+  private walletRowsFor(key: string): any[] {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.walletRowsFor().");
+    const rows = vcIssued.rowsForSubject(null).filter(function (row) {
+      return stats.holderKeyOf(helpers.nameForSubject(row.subject) || '',
+                               row.subject) === key;
+    });
+    log.debug("Leaving Logout.walletRowsFor(). " + rows.length + ".");
+    return rows;
+  }
+
   private contextFor(key?, issuer?, by?) {
     const { log } = this.deps;
     log.debug("Entering Logout.contextFor().");
@@ -1195,7 +1395,14 @@ class Logout {
       // this process does.
       notifications: [],
       cleanups: [],
-      logoutRequests: []
+      logoutRequests: [],
+      // THE SESSIONS THIS ACT WILL END (2026-09-17, #36 follow-up), filled by
+      // terminate() before any family runs. The `oidc-rp` family reads it: a
+      // relying party on a session that is ending is told by the session's
+      // end — `authn.dropSession()`, through the session-end claim — and not
+      // by this request, which is what made a global logout's Logout Tokens
+      // the one send outside that claim.
+      endingSessions: {}
     };
   }
 
@@ -1214,7 +1421,7 @@ class Logout {
   // half that would be wrong is the half somebody is about to press a button
   // on.
   //
-  // **THREE OF THE TEN FAMILIES HAVE A SESSION AND THE OTHER SEVEN DO NOT**,
+  // **THREE OF THE TWELVE FAMILIES HAVE A SESSION AND THE OTHER NINE DO NOT**,
   // and the distinction is not a simplification. A session is a state THIS
   // SERVICE holds that makes somebody currently authenticated; a token, an
   // assertion, an authorization code and an X509-SVID are things it has HANDED
@@ -1807,10 +2014,14 @@ class Logout {
   // them and the wrong one for anything that does — so state it.
   // ---------------------------------------------------------------------------
   terminate(key?, selection?, opts?) {
-    const { log, audit, config, errorCodes, ldapServer } = this.deps;
+    const { log, audit, config, errorCodes, ldapServer,
+            backchannel } = this.deps;
     log.debug("Entering Logout.terminate(). key=" + key + ", selected=" +
               ((selection && selection.length) || 'all'));
     const options = opts || {};
+    // Where the back-channel register stood before this act, so the result
+    // lists what THIS act queued (2026-09-17, #36).
+    const backchannelMark = backchannel.mark();
     const ctx = this.contextFor(key, options.issuer, options.by);
     const wanted = (selection || []).map(String).filter(Boolean);
     const global = !wanted.length;
@@ -1821,6 +2032,15 @@ class Logout {
     const skipped = [];
     const unknown = {};
     wanted.forEach((id) => { unknown[id] = true; });
+
+    // WHICH SESSIONS THIS ACT ENDS, before any family runs — see
+    // `endingSessions` in contextFor(). Every live session in a global logout;
+    // in a selective one, the sessions whose own row was ticked.
+    ctx.sessions.forEach((session) => {
+      if (global || wantedSet['session:' + session.id]) {
+        ctx.endingSessions[session.id] = true;
+      }
+    });
 
     // See the block above: the ending order is not the reading order, and a
     // copy is sorted rather than FAMILIES itself — the table's own order is
@@ -1917,6 +2137,15 @@ class Logout {
 
     const unknownIds = Object.keys(unknown);
 
+    // THE BACK-CHANNEL DELIVERIES THIS ACT QUEUED, with the state each has
+    // now — `pending` for nearly all of them, because they are sent after
+    // this answer (see `oauth-oidc/backchannel_logout.ts`). Read for every
+    // session the act started from, which covers both triggers: a session
+    // ended, and a relying party forgotten on one that stays.
+    const backchannelRows = backchannel.deliveriesFor(
+      ctx.sessions.map((session) => { return session.id; }), backchannelMark);
+    const backchannelSummary = backchannel.summarize(backchannelRows);
+
     // ONE audit row for the ACT, and not one per thing ended. Every termination
     // that has an audit row of its own already wrote it — `session.end` from
     // dropSession(), the revocation's own log line — and a second row per item
@@ -1969,6 +2198,9 @@ class Logout {
       notifications: ctx.notifications,
       cleanups: ctx.cleanups,
       logoutRequests: ctx.logoutRequests,
+      // What this process sends by itself, with no browser: the back-channel
+      // Logout Tokens, each with its state at the moment of this answer.
+      backchannel: backchannelRows,
       message: (global ? 'Global logout for ' : 'Logout for ') + ctx.key +
                ': ' + done.length + ' item(s) ended' +
                (skipped.length ? ', ' + skipped.length + ' that could not be' :
@@ -1979,7 +2211,8 @@ class Logout {
                  ? ' Other nodes were instructed to close this identity\'s ' +
                    'directory connections and do so as they apply the change ' +
                    'log.'
-                 : '')
+                 : '') +
+               (backchannelSummary ? ' ' + backchannelSummary : '')
     };
     if (acrossCluster.length) {
       result.acrossCluster = acrossCluster;
@@ -2157,7 +2390,7 @@ class Logout {
   // and the three things only the BROWSER can do — the front-channel iframes,
   // the WS-Federation cleanup images, and the SAML LogoutRequests as links.
   private resultPage(base?, result?, inventory?) {
-    const { log, app, frontchannel, xmlEscape } = this.deps;
+    const { log, app, frontchannel, backchannel, xmlEscape } = this.deps;
     log.debug("Entering Logout.resultPage().");
     const listOf = (rows, cls) => {
       log.debug("Entering listOf().");
@@ -2212,6 +2445,7 @@ class Logout {
       (result.notifications.length
         ? frontchannel.render(result.notifications)
         : '') +
+      backchannel.render(result.backchannel || []) +
       (result.cleanups.length
         ? '<h2>WS-Federation cleanup ' +
           'requests</h2><table><thead><tr><th>Realm</th><th>Cleanup ' +

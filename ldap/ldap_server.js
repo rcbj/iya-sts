@@ -1854,6 +1854,10 @@ const OWN_NAMES = [
   // `pwdReset` is draft-behera-ldap-password-policy's name, spelt as that draft
   // spells it, beside the `pwd*` names the password policy already uses.
   'pwdReset', 'stsBootstrapAdministrator', 'stsConsoleClaimedAt',
+  // A DISABLED ACCOUNT (2026-09-17) — the same draft's `pwdAccountLockedTime`,
+  // `000001010000Z` when an administrator disabled it. See
+  // `common/credentials.ts`, `accountDisabled()`.
+  'pwdAccountLockedTime',
   // WHAT AN ADMINISTRATOR PUT ON A PERSON FROM THEIR /admin/users PAGE
   // (2026-09-13) — see readPersonFlags(): a second factor required of them, and
   // the hash of a password reset link.
@@ -8181,6 +8185,20 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Leaving writeMfaRequired().");
       return writePersonFlag(key, 'stsMfaRequired', value ? true : '');
     },
+    // A DISABLED ACCOUNT (2026-09-17): the draft's administrative lock, in the
+    // ambient realm like the rest of the person's credentials.
+    readAccountDisabled: function (key) {
+      log.debug("Entering readAccountDisabled().");
+      const flags = readPersonFlags(key);
+      log.debug("Leaving readAccountDisabled().");
+      return !!(flags && flags.accountLockedTime);
+    },
+    writeAccountDisabled: function (key, value) {
+      log.debug("Entering writeAccountDisabled().");
+      log.debug("Leaving writeAccountDisabled().");
+      return writePersonFlag(key, 'pwdAccountLockedTime',
+                             value ? ADMINISTRATIVE_LOCK : '');
+    },
     // A PASSWORD RESET LINK (2026-09-13): the hash and the expiry, written and
     // cleared together, which is `writeActivation()`'s shape.
     readPasswordResetLink: function (key) {
@@ -8585,7 +8603,11 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       return { dn: stored.dn, username: usernameOfEntry(stored),
                keys: firstValue(stored, 'stskrb5keys'),
                info: firstValue(stored, 'stskrb5keyinfo'),
-               passwordHash: firstValue(stored, 'userpassword') };
+               passwordHash: firstValue(stored, 'userpassword'),
+               // A DISABLED ACCOUNT (2026-09-17) is refused an AS-REQ —
+               // `krb5_person_keys.ts` answers `disabled` and the KDC
+               // KDC_ERR_CLIENT_REVOKED (18).
+               disabled: !!firstValue(stored, 'pwdaccountlockedtime') };
     },
     writePerson: function (username, keysValue, infoValue) {
       log.debug('Entering writePerson(). username=' + username);
@@ -8746,6 +8768,11 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 //                              to sign in with a second factor (2026-09-13).
 //                              `authn.js` asks them to enrol one at the sign-in
 //                              screen when they hold none.
+//   pwdAccountLockedTime       draft-behera-ldap-password-policy's lock, set
+//                              to `000001010000Z` when an administrator (or a
+//                              SCIM `active: false`) disables the account
+//                              (2026-09-17). Any value is a lock here — see
+//                              `common/credentials.ts`, `accountDisabled()`.
 //   stsPasswordResetToken      the scrypt hash of a password reset link an
 //   stsPasswordResetExpires    administrator issued, and when it stops working
 //                              (2026-09-13). The token is a SECRET_ATTRIBUTE:
@@ -8757,7 +8784,12 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // ---------------------------------------------------------------------------
 const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
                       'stsConsoleClaimedAt', 'stsMfaRequired',
-                      'stsPasswordResetToken', 'stsPasswordResetExpires'];
+                      'stsPasswordResetToken', 'stsPasswordResetExpires',
+                      'pwdAccountLockedTime'];
+
+// The value an administrator's lock is written with: the draft's "locked
+// permanently, until a password administrator unlocks it".
+const ADMINISTRATIVE_LOCK = '000001010000Z';
 
 function readPersonFlags(key) {
   log.debug('Entering readPersonFlags(). key=' + key);
@@ -8781,7 +8813,8 @@ function readPersonFlags(key) {
            consoleClaimedAt: one('stsConsoleClaimedAt'),
            mfaRequired: one('stsMfaRequired').toUpperCase() === 'TRUE',
            passwordResetToken: one('stsPasswordResetToken'),
-           passwordResetExpires: Number(one('stsPasswordResetExpires') || 0) };
+           passwordResetExpires: Number(one('stsPasswordResetExpires') || 0),
+           accountLockedTime: one('pwdAccountLockedTime') };
 }
 
 function writePersonFlag(key, name, value) {
@@ -8798,6 +8831,14 @@ function writePersonFlag(key, name, value) {
     log.debug('Leaving writePersonFlag(). No entry.');
     return false;
   }
+  // THE LOCK IS AN ACCOUNT CHANGE RISC REPORTS (2026-09-17), so a write of it
+  // is handed to the account observer as an SCIM or LDAP write of it is — one
+  // `account-disabled` or `account-enabled` whichever door disabled somebody.
+  // `consequences: false`: the caller of this writer is
+  // `common/account_state.ts`, which ends what the person holds itself and
+  // reports it; the directory must not end it a second time.
+  const observed = name === 'pwdAccountLockedTime'
+    ? attributeSnapshot(stored) : null;
   if (value === null || value === undefined || value === '' ||
       value === false) {
     delete stored.attributes[name.toLowerCase()];
@@ -8807,6 +8848,10 @@ function writePersonFlag(key, name, value) {
   }
   stored.attributes.modifytimestamp = [generalizedTime()];
   touchDirectory(stored.dn);
+  if (observed) {
+    noteAccountChange('updated', stored.dn, observed,
+                      attributeSnapshot(stored), { consequences: false });
+  }
   log.debug('Leaving writePersonFlag().');
   return true;
 }
@@ -13602,8 +13647,31 @@ function attributeSnapshot(stored) {
   return out;
 }
 
-function noteAccountChange(kind, dn, before, after) {
+function noteAccountChange(kind, dn, before, after, options) {
   log.debug('Entering noteAccountChange(). ' + kind + ' ' + dn);
+  // A LOCK THAT MOVED IS AN ACCOUNT DISABLED OR ENABLED (2026-09-17), and
+  // whichever door moved it — a SCIM `active`, an `ldapmodify`, a console
+  // create — what the person holds has to end with it. That is
+  // `common/account_state.ts`'s act and not this file's: it is handed the
+  // transition, LAZILY required (it reaches the logout family, which is loaded
+  // long after this file), and it runs AFTER this write has returned, so an
+  // LDAP modify is never answered from inside a global logout of the identity
+  // bound on the connection asking. `consequences: false` is the one writer
+  // that ends things itself — see writePersonFlag().
+  const lockBefore = !!firstLockOf(before);
+  const lockAfter = !!firstLockOf(after);
+  if (lockBefore !== lockAfter && String(kind).indexOf('deleted') !== 0 &&
+      !(options && options.consequences === false)) {
+    try {
+      require('../common/account_state').directoryChanged({
+        username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
+        disabled: lockAfter, kind: String(kind) });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0097') + 'ldap: the lock on ' + dn +
+                ' changed and what the person holds could not be ended ' +
+                'with it: ' + ((e && e.message) || e));
+    }
+  }
   if (!accountObserver) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');
     return;
@@ -13618,6 +13686,14 @@ function noteAccountChange(kind, dn, before, after) {
               e.message);
   }
   log.debug('Leaving noteAccountChange().');
+}
+
+// The lock value on an attribute snapshot, or ''.
+function firstLockOf(attributes) {
+  log.debug('Entering firstLockOf().');
+  const values = (attributes || {}).pwdaccountlockedtime;
+  log.debug('Leaving firstLockOf().');
+  return Array.isArray(values) && values.length ? String(values[0]) : '';
 }
 
 // What a person is CALLED, from a DN alone, for a register that is keyed on

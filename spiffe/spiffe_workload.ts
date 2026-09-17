@@ -913,8 +913,9 @@ const slot = new InstanceSlot<SpiffeWorkload>(
 // credential format. That is worse than not implementing it, and it is worse in
 // the specific way this whole service is built to avoid: a client author would
 // write code against this mock's invention, it would work here, and it would
-// interoperate with nothing. The same reasoning that makes `wauth` a refusal in
-// `wsfed.js` rather than a fabricated second factor.
+// interoperate with nothing. The same reasoning that stops `wsfed.ts` from
+// writing a second factor into an assertion that did not happen — it asks for
+// one, since 2026-09-17, and refuses when it still did not.
 //
 // So: `Unimplemented`, with a message that says what it is and what it would
 // take, rather than a silent empty response — which a client would read as "I

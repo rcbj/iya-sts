@@ -18,6 +18,18 @@ session it owns; every Kerberos module is #15 and below so that the KDC's routes
 are not dragged to the front of the router. A require from here to there would do
 exactly that AND close a cycle, since that module needs `startSession()`.
 
+**AND A FOURTH, FIFTH, SIXTH AND SEVENTH (2026-09-17, #38 and its follow-ups):
+`/authn/wallet`, `/authn/wallet/wait`, `/authn/wallet/dc-api` and
+`/authn/wallet.js`** — sign in with a wallet — are `oid4vc/vc_signin.ts`'s, for
+the same kind of reason: what they drive is the OpenID4VP Verifier, which is
+required at 11–14, and this module requires nothing of that family. This module
+declares all four paths (`WALLET_PATH`, `WALLET_WAIT_PATH`,
+`WALLET_DCAPI_PATH`, `WALLET_SCRIPT_PATH`), draws the button
+(`walletOptionHtml()`, gone when `oid4vp.signIn` is off — **no longer withheld
+under `forceMfa`**), and that door uses `pendingFor()` and
+`completeAuthentication()` exactly as the Kerberos door does. See *The wallet door* below; the design is argued in
+`oid4vc/CLAUDE.md`, *Signing in with a wallet*.
+
 **It needed no inverted hook either**, which is worth saying because rule 3e's
 inventory of slots is long and another is the obvious move. The only two things
 this module needs to know are the PATH — declared here, as `SPNEGO_PATH`, in a
@@ -26,7 +38,9 @@ space this module already owns — and whether the door is open, which is
 3e's test is whether a require would close a cycle or move a route; here nothing
 has to point anywhere.
 
-**Three exports exist for it and for nothing else**: `SPNEGO_PATH`,
+**Three exports exist for it and — since #38, with `WALLET_PATH` and
+`WALLET_WAIT_PATH` beside them — for the wallet door, and for nothing else**:
+`SPNEGO_PATH`,
 `pendingFor()` (read-only, and it sweeps an expired record on the way past
 exactly as it does for the screen) and `completeAuthentication()`. The last is
 one function rather than an exported `pending` and an exported
@@ -104,8 +118,11 @@ rule is about the level actually changing.
 ### The rules that hold it together
 
 * **Evidence arrives, identity does not.** A federated assertion, a SPNEGO
-  ticket, a client certificate or a WS-Trust token is recorded ON an event as
-  what proved it. None of them is the identity.
+  ticket, a client certificate, a WS-Trust token or a wallet's presentation is
+  recorded ON an event as what proved it. None of them is the identity — a
+  presentation least of all: `/authn/wallet` signs in the entry this realm
+  RECORDED the credential as issued for, never the subject the credential
+  names (`oid4vc/CLAUDE.md`).
 * **Artifacts leave as PROJECTIONS.** An ID Token, a SAML `AuthnStatement` and a
   WS-Federation token are rendered from the session and carry its `sid` (or
   `SessionIndex`). None of them is kept as the session's truth.
@@ -296,6 +313,62 @@ draw a row for a session that is not the caller's. Neither expires anything:
 expired, because an observer that quietly ended sessions while reporting on them
 would be changing the thing it describes — the same rule `audit.js`'s actor
 resolver follows.
+
+## THE WALLET DOOR (2026-09-17, #38)
+
+The sixth way to establish a session, after the password screen, the two
+WebAuthn roles, a federated assertion, a Kerberos ticket and a client
+certificate: a verified OpenID4VP presentation of a holder-bound SD-JWT VC this
+realm issued. What this module owns of it is small and is the part that has to
+agree with the rest of the screen:
+
+* **The button is offered to every application**, as the Kerberos one is,
+  because whether somebody holds a credential this realm issued is a fact about
+  their wallet and not about the relying party. **One setting** where Kerberos
+  has two: a wallet sign-in has no use outside a browser waiting to be signed
+  in, so a switch that hid the button and left the door open would describe a
+  state nobody can use.
+* ~~**It is withheld under `forceMfa`, and says so**~~ — **REVERSED in the
+  follow-ups**, and what replaced it is below. A presentation still proves
+  possession of ONE key; what changed is that one factor may now be followed
+  by another, so the button says what will happen (`id="wallet-mfa-note"`)
+  instead of disappearing. `STS-VC-0054` is retired.
+* **A WALLET IS A FACTOR, AT EITHER END** (#38's follow-ups). Three functions
+  here, and `oid4vc/CLAUDE.md` carries the argument:
+  * `beginSecondFactorAfterWallet()` — asked by the wallet door once a
+    presentation has named somebody, and it answers whether a second factor
+    is needed (`forceMfa`, `authn.mfaRequired`, the person's own
+    `stsMfaRequired`, or a second factor they hold) and draws it: their
+    authenticator app, their security key, or their PASSWORD at
+    `/authn/password-factor` — a new screen with one field, no script, rate
+    limited on the sign-in bucket, for the many people who hold neither of the
+    other two. A presentation whose key attestation already claimed two
+    factors needs none.
+  * `finishWithWallet()` — a wallet finishing a PASSWORD sign-in's
+    second-factor step (`/authn/wallet?mfa=<step>`, linked from every one of
+    those screens as `id="wallet-second-factor"`). It refuses a credential
+    issued to anybody but the person the step names (`STS-VC-0084`), and
+    refuses a wallet twice: one key proved twice is one factor.
+  * `firstAmrOf(step)` — the first factor's own `amr`, carried on the step, so
+    a session says `["pop","otp"]` where a wallet came first and `["pwd","pop"]`
+    where a password did. Every second-factor door builds its list from it,
+    which is what stops a session claiming a password nobody typed.
+* **`amr` AND `acr` FOLLOW THE EVIDENCE, AND A KEY ATTESTATION IS EVIDENCE.**
+  A bare presentation is `amr ["pop"]`, `acr "1"`. Where the ISSUER verified a
+  key attestation (OpenID4VCI Appendix D) at ISO 18045 Moderate or better,
+  `hwk` is added; where the USER AUTHENTICATION guarding that key is attested
+  too, `mfa` is added and `acr` is `"mfa"` — two factors in one act, and the
+  only case here where a wallet answers `forceMfa` on its own.
+* **`methodPhraseFor()` has a `pop` branch**, asked first, for the reason the
+  `otp` branch exists: the fall-through says *password*.
+* **A different person's session is replaced, the same person's is
+  re-authenticated** — `startSession()` decides, and the wallet door passes
+  `request` so it can.
+
+The binding to the browser that started it, the one-time `response_code`, the
+lifetime, the single use and the relay that cannot be prevented are argued in
+`oid4vc/CLAUDE.md` and `vc_signin.ts`'s header; `tests/oid4vp_sign_in.js` is the
+contract.
 
 ## `consoleSession()` — the one reader that crosses a realm boundary, and the ADMIN CONSOLE is its only caller
 
@@ -1627,6 +1700,99 @@ delete, not before the function returns. `tests/cluster_signout_signals.js`
 section 3 holds it: two ends of one session with a shared stub store report
 once (with the losing row coded), the same without one report twice (the
 control), and an unreachable store still reports.
+
+**THE BACK-CHANNEL LOGOUT TOKENS RIDE THE SAME CLAIM (2026-09-17, #36).**
+`dropSession()` asks `oauth-oidc/backchannel_logout.ts` to PLAN a delivery for
+every OIDC relying party on the session that registered a
+`backchannel_logout_uri` — synchronously, before the claim, so the door's
+answer can list them as `pending` — and the `emit` that `sessionEndOnce()`
+lets out DISPATCHES them. It is the reason a Logout Token reaches a relying
+party from every door, `wsignout1.0` and SAML Single Logout included: this
+function is the one they share. The require is LAZY, like
+`frontchannel_logout.ts`'s require of this module, and is caught — a delivery
+that cannot be planned never stops a sign-out.
+
+**AND `expireSession()` PLANS THEM TOO, SINCE THE FOLLOW-UP THE SAME DAY.** It
+read *an expiry sends no Logout Token, by decision* until then; the decision
+was reversed (`oauth-oidc/CLAUDE.md`, 3aq) and is now
+`oauth2.backchannelLogoutOnExpiry`, on by default. The plan and the dispatch
+sit either side of the same claim, so an expiry noticed on two nodes sends
+once. **Front-channel logout still cannot follow an expiry** — it is an iframe
+and there is no browser on a sign-out page — which is the asymmetry that made
+the two triggers different in the first place.
+
+**WHAT A LOST OR REJECTED CLAIM DOES TO THE PLANNED ROWS IS NOTHING, AND THAT
+IS THE POINT OF THE FOLLOW-UP.** A delivery is a row in a persisted, replicated
+store whose id is derived from the session and the client, so the loser of the
+claim planned the SAME rows the winner did and has nothing to hand off — the
+old `abandon()`/`elsewhere` state is gone. A row nobody dispatched (the claim
+was rejected, or only the loser's copy of the session named that client) is
+picked up by the next sweep in any process, and each ATTEMPT is claimed
+separately, so "sent once" holds even where `authn.session-end` could not be
+asked.
+
+## `forceKey`: A SIGN-IN THAT DEMANDS A SECURITY KEY (2026-09-17, #36 follow-up)
+
+`forceMfa` has been on the pending record since RFC 9470: a caller that was
+told two factors are required takes the opt-out away. It could not say WHICH
+second factor, and that made one demand unanswerable — a WS-Federation
+`wauth` asking for a HardwareToken forced `forceMfa`, under which the
+passwordless box is DISABLED, so the only way through the screen was a key as a
+second factor and a one-time code walked through it only to be refused on the
+way back.
+
+**`forceKey` is the second flag, and `oauth-oidc/step_up.ts` names the
+combinations** (`screenDemand()`, `screenDemandFor()`) rather than a second
+mechanism being invented per protocol:
+
+| | what the screen offers |
+|---|---|
+| `forceMfa` | a password and ANY second factor — unchanged |
+| `forceKey` | a security key ALONE (passwordless) or AFTER a password, and nothing else |
+| both | a password AND a key — what the RFC 8176 aliases `hwk`, `phr` and `phrh` ask for at the authorization endpoint |
+
+Under `forceKey` the screen ticks and disables the second-factor box, leaves
+the passwordless box ENABLED and says why; the Kerberos and wallet buttons are
+withheld with their own sentence (a ticket claims what its flags claim and a
+presentation proves one key, neither of which is a security key); the
+second-factor step is the KEY whatever the person is configured for; and
+`/authn/totp` and `/authn/backup-code` REFUSE the step (`STS-AUTHN-0204`) —
+the links to them are not drawn, and a link that is not drawn is still a URL.
+
+**THE ONE REFUSAL WORTH ARGUING is a person who holds a second factor and no
+key.** They are told to add one at `/portal/keys` rather than handed the
+enrolling ceremony: the security-key page enrols on first use, so anybody who
+knew that person's password could otherwise register a brand new authenticator
+and be signed in — which is the bypass `finishPasswordSignIn()` already argues
+about the checkbox, met again one demand along. Somebody who holds NO second
+factor still enrols one here, as they always did.
+
+## A DISABLED ACCOUNT IS REFUSED AT `startSession()` AND AT EVERY SESSION IT ALREADY HAS (2026-09-17)
+
+`common/account_state.ts` owns the state (`common/CLAUDE.md`, 3at); this module
+owns the two places it decides a SESSION.
+
+* **`startSession()` refuses one, FIRST** — before the browser's previous
+  session is ended, before the issuance gate (which the sign-in screen skips
+  with `gated: true`) and before the "a credential presented again" branch,
+  which would otherwise TOUCH a SCIM or SPIFFE caller's row rather than refuse
+  it. It answers `null`, as the gate's refusal does, and writes a
+  `session.refuse` row coded `STS-AUTHN-0201`. **Every door that makes a
+  session reaches this line**: the sign-in screen, its three second-factor
+  steps and the enrolment step, federation, SPNEGO, `GET /tls/sign-in`, the
+  OID4VP wallet door, WS-Trust, and the keyed API callers. An UNAUTHENTICATED
+  session names nobody's account and is not asked.
+* **`sessionOf()` ends a session whose account was disabled** since it was
+  made, through `dropSession()` — so it gets the audit row, CAEP and the
+  back-channel Logout Tokens a sign-out gets. Disabling ends every session at
+  once; this is the second half, for a session that act could not reach (a lock
+  written by an `ldapmodify` on a node whose copy of the session it did not
+  hold).
+* **The screens answer "Authentication failed"**, the same sentence a wrong
+  password gets, for the account-enumeration reason `credentials.verify()`'s
+  callers give — and `finishPasswordSignIn()` asks BEFORE any ceremony, so a
+  disabled person is not walked through a WebAuthn enrolment whose result would
+  be refused.
 
 ## SEVERAL NODES: THE THREE SECOND-FACTOR DOORS SPEND IN THE STORE (2026-09-14, #46)
 

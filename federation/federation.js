@@ -415,7 +415,21 @@ const MECHANISMS = [
           'claims neither. A client that cannot get a ticket meets a page ' +
           'with the sign-in screen linked from it, because a bare 401 ' +
           'Negotiate is a dead end in every browser that is not configured ' +
-          'for this host.' }
+          'for this host.' },
+  // THE SIXTH, ADDED 2026-09-17 (#38's follow-ups): a WALLET. Like `spnego`
+  // it is a credential the person already holds rather than a screen, and
+  // like `spnego` it can be switched off service-wide — `oid4vp.signIn` —
+  // which authn.ts's declaredMechanismFor() reports rather than sending
+  // somebody to a door that is shut.
+  { mechanism: 'wallet', label: 'Wallet (OpenID4VP)',
+    what: 'The person is sent to /authn/wallet, which asks their wallet — ' +
+          'through the Digital Credentials API, or on this device by link — ' +
+          'for a credential this realm issued them, and signs them in as the ' +
+          'directory entry it was issued for once a fresh holder proof ' +
+          'verifies. amr ["pop"] and acr "1" for one factor; a caller that ' +
+          'demanded two is asked for a second factor afterwards (or has one ' +
+          'already, where the credential\'s key attestation says so), so this ' +
+          'mechanism does not lose to forceMfa the way spnego does.' }
 ];
 
 const MECHANISM_IDS = MECHANISMS.map(function (one) {
@@ -672,7 +686,8 @@ const SCHEMA = {
       what: 'HOW THIS SERVICE AUTHENTICATES THE PERSON when this partner ' +
             'asks it to: password, password-mfa, webauthn, spnego — a ' +
             'Kerberos ticket the browser already holds, with no screen at ' +
-            'all — or federation, ' +
+            'all — wallet — a credential this realm issued, presented from ' +
+            'the person\'s wallet — or federation, ' +
             'which sends them on to another relationship and is what makes ' +
             'this service an identity BRIDGE between two protocols. EMPTY ' +
             'MEANS THIS RELATIONSHIP SAYS NOTHING, which is not the same as ' +

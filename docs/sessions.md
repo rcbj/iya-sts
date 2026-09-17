@@ -112,10 +112,15 @@ that can start a session without being counted, audited and reported:
 | The same screen reached from a SAML 2.0 `AuthnRequest` | `SAML 2.0` |
 | The same screen reached from a SAML 1.1 inter-site transfer | `SAML 1.1` |
 | A Kerberos ticket spent at `/authn/spnego` — no screen | `Kerberos v5 (SPNEGO)` |
+| A wallet's presentation of a credential this service issued — collected at `/authn/wallet/wait` by the browser that started it, or answered to that page through the Digital Credentials API at `/authn/wallet/dc-api` | `OpenID4VP (a wallet)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person authenticated somewhere else entirely | `Federation (SAML 2.0)`, and the same for the other federation protocols |
 
-**No password is checked at any of them** except the Kerberos one, where the
-ticket is verified against a real long-term key — see
+**No password is checked at any of them** in development mode. The Kerberos
+one verifies the ticket against a real long-term key, and the wallet one
+verifies the presentation — the issuer's signature and a fresh holder proof
+against the key the credential is bound to, whichever of the three formats it
+is in — and signs in only the directory entry the credential was issued for,
+and only while this service has not disowned it — see
 [what is not checked](what-is-not-checked.md).
 
 A **re-authentication makes a new session** rather than refreshing this one:
@@ -295,7 +300,7 @@ paragraph exists to prevent.
   buckets are the answer to "why is this token not under a session", and the
   middle one is not an error: sessions expire and are swept, and the token
   outlives the sign-on it came from.
-- **`/admin/logout`** — one person, across all ten families: what is still live
+- **`/admin/logout`** — one person, across all eleven families: what is still live
   and what cannot be ended, with the reason. It is `/admin/sessions` asked the
   other way round.
 - **`/admin/caep-sessions`** — what has been *said* about each session over

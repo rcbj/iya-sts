@@ -1008,6 +1008,19 @@ module's statement rather than a guess in a select. The rule to take from it:
 **when two controls on one form are two vocabularies for one question, the one
 that survives is the one on the DECLARED side of the line.**
 
+**TWO SAML 2.0 ACTIONS DIAL OUT AND SO ANSWER WITH A PROMISE** (2026-09-17,
+#37 follow-up): `refresh-metadata` (the entry's `samlSpMetadataUrl`, or the
+realm's MDQ responder for an entry with none) and `mdq-import` (by entityID,
+creating the entry). `POST /admin/saml2` therefore resolves whatever
+`saml2Action()` answers before it redirects — `applicationsAction()`'s
+arrangement for its own `refresh-metadata`, made again here rather than made
+general, because every other action on the page is synchronous and a
+`Promise.resolve()` around all of them would hide which ones are not. The SAML
+2.0 page also draws the consumed document's STATE (fresh, stale, expired), what
+the background refresher last found, and the realm's metadata trust anchors,
+all out of `admin-core/admin_views.ts`'s view model, so `/admin-api/saml2?sp=`
+shows the same.
+
 **THE FIELD NAMES ARE THE SCHEMA'S OWN, PREFIXED `field.`**, and both halves of
 that are deliberate. The prefix is what lets `applicationFieldsFrom()` tell an
 attribute from `name` or `action` without scanning the body for schema names, so
@@ -4692,7 +4705,8 @@ mint a fresh set.
 What was added is the act the old label promised, and **it is not a second
 implementation**: the form posts to `/admin/logout` with `action=global`, so it
 reaches `logoutReader.terminate(key, [], …)` — the same function, through the
-sixth slot, walking the same ten families in the same `endOrder`. A sign-out
+sixth slot, walking the same families (ten then, eleven since the wallet
+sign-in of 2026-09-17) in the same `endOrder`. A sign-out
 built here would have been a SECOND answer to "what is a live session", which is
 exactly what rule 3m exists to prevent, and it would have got the order wrong the
 same way `terminate()` did the first time: the notifications are built off the
@@ -5830,6 +5844,68 @@ things are this console's.
 `tests/admin_credential_controls.js` drives the actions, the portal page and the
 enrolment step in a child process; no owned browser job presses the section yet.
 
+## `/admin/vc-status`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
+
+Verifiable Credentials → Credential status, drawn by `vc_status_admin.ts` from
+`oid4vc/vc_status.ts` (`oid4vc/CLAUDE.md`, rule 3as). It shows where the Token
+Status List, its aggregation and the two Bitstring Status List credentials are
+served, the list size, `bits` and lifetimes, the counts, and — paged, newest
+first — every live credential's index, format, configuration, effective status,
+the explicit status beside it, and who set it.
+
+Four decisions:
+
+* **A REALM'S PAGE, not a service page.** What it shows and changes is the
+  ambient realm's own lists, which is #32's rule: a realm's administrator runs
+  their realm's issuance. It is absent from `SERVICE_PAGES`.
+* **THE CONTROL IS PER ROW**: Suspend, Reinstate (from SUSPENDED only) and
+  Revoke. INVALID is final, as the draft means it, and the refusal says so
+  (`STS-VC-0082`).
+* **THE STATUS IS COMPUTED, AND THIS PAGE KEEPS NO SECOND ANSWER.** A
+  credential an administrator revoked on `/admin/tokens` reads INVALID here by
+  that act and a restore there clears it; a global sign-out's disown reads the
+  same way. One question, one answer — the thing rule 3m is about, applied to
+  a page rather than to a family.
+* **RULE 7**: `GET /admin-api/vc-status` answers `statusView()` and
+  `POST /admin-api/vc-status/{suspend|reinstate|revoke}` answers
+  `statusAction()`, the two functions the page itself calls.
+**AND THE ACCOUNT ITSELF, SINCE 2026-09-17 (#36 follow-up).** The state table's
+first row is *Account: enabled / DISABLED*, and the controls above the reset are
+**Disable the account** and **Enable the account** — `usersAction()`'s
+`disable` and `enable`, `common/account_state.ts`'s act. Disabling is drawn as
+the dangerous control it is and says what it does: every door refuses that
+person, and everything they hold ends at once, with the back-channel Logout
+Tokens and RISC `account-disabled` going out. It is the SAME act as SCIM's
+`active: false` — the page says so, because an operator who disables somebody
+here and sees their provisioning system re-enable them tomorrow should know
+which member did it.
+
+## `/admin/logout`'S DELIVERY LIST IS THE SERVICE'S, PAGED, WITH A RETRY (2026-09-17, #36 follow-up)
+
+The section `backchannelDeliveriesSection()` draws under both halves of
+`/admin/logout` listed *the last 25 this process made*, which was the honest
+sentence while the deliveries lived in one process's memory. They are rows of a
+persisted, replicated store now (`oauth-oidc/CLAUDE.md`, 3aq), so:
+
+* it lists the whole realm's, from every node, with the counts by state above
+  it (pending, sent, dead letters);
+* it is filtered by state and searched (`deliveryState`, `deliveryq`) and paged
+  on `backchannelDeliveriesPage` — the drill-down paging convention, with the
+  shared `per`, because this page already pages its live rows;
+* **a DEAD LETTER carries a Retry button** for Admin Write, posting
+  `retry-backchannel` — the same action `POST
+  /admin-api/logout/retry-backchannel` calls, so the two doors cannot drift
+  (rule 7). The row it queues is a new generation with a new Logout Token and
+  the client's CURRENT address;
+* the three filter parameters joined `'/admin/logout'`'s row in
+  `LIST_VIEW_PARAMS`, so the Retry button's `back` returns the reader to the
+  page they pressed it from.
+
+While fixing the list this page's own `?page=` was found not to work:
+`logoutJson()` asked `pagedRows()` for a parameter named `page`, and
+`pagingOf()` appends `Page` to a name, so the live rows paged on `pagePage`
+while the API documented `page`. It is the default name now.
+
 ## `/admin/caches`: EVERY CACHE AND REPLAY STORE, AND ONE STORE'S ENTRIES (#74, 2026-09-17)
 
 Monitoring → Caches, drawn by `caches_admin.ts` from
@@ -5868,3 +5944,34 @@ Five decisions:
 `GET /admin-api/caches` (with `cache`, `page`, `per`) answers the same
 `cachesJson()` minus the drawing's `paging` (rule 7).
 `tests/cache_registry.js` covers the registry, the owners and the page.
+
+---
+
+## `/admin/saml2?sp=` GREW TWO SECTIONS (2026-09-17, #37)
+
+The drill-down now answers the two questions #37 made real: **what is this
+service provider's signature checked against**, and **what did consuming its
+metadata register**. `saml/CLAUDE.md` argues the behaviour; three decisions
+here are the page's own.
+
+* **Every control has an operation** (rule 7) and they are the same action
+  function: `set-`, `remove-`, `confirm-` and `discard-signing-certificate`,
+  `set-metadata-signing-certificate` and `upload-metadata` on
+  `saml2Action()`, and `POST /admin-api/saml2/<action>` for each. The unknown-
+  action sentence says "The nine are", which is what the parity check reads.
+* **The refresh button is NOT drawn a second time here.** It stays on the
+  application's own page, beside the URL it dials — the only control there that
+  reaches off this machine — and this page links to it. Two buttons for one
+  outbound request would be two places to reason about who may cause one.
+* **The lists are drawn whole, not paginated.** The registered certificates and
+  the consumed endpoints are values on ONE entry, bounded by what an operator
+  typed or one metadata document (itself capped by
+  `saml2.spMetadataMaxBytes`) carried — the same argument the endpoint lists
+  already on this page were drawn under. The pagination rule is about lists of
+  entries, which grow with the deployment.
+
+The upload form is `multipart/form-data` with a textarea beside the file input,
+so a person with no file can paste; `parseBody()` hands the file part over as
+text under `file`, and `saml2Action()` takes `document` first. The list page
+gained one column, the last request's signature outcome, read off
+`samlAuthnRequestVerification`.

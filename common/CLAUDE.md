@@ -36,6 +36,7 @@ more than one family needs it, not because it felt general.
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
+| `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -226,6 +227,55 @@ DIRECT CHILD, and additionally refuses a signature whose reference names
 something else, which none of the four ever checked. `tests/crypto_module.js`
 asserts all of it and was mutation-tested against eight mutants.
 
+**EVERY SIGNATURE FAMILY NODE VERIFIES IS VERIFIED, AND SHA-1 IS A SETTING
+(2026-09-17, #37 follow-up; section 1a of the file).** Until then every XML
+signature this service checked had to be RSA: the vendored engine implements
+RSA itself and takes any other family through an injected `verifier`, and
+nothing here injected one — so an ECDSA signature was "not checkable" and an EC
+certificate could not even be registered. Four decisions, each the one somebody
+will want to undo:
+
+* **The verifier is ALWAYS injected and it is node's OpenSSL**, for RSA too:
+  PKCS#1 v1.5 and RSASSA-PSS (with and without RSAPSSParams), ECDSA (r||s, DER
+  tolerated), EdDSA Ed25519/Ed448, DSA, and the post-quantum ML-DSA and
+  SLH-DSA rows the vendored registry names (a DRAFT's identifiers —
+  draft-eastlake-rfc9231bis-xmlsec-uris; no standard has any yet). The vendored
+  engine still does the canonicalization, the transforms, the references and
+  the digests, so the "both ends canonicalize with the same code" argument
+  above still holds. The key comes from the certificate the CALLER named, read
+  by node, and the engine is shown the signature with its certificate text
+  emptied, because it would try to read that with forge (RSA only).
+* **The new URIs are REGISTERED into the vendored module's exported
+  `SIG_METHODS` and `DIGEST_METHODS`**, additively — a row the vendored table
+  has is never touched — because the engine refuses an unknown SignatureMethod
+  or DigestMethod before it calls any verifier. It is the one place this file
+  writes another module's state, and the alternative was a second
+  canonicalizing verifier here, which is the drift this file exists to end.
+  The SHA-224, SHA-3 and RIPEMD-160 digest rows are node hashes dressed as
+  forge's.
+* **What is not verified is refused BY NAME as not checkable
+  (`STS-KEYS-0061`)**, never as a wrong signature: MD5/MD2, HMAC and the other
+  MACs (a SAML party registers a certificate, not a shared secret),
+  Whirlpool/RIPEMD-128 (not in node's default provider), ESIGN, pre-hashed and
+  context EdDSA, and the stateful HSS/LMS and XMSS (OpenSSL 3.5 has none).
+* **SHA-1 is `saml.allowSha1Signatures`, off by default in both modes**, and it
+  is enforced HERE — on the SignatureMethod and on every DigestMethod, before
+  any cryptography (`STS-KEYS-0062`) — so every XML signature path in the
+  service gets one answer: SAML 2.0 requests and metadata, artifact
+  resolution, federation, RFC 7522, WS-Trust, WS-Federation, SAML 1.1, GNAP.
+  With it on, SHA-1 verifies and the verdict still says `weak` (RIPEMD-160 is
+  `weak` too and no setting refuses it). A consequence worth knowing: setting
+  `saml.signatureAlgorithm` to `rsa-sha1` makes this service's own verifiers
+  refuse what it signs unless the setting is on as well.
+
+One more thing the same change fixed: **an INCLUSIVE-canonicalization signature
+never verified here, even on a root element**, because the engine
+canonicalizes the SignedInfo from the Signature serialized on its own, which
+loses the namespace declarations inclusive c14n renders from the ancestors. The
+in-scope declarations are now copied onto the Signature first; a NESTED
+element under inclusive c14n is still refused (`STS-KEYS-0010`), for the
+reason above.
+
 **XML ENCRYPTION MOVED RATHER THAN BEING REPLACED**, and it is the one place the
 vendored file did not win. It was never duplicated — one implementation, two
 callers — and the vendored `encryptXml()` produces a byte-compatible document,
@@ -291,6 +341,23 @@ Its sibling `ssfReceiverId` is the opposite and is worth the contrast: it is one
 of the few declaration attributes a PROTOCOL also writes, because a receiver
 authenticating and being agreed a stream is exactly the kind of event this
 registry exists to hold.
+
+## A SAML SIGNING CERTIFICATE HAS A PROVENANCE TOO (2026-09-17, #37)
+
+`samlSigningCertificate` became the trust anchor a service provider's request
+signatures are verified against, so it became MULTI-valued and nothing a request
+carries is written to it; the `ds:KeyInfo` certificate goes on
+`samlObservedSigningCertificate` (single, derived). The registry functions are
+`confirmSigningCertificate()` / `discardSigningCertificate()` (the pair
+`confirmReturnAddress()` has), `replaceSamlMetadataFields()` (the one save
+consuming SP metadata makes, over a CLOSED list of attributes because it writes
+derived ones), and `samlCertificateProblem()`, which `updateApplication()` asks
+of every add or set of `samlSigningCertificate` and
+`samlSpMetadataSigningCertificate` (RSA X.509 only, `STS-REG-0160`). An explicit
+`add` of the observed value confirms it. `saml/CLAUDE.md` argues why the
+certificate is a separate attribute where a return address is a mark, and the
+two `mode.js` predicates it added — `acceptsUnsignedSamlRequests()` and
+`encryptsToObservedCertificates()`.
 
 ## A RETURN ADDRESS HAS A PROVENANCE, AND `returnAddressesOf()` IS THE ONE PLACE IT IS READ (2026-09-12)
 
@@ -777,6 +844,20 @@ R2). **A process that requires a single converted route module and not this
 file gets no routes from it** — it has to call that module's
 `registerRoutes(app)` itself.
 
+**The root does not build or require ITSELF (2026-09-17).** R2's build list
+was recorded from the order modules finished loading, and this file finishes
+last, so `load()` ended with `build('common/protocol_stack',
+require('./protocol_stack'))`. `load()` runs inside this file's own require, so
+that was a module required from within its own load: node handed back the
+half-built exports and printed *Accessing non-existent property
+'installInstance' of module exports inside circular dependency* on every start,
+in every request worker and in every whole-stack test. The build skipped it
+anyway (`ProtocolStack` has no `installInstance()`), so the line was DELETED
+rather than made lazy — rule 3e's reasoning: a lazy require is for a cycle two
+modules need, and this cycle was needed by nothing. `tests/composition_root.js`
+now fails on any circular-dependency warning while the stack loads, in both
+its stack and worker orders.
+
 `server.js` loads that file and then binds the sockets. **`common/request_worker.ts`
 loads the SAME file and binds none of them** — it is a child process that runs
 the service and answers HTTP on a unix socket the front process proxies to. A
@@ -1197,6 +1278,68 @@ protocol pool until the re-fork. The setting's own default stays 0, because a
 non-zero one would require dispatch and read-your-write of every
 single-process run.
 
+
+## 3at. `account_state.ts` — A DISABLED ACCOUNT (2026-09-17, #36 follow-up)
+
+The directory had no disabled state. An administrator who wanted somebody OUT
+could remove their password (and their sign-in with a security key went on
+working), narrow the issuance policy (which is about an APPLICATION), or delete
+the entry (which loses everything about them). SCIM's `active: false` was
+recorded in an invented `scimActive` and read by nothing — the root
+`CLAUDE.md`'s longest-standing non-goal about this directory, and the one most
+likely to let somebody ship a deprovisioning path that had never worked.
+
+**THE ATTRIBUTE IS `pwdAccountLockedTime`** — draft-behera-ldap-password-
+policy section 5.3.3, whose value `000001010000Z` means "locked permanently,
+and only a password administrator can unlock it". That is exactly what an
+administrator disabling an account says. It was chosen over an invented
+`stsAccountDisabled` for one reason that is not taste: an LDAP client reading
+this directory already understands it (OpenLDAP's ppolicy overlay writes and
+reads that value), and `pwdReset` beside it comes from the same draft. **This
+service enforces it more widely than the draft asks** — the draft is about
+password binds; here EVERY door refuses the person — and that is the safe
+direction for a lock. Any value is a lock, which is the draft's own rule where
+no `pwdLockoutDuration` is configured, and none is here.
+
+**WHAT A DISABLE DOES, IN ORDER.** The lock is written
+(`credentials.setAccountDisabled()`, an eleventh directory hook); everything
+the person holds is ENDED through the same `logout.terminate()` a global
+logout calls — every session (and with each, `dropSession()`'s consequences:
+CAEP `session-revoked`, the back-channel Logout Tokens, the RFC 9700 refresh
+revocation), every revocable token, every outstanding code, every directory
+connection bound as them, a Kerberos sign-out instant, and the disowning of
+what cannot be revoked; and one `account.disable` audit row names who did it.
+Enabling clears the lock and ends nothing. RISC's `account-disabled` /
+`account-enabled` come from the directory's own account observer
+(`ssf/risc.ts` reads the lock where it read `scimActive`), so they are emitted
+once whichever door wrote it.
+
+**WHERE IT IS ASKED — the list is the feature.** A refusal that held at the
+sign-in screen and nowhere else would look exactly like this working:
+
+| Door | How |
+|---|---|
+| every password (the sign-in screen, an LDAP bind, the password grant, a WS-Trust UsernameToken, SCIM and SSF Basic, EST) | `credentials.verify()`, before the development-mode pass, so it holds in BOTH modes (`STS-AUTHN-0200`) |
+| every session (the screen and its second-factor steps, federation, SPNEGO, `GET /tls/sign-in`, the OID4VP wallet door, WS-Trust, the keyed API callers) | `authn.startSession()`, first, before the gate and before the keyed branch (`STS-AUTHN-0201`) |
+| a session they already hold | `authn.sessionOf()` ends it through `dropSession()` |
+| every issuance — any token grant carrying a person, an ID Token, a SAML or WS-Federation assertion, a WS-Trust token, a Kerberos TGS ticket, a session | `issuance_gate.check()`, BEFORE its three permissive early answers, because a disable is not a role decision (`STS-OAUTH-0551` at the token endpoint, as `invalid_grant`) |
+| a Kerberos AS-REQ, and an S4U2Self naming them | `krb5_principals.personDisabled()` → KDC_ERR_CLIENT_REVOKED (18), in both modes and before a development KDC would create the principal (`STS-KRB-0129`) |
+| the management API | its bearer check, which also learned to refuse a REVOKED token there (`STS-API-0122`) |
+
+**A WRITE THAT DID NOT COME THROUGH HERE still has the consequence**: the
+directory hands a lock that moved — SCIM, an `ldapmodify`, a console create —
+to `directoryChanged()`, which ends what the person holds AFTER the write has
+been answered (`ldap/CLAUDE.md`). So the effect does not depend on the door,
+and an `ldapmodify` cannot leave a disabled person with live sessions.
+
+**IT FINDS `logout/logout.ts` IN `require.cache` AND NEVER REQUIRES IT** —
+`ssf/account_signals.ts`'s arrangement, for its reason: this file is loaded
+long before that family, and a process that never loaded it (an in-process
+test, the parent project's Kerberos jobs) is told so in the answer rather than
+handed nine modules it did not ask for.
+
+`tests/account_disable.js` drives every door above that a single process can
+reach, with a control before each.
 
 ## `realms.js`: several logical copies of this service, in one process
 
@@ -3922,6 +4065,23 @@ would be nothing to address its row by at all. It is deliberately kept apart fro
 `credential_graph.ts` looks a lineage up by; this is only ever a way of naming
 one row of the issued register. `nums.artifactsRecorded` counts what has EVER
 been recorded and is not `artifacts.length`, which falls back as the cap shifts.
+
+### The handle, read back (#38's follow-ups, 2026-09-17)
+
+`artifactRevokedByKey(key)` answers the mark on one artifact by the HANDLE
+alone, for a caller that kept the handle and not the record: the wallet sign-in
+register (`oid4vc/vc_issued.ts`) asks it whether an administrator has disowned
+the credential a presentation carries, and the status lists ask it which bit to
+publish. The register of revocations outlives the row — it is a
+`realms.map({persist})` of its own, for the reason above it — so this needs
+nothing but the key.
+
+**And a credential artifact may name a PERSON as well as a subject.** An
+`ldp_vc`'s subject is the holder's `did:jwk` and says nothing about whose wallet
+it is, so `recordCredential()` takes `person` — the `urn:uuid:` subject of the
+verified access token the credential was issued on — and `userDetail()` files
+the row under them as well. Without it that credential was nobody's on
+`/admin/users` and out of reach of that person's global sign-out.
 
 ### And one ordering fix that is easy to read past
 

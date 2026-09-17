@@ -157,6 +157,10 @@ import krb5Principals = require('../kerberos/krb5_principals');
 // `admin_actions.ts` gives beside its own.
 import krb5PersonKeys = require('../kerberos/krb5_person_keys');
 import oauth2 = require('../oauth-oidc/oauth2');
+// The recent back-channel logout deliveries (2026-09-17, #36), which the
+// sign-out page lists so a delivery queued as `pending` can be seen to have
+// arrived or not. A library that registers no route.
+import backchannel = require('../oauth-oidc/backchannel_logout');
 // RFC 7591 section 2.3 (2026-09-13): what a statement on an entry says, and the
 // settings that decide what one is worth. A library that registers no route.
 import softwareStatement = require('../oauth-oidc/software_statement');
@@ -171,6 +175,13 @@ import mtls = require('../oauth-oidc/mtls');
 // pages publish.
 import saml2 = require('../saml/saml2_sso');
 import saml11 = require('../saml/saml11_sso');
+// Whether a service provider's requests must be signed (#37), for the
+// drill-down. A library that registers nothing.
+import requestSignature = require('../saml/request_signature');
+// How current a service provider's consumed metadata is, and what the
+// background refresher last found (#37 follow-up). Already required by
+// `admin_actions.ts`, so this closes no cycle.
+import spMetadata = require('../saml/sp_metadata');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
 // The receiver half of Shared Signals, which the three reports below draw
@@ -406,12 +417,15 @@ interface AdminViewsDeps {
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
   oauth2: typeof oauth2;
+  backchannel: typeof backchannel;
   softwareStatement: typeof softwareStatement;
   assertionGrant: typeof assertionGrant;
   tlsClientCertificates: typeof tlsClientCertificates;
   certificateSubject: typeof certificateSubject;
   mtls: typeof mtls;
   saml2: typeof saml2;
+  requestSignature: typeof requestSignature;
+  spMetadata: typeof spMetadata;
   saml11: typeof saml11;
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
@@ -474,12 +488,15 @@ class AdminViews {
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
       oauth2: oauth2,
+      backchannel: backchannel,
       softwareStatement: softwareStatement,
       assertionGrant: assertionGrant,
       tlsClientCertificates: tlsClientCertificates,
       certificateSubject: certificateSubject,
       mtls: mtls,
       saml2: saml2,
+      requestSignature: requestSignature,
+      spMetadata: spMetadata,
       saml11: saml11,
       authorizationServers: authorizationServers,
       federation: federation,
@@ -4163,7 +4180,10 @@ class AdminViews {
                 self.valuesFor(row.fields.samlSingleLogoutService),
               nameIdFormats: self.valuesFor(row.fields.samlNameIdFormat),
               responseBindings: self.valuesFor(row.fields.samlResponseBinding),
-              lastRequestSigned: row.fields.samlAuthnRequestSigned === 'TRUE'
+              lastRequestSigned: row.fields.samlAuthnRequestSigned === 'TRUE',
+              lastRequestVerification:
+                String(row.fields.samlAuthnRequestVerification || '')
+                  .split(' ')[0]
             });
           }),
           paging: paging,
@@ -4188,7 +4208,7 @@ class AdminViews {
   }
 
   saml2DetailJson(req, identifier) {
-    const { log, baseUrlOf, applications } = this.deps;
+    const { log, baseUrlOf, applications, requestSignature } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml2DetailJson(). identifier=" +
               identifier);
@@ -4211,9 +4231,99 @@ class AdminViews {
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
           responseBindings: self.valuesFor(fields.samlResponseBinding),
           lastRequestSigned: fields.samlAuthnRequestSigned === 'TRUE',
-          signingCertificate: fields.samlSigningCertificate || ''
+          // THE SIGNATURE CHECK (#37). `signingCertificate` is kept, as the
+          // first registered certificate, for the callers that read it when
+          // the attribute held one value; `signingCertificates` is the list
+          // requests are verified against.
+          lastRequestVerification: self.verificationOf(
+            fields.samlAuthnRequestVerification),
+          signingCertificate:
+            self.valuesFor(fields.samlSigningCertificate)[0] || '',
+          signingCertificates: self.valuesFor(fields.samlSigningCertificate),
+          observedSigningCertificate:
+            String(fields.samlObservedSigningCertificate || ''),
+          signedRequestsRequired: requestSignature.requiresSignedRequests(
+            fields),
+          metadata: self.consumedMetadataOf(fields, identifier)
       });
       }())
+    };
+  }
+
+  // `<outcome> <binding> <sigAlg> [weak]`, as the SSO service records it, as
+  // an object.
+  verificationOf(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.verificationOf().");
+    const parts = String(value || '').split(' ');
+    log.debug("Leaving AdminViews.verificationOf().");
+    return {
+      outcome: parts[0] || '',
+      binding: parts[1] && parts[1] !== '-' ? parts[1] : '',
+      signatureMethod: parts[2] && parts[2] !== '-' ? parts[2] : '',
+      weak: parts[3] === 'weak'
+    };
+  }
+
+  // WHAT CONSUMING THE SERVICE PROVIDER'S METADATA WROTE (#37), as the page
+  // and `GET /admin-api/saml2?sp=` show it. `consumed` is false for an entry
+  // no document has been consumed onto. Since the #37 follow-up `state` is
+  // `sp_metadata.ts`'s freshness — fresh, stale or expired, ENFORCED — and
+  // `refresh` is what the background refresher last found.
+  consumedMetadataOf(fields, entityId?) {
+    const { log, spMetadata, config } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.consumedMetadataOf().");
+    const consumedAt = String(fields.samlSpMetadataConsumedAt || '');
+    const validUntil = String(fields.samlSpMetadataValidUntil || '');
+    const fresh = spMetadata.freshness(fields);
+    const identifier = entityId || self.valuesFor(fields.samlEntityId)[0] ||
+                       '';
+    log.debug("Leaving AdminViews.consumedMetadataOf().");
+    return {
+      state: fresh.state,
+      stateWhy: fresh.why,
+      expiresAt: fresh.expiresAt,
+      staleAt: fresh.staleAt,
+      refreshable: fresh.refreshable,
+      refresh: identifier ? spMetadata.refreshStatus(identifier) : null,
+      refresherEnabled: !!config.value('saml2.spMetadataRefresh'),
+      refresherRunning: spMetadata.refresherRunning(),
+      trustAnchors: spMetadata.trustAnchorsFor(fields).length,
+      trustAnchorProblems: spMetadata.anchorProblems(),
+      mdqUrl: identifier ? spMetadata.mdqUrlFor(identifier) : '',
+      consumed: !!consumedAt,
+      consumedAt: consumedAt.split(' ')[0] || '',
+      how: consumedAt.split(' ')[1] || '',
+      url: self.valuesFor(fields.samlSpMetadataUrl)[0] || '',
+      signature: String(fields.samlSpMetadataSignature || ''),
+      signingCertificateConfigured:
+        !!String(fields.samlSpMetadataSigningCertificate || ''),
+      validUntil: validUntil,
+      expired: fresh.state === 'expired',
+      cacheDuration: String(fields.samlSpMetadataCacheDuration || ''),
+      authnRequestsSigned: fields.samlSpAuthnRequestsSigned === 'TRUE',
+      wantAssertionsSigned: fields.samlSpWantAssertionsSigned === 'TRUE',
+      wantAssertionsEncrypted:
+        fields.samlSpWantAssertionsEncrypted === 'TRUE',
+      nameIdFormats: self.valuesFor(fields.samlSpNameIdFormat),
+      assertionConsumerServices: self.valuesFor(fields.samlAcsEndpoint)
+        .map(function (value) {
+          const parts = value.split(' ');
+          return { index: parts[0] === '-' ? '' : parts[0],
+                   isDefault: parts[1] === 'true' ? true
+                     : (parts[1] === 'false' ? false : null),
+                   binding: parts[2] || '',
+                   location: parts.slice(3).join(' ') };
+        }),
+      singleLogoutServices: self.valuesFor(fields.samlSloEndpoint)
+        .map(function (value) {
+          const parts = value.split(' ');
+          return { binding: parts[0] || '', location: parts[1] || '',
+                   responseLocation: parts[2] || '' };
+        }),
+      encryptionCertificate:
+        !!self.valuesFor(fields.samlEncryptionCertificate).length
     };
   }
 
@@ -6130,6 +6240,9 @@ class AdminViews {
       // different question from `mfaRequired` below, what they HOLD.
       passwordChangeRequired: credentials.passwordResetRequired(key),
       passwordResetLink: mech.passwordResetLink || null,
+      // A DISABLED ACCOUNT (2026-09-17): `pwdAccountLockedTime` on the entry,
+      // which every door refuses; `POST /admin-api/users/enable` clears it.
+      disabled: !!mech.disabled,
       mfaRequirement: mech.mfaRequirement ||
         { required: false, byUser: false, byRealm: false },
       usable: mech.usable,
@@ -6344,17 +6457,48 @@ class AdminViews {
   // first version answered the json directly on its two early paths and a model
   // on the third, which left the management API calling it twice to find out
   // which it had been given.
-  logoutJson(req) {
-    const { log, stats } = this.deps;
+  //
+  // `backchannelDeliveries` (2026-09-17, #36) is on EVERY branch: the
+  // back-channel Logout Token deliveries in this realm, newest first, with the
+  // state each reached — a sign-out answers before its deliveries are made,
+  // so this is where `pending` turns into `sent` or `dead`. SINCE THE
+  // FOLLOW-UP THE LIST IS THE CLUSTER'S: the deliveries are rows of a
+  // persisted, replicated store, so every node lists every node's. It is
+  // FILTERED (`deliveryState`, `deliveryq`) and PAGED
+  // (`backchannelDeliveriesPage`, `per` shared), with `backchannelCounts`
+  // beside it — the dead letters an operator retries are
+  // `deliveryState=dead`.
+  logoutJson(req): any {
+    const { log, stats, backchannel } = this.deps;
     log.debug("Entering AdminViews.logoutJson().");
     const wantedUser = String((req.query || {}).user || '').trim();
     const gate = this.gateStateFor(req);
     const params = this.pageParamsOf(req.query);
     const families = this.logoutFamilies();
+    const q = req.query || {};
+    const deliveryState = backchannel.STATES.indexOf(
+      String(q.deliveryState || '')) >= 0 ? String(q.deliveryState) : '';
+    const deliveryQ = String(q.deliveryq || '').trim().slice(0, 256);
+    const allDeliveries = backchannel.list({ state: deliveryState,
+                                             q: deliveryQ });
+    const deliveriesPg = this.pagedRows(q, allDeliveries,
+      { name: 'backchannelDeliveries', noun: 'deliveries' });
+    const backchannelDeliveries = deliveriesPg.shown;
+    const backchannelBlock = {
+      backchannelDeliveries: backchannelDeliveries,
+      backchannelDeliveriesPaging: this.pagingJson(deliveriesPg.paging),
+      backchannelCounts: backchannel.counts(),
+      deliveryState: deliveryState,
+      deliveryq: deliveryQ
+    };
     if (!wantedUser) {
       log.debug("Leaving AdminViews.logoutJson(). Nobody was named.");
-      return { families: families,
-               json: { user: '', known: false, families: families } };
+      return Object.assign({ families: families,
+                             deliveriesPg: deliveriesPg },
+                           backchannelBlock,
+                           { json: Object.assign({ user: '', known: false,
+                                                   families: families },
+                                                 backchannelBlock) });
     }
     const key = stats.identityKeyOf(wantedUser);
     const inventory = this.logoutInventoryFor(key);
@@ -6362,9 +6506,13 @@ class AdminViews {
     // this is only the answer half of that branch.
     if (!inventory) {
       log.debug("Leaving AdminViews.logoutJson(). No logout reader.");
-      return { inventory: null,
-               json: { user: wantedUser, known: false,
-                       error: 'no logout reader is installed' } };
+      return Object.assign({ inventory: null, deliveriesPg: deliveriesPg },
+                           backchannelBlock,
+                           { json: Object.assign({ user: wantedUser,
+                                                   known: false,
+                                                   error: 'no logout reader ' +
+                                                          'is installed' },
+                                                 backchannelBlock) });
     }
 
     // Flattened, because this table filters and pages ACROSS families — see the
@@ -6380,8 +6528,9 @@ class AdminViews {
     const wantedFamily = String(req.query.family || '').trim();
     const filtered = wantedFamily
       ? all.filter(function (r) { return r.family === wantedFamily; }) : all;
-    const pg = this.pagedRows(req.query, filtered,
-                              { name: 'page', noun: 'live items' });
+    // `page` itself (2026-09-17): this passed `name: 'page'`, which pagingOf()
+    // turns into `pagePage`, so the documented `?page=` moved nothing.
+    const pg = this.pagedRows(req.query, filtered, { noun: 'live items' });
 
     const canWrite = gate.write;
     log.debug("Leaving AdminViews.logoutJson(). " + inventory.total +
@@ -6390,10 +6539,17 @@ class AdminViews {
       wantedUser: wantedUser, gate: gate, params: params, families: families,
       key: key, inventory: inventory, all: all, wantedFamily: wantedFamily,
       filtered: filtered, pg: pg, canWrite: canWrite,
+      deliveriesPg: deliveriesPg,
+      backchannelDeliveries: backchannelDeliveries,
+      backchannelDeliveriesPaging: backchannelBlock.backchannelDeliveriesPaging,
+      backchannelCounts: backchannelBlock.backchannelCounts,
+      deliveryState: deliveryState,
+      deliveryq: deliveryQ,
       json: Object.assign({ user: wantedUser, known: true, canWrite: canWrite },
                           inventory,
                           { rows: pg.shown,
-                            paging: this.pagingJson(pg.paging) })
+                            paging: this.pagingJson(pg.paging) },
+                          backchannelBlock)
     };
   }
 

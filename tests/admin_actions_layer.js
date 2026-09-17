@@ -430,6 +430,11 @@ function checkNothingRequiresItEarly(t) {
                    // after the console, so the require is a cache hit and
                    // moves no route.
                    'admin-ui/caches_admin.ts',
+                   // The credential status page (#38's follow-ups), for
+                   // `adminViews`' paging only — the list of issued
+                   // credentials. Required at 18h, after the console, so the
+                   // require is a cache hit and moves no route.
+                   'admin-ui/vc_status_admin.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

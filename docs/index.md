@@ -142,7 +142,8 @@ the diagram and a walk through each layer.
 | TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls`, `/tls/sign-in` |
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` |
-| OpenID4VP 1.0 — a Verifier | `/oid4vp/verifier` |
+| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` |
+| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc-status` |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` |
 
 ## The four things to know before you rely on it

@@ -312,7 +312,13 @@ rewritten whole per event. Not changed here.
 `cluster_claims.claim({ scope, value, ttlMs })`: the key stored is SHA-256 of
 scope and value, never the value; the lifetime is the database's clock; a store
 that cannot be asked answers `reason: 'store'` and the caller refuses (fail
-closed). `releaseUnlessSucceeded(res, handle)` gives a claim back when the
+closed). **A won claim answers `claimedAt` as well since 2026-09-17**, the
+store's own clock: a claim re-taken after its lifetime lapsed carries a LATER
+time than the one it replaced, so a caller can use it as a FENCING TOKEN. The
+back-channel Logout Token deliveries do — one claim per delivery attempt, and
+the row keeps whichever copy carries the higher claim time, so a process that
+stalled past its lease cannot overwrite the outcome of the one that took over
+(`oauth-oidc/CLAUDE.md`, 3aq). `releaseUnlessSucceeded(res, handle)` gives a claim back when the
 response is not 2xx/3xx. On memory or ldif it is this process's map, which is
 exactly as atomic as the map it replaces.
 

@@ -227,6 +227,8 @@ class ProtocolStack {
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     this.build('common/credentials', require('./credentials'), 'Credentials');
+    this.build('common/account_state', require('./account_state'),
+               'AccountState');
     this.build('cluster/cluster_secrets', require('../cluster/cluster_secrets'),
                'ClusterSecrets');
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
@@ -336,12 +338,18 @@ class ProtocolStack {
     this.build('oauth-oidc/frontchannel_logout',
                require('../oauth-oidc/frontchannel_logout'),
                'FrontchannelLogout');
+    this.build('oauth-oidc/backchannel_logout',
+               require('../oauth-oidc/backchannel_logout'),
+               'BackchannelLogout');
     this.build('oauth-oidc/refresh_token_crypto',
                require('../oauth-oidc/refresh_token_crypto'),
                'RefreshTokenCrypto');
     this.build('oauth-oidc/introspection_jwt',
                require('../oauth-oidc/introspection_jwt'),
                'IntrospectionJwt');
+    this.build('oauth-oidc/id_token_encryption',
+               require('../oauth-oidc/id_token_encryption'),
+               'IdTokenEncryption');
     this.build('oauth-oidc/request_object',
                require('../oauth-oidc/request_object'),
                'RequestObject');
@@ -389,6 +397,10 @@ class ProtocolStack {
                'FederationHttp');
     this.build('saml/sp_metadata', require('../saml/sp_metadata'),
                'SpMetadata');
+    // Whether a service provider's request is signed by it (#37). A library
+    // `saml2_sso.ts` requires, built before that module's instance.
+    this.build('saml/request_signature', require('../saml/request_signature'),
+               'RequestSignature');
     this.build('saml/saml2_sso', require('../saml/saml2_sso'), 'Saml2Sso');
     this.register(app, require('../saml/saml2_sso'), 'saml/saml2_sso');
     // SAML 1.1's two browser profiles, and the SAML responder behind one of
@@ -445,6 +457,20 @@ class ProtocolStack {
     require('../oid4vc/vc_did');
     this.build('oid4vc/vc_did', require('../oid4vc/vc_did'), 'VcDid');
     this.register(app, require('../oid4vc/vc_did'), 'oid4vc/vc_did');
+    // THE STATUS LISTS AND THEIR TWO LIBRARIES (#38's follow-ups): the codec
+    // (Token Status List, CBOR/COSE, Bitstring Status List), the holder's
+    // Data Integrity proof, and the lists themselves, whose routes —
+    // /oid4vci/status-lists/* — register here, ahead of the issuer that
+    // references them. None requires the issuer or the verifier.
+    this.build('oid4vc/vc_status_codec', require('../oid4vc/vc_status_codec'),
+               'VcStatusCodec');
+    this.build('oid4vc/vc_data_integrity',
+               require('../oid4vc/vc_data_integrity'), 'VcDataIntegrity');
+    this.build('oid4vc/vc_status', require('../oid4vc/vc_status'), 'VcStatus');
+    this.register(app, require('../oid4vc/vc_status'), 'oid4vc/vc_status');
+    // The register of credentials issued for a directory entry (#38): a
+    // library both the issuer and the verifier read, built before either.
+    this.build('oid4vc/vc_issued', require('../oid4vc/vc_issued'), 'VcIssued');
     require('../oid4vc/vc_issuer');
     this.build('oid4vc/vc_issuer', require('../oid4vc/vc_issuer'), 'VcIssuer');
     this.register(app, require('../oid4vc/vc_issuer'), 'oid4vc/vc_issuer');
@@ -455,6 +481,18 @@ class ProtocolStack {
     this.build('oid4vc/vc_verifier', require('../oid4vc/vc_verifier'),
                'VcVerifier');
     this.register(app, require('../oid4vc/vc_verifier'), 'oid4vc/vc_verifier');
+    // -------------------------------------------------------------------------
+    // 14a. AND A PRESENTATION AS A SIGN-IN (2026-09-17, #38): /authn/wallet,
+    // which turns a verified presentation of a credential this realm issued
+    // into the session every protocol family reads. After `vc_verifier`,
+    // whose transactions it is, and after `authn/authn` (#8), whose
+    // `startSession()` it calls — `kerberos/spnego_authn`'s arrangement, and
+    // for its reason: `authn` declares the two paths and requires nothing
+    // here, so no route moves and no cycle closes.
+    // -------------------------------------------------------------------------
+    require('../oid4vc/vc_signin');
+    this.build('oid4vc/vc_signin', require('../oid4vc/vc_signin'), 'VcSignin');
+    this.register(app, require('../oid4vc/vc_signin'), 'oid4vc/vc_signin');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
     // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port
@@ -741,6 +779,14 @@ class ProtocolStack {
                'CachesAdmin');
     this.register(app, require('../admin-ui/caches_admin'),
                   'admin-ui/caches_admin');
+    // 18h. THE STATUS LISTS' PAGE (#38's follow-ups), 18a's placement and
+    // reason: the console's shell and `oid4vc/vc_status` already loaded, and
+    // `mgmt-api/admin_api` requires it.
+    require('../admin-ui/vc_status_admin');
+    this.build('admin-ui/vc_status_admin',
+               require('../admin-ui/vc_status_admin'), 'VcStatusAdmin');
+    this.register(app, require('../admin-ui/vc_status_admin'),
+                  'admin-ui/vc_status_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module
@@ -1172,8 +1218,20 @@ class ProtocolStack {
     require('../sts_metadata');
     this.build('sts_metadata', require('../sts_metadata'), 'StsMetadata');
     this.register(app, require('../sts_metadata'), 'sts_metadata');
-    this.build('common/protocol_stack', require('./protocol_stack'),
-               'ProtocolStack');
+    // NO `build()` OF THIS FILE (2026-09-17, #36 follow-up). There was one
+    // here — R2's build list was recorded from the order modules FINISHED
+    // loading, and this file finishes last — and it was the one line in the
+    // service that required a module from inside its own load: `load()` runs
+    // at this file's require, so `require('./protocol_stack')` answered the
+    // half-built `module.exports` and node printed "Accessing non-existent
+    // property 'installInstance' of module exports inside circular
+    // dependency" on every start, every worker and every whole-stack test.
+    // It built nothing — `ProtocolStack` exports no `installInstance()` and
+    // `build()` skipped it — so the line is removed rather than made lazy:
+    // the root is not a module the root installs, and a lazy require of
+    // itself would still be a cycle, only a quieter one.
+    // `tests/composition_root.js` fails if any circular-dependency warning is
+    // printed while the stack loads.
     this.checkOrigins();
     helpers.log.debug("Leaving ProtocolStack.load(). " +
                       this.registered.length + " route module(s), " +

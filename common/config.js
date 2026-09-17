@@ -4965,8 +4965,10 @@ const SETTINGS = [
   // (admin_stats.js's note that no token here carries a session identifier).
   // The reasoning behind that note is kept and is why this is switchable: a
   // claim is added because a specification needs it, and Front-Channel Logout
-  // section 3 is that specification. Turning this OFF restores the tokens and
-  // the metadata this service issued before the feature existed, exactly.
+  // section 3 is that specification. Turning this OFF restores the metadata
+  // this service issued before the feature existed; the tokens are restored
+  // only with `oauth2.backchannelLogout` off as well (2026-09-17, #36), because
+  // Back-Channel Logout needs the same `sid`.
   // ---------------------------------------------------------------------
   { key: 'oauth2.frontchannelLogout', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Front-Channel Logout',
@@ -4981,10 +4983,160 @@ const SETTINGS = [
                  'relying party that registered a frontchannel_logout_uri, ' +
                  'with iss and sid on it where the client registered ' +
                  'frontchannel_logout_session_required. Off, none of the ' +
-                 'three happens and the tokens are byte-for-byte what this ' +
-                 'service issued before the feature existed. A client that ' +
+                 'three happens — except the `sid` claim while ' +
+                 'oauth2.backchannelLogout is on, which needs it too; with ' +
+                 'both off the tokens are byte-for-byte what this service ' +
+                 'issued before either feature existed. A client that ' +
                  'registers no logout URI is never notified either way, and ' +
                  '/logout says so on its row rather than leaving it out.' },
+
+  // ---------------------------------------------------------------------
+  // OPENID CONNECT BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36), AND THE SAME
+  // SHAPE AS THE ROW ABOVE FOR THE SAME REASON: ONE SWITCH OVER THE CLAIM, THE
+  // ADVERTISEMENT AND THE FAN-OUT.
+  //
+  // `backchannel_logout_supported` and `backchannel_logout_session_supported`
+  // in discovery, the `sid` claim an RP needs to match a Logout Token to its
+  // session, and the POST of a signed Logout Token to every relying party on an
+  // ending session that registered a `backchannel_logout_uri`. ON by default,
+  // for the row above's reason: a capability, refusing nothing. The `sid`
+  // claim is on while EITHER of the two is on — both specifications need it —
+  // so only turning both off restores the tokens issued before either existed.
+  //
+  // The four tunables below it are the delivery's, which is ASYNCHRONOUS with
+  // bounded retry: the sign-out answers at once, and a relying party that is
+  // down is tried `attempts` times, `backoffMs` apart and doubling, each try
+  // bounded by `timeoutMs`. `oauth-oidc/backchannel_logout.ts` argues them.
+  // ---------------------------------------------------------------------
+  { key: 'oauth2.backchannelLogout', group: 'OAuth 2.0 / OIDC',
+    label: 'OpenID Connect Back-Channel Logout',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Advertise and perform OpenID Connect Back-Channel Logout ' +
+                 '1.0. With it on: the discovery document says ' +
+                 'backchannel_logout_supported and ' +
+                 'backchannel_logout_session_supported, an ID Token issued ' +
+                 'on a browser sign-on session carries `sid`, and when a ' +
+                 'session ends by any sign-out — /oauth2/logout, /logout, ' +
+                 'wsignout1.0, SAML Single Logout, the console and ' +
+                 '/admin-api — every relying party on it that registered a ' +
+                 'backchannel_logout_uri is POSTed a Logout Token signed ' +
+                 'like its ID Token. The POSTs go out after the sign-out has ' +
+                 'answered, through the outbound policy ' +
+                 '(federation.outbound, https unless ' +
+                 'federation.outboundAllowInsecure, and no ' +
+                 'internal address in product mode), and each outcome is an ' +
+                 'audit row. A session that EXPIRES sends too while ' +
+                 'oauth2.backchannelLogoutOnExpiry is on, and so does one an ' +
+                 'administrator disables. Each delivery is a persisted row ' +
+                 'that exactly one process of the cluster sends, retried by ' +
+                 'any node across restarts and dead-lettered on a final ' +
+                 'failure (listed and retried on /admin/logout). Off, none ' +
+                 'of it happens; `sid` stays while ' +
+                 'oauth2.frontchannelLogout is on.' },
+  { key: 'oauth2.backchannelLogoutOnExpiry', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout on session expiry',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_ON_EXPIRY', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Send the Logout Tokens when a session EXPIRES — its ' +
+                 'lifetime ran out, or it went idle past ' +
+                 'authn.sessionIdleTimeoutS — as well as when somebody ' +
+                 'signs out. Back-Channel Logout 1.0 lets the provider tell ' +
+                 'its relying parties whenever its session ends, and a ' +
+                 'relying party never told of an expiry keeps a session this ' +
+                 'service no longer vouches for. Off for a deployment whose ' +
+                 'relying parties deliberately outlive the provider\'s idle ' +
+                 'timeout, or a test that wants an expiry to be silent. ' +
+                 'Front-channel logout cannot follow an expiry either way: ' +
+                 'it needs the person\'s browser on a sign-out page.' },
+  { key: 'oauth2.backchannelLogoutTokenTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel Logout Token lifetime (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_TOKEN_TTL_S', type: 'int', dflt: 120,
+    min: 10, max: 3600, runtime: true,
+    description: 'How far in the future a Logout Token\'s exp is. Section 4 ' +
+                 'of the specification encourages "at most two minutes", ' +
+                 'which is the default. A token is signed once and resent ' +
+                 'unchanged on a retry while it is good; one that would ' +
+                 'expire before a retry is signed again with the SAME jti, ' +
+                 'so a relying party still deduplicates on it.' },
+  { key: 'oauth2.backchannelLogoutAttempts', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout delivery attempts',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_ATTEMPTS', type: 'int', dflt: 3,
+    min: 1, max: 10, runtime: true,
+    description: 'How many times one Logout Token is POSTed before its ' +
+                 'delivery becomes a DEAD LETTER. Only a failure worth ' +
+                 'repeating is retried — a timeout, a connection failure, a ' +
+                 '5xx, 408 or 429. A 400 is final (section 2.8 makes it the ' +
+                 'relying party\'s refusal), and so is a refusal by the ' +
+                 'outbound policy. 1 is a single try.' },
+  { key: 'oauth2.backchannelLogoutTimeoutMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout request timeout (ms)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 60000, runtime: true,
+    description: 'How long one POST of a Logout Token may take. Nobody is ' +
+                 'waiting on it — the sign-out has already answered — so ' +
+                 'this bounds how long a dead relying party holds a socket ' +
+                 'open, not how long a person waits.' },
+  { key: 'oauth2.backchannelLogoutBackoffMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout retry backoff (ms)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_BACKOFF_MS', type: 'int', dflt: 1000,
+    min: 0, max: 60000, runtime: true,
+    description: 'The wait before the second attempt; it doubles before ' +
+                 'each one after. 0 retries at once, which is what a test ' +
+                 'wants and a relying party that is down does not.' },
+  { key: 'oauth2.backchannelLogoutLeaseMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout attempt lease (ms)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_LEASE_MS', type: 'int', dflt: 60000,
+    min: 1000, max: 3600000, runtime: true,
+    description: 'How long one process holds its claim on one delivery ' +
+                 'attempt. A process that dies — or stalls — mid-attempt has ' +
+                 'the attempt taken over by another after this, and the ' +
+                 'claim time fences a late writer out. Never less than one ' +
+                 'request timeout and a second, whatever is set: signing a ' +
+                 'post-quantum Logout Token can take seconds, and the ' +
+                 'default leaves room for it.' },
+  { key: 'oauth2.backchannelLogoutSweepS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout sweep interval (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SWEEP_S', type: 'int', dflt: 10,
+    min: 1, max: 3600, runtime: true,
+    description: 'How often every process looks for deliveries that are due ' +
+                 '— a retry whose backoff has passed, a lease that lapsed, a ' +
+                 'row restored after a restart — and dead-letters any still ' +
+                 'pending past the retention. The process that planned a ' +
+                 'delivery attempts it at once and schedules its own ' +
+                 'retries; this is the safety net, not the delay.' },
+  { key: 'oauth2.backchannelLogoutRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout delivery retention (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_RETENTION_S', type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long a delivery is kept after it was queued — sent, ' +
+                 'dead or still pending. A row still pending when this ' +
+                 'passes is dead-lettered (STS-OAUTH-0548) so nothing is ' +
+                 'pending for ever; a finished row is removed.' },
+  { key: 'oauth2.backchannelLogoutMaxRows', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout deliveries kept per realm',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_MAX_ROWS', type: 'int', dflt: 2000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'The most deliveries one realm keeps. Past it the oldest ' +
+                 'FINISHED rows go first; a pending one is never removed ' +
+                 'for room.' },
+  { key: 'oauth2.backchannelLogoutConcurrency', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout sweep concurrency',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 256, runtime: true,
+    description: 'How many due deliveries one process attempts at once from ' +
+                 'its sweep. Per process: N nodes of P processes send up to ' +
+                 'N x P x this, each attempt claimed so no two send the ' +
+                 'same one.' },
+  { key: 'oauth2.backchannelLogoutSummaryS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout summary interval (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SUMMARY_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'At most one log line per realm per interval, counting ' +
+                 'what this process sent, retried, took over and ' +
+                 'dead-lettered since the last — never a line per attempt ' +
+                 'or per failure. A warning (STS-OAUTH-0545) when anything ' +
+                 'was dead-lettered.' },
 
   // --- The admin console ---------------------------------------------------
   //
@@ -5624,6 +5776,32 @@ const SETTINGS = [
                  'refuses inclusive c14n on a nested element for that ' +
                  'reason.' },
 
+  // SHA-1 IN AN INBOUND XML SIGNATURE (2026-09-17, #37 follow-up). A plain
+  // default rather than a `mode.js` predicate: rcbj asked for OFF by default,
+  // and a development service that accepted SHA-1 would tell the person
+  // testing a partner that its SHA-1 signing works everywhere. In the SAML
+  // group because `common/crypto.js` applies it to EVERY XML signature this
+  // service verifies — SAML 2.0 and 1.1, federation, RFC 7522, WS-Trust,
+  // WS-Federation — and a signature that is refused on one path and accepted
+  // on the next would be two answers to one question.
+  { key: 'saml.allowSha1Signatures', group: 'SAML',
+    label: 'Accept SHA-1 XML signatures',
+    env: 'STS_SAML_ALLOW_SHA1_SIGNATURES', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether an XML signature this service VERIFIES may use ' +
+                 'SHA-1 — as its SignatureMethod (rsa-sha1, ecdsa-sha1, ' +
+                 'dsa-sha1, sha1-rsa-MGF1) or as any Reference\'s ' +
+                 'DigestMethod. OFF (the default, in both modes): such a ' +
+                 'signature is refused before any cryptography ' +
+                 '(STS-KEYS-0062, and on a service provider\'s request ' +
+                 'STS-SAML-0073). ON: it is verified like any other and ' +
+                 'still recorded as `weak`. It governs every inbound path — ' +
+                 'a SAML 2.0 service provider\'s requests and metadata, the ' +
+                 'artifact resolution service, a federation partner\'s ' +
+                 'Response, an RFC 7522 assertion, WS-Trust and ' +
+                 'WS-Federation, SAML 1.1 — and none of what this service ' +
+                 'SIGNS, which is saml.signatureAlgorithm.' },
+
   { key: 'saml.organizationName', group: 'SAML',
     label: 'Metadata OrganizationName',
     env: 'STS_SAML_ORGANIZATION_NAME', type: 'string', dflt: 'sts',
@@ -5724,12 +5902,17 @@ const SETTINGS = [
     dflt: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     runtime: true,
     description: 'The Format on the NameID when the AuthnRequest\'s ' +
-                 'NameIDPolicy asks for none. A request that DOES name one ' +
-                 'is answered with the one it named — any of them, including ' +
-                 'a format this service has never heard of, because a ' +
-                 'service provider being told its own format back is the ' +
-                 'behaviour worth exercising and refusing with ' +
-                 'InvalidNameIDPolicy would remove the test case.' },
+                 'NameIDPolicy asks for none — or, where the service ' +
+                 'provider\'s consumed metadata lists NameIDFormats and this ' +
+                 'value is not among them, the first of those this identity ' +
+                 'provider publishes. A request that DOES name one is ' +
+                 'answered with the one it named — any of them, including a ' +
+                 'format this service has never heard of, because a service ' +
+                 'provider being told its own format back is the behaviour ' +
+                 'worth exercising — UNLESS that service provider\'s ' +
+                 'consumed metadata declares its formats and this is not one ' +
+                 'of them, which is answered InvalidNameIDPolicy ' +
+                 '(saml-core-2.0-os section 3.4.1.1).' },
 
   { key: 'saml2.artifactTtlS', group: 'SAML 2.0 assertions',
     label: 'Artifact ' +
@@ -5768,11 +5951,14 @@ const SETTINGS = [
                  'refusal to issue would be a mock that stopped answering, ' +
                  'and silently sending plaintext while a page said ' +
                  '"encrypted" would be worse than either. The certificate is ' +
-                 'taken from the service provider\'s metadata if this ' +
-                 'service holds any, then samlEncryptionCertificate on its ' +
-                 'entry, then samlSigningCertificate — which is captured off ' +
-                 'a signed AuthnRequest, so a service provider that signs ' +
-                 'its requests needs no configuration at all. The assertion ' +
+                 'taken from samlEncryptionCertificate on its entry (which ' +
+                 'consuming its metadata writes), then its registered ' +
+                 'samlSigningCertificate, then — in development mode only — ' +
+                 'the OBSERVED certificate off a signed AuthnRequest, so a ' +
+                 'service provider that signs its requests needs no ' +
+                 'configuration there; product encrypts to an observed ' +
+                 'certificate only once an operator confirms it. The ' +
+                 'assertion ' +
                  'is SIGNED FIRST and then encrypted, which is the order ' +
                  'every service provider expects: the signature is inside ' +
                  'the ciphertext and is what survives decryption.' },
@@ -5837,18 +6023,48 @@ const SETTINGS = [
                  'wants before their directory has ten thousand entries in ' +
                  'it.' },
 
+  // --- REQUEST SIGNATURES (2026-09-17, #37) ------------------------------
+  // `auto` is how the requirement defaults by mode, through
+  // `mode.acceptsUnsignedSamlRequests()`, rather than through a literal —
+  // `pki.revocationCheck`'s arrangement. A signature that is PRESENT is
+  // verified whatever this says; this row decides only whether one may be
+  // ABSENT. `saml/request_signature.ts` argues both halves.
+  { key: 'saml2.requireSignedAuthnRequests', group: 'SAML 2.0',
+    label: 'Require signed requests from service providers',
+    env: 'STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS', type: 'enum',
+    enumValues: ['auto', 'on', 'off'], dflt: 'auto', runtime: true,
+    description: 'Whether an UNSIGNED <samlp:AuthnRequest> — and an ' +
+                 'unsigned <samlp:LogoutRequest> from a service provider — ' +
+                 'is refused. **`auto` is ON in product mode and OFF in ' +
+                 'development.** `on` and `off` decide regardless of the ' +
+                 'mode; a service provider whose consumed metadata says ' +
+                 'AuthnRequestsSigned="true" is held to it even when this ' +
+                 'is off. It is also what the WantAuthnRequestsSigned in ' +
+                 'this identity provider\'s metadata says.\n\nA signature ' +
+                 'that is PRESENT is verified in every mode — the HTTP ' +
+                 'Redirect binding\'s query-string signature (section ' +
+                 '3.4.4.1) or the HTTP POST binding\'s enveloped one — ' +
+                 'against the service provider\'s REGISTERED signing ' +
+                 'certificates (samlSigningCertificate, from its metadata or ' +
+                 'set on the SAML 2.0 page), never against the certificate ' +
+                 'the request carries, and a signature that does not verify ' +
+                 'is refused. With no registered certificate a signature is ' +
+                 'recorded as not verified, which counts as UNSIGNED when ' +
+                 'this is on.' },
+
   { key: 'saml2.defaultSingleLogoutService', group: 'SAML 2.0',
     label: 'Fallback logout return address',
     env: 'STS_SAML2_DEFAULT_SLO_SERVICE', type: 'string', dflt: '',
     runtime: true,
     description: 'Where a <samlp:LogoutResponse> goes when the service ' +
-                 'provider has no SingleLogoutService recorded on its ' +
-                 'application entry. A LogoutRequest carries no return ' +
-                 'address of its own — only SP metadata has one, and this ' +
-                 'service does not consume SP metadata — so without this the ' +
-                 'fallback is the assertion consumer service URL that ' +
-                 'application last used, which is stated on the page rather ' +
-                 'than done quietly. Set it to remove the guess.' },
+                 'provider has no SingleLogoutService registered — neither ' +
+                 'from its consumed metadata nor declared on its application ' +
+                 'entry. A LogoutRequest carries no return address of its ' +
+                 'own, so without this the fallback is the assertion ' +
+                 'consumer service URL that application last used, which is ' +
+                 'stated on the page rather than done quietly. Set it, or ' +
+                 'consume the service provider\'s metadata, to remove the ' +
+                 'guess.' },
 
   { key: 'saml2.requestTtlMin', group: 'SAML 2.0',
     label: 'Held AuthnRequest lifetime (minutes)',
@@ -5886,9 +6102,76 @@ const SETTINGS = [
     env: 'STS_SAML2_SP_METADATA_MAX_BYTES', type: 'int', dflt: 524288,
     min: 1024, max: 16777216, runtime: true,
     description: 'The cap on a service provider\'s metadata fetched by the ' +
-                 'refresh action (samlSpMetadataUrl). A metadata document is ' +
+                 'refresh action (samlSpMetadataUrl), and on one uploaded on ' +
+                 'the SAML 2.0 page or with POST ' +
+                 '/admin-api/saml2/upload-metadata. A metadata document is ' +
                  'kilobytes; the cap is what stops an endless response being ' +
                  'read into this process.' },
+
+  // --- SERVICE PROVIDER METADATA AFTER IT IS CONSUMED (#37 follow-up) -------
+  // Four rows, and each is per trust realm like every runtime row: a realm is
+  // a federation of its own, with its own operator keys and responder.
+  { key: 'saml2.spMetadataRefresh', group: 'SAML 2.0',
+    label: 'Refresh stale SP metadata in the background',
+    env: 'STS_SAML2_SP_METADATA_REFRESH', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the background refresher fetches a service ' +
+                 'provider\'s metadata again once its cacheDuration has ' +
+                 'passed (or, with none, halfway to its validUntil) — from ' +
+                 'the entry\'s samlSpMetadataUrl, or from the MDQ responder ' +
+                 'for an entity imported from one — through the federation ' +
+                 'outbound policy. A failed fetch changes nothing, so the ' +
+                 'last good document keeps working until its validUntil. ' +
+                 'OFF: nothing is fetched on its own and a document is ' +
+                 'simply refused once it expires. EXPIRY is enforced ' +
+                 'whatever this says: past validUntil the service ' +
+                 'provider\'s requests are refused (STS-SAML-0074). Nothing ' +
+                 'is ever dialled while a request is being answered.' },
+
+  { key: 'saml2.spMetadataRefreshIntervalS', group: 'SAML 2.0',
+    label: 'Metadata refresher interval (seconds)',
+    env: 'STS_SAML2_SP_METADATA_REFRESH_INTERVAL_S', type: 'int', dflt: 300,
+    min: 10, max: 86400, runtime: true,
+    description: 'How often the background refresher looks for stale ' +
+                 'metadata, and how long a failed MDQ lookup is remembered ' +
+                 'before the same entityID is asked for again. Across a ' +
+                 'cluster each document is refreshed by one node per ' +
+                 'interval (a cluster claim).' },
+
+  { key: 'saml2.metadataTrustAnchors', group: 'SAML 2.0',
+    label: 'Metadata signing trust anchors',
+    env: 'STS_SAML2_METADATA_TRUST_ANCHORS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Certificates, base64 DER and comma-separated, that a ' +
+                 'consumed service provider metadata document may be SIGNED ' +
+                 'with — a federation operator\'s aggregate-signing keys. ' +
+                 'SET: every document consumed in this realm (a refresh, an ' +
+                 'upload, an MDQ answer) must carry a signature that ' +
+                 'verifies against one of these or against the entry\'s own ' +
+                 'samlSpMetadataSigningCertificate, or it is refused ' +
+                 '(STS-SAML-0065). An <md:EntitiesDescriptor> is verified by ' +
+                 'its own signature, else by the entity\'s. EMPTY, the ' +
+                 'default: only an entry with its own certificate is held ' +
+                 'to one. Any key an XML signature is verified with here ' +
+                 'will do — RSA, EC, EdDSA, ML-DSA, SLH-DSA; a value that is ' +
+                 'not one is named on the SAML 2.0 page and ignored.' },
+
+  { key: 'saml2.mdqBaseUrl', group: 'SAML 2.0',
+    label: 'Metadata Query (MDQ) responder',
+    env: 'STS_SAML2_MDQ_BASE_URL', type: 'string', dflt: '', runtime: true,
+    description: 'The base URL of a Metadata Query Protocol responder ' +
+                 '(draft-young-md-query and its SAML profile). A service ' +
+                 'provider\'s metadata is fetched from <base>/entities/' +
+                 '<percent-encoded entityID> — by the Import from MDQ ' +
+                 'action on the SAML 2.0 page or POST ' +
+                 '/admin-api/saml2/mdq-import, by the refresh of an entry ' +
+                 'with no samlSpMetadataUrl, by the background refresher, ' +
+                 'and, never waited on, when a request arrives from a ' +
+                 'service provider with no consumed metadata (that request ' +
+                 'is answered as unknown NOW; the next one finds the ' +
+                 'registration). Through the federation outbound policy: ' +
+                 'https, federation.outbound, the timeout. EMPTY, the ' +
+                 'default: no responder.' },
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for
@@ -6497,11 +6780,21 @@ const SETTINGS = [
   { key: 'oid4vci.credentialSigningAlgorithm', group: 'OID4VCI',
     label: 'Algorithm credentials are signed with',
     env: 'OID4VCI_CREDENTIAL_SIGNING_ALGORITHM', type: 'enum',
+    // THE POST-QUANTUM ALGORITHMS SINCE #38's FOLLOW-UPS: the credential
+    // builders sign asynchronously now, so an ML-DSA, SLH-DSA or composite
+    // signature is made in the worker pool, and the Verifier accepts one as
+    // this realm's (vc_verifier.ts, verifyIssuerSignatureAsync()).
     enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
-                 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA'],
+                 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
+                 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-SHA2-128s',
+                 'SLH-DSA-SHAKE-128s', 'ML-DSA-44-ES256', 'ML-DSA-65-ES256',
+                 'ML-DSA-87-ES384', 'ML-DSA-44-Ed25519', 'ML-DSA-65-Ed25519',
+                 'ML-DSA-87-Ed448'],
     dflt: 'RS256', runtime: true,
     description: 'The JWS algorithm dc+sd-jwt and jwt_vc_json credentials ' +
-                 'are signed with, and the one the DID Configuration\'s ' +
+                 'are signed with — post-quantum ones included — and the ' +
+                 'one this realm\'s status lists are signed with, and the ' +
+                 'one the DID Configuration\'s ' +
                  'Domain Linkage Credential and /did/generate\'s did:web ' +
                  'credential use. The metadata\'s ' +
                  'credential_signing_alg_values_supported names it, ' +
@@ -6715,6 +7008,153 @@ const SETTINGS = [
     max: 1000, runtime: true,
     description: 'The most claims /admin/vc-verifier-config lets the ' +
                  'Verifier\'s request name.' },
+
+  // SIGNING IN WITH A WALLET (2026-09-17, #38). `oid4vc/vc_signin.ts` argues
+  // the mechanism; these are its four knobs. ON BY DEFAULT, in both modes,
+  // and the argument is the one rcbj made for the issue: the sign-in screen
+  // offers every mechanism the service supports, and this one is not weaker
+  // than the others it sits beside — it signs in only the directory entry a
+  // credential THIS REALM issued was issued for, on an access token this
+  // realm verified, and only for a wallet proving the key the credential is
+  // bound to. In product mode that token came from a person who signed in
+  // with a verified credential of their own (the offer page is gated there),
+  // so the wallet is never a way in that did not first go through one.
+  { key: 'oid4vp.signIn', group: 'OID4VP',
+    label: 'Sign in with a wallet',
+    env: 'OID4VP_SIGN_IN', type: 'bool', dflt: true, runtime: true,
+    description: 'Offer "Sign in with a wallet" on /authn/login and answer ' +
+                 '/authn/wallet: an OpenID4VP request — through the Digital ' +
+                 'Credentials API, or by link on the same device — for a ' +
+                 'credential this realm issued, in any format ' +
+                 'oid4vp.signInFormats names, whose verified presentation ' +
+                 '— a fresh holder proof included — starts a session for ' +
+                 'the directory entry the credential was issued for, and ' +
+                 'carries on with whatever flow was waiting at the sign-in ' +
+                 'screen. A wallet may also be the second factor after a ' +
+                 'password, and a second factor is asked for after a ' +
+                 'wallet where the request demands two. A ' +
+                 'credential from any other issuer, or one issued on an ' +
+                 'access token this service did not issue, still verifies ' +
+                 'and signs nobody in. Off removes the button and closes ' +
+                 'the door; the Verifier at /oid4vp/verifier is unaffected.' },
+
+  { key: 'oid4vp.signInTtlS', group: 'OID4VP',
+    label: 'Wallet sign-in lifetime (s)',
+    env: 'OID4VP_SIGN_IN_TTL_S', type: 'int', dflt: 300, min: 30,
+    max: 3600, runtime: true,
+    description: 'How long a wallet sign-in waits for the wallet to answer, ' +
+                 'and how long the browser that started it may take to ' +
+                 'collect the session. Short on purpose: a QR code that ' +
+                 'stays valid is a QR code somebody else has longer to ' +
+                 'relay.' },
+
+  { key: 'oid4vp.signInPollS', group: 'OID4VP',
+    label: 'Wallet sign-in page refresh (s)',
+    env: 'OID4VP_SIGN_IN_POLL_S', type: 'int', dflt: 3, min: 1, max: 60,
+    runtime: true,
+    description: 'How often the QR-code page (oid4vp.signInCrossDevice) ' +
+                 'reloads itself while a wallet on another device answers. ' +
+                 'It is a <meta> refresh and not a script, so every reload ' +
+                 'is a whole page. The Digital Credentials API page does ' +
+                 'not reload: a reload would close the browser\'s wallet ' +
+                 'dialog.' },
+
+  // OFF BY DEFAULT IN EVERY MODE SINCE #38's FOLLOW-UPS (rcbj): the plain QR
+  // code is the one wallet sign-in path a relay works on, and the Digital
+  // Credentials API reaches a wallet on another device without it, with a
+  // proximity check the QR code cannot make. A deployment that needs it —
+  // a wallet the browser cannot reach — turns it on and is told what it
+  // costs.
+  { key: 'oid4vp.signInCrossDevice', group: 'OID4VP',
+    label: 'Wallet sign-in QR code (cross-device, relayable)',
+    env: 'OID4VP_SIGN_IN_CROSS_DEVICE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Offer a plain QR code on the wallet sign-in page, for a ' +
+                 'wallet on another device that the browser\'s Digital ' +
+                 'Credentials API cannot reach. OFF by default: only the ' +
+                 'browser that started the sign-in can be signed in by it, ' +
+                 'and that is exactly what a relay exploits — somebody ' +
+                 'shows their own code to a victim who scans it and signs ' +
+                 'the attacker\'s browser in. The Digital Credentials API ' +
+                 'path proves the wallet is near the browser and is not ' +
+                 'affected by this setting.' },
+
+  { key: 'oid4vp.signInFormats', group: 'OID4VP',
+    label: 'Wallet sign-in credential formats',
+    env: 'OID4VP_SIGN_IN_FORMATS', type: 'csv',
+    dflt: 'dc+sd-jwt,jwt_vc_json,ldp_vc', runtime: true,
+    description: 'The credential formats a wallet sign-in asks for, in ' +
+                 'order of preference: one DCQL credential query each, and ' +
+                 'a credential set saying any one will do. Each signs in ' +
+                 'only with a fresh holder proof — a Key Binding JWT, a VP ' +
+                 'JWT, or a Data Integrity proof — for this request. ' +
+                 'Unknown names are ignored; none at all means all three. ' +
+                 'A wallet that answers only the first query it reads ' +
+                 'answers in the first format here.' },
+
+  { key: 'oid4vp.signInDcApiResponseMode', group: 'OID4VP',
+    label: 'Digital Credentials API response mode',
+    env: 'OID4VP_SIGN_IN_DC_API_RESPONSE_MODE', type: 'enum',
+    enumValues: ['dc_api.jwt', 'dc_api'], dflt: 'dc_api.jwt', runtime: true,
+    description: 'How a wallet answers a sign-in through the Digital ' +
+                 'Credentials API (OpenID4VP Appendix A): dc_api.jwt — ' +
+                 'encrypted (ECDH-ES) to a key only this sign-in holds, so ' +
+                 'the page\'s script carries a JWE — or dc_api, in the ' +
+                 'clear, for a wallet that cannot encrypt.' },
+
+  { key: 'oid4vp.statusListMaxCacheS', group: 'OID4VP',
+    label: 'Longest a fetched status list is kept (s)',
+    env: 'OID4VP_STATUS_LIST_MAX_CACHE_S', type: 'int', dflt: 3600, min: 0,
+    max: 86400, runtime: true,
+    description: 'The most the Verifier keeps a status list a trusted ' +
+                 'foreign issuer published, whatever its ttl says — and ' +
+                 'what it keeps one for whose token names no ttl. A list ' +
+                 'is never kept past its own exp. 0 fetches for every ' +
+                 'presentation.' },
+
+  // --- status lists (#38's follow-ups) ------------------------------------
+  { key: 'oid4vci.statusListTtlS', group: 'OID4VCI',
+    label: 'Status list time to live (s)',
+    env: 'OID4VCI_STATUS_LIST_TTL_S', type: 'int', dflt: 300, min: 1,
+    max: 86400, runtime: true,
+    description: 'The ttl this realm\'s status lists carry ' +
+                 '(draft-ietf-oauth-status-list section 5): how long a ' +
+                 'verifier may keep one before fetching it again, and so ' +
+                 'how long a revocation can take to be seen. Also the ' +
+                 'HTTP max-age.' },
+
+  { key: 'oid4vci.statusListLifetimeS', group: 'OID4VCI',
+    label: 'Status list lifetime (s)',
+    env: 'OID4VCI_STATUS_LIST_LIFETIME_S', type: 'int', dflt: 86400,
+    min: 60, max: 31536000, runtime: true,
+    description: 'How long after it is signed a status list token says it ' +
+                 'is valid (its exp), and a Bitstring Status List ' +
+                 'credential\'s validUntil.' },
+
+  { key: 'oid4vci.keyAttestationRequired', group: 'OID4VCI',
+    label: 'Require a key attestation',
+    env: 'OID4VCI_KEY_ATTESTATION_REQUIRED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Require every Credential Request to carry a key ' +
+                 'attestation (OpenID4VCI Appendix D) — in a jwt proof\'s ' +
+                 'key_attestation header, or as the attestation proof ' +
+                 'type — and say so in the metadata ' +
+                 '(key_attestations_required). Off, an attestation that is ' +
+                 'sent is still verified and recorded. What it attests ' +
+                 'decides what a wallet sign-in claims: hwk for key storage ' +
+                 'resisting Moderate attack potential, and acr "mfa" where ' +
+                 'user authentication does too.' },
+
+  { key: 'oid4vci.keyAttestationTrustedCertificates', group: 'OID4VCI',
+    label: 'Trusted key attesters (PEM)',
+    env: 'OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES', type: 'string',
+    dflt: '', runtime: true,
+    description: 'PEM certificates, concatenated, of the Wallet Providers ' +
+                 'and key storage components whose key attestations this ' +
+                 'issuer believes: an attestation must verify against one ' +
+                 'of these keys, or be signed by a certificate (its x5c) ' +
+                 'one of them issued. Empty trusts none, and a key ' +
+                 'attestation is then refused.' },
 
   // --- Kerberos ------------------------------------------------------------
   //

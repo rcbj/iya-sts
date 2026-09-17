@@ -27,15 +27,57 @@ its own for this reason; it has none since 2026-08-26 — see below.)
 
 ---
 
-## `wauth` is refused rather than faked
+## `wauth` is a STEP-UP, never a fake (2026-09-17, #36)
 
-* **WS-Federation's `wauth` is refused rather than faked.** A relying party demanding
-  multi-factor against a password-only session gets an error and two ways forward, not
-  an assertion claiming a second factor that did not happen. It is the one thing in
-  this profile that could trivially have been faked, and faking it would have taught a
-  relying party something false about how a person signed in. Likewise `wreqptr` is
-  never dereferenced: fetching a URL handed over in a query parameter is a
-  server-side request forgery with a specification citation attached.
+**Until 2026-09-17 a `wauth` the session could not meet was REFUSED**, 400
+with `STS-WSFED-0009` (a hardware token) or `STS-WSFED-0010` (multi-factor),
+and the root `CLAUDE.md` listed "Fake WS-Federation's `wauth`" among the things
+this service deliberately does not do. The refusal had one argument left once
+this profile moved onto `authn/`'s screen (2026-08-26): that `wauth` is read on
+a request that ALREADY has a session, and re-authenticating somebody who is
+signed in is `wfresh`'s job. RFC 9470 took that argument away one directory
+over — `acr_values=mfa` on a one-factor session sends the person to sign in
+again — and the identity model made it cheap: a re-authentication ADDS an event
+to the same session rather than replacing it (`../authn/CLAUDE.md`). rcbj's
+direction on #36 was to take the row off the list, so:
+
+* **A demand the session does not meet is a step-up, in every mode.** The
+  person is sent through `beginAuthentication()` with what the demand asks for
+  — `step_up.screenDemand()` turns a multi-factor demand into `forceMfa` and a
+  HARDWARE demand into `forceKey` (2026-09-17) — and the return address
+  carries `step_up.ts`'s `step_up_honoured=1`. With no session at all, a
+  demand makes the first sign-in require it too. **One mechanism, not a
+  second**: both flags and the marker are RFC 9470's, and the authorization
+  endpoint reads the same function for `acr_values` naming only the RFC 8176
+  key aliases.
+* **The assertion reports what HAPPENED.** `authnMethodsFor()` reads the
+  session after the step-up; a password and a one-time code is
+  `multipleauthn`, a password and a key is `multipleauthn` too, a passwordless
+  key alone is `HardwareToken`. Nothing about the request changes the answer.
+* **A HARDWARE demand is met by a key in EITHER role; a MULTI-FACTOR demand
+  only by two real factors.** A passwordless key does not answer multi-factor,
+  however phishing-resistant it is. **THE SCREEN NOW OFFERS EXACTLY THOSE TWO
+  CHOICES (2026-09-17).** Under `forceMfa` alone it could not run a key by
+  itself, so a hardware demand went to a screen that accepted a one-time code
+  and produced a session this profile then refused on the way back — the
+  demand was answerable only by luck. `forceKey` fixes it at the screen: the
+  key alone or the key after a password, no code, no recovery code, no
+  Kerberos ticket and no wallet (`../authn/CLAUDE.md`, *`forceKey`*). A person
+  who holds a second factor and no key is told to enrol one rather than handed
+  a ceremony that would enrol one for whoever knows their password.
+* **ONE attempt, then the refusal.** A request carrying the marker whose
+  session still does not meet the demand is refused with the codes it always
+  had: `STS-WSFED-0009` or `STS-WSFED-0010`. That is the only place they are
+  raised now, and it is what stops a demand the screen cannot meet — no factor
+  enrolled, a code offered for a key — from looping. The marker can be forged
+  onto a first request, and all that buys is the refusal, for `step_up.ts`'s
+  reason.
+* **An unknown `wauth` is still refused** (`STS-WSFED-0006`): a method this
+  service cannot perform or report is not answered with one it can.
+* **`wreqptr` is still never dereferenced** — fetching a URL handed over in a
+  query parameter is a server-side request forgery with a specification
+  citation attached. That half of the old non-goal row stays, as a row of its
+  own.
 
 Note also `authnMethodsFor()`, which used to test for `hwk` and call a
 passwordless sign-in a two-factor one. Anything reading `hwk` to mean "two
@@ -101,7 +143,8 @@ is the whole mechanism. See the root `CLAUDE.md`.
 * **`authnMethodsFor()` is `../saml/authn_context.ts`'s reading now**, which
   fixed the defect all three copies had (a certificate, a Kerberos ticket, a
   federated or unauthenticated session was `am:password`). The `wauth` hardware
-  and multi-factor checks read `hardwareKey` / `multiFactor` off the same answer.
+  and multi-factor step-up reads `hardwareKey` / `multiFactor` off the same
+  answer.
 * **The persona claims** come off the directory entry in product mode or are
   omitted (`../saml/person_attributes.ts`), and **the signed metadata describes
   what the realm's mode emits** — it said `Always "Mock"` and
@@ -116,11 +159,22 @@ is the whole mechanism. See the root `CLAUDE.md`.
 
 ## What no test covers yet
 
-`tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and nothing
-else here is tested. The mock relying party makes the rest look covered — but a
-person has to click it and read the page. What a test would add is the
-negatives: an altered `wctx`, `wauth`
-demanding a factor the session never had, `wfresh` read as seconds rather than
-minutes, a SAML 1.1 signature whose reference does not resolve because
-`AssertionID` was not named. A passive requestor that issues a good token to a
+`tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and
+`tests/wsfed_wauth_step_up.js` (2026-09-17) pins the `wauth` step-up: a
+multi-factor demand on a one-factor session sent to sign in again with the
+factor required and the marker on the return, the assertion reporting
+`multipleauthn` after a one-time code, a hardware demand whose screen
+offers the key in both roles and refuses a one-time code (`STS-AUTHN-0204`),
+a person holding a code and no key told so, a session still keyless on the way
+back refused `STS-WSFED-0009`, a REAL WebAuthn ceremony (a software
+authenticator built in the test) meeting the demand passwordless AND as a
+second factor, a forged marker refused
+`STS-WSFED-0010`, and an unknown method still `STS-WSFED-0006`. Its mutant —
+the marker ignored, so every unmet demand is refused as before — turned eight
+of its assertions red. Nothing else here is
+tested. The mock relying party makes the rest look covered — but a person has
+to click it and read the page. What a test would add is the other negatives:
+an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
+signature whose reference does not resolve because `AssertionID` was not
+named, A passive requestor that issues a good token to a
 working relying party looks finished and proves almost nothing.

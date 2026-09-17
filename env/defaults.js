@@ -331,7 +331,19 @@ var config = {
     parAllowUnregisteredRedirectUris: false,     // Pushed requests may name an unregistered redirect_uri
     stepUpAcrValues: "",                         // Step-up: acr values this service's resource server requires
     stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
-    frontchannelLogout: true                     // OpenID Connect Front-Channel Logout
+    frontchannelLogout: true,                    // OpenID Connect Front-Channel Logout
+    backchannelLogout: true,                     // OpenID Connect Back-Channel Logout
+    backchannelLogoutOnExpiry: true,             // Back-channel logout on session expiry
+    backchannelLogoutTokenTtlS: 120,             // Back-channel Logout Token lifetime (seconds)
+    backchannelLogoutAttempts: 3,                // Back-channel logout delivery attempts
+    backchannelLogoutTimeoutMs: 5000,            // Back-channel logout request timeout (ms)
+    backchannelLogoutBackoffMs: 1000,            // Back-channel logout retry backoff (ms)
+    backchannelLogoutLeaseMs: 60000,             // Back-channel logout attempt lease (ms)
+    backchannelLogoutSweepS: 10,                 // Back-channel logout sweep interval (seconds)
+    backchannelLogoutRetentionS: 86400,          // Back-channel logout delivery retention (seconds)
+    backchannelLogoutMaxRows: 2000,              // Back-channel logout deliveries kept per realm
+    backchannelLogoutConcurrency: 8,             // Back-channel logout sweep concurrency
+    backchannelLogoutSummaryS: 60                // Back-channel logout summary interval (seconds)
   },
 
   // --- PKI -------------------------------------------------------------
@@ -472,6 +484,7 @@ var config = {
     clockSkewS: 0,                                          // Assertion clock skew (s)
     signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
     canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
+    allowSha1Signatures: false,                             // Accept SHA-1 XML signatures
     organizationName: "sts",                                // Metadata OrganizationName
     organizationDisplayName: "Mock security token service", // Metadata OrganizationDisplayName
     organizationUrl: ""                                     // Metadata OrganizationURL
@@ -491,11 +504,16 @@ var config = {
     keyTransportAlgorithm: "rsa-oaep-mgf1p",                               // Key transport algorithm
     encryptLogoutNameId: false,                                            // Encrypt the NameID in a LogoutRequest
     autocreateApplications: true,                                          // Register a service provider on sight
+    requireSignedAuthnRequests: "auto",                                    // Require signed requests from service providers
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
-    spMetadataMaxBytes: 524288                                             // Largest SP metadata document fetched (bytes)
+    spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
+    spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
+    spMetadataRefreshIntervalS: 300,                                       // Metadata refresher interval (seconds)
+    metadataTrustAnchors: "",                                              // Metadata signing trust anchors
+    mdqBaseUrl: ""                                                         // Metadata Query (MDQ) responder
   },
 
   // --- SAML 1.1 --------------------------------------------------------
@@ -574,7 +592,11 @@ var config = {
     domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
     generatedDidCredentialLifetimeS: 3600,                 // /did/generate credential lifetime (s)
     sdJwtIssuerDid: false,                                 // Name the SD-JWT VC issuer by DID; restart to apply
-    ldpVcIssuerDid: false                                  // Name the ldp_vc issuer by DID; restart to apply
+    ldpVcIssuerDid: false,                                 // Name the ldp_vc issuer by DID; restart to apply
+    statusListTtlS: 300,                                   // Status list time to live (s)
+    statusListLifetimeS: 86400,                            // Status list lifetime (s)
+    keyAttestationRequired: false,                         // Require a key attestation
+    keyAttestationTrustedCertificates: ""                  // Trusted key attesters (PEM)
   },
 
   // --- OID4VP ----------------------------------------------------------
@@ -588,7 +610,14 @@ var config = {
     allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
     trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
     expectedVct: "urn:idptools:sd-jwt-vc:identity",    // Expected SD-JWT VC type (vct)
-    maxRequestedClaims: 40                             // Claims one request may ask for
+    maxRequestedClaims: 40,                            // Claims one request may ask for
+    signIn: true,                                      // Sign in with a wallet
+    signInTtlS: 300,                                   // Wallet sign-in lifetime (s)
+    signInPollS: 3,                                    // Wallet sign-in page refresh (s)
+    signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
+    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
+    signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
+    statusListMaxCacheS: 3600                          // Longest a fetched status list is kept (s)
   },
 
   // --- Kerberos --------------------------------------------------------

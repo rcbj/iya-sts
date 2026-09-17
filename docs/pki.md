@@ -387,9 +387,11 @@ self-signed leaf (register that on `oauthJwks` or
 **another realm** of this service, even with its whole chain — every realm
 shares one Root, so such a chain is consistent and is still not this realm's.
 
-The key must be one the profile's verifier can use: RSA of at least 2048 bits
-or ECDSA on P-256, P-384 or P-521 for both profiles, and for RFC 7523 also
-secp256k1 (ES256K) or Ed25519 (EdDSA).
+The key must be one the profile's verifier can use: RSA of at least 2048 bits,
+or ECDSA on P-256, P-384 or P-521, for both profiles; for RFC 7523 also
+secp256k1 (ES256K) or Ed25519 (EdDSA); and for RFC 7522 — whose XML Signature
+verifier takes every family since 2026-09-17 — also Ed25519, Ed448, DSA, ML-DSA
+or SLH-DSA.
 
 As with an issued key pair, **a key pair is not a trust decision**: to present
 an authorization grant the application's issuer must still be declared on

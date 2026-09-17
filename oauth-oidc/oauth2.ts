@@ -196,6 +196,11 @@ import senderConstraints = require('./sender_constraints');
 // `/logout` and the console have to render the SAME fan-out, and reaching into
 // this module for it would be a require in the wrong direction.
 import frontchannel = require('./frontchannel_logout');
+// OpenID Connect Back-Channel Logout 1.0 (2026-09-17, #36): the discovery
+// members, the `sid` it needs, and the sign-out page's list of deliveries. A
+// library of the same kind as the one above, and it does not require this
+// module either.
+import backchannel = require('./backchannel_logout');
 // The application registry, which lives in the embedded LDAP directory. A
 // library like the two above — it registers no route and requires only
 // `common/` libraries, none of which requires this module — so requiring it
@@ -230,6 +235,11 @@ import jwtAccessToken = require('./jwt_access_token');
 // a JWT and has it build and protect one, the metadata publishes its algorithm
 // lists, and the UserInfo response takes its recipient-key reading from it.
 import introspectionJwt = require('./introspection_jwt');
+// OPENID CONNECT CORE SECTION 10.2, THE ENCRYPTED ID TOKEN (2026-09-17, #36
+// follow-up). A LIBRARY that registers no route: idToken() hands it the signed
+// token, and the registration endpoint asks it whether a client that
+// registered `id_token_encrypted_response_alg` gave a key to encrypt to.
+import idTokenEncryption = require('./id_token_encryption');
 // RFC 9470 (2026-09-13): step-up authentication. A library (rule 3) — what an
 // authorization request's acr_values and max_age ask of a session, what meets
 // them, and the refusal when nothing can. See `step_up.ts`.
@@ -394,12 +404,14 @@ interface OAuth2ServerDeps {
   oauth21: typeof oauth21;
   senderConstraints: typeof senderConstraints;
   frontchannel: typeof frontchannel;
+  backchannel: typeof backchannel;
   applications: typeof applications;
   validation: typeof validation;
   errorCodes: typeof errorCodes;
   refreshTokenCrypto: typeof refreshTokenCrypto;
   jwtAccessToken: typeof jwtAccessToken;
   introspectionJwt: typeof introspectionJwt;
+  idTokenEncryption: typeof idTokenEncryption;
   stepUp: typeof stepUp;
   requestObject: typeof requestObject;
   richAuthorization: typeof richAuthorization;
@@ -1402,12 +1414,14 @@ class OAuth2Server {
       oauth21: oauth21,
       senderConstraints: senderConstraints,
       frontchannel: frontchannel,
+      backchannel: backchannel,
       applications: applications,
       validation: validation,
       errorCodes: errorCodes,
       refreshTokenCrypto: refreshTokenCrypto,
       jwtAccessToken: jwtAccessToken,
       introspectionJwt: introspectionJwt,
+      idTokenEncryption: idTokenEncryption,
       stepUp: stepUp,
       requestObject: requestObject,
       richAuthorization: richAuthorization,
@@ -2142,7 +2156,7 @@ class OAuth2Server {
   // ---------------------------------------------------------------------------
   private oidcMetadata(req: Req, issuer?: string): Json {
     const { stsCrypto, log, baseUrlOf, authorizationServers, config,
-            frontchannel } = this.deps;
+            frontchannel, backchannel } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.oidcMetadata(). issuer=" +
               (issuer || '(the request ' +
@@ -2201,7 +2215,13 @@ class OAuth2Server {
       // is what public MEANS. Claiming `pairwise` would be a claim about a
       // calculation this server does not perform.
       subject_types_supported: ['public'],
-      // The id_token is not encrypted, so there is no *_enc member.
+      // OIDC Core section 10.2 (2026-09-17): an ID Token is encrypted — signed
+      // first, then encrypted to the key in the client's inline `jwks` — when
+      // the client registered `id_token_encrypted_response_alg`. The lists
+      // are the UserInfo response's, for its reason; `id_token_encryption.ts`
+      // argues the rest. A Logout Token follows the same registration.
+      id_token_encryption_alg_values_supported: idTokenEncryption.ALGS,
+      id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
       // asymmetric algorithm in the table and can use a client's own secret for
@@ -2256,11 +2276,10 @@ class OAuth2Server {
       // because the alternative is a client with no way to end a session that
       // this server really does end.
       end_session_endpoint: at + '/oauth2/logout',
-      // FRONT-CHANNEL LOGOUT IS SUPPORTED NOW AND BACK-CHANNEL IS NOT, which is
-      // the honest pair rather than the tidy one. Both members are stated
-      // because "the OP did not mention it" and "the OP said no" read
-      // identically to a client and only one of them is a fact this server is
-      // prepared to stand behind.
+      // BOTH LOGOUT SPECIFICATIONS, EACH FOLLOWING ITS OWN SETTING. The
+      // members are stated whichever way they read, because "the OP did not
+      // mention it" and "the OP said no" read identically to a client and only
+      // one of them is a fact this server is prepared to stand behind.
       //
       // Front-Channel Logout 1.0: a relying party registers a
       // `frontchannel_logout_uri` and every sign-out here loads it in a hidden
@@ -2275,14 +2294,18 @@ class OAuth2Server {
       // client: the per-client member of the same name is what decides whether
       // a given RP is sent one.
       //
-      // Back-channel logout stays FALSE and is a different specification: it is
-      // a signed Logout Token POSTed server-to-server, which needs the provider
-      // to reach the RP's network rather than the browser's, and nothing here
-      // implements it. Advertising it because front-channel arrived would be
-      // the overstatement this document exists not to make.
+      // BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36; this member read `false`
+      // until then): a signed Logout Token POSTed server-to-server to every
+      // relying party on an ending session that registered a
+      // `backchannel_logout_uri` — see `backchannel_logout.ts`.
+      // `oauth2.backchannelLogout` turns both members and the fan-out off
+      // together. `backchannel_logout_session_supported` is section 2.1's
+      // "the OP can pass a sid", which it can whenever the feature is on:
+      // every Logout Token here carries one.
       frontchannel_logout_supported: frontchannel.enabled(),
       frontchannel_logout_session_required: frontchannel.enabled(),
-      backchannel_logout_supported: false
+      backchannel_logout_supported: backchannel.enabled(),
+      backchannel_logout_session_supported: backchannel.enabled()
     });
     // The path-appended form's issuer (see below). Assigned after the merge so
     // it replaces the base URL asMetadata() derived, and assigned rather than
@@ -3051,7 +3074,8 @@ class OAuth2Server {
   // console's count.
   async idToken(base: Json, opts: Json): Promise<Json> {
     const { log, nowSec, randomId, signJwt, signJwtAsAsync, userFor, stats,
-            config, frontchannel, applications } = this.deps;
+            config, frontchannel, backchannel, applications,
+            idTokenEncryption } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.idToken().");
     const iat = nowSec();
@@ -3121,7 +3145,12 @@ class OAuth2Server {
     // should carry a session identifier; that argument was about inventing one
     // to make a console page easier, and the setting is what keeps it honoured
     // for anybody who wants it back.
-    if (opts.session_id && frontchannel.enabled()) {
+    //
+    // BACK-CHANNEL LOGOUT NEEDS IT TOO (2026-09-17, #36): a relying party
+    // matches a Logout Token's `sid` against the one in the ID Token it holds,
+    // so the claim is on while EITHER feature is — and only both settings off
+    // restore the tokens issued before either existed.
+    if (opts.session_id && (frontchannel.enabled() || backchannel.enabled())) {
       payload.sid = opts.session_id;
     }
     if (opts.access_token) payload.at_hash = self.halfHash(opts.access_token);
@@ -3200,8 +3229,23 @@ class OAuth2Server {
       : await signJwtAsAsync(payloadWithCustom, idAlg, registered.client_secret,
                              { session: opts.user && opts.user.sub,
                                certificateHeader: 'id-token' });
-    log.debug("Leaving OAuth2Server.idToken(). alg=" + idAlg);
-    return token;
+    // OIDC Core section 10.2 (2026-09-17): SIGNED, THEN ENCRYPTED, when the
+    // client registered `id_token_encrypted_response_alg` — a Nested JWT with
+    // `cty: "JWT"`. The signature above is unchanged by it (any algorithm of
+    // the table, the post-quantum ones included); what is added is the JWE
+    // around it, to the key in the client's inline `jwks`. A registration
+    // that cannot be honoured any longer THROWS with the sentence, as an
+    // unusable signing algorithm does above: an ID Token sent in the clear to
+    // a client that asked for encryption is not a downgrade it can notice.
+    // The console's count was recorded by `signJwt()` on the inner token,
+    // which is the credential; the envelope is not a second one.
+    const protectedToken = idTokenEncryption.protect(token, registered);
+    log.debug("Leaving OAuth2Server.idToken(). alg=" + idAlg +
+              (protectedToken.encrypted
+                ? ', encrypted ' + protectedToken.alg + ' ' +
+                  protectedToken.enc
+                : ''));
+    return protectedToken.token;
   }
 
   // What a token response is about to mint, in the gate's own words. Derived
@@ -5085,7 +5129,12 @@ class OAuth2Server {
     // about `wsfedRealms` and saml2_sso.ts makes about `saml2ServiceProviders`:
     // the list should die exactly when the session does, and nothing then has
     // to sweep it.
-    frontchannel.noteClient(authInfo, String(query.client_id));
+    //
+    // With the issuer and the subject the ID Token is issued under (2026-09-17,
+    // #36), which is what a Logout Token for this client has to name — see
+    // `noteClient()`.
+    frontchannel.noteClient(authInfo, String(query.client_id),
+                            { iss: self.issuerOf(base), sub: user.sub });
 
     if (types.indexOf('code') >= 0) {
       const code = randomId(24);
@@ -6504,7 +6553,13 @@ class OAuth2Server {
     // ordered preference list they are: `mfa 1` accepts one factor and does not
     // force a second, and a value is matched whole and case-sensitively, where
     // a regex used to find `mfa` inside any word.
-    const forceMfa = stepUp.demandsSecondFactor(stepUpNeed.acrValues);
+    //
+    // AND A REQUEST NAMING ONLY KEY ALIASES (`hwk`, `phr`, `phrh`) FORCES THE
+    // KEY TOO (2026-09-17): those are met by a password with a security key,
+    // so the screen offers exactly that and not a one-time code, which would
+    // only be refused on the way back. `step_up.screenDemandFor()`.
+    const screen = stepUp.screenDemandFor(stepUpNeed.acrValues);
+    const forceMfa = !!screen.forceMfa;
     if (stepUpReauth) {
       stepUp.record(q.client_id, 'stepup.reauth_' + stepUpAssessed.reason);
       log.info('oauth2: RFC 9470: the session does not meet the request ' +
@@ -6530,7 +6585,8 @@ class OAuth2Server {
     }
     res.redirect(302, authn.beginAuthentication({
       returnTo: returnTo, details: details, hint: q.login_hint || '',
-      forceMfa: forceMfa, protocol: 'OAuth 2.0 / OIDC',
+      forceMfa: forceMfa, forceKey: !!screen.forceKey,
+      protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
       // relationship sends the person to that partner instead of to the sign-in
       // screen. It is the raw client_id: the registry is keyed by the
@@ -6594,14 +6650,15 @@ class OAuth2Server {
 
   // Ends the session, so the next authorization request prompts again.
   private logoutEndpoint(req: Req, res: Res): Json {
-    const { log, STS, xmlEscape, mode, bcp, frontchannel, applications,
-            validation, errorCodes, endSession } = this.deps;
+    const { log, STS, xmlEscape, mode, bcp, frontchannel, backchannel,
+            applications, validation, errorCodes, endSession } = this.deps;
     const self = this;
     log.debug("Entering the logout endpoint.");
     // The same session WS-Federation's wsignout1.0 ends, through the same
     // function — one browser session shared by both protocols means signing out
     // of either signs out of both, which is what a person testing them together
     // expects.
+    const backchannelMark = backchannel.mark();
     const session = endSession(req, res);
     // ---------------------------------------------------------------------
     // FRONT-CHANNEL LOGOUT, AND WHY IT CAN TURN A REDIRECT INTO A PAGE.
@@ -6619,7 +6676,16 @@ class OAuth2Server {
     // that has not asked for this — and the redirect below happens exactly as
     // it always did. That is deliberate: the behaviour of an existing caller
     // must not turn on a feature it never opted into.
+    //
+    // BACK-CHANNEL LOGOUT CHANGES NONE OF THAT (2026-09-17, #36). Its Logout
+    // Tokens were queued by `endSession()` above — `dropSession()` is where a
+    // session's end sends them, whichever door ended it — and go out after
+    // this answer whether it is a redirect or a page. They need no browser, so
+    // they are no reason to hold one here; where the page IS drawn, it lists
+    // them.
     // ---------------------------------------------------------------------
+    const backchannelRows = session
+      ? backchannel.deliveriesFor([session.id], backchannelMark) : [];
     const notifications = frontchannel.enabled()
       ? frontchannel.notificationsFor(session,
                                       self.issuerOf(self.asBaseOf(req)))
@@ -6661,6 +6727,7 @@ class OAuth2Server {
             'anyway.') +
         '</div>' +
         frontchannel.render(notifications) +
+        backchannel.render(backchannelRows) +
         (checked
           ? '<h2>Return to the relying party</h2><p><a href="' +
             xmlEscape(checked) + '">' +
@@ -7673,6 +7740,20 @@ class OAuth2Server {
                 "translate.");
       return answered;
     } catch (e) {
+      // A DISABLED ACCOUNT (2026-09-17): every grant carrying a person —
+      // a code, a refresh token, a password, an assertion, a token exchange,
+      // a pre-authorized code — reaches `checkIssuance()`, whose gate refuses
+      // it first. RFC 6749 section 5.2's `invalid_grant` ("revoked"), not the
+      // policy's `access_denied`: the grant is no longer good, whatever any
+      // policy would say.
+      if (e && e.name === 'IssuanceRefused' && e.issuance &&
+          e.issuance.disabled) {
+        log.debug("Leaving the token endpoint's refusal wrapper. The " +
+                  "account is disabled.");
+        errorCodes.mark(res, 'STS-OAUTH-0551');
+        log.debug("Leaving OAuth2Server.tokenEndpoint().");
+        return self.oauthError(res, 400, 'invalid_grant', e.message);
+      }
       if (e && e.name === 'IssuanceRefused') {
         log.debug("Leaving the token endpoint's refusal wrapper. The " +
                   "issuance " +
@@ -11423,7 +11504,7 @@ class OAuth2Server {
   private async registerClient(req: Req, res: Res): Promise<Json> {
     const { log, baseUrlOf, randomId, parseBody,
             softwareStatement, config, bcp, applications,
-            validation, errorCodes } = this.deps;
+            validation, errorCodes, idTokenEncryption } = this.deps;
     const self = this;
     log.debug("Entering the client registration endpoint.");
     const base = baseUrlOf(req);
@@ -11525,7 +11606,8 @@ class OAuth2Server {
     // THE ADDRESSES, IN EVERY MODE (2026-09-13). Until this date the elements
     // of redirect_uris were never looked at, and neither were
     // post_logout_redirect_uris or frontchannel_logout_uri — so `javascript:`
-    // registered in all three, and the last is framed on the sign-out page. The
+    // registered in all three, and the last is framed on the sign-out page
+    // (`backchannel_logout_uri` joined them on 2026-09-17, #36). The
     // rule is the application register's, asked here so the answer is RFC 7591
     // section 3.2.2's error rather than a registration that silently did not
     // store. RFC 9701 section 6's three members are checked beside the
@@ -11536,6 +11618,8 @@ class OAuth2Server {
     const addressProblem =
       applications.registrationUriProblem(metadata) ||
       applications.introspectionResponseProblem(metadata) ||
+      applications.idTokenEncryptionMetadataProblem(metadata) ||
+      idTokenEncryption.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
@@ -11646,7 +11730,8 @@ class OAuth2Server {
   // RFC 7592 section 2.2, after the registration access token has matched.
   private async updateClient(req: Req, res: Res, record: Json): Promise<Json> {
     const { log, baseUrlOf, parseBody, softwareStatement, bcp,
-            applications, validation, errorCodes } = this.deps;
+            applications, validation, errorCodes,
+            idTokenEncryption } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.updateClient(). client_id=" +
               record.client_id);
@@ -11698,6 +11783,8 @@ class OAuth2Server {
     const addressProblem =
       applications.registrationUriProblem(metadata) ||
       applications.introspectionResponseProblem(metadata) ||
+      applications.idTokenEncryptionMetadataProblem(metadata) ||
+      idTokenEncryption.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||

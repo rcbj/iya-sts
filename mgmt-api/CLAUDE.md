@@ -224,6 +224,19 @@ got a 404 naming an endpoint of this service's own. It is an arm of
 `usersAction()` now, so the console and this API reach one function, and it is
 the third action on that resource.
 
+**AND TWO MORE ON THAT RESOURCE SINCE 2026-09-17 (#36 follow-up):** `disable`
+and `enable`, the console's Disable and Enable buttons on a person's page.
+`disableUserAccount` is the one operation in this API that ends things as a
+side effect — every session, token, code, directory connection and Kerberos
+ticket the person holds, exactly as `POST /admin-api/logout/global` would —
+and its description says so, because a caller reading only the summary would
+take it for a flag. The reply carries `ended`, which is what the global logout
+answered. **`POST /admin-api/logout/retry-backchannel` is the fifth action on
+the sign-out resource**: it names a DELIVERY rather than a person (the list it
+is read from is every delivery in the realm), so it is answered before the
+`user` check the other four make, and `GET /admin-api/logout` grew
+`deliveryState`, `deliveryq` and `backchannelDeliveriesPage` to find one.
+
 ### `/admin-api/applications/new` is a GET WITH NO POST BESIDE IT, and that is rule 7 read exactly
 
 `/admin/applications/new` arrived on 2026-08-25 — a console page whose one
@@ -1019,8 +1032,9 @@ URL, and rule 7's parity check reads the console's own list.
 Both read `logout/logout.ts`, and they answer two different questions:
 
 * `GET /admin-api/logout?user=` is *what is alice still signed into* — keyed on
-  one identity, reaching all ten families, including the seven whose rows are
-  things this service HANDED OUT and cannot recall.
+  one identity, reaching all eleven families (ten until #38 added
+  `wallet-signin`), including the ones whose rows are things this service
+  HANDED OUT and cannot recall.
 * `GET /admin-api/sessions` is *who is signed in at all* — across everybody, in
   the three families that have a session. **A `user` parameter on the first
   could not have answered it, because the answer has no user in it.**
@@ -1597,3 +1611,15 @@ claiming gives the claim back and answers 500 (`STS-API-0113`). Everywhere else
 the handler runs synchronously as it did. The directory module is found in the
 require CACHE, never required: it is below this module in the route order. The
 design is `ldap/CLAUDE.md`'s, *Several nodes: a create claims its name*.
+
+## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
+
+Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions
+(rule 7): `GET /admin-api/vc-status` is what `/admin/vc-status?format=json`
+answers — where this realm's status lists are served, their size and
+lifetimes, the counts, and a page of every issued credential's index and
+status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
+`{ idx }` is the page's three buttons, through `statusAction()`. The action is
+a PATH SEGMENT, as every other action here is, so one operation per verb
+appears in the OpenAPI document with its own `operationId` and its own
+description of what it does to the lists.

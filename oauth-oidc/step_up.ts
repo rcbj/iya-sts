@@ -371,6 +371,54 @@ class StepUp {
     return demands;
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT THE SIGN-IN SCREEN MUST DEMAND, AS THE TWO FLAGS
+  // `authn.beginAuthentication()` TAKES (2026-09-17, #36 follow-up).
+  //
+  //   forceMfa   two factors — a password and a second factor.
+  //   forceKey   a SECURITY KEY — alone (passwordless), or as the second
+  //              factor after a password; a one-time code or a recovery code
+  //              does not answer it.
+  //
+  // Both together are a password AND a key, which is what the RFC 8176 key
+  // aliases ask for here; `forceKey` alone is WS-Federation's `HardwareToken`
+  // demand, which a passwordless key meets (`wsfed.ts`). One mechanism —
+  // these two flags on the pending sign-in and `HONOURED` on the return —
+  // behind every protocol that steps up, rather than a second one per door.
+  //
+  // `screenDemand(kind)` names the kind: '' (nothing), 'mfa', 'key', or
+  // 'mfa+key'. `screenDemandFor(acrValues)` reads it off a request: every
+  // producible value needing two factors is 'mfa', and when every one of
+  // them is a key alias it is 'mfa+key'.
+  // -------------------------------------------------------------------------
+  screenDemand(kind: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering StepUp.screenDemand(). " + kind);
+    const k = String(kind || '');
+    const out = { forceMfa: k === 'mfa' || k === 'mfa+key',
+                  forceKey: k === 'key' || k === 'mfa+key' };
+    log.debug("Leaving StepUp.screenDemand().");
+    return out;
+  }
+
+  screenDemandFor(acrValues: string[] | null | undefined): Json {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering StepUp.screenDemandFor().");
+    if (!this.demandsSecondFactor(acrValues)) {
+      log.debug("Leaving StepUp.screenDemandFor(). Nothing forced.");
+      return this.screenDemand('');
+    }
+    const producible = (acrValues || []).filter(function (one) {
+      return self.levelOf(one) >= 0 || KEY_ALIASES.indexOf(one) >= 0;
+    });
+    const keysOnly = producible.every(function (one) {
+      return KEY_ALIASES.indexOf(one) >= 0;
+    });
+    log.debug("Leaving StepUp.screenDemandFor(). keysOnly=" + keysOnly);
+    return this.screenDemand(keysOnly ? 'mfa+key' : 'mfa');
+  }
+
   private nowSec(): number {
     const { log } = this.deps;
     log.debug("Entering StepUp.nowSec().");
@@ -601,6 +649,8 @@ export = {
   meets: slot.forward('meets'),
   satisfiedAcr: slot.forward('satisfiedAcr'),
   demandsSecondFactor: slot.forward('demandsSecondFactor'),
+  screenDemand: slot.forward('screenDemand'),
+  screenDemandFor: slot.forward('screenDemandFor'),
   assessSession: slot.forward('assessSession'),
   unmetRefusal: slot.forward('unmetRefusal'),
   tokenRefusal: slot.forward('tokenRefusal'),

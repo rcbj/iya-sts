@@ -7,7 +7,7 @@ Federation relationships: this service as either end of one, in five protocols.
 | `federation.js` | **The register.** The schema, the two conversions, the CRUD, the counters, the release filter, and the broker resolver (`identityProviderFor()` / `authenticationFor()` / `usableServiceProvider()`). A library (rule 3): it registers nothing. Directory-backed — `ou=federations` IS the store. |
 | `federation_map.ts` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.ts`**, which draws the picture — the near-collision is why that file is not called `federation_map.ts` too. |
 | `federation_graph.ts` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
-| `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. |
+| `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. Since 2026-09-17 also `deliverForm()` (the back-channel Logout Token's POST), `fetchPublished()` (a trusted issuer's status list) and the product-mode internal-address check every outbound requester shares. |
 | `federation_sp.ts` | The four endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued. |
 
 ---
@@ -734,6 +734,63 @@ it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`,
 and the embedded debugger's api, the RFC 9728 import and a registered RFC 9101
 `request_uri` are indexed in the root `CLAUDE.md`'s *Things this service
 deliberately does not do*.
+
+### `deliverForm()`: the second function, and a second kind of URL (2026-09-17, #36)
+
+OpenID Connect Back-Channel Logout needed this service to POST a Logout Token to
+a relying party's `backchannel_logout_uri` — an address that can arrive through
+the unauthenticated `POST /oauth2/register`, which is exactly the provenance
+the argument above refuses to FETCH from. It is the "separate argument in a
+separate function" this section asks for, and the argument is the other
+distinction the root index draws: **an address somebody registered to be SENT
+something at is not a URL to fetch something FROM.** Nothing that comes back is
+used — the status and `Cache-Control` are the whole answer, and the body is
+drained to the cap and discarded — and what goes out is a signed statement that
+one of that client's own sessions ended.
+
+What is left is the request-forwarder risk, and it is bounded as the RFC 9728
+import bounds it: **in product mode (`mode.dialsInternalAddresses()` false) the
+name is resolved once, every address is checked against the loopback, private,
+link-local and reserved ranges, and the connection is pinned to the address
+that was checked.** That check and that resolution MOVED HERE on the same day
+(`internalAddressProblem()`, `vetHost()`), because a second requester needing
+them made this module — the owner of the outbound policy — the place for one
+copy; `oauth-oidc/protected_resource_metadata.ts` now asks for them and keeps
+its own refusal codes. Everything else above holds for `deliverForm()` too:
+the kill switch, https unless `federation.outboundAllowInsecure`, no redirect,
+the cap, a timeout (the caller's, `oauth2.backchannelLogoutTimeoutMs`). **Its
+URL comes off a record by an attribute name from its OWN list, `SENDABLE`**
+(`oauthBackchannelLogoutUri`), and it refuses a name from `DIALLABLE` exactly as
+`fetchJson()` refuses one from `SENDABLE`: neither list borrows the other's
+names. It answers a `kind` rather than a code, so the caller names each
+failure in its own subsystem (`STS-OAUTH-0532..0540`).
+
+### `fetchPublished()`: the third function, and a URL a CALLER supplied (2026-09-17)
+
+`oid4vc/vc_status.ts` fetches a Token Status List or a Bitstring Status List
+credential to find out whether a presented credential has been revoked. **That
+address comes out of the credential**, which is the caller's kind of URL — the
+kind the header at the top of that file says this module will not dial. So
+this is a third argument, made in a third function, rather than a name added to
+either list:
+
+**WHAT MAKES IT THE ADMINISTRATOR'S IS WHERE IT SITS.** It is inside a document
+whose signature has already VERIFIED against a certificate an administrator
+wrote into `oid4vp.trustedIssuerCertificates`. The presenter cannot choose it;
+the issuer that administrator trusted did. And it is never dialled for a
+credential THIS REALM signed — that list is in this service's own store, and a
+credential of ours naming somebody else's list is refused rather than followed.
+What comes back is verified against the same certificate, so nothing that
+arrives is believed on its own say-so (point 5 above).
+
+It keeps every other rule here — the kill switch, https unless
+`federation.outboundAllowInsecure`, the internal-address check with the
+connection pinned in product mode, the body cap, the timeout — and it follows
+NO REDIRECT, which the status-list draft's section 8.2 says a client SHOULD do
+and its section 11.4 says is where the risk is: a list that has moved is a
+failure, and the credential is refused rather than the Location followed. It
+sends nothing but `Accept` and answers `{ ok, status, body, contentType, kind,
+why, url }`.
 
 ---
 

@@ -1495,6 +1495,75 @@ const SCHEMAS = {
                           'authenticated before now, not just this one.' }
     }),
 
+  BackchannelDelivery: openObject(
+    'One OpenID Connect Back-Channel Logout 1.0 delivery: a signed (and, ' +
+    'where the client registered it, encrypted) Logout Token this service ' +
+    'POSTs to a relying party\'s registered backchannel_logout_uri when a ' +
+    'session it was issued an authorization response on ends. A row of a ' +
+    'persisted, replicated store — every node lists every node\'s — and ' +
+    'the token itself is never in a reply.',
+    {
+      id: { type: 'string',
+            description: 'Derived from the session and the client, so the ' +
+                         'same delivery planned by two processes is one ' +
+                         'row. What `retry-backchannel` names.' },
+      realm: { type: 'string' },
+      sessionId: { type: 'string',
+                   description: 'The sign-on session whose end it reports ' +
+                                '— the Logout Token\'s `sid`.' },
+      clientId: { type: 'string', description: 'The token\'s `aud`.' },
+      uri: { type: 'string' },
+      sessionRequired: { type: 'boolean',
+                         description: 'What the client registered as ' +
+                                      'backchannel_logout_session_required. ' +
+                                      '`sid` is sent either way.' },
+      state: { type: 'string',
+               enum: ['pending', 'sent', 'dead'],
+               description: '`pending` until it is accepted (`sent`: 200 ' +
+                            'or 204) or finally fails — refused with 400, ' +
+                            'refused by the outbound policy, or out of ' +
+                            'attempts — as a DEAD LETTER (`dead`), which ' +
+                            'is sent again only by `retry-backchannel`. A ' +
+                            'sign-out answers BEFORE its deliveries are ' +
+                            'made, so its own reply says `pending`.' },
+      generation: { type: 'integer',
+                    description: '1, and one more for each operator retry; ' +
+                                 'each generation is a new Logout Token.' },
+      attempts: { type: 'integer',
+                  description: 'Attempts recorded in this generation.' },
+      inFlight: { type: 'boolean',
+                  description: 'An attempt is claimed and not yet recorded ' +
+                               '— being sent now, or by a process that ' +
+                               'died, in which case another takes it over ' +
+                               'when its lease lapses.' },
+      holder: { type: 'string',
+                description: 'The host and process that last claimed an ' +
+                             'attempt.' },
+      status: { type: 'integer',
+                description: 'The last HTTP status, or 0 where none came ' +
+                             'back.' },
+      errorCode: { type: 'string',
+                   description: 'The STS-OAUTH-05xx code of the last ' +
+                                'failure.' },
+      why: { type: 'string' },
+      via: { type: 'string',
+             description: 'Which door ended the session.' },
+      trigger: { type: 'string', enum: ['sign-out', 'expiry', 'forget'],
+                 description: 'A sign-out (any door, an account disabled ' +
+                              'included), an expiry, or a relying party ' +
+                              'forgotten on a session that stays.' },
+      encrypted: { type: 'string',
+                   description: 'The JWE alg and enc the token was ' +
+                                'encrypted with, or empty.' },
+      queuedAt: { type: 'string', format: 'date-time' },
+      nextAttemptAt: { type: 'string',
+                       description: 'ISO 8601 while pending, else empty.' },
+      lastAttemptAt: { type: 'string',
+                       description: 'ISO 8601, or empty before the first.' },
+      finishedAt: { type: 'string',
+                    description: 'ISO 8601, or empty while pending.' }
+    }),
+
   LogoutInventory: openObject(
     'What this service is still holding for one identity, across every ' +
     'protocol family — or, with no `user`, the list of families a logout ' +
@@ -1525,7 +1594,30 @@ const SCHEMAS = {
                   items: { $ref: '#/components/schemas/LogoutFamily' } },
       rows: { type: 'array', items: { $ref: '#/components/schemas/LogoutRow' },
               description: 'The same rows flattened, filtered and paged — ' +
-                           'which is what the console table shows.' }
+                           'which is what the console table shows.' },
+      backchannelDeliveries: {
+        type: 'array',
+        items: { $ref: '#/components/schemas/BackchannelDelivery' },
+        description: 'The back-channel Logout Token deliveries in this ' +
+                     'realm, from EVERY node, newest first, with or without ' +
+                     '`user`, narrowed by `deliveryState` and `deliveryq` ' +
+                     'and paged by `backchannelDeliveriesPage` — where a ' +
+                     'delivery a sign-out reported as `pending` is seen to ' +
+                     'have arrived, and where the dead letters are. Every ' +
+                     'final outcome is also a `logout.backchannel` audit ' +
+                     'row.' },
+      backchannelDeliveriesPaging: pagingObject('backchannelDeliveries'),
+      backchannelCounts: openObject(
+        'How many deliveries this realm holds in each state.', {
+          pending: { type: 'integer' },
+          sent: { type: 'integer' },
+          dead: { type: 'integer',
+                  description: 'The dead letters.' }
+        }),
+      deliveryState: { type: 'string',
+                       description: 'The state asked for, or empty.' },
+      deliveryq: { type: 'string',
+                   description: 'The search asked for, or empty.' }
     }, PAGING_PROPERTIES)),
 
   UserList: openObject(
@@ -5462,6 +5554,8 @@ const TAG_DESCRIPTIONS = {
                             'custom claims are in, and the same two halves: ' +
                             'a typed attribute and a directory one.',
   'Credential claims': 'What an issued Verifiable Credential carries.',
+  'Credential status': 'The status lists every issued Verifiable ' +
+    'Credential names, and suspending, reinstating or revoking one.',
   'Verifier request': 'What the mock OID4VP Verifier asks a wallet for.',
   'Token lifetimes': 'How long an access token, an ID Token and a refresh ' +
                      'token issued here last, and how far out a clock may be ' +

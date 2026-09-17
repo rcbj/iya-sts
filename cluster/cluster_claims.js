@@ -130,7 +130,8 @@ function maybePurge(theStore) {
 // the value itself and never leaves this function; `ttlMs` is how long it could
 // still be valid; `realm` defaults to the ambient one.
 //
-// Resolves to `{ ok: true, handle }`, `{ ok: false, reason: 'used', existing }`
+// Resolves to `{ ok: true, handle, claimedAt }`,
+// `{ ok: false, reason: 'used', existing }`
 // or `{ ok: false, reason: 'store', why }`. It never rejects.
 // ---------------------------------------------------------------------------
 /**
@@ -174,7 +175,7 @@ function claim(opts) {
     memory.set(key, { reservation: reservation, claimedAt: now,
                       expiresAt: now + ttlMs });
     log.debug("Leaving claim(). Claimed, in memory.");
-    return Promise.resolve({ ok: true, handle: handle });
+    return Promise.resolve({ ok: true, handle: handle, claimedAt: now });
   }
   maybePurge(theStore);
   log.debug("Leaving claim(). Asking the store.");
@@ -183,7 +184,12 @@ function claim(opts) {
                               { ttlMs: ttlMs, reservation: reservation });
   }).then(function (answer) {
     if (answer && answer.claimed) {
-      return { ok: true, handle: handle };
+      // WHEN, BY THE STORE'S CLOCK (2026-09-17): a claim re-taken after its
+      // lifetime lapsed is a LATER time than the one it replaced, which is
+      // what lets a caller use it as a fencing token — the back-channel
+      // logout deliveries do (`oauth-oidc/backchannel_logout.ts`).
+      return { ok: true, handle: handle,
+               claimedAt: Number(answer.claimedAt) || Date.now() };
     }
     return { ok: false, reason: 'used',
              existing: (answer && answer.existing) || null };

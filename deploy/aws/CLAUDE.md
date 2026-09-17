@@ -18,6 +18,7 @@ Dockerfile removes this directory from the image.
 | `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
 | `run-suite.sh` | per run | runs the suite from the machine it is started on, less the two jobs the nodes must call back to | a person |
 | `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
+| `../../.github/workflows/testidp-deploy.yml`, `testidp-destroy.yml` | per deployment | build `testidp`'s two images and apply it, admitting only the address(es) given as `allowed_ip`; destroy it (typed confirmation) | GitHub Actions (dispatch only) |
 
 ## The decisions, and what each costs
 
@@ -153,6 +154,20 @@ plan against its state showed two new empty outputs and nothing else.
   balancer admits the building host's current address and nothing else:
   `IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidp apply`, and
   `… testidp destroy`.
+* **Or from GitHub (2026-09-17)**: `testidp-deploy.yml` builds the service
+  and schema-init images for the dispatched commit and applies;
+  `testidp-destroy.yml` destroys, refusing unless `confirm` is typed as
+  `testidp`. Both share `aws-cluster.yml`'s concurrency group for the
+  environment, so nothing overlaps. **A workflow cannot see the address of the
+  person who dispatched it** — the event names the account and carries no IP,
+  and the runner's address is GitHub's — so the deploy takes `allowed_ip` as a
+  required input (single public IPv4 addresses, each a /32; wider ranges and
+  private addresses are refused before anything is built), and does NOT admit
+  the runner, unlike `aws-cluster.yml`, whose suite needs it. The one-liner
+  that fills it with your current address:
+  `gh workflow run testidp-deploy.yml --ref develop -f allowed_ip="$(curl -fsS https://checkip.amazonaws.com)"`.
+  Re-running with a new address replaces the list, which is how a changed
+  address is let back in.
 
 The deployer gained ACM (created and changed only with `Project = STS`) and
 Route53 (`foundation/variables.tf`'s `public_dns`: listed zones, and only the

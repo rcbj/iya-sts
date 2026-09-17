@@ -533,6 +533,30 @@ const RETURN_ADDRESS_ATTRIBUTES = PROTOCOLS
 // returnAddressesOf() below, which is the one place the mark is read.
 const OBSERVED_ADDRESS_ATTRIBUTE = 'appReturnAddressObserved';
 
+// THE SAML SIGNING-CERTIFICATE PAIR (2026-09-17, #37): what is registered and
+// trusted, and what a request carried and nobody has vouched for. See the two
+// schema rows, and `saml/request_signature.ts`.
+const OBSERVED_CERTIFICATE_ATTRIBUTE = 'samlObservedSigningCertificate';
+
+// The editable attributes that hold a certificate somebody's signature is
+// checked against, normalised and checked on the way in by updateApplication().
+const SAML_CERTIFICATE_ATTRIBUTES = ['samlSigningCertificate',
+                                     'samlSpMetadataSigningCertificate'];
+
+// WHAT CONSUMING A SERVICE PROVIDER'S METADATA MAY WRITE, and the only
+// attributes replaceSamlMetadataFields() will touch. A closed list, because
+// that function writes DERIVED attributes no door may edit, and a function
+// that wrote whatever it was handed would be a door around the EDITABLE table.
+const SAML_METADATA_FIELDS = [
+  'samlSpMetadata', 'samlEncryptionCertificate', 'samlSigningCertificate',
+  'samlAssertionConsumerService', 'samlAcsEndpoint',
+  'samlSingleLogoutService', 'samlSloEndpoint', 'samlSpNameIdFormat',
+  'samlSpAuthnRequestsSigned', 'samlSpWantAssertionsSigned',
+  'samlSpWantAssertionsEncrypted',
+  'samlSpMetadataValidUntil', 'samlSpMetadataCacheDuration',
+  'samlSpMetadataConsumedAt', 'samlSpMetadataSignature'
+];
+
 const PROTOCOL_BY_ID = {};
 PROTOCOLS.forEach(function (row) { PROTOCOL_BY_ID[row.id] = row; });
 
@@ -961,6 +985,26 @@ const SCHEMA = {
             'boolean FALSE rather than unknown — so an absent value here ' +
             'means the client did not ask, which is a different fact from ' +
             'the client not having registered.' },
+    { name: 'oauthBackchannelLogoutUri', kind: 'single',
+      from: 'POST /oauth2/register, the console, or by hand',
+      what: 'WHERE THIS SERVICE POSTS A LOGOUT TOKEN WHEN THE USER SIGNS OUT ' +
+            '— OpenID Connect Back-Channel Logout 1.0 section 2.2\'s ' +
+            'backchannel_logout_uri. Every sign-out of a session this client ' +
+            'was issued an authorization response on sends one, ' +
+            'server-to-server, after the sign-out has answered, through the ' +
+            'outbound policy (https unless ' +
+            'federation.outboundAllowInsecure; no internal address in ' +
+            'product mode). SINGLE-valued, like the front-channel URI: the ' +
+            'specification defines one per client. http or https with no ' +
+            'fragment.' },
+    { name: 'oauthBackchannelLogoutSessionRequired', kind: 'single',
+      from: 'POST /oauth2/register, the console, or by hand',
+      what: 'TRUE if this client requires `sid` in the Logout Token — ' +
+            'Back-Channel Logout 1.0 section 2.2\'s ' +
+            'backchannel_logout_session_required. This service puts `sid` ' +
+            'AND `sub` in every Logout Token it sends, so the flag is always ' +
+            'honoured; it is recorded because "false" and "not stated" are ' +
+            'different facts about a client, as for the front-channel flag.' },
     { name: 'oauthGrantType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'Grant types registered or observed at the token endpoint.' },
     { name: 'oauthResponseType', kind: 'multi', from: 'OAuth 2.0 / OIDC',
@@ -1757,16 +1801,19 @@ const SCHEMA = {
             'it — so a realm switched from development to product does not ' +
             'trust what development learnt. Values recorded before that mark ' +
             'existed carry none and still need reviewing.' },
-    { name: 'samlSingleLogoutService', kind: 'multi', from: 'by hand',
+    { name: 'samlSingleLogoutService', kind: 'multi',
+      from: 'consumed metadata, or by hand',
       what: 'WHERE A <samlp:LogoutResponse> IS SENT for this service ' +
             'provider, and where a LogoutRequest goes when this identity ' +
-            'provider starts the logout. DECLARED, not observed, and it is ' +
-            'the one SAML attribute that has to be: a LogoutRequest carries ' +
-            'no return address, only SP METADATA does, and this service does ' +
-            'not consume SP metadata. With none recorded the fallback is the ' +
-            'assertion consumer service URL above, which is a guess this ' +
-            'service makes out loud rather than quietly — see ' +
-            'saml2.defaultSingleLogoutService.' },
+            'provider starts the logout. DECLARED, not observed: a ' +
+            'LogoutRequest carries no return address, so only SP METADATA ' +
+            'or an operator can say. Consuming the metadata writes its ' +
+            'SingleLogoutService locations here (and each endpoint\'s ' +
+            'binding and ResponseLocation on samlSloEndpoint, which is read ' +
+            'first). With none recorded the fallback is ' +
+            'saml2.defaultSingleLogoutService and then the assertion ' +
+            'consumer service URL above, which is a guess this service makes ' +
+            'out loud rather than quietly.' },
     { name: 'samlNameIdFormat', kind: 'multi', from: 'SAML 2.0',
       what: 'Every NameID Format this service provider has asked for in a ' +
             'NameIDPolicy, accumulated. It is evidence rather than ' +
@@ -1778,30 +1825,68 @@ const SCHEMA = {
             'HTTP-POST, HTTP-Redirect or HTTP-Artifact. Several is the ' +
             'ordinary case for a service provider being exercised, which is ' +
             'what makes this a list.' },
-    { name: 'samlSigningCertificate', kind: 'single', from: 'SAML 2.0, or by ' +
-        'hand',
-      what: 'THE SERVICE PROVIDER\'S SIGNING CERTIFICATE, base64 DER, taken ' +
-            'off the ds:KeyInfo of a signed AuthnRequest when one carries ' +
-            'it. It is RECORDED AND NOT CHECKED — see saml/CLAUDE.md, where ' +
-            'the refusal to verify a request signature is argued rather than ' +
-            'assumed — so it is here to be read, and to be what a later ' +
-            'verification would read, rather than because anything depends ' +
-            'on it today. Public key material, so unlike oauthClientSecret ' +
-            'it is worth nothing to whoever reads this directory.' },
+    // THE TRUST ANCHOR FOR A SERVICE PROVIDER'S SIGNATURES (2026-09-17,
+    // #37). It was single-valued and written straight off the ds:KeyInfo of
+    // every signed AuthnRequest while nothing verified a request signature;
+    // now that something does, a certificate a REQUEST carries cannot be
+    // what the request is checked against, so a sighting writes
+    // `samlObservedSigningCertificate` below instead and this attribute holds
+    // only what an operator or consumed metadata registered. MULTI, because
+    // metadata publishes the old and new key side by side during a rollover
+    // and both must verify. `saml/request_signature.ts` argues the rest.
+    { name: 'samlSigningCertificate', kind: 'multi',
+      from: 'consumed metadata, the SAML 2.0 page, or by hand',
+      what: 'THE SERVICE PROVIDER\'S REGISTERED SIGNING CERTIFICATES, base64 ' +
+            'DER, one per value. A signed AuthnRequest, LogoutRequest or ' +
+            'LogoutResponse from this service provider is VERIFIED against ' +
+            'these — in every mode — and refused when it verifies against ' +
+            'none. Written by consuming its metadata (every KeyDescriptor ' +
+            'use="signing" or with no use), by the SAML 2.0 console page, by ' +
+            'POST /admin-api/saml2/set-signing-certificate, by confirming ' +
+            'the observed certificate below, or by hand; an RSA certificate ' +
+            'is required, because the verifier here is RSA. It is NEVER ' +
+            'written from a request: the certificate a request carries in ' +
+            'its ds:KeyInfo goes on samlObservedSigningCertificate. Values ' +
+            'written before 2026-09-17 were captured off requests and carry ' +
+            'no provenance — review them before trusting them. Public key ' +
+            'material, so unlike oauthClientSecret it is worth nothing to ' +
+            'whoever reads this directory.' },
+    { name: 'samlObservedSigningCertificate', kind: 'single',
+      from: 'a signed SAML 2.0 request',
+      what: 'THE CERTIFICATE THE LAST SIGNED REQUEST CARRIED IN ITS ' +
+            'ds:KeyInfo, base64 DER, when it is not one of the registered ' +
+            'samlSigningCertificate values. OBSERVED, NOT TRUSTED: a key a ' +
+            'request brings with it proves nothing about who sent the ' +
+            'request, so it verifies nothing in either mode. Development ' +
+            'still encrypts an assertion to it when the entry holds no other ' +
+            'certificate; product does not. An operator CONFIRMS it (it ' +
+            'moves onto samlSigningCertificate) or DISCARDS it, on the SAML ' +
+            '2.0 page or with POST /admin-api/saml2/confirm-signing-' +
+            'certificate and /discard-signing-certificate. ONE value — the ' +
+            'last — so a stream of requests carrying made-up keys cannot ' +
+            'grow the entry.' },
+    { name: 'samlAuthnRequestVerification', kind: 'single',
+      from: 'SAML 2.0',
+      what: 'WHAT CHECKING THE LAST REQUEST\'S SIGNATURE FOUND: `verified`, ' +
+            '`failed`, `unsigned` or `no-certificate` (signed, and nothing ' +
+            'registered to check it against), then the binding and the ' +
+            'algorithm. Assigned, like samlAuthnRequestSigned beside it.' },
     // ---------------------------------------------------------------------
     // SAML 2.0 ENCRYPTION, added 2026-08-27. Three attributes that are NOT
     // setting overrides — they are where the recipient's key comes from — and
     // four that are.
     //
     // THE CERTIFICATE IS RESOLVED IN THREE PLACES, MOST SPECIFIC FIRST:
-    // `samlEncryptionCertificate` (extracted from metadata, or typed), then
-    // `samlSigningCertificate`. The last is the one that makes this work with
-    // no configuration at all: it is captured off a SIGNED AuthnRequest's
-    // ds:KeyInfo, so a service provider that signs its requests has already
-    // told this service which key it holds. Using a SIGNING key to encrypt to
-    // is not what a careful deployment does — real metadata carries a separate
-    // `use="encryption"` KeyDescriptor — and it is the right default for a
-    // mock, where the alternative is refusing to demonstrate the feature.
+    // `samlEncryptionCertificate` (extracted from metadata, or typed), then a
+    // REGISTERED `samlSigningCertificate`, then — in development mode only
+    // since 2026-09-17 (#37) — the OBSERVED `samlObservedSigningCertificate`
+    // off a signed AuthnRequest's ds:KeyInfo. That last one is what makes
+    // this work with no configuration at all in development; product does not
+    // encrypt to a key anybody could have put in a request. Using a SIGNING
+    // key to encrypt to is not what a careful deployment does — real metadata
+    // carries a separate `use="encryption"` KeyDescriptor — and it is the
+    // right default for a mock, where the alternative is refusing to
+    // demonstrate the feature.
     { name: 'samlSpMetadataUrl', kind: 'single', from: 'by hand',
       what: 'WHERE THIS SERVICE PROVIDER\'S METADATA IS PUBLISHED. It is ' +
             'fetched by the "refresh metadata" action on the application ' +
@@ -1809,7 +1894,8 @@ const SCHEMA = {
             'NEVER while a flow is running — an assertion that had to wait ' +
             'on somebody else\'s web server to be issued would make every ' +
             'sign-in as reliable as that server. What the fetch writes is ' +
-            'samlSpMetadata and samlEncryptionCertificate below.\n\nThis is ' +
+            'everything consuming the document writes — see ' +
+            'samlSpMetadata below.\n\nThis is ' +
             'the SECOND outbound-request surface in this service; federation ' +
             'was the first and is the only other. It follows the same ' +
             'refusals — the URL must be one this entry carries, the scheme ' +
@@ -1817,13 +1903,21 @@ const SCHEMA = {
     { name: 'samlSpMetadata', kind: 'single', from: 'a metadata fetch, or by ' +
                                                     'hand',
       what: 'THE SERVICE PROVIDER\'S METADATA DOCUMENT, cached verbatim. It ' +
-            'is what the refresh action stores, and it can be pasted instead ' +
-            'for a service provider whose metadata this service cannot reach ' +
-            '— an air-gapped test, or one behind an authenticating proxy. ' +
-            'Parsing it is what fills samlEncryptionCertificate.\n\nIT IS ' +
-            'KEPT AS WELL AS THE EXTRACT so that a reader can see what was ' +
-            'actually consumed. A certificate with no document behind it is ' +
-            'a value nobody can check.' },
+            'is what the refresh action stores, and what uploading one on ' +
+            'the SAML 2.0 page (or POST /admin-api/saml2/upload-metadata) ' +
+            'stores for a service provider whose metadata this service ' +
+            'cannot reach. CONSUMING it (2026-09-17) writes its ' +
+            'AssertionConsumerService and SingleLogoutService endpoints as ' +
+            'REGISTERED return addresses (samlAssertionConsumerService, ' +
+            'samlAcsEndpoint, samlSingleLogoutService, samlSloEndpoint), its ' +
+            'signing certificates (samlSigningCertificate), its encryption ' +
+            'certificate (samlEncryptionCertificate), its NameIDFormats, ' +
+            'AuthnRequestsSigned and WantAssertionsSigned, and its ' +
+            'validUntil and cacheDuration. Setting this attribute by hand ' +
+            'stores the document and consumes NOTHING — use the upload.' +
+            '\n\nIT IS KEPT AS WELL AS THE EXTRACT so that a reader can see ' +
+            'what was actually consumed. A certificate with no document ' +
+            'behind it is a value nobody can check.' },
     { name: 'samlEncryptionCertificate', kind: 'single',
       from: 'metadata, or by hand',
       what: 'THE CERTIFICATE AN ASSERTION IS ENCRYPTED TO, base64 DER or ' +
@@ -1831,11 +1925,105 @@ const SCHEMA = {
             'use="encryption"> — falling back to an unqualified ' +
             'KeyDescriptor, which the specification says serves both uses — ' +
             'and settable by hand for a service provider with no metadata at ' +
-            'all.\n\nIt is READ, which distinguishes it from ' +
-            'samlSigningCertificate beside it: that one is recorded and ' +
-            'never checked, and this one decides what goes out. With none ' +
-            'here the signing certificate is used, and with neither the ' +
-            'assertion is sent in clear and the page says so.' },
+            'all.\n\nIt decides what goes out. With none here a registered ' +
+            'samlSigningCertificate is used, then — in development only — ' +
+            'the observed one, and with none of them the assertion is sent ' +
+            'in clear (development) or refused (product), and the page says ' +
+            'so.' },
+    // ---------------------------------------------------------------------
+    // WHAT CONSUMING THE METADATA FOUND (2026-09-17, #37). DERIVED — each is
+    // rewritten whole by every consumption and by nothing else, which is
+    // `applications.replaceSamlMetadataFields()`'s job — except the
+    // metadata's own signing certificate, which is what an operator
+    // DECLARES the document must be signed with.
+    //
+    // THE TWO ENDPOINT ATTRIBUTES CARRY ONE ENDPOINT PER VALUE, space
+    // separated with the URL LAST — `appReturnAddressObserved`'s arrangement,
+    // for its reason: a URL has no raw space in it, so it can take the
+    // remainder. The plain locations are ALSO written to
+    // samlAssertionConsumerService and samlSingleLogoutService, because those
+    // are what the return-address rules and every older reader already ask.
+    // ---------------------------------------------------------------------
+    { name: 'samlAcsEndpoint', kind: 'multi', from: 'consumed metadata',
+      what: 'An <md:AssertionConsumerService> from the consumed metadata, as ' +
+            '`<index> <isDefault> <binding> <location>` — isDefault is ' +
+            '`true`, `false` or `-` for unstated. An AuthnRequest naming an ' +
+            'AssertionConsumerServiceIndex is answered at that endpoint and ' +
+            'on its binding; one naming an AssertionConsumerServiceURL must ' +
+            'name one of these (in EVERY mode, once metadata has been ' +
+            'consumed); one naming neither goes to the default endpoint ' +
+            '(saml-metadata-2.0-os section 2.2.3).' },
+    { name: 'samlSloEndpoint', kind: 'multi', from: 'consumed metadata',
+      what: 'An <md:SingleLogoutService> from the consumed metadata, as ' +
+            '`<binding> <location>` or `<binding> <location> ' +
+            '<responseLocation>`. A LogoutResponse goes to the ' +
+            'ResponseLocation where there is one, on the binding the ' +
+            'LogoutRequest arrived on where the service provider publishes ' +
+            'it.' },
+    { name: 'samlSpNameIdFormat', kind: 'multi', from: 'consumed metadata',
+      what: 'The <md:NameIDFormat> values the service provider\'s metadata ' +
+            'declares. Unlike samlNameIdFormat (what it has ASKED for), ' +
+            'these RESTRICT: a NameIDPolicy naming another format is ' +
+            'answered InvalidNameIDPolicy (saml-core-2.0-os section ' +
+            '3.4.1.1), and the default format is chosen from them.' },
+    { name: 'samlSpAuthnRequestsSigned', kind: 'single',
+      from: 'consumed metadata',
+      what: 'TRUE when the metadata says AuthnRequestsSigned="true": an ' +
+            'unsigned request from this service provider is then refused ' +
+            'whatever saml2.requireSignedAuthnRequests says, and the ' +
+            'metadata this identity provider serves it says ' +
+            'WantAuthnRequestsSigned="true".' },
+    { name: 'samlSpWantAssertionsSigned', kind: 'single',
+      from: 'consumed metadata',
+      what: 'TRUE when the metadata says WantAssertionsSigned="true": the ' +
+            'assertion is signed even where saml2.signAssertion (or ' +
+            'saml2SignAssertion) is off — in product mode; development ' +
+            'honours the setting, which is a test case, and logs that the ' +
+            'service provider asked otherwise.' },
+    { name: 'samlSpWantAssertionsEncrypted', kind: 'single',
+      from: 'consumed metadata',
+      what: 'TRUE when the consumed metadata publishes a KeyDescriptor ' +
+            'marked use="encryption" — the service provider saying it has a ' +
+            'key for encrypted assertions, which SAML 2.0 metadata has no ' +
+            'attribute of its own for (the interoperability profiles read ' +
+            'the key as the request). The assertion is then ENCRYPTED to ' +
+            'that key in every mode, whatever saml2.encryptAssertion says.' },
+    { name: 'samlSpMetadataValidUntil', kind: 'single',
+      from: 'consumed metadata',
+      what: 'The EFFECTIVE validUntil of the consumed document — the ' +
+            'earliest on any enclosing EntitiesDescriptor, the ' +
+            'EntityDescriptor and its SPSSODescriptor. A document already ' +
+            'expired is refused when consumed; once this passes, every ' +
+            'request from the service provider is REFUSED (STS-SAML-0074) ' +
+            'until a newer document is consumed.' },
+    { name: 'samlSpMetadataCacheDuration', kind: 'single',
+      from: 'consumed metadata',
+      what: 'The EFFECTIVE cacheDuration of the consumed document (the ' +
+            'shortest in its chain), as the xs:duration it carried. Once it ' +
+            'has elapsed since the document was consumed, the document is ' +
+            'STALE: the background refresher fetches it again where it can ' +
+            '(saml2.spMetadataRefresh), and it keeps working until its ' +
+            'validUntil.' },
+    { name: 'samlSpMetadataConsumedAt', kind: 'single',
+      from: 'consumed metadata',
+      what: 'When the document was last consumed, and how: `<ISO instant> ' +
+            '<refresh|upload|mdq>` — `mdq` for one fetched from the Metadata ' +
+            'Query responder, which the background refresher can fetch ' +
+            'again.' },
+    { name: 'samlSpMetadataSignature', kind: 'single',
+      from: 'consumed metadata',
+      what: 'What checking the consumed document\'s own signature found: ' +
+            '`verified`, `unsigned`, or `signed-not-verified` (signed, and ' +
+            'no samlSpMetadataSigningCertificate to check it against).' },
+    { name: 'samlSpMetadataSigningCertificate', kind: 'single',
+      from: 'by hand',
+      what: 'THE CERTIFICATE THIS SERVICE PROVIDER\'S METADATA MUST BE ' +
+            'SIGNED WITH, base64 DER. With it set, a document that is ' +
+            'unsigned, or whose signature does not verify against it, is ' +
+            'REFUSED and nothing on the entry changes. Without it a signed ' +
+            'document is consumed and recorded as signed-not-verified: the ' +
+            'trust act is then the operator\'s choice of URL (or document), ' +
+            'which is what an explicit refresh or upload is.' },
     { name: 'saml2EncryptAssertion', kind: 'single', from: 'by hand',
       overrides: 'saml2.encryptAssertion',
       what: 'TRUE or FALSE: encrypt the assertion issued to THIS service ' +
@@ -2694,14 +2882,20 @@ const SCHEMA = {
       from: 'the console, the management API, or by hand',
       what: 'HOW THIS APPLICATION\'S USERS AUTHENTICATE, one value from the ' +
             'same closed list fedAuthnMechanism uses: password, ' +
-            'password-mfa, webauthn, spnego, federation.\n\nIt is the ' +
+            'password-mfa, webauthn, spnego, wallet, federation.\n\nIt is ' +
+            'the ' +
             'generalisation of appFederationRelationship beside it, and the ' +
             'value that could not be said before it existed is `spnego` — ' +
             'INTEGRATED AUTHENTICATION, where this application\'s people are ' +
             'sent to /authn/spnego and signed in on the Kerberos ticket ' +
             'their machine already holds, with no screen drawn and nothing ' +
             'typed. That is the one mechanism here resting on a credential ' +
-            'this service genuinely verifies.\n\n`federation` means the ' +
+            'this service genuinely verifies.\n\n`wallet` (2026-09-17) ' +
+            'sends them to /authn/wallet instead, where their wallet ' +
+            'presents a credential this realm issued them and they are ' +
+            'signed in as the entry it was issued for — asked for a second ' +
+            'factor afterwards where the request demands two.\n\n' +
+            '`federation` means the ' +
             'relationships named in appFederationRelationship, which is what ' +
             'naming one already implied, said out loud — so it changes ' +
             'nothing, and declaring it while naming NO usable relationship ' +
@@ -2712,8 +2906,9 @@ const SCHEMA = {
             'same as password: it falls through to appFederationRelationship ' +
             'and then to the screen, which is exactly what every application ' +
             'did before this attribute existed.\n\nA value this service ' +
-            'cannot honour — a mechanism it does not have, or `spnego` while ' +
-            'krb5.spnegoAuthentication is off — is REPORTED on the screen, ' +
+            'cannot honour — a mechanism it does not have, `spnego` while ' +
+            'krb5.spnegoAuthentication is off, or `wallet` while ' +
+            'oid4vp.signIn is off — is REPORTED on the screen, ' +
             'one line, rather than dropped. A configured mechanism that ' +
             'silently is not happening looks exactly like one that is.\n\nIt ' +
             'is WRITTEN BY NOBODY. No protocol presents it and no sighting ' +
@@ -2861,8 +3056,10 @@ const EDITABLE = {
   // certificate the service provider signs with are configuration, and the
   // NameID formats it has asked for and whether its last request was signed
   // are what HAPPENED.
-  samlSigningCertificate: 'set',
+  // `multi` since 2026-09-17 (#37): a rollover publishes two keys.
+  samlSigningCertificate: 'multi',
   samlSingleLogoutService: 'multi',
+  samlSpMetadataSigningCertificate: 'set',
   // THE TEN PER-APPLICATION SETTING OVERRIDES. Every one is `set`, for the
   // reason their SCHEMA rows give: a setting has one answer, and `multi` would
   // accumulate two values with no rule for which won. They are editable
@@ -2976,6 +3173,8 @@ const EDITABLE = {
   oauthPostLogoutRedirectUri: 'multi',
   oauthFrontchannelLogoutUri: 'set',
   oauthFrontchannelLogoutSessionRequired: 'set',
+  oauthBackchannelLogoutUri: 'set',
+  oauthBackchannelLogoutSessionRequired: 'set',
   oauthGrantType: 'multi',
   oauthResponseType: 'multi',
   oauthScope: 'multi',
@@ -3988,6 +4187,8 @@ function openSealedFields(fields, identifier) {
 //
 // `oauthRedirectUri` and `oauthPostLogoutRedirectUri` are addresses a browser
 // is SENT to, and `oauthFrontchannelLogoutUri` is one a sign-out page FRAMES.
+// `oauthBackchannelLogoutUri` (2026-09-17, #36) is one this service POSTs a
+// Logout Token to, and takes the same http(s)-only rule.
 // Until this date none of the three was checked on the way in — at
 // registration, at a console `add` or at `/admin-api` — so `javascript:` could
 // be stored in all of them. The two redirect attributes were caught again at
@@ -4007,7 +4208,8 @@ function openSealedFields(fields, identifier) {
 const ADDRESS_ATTRIBUTES = {
   oauthRedirectUri: 'redirect',
   oauthPostLogoutRedirectUri: 'redirect',
-  oauthFrontchannelLogoutUri: 'frontchannel'
+  oauthFrontchannelLogoutUri: 'frontchannel',
+  oauthBackchannelLogoutUri: 'backchannel'
 };
 
 function addressProblem(attribute, value) {
@@ -4019,7 +4221,9 @@ function addressProblem(attribute, value) {
   }
   const problem = kind === 'frontchannel'
     ? validation.frontchannelUriProblem(String(value))
-    : validation.redirectUriProblem(String(value));
+    : kind === 'backchannel'
+      ? validation.backchannelUriProblem(String(value))
+      : validation.redirectUriProblem(String(value));
   log.debug("Leaving addressProblem().");
   return problem ? '"' + value + '" cannot be ' + attribute + ': it ' +
                    problem + '.' : null;
@@ -4037,6 +4241,8 @@ function registrationUriProblem(metadata) {
     ['post_logout_redirect_uris', 'oauthPostLogoutRedirectUri',
      'invalid_client_metadata'],
     ['frontchannel_logout_uri', 'oauthFrontchannelLogoutUri',
+     'invalid_client_metadata'],
+    ['backchannel_logout_uri', 'oauthBackchannelLogoutUri',
      'invalid_client_metadata']
   ];
   for (let i = 0; i < members.length; i++) {
@@ -4183,6 +4389,80 @@ function introspectionAttributeProblem(attribute, value, fields) {
     ? problem.description.replace(problem.member,
                                   INTROSPECTION_ATTRIBUTES[problem.member])
     : '';
+}
+
+// ---------------------------------------------------------------------------
+// OPENID CONNECT REGISTRATION SECTION 2: WHAT A CLIENT MAY REGISTER ABOUT THE
+// ENCRYPTION OF ITS ID TOKENS (2026-09-17, #36 follow-up).
+//
+// `id_token_encrypted_response_alg` and `_enc`, which OpenID Connect Core
+// section 10.2 turns into a Nested JWT and Back-Channel Logout section 2.4
+// applies to a Logout Token too. The grammar is here for the introspection
+// members' reason — this module owns what a registration may say, and every
+// write door (`register()`, `updateRegistration()`, the registration endpoint's
+// own 400) asks it. Unlike those three members these two have NO ATTRIBUTE:
+// they live in `appRegistrationJson` beside `id_token_signed_response_alg`,
+// the member they qualify, which has none either. Whether the client's `jwks`
+// holds a key to encrypt to is asked by `oauth-oidc/id_token_encryption.ts`,
+// which owns the key selection and cannot be required from here.
+//
+// The lists are the introspection response's: the ASYMMETRIC families only,
+// every content encryption `common/crypto.js` has, A128CBC-HS256 by default,
+// and an `enc` with no `alg` refused (Registration section 2: "If
+// id_token_encrypted_response_enc is included,
+// id_token_encrypted_response_alg MUST also be provided").
+// ---------------------------------------------------------------------------
+const ID_TOKEN_DEFAULT_ENC = 'A128CBC-HS256';
+
+const ID_TOKEN_ENCRYPTION_ALGS = stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0);
+
+const ID_TOKEN_ENCRYPTION_ENCS = Object.keys(stsCrypto.JWE_ENCS);
+
+function idTokenEncryptionMetadataProblem(values) {
+  log.debug("Entering idTokenEncryptionMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0164', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const names = ['id_token_encrypted_response_alg',
+                 'id_token_encrypted_response_enc'];
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving idTokenEncryptionMetadataProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+  }
+  const alg = String(asked.id_token_encrypted_response_alg || '').trim();
+  const enc = String(asked.id_token_encrypted_response_enc || '').trim();
+  if (alg && ID_TOKEN_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving idTokenEncryptionMetadataProblem(). Encryption alg.");
+    return refusal(names[0], '"' + alg + '" is not an algorithm this ' +
+      'service encrypts an ID Token with. It encrypts with ' +
+      ID_TOKEN_ENCRYPTION_ALGS.join(', ') + ' (see ' +
+      'id_token_encryption_alg_values_supported). The symmetric families ' +
+      'are for a document encrypted TO this service; an ID Token is ' +
+      'encrypted to the key you registered in "jwks".');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving idTokenEncryptionMetadataProblem(). enc without alg.");
+    return refusal(names[1], 'OpenID Connect Dynamic Client Registration ' +
+      'section 2 says id_token_encrypted_response_alg MUST also be provided, ' +
+      'and none is.');
+  }
+  if (enc && ID_TOKEN_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving idTokenEncryptionMetadataProblem(). Content " +
+              "encryption.");
+    return refusal(names[1], '"' + enc + '" is not a content encryption ' +
+      'algorithm this service has. It has ' +
+      ID_TOKEN_ENCRYPTION_ENCS.join(', ') + ' (see ' +
+      'id_token_encryption_enc_values_supported).');
+  }
+  log.debug("Leaving idTokenEncryptionMetadataProblem(). Nothing refused.");
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -6127,6 +6407,12 @@ function applyRegistrationFields(record, registration, statement) {
     setField(record, 'oauthFrontchannelLogoutSessionRequired',
              meta.frontchannel_logout_session_required ? 'TRUE' : 'FALSE');
   }
+  // Back-Channel Logout 1.0 section 2.2, the same way (2026-09-17, #36).
+  setField(record, 'oauthBackchannelLogoutUri', meta.backchannel_logout_uri);
+  if (meta.backchannel_logout_session_required !== undefined) {
+    setField(record, 'oauthBackchannelLogoutSessionRequired',
+             meta.backchannel_logout_session_required ? 'TRUE' : 'FALSE');
+  }
   // RFC 7591 section 2 `client_uri`: "URL string of a web page providing
   // information about the client". That is the application's home page, which
   // is the fact appHomePageUrl holds, so a registered client arrives with one
@@ -6161,6 +6447,7 @@ function register(clientId, registration, options) {
   // algorithm nothing would then check.
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
+                     idTokenEncryptionMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
@@ -6211,6 +6498,7 @@ function updateRegistration(clientId, registration, options) {
   // The same backstop as register().
   const uriProblem = registrationUriProblem(registration) ||
                      introspectionResponseProblem(registration) ||
+                     idTokenEncryptionMetadataProblem(registration) ||
                      requestObjectMetadataProblem(registration) ||
                      pushedAuthorizationMetadataProblem(registration) ||
                      mtlsMetadataProblem(registration) ||
@@ -6367,6 +6655,14 @@ function registrationOf(clientId) {
     document.frontchannel_logout_session_required =
       String(fields.oauthFrontchannelLogoutSessionRequired).toUpperCase() === 'TRUE';
   }
+  if (fields.oauthBackchannelLogoutUri !== undefined) {
+    document.backchannel_logout_uri = fields.oauthBackchannelLogoutUri;
+  }
+  if (fields.oauthBackchannelLogoutSessionRequired !== undefined) {
+    document.backchannel_logout_session_required =
+      String(fields.oauthBackchannelLogoutSessionRequired)
+        .toUpperCase() === 'TRUE';
+  }
   if (fields.oauthGrantType) document.grant_types = fields.oauthGrantType.slice(
       0);
   if (fields.oauthResponseType) document.response_types =
@@ -6497,6 +6793,8 @@ function clientConfigOf(identifier) {
              post_logout_redirect_uris: [], token_endpoint_auth_method: '',
              frontchannel_logout_uri: '',
              frontchannel_logout_session_required: false,
+             backchannel_logout_uri: '',
+             backchannel_logout_session_required: false,
              client_secret: '' };
   }
   const fields = loaded.record.fields;
@@ -6547,6 +6845,14 @@ function clientConfigOf(identifier) {
       ? '' : String(fields.oauthFrontchannelLogoutUri),
     frontchannel_logout_session_required:
       String(fields.oauthFrontchannelLogoutSessionRequired ||
+             '').toUpperCase() === 'TRUE',
+    // Where a sign-out POSTs this client a Logout Token (Back-Channel Logout
+    // 1.0, 2026-09-17), and whether it asked for `sid` in it — defaulted
+    // FALSE by the same RFC 7591 rule.
+    backchannel_logout_uri: fields.oauthBackchannelLogoutUri === undefined
+      ? '' : String(fields.oauthBackchannelLogoutUri),
+    backchannel_logout_session_required:
+      String(fields.oauthBackchannelLogoutSessionRequired ||
              '').toUpperCase() === 'TRUE',
     token_endpoint_auth_method: method,
     client_secret: fields.oauthClientSecret === undefined
@@ -7338,6 +7644,34 @@ function updateApplication(identifier, change) {
     }
   }
   // ---------------------------------------------------------------------------
+  // A SAML SIGNING CERTIFICATE IS A TRUST ANCHOR SINCE 2026-09-17 (#37), so
+  // it is normalised to base64 DER — PEM armour and whitespace off, which is
+  // what `ds:X509Certificate` carries and what every reader compares — and a
+  // value whose key signs nothing this service verifies (any key
+  // `common/crypto.js` section 1a knows, not only RSA) is refused at the door
+  // rather than at the next signed request, where the only symptom would be
+  // every signature from that service provider being refused. A REMOVE is
+  // normalised and not checked, the asymmetry every rule here has: it names a
+  // value already on the entry.
+  // ---------------------------------------------------------------------------
+  if (SAML_CERTIFICATE_ATTRIBUTES.indexOf(attribute) >= 0 && value) {
+    value = samlCertificateBase64(value);
+    if (mode !== 'remove') {
+      const problem = samlCertificateProblem(value);
+      if (problem) {
+        log.debug("Leaving updateApplication(). Not a usable certificate.");
+        return errorCodes.mark({ ok: false, errors: ['`' + attribute + '` ' +
+                                 'must be an X.509 certificate whose key ' +
+                                 'makes an XML signature this service ' +
+                                 'verifies, ' +
+                                 'base64 DER or PEM, and this one is not: ' +
+                                 problem +
+                                 '. Nothing was written.'] },
+                               'STS-REG-0160');
+      }
+    }
+  }
+  // ---------------------------------------------------------------------------
   // PRIVATE KEY MATERIAL IS SEALED HERE, WHICH IS BEFORE ANYTHING ELSE IN THIS
   // FUNCTION TOUCHES THE VALUE — including the sentence that goes to the audit
   // log, which quotes it. See SEALED_FIELDS: this is the ONE door the console
@@ -7437,6 +7771,16 @@ function updateApplication(identifier, change) {
     // builds the change from `mode`, `attribute` and `value` alone, so a body
     // carrying `observed` cannot demote a registration from outside.
     // -----------------------------------------------------------------------
+    // AN EXPLICIT ADD OF THE OBSERVED SIGNING CERTIFICATE CONFIRMS IT — the
+    // same rule an explicit add of an observed return address follows, for
+    // the same reason: writing it by hand is a registration.
+    if (attribute === 'samlSigningCertificate' &&
+        String(record.fields[OBSERVED_CERTIFICATE_ATTRIBUTE] || '') === value) {
+      delete record.fields[OBSERVED_CERTIFICATE_ATTRIBUTE];
+      changed = true;
+      what = 'registered "' + attribute + '" from the certificate the last ' +
+             'signed request carried (it was OBSERVED and is trusted now)';
+    }
     if (RETURN_ADDRESS_ATTRIBUTES.indexOf(attribute) >= 0) {
       if (asked.observed === true && acceptsSightedAddresses()) {
         if (markObservedAddresses(record, attribute, before)) {
@@ -7780,6 +8124,259 @@ function discardReturnAddress(identifier, change) {
                                            what,
                                            (change || {}).actor);
   log.debug("Leaving discardReturnAddress().");
+  return answer;
+}
+
+// ---------------------------------------------------------------------------
+// A SAML SIGNING CERTIFICATE: ITS ONE SPELLING, AND WHETHER IT IS USABLE
+// (2026-09-17, #37).
+//
+// base64 DER with no whitespace is what a `ds:X509Certificate` carries, what
+// metadata publishes and what `samlObservedSigningCertificate` is compared
+// against, so every value is brought to it before it is stored or compared. A
+// PEM is accepted and its armour taken off; anything else is left for the
+// check to refuse.
+// ---------------------------------------------------------------------------
+function samlCertificateBase64(value) {
+  log.debug("Entering samlCertificateBase64().");
+  log.debug("Leaving samlCertificateBase64().");
+  return String(value == null ? '' : value)
+    .replace(/-----[^-]+-----/g, '')
+    .replace(/\s+/g, '');
+}
+
+// '' for an X.509 certificate whose key makes an XML signature this service
+// verifies, and otherwise a sentence. Until the #37 follow-up that meant RSA
+// only, because nothing verified anything else; `common/crypto.js` section 1a
+// now verifies EC, EdDSA, DSA and the post-quantum families too, and asking
+// it keeps the door and the verifier from disagreeing.
+function samlCertificateProblem(value) {
+  log.debug("Entering samlCertificateProblem().");
+  const der = samlCertificateBase64(value);
+  if (!der) {
+    log.debug("Leaving samlCertificateProblem(). Empty.");
+    return 'it is empty';
+  }
+  if (!/^[A-Za-z0-9+/]+=*$/.test(der)) {
+    log.debug("Leaving samlCertificateProblem(). Not base64.");
+    return 'it is not base64';
+  }
+  // ANY KEY `common/crypto.js` VERIFIES AN XML SIGNATURE WITH (section 1a,
+  // since the #37 follow-up): RSA, EC, Ed25519, Ed448, DSA, ML-DSA, SLH-DSA.
+  const problem = stsCrypto.xmlSignatureKeyProblem(der);
+  if (problem) {
+    log.debug("Leaving samlCertificateProblem(). " + problem);
+    return problem;
+  }
+  log.debug("Leaving samlCertificateProblem(). Usable.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// WRITE WHAT CONSUMING A SERVICE PROVIDER'S METADATA FOUND, IN ONE SAVE
+// (2026-09-17, #37).
+//
+// `replacements` maps an attribute in SAML_METADATA_FIELDS to its new value:
+// a string or a list REPLACES the attribute, '' or an empty list REMOVES it,
+// and an attribute not named is left alone. Two members are not plain
+// replacements, because what metadata says about them is only PART of what
+// the entry holds:
+//
+//   * `samlAssertionConsumerService` and `samlSingleLogoutService` also hold
+//     addresses an operator declared and — for the first — addresses a
+//     development request recorded. So `retire` names the locations the LAST
+//     consumption wrote, which are taken off unless the new document names
+//     them again, and the new ones are ADDED. An address written here is an
+//     explicit registration, so its observed mark goes, as `add` does.
+//
+// It is NOT a door: no console form or API operation reaches it with a
+// caller's attribute names. `saml/sp_metadata.ts`'s `consume()` is the one
+// caller, and the attributes it writes are derived from a document the
+// operator chose.
+// ---------------------------------------------------------------------------
+function replaceSamlMetadataFields(identifier, replacements, options) {
+  log.debug("Entering replaceSamlMetadataFields(). identifier=" + identifier);
+  const opts = options || {};
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving replaceSamlMetadataFields(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+                             'called "' + identifier + '" in this ' +
+                             'registry.'] }, 'STS-REG-0021');
+  }
+  const wanted = replacements || {};
+  const stray = Object.keys(wanted).filter(function (name) {
+    return SAML_METADATA_FIELDS.indexOf(name) < 0;
+  });
+  if (stray.length) {
+    // A programming error rather than a caller's, and refused loudly so that
+    // it is found in a test rather than in a directory.
+    log.debug("Leaving replaceSamlMetadataFields(). Not metadata fields.");
+    return errorCodes.mark({ ok: false, errors: ['Consuming metadata may not ' +
+                             'write ' + stray.join(', ') + '.'] },
+                           'STS-REG-0161');
+  }
+  const record = loaded.record;
+  const retire = opts.retire || {};
+  Object.keys(wanted).forEach(function (name) {
+    const row = ATTRIBUTE_BY_NAME[name];
+    const list = valuesOf(wanted[name]);
+    if (name === 'samlAssertionConsumerService' ||
+        name === 'samlSingleLogoutService') {
+      const leaving = valuesOf(retire[name]).filter(function (one) {
+        return list.indexOf(one) < 0;
+      });
+      const kept = valuesOf(record.fields[name]).filter(function (one) {
+        return leaving.indexOf(one) < 0;
+      });
+      leaving.forEach(function (one) {
+        clearObservedMark(record, name, one);
+      });
+      list.forEach(function (one) {
+        if (kept.indexOf(one) < 0) {
+          kept.push(one);
+        }
+        if (RETURN_ADDRESS_ATTRIBUTES.indexOf(name) >= 0) {
+          clearObservedMark(record, name, one);
+        }
+      });
+      if (kept.length) {
+        record.fields[name] = kept;
+      } else {
+        delete record.fields[name];
+      }
+      return;
+    }
+    if (!list.length) {
+      delete record.fields[name];
+      return;
+    }
+    record.fields[name] = row && row.kind === 'multi' ? list : list[0];
+  });
+  // A certificate the metadata now registers is no longer merely observed.
+  const observed = String(record.fields[OBSERVED_CERTIFICATE_ATTRIBUTE] || '');
+  if (observed &&
+      valuesOf(record.fields.samlSigningCertificate).indexOf(observed) >= 0) {
+    delete record.fields[OBSERVED_CERTIFICATE_ATTRIBUTE];
+  }
+  record.lastAt = record.lastAt || Date.now();
+  if (!save(record) && store()) {
+    log.debug("Leaving replaceSamlMetadataFields(). The entry would not " +
+              "take it.");
+    return errorCodes.mark({ ok: false, errors: ['The application entry ' +
+                             'would not take the consumed metadata.'] },
+                           'STS-REG-0162');
+  }
+  audit.audit({
+    action: 'application.update', actor: opts.actor || '',
+    protocol: 'SAML 2.0', channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": its service provider ' +
+             'metadata was consumed (' + (opts.how || 'unstated') + ')',
+    detail: { identifier: String(identifier),
+              attributes: Object.keys(wanted), mode: 'consume-metadata' }
+  });
+  log.info('applications: "' + identifier + '" — service provider metadata ' +
+           'consumed (' + (opts.how || 'unstated') + ').');
+  log.debug("Leaving replaceSamlMetadataFields().");
+  return { ok: true, changed: true,
+           application: viewAfterWrite(identifier, record) };
+}
+
+// ---------------------------------------------------------------------------
+// THE OBSERVED SIGNING CERTIFICATE: CONFIRM IT, OR DISCARD IT (2026-09-17,
+// #37). confirmReturnAddress()'s pair for the one thing a SAML request brings
+// with it that could become a trust anchor. Confirming MOVES it onto
+// `samlSigningCertificate` — one save, so it is never on both or neither —
+// and is refused for a certificate that is not RSA, for updateApplication()'s
+// reason. Discarding takes it off.
+// ---------------------------------------------------------------------------
+function observedCertificateRequest(identifier, verb) {
+  log.debug("Entering observedCertificateRequest(). verb=" + verb);
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving observedCertificateRequest(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+                             'called "' + identifier + '" in this ' +
+                             'registry.'] }, 'STS-REG-0021');
+  }
+  const observed = String(
+    loaded.record.fields[OBSERVED_CERTIFICATE_ATTRIBUTE] || '');
+  if (!observed) {
+    log.debug("Leaving observedCertificateRequest(). Nothing observed.");
+    return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" has ' +
+                             'no observed signing certificate, so there is ' +
+                             'nothing to ' + verb + '. One is recorded when ' +
+                             'a signed request carries a certificate in its ' +
+                             'ds:KeyInfo that is not already registered.'] },
+                           'STS-REG-0163');
+  }
+  log.debug("Leaving observedCertificateRequest().");
+  return { ok: true, loaded: loaded, observed: observed };
+}
+
+function saveObservedCertificateChange(identifier, record, verb, what, actor) {
+  log.debug("Entering saveObservedCertificateChange().");
+  record.lastAt = record.lastAt || Date.now();
+  save(record);
+  audit.audit({
+    action: 'application.update', actor: actor || '', protocol: 'console',
+    channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": ' + what,
+    detail: { identifier: String(identifier),
+              attribute: OBSERVED_CERTIFICATE_ATTRIBUTE,
+              mode: verb + '-certificate', editedByHand: true }
+  });
+  log.info('applications: "' + identifier + '" — ' + what + '.');
+  log.debug("Leaving saveObservedCertificateChange().");
+  return { ok: true, changed: true,
+           application: viewAfterWrite(identifier, record),
+           message: what + '.' };
+}
+
+function confirmSigningCertificate(identifier, options) {
+  log.debug("Entering confirmSigningCertificate(). identifier=" + identifier);
+  const found = observedCertificateRequest(identifier, 'confirm');
+  if (!found.ok) {
+    log.debug("Leaving confirmSigningCertificate(). Refused.");
+    return found;
+  }
+  const problem = samlCertificateProblem(found.observed);
+  if (problem) {
+    log.debug("Leaving confirmSigningCertificate(). Not usable.");
+    return errorCodes.mark({ ok: false, errors: ['The observed certificate ' +
+                             'cannot be registered: ' + problem + '. ' +
+                             'Discard it instead.'] }, 'STS-REG-0160');
+  }
+  const record = found.loaded.record;
+  const registered = valuesOf(record.fields.samlSigningCertificate);
+  if (registered.indexOf(found.observed) < 0) {
+    registered.push(found.observed);
+  }
+  record.fields.samlSigningCertificate = registered;
+  delete record.fields[OBSERVED_CERTIFICATE_ATTRIBUTE];
+  const answer = saveObservedCertificateChange(identifier, record, 'confirm',
+    'confirmed the observed signing certificate: it is on ' +
+    'samlSigningCertificate now, and this service provider\'s signatures ' +
+    'are verified against it from the next request',
+    (options || {}).actor);
+  log.debug("Leaving confirmSigningCertificate().");
+  return answer;
+}
+
+function discardSigningCertificate(identifier, options) {
+  log.debug("Entering discardSigningCertificate(). identifier=" + identifier);
+  const found = observedCertificateRequest(identifier, 'discard');
+  if (!found.ok) {
+    log.debug("Leaving discardSigningCertificate(). Refused.");
+    return found;
+  }
+  const record = found.loaded.record;
+  delete record.fields[OBSERVED_CERTIFICATE_ATTRIBUTE];
+  const answer = saveObservedCertificateChange(identifier, record, 'discard',
+    'discarded the observed signing certificate. It was never trusted; a ' +
+    'signed request carrying it again records it again',
+    (options || {}).actor);
+  log.debug("Leaving discardSigningCertificate().");
   return answer;
 }
 
@@ -9259,6 +9856,10 @@ module.exports = {
   // attribute holds which member. `oauth-oidc/introspection_jwt.ts` and the
   // registration endpoint read them; nothing else should keep a copy.
   introspectionResponseProblem: introspectionResponseProblem,
+  idTokenEncryptionMetadataProblem: idTokenEncryptionMetadataProblem,
+  ID_TOKEN_DEFAULT_ENC: ID_TOKEN_DEFAULT_ENC,
+  ID_TOKEN_ENCRYPTION_ALGS: ID_TOKEN_ENCRYPTION_ALGS,
+  ID_TOKEN_ENCRYPTION_ENCS: ID_TOKEN_ENCRYPTION_ENCS,
   INTROSPECTION_ATTRIBUTES: INTROSPECTION_ATTRIBUTES,
   INTROSPECTION_DEFAULT_SIGNING_ALG: INTROSPECTION_DEFAULT_SIGNING_ALG,
   INTROSPECTION_DEFAULT_ENC: INTROSPECTION_DEFAULT_ENC,
@@ -9326,6 +9927,14 @@ module.exports = {
   returnAddressesOf: returnAddressesOf,
   observedReturnAddresses: observedReturnAddresses,
   confirmReturnAddress: confirmReturnAddress,
+  // THE SAML SIGNING-CERTIFICATE PAIR AND METADATA CONSUMPTION (2026-09-17,
+  // #37). See the functions.
+  confirmSigningCertificate: confirmSigningCertificate,
+  discardSigningCertificate: discardSigningCertificate,
+  replaceSamlMetadataFields: replaceSamlMetadataFields,
+  samlCertificateBase64: samlCertificateBase64,
+  samlCertificateProblem: samlCertificateProblem,
+  SAML_METADATA_FIELDS: SAML_METADATA_FIELDS,
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,

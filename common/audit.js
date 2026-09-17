@@ -372,6 +372,13 @@ const ACTIONS = [
       'Everything held for one identity was ended, across every protocol' },
   { action: 'logout.selective', category: 'session',
     label: 'Named sessions or credentials were ended for one identity' },
+  // OPENID CONNECT BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36). ONE ROW PER
+  // DELIVERY, written when it reaches its final state — sent, or failed with
+  // its code — and never one per attempt: a relying party that is down would
+  // otherwise write a row per retry. `oauth-oidc/backchannel_logout.ts`.
+  { action: 'logout.backchannel', category: 'session',
+    label: 'A back-channel Logout Token reached a relying party, or finally ' +
+           'did not' },
 
   // The four the request that started this feature named, plus the two that
   // fall out of the same operations on something that is not a person. The
@@ -667,6 +674,13 @@ const ACTIONS = [
   // GNAP (RFC 9635 + RFC 9767), 2026-09-12. In the protocol category, beside
   // `protocol.call`: every one of these is a protocol act a client or resource
   // server performed, and the person investigating one is debugging that party.
+  // SAML 2.0 (2026-09-17, #37): what checking the signature on a service
+  // provider's AuthnRequest, LogoutRequest or LogoutResponse found — verified,
+  // failed, unsigned or no-certificate. One row per message, because the
+  // outcome is the thing a person integrating a service provider is asking
+  // about and the call-log row beside it cannot say it.
+  { action: 'saml2.request.signature', category: 'protocol',
+    label: 'A SAML 2.0 service provider\'s request signature was checked' },
   { action: 'gnap.grant.request', category: 'protocol',
     label: 'A GNAP grant was requested' },
   { action: 'gnap.grant.consent', category: 'protocol',
@@ -985,7 +999,12 @@ function record(event) {
   };
   events.push(row);
   trimToCap();
-  if (errorCode) {
+  // `summarised: true` (2026-09-17, #36 follow-up): the caller logs a
+  // PERIODIC SUMMARY of these rows by code instead — the standing rule that a
+  // storm of one kind of failure (a relying party that is down, and every
+  // Logout Token to it dead-lettered) is a line a minute, not a line an event.
+  // The row still carries its code and is still filterable on /admin/audit.
+  if (errorCode && info.summarised !== true) {
     logFailure(row);
   }
   log.debug("Leaving record().");
