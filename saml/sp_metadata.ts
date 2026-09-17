@@ -85,8 +85,10 @@
 // shape: `SpMetadata` takes node's `http`, `https` and `url`, the XML parser,
 // node-forge, helpers, `config`, the error-code registry, the audit log, the
 // application registry and `federation/federation_http.ts` through its
-// constructor. The module still exports the old names from a TRANSITIONAL
-// instance for `saml2_sso.ts`, the console and the management API.
+// constructor. Since #50's R2 the composition root builds the instance; the
+// module's old names are FACADES forwarding to it, for `saml2_sso.ts`, the
+// console and the management API, and a process without the root builds a
+// default at load.
 // ---------------------------------------------------------------------------
 
 import http = require('http');
@@ -95,6 +97,7 @@ import url = require('url');
 import xmldom = require('@xmldom/xmldom');
 import forge = require('node-forge');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // THE ERROR CODES AND THE AUDIT LOG. A refresh is an action whose result the
 // console or the management API sends back as it is, so a code cannot ride on
@@ -153,6 +156,26 @@ class SpMetadata {
   constructor(private readonly deps: SpMetadataDeps) {
     deps.helpers.log.debug("Entering SpMetadata.constructor().");
     deps.helpers.log.debug("Leaving SpMetadata.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): SpMetadataDeps {
+    helpers.log.debug("Entering SpMetadata.defaultDeps().");
+    helpers.log.debug("Leaving SpMetadata.defaultDeps().");
+    return {
+      http: http,
+      https: https,
+      url: url,
+      xmldom: xmldom,
+      forge: forge,
+      helpers: helpers,
+      config: config,
+      errorCodes: errorCodes,
+      audit: audit,
+      applications: applications,
+      fedHttp: fedHttp
+    };
   }
 
   // The metadata namespace, and the two this file reads inside it. Matched on
@@ -622,30 +645,32 @@ class SpMetadata {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const spMetadata = new SpMetadata({
-  http: http,
-  https: https,
-  url: url,
-  xmldom: xmldom,
-  forge: forge,
-  helpers: helpers,
-  config: config,
-  errorCodes: errorCodes,
-  audit: audit,
-  applications: applications,
-  fedHttp: fedHttp
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpMetadata>(
+  'saml/sp_metadata',
+  () => new SpMetadata(SpMetadata.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SpMetadata: SpMetadata,
-  parse: spMetadata.parse.bind(spMetadata) as SpMetadata['parse'],
-  toPem: spMetadata.toPem.bind(spMetadata) as SpMetadata['toPem'],
-  certificateProblem: spMetadata.certificateProblem.bind(spMetadata) as
-    SpMetadata['certificateProblem'],
-  urlProblem: spMetadata.urlProblem.bind(spMetadata) as
-    SpMetadata['urlProblem'],
-  fetchMetadata: spMetadata.fetchMetadata.bind(spMetadata) as
-    SpMetadata['fetchMetadata'],
-  refresh: spMetadata.refresh.bind(spMetadata) as SpMetadata['refresh']
+  installInstance: (instance: SpMetadata): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  parse: slot.forward('parse'),
+  toPem: slot.forward('toPem'),
+  certificateProblem: slot.forward('certificateProblem'),
+  urlProblem: slot.forward('urlProblem'),
+  fetchMetadata: slot.forward('fetchMetadata'),
+  refresh: slot.forward('refresh')
 };

@@ -37,12 +37,14 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `PersonAttributes` takes the logger, `mode` and a LOADER for
 // `claim_attributes.js` through its constructor (a loader and not the module,
-// for the lazy require the header argues), and the module still exports
-// `personFor()` and `withoutAbsent()` from a TRANSITIONAL instance for the
-// unconverted modules that require it.
+// for the lazy require the header argues). Since #50's R2 the composition
+// root builds the instance; `personFor()` and `withoutAbsent()` are FACADES
+// forwarding to it, for the unconverted modules that require it, and a
+// process without the root builds a default at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import mode = require('../common/mode');
 
 // The person as `helpers.userFor()` draws them; only `username` and the four
@@ -97,6 +99,20 @@ class PersonAttributes {
   constructor(private readonly deps: PersonAttributesDeps) {
     deps.log.debug("Entering PersonAttributes.constructor().");
     deps.log.debug("Leaving PersonAttributes.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): PersonAttributesDeps {
+    helpers.log.debug("Entering PersonAttributes.defaultDeps().");
+    helpers.log.debug("Leaving PersonAttributes.defaultDeps().");
+    return {
+      log: helpers.log,
+      mode: mode,
+      loadClaimAttributes: function (): ClaimAttributesReader {
+        return require('../common/claim_attributes');
+      }
+    };
   }
 
   private present(value: unknown): boolean {
@@ -169,19 +185,28 @@ class PersonAttributes {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const personAttributes = new PersonAttributes({
-  log: helpers.log,
-  mode: mode,
-  loadClaimAttributes: function (): ClaimAttributesReader {
-    return require('../common/claim_attributes');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PersonAttributes>(
+  'saml/person_attributes',
+  () => new PersonAttributes(PersonAttributes.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PersonAttributes: PersonAttributes,
-  personFor: personAttributes.personFor.bind(personAttributes) as
-    PersonAttributes['personFor'],
-  withoutAbsent: personAttributes.withoutAbsent.bind(personAttributes) as
-    PersonAttributes['withoutAbsent']
+  installInstance: (instance: PersonAttributes): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  personFor: slot.forward('personFor'),
+  withoutAbsent: slot.forward('withoutAbsent')
 };

@@ -123,12 +123,13 @@
 // functions of `authn.js`, the issuance gate, `mode`, this directory's four
 // libraries and the two cluster libraries) through its constructor, typed as
 // `typeof` each module. Its routes are registered by `registerRoutes(app)`, in
-// the order they always were. The TRANSITIONAL instance at the bottom does
-// not call it (#50, R1): the module exports it, and
-// `common/protocol_stack.ts` calls it at the point in the route order where
-// requiring this module used to register the routes (rule 1). The instance
-// exports the old names for `admin-ui/admin.ts`, `saml11_sso.ts`,
-// `logout/logout.ts` and the others. The three stores stay module-level
+// the order they always were. Loading the module does not call it (#50, R1):
+// the module exports it, and `common/protocol_stack.ts` calls it at the point
+// in the route order where requiring this module used to register the routes
+// (rule 1). Since #50's R2 that root also BUILDS the instance; the module's
+// old names are FACADES forwarding to it, for `admin-ui/admin.ts`,
+// `saml11_sso.ts`, `logout/logout.ts` and the others, and a process without
+// the root builds a default at load. The three stores stay module-level
 // `realms.map()` declarations, which is where a store becomes per realm.
 // ---------------------------------------------------------------------------
 
@@ -147,6 +148,7 @@ import xmldom = require('@xmldom/xmldom');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The input validator. A LEAF (rule 3): it registers no route and closes no
 // cycle.
 import validation = require('../common/validation');
@@ -415,6 +417,37 @@ class Saml2Sso {
   constructor(private readonly deps: Saml2SsoDeps) {
     deps.helpers.log.debug("Entering Saml2Sso.constructor().");
     deps.helpers.log.debug("Leaving Saml2Sso.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): Saml2SsoDeps {
+    helpers.log.debug("Entering Saml2Sso.defaultDeps().");
+    helpers.log.debug("Leaving Saml2Sso.defaultDeps().");
+    return {
+      zlib: zlib,
+      realms: realms,
+      crypto: crypto,
+      xmldom: xmldom,
+      stsCrypto: stsCrypto,
+      app: app,
+      helpers: helpers,
+      validation: validation,
+      config: config,
+      errorCodes: errorCodes,
+      saml2: saml2,
+      spMetadata: spMetadata,
+      authn: authn,
+      gate: gate,
+      applications: applications,
+      mode: mode,
+      authnContext: authnContext,
+      documentSettings: documentSettings,
+      returnAddress: returnAddress,
+      personAttributes: personAttributes,
+      clusterClaims: clusterClaims,
+      capabilities: capabilities
+    };
   }
 
   // How many artifacts are waiting to be resolved, for the console.
@@ -3836,31 +3869,20 @@ class Saml2Sso {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const saml2Sso = new Saml2Sso({
-  zlib: zlib,
-  realms: realms,
-  crypto: crypto,
-  xmldom: xmldom,
-  stsCrypto: stsCrypto,
-  app: app,
-  helpers: helpers,
-  validation: validation,
-  config: config,
-  errorCodes: errorCodes,
-  saml2: saml2,
-  spMetadata: spMetadata,
-  authn: authn,
-  gate: gate,
-  applications: applications,
-  mode: mode,
-  authnContext: authnContext,
-  documentSettings: documentSettings,
-  returnAddress: returnAddress,
-  personAttributes: personAttributes,
-  clusterClaims: clusterClaims,
-  capabilities: capabilities
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Saml2Sso>(
+  'saml/saml2_sso',
+  () => new Saml2Sso(Saml2Sso.defaultDeps()),
+  null,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
@@ -3873,9 +3895,14 @@ const saml2Sso = new Saml2Sso({
 // it in the protocol stack.
 capabilities.provide('saml.artifacts-once');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => saml2Sso.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   Saml2Sso: Saml2Sso,
+  installInstance: (instance: Saml2Sso): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   BINDING_REDIRECT: BINDING_REDIRECT,
   BINDING_POST: BINDING_POST,
   BINDING_ARTIFACT: BINDING_ARTIFACT,
@@ -3884,21 +3911,15 @@ export = {
   // Read by admin-ui/admin.ts, which draws the console page for this profile
   // and must not reimplement any of it — the same division /admin/groups keeps
   // with ldap_server.js.
-  slugOf: saml2Sso.slugOf.bind(saml2Sso) as Saml2Sso['slugOf'],
-  idpEntityIdFor: saml2Sso.idpEntityIdFor.bind(saml2Sso) as
-    Saml2Sso['idpEntityIdFor'],
-  endpointsFor: saml2Sso.endpointsFor.bind(saml2Sso) as
-    Saml2Sso['endpointsFor'],
-  artifactCount: saml2Sso.artifactCount.bind(saml2Sso) as
-    Saml2Sso['artifactCount'],
-  pendingRequestCount: saml2Sso.pendingRequestCount.bind(saml2Sso) as
-    Saml2Sso['pendingRequestCount'],
-  metadataFor: saml2Sso.metadataFor.bind(saml2Sso) as Saml2Sso['metadataFor'],
-  verifyResponse: saml2Sso.verifyResponse.bind(saml2Sso) as
-    Saml2Sso['verifyResponse'],
+  slugOf: slot.forward('slugOf'),
+  idpEntityIdFor: slot.forward('idpEntityIdFor'),
+  endpointsFor: slot.forward('endpointsFor'),
+  artifactCount: slot.forward('artifactCount'),
+  pendingRequestCount: slot.forward('pendingRequestCount'),
+  metadataFor: slot.forward('metadataFor'),
+  verifyResponse: slot.forward('verifyResponse'),
   // The LogoutRequests one session is owed. Read by ../logout/logout.ts so that
   // a global sign-out names exactly what Single Logout names — see the block
   // above logoutTargetsFor().
-  logoutTargetsFor: saml2Sso.logoutTargetsFor.bind(saml2Sso) as
-    Saml2Sso['logoutTargetsFor']
+  logoutTargetsFor: slot.forward('logoutTargetsFor')
 };

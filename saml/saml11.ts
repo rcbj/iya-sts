@@ -69,13 +69,16 @@
 // shape: `Saml11Assertions` takes `common/crypto.js`, helpers (the logger, the
 // artifact log, the signing-key view and the XML helpers), `config`, the
 // error-code registry, the statistics register and this directory's two
-// libraries through its constructor. The module still exports the old names
-// and constants from a TRANSITIONAL instance for `wsfed.ts`, `saml11_sso.ts`
-// and the other unconverted modules that require it.
+// libraries through its constructor. Since #50's R2 the composition root
+// builds the instance; the module's old names are FACADES forwarding to it
+// (the constants are exported as they were), for `wsfed.ts`, `saml11_sso.ts`
+// and the other unconverted modules that require it, and a process without
+// the root builds a default at load.
 // ---------------------------------------------------------------------------
 
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // saml.issuer — the same setting the 2.0 assertions carry, because it names
 // the same signer.
 import config = require('../common/config');
@@ -117,6 +120,22 @@ class Saml11Assertions {
   constructor(private readonly deps: Saml11AssertionsDeps) {
     deps.helpers.log.debug("Entering Saml11Assertions.constructor().");
     deps.helpers.log.debug("Leaving Saml11Assertions.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): Saml11AssertionsDeps {
+    helpers.log.debug("Entering Saml11Assertions.defaultDeps().");
+    helpers.log.debug("Leaving Saml11Assertions.defaultDeps().");
+    return {
+      stsCrypto: stsCrypto,
+      helpers: helpers,
+      config: config,
+      errorCodes: errorCodes,
+      stats: stats,
+      documentSettings: documentSettings,
+      authnContext: authnContext
+    };
   }
 
   // Sign the assertion enveloped, with the signature as the last child of
@@ -477,19 +496,28 @@ class Saml11Assertions {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const assertions = new Saml11Assertions({
-  stsCrypto: stsCrypto,
-  helpers: helpers,
-  config: config,
-  errorCodes: errorCodes,
-  stats: stats,
-  documentSettings: documentSettings,
-  authnContext: authnContext
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Saml11Assertions>(
+  'saml/saml11',
+  () => new Saml11Assertions(Saml11Assertions.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Saml11Assertions: Saml11Assertions,
+  installInstance: (instance: Saml11Assertions): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SAML11_NS: SAML11_NS,
   // The two the browser profiles need by name: an artifact-profile assertion
   // MUST be confirmed as `artifact` and a POST-profile one as `bearer`, and
@@ -497,8 +525,6 @@ export = {
   CONFIRMATION_BEARER: CONFIRMATION_BEARER,
   CONFIRMATION_ARTIFACT: CONFIRMATION_ARTIFACT,
   NAMEID_FORMAT_UNSPECIFIED: NAMEID_FORMAT_UNSPECIFIED,
-  buildSaml11Assertion: assertions.buildSaml11Assertion.bind(assertions) as
-    Saml11Assertions['buildSaml11Assertion'],
-  signSaml11Assertion: assertions.signSaml11Assertion.bind(assertions) as
-    Saml11Assertions['signSaml11Assertion']
+  buildSaml11Assertion: slot.forward('buildSaml11Assertion'),
+  signSaml11Assertion: slot.forward('signSaml11Assertion')
 };

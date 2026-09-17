@@ -23,12 +23,15 @@
 // shape: `Saml2Assertions` takes helpers (the logger, the artifact log, the
 // signing-key view and the XML helpers), `common/crypto.js`, `config`, the
 // error-code registry, the statistics register and this directory's two
-// libraries through its constructor. The module still exports the old names
-// from a TRANSITIONAL instance for `wsfed.ts`, `wstrust.ts`, `saml2_sso.ts`
-// and the other unconverted modules that require it.
+// libraries through its constructor. Since #50's R2 the composition root
+// builds the instance; the module's old names are FACADES forwarding to it,
+// for `wsfed.ts`, `wstrust.ts`, `saml2_sso.ts` and the other unconverted
+// modules that require it, and a process without the root builds a default
+// at load.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // ---------------------------------------------------------------------------
 // EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE IS IN ONE MODULE SINCE
 // 2026-08-27, and this file is where two of the four families used to live.
@@ -99,6 +102,22 @@ class Saml2Assertions {
   constructor(private readonly deps: Saml2AssertionsDeps) {
     deps.helpers.log.debug("Entering Saml2Assertions.constructor().");
     deps.helpers.log.debug("Leaving Saml2Assertions.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): Saml2AssertionsDeps {
+    helpers.log.debug("Entering Saml2Assertions.defaultDeps().");
+    helpers.log.debug("Leaving Saml2Assertions.defaultDeps().");
+    return {
+      helpers: helpers,
+      stsCrypto: stsCrypto,
+      config: config,
+      errorCodes: errorCodes,
+      stats: stats,
+      documentSettings: documentSettings,
+      authnContext: authnContext
+    };
   }
 
   // Sign a SAML assertion enveloped (signature after Issuer), like the parent
@@ -446,29 +465,33 @@ class Saml2Assertions {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const assertions = new Saml2Assertions({
-  helpers: helpers,
-  stsCrypto: stsCrypto,
-  config: config,
-  errorCodes: errorCodes,
-  stats: stats,
-  documentSettings: documentSettings,
-  authnContext: authnContext
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Saml2Assertions>(
+  'saml/saml2',
+  () => new Saml2Assertions(Saml2Assertions.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   Saml2Assertions: Saml2Assertions,
-  signAssertion: assertions.signAssertion.bind(assertions) as
-    Saml2Assertions['signAssertion'],
-  buildSamlAssertion: assertions.buildSamlAssertion.bind(assertions) as
-    Saml2Assertions['buildSamlAssertion'],
-  encryptAssertion: assertions.encryptAssertion.bind(assertions) as
-    Saml2Assertions['encryptAssertion'],
-  encryptElement: assertions.encryptElement.bind(assertions) as
-    Saml2Assertions['encryptElement'],
-  decryptElement: assertions.decryptElement.bind(assertions) as
-    Saml2Assertions['decryptElement'],
+  installInstance: (instance: Saml2Assertions): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  signAssertion: slot.forward('signAssertion'),
+  buildSamlAssertion: slot.forward('buildSamlAssertion'),
+  encryptAssertion: slot.forward('encryptAssertion'),
+  encryptElement: slot.forward('encryptElement'),
+  decryptElement: slot.forward('decryptElement'),
   BLOCK_CIPHERS: BLOCK_CIPHERS,
   KEY_TRANSPORTS: KEY_TRANSPORTS
 };

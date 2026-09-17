@@ -175,16 +175,15 @@
 // constructor as `Saml11SsoDeps`, and nothing inside the class requires a
 // module on its own.
 //
-// **THE MODULE STILL EXPORTS WHAT IT DID**, from a TRANSITIONAL instance
-// built at the bottom with the real modules, for `admin-ui/admin.ts`, the
-// management API and the tests, which are not converted. That instance
-// REGISTERS NOTHING at load (#50, R1): the module exports
-// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it exactly
-// where rule 1 had the routes registered before. The three per-realm stores
-// and the vocabulary stay module-level constants, declared as they were; the
-// three counts that were anonymous functions in the exports are methods now.
-// The instance goes when the composition root also constructs the modules
-// (#50's R2).
+// **THE MODULE STILL EXPORTS WHAT IT DID**, as FACADES forwarding to the
+// instance the composition root builds (#50, R2), for `admin-ui/admin.ts`,
+// the management API and the tests, which are not converted; a process
+// without the root builds a default at load. Loading the module REGISTERS
+// NOTHING (#50, R1): the module exports `registerRoutes(app)`, and
+// `common/protocol_stack.ts` calls it exactly where rule 1 had the routes
+// registered before. The three per-realm stores and the vocabulary stay
+// module-level constants, declared as they were; the three counts that were
+// anonymous functions in the exports are methods now.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -198,6 +197,7 @@ const { DOMParser } = xmldom;
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // Read per request rather than captured at require time, so that /admin/config
 // and /admin-api can change what the next response says and how it is signed.
 import config = require('../common/config');
@@ -479,6 +479,49 @@ class Saml11Sso {
   constructor(private readonly deps: Saml11SsoDeps) {
     deps.log.debug("Entering Saml11Sso.constructor().");
     deps.log.debug("Leaving Saml11Sso.constructor().");
+  }
+
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
+  static defaultDeps(): Saml11SsoDeps {
+    helpers.log.debug("Entering Saml11Sso.defaultDeps().");
+    helpers.log.debug("Leaving Saml11Sso.defaultDeps().");
+    return {
+      stsCrypto: stsCrypto,
+      app: app,
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      STS: helpers.STS,
+      xmlEscape: helpers.xmlEscape,
+      genId: helpers.genId,
+      iso: helpers.iso,
+      baseUrlOf: helpers.baseUrlOf,
+      randomId: helpers.randomId,
+      parseBody: helpers.parseBody,
+      firstByLocal: helpers.firstByLocal,
+      textByLocal: helpers.textByLocal,
+      userFor: helpers.userFor,
+      config: config,
+      errorCodes: errorCodes,
+      gate: gate,
+      buildSaml11Assertion: saml11.buildSaml11Assertion,
+      CONFIRMATION_BEARER: saml11.CONFIRMATION_BEARER,
+      CONFIRMATION_ARTIFACT: saml11.CONFIRMATION_ARTIFACT,
+      NAMEID_FORMAT_UNSPECIFIED: saml11.NAMEID_FORMAT_UNSPECIFIED,
+      slugOf: saml2Sso.slugOf,
+      sessionOf: authn.sessionOf,
+      sessionsOf: authn.sessionsOf,
+      beginAuthentication: authn.beginAuthentication,
+      notePresented: authn.notePresented,
+      noteSessionChanged: authn.noteSessionChanged,
+      applications: applications,
+      mode: mode,
+      authnContext: authnContext,
+      documentSettings: documentSettings,
+      returnAddress: returnAddress,
+      personAttributes: personAttributes,
+      clusterClaims: clusterClaims
+    };
   }
 
   // A flow interrupted by the sign-in screen. Smaller than the 2.0 module's
@@ -3076,55 +3119,38 @@ class Saml11Sso {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const saml11Sso = new Saml11Sso({
-  stsCrypto: stsCrypto,
-  app: app,
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  STS: helpers.STS,
-  xmlEscape: helpers.xmlEscape,
-  genId: helpers.genId,
-  iso: helpers.iso,
-  baseUrlOf: helpers.baseUrlOf,
-  randomId: helpers.randomId,
-  parseBody: helpers.parseBody,
-  firstByLocal: helpers.firstByLocal,
-  textByLocal: helpers.textByLocal,
-  userFor: helpers.userFor,
-  config: config,
-  errorCodes: errorCodes,
-  gate: gate,
-  buildSaml11Assertion: saml11.buildSaml11Assertion,
-  CONFIRMATION_BEARER: saml11.CONFIRMATION_BEARER,
-  CONFIRMATION_ARTIFACT: saml11.CONFIRMATION_ARTIFACT,
-  NAMEID_FORMAT_UNSPECIFIED: saml11.NAMEID_FORMAT_UNSPECIFIED,
-  slugOf: saml2Sso.slugOf,
-  sessionOf: authn.sessionOf,
-  sessionsOf: authn.sessionsOf,
-  beginAuthentication: authn.beginAuthentication,
-  notePresented: authn.notePresented,
-  noteSessionChanged: authn.noteSessionChanged,
-  applications: applications,
-  mode: mode,
-  authnContext: authnContext,
-  documentSettings: documentSettings,
-  returnAddress: returnAddress,
-  personAttributes: personAttributes,
-  clusterClaims: clusterClaims
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Saml11Sso>(
+  'saml/saml11_sso',
+  () => new Saml11Sso(Saml11Sso.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 // Exported for `../admin-ui/admin.ts`, which draws /admin/saml11 and needs to
 // name the same endpoints and the same slug this file does — a console that
 // derived a URL of its own would be a console that tells somebody to configure
 // a path nothing serves.
 export = {
-  registerRoutes: (target: any): void => saml11Sso.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   Saml11Sso: Saml11Sso,
+  installInstance: (instance: Saml11Sso): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PROFILE_POST: PROFILE_POST,
   PROFILE_ARTIFACT: PROFILE_ARTIFACT,
   BINDING_SOAP: BINDING_SOAP,
@@ -3132,18 +3158,11 @@ export = {
   NAMEID_FORMATS: NAMEID_FORMATS,
   RP_KIND: RP_KIND,
   slugOf: saml2Sso.slugOf,
-  providerIdFor: saml11Sso.providerIdFor.bind(saml11Sso) as
-    Saml11Sso['providerIdFor'],
-  endpointsFor: saml11Sso.endpointsFor.bind(saml11Sso) as
-    Saml11Sso['endpointsFor'],
-  metadataFor: saml11Sso.metadataFor.bind(saml11Sso) as
-    Saml11Sso['metadataFor'],
-  artifactCount: saml11Sso.artifactCount.bind(saml11Sso) as
-    Saml11Sso['artifactCount'],
-  cachedAssertionCount: saml11Sso.cachedAssertionCount.bind(saml11Sso) as
-    Saml11Sso['cachedAssertionCount'],
-  pendingFlowCount: saml11Sso.pendingFlowCount.bind(saml11Sso) as
-    Saml11Sso['pendingFlowCount'],
-  verifyResponse: saml11Sso.verifyResponse.bind(saml11Sso) as
-    Saml11Sso['verifyResponse']
+  providerIdFor: slot.forward('providerIdFor'),
+  endpointsFor: slot.forward('endpointsFor'),
+  metadataFor: slot.forward('metadataFor'),
+  artifactCount: slot.forward('artifactCount'),
+  cachedAssertionCount: slot.forward('cachedAssertionCount'),
+  pendingFlowCount: slot.forward('pendingFlowCount'),
+  verifyResponse: slot.forward('verifyResponse')
 };
