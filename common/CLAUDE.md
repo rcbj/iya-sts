@@ -292,6 +292,23 @@ of the few declaration attributes a PROTOCOL also writes, because a receiver
 authenticating and being agreed a stream is exactly the kind of event this
 registry exists to hold.
 
+## A SAML SIGNING CERTIFICATE HAS A PROVENANCE TOO (2026-09-17, #37)
+
+`samlSigningCertificate` became the trust anchor a service provider's request
+signatures are verified against, so it became MULTI-valued and nothing a request
+carries is written to it; the `ds:KeyInfo` certificate goes on
+`samlObservedSigningCertificate` (single, derived). The registry functions are
+`confirmSigningCertificate()` / `discardSigningCertificate()` (the pair
+`confirmReturnAddress()` has), `replaceSamlMetadataFields()` (the one save
+consuming SP metadata makes, over a CLOSED list of attributes because it writes
+derived ones), and `samlCertificateProblem()`, which `updateApplication()` asks
+of every add or set of `samlSigningCertificate` and
+`samlSpMetadataSigningCertificate` (RSA X.509 only, `STS-REG-0160`). An explicit
+`add` of the observed value confirms it. `saml/CLAUDE.md` argues why the
+certificate is a separate attribute where a return address is a mark, and the
+two `mode.js` predicates it added — `acceptsUnsignedSamlRequests()` and
+`encryptsToObservedCertificates()`.
+
 ## A RETURN ADDRESS HAS A PROVENANCE, AND `returnAddressesOf()` IS THE ONE PLACE IT IS READ (2026-09-12)
 
 Development mode writes the return address a request NAMED onto the attribute

@@ -888,7 +888,7 @@ the file the row names.
 | Recall anything it has already ISSUED — it DISOWNS them, which is a different claim | `logout/CLAUDE.md`, `common/CLAUDE.md` |
 | Perform back-channel logout. Front-channel IS implemented | `oauth-oidc/CLAUDE.md` |
 | Fake WS-Federation's `wauth`, or dereference `wreqptr` | `ws-federation/CLAUDE.md` |
-| Verify a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither checked | `saml/CLAUDE.md` |
+| ~~Verify a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither checked~~ — **reversed 2026-09-17 (#37)**: a present signature is verified against the SP's registered certificate in every mode, an unsigned one refused where `saml2.requireSignedAuthnRequests` says, and consumed metadata registers the SP's endpoints and keys | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion to a service provider it holds no certificate for — it sends it in CLEAR and says so loudly | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
 
