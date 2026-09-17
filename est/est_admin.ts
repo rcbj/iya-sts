@@ -30,10 +30,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `EstAdmin` takes the modules it uses through its constructor
-// (`EstAdminDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `EstAdmin` is exported beside them for the
-// composition root.
+// (`EstAdminDeps`). Since #50's R2 the composition root builds the instance
+// (`EstAdmin.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `EstAdmin` is
+// exported beside them for the composition root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -48,6 +49,7 @@ import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import admin = require('../admin-ui/admin');
 import consoleModel = require('./est_console');
+import InstanceSlot = require('../common/instance_slot');
 
 const esc = admin.esc;
 const vz = validation.z;
@@ -81,6 +83,22 @@ class EstAdmin {
   constructor(private readonly deps: EstAdminDeps) {
     deps.log.debug("Entering EstAdmin.constructor().");
     deps.log.debug("Leaving EstAdmin.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): EstAdminDeps {
+    helpers.log.debug("Entering EstAdmin.defaultDeps().");
+    helpers.log.debug("Leaving EstAdmin.defaultDeps().");
+    return {
+      log: log,
+      parseBody: parseBody,
+      errorCodes: errorCodes,
+      validation: validation,
+      admin: admin,
+      consoleModel: consoleModel,
+      esc: esc
+    };
   }
 
   queryRefused(req, res) {
@@ -461,25 +479,32 @@ class EstAdmin {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const estAdmin = new EstAdmin({
-  log: log,
-  parseBody: parseBody,
-  errorCodes: errorCodes,
-  validation: validation,
-  admin: admin,
-  consoleModel: consoleModel,
-  esc: esc
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<EstAdmin>(
+  'est/est_admin',
+  () => new EstAdmin(EstAdmin.defaultDeps()),
+  null,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => estAdmin.registerRoutes(target),
-  EstAdmin: EstAdmin
+  registerRoutes: slot.forward('registerRoutes'),
+  EstAdmin: EstAdmin,
+  installInstance: (instance: EstAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin()
 };

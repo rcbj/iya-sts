@@ -40,14 +40,16 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `EstCodec` takes the modules it uses through its constructor
-// (`EstCodecDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `EstCodec` is exported beside them for the
-// composition root.
+// (`EstCodecDeps`). Since #50's R2 the composition root builds the instance
+// (`EstCodec.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `EstCodec` is
+// exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 
 // The OIDs this file writes, in one table so the csrattrs response and the
@@ -91,6 +93,17 @@ class EstCodec {
   constructor(private readonly deps: EstCodecDeps) {
     deps.log.debug("Entering EstCodec.constructor().");
     deps.log.debug("Leaving EstCodec.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): EstCodecDeps {
+    log.debug("Entering EstCodec.defaultDeps().");
+    log.debug("Leaving EstCodec.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      log: log
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -309,24 +322,35 @@ class EstCodec {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const estCodec = new EstCodec({
-  nodeCrypto: nodeCrypto,
-  log: log
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<EstCodec>(
+  'est/est_codec',
+  () => new EstCodec(EstCodec.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   EstCodec: EstCodec,
+  installInstance: (instance: EstCodec): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   OIDS: OIDS,
   SIGNATURE_ALGORITHMS: SIGNATURE_ALGORITHMS,
-  decodeBody: estCodec.decodeBody.bind(estCodec) as EstCodec['decodeBody'],
-  base64Lines: estCodec.base64Lines.bind(estCodec) as EstCodec['base64Lines'],
-  certsOnly: estCodec.certsOnly.bind(estCodec) as EstCodec['certsOnly'],
-  csrAttrs: estCodec.csrAttrs.bind(estCodec) as EstCodec['csrAttrs'],
-  multipartMixed: estCodec.multipartMixed.bind(estCodec) as
-    EstCodec['multipartMixed'],
-  pemToDer: estCodec.pemToDer.bind(estCodec) as EstCodec['pemToDer'],
-  oid: estCodec.oid.bind(estCodec) as EstCodec['oid']
+  decodeBody: slot.forward('decodeBody'),
+  base64Lines: slot.forward('base64Lines'),
+  certsOnly: slot.forward('certsOnly'),
+  csrAttrs: slot.forward('csrAttrs'),
+  multipartMixed: slot.forward('multipartMixed'),
+  pemToDer: slot.forward('pemToDer'),
+  oid: slot.forward('oid')
 };

@@ -33,10 +33,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `EstConsole` takes the modules it uses through its constructor
-// (`EstConsoleDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `EstConsole` is exported beside them for the
-// composition root.
+// (`EstConsoleDeps`). Since #50's R2 the composition root builds the instance
+// (`EstConsole.defaultDeps()`) and installs it; the module's old export names
+// are FACADES that forward to it, for the JavaScript callers, and a process
+// without the root builds a default when the module finishes loading.
+// `EstConsole` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import config = require('../common/config');
@@ -50,6 +51,7 @@ import monitor = require('../common/enrollment_monitor');
 import keyMaterial = require('../common/vendored/key_material');
 import adminViews = require('../admin-core/admin_views');
 import codec = require('./est_codec');
+import InstanceSlot = require('../common/instance_slot');
 
 const FAMILY = 'est';
 
@@ -120,6 +122,26 @@ class EstConsole {
   constructor(private readonly deps: EstConsoleDeps) {
     deps.log.debug("Entering EstConsole.constructor().");
     deps.log.debug("Leaving EstConsole.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): EstConsoleDeps {
+    helpers.log.debug("Entering EstConsole.defaultDeps().");
+    helpers.log.debug("Leaving EstConsole.defaultDeps().");
+    return {
+      config: config,
+      log: log,
+      baseUrlOf: baseUrlOf,
+      errorCodes: errorCodes,
+      validation: validation,
+      mode: mode,
+      core: core,
+      monitor: monitor,
+      keyMaterial: keyMaterial,
+      adminViews: adminViews,
+      codec: codec
+    };
   }
 
   refused(code, status, sentence) {
@@ -475,31 +497,33 @@ class EstConsole {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const estConsole = new EstConsole({
-  config: config,
-  log: log,
-  baseUrlOf: baseUrlOf,
-  errorCodes: errorCodes,
-  validation: validation,
-  mode: mode,
-  core: core,
-  monitor: monitor,
-  keyMaterial: keyMaterial,
-  adminViews: adminViews,
-  codec: codec
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<EstConsole>(
+  'est/est_console',
+  () => new EstConsole(EstConsole.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   EstConsole: EstConsole,
+  installInstance: (instance: EstConsole): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FAMILY: FAMILY,
   EST_ACTIONS: EST_ACTIONS,
   OPERATIONS: OPERATIONS,
   REVOCATION_REASONS: REVOCATION_REASONS,
-  estView: estConsole.estView.bind(estConsole) as EstConsole['estView'],
-  estMonitorView: estConsole.estMonitorView.bind(estConsole) as
-    EstConsole['estMonitorView'],
-  estAction: estConsole.estAction.bind(estConsole) as EstConsole['estAction']
+  estView: slot.forward('estView'),
+  estMonitorView: slot.forward('estMonitorView'),
+  estAction: slot.forward('estAction')
 };

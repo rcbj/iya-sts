@@ -26,18 +26,24 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `EstApi` takes the modules it uses through its constructor
-// (`EstApiDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `EstApi` is exported beside them for the
-// composition root.
+// (`EstApiDeps`). Since #50's R2 the composition root builds the instance
+// (`EstApi.defaultDeps()`) and installs it; the module's old export names are
+// FACADES that forward to it, for the JavaScript callers, and a process without
+// the root builds a default when the module finishes loading. `EstApi` is
+// exported beside them for the composition root.
 //
 // **THE TABLES WHOSE ENTRIES CALL THIS MODULE** (`ROUTES`) are built by
-// `build…()` methods, called at load where each was declared.
+// `build…()` methods. Since R2 `wire()` builds the table when the instance is
+// installed, and `ROUTES` is a getter over it: `mgmt-api/admin_api.ts` must
+// read it only after the root has installed this module's instance (its own
+// `wire()` does), or it builds a default here that the root then cannot
+// replace.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 const { log, parseBody } = helpers;
 import errorCodes = require('../common/error_codes');
+import InstanceSlot = require('../common/instance_slot');
 
 const BASE = '/admin-api';
 
@@ -57,6 +63,29 @@ class EstApi {
   constructor(private readonly deps: EstApiDeps) {
     deps.log.debug("Entering EstApi.constructor().");
     deps.log.debug("Leaving EstApi.constructor().");
+  }
+
+  // What the composition root passes: the modules the load-time instance
+  // was built from before R2.
+  static defaultDeps(): EstApiDeps {
+    helpers.log.debug("Entering EstApi.defaultDeps().");
+    helpers.log.debug("Leaving EstApi.defaultDeps().");
+    return {
+      log: log,
+      parseBody: parseBody,
+      errorCodes: errorCodes,
+      loadEstConsole: function () {
+        return require('./est_console');
+      }
+    };
+  }
+
+  // What loading this module did with its instance before R2, run once
+  // for whichever instance is installed (#50, R2).
+  static wire(instance: EstApi): void {
+    helpers.log.debug("Entering EstApi.wire().");
+    routes = instance.buildRoutes();
+    helpers.log.debug("Leaving EstApi.wire().");
   }
 
   // `admin_api.js`'s `sendJson()`, which is not exported: the same answer, and
@@ -291,18 +320,40 @@ class EstApi {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const estApi = new EstApi({
-  log: log,
-  parseBody: parseBody,
-  errorCodes: errorCodes,
-  loadEstConsole: function () {
-    return require('./est_console');
+// The table `buildRoutes()` made for the installed instance, filled by
+// `wire()` and read through the `ROUTES` getter below.
+type Routes = ReturnType<EstApi['buildRoutes']>;
+let routes: Routes = null;
+
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module finishes loading (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<EstApi>(
+  'est/est_api',
+  () => new EstApi(EstApi.defaultDeps()),
+  EstApi.wire,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
+export = {
+  EstApi: EstApi,
+  installInstance: (instance: EstApi): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  // A GETTER, so the table is the installed instance's: under the root it is
+  // built when the root installs that instance, and `mgmt-api/admin_api.ts`
+  // reads it after that.
+  get ROUTES(): Routes {
+    log.debug("Entering ROUTES().");
+    slot.get();
+    log.debug("Leaving ROUTES().");
+    return routes;
   }
-});
-
-const ROUTES = estApi.buildRoutes();
-
-export = { EstApi: EstApi, ROUTES: ROUTES };
+};
