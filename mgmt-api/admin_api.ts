@@ -92,29 +92,35 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AdminApi` takes the modules it uses through its constructor
-// (`AdminApiDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `AdminApi` is exported beside them for the
-// composition root.
+// (`AdminApiDeps`). Since R2 the composition root
+// (`common/protocol_stack.ts`) builds the instance, and the module's old
+// names are FACADES that forward to it, for the JavaScript callers; a process
+// without the root builds a default at load. `AdminApi` is exported beside
+// them for the root.
 //
 // **THE ROUTES ARE REGISTERED BY TWO METHODS**, because the old file ran a
 // statement between them: `registerGate()` (the access-token middleware on
 // the base path), then `compileRequestSchemas()`, then `registerRoutes()`
-// (the table's operations). The transitional code calls
-// `compileRequestSchemas()` at load and exports a `registerRoutes(app)`
-// that calls `registerGate()` and then the table's `registerRoutes()`;
-// `common/protocol_stack.ts` calls it at 19, where requiring this module used
-// to register both (#50, R1), so the route order is unchanged. Requiring the
-// module registers nothing. (The schemas are therefore compiled BEFORE the
-// gate is registered rather than after it; neither reads the other.)
+// (the table's operations). `AdminApi.wire()` calls
+// `compileRequestSchemas()` when the instance is installed, and the module
+// exports a `registerRoutes(app)` that calls `registerGate()` and then the
+// table's `registerRoutes()`; `common/protocol_stack.ts` calls it at 19,
+// where requiring this module used to register both (#50, R1), so the route
+// order is unchanged. Requiring the module registers nothing. (The schemas
+// are therefore compiled BEFORE the gate is registered rather than after it;
+// neither reads the other.)
 //
 // `PROTOCOL_SETTINGS_OPERATIONS` and `ROUTES` are typed `any[]`, as the
 // JavaScript's JSDoc typed the second: a union of a few hundred object
 // literal types is not a type anybody reads.
 //
 // **THE TABLES WHOSE ENTRIES CALL THIS MODULE**
-// (`PROTOCOL_SETTINGS_OPERATIONS`, `ROUTES`) are built by `build…()` methods,
-// called at load where each was declared.
+// (`PROTOCOL_SETTINGS_OPERATIONS`, `ROUTES`) are built by `build…()` methods.
+// Since R2 they are module-level `let`s filled by `AdminApi.wire()`, in the
+// order they were declared, when the instance is installed — for a process
+// without the root, that is still at load — and `ROUTES` is exported through
+// a getter. The startup banner, which counts the instance's operations, is
+// logged from `wire()` too, straight after them, as it was.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -386,6 +392,80 @@ class AdminApi {
   constructor(private readonly deps: AdminApiDeps) {
     deps.log.debug("Entering AdminApi.constructor().");
     deps.log.debug("Leaving AdminApi.constructor().");
+  }
+
+  // What the composition root passes, from the real modules, with the lazy
+  // requires as loaders.
+  static defaultDeps(): AdminApiDeps {
+    log.debug("Entering AdminApi.defaultDeps().");
+    log.debug("Leaving AdminApi.defaultDeps().");
+    return {
+      errorCodes: errorCodes,
+      createClaims: createClaims,
+      helpers: helpers,
+      log: log,
+      parseBody: parseBody,
+      baseUrlOf: baseUrlOf,
+      STS: STS,
+      stsCrypto: stsCrypto,
+      roles: roles,
+      passwordPolicy: passwordPolicy,
+      admin: admin,
+      adminScope: adminScope,
+      adminActions: adminActions,
+      adminViews: adminViews,
+      pkiAdmin: pkiAdmin,
+      pki: pki,
+      certificateViews: certificateViews,
+      protocolEndpoints: protocolEndpoints,
+      encryptionAdmin: encryptionAdmin,
+      databaseAdmin: databaseAdmin,
+      secretsAdmin: secretsAdmin,
+      debuggerAdmin: debuggerAdmin,
+      config: config,
+      rbac: rbac,
+      stats: stats,
+      applications: applications,
+      resourceMetadata: resourceMetadata,
+      spec: spec,
+      realms: realms,
+      jwtAccessToken: jwtAccessToken,
+      mtls: mtls,
+      dpop: dpop,
+      senderConstraints: senderConstraints,
+      accessGate: accessGate,
+      mode: mode,
+      loadApiExplorer: function () {
+        return require('../admin-ui/api_explorer');
+      },
+      loadGnapConsole: function () {
+        return require('../gnap/gnap_console');
+      },
+      loadAcmeApi: function () {
+        return require('../acme/acme_api');
+      },
+      loadEstApi: function () {
+        return require('../est/est_api');
+      },
+      loadScepApi: function () {
+        return require('../scep/scep_api');
+      },
+      loadOauth2MonitorApi: function () {
+        return require('../oauth-oidc/oauth2_monitor_api');
+      }
+    };
+  }
+
+  // THE LOAD-TIME WORK, run once for the installed instance (#50, R2): the
+  // two tables, the request schemas and the startup banner, in the order
+  // this module ran them at load.
+  static wire(instance: AdminApi): void {
+    log.debug("Entering AdminApi.wire().");
+    PROTOCOL_SETTINGS_OPERATIONS = instance.buildProtocolSettingsOperations();
+    ROUTES = instance.buildRoutes();
+    instance.compileRequestSchemas();
+    log.info(startupBanner(instance.operationSummaries().length));
+    log.debug("Leaving AdminApi.wire().");
   }
 
   structureOnly(node) {
@@ -15399,7 +15479,7 @@ class AdminApi {
 
   // THE TABLE'S ROUTES, registered by the exported `registerRoutes(app)`
   // straight after the gate, which `common/protocol_stack.ts` calls at 19
-  // (#50, R1). `compileRequestSchemas()` has already run, at load.
+  // (#50, R1). `compileRequestSchemas()` has already run, in `wire()`.
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, protocolEndpoints } = this.deps;
     const self = this;
@@ -15509,66 +15589,7 @@ const BASE = '/admin-api';
 import accessGate = require('../common/access_gate');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 import mode = require('../common/mode');
-
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root builds the modules as well as
-// registering their routes (#50's R2).
-const managementApi = new AdminApi({
-  errorCodes: errorCodes,
-  createClaims: createClaims,
-  helpers: helpers,
-  log: log,
-  parseBody: parseBody,
-  baseUrlOf: baseUrlOf,
-  STS: STS,
-  stsCrypto: stsCrypto,
-  roles: roles,
-  passwordPolicy: passwordPolicy,
-  admin: admin,
-  adminScope: adminScope,
-  adminActions: adminActions,
-  adminViews: adminViews,
-  pkiAdmin: pkiAdmin,
-  pki: pki,
-  certificateViews: certificateViews,
-  protocolEndpoints: protocolEndpoints,
-  encryptionAdmin: encryptionAdmin,
-  databaseAdmin: databaseAdmin,
-  secretsAdmin: secretsAdmin,
-  debuggerAdmin: debuggerAdmin,
-  config: config,
-  rbac: rbac,
-  stats: stats,
-  applications: applications,
-  resourceMetadata: resourceMetadata,
-  spec: spec,
-  realms: realms,
-  jwtAccessToken: jwtAccessToken,
-  mtls: mtls,
-  dpop: dpop,
-  senderConstraints: senderConstraints,
-  accessGate: accessGate,
-  mode: mode,
-  loadApiExplorer: function () {
-    return require('../admin-ui/api_explorer');
-  },
-  loadGnapConsole: function () {
-    return require('../gnap/gnap_console');
-  },
-  loadAcmeApi: function () {
-    return require('../acme/acme_api');
-  },
-  loadEstApi: function () {
-    return require('../est/est_api');
-  },
-  loadScepApi: function () {
-    return require('../scep/scep_api');
-  },
-  loadOauth2MonitorApi: function () {
-    return require('../oauth-oidc/oauth2_monitor_api');
-  }
-});
+import InstanceSlot = require('../common/instance_slot');
 
 // ---------------------------------------------------------------------------
 // THE SEVEN ACTIONS OF A CLAIM SET, FOR WHICHEVER FAMILY OF SETS ASKED.
@@ -15651,12 +15672,11 @@ const SAML_CLAIM_FAMILY = {
          none: 'clearSamlDirectoryAttributes' }
 };
 
-const PROTOCOL_SETTINGS_OPERATIONS =
-  managementApi.buildProtocolSettingsOperations();
+// Filled by `AdminApi.wire()` (#50, R2), in this order, with the request
+// schemas compiled straight after.
+let PROTOCOL_SETTINGS_OPERATIONS: any[] = null;
 
-const ROUTES = managementApi.buildRoutes();
-
-managementApi.compileRequestSchemas();
+let ROUTES: any[] = null;
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
@@ -15671,12 +15691,18 @@ managementApi.compileRequestSchemas();
 // working from a log line from an older build will look for that sentence, so
 // the replacement contradicts it in the same place rather than going quiet.
 //
-// It is computed at require time and says "currently", because
+// It is computed at startup (when the instance is installed — at require
+// time for a process without the root) and says "currently", because
 // `adminApi.authRequired` is changeable while running — a banner that stated
 // it as a fact would be a line in a log claiming something the operator turned
 // off ten minutes later.
-log.info('The management API is at ' + BASE + ': ' +
-         managementApi.operationSummaries().length +
+//
+// Since R2 the banner is logged by `AdminApi.wire()`, which counts the
+// installed instance's operations; this function is its text.
+function startupBanner(operations: number): string {
+  log.debug("Entering startupBanner().");
+  const text = 'The management API is at ' + BASE + ': ' +
+         operations +
          ' operations over the same functions ' +
          'the /admin console calls. Its OpenAPI document is at ' + BASE +
          '/openapi.json and an explorer that calls it is at ' + BASE +
@@ -15700,24 +15726,49 @@ log.info('The management API is at ' + BASE + ': ' +
            : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
              'console is gated unconditionally, so this is the surface to ' +
              'reach for when nobody holds a console role: POST ' + BASE +
-             '/rbac/grant.'));
+             '/rbac/grant.');
+  log.debug("Leaving startupBanner().");
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AdminApi>(
+  'mgmt-api/admin_api',
+  () => new AdminApi(AdminApi.defaultDeps()),
+  AdminApi.wire,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   registerRoutes: (target: any): void => {
+    const managementApi = slot.get();
     managementApi.registerGate(target);
     managementApi.registerRoutes(target);
   },
   AdminApi: AdminApi,
+  installInstance: (instance: AdminApi): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   BASE: BASE,
   // The three facts the OpenAPI document is built from, gathered in one place
   // so that this file's document and the console explorer's cannot disagree
   // about what this API requires. See specOptions().
-  specOptions: managementApi.specOptions.bind(managementApi) as
-    AdminApi['specOptions'],
+  specOptions: slot.forward('specOptions'),
   // The table, so that the parent project's tests can assert what this file
   // covers against what the console offers rather than against a list somebody
   // typed into a test.
-  ROUTES: ROUTES,
-  operationSummaries: managementApi.operationSummaries.bind(managementApi) as
-    AdminApi['operationSummaries']
+  get ROUTES(): any[] {
+    slot.get();
+    return ROUTES;
+  },
+  operationSummaries: slot.forward('operationSummaries')
 };

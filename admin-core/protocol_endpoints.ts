@@ -70,11 +70,12 @@
 // directory (for `loaded()`), `config`, `realms`, the logger, the base-URL
 // reader and the authorization-server registry through its constructor.
 // THE TABLE and the socket builders call the row builders, which are
-// methods now, so the constructor builds both — at load, for the
-// TRANSITIONAL instance at the bottom, which is when they were built before.
-// That instance exports the three old names for `admin-ui/admin.ts`,
-// `mgmt-api/admin_api.ts` and the test; `ProtocolEndpoints` is exported
-// beside them for the composition root.
+// methods now, so the constructor builds both. Since R2 the composition root
+// (`common/protocol_stack.ts`) builds the instance, and the three old names
+// are FACADES that forward to it, for `admin-ui/admin.ts`,
+// `mgmt-api/admin_api.ts` and the test; a process without the root builds a
+// default at load, which is when the tables were built before.
+// `ProtocolEndpoints` is exported beside them for the root.
 // ---------------------------------------------------------------------------
 
 import path = require('path');
@@ -82,6 +83,7 @@ import helpers = require('../common/helpers');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
+import InstanceSlot = require('../common/instance_slot');
 
 const OAUTH_ISSUING = ['/oauth2/authorize', '/oauth2/token',
                        '/oauth2/introspect', '/oauth2/revoke'];
@@ -135,9 +137,9 @@ interface ProtocolEndpointsDeps {
 }
 
 class ProtocolEndpoints {
-  // THE TABLE and the socket builders, built once when the instance is — at
-  // load, for the transitional instance, which is when they were built
-  // before.
+  // THE TABLE and the socket builders, built once when the instance is — by
+  // the composition root, or at load for a process without one, which is
+  // when they were built before.
   private readonly pagesTable: Record<string, Entry[]>;
   private readonly sockets: Record<string, SocketBuilder>;
 
@@ -146,6 +148,23 @@ class ProtocolEndpoints {
     this.pagesTable = this.buildPages();
     this.sockets = this.buildSockets();
     deps.log.debug("Leaving ProtocolEndpoints.constructor().");
+  }
+
+  // What the composition root passes, from the real modules: `require.cache`
+  // and this file's directory for `loaded()`, as before.
+  static defaultDeps(): ProtocolEndpointsDeps {
+    helpers.log.debug("Entering ProtocolEndpoints.defaultDeps().");
+    helpers.log.debug("Leaving ProtocolEndpoints.defaultDeps().");
+    return {
+      path: path,
+      cache: require.cache,
+      dir: __dirname,
+      config: config,
+      log: helpers.log,
+      baseUrlOf: helpers.baseUrlOf,
+      realms: realms,
+      authorizationServers: authorizationServers
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -605,23 +624,30 @@ class ProtocolEndpoints {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const endpoints = new ProtocolEndpoints({
-  path: path,
-  cache: require.cache,
-  dir: __dirname,
-  config: config,
-  log: helpers.log,
-  baseUrlOf: helpers.baseUrlOf,
-  realms: realms,
-  authorizationServers: authorizationServers
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ProtocolEndpoints>(
+  'admin-core/protocol_endpoints',
+  () => new ProtocolEndpoints(ProtocolEndpoints.defaultDeps()),
+  null,
+  helpers.log);
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ProtocolEndpoints: ProtocolEndpoints,
-  forPage: endpoints.forPage.bind(endpoints) as ProtocolEndpoints['forPage'],
-  pages: endpoints.pages.bind(endpoints) as ProtocolEndpoints['pages'],
-  exempt: endpoints.exempt.bind(endpoints) as ProtocolEndpoints['exempt']
+  installInstance: (instance: ProtocolEndpoints): void =>
+    slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  forPage: slot.forward('forPage'),
+  pages: slot.forward('pages'),
+  exempt: slot.forward('exempt')
 };

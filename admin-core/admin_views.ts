@@ -74,11 +74,12 @@
 // shape: `AdminViews` takes every module this file used to require, the
 // helpers it destructured, the two session readers of `authn.ts` and the
 // three functions it borrows from `admin_actions.ts` through its constructor,
-// typed as `typeof` each. Every view is a method, and the module still
-// exports every old name — bound to a TRANSITIONAL instance built at the
-// bottom — for the console, the management API, the view/action layers of
-// the other families and the tests; `AdminViews` is exported beside them for
-// the composition root.
+// typed as `typeof` each. Every view is a method. Since R2 the composition
+// root (`common/protocol_stack.ts`) builds the instance, and the module's old
+// names are FACADES that forward to it, for the console, the management API,
+// the view/action layers of the other families and the tests; a process
+// without the root builds a default at load. `AdminViews` is exported beside
+// them for the root.
 //
 // **THE FORWARDED COLLABORATORS STAY MODULE-LEVEL `let`s**, each with ONE
 // writer — its setter, a method the console still calls through the module's
@@ -95,6 +96,7 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The credential store, for the ways-in list the new-person form offers.
 import credentials = require('../common/credentials');
 // The two second factors, for the roster columns on /admin/users.
@@ -427,6 +429,69 @@ class AdminViews {
   constructor(private readonly deps: AdminViewsDeps) {
     deps.log.debug("Entering AdminViews.constructor().");
     deps.log.debug("Leaving AdminViews.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): AdminViewsDeps {
+    helpers.log.debug("Entering AdminViews.defaultDeps().");
+    helpers.log.debug("Leaving AdminViews.defaultDeps().");
+    return {
+      log: helpers.log,
+      baseUrlOf: helpers.baseUrlOf,
+      stsKeysFor: helpers.stsKeysFor,
+      userFor: helpers.userFor,
+      subjectForName: helpers.subjectForName,
+      credentials: credentials,
+      totp: totp,
+      webauthnPolicy: webauthnPolicy,
+      backupCodes: backupCodes,
+      sessions: authn.sessions,
+      sessionStartedAt: authn.sessionStartedAt,
+      config: config,
+      mode: mode,
+      realms: realms,
+      stats: stats,
+      oidcRp: oidcRp,
+      rbac: rbac,
+      vcClaims: vcClaims,
+      vpConfig: vpConfig,
+      claimAttributes: claimAttributes,
+      scimMap: scimMap,
+      groupClaims: groupClaims,
+      applications: applications,
+      personAssertions: personAssertions,
+      keystore: keystore,
+      pki: pki,
+      nodeCrypto: nodeCrypto,
+      appPermissions: appPermissions,
+      consent: consent,
+      roles: roles,
+      passwordPolicy: passwordPolicy,
+      auditLog: auditLog,
+      errorCodes: errorCodes,
+      usedAssertions: usedAssertions,
+      delegation: delegation,
+      krb5Principals: krb5Principals,
+      krb5PersonKeys: krb5PersonKeys,
+      oauth2: oauth2,
+      softwareStatement: softwareStatement,
+      assertionGrant: assertionGrant,
+      tlsClientCertificates: tlsClientCertificates,
+      certificateSubject: certificateSubject,
+      mtls: mtls,
+      saml2: saml2,
+      saml11: saml11,
+      authorizationServers: authorizationServers,
+      federation: federation,
+      signals: signals,
+      spiffeRegistry: spiffeRegistry,
+      spiffeCa: spiffeCa,
+      spiffeAuth: spiffeAuth,
+      adminActions: adminActions,
+      configSettingFor: adminActions.configSettingFor,
+      noXacml: adminActions.noXacml,
+      samlAssertionRowFor: adminActions.samlAssertionRowFor
+    };
   }
 
   setGroupReader(value) {
@@ -6360,298 +6425,177 @@ class AdminViews {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const views = new AdminViews({
-  log: helpers.log,
-  baseUrlOf: helpers.baseUrlOf,
-  stsKeysFor: helpers.stsKeysFor,
-  userFor: helpers.userFor,
-  subjectForName: helpers.subjectForName,
-  credentials: credentials,
-  totp: totp,
-  webauthnPolicy: webauthnPolicy,
-  backupCodes: backupCodes,
-  sessions: authn.sessions,
-  sessionStartedAt: authn.sessionStartedAt,
-  config: config,
-  mode: mode,
-  realms: realms,
-  stats: stats,
-  oidcRp: oidcRp,
-  rbac: rbac,
-  vcClaims: vcClaims,
-  vpConfig: vpConfig,
-  claimAttributes: claimAttributes,
-  scimMap: scimMap,
-  groupClaims: groupClaims,
-  applications: applications,
-  personAssertions: personAssertions,
-  keystore: keystore,
-  pki: pki,
-  nodeCrypto: nodeCrypto,
-  appPermissions: appPermissions,
-  consent: consent,
-  roles: roles,
-  passwordPolicy: passwordPolicy,
-  auditLog: auditLog,
-  errorCodes: errorCodes,
-  usedAssertions: usedAssertions,
-  delegation: delegation,
-  krb5Principals: krb5Principals,
-  krb5PersonKeys: krb5PersonKeys,
-  oauth2: oauth2,
-  softwareStatement: softwareStatement,
-  assertionGrant: assertionGrant,
-  tlsClientCertificates: tlsClientCertificates,
-  certificateSubject: certificateSubject,
-  mtls: mtls,
-  saml2: saml2,
-  saml11: saml11,
-  authorizationServers: authorizationServers,
-  federation: federation,
-  signals: signals,
-  spiffeRegistry: spiffeRegistry,
-  spiffeCa: spiffeCa,
-  spiffeAuth: spiffeAuth,
-  adminActions: adminActions,
-  configSettingFor: adminActions.configSettingFor,
-  noXacml: adminActions.noXacml,
-  samlAssertionRowFor: adminActions.samlAssertionRowFor
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AdminViews>(
+  'admin-core/admin_views',
+  () => new AdminViews(AdminViews.defaultDeps()),
+  null,
+  helpers.log);
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AdminViews: AdminViews,
-  logoutInventoryFor: views.logoutInventoryFor.bind(views) as
-    AdminViews['logoutInventoryFor'],
-  logoutFamilies: views.logoutFamilies.bind(views) as
-    AdminViews['logoutFamilies'],
-  logoutJson: views.logoutJson.bind(views) as AdminViews['logoutJson'],
-  mfaRosterJson: views.mfaRosterJson.bind(views) as AdminViews['mfaRosterJson'],
+  installInstance: (instance: AdminViews): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  logoutInventoryFor: slot.forward('logoutInventoryFor'),
+  logoutFamilies: slot.forward('logoutFamilies'),
+  logoutJson: slot.forward('logoutJson'),
+  mfaRosterJson: slot.forward('mfaRosterJson'),
   DEFAULT_BLOCKS_PER_PAGE: DEFAULT_BLOCKS_PER_PAGE,
-  queryWith: views.queryWith.bind(views) as AdminViews['queryWith'],
-  sessionRowsFor: views.sessionRowsFor.bind(views) as
-    AdminViews['sessionRowsFor'],
-  tokensBySession: views.tokensBySession.bind(views) as
-    AdminViews['tokensBySession'],
-  ldapObjectJson: views.ldapObjectJson.bind(views) as
-    AdminViews['ldapObjectJson'],
+  queryWith: slot.forward('queryWith'),
+  sessionRowsFor: slot.forward('sessionRowsFor'),
+  tokensBySession: slot.forward('tokensBySession'),
+  ldapObjectJson: slot.forward('ldapObjectJson'),
   // The person's `sub` for the console's drill-down (2026-09-14): the same
   // answer the JSON half's `subject` member carries.
   userDetailSubject: helpers.subjectForName,
-  mfaJson: views.mfaJson.bind(views) as AdminViews['mfaJson'],
-  userDetailJson: views.userDetailJson.bind(views) as
-    AdminViews['userDetailJson'],
-  personCredentialsState: views.personCredentialsState.bind(views) as
-    AdminViews['personCredentialsState'],
-  usersJson: views.usersJson.bind(views) as AdminViews['usersJson'],
-  peopleRows: views.peopleRows.bind(views) as AdminViews['peopleRows'],
-  mergeFactors: views.mergeFactors.bind(views) as AdminViews['mergeFactors'],
-  usersListJson: views.usersListJson.bind(views) as AdminViews['usersListJson'],
-  federationRow: views.federationRow.bind(views) as AdminViews['federationRow'],
-  federationDetailJson: views.federationDetailJson.bind(views) as
-    AdminViews['federationDetailJson'],
-  federationJson: views.federationJson.bind(views) as
-    AdminViews['federationJson'],
-  federationListJson: views.federationListJson.bind(views) as
-    AdminViews['federationListJson'],
-  applicationPermissionsState: views.applicationPermissionsState.bind(views) as
-    AdminViews['applicationPermissionsState'],
-  applicationDetailJson: views.applicationDetailJson.bind(views) as
-    AdminViews['applicationDetailJson'],
-  applicationsJson: views.applicationsJson.bind(views) as
-    AdminViews['applicationsJson'],
-  applicationsListJson: views.applicationsListJson.bind(views) as
-    AdminViews['applicationsListJson'],
+  mfaJson: slot.forward('mfaJson'),
+  userDetailJson: slot.forward('userDetailJson'),
+  personCredentialsState: slot.forward('personCredentialsState'),
+  usersJson: slot.forward('usersJson'),
+  peopleRows: slot.forward('peopleRows'),
+  mergeFactors: slot.forward('mergeFactors'),
+  usersListJson: slot.forward('usersListJson'),
+  federationRow: slot.forward('federationRow'),
+  federationDetailJson: slot.forward('federationDetailJson'),
+  federationJson: slot.forward('federationJson'),
+  federationListJson: slot.forward('federationListJson'),
+  applicationPermissionsState: slot.forward('applicationPermissionsState'),
+  applicationDetailJson: slot.forward('applicationDetailJson'),
+  applicationsJson: slot.forward('applicationsJson'),
+  applicationsListJson: slot.forward('applicationsListJson'),
   NOT_A_VIEW: NOT_A_VIEW,
-  pageParamsOf: views.pageParamsOf.bind(views) as AdminViews['pageParamsOf'],
-  groupDetailJson: views.groupDetailJson.bind(views) as
-    AdminViews['groupDetailJson'],
-  groupsJson: views.groupsJson.bind(views) as AdminViews['groupsJson'],
-  setGroupReader: views.setGroupReader.bind(views) as
-    AdminViews['setGroupReader'],
-  setGroupWriter: views.setGroupWriter.bind(views) as
-    AdminViews['setGroupWriter'],
-  groupsListJson: views.groupsListJson.bind(views) as
-    AdminViews['groupsListJson'],
-  asDriftRows: views.asDriftRows.bind(views) as AdminViews['asDriftRows'],
-  asTruthRequest: views.asTruthRequest.bind(views) as
-    AdminViews['asTruthRequest'],
-  asDetailJson: views.asDetailJson.bind(views) as AdminViews['asDetailJson'],
-  authorizationServersJson: views.authorizationServersJson.bind(views) as
-    AdminViews['authorizationServersJson'],
-  asListJson: views.asListJson.bind(views) as AdminViews['asListJson'],
-  saml11RelyingParties: views.saml11RelyingParties.bind(views) as
-    AdminViews['saml11RelyingParties'],
-  saml11Facts: views.saml11Facts.bind(views) as AdminViews['saml11Facts'],
-  saml11DetailJson: views.saml11DetailJson.bind(views) as
-    AdminViews['saml11DetailJson'],
-  saml11Json: views.saml11Json.bind(views) as AdminViews['saml11Json'],
-  saml11ListJson: views.saml11ListJson.bind(views) as
-    AdminViews['saml11ListJson'],
-  saml2ServiceProviders: views.saml2ServiceProviders.bind(views) as
-    AdminViews['saml2ServiceProviders'],
-  saml2Facts: views.saml2Facts.bind(views) as AdminViews['saml2Facts'],
-  valuesFor: views.valuesFor.bind(views) as AdminViews['valuesFor'],
-  saml2DetailJson: views.saml2DetailJson.bind(views) as
-    AdminViews['saml2DetailJson'],
-  saml2Json: views.saml2Json.bind(views) as AdminViews['saml2Json'],
-  saml2ListJson: views.saml2ListJson.bind(views) as AdminViews['saml2ListJson'],
-  knownUserKeys: views.knownUserKeys.bind(views) as AdminViews['knownUserKeys'],
-  rbacListJson: views.rbacListJson.bind(views) as AdminViews['rbacListJson'],
-  setDirectoryWriter: views.setDirectoryWriter.bind(views) as
-    AdminViews['setDirectoryWriter'],
-  setDirectoryReader: views.setDirectoryReader.bind(views) as
-    AdminViews['setDirectoryReader'],
+  pageParamsOf: slot.forward('pageParamsOf'),
+  groupDetailJson: slot.forward('groupDetailJson'),
+  groupsJson: slot.forward('groupsJson'),
+  setGroupReader: slot.forward('setGroupReader'),
+  setGroupWriter: slot.forward('setGroupWriter'),
+  groupsListJson: slot.forward('groupsListJson'),
+  asDriftRows: slot.forward('asDriftRows'),
+  asTruthRequest: slot.forward('asTruthRequest'),
+  asDetailJson: slot.forward('asDetailJson'),
+  authorizationServersJson: slot.forward('authorizationServersJson'),
+  asListJson: slot.forward('asListJson'),
+  saml11RelyingParties: slot.forward('saml11RelyingParties'),
+  saml11Facts: slot.forward('saml11Facts'),
+  saml11DetailJson: slot.forward('saml11DetailJson'),
+  saml11Json: slot.forward('saml11Json'),
+  saml11ListJson: slot.forward('saml11ListJson'),
+  saml2ServiceProviders: slot.forward('saml2ServiceProviders'),
+  saml2Facts: slot.forward('saml2Facts'),
+  valuesFor: slot.forward('valuesFor'),
+  saml2DetailJson: slot.forward('saml2DetailJson'),
+  saml2Json: slot.forward('saml2Json'),
+  saml2ListJson: slot.forward('saml2ListJson'),
+  knownUserKeys: slot.forward('knownUserKeys'),
+  rbacListJson: slot.forward('rbacListJson'),
+  setDirectoryWriter: slot.forward('setDirectoryWriter'),
+  setDirectoryReader: slot.forward('setDirectoryReader'),
   CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
-  newUserContainer: views.newUserContainer.bind(views) as
-    AdminViews['newUserContainer'],
-  newUserJson: views.newUserJson.bind(views) as AdminViews['newUserJson'],
-  newApplicationJson: views.newApplicationJson.bind(views) as
-    AdminViews['newApplicationJson'],
-  spiffeSelectorText: views.spiffeSelectorText.bind(views) as
-    AdminViews['spiffeSelectorText'],
-  setSpiffeReader: views.setSpiffeReader.bind(views) as
-    AdminViews['setSpiffeReader'],
-  spiffeListeners: views.spiffeListeners.bind(views) as
-    AdminViews['spiffeListeners'],
-  spiffeJson: views.spiffeJson.bind(views) as AdminViews['spiffeJson'],
-  spiffeEntriesJson: views.spiffeEntriesJson.bind(views) as
-    AdminViews['spiffeEntriesJson'],
-  spiffeAgentsJson: views.spiffeAgentsJson.bind(views) as
-    AdminViews['spiffeAgentsJson'],
-  setSignalsReporter: views.setSignalsReporter.bind(views) as
-    AdminViews['setSignalsReporter'],
-  setCaepReporter: views.setCaepReporter.bind(views) as
-    AdminViews['setCaepReporter'],
-  setRiscReporter: views.setRiscReporter.bind(views) as
-    AdminViews['setRiscReporter'],
-  signalsJson: views.signalsJson.bind(views) as AdminViews['signalsJson'],
-  signalsState: views.signalsState.bind(views) as AdminViews['signalsState'],
-  ssfDeadLettersJson: views.ssfDeadLettersJson.bind(views) as
-    AdminViews['ssfDeadLettersJson'],
-  ssfDeadLettersState: views.ssfDeadLettersState.bind(views) as
-    AdminViews['ssfDeadLettersState'],
-  ssfJson: views.ssfJson.bind(views) as AdminViews['ssfJson'],
-  caepJson: views.caepJson.bind(views) as AdminViews['caepJson'],
-  caepSessionsState: views.caepSessionsState.bind(views) as
-    AdminViews['caepSessionsState'],
-  caepApplicationsState: views.caepApplicationsState.bind(views) as
-    AdminViews['caepApplicationsState'],
-  caepSessionsJson: views.caepSessionsJson.bind(views) as
-    AdminViews['caepSessionsJson'],
-  riscJson: views.riscJson.bind(views) as AdminViews['riscJson'],
-  riscAccountsState: views.riscAccountsState.bind(views) as
-    AdminViews['riscAccountsState'],
-  riscApplicationsState: views.riscApplicationsState.bind(views) as
-    AdminViews['riscApplicationsState'],
-  riscAccountsJson: views.riscAccountsJson.bind(views) as
-    AdminViews['riscAccountsJson'],
-  setLogoutReader: views.setLogoutReader.bind(views) as
-    AdminViews['setLogoutReader'],
+  newUserContainer: slot.forward('newUserContainer'),
+  newUserJson: slot.forward('newUserJson'),
+  newApplicationJson: slot.forward('newApplicationJson'),
+  spiffeSelectorText: slot.forward('spiffeSelectorText'),
+  setSpiffeReader: slot.forward('setSpiffeReader'),
+  spiffeListeners: slot.forward('spiffeListeners'),
+  spiffeJson: slot.forward('spiffeJson'),
+  spiffeEntriesJson: slot.forward('spiffeEntriesJson'),
+  spiffeAgentsJson: slot.forward('spiffeAgentsJson'),
+  setSignalsReporter: slot.forward('setSignalsReporter'),
+  setCaepReporter: slot.forward('setCaepReporter'),
+  setRiscReporter: slot.forward('setRiscReporter'),
+  signalsJson: slot.forward('signalsJson'),
+  signalsState: slot.forward('signalsState'),
+  ssfDeadLettersJson: slot.forward('ssfDeadLettersJson'),
+  ssfDeadLettersState: slot.forward('ssfDeadLettersState'),
+  ssfJson: slot.forward('ssfJson'),
+  caepJson: slot.forward('caepJson'),
+  caepSessionsState: slot.forward('caepSessionsState'),
+  caepApplicationsState: slot.forward('caepApplicationsState'),
+  caepSessionsJson: slot.forward('caepSessionsJson'),
+  riscJson: slot.forward('riscJson'),
+  riscAccountsState: slot.forward('riscAccountsState'),
+  riscApplicationsState: slot.forward('riscApplicationsState'),
+  riscAccountsJson: slot.forward('riscAccountsJson'),
+  setLogoutReader: slot.forward('setLogoutReader'),
   DEFAULT_PER_PAGE: DEFAULT_PER_PAGE,
   DELEGATION_PER_PAGE: DELEGATION_PER_PAGE,
   MAX_ROWS: MAX_ROWS,
-  pagingOf: views.pagingOf.bind(views) as AdminViews['pagingOf'],
-  pagingJson: views.pagingJson.bind(views) as AdminViews['pagingJson'],
-  pagedRows: views.pagedRows.bind(views) as AdminViews['pagedRows'],
-  tokensView: views.tokensView.bind(views) as AdminViews['tokensView'],
-  sessionProtocolsIn: views.sessionProtocolsIn.bind(views) as
-    AdminViews['sessionProtocolsIn'],
-  sessionsView: views.sessionsView.bind(views) as AdminViews['sessionsView'],
-  auditView: views.auditView.bind(views) as AdminViews['auditView'],
-  errorCodesView: views.errorCodesView.bind(views) as
-    AdminViews['errorCodesView'],
-  usedAssertionsView: views.usedAssertionsView.bind(views) as
-    AdminViews['usedAssertionsView'],
-  delegationView: views.delegationView.bind(views) as
-    AdminViews['delegationView'],
-  clusterSummary: views.clusterSummary.bind(views) as
-    AdminViews['clusterSummary'],
-  permissionGroupsView: views.permissionGroupsView.bind(views) as
-    AdminViews['permissionGroupsView'],
-  queryOne: views.queryOne.bind(views) as AdminViews['queryOne'],
-  chooserMatches: views.chooserMatches.bind(views) as
-    AdminViews['chooserMatches'],
+  pagingOf: slot.forward('pagingOf'),
+  pagingJson: slot.forward('pagingJson'),
+  pagedRows: slot.forward('pagedRows'),
+  tokensView: slot.forward('tokensView'),
+  sessionProtocolsIn: slot.forward('sessionProtocolsIn'),
+  sessionsView: slot.forward('sessionsView'),
+  auditView: slot.forward('auditView'),
+  errorCodesView: slot.forward('errorCodesView'),
+  usedAssertionsView: slot.forward('usedAssertionsView'),
+  delegationView: slot.forward('delegationView'),
+  clusterSummary: slot.forward('clusterSummary'),
+  permissionGroupsView: slot.forward('permissionGroupsView'),
+  queryOne: slot.forward('queryOne'),
+  chooserMatches: slot.forward('chooserMatches'),
   CHOOSER_HITS: CHOOSER_HITS,
-  claimsRequestPreview: views.claimsRequestPreview.bind(views) as
-    AdminViews['claimsRequestPreview'],
-  claimsRequestJson: views.claimsRequestJson.bind(views) as
-    AdminViews['claimsRequestJson'],
-  userinfoClaimsJson: views.userinfoClaimsJson.bind(views) as
-    AdminViews['userinfoClaimsJson'],
-  setCryptoReporter: views.setCryptoReporter.bind(views) as
-    AdminViews['setCryptoReporter'],
-  setXacmlPages: views.setXacmlPages.bind(views) as AdminViews['setXacmlPages'],
-  setDirectoryPages: views.setDirectoryPages.bind(views) as
-    AdminViews['setDirectoryPages'],
-  setScimReader: views.setScimReader.bind(views) as AdminViews['setScimReader'],
-  setRolePreviewer: views.setRolePreviewer.bind(views) as
-    AdminViews['setRolePreviewer'],
-  setConfigSettingsJson: views.setConfigSettingsJson.bind(views) as
-    AdminViews['setConfigSettingsJson'],
-  setTruststore: views.setTruststore.bind(views) as AdminViews['setTruststore'],
-  truststoreJson: views.truststoreJson.bind(views) as
-    AdminViews['truststoreJson'],
-  kerberosPrincipalsJson: views.kerberosPrincipalsJson.bind(views) as
-    AdminViews['kerberosPrincipalsJson'],
-  consoleRpSession: views.consoleRpSession.bind(views) as
-    AdminViews['consoleRpSession'],
-  gateStateFor: views.gateStateFor.bind(views) as AdminViews['gateStateFor'],
-  signOnSessionRows: views.signOnSessionRows.bind(views) as
-    AdminViews['signOnSessionRows'],
-  metricsJson: views.metricsJson.bind(views) as AdminViews['metricsJson'],
-  tokenSetView: views.tokenSetView.bind(views) as AdminViews['tokenSetView'],
-  permissionsView: views.permissionsView.bind(views) as
-    AdminViews['permissionsView'],
-  cryptoView: views.cryptoView.bind(views) as AdminViews['cryptoView'],
-  keysView: views.keysView.bind(views) as AdminViews['keysView'],
-  keysExport: views.keysExport.bind(views) as AdminViews['keysExport'],
-  xacmlView: views.xacmlView.bind(views) as AdminViews['xacmlView'],
-  xacmlPoliciesView: views.xacmlPoliciesView.bind(views) as
-    AdminViews['xacmlPoliciesView'],
-  xacmlEditorView: views.xacmlEditorView.bind(views) as
-    AdminViews['xacmlEditorView'],
-  xacmlPepsView: views.xacmlPepsView.bind(views) as AdminViews['xacmlPepsView'],
-  xacmlDecideView: views.xacmlDecideView.bind(views) as
-    AdminViews['xacmlDecideView'],
-  xacmlMonitorView: views.xacmlMonitorView.bind(views) as
-    AdminViews['xacmlMonitorView'],
-  directoryPageJson: views.directoryPageJson.bind(views) as
-    AdminViews['directoryPageJson'],
-  consentView: views.consentView.bind(views) as AdminViews['consentView'],
-  rolesRegister: views.rolesRegister.bind(views) as AdminViews['rolesRegister'],
-  rolesView: views.rolesView.bind(views) as AdminViews['rolesView'],
-  passwordPoliciesView: views.passwordPoliciesView.bind(views) as
-    AdminViews['passwordPoliciesView'],
+  claimsRequestPreview: slot.forward('claimsRequestPreview'),
+  claimsRequestJson: slot.forward('claimsRequestJson'),
+  userinfoClaimsJson: slot.forward('userinfoClaimsJson'),
+  setCryptoReporter: slot.forward('setCryptoReporter'),
+  setXacmlPages: slot.forward('setXacmlPages'),
+  setDirectoryPages: slot.forward('setDirectoryPages'),
+  setScimReader: slot.forward('setScimReader'),
+  setRolePreviewer: slot.forward('setRolePreviewer'),
+  setConfigSettingsJson: slot.forward('setConfigSettingsJson'),
+  setTruststore: slot.forward('setTruststore'),
+  truststoreJson: slot.forward('truststoreJson'),
+  kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
+  consoleRpSession: slot.forward('consoleRpSession'),
+  gateStateFor: slot.forward('gateStateFor'),
+  signOnSessionRows: slot.forward('signOnSessionRows'),
+  metricsJson: slot.forward('metricsJson'),
+  tokenSetView: slot.forward('tokenSetView'),
+  permissionsView: slot.forward('permissionsView'),
+  cryptoView: slot.forward('cryptoView'),
+  keysView: slot.forward('keysView'),
+  keysExport: slot.forward('keysExport'),
+  xacmlView: slot.forward('xacmlView'),
+  xacmlPoliciesView: slot.forward('xacmlPoliciesView'),
+  xacmlEditorView: slot.forward('xacmlEditorView'),
+  xacmlPepsView: slot.forward('xacmlPepsView'),
+  xacmlDecideView: slot.forward('xacmlDecideView'),
+  xacmlMonitorView: slot.forward('xacmlMonitorView'),
+  directoryPageJson: slot.forward('directoryPageJson'),
+  consentView: slot.forward('consentView'),
+  rolesRegister: slot.forward('rolesRegister'),
+  rolesView: slot.forward('rolesView'),
+  passwordPoliciesView: slot.forward('passwordPoliciesView'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
-  rolesPreview: views.rolesPreview.bind(views) as AdminViews['rolesPreview'],
-  claimsPreviewUser: views.claimsPreviewUser.bind(views) as
-    AdminViews['claimsPreviewUser'],
-  claimSetsJson: views.claimSetsJson.bind(views) as AdminViews['claimSetsJson'],
-  claimsJson: views.claimsJson.bind(views) as AdminViews['claimsJson'],
-  samlAttributesJson: views.samlAttributesJson.bind(views) as
-    AdminViews['samlAttributesJson'],
-  claimsRequestParameter: views.claimsRequestParameter.bind(views) as
-    AdminViews['claimsRequestParameter'],
-  vcPreviewUser: views.vcPreviewUser.bind(views) as AdminViews['vcPreviewUser'],
-  vcJson: views.vcJson.bind(views) as AdminViews['vcJson'],
-  vpConfigJson: views.vpConfigJson.bind(views) as AdminViews['vpConfigJson'],
-  realmRootUrl: views.realmRootUrl.bind(views) as AdminViews['realmRootUrl'],
-  realmSettingRows: views.realmSettingRows.bind(views) as
-    AdminViews['realmSettingRows'],
-  realmJson: views.realmJson.bind(views) as AdminViews['realmJson'],
-  realmsJson: views.realmsJson.bind(views) as AdminViews['realmsJson'],
-  tokenLifetimesJson: views.tokenLifetimesJson.bind(views) as
-    AdminViews['tokenLifetimesJson'],
-  samlAssertionSeconds: views.samlAssertionSeconds.bind(views) as
-    AdminViews['samlAssertionSeconds'],
-  samlAssertionsJson: views.samlAssertionsJson.bind(views) as
-    AdminViews['samlAssertionsJson'],
-  scimJson: views.scimJson.bind(views) as AdminViews['scimJson'],
-  scimMappingRow: views.scimMappingRow.bind(views) as
-    AdminViews['scimMappingRow'],
-  scimMonitorJson: views.scimMonitorJson.bind(views) as
-    AdminViews['scimMonitorJson']
+  rolesPreview: slot.forward('rolesPreview'),
+  claimsPreviewUser: slot.forward('claimsPreviewUser'),
+  claimSetsJson: slot.forward('claimSetsJson'),
+  claimsJson: slot.forward('claimsJson'),
+  samlAttributesJson: slot.forward('samlAttributesJson'),
+  claimsRequestParameter: slot.forward('claimsRequestParameter'),
+  vcPreviewUser: slot.forward('vcPreviewUser'),
+  vcJson: slot.forward('vcJson'),
+  vpConfigJson: slot.forward('vpConfigJson'),
+  realmRootUrl: slot.forward('realmRootUrl'),
+  realmSettingRows: slot.forward('realmSettingRows'),
+  realmJson: slot.forward('realmJson'),
+  realmsJson: slot.forward('realmsJson'),
+  tokenLifetimesJson: slot.forward('tokenLifetimesJson'),
+  samlAssertionSeconds: slot.forward('samlAssertionSeconds'),
+  samlAssertionsJson: slot.forward('samlAssertionsJson'),
+  scimJson: slot.forward('scimJson'),
+  scimMappingRow: slot.forward('scimMappingRow'),
+  scimMonitorJson: slot.forward('scimMonitorJson')
 };

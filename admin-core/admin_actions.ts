@@ -108,11 +108,12 @@
 // shape: `AdminActions` takes every module this file used to require, and the
 // three helpers it destructured, through its constructor, typed as `typeof`
 // each; `oauth2` is among them although no action calls it, so that its
-// require stays where it was. Every action is a method, and the module still
-// exports every old name — bound to a TRANSITIONAL instance built at the
-// bottom — for `admin-ui/admin.ts`, `mgmt-api/admin_api.ts`,
-// `admin_views.ts` and the tests; `AdminActions` is exported beside them for
-// the composition root.
+// require stays where it was. Every action is a method. Since R2 the
+// composition root (`common/protocol_stack.ts`) builds the instance, and the
+// module's old names are FACADES that forward to it, for
+// `admin-ui/admin.ts`, `mgmt-api/admin_api.ts`, `admin_views.ts` and the
+// tests; a process without the root builds a default at load.
+// `AdminActions` is exported beside them for the root.
 //
 // **THE EIGHT FORWARDED COLLABORATORS STAY MODULE-LEVEL `let`s**, each with
 // ONE writer — its setter, now a method the console still calls through the
@@ -129,6 +130,7 @@
 // of thing only a test that drives the surface can find, and
 // tests/vendored/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import credentials = require('../common/credentials');
 import realms = require('../common/realms');
@@ -724,6 +726,50 @@ class AdminActions {
   constructor(private readonly deps: AdminActionsDeps) {
     deps.log.debug("Entering AdminActions.constructor().");
     deps.log.debug("Leaving AdminActions.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): AdminActionsDeps {
+    helpers.log.debug("Entering AdminActions.defaultDeps().");
+    helpers.log.debug("Leaving AdminActions.defaultDeps().");
+    return {
+      log: helpers.log,
+      b64uDecode: helpers.b64uDecode,
+      numberWord: helpers.numberWord,
+      config: config,
+      credentials: credentials,
+      realms: realms,
+      stats: stats,
+      rbac: rbac,
+      mode: mode,
+      vcClaims: vcClaims,
+      vpConfig: vpConfig,
+      claimAttributes: claimAttributes,
+      auditLog: auditLog,
+      applications: applications,
+      spMetadata: spMetadata,
+      saml2: saml2,
+      saml11: saml11,
+      authorizationServers: authorizationServers,
+      refreshTokenCrypto: refreshTokenCrypto,
+      resourceMetadata: resourceMetadata,
+      softwareStatement: softwareStatement,
+      tlsClientCertificates: tlsClientCertificates,
+      federation: federation,
+      spiffeCa: spiffeCa,
+      spiffeRegistry: spiffeRegistry,
+      spiffeIdLib: spiffeIdLib,
+      signals: signals,
+      accountSignals: accountSignals,
+      oauth2: oauth2,
+      appPermissions: appPermissions,
+      consent: consent,
+      roles: roles,
+      passwordPolicy: passwordPolicy,
+      errorCodes: errorCodes,
+      krb5Principals: krb5Principals,
+      krb5PersonKeys: krb5PersonKeys
+    };
   }
 
   // A refusal THIS LAYER decided. Returns the result, so it wraps the literal.
@@ -5221,170 +5267,109 @@ class AdminActions {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules,
-// as the composition root will build one.
-const actions = new AdminActions({
-  log: helpers.log,
-  b64uDecode: helpers.b64uDecode,
-  numberWord: helpers.numberWord,
-  config: config,
-  credentials: credentials,
-  realms: realms,
-  stats: stats,
-  rbac: rbac,
-  mode: mode,
-  vcClaims: vcClaims,
-  vpConfig: vpConfig,
-  claimAttributes: claimAttributes,
-  auditLog: auditLog,
-  applications: applications,
-  spMetadata: spMetadata,
-  saml2: saml2,
-  saml11: saml11,
-  authorizationServers: authorizationServers,
-  refreshTokenCrypto: refreshTokenCrypto,
-  resourceMetadata: resourceMetadata,
-  softwareStatement: softwareStatement,
-  tlsClientCertificates: tlsClientCertificates,
-  federation: federation,
-  spiffeCa: spiffeCa,
-  spiffeRegistry: spiffeRegistry,
-  spiffeIdLib: spiffeIdLib,
-  signals: signals,
-  accountSignals: accountSignals,
-  oauth2: oauth2,
-  appPermissions: appPermissions,
-  consent: consent,
-  roles: roles,
-  passwordPolicy: passwordPolicy,
-  errorCodes: errorCodes,
-  krb5Principals: krb5Principals,
-  krb5PersonKeys: krb5PersonKeys
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AdminActions>(
+  'admin-core/admin_actions',
+  () => new AdminActions(AdminActions.defaultDeps()),
+  null,
+  helpers.log);
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AdminActions: AdminActions,
-  tokenLifetimeKeys: actions.tokenLifetimeKeys.bind(actions) as
-    AdminActions['tokenLifetimeKeys'],
-  samlAssertionKeys: actions.samlAssertionKeys.bind(actions) as
-    AdminActions['samlAssertionKeys'],
+  installInstance: (instance: AdminActions): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  tokenLifetimeKeys: slot.forward('tokenLifetimeKeys'),
+  samlAssertionKeys: slot.forward('samlAssertionKeys'),
   // The seven the console forwards. See the header.
-  setLogoutReader: actions.setLogoutReader.bind(actions) as
-    AdminActions['setLogoutReader'],
-  setDirectoryWriter: actions.setDirectoryWriter.bind(actions) as
-    AdminActions['setDirectoryWriter'],
-  setGroupWriter: actions.setGroupWriter.bind(actions) as
-    AdminActions['setGroupWriter'],
-  setSignalsReporter: actions.setSignalsReporter.bind(actions) as
-    AdminActions['setSignalsReporter'],
-  setCaepReporter: actions.setCaepReporter.bind(actions) as
-    AdminActions['setCaepReporter'],
-  setRiscReporter: actions.setRiscReporter.bind(actions) as
-    AdminActions['setRiscReporter'],
-  setXacmlPages: actions.setXacmlPages.bind(actions) as
-    AdminActions['setXacmlPages'],
-  setTruststore: actions.setTruststore.bind(actions) as
-    AdminActions['setTruststore'],
+  setLogoutReader: slot.forward('setLogoutReader'),
+  setDirectoryWriter: slot.forward('setDirectoryWriter'),
+  setGroupWriter: slot.forward('setGroupWriter'),
+  setSignalsReporter: slot.forward('setSignalsReporter'),
+  setCaepReporter: slot.forward('setCaepReporter'),
+  setRiscReporter: slot.forward('setRiscReporter'),
+  setXacmlPages: slot.forward('setXacmlPages'),
+  setTruststore: slot.forward('setTruststore'),
   TRUSTSTORE_ACTIONS: TRUSTSTORE_ACTIONS,
-  truststoreAction: actions.truststoreAction.bind(actions) as
-    AdminActions['truststoreAction'],
+  truststoreAction: slot.forward('truststoreAction'),
   KERBEROS_PRINCIPAL_ACTIONS: KERBEROS_PRINCIPAL_ACTIONS,
-  kerberosPrincipalsAction: actions.kerberosPrincipalsAction.bind(actions) as
-    AdminActions['kerberosPrincipalsAction'],
+  kerberosPrincipalsAction: slot.forward('kerberosPrincipalsAction'),
   // The thirty actions, the tables they dispatch on, and the pure helpers
   // they share with the pages that draw their buttons.
   FORM_FURNITURE: FORM_FURNITURE,
-  jtiFrom: actions.jtiFrom.bind(actions) as AdminActions['jtiFrom'],
-  tokenAction: actions.tokenAction.bind(actions) as AdminActions['tokenAction'],
-  sessionsAction: actions.sessionsAction.bind(actions) as
-    AdminActions['sessionsAction'],
-  logoutAction: actions.logoutAction.bind(actions) as
-    AdminActions['logoutAction'],
+  jtiFrom: slot.forward('jtiFrom'),
+  tokenAction: slot.forward('tokenAction'),
+  sessionsAction: slot.forward('sessionsAction'),
+  logoutAction: slot.forward('logoutAction'),
   PERMISSION_ACTIONS: PERMISSION_ACTIONS,
-  permissionsAction: actions.permissionsAction.bind(actions) as
-    AdminActions['permissionsAction'],
-  noXacml: actions.noXacml.bind(actions) as AdminActions['noXacml'],
-  xacmlAction: actions.xacmlAction.bind(actions) as AdminActions['xacmlAction'],
+  permissionsAction: slot.forward('permissionsAction'),
+  noXacml: slot.forward('noXacml'),
+  xacmlAction: slot.forward('xacmlAction'),
   USER_FIELD_PREFIX: USER_FIELD_PREFIX,
-  userFieldsFrom: actions.userFieldsFrom.bind(actions) as
-    AdminActions['userFieldsFrom'],
-  truthy: actions.truthy.bind(actions) as AdminActions['truthy'],
+  userFieldsFrom: slot.forward('userFieldsFrom'),
+  truthy: slot.forward('truthy'),
   USERS_ACTIONS: USERS_ACTIONS,
-  usersAction: actions.usersAction.bind(actions) as AdminActions['usersAction'],
-  groupsAction: actions.groupsAction.bind(actions) as
-    AdminActions['groupsAction'],
+  usersAction: slot.forward('usersAction'),
+  groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
-  applicationFieldsFrom: actions.applicationFieldsFrom.bind(actions) as
-    AdminActions['applicationFieldsFrom'],
+  applicationFieldsFrom: slot.forward('applicationFieldsFrom'),
   APPLICATION_ACTIONS: APPLICATION_ACTIONS,
-  applicationsAction: actions.applicationsAction.bind(actions) as
-    AdminActions['applicationsAction'],
-  asAction: actions.asAction.bind(actions) as AdminActions['asAction'],
+  applicationsAction: slot.forward('applicationsAction'),
+  asAction: slot.forward('asAction'),
   SAML2_SP_KIND: SAML2_SP_KIND,
-  saml2Action: actions.saml2Action.bind(actions) as AdminActions['saml2Action'],
+  saml2Action: slot.forward('saml2Action'),
   SAML11_RP_KIND: SAML11_RP_KIND,
-  saml11Action: actions.saml11Action.bind(actions) as
-    AdminActions['saml11Action'],
+  saml11Action: slot.forward('saml11Action'),
   MFA_ACTIONS: MFA_ACTIONS,
-  mfaAction: actions.mfaAction.bind(actions) as AdminActions['mfaAction'],
-  rbacAction: actions.rbacAction.bind(actions) as AdminActions['rbacAction'],
+  mfaAction: slot.forward('mfaAction'),
+  rbacAction: slot.forward('rbacAction'),
   CONSENT_ACTIONS: CONSENT_ACTIONS,
-  consentAction: actions.consentAction.bind(actions) as
-    AdminActions['consentAction'],
+  consentAction: slot.forward('consentAction'),
   ROLE_ACTIONS: ROLE_ACTIONS,
   ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
-  roleMemberKindOf: actions.roleMemberKindOf.bind(actions) as
-    AdminActions['roleMemberKindOf'],
-  rolesAction: actions.rolesAction.bind(actions) as AdminActions['rolesAction'],
-  passwordPoliciesAction: actions.passwordPoliciesAction.bind(actions) as
-    AdminActions['passwordPoliciesAction'],
+  roleMemberKindOf: slot.forward('roleMemberKindOf'),
+  rolesAction: slot.forward('rolesAction'),
+  passwordPoliciesAction: slot.forward('passwordPoliciesAction'),
   PASSWORD_POLICY_ACTIONS: PASSWORD_POLICY_ACTIONS,
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
-  claimsAction: actions.claimsAction.bind(actions) as
-    AdminActions['claimsAction'],
-  sweepText: actions.sweepText.bind(actions) as AdminActions['sweepText'],
-  vcAction: actions.vcAction.bind(actions) as AdminActions['vcAction'],
-  vpConfigAction: actions.vpConfigAction.bind(actions) as
-    AdminActions['vpConfigAction'],
-  realmsAction: actions.realmsAction.bind(actions) as
-    AdminActions['realmsAction'],
-  configAction: actions.configAction.bind(actions) as
-    AdminActions['configAction'],
-  configKnows: actions.configKnows.bind(actions) as AdminActions['configKnows'],
-  configSettingFor: actions.configSettingFor.bind(actions) as
-    AdminActions['configSettingFor'],
+  claimsAction: slot.forward('claimsAction'),
+  sweepText: slot.forward('sweepText'),
+  vcAction: slot.forward('vcAction'),
+  vpConfigAction: slot.forward('vpConfigAction'),
+  realmsAction: slot.forward('realmsAction'),
+  configAction: slot.forward('configAction'),
+  configKnows: slot.forward('configKnows'),
+  configSettingFor: slot.forward('configSettingFor'),
   TOKEN_LIFETIME_KEYS: TOKEN_LIFETIME_KEYS,
-  tokenLifetimesAction: actions.tokenLifetimesAction.bind(actions) as
-    AdminActions['tokenLifetimesAction'],
+  tokenLifetimesAction: slot.forward('tokenLifetimesAction'),
   SAML_ASSERTION_SETTINGS: SAML_ASSERTION_SETTINGS,
   SAML_ASSERTION_KEYS: SAML_ASSERTION_KEYS,
-  samlAssertionRowFor: actions.samlAssertionRowFor.bind(actions) as
-    AdminActions['samlAssertionRowFor'],
-  samlAssertionsAction: actions.samlAssertionsAction.bind(actions) as
-    AdminActions['samlAssertionsAction'],
+  samlAssertionRowFor: slot.forward('samlAssertionRowFor'),
+  samlAssertionsAction: slot.forward('samlAssertionsAction'),
   SIGNALS_CONSOLE_ACTIONS: SIGNALS_CONSOLE_ACTIONS,
-  signalsAction: actions.signalsAction.bind(actions) as
-    AdminActions['signalsAction'],
-  ssfAction: actions.ssfAction.bind(actions) as AdminActions['ssfAction'],
-  caepAction: actions.caepAction.bind(actions) as AdminActions['caepAction'],
-  riscAction: actions.riscAction.bind(actions) as AdminActions['riscAction'],
-  spiffeCommaList: actions.spiffeCommaList.bind(actions) as
-    AdminActions['spiffeCommaList'],
+  signalsAction: slot.forward('signalsAction'),
+  ssfAction: slot.forward('ssfAction'),
+  caepAction: slot.forward('caepAction'),
+  riscAction: slot.forward('riscAction'),
+  spiffeCommaList: slot.forward('spiffeCommaList'),
   SPIFFE_ENTRY_ACTIONS: SPIFFE_ENTRY_ACTIONS,
   SPIFFE_AGENT_ACTIONS: SPIFFE_AGENT_ACTIONS,
-  spiffeUnknownAction: actions.spiffeUnknownAction.bind(actions) as
-    AdminActions['spiffeUnknownAction'],
-  spiffeEntriesAction: actions.spiffeEntriesAction.bind(actions) as
-    AdminActions['spiffeEntriesAction'],
+  spiffeUnknownAction: slot.forward('spiffeUnknownAction'),
+  spiffeEntriesAction: slot.forward('spiffeEntriesAction'),
   SPIFFE_FIELD_ATTRIBUTES: SPIFFE_FIELD_ATTRIBUTES,
-  fieldToAttribute: actions.fieldToAttribute.bind(actions) as
-    AdminActions['fieldToAttribute'],
-  spiffeAgentsAction: actions.spiffeAgentsAction.bind(actions) as
-    AdminActions['spiffeAgentsAction'],
-  spiffeAction: actions.spiffeAction.bind(actions) as
-    AdminActions['spiffeAction'],
+  fieldToAttribute: slot.forward('fieldToAttribute'),
+  spiffeAgentsAction: slot.forward('spiffeAgentsAction'),
+  spiffeAction: slot.forward('spiffeAction'),
   SPIFFE_ACTIONS: SPIFFE_ACTIONS,
-  federationAction: actions.federationAction.bind(actions) as
-    AdminActions['federationAction']
+  federationAction: slot.forward('federationAction')
 };

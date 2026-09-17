@@ -39,10 +39,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AdminApiDocs` takes the modules it uses through its constructor
-// (`AdminApiDocsDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `AdminApiDocs` is exported beside them for the
-// composition root.
+// (`AdminApiDocsDeps`). Since R2 the composition root
+// (`common/protocol_stack.ts`) builds the instance, and the module's old
+// names are FACADES that forward to it, for the JavaScript callers; a process
+// without the root builds a default at load. `AdminApiDocs` is exported
+// beside them for the root.
 //
 // **THE BROWSER SCRIPT IS NOT CONVERTED.** `admin_api_explorer.js` is read
 // off disk at load, by that name, and served verbatim, exactly as before;
@@ -52,6 +53,7 @@
 import fs = require('fs');
 import path = require('path');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log, xmlEscape } = helpers;
 
 // The relaxed policy, which differs from app.js's in exactly two clauses:
@@ -183,6 +185,16 @@ class AdminApiDocs {
     deps.log.debug("Leaving AdminApiDocs.constructor().");
   }
 
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): AdminApiDocsDeps {
+    log.debug("Entering AdminApiDocs.defaultDeps().");
+    log.debug("Leaving AdminApiDocs.defaultDeps().");
+    return {
+      log: log,
+      xmlEscape: xmlEscape
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // `realmPrefix` IS THE ONE THING THIS PAGE NEEDS THAT NO OTHER PAGE HERE
   // DOES.
@@ -299,20 +311,31 @@ class AdminApiDocs {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const docsPage = new AdminApiDocs({
-  log: log,
-  xmlEscape: xmlEscape
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AdminApiDocs>(
+  'mgmt-api/admin_api_docs',
+  () => new AdminApiDocs(AdminApiDocs.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AdminApiDocs: AdminApiDocs,
   CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
   SCRIPT: SCRIPT,
   STYLE: STYLE,
-  page: docsPage.page.bind(docsPage) as AdminApiDocs['page'],
-  consoleBody: docsPage.consoleBody.bind(docsPage) as
-    AdminApiDocs['consoleBody']
+  installInstance: (instance: AdminApiDocs): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  page: slot.forward('page'),
+  consoleBody: slot.forward('consoleBody')
 };

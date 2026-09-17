@@ -12,16 +12,19 @@
 //     functions call this module's own; they are built by the constructor now
 //     (`families`, `familyById`, `sessionExpiryRules`), each exactly as it was
 //     written, and the module exports them from the instance under their old
-//     names. They hold no state, which is this directory's first rule.
-//   * `registerRoutes(app)` holds `GET` and `POST /logout`. The TRANSITIONAL
-//     instance at the bottom registers NOTHING at load (#50, R1): the module
-//     exports `registerRoutes(app)`, and `common/protocol_stack.ts` calls it
-//     at the point in the route order where requiring this module used to
-//     register the routes (rule 1). At load the instance still fills
-//     `admin.js`'s `setLogoutReader()` slot exactly as before — with a plain
-//     `require` of the console at that same point, because that is where the
-//     module read it.
-//   * The module still exports its old names from that instance for
+//     names (as getters, since R2). They hold no state, which is this
+//     directory's first rule.
+//   * `registerRoutes(app)` holds `GET` and `POST /logout`. Nothing is
+//     registered at load (#50, R1): `common/protocol_stack.ts` calls
+//     `registerRoutes(app)` at the point in the route order where requiring
+//     this module used to register the routes (rule 1).
+//   * THE INSTANCE IS THE COMPOSITION ROOT'S (#50, R2): the root builds it
+//     and installs it, and the module's `wire` step fills `admin.js`'s
+//     `setLogoutReader()` slot with it exactly as loading this module did —
+//     the console is still required by a plain `require` at load, at the
+//     point where the module read it. A process without the root builds a
+//     default, and wires it, at load.
+//   * The module's old names are FACADES that forward to that instance, for
 //     `admin-ui/admin.ts`, `mgmt-api/admin_api.ts` and the tests.
 // ---------------------------------------------------------------------------
 
@@ -166,6 +169,7 @@ import vcOffers = require('../oid4vc/vc_offers');
 import krb5Principals = require('../kerberos/krb5_principals');
 // The embedded directory, for the bound connections that ARE the LDAP session.
 import ldapServer = require('../ldap/ldap_server');
+import InstanceSlot = require('../common/instance_slot');
 
 const LOGOUT_PATH = '/logout';
 const LOGOUT_FORM = validation.z.looseObject({
@@ -223,6 +227,55 @@ class Logout {
     });
     this.sessionExpiryRules = this.buildExpiryRules();
     deps.log.debug("Leaving Logout.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): LogoutDeps {
+    helpers.log.debug("Entering Logout.defaultDeps().");
+    helpers.log.debug("Leaving Logout.defaultDeps().");
+    return {
+      crypto: crypto,
+      app: app,
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      baseUrlOf: helpers.baseUrlOf,
+      parseBody: helpers.parseBody,
+      nowSec: helpers.nowSec,
+      validation: validation,
+      config: config,
+      mode: mode,
+      stats: stats,
+      audit: audit,
+      errorCodes: errorCodes,
+      authn: authn,
+      oauth2: oauth2,
+      frontchannel: frontchannel,
+      wsfed: wsfed,
+      saml2Sso: saml2Sso,
+      vcOffers: vcOffers,
+      krb5Principals: krb5Principals,
+      ldapServer: ldapServer
+    };
+  }
+
+  // THE LOAD-TIME WORK, run once for the installed instance (#50, R2): the
+  // console's slot below, filled exactly as loading this module filled it.
+  static wire(instance: Logout): void {
+    helpers.log.debug("Entering Logout.wire().");
+    if (typeof adminConsole.setLogoutReader === 'function') {
+      adminConsole.setLogoutReader({
+        FAMILIES: instance.describedFamilies(),
+        inventoryFor: instance.inventoryFor.bind(instance),
+        terminate: instance.terminate.bind(instance),
+        // /admin/sessions and GET /admin-api/sessions (2026-09-04). The whole
+        // list rather than one identity's, and the rules that go with it —
+        // see liveSessions() for why enumerating them is this module's job
+        // and not the console's.
+        liveSessions: instance.liveSessions.bind(instance),
+        SESSION_EXPIRY_RULES: instance.sessionExpiryRules
+      });
+    }
+    helpers.log.debug("Leaving Logout.wire().");
   }
 
   // An opaque, stable handle for a row whose natural key is a CREDENTIAL. An
@@ -2571,31 +2624,6 @@ class Logout {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const logout = new Logout({
-  crypto: crypto,
-  app: app,
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape,
-  baseUrlOf: helpers.baseUrlOf,
-  parseBody: helpers.parseBody,
-  nowSec: helpers.nowSec,
-  validation: validation,
-  config: config,
-  mode: mode,
-  stats: stats,
-  audit: audit,
-  errorCodes: errorCodes,
-  authn: authn,
-  oauth2: oauth2,
-  frontchannel: frontchannel,
-  wsfed: wsfed,
-  saml2Sso: saml2Sso,
-  vcOffers: vcOffers,
-  krb5Principals: krb5Principals,
-  ldapServer: ldapServer
-});
-
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -2618,47 +2646,61 @@ const logout = new Logout({
 // of it. The guard is the same shape `ldap_server.js` uses when it fills
 // `admin_rbac.js`: a console that will not start is worse than one page that
 // says why it cannot answer.
+//
+// Since R2 the console is still required HERE, at load, and the fill itself
+// is `Logout.wire()`, run for whichever instance is installed.
 const adminConsole = require('../admin-ui/admin');
-if (typeof adminConsole.setLogoutReader === 'function') {
-  adminConsole.setLogoutReader({
-    FAMILIES: logout.describedFamilies(),
-    inventoryFor: logout.inventoryFor.bind(logout),
-    terminate: logout.terminate.bind(logout),
-    // /admin/sessions and GET /admin-api/sessions (2026-09-04). The whole
-    // list rather than one identity's, and the rules that go with it — see
-    // liveSessions() for why enumerating them is this module's job and not
-    // the console's.
-    liveSessions: logout.liveSessions.bind(logout),
-    SESSION_EXPIRY_RULES: logout.sessionExpiryRules
-  });
-}
+
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Logout>(
+  'logout/logout',
+  () => new Logout(Logout.defaultDeps()),
+  Logout.wire,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => logout.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   Logout: Logout,
+  installInstance: (instance: Logout): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   LOGOUT_PATH: LOGOUT_PATH,
   // The list of families, for /admin/logout and the management API's OpenAPI
   // document — both describe what this endpoint reaches, and a second list
   // over there would be a second answer that goes stale on the day a family
   // is added. Only the prose: `collect` and `terminate` stay in here.
-  FAMILIES: logout.describedFamilies(),
+  get FAMILIES(): Loose[] {
+    return slot.get().describedFamilies();
+  },
   // The two functions everything else calls. `admin.js` renders them at
   // /admin/logout and `admin_api.js` serves them at /admin-api/logout, which
   // is what makes the console, the API and this page one behaviour rather
   // than three — rule 7.
-  inventoryFor: logout.inventoryFor.bind(logout) as Logout['inventoryFor'],
-  terminate: logout.terminate.bind(logout) as Logout['terminate'],
+  inventoryFor: slot.forward('inventoryFor'),
+  terminate: slot.forward('terminate'),
   // EVERY live session in the service, for /admin/sessions and
   // GET /admin-api/sessions. It is on this slot rather than on one of its own
   // for the reason the slot exists at all — see setLogoutReader() in
   // admin-ui/admin.ts — and it is validated with the other three, because a
   // reader that installed the inventory and not this would leave that page
   // saying no reader is loaded on a service that plainly has one.
-  liveSessions: logout.liveSessions.bind(logout) as Logout['liveSessions'],
-  SESSION_EXPIRY_RULES: logout.sessionExpiryRules,
+  liveSessions: slot.forward('liveSessions'),
+  get SESSION_EXPIRY_RULES(): Loose {
+    return slot.get().sessionExpiryRules;
+  },
   // WHO A /logout REQUEST IS ABOUT, exported for `tests/session_clocks.js`
   // (2026-09-12) and for no caller. Whether an anonymous `?username=` may
   // name somebody else is a decision about a setting and a mode, and it is
   // the one piece of this endpoint a test can ask without a listener.
-  subjectOf: logout.subjectOf.bind(logout) as Logout['subjectOf']
+  subjectOf: slot.forward('subjectOf')
 };

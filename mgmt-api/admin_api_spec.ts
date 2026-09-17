@@ -38,21 +38,28 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AdminApiSpec` takes the modules it uses through its constructor
-// (`AdminApiSpecDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `AdminApiSpec` is exported beside them for the
-// composition root.
+// (`AdminApiSpecDeps`). Since R2 the composition root
+// (`common/protocol_stack.ts`) builds the instance, and the module's old
+// names are FACADES that forward to it, for the JavaScript callers; a process
+// without the root builds a default at load. `AdminApiSpec` is exported
+// beside them for the root.
 //
-// **`openObject()` AND `pagingObject()` ARE ALSO BOUND AT MODULE SCOPE**,
-// from that instance and under their old names, because the schema tables
-// below call them at load — some three hundred call sites that read exactly
-// as they did. The tables themselves stay module-level constants.
+// **`openObject()` AND `pagingObject()` ARE STATIC, AND BOUND AT MODULE SCOPE
+// under their old names**, because the schema tables below call them at
+// load — some three hundred call sites that read exactly as they did. Since
+// R2 nothing at load may use the instance (the root installs it later, and a
+// facade called now would build a default the root's install then refuses),
+// and the two need nothing an instance holds: they are pure shapes over
+// `PAGING_PROPERTIES`, logging to the service logger. The tables themselves
+// stay module-level constants, so `SCHEMAS` is the same value at load that
+// `mgmt-api/admin_api.ts` has always read.
 // ---------------------------------------------------------------------------
 
 // The reply shape shared by every POST here: the console's own action result,
 // unchanged. `ok` is the only member that is always present; the rest depends
 // on what was asked, which is why this schema is open rather than closed.
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
 // Which console pages list their realm's endpoints, so a GET mirroring one
 // can say that its reply carries them (2026-09-13). A library that requires
@@ -244,6 +251,16 @@ class AdminApiSpec {
     deps.log.debug("Leaving AdminApiSpec.constructor().");
   }
 
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): AdminApiSpecDeps {
+    log.debug("Entering AdminApiSpec.defaultDeps().");
+    log.debug("Leaving AdminApiSpec.defaultDeps().");
+    return {
+      log: log,
+      protocolEndpoints: protocolEndpoints
+    };
+  }
+
   // The same members as an OBJECT, for a reply that carries more than one list
   // and therefore cannot put them at the top level. Built from
   // PAGING_PROPERTIES above rather than written out again, because two
@@ -254,8 +271,8 @@ class AdminApiSpec {
   // level the number is called `matched`, which is the count AFTER a filter. A
   // drill-down's lists have no filter, so the honest name for the number is the
   // plain one.
-  pagingObject(what) {
-    const { log } = this.deps;
+  // Static since R2: the tables call it at load (see the header).
+  static pagingObject(what) {
     log.debug("Entering AdminApiSpec.pagingObject().");
     log.debug("Leaving AdminApiSpec.pagingObject().");
     return {
@@ -274,8 +291,8 @@ class AdminApiSpec {
     };
   }
 
-  openObject(description, properties) {
-    const { log } = this.deps;
+  // Static since R2: the tables call it at load (see the header).
+  static openObject(description, properties) {
     log.debug("Entering AdminApiSpec.openObject().");
     log.debug("Leaving AdminApiSpec.openObject().");
     return { type: 'object', description: description,
@@ -577,20 +594,10 @@ class AdminApiSpec {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const specBuilder = new AdminApiSpec({
-  log: log,
-  protocolEndpoints: protocolEndpoints
-});
-
-// THE HELPERS THE TABLES BELOW CALL at load, bound to that instance so
-// that every call site in them reads as it did.
-const openObject = specBuilder.openObject.bind(specBuilder) as
-  AdminApiSpec['openObject'];
-const pagingObject = specBuilder.pagingObject.bind(specBuilder) as
-  AdminApiSpec['pagingObject'];
+// THE HELPERS THE TABLES BELOW CALL at load, under their old names so that
+// every call site in them reads as it did. Static, so no instance is used.
+const openObject = AdminApiSpec.openObject;
+const pagingObject = AdminApiSpec.pagingObject;
 
 
 // One row of config.js's table, as this API reports it. Written out rather than
@@ -5465,9 +5472,28 @@ const TAG_DESCRIPTIONS = {
                      'of ignoring it.'
 };
 
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when the module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AdminApiSpec>(
+  'mgmt-api/admin_api_spec',
+  () => new AdminApiSpec(AdminApiSpec.defaultDeps()),
+  null,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   AdminApiSpec: AdminApiSpec,
   SCHEMAS: SCHEMAS,
-  buildSpec: specBuilder.buildSpec.bind(specBuilder) as
-    AdminApiSpec['buildSpec']
+  installInstance: (instance: AdminApiSpec): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  buildSpec: slot.forward('buildSpec')
 };
