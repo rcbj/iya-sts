@@ -1008,6 +1008,19 @@ module's statement rather than a guess in a select. The rule to take from it:
 **when two controls on one form are two vocabularies for one question, the one
 that survives is the one on the DECLARED side of the line.**
 
+**TWO SAML 2.0 ACTIONS DIAL OUT AND SO ANSWER WITH A PROMISE** (2026-09-17,
+#37 follow-up): `refresh-metadata` (the entry's `samlSpMetadataUrl`, or the
+realm's MDQ responder for an entry with none) and `mdq-import` (by entityID,
+creating the entry). `POST /admin/saml2` therefore resolves whatever
+`saml2Action()` answers before it redirects — `applicationsAction()`'s
+arrangement for its own `refresh-metadata`, made again here rather than made
+general, because every other action on the page is synchronous and a
+`Promise.resolve()` around all of them would hide which ones are not. The SAML
+2.0 page also draws the consumed document's STATE (fresh, stale, expired), what
+the background refresher last found, and the realm's metadata trust anchors,
+all out of `admin-core/admin_views.ts`'s view model, so `/admin-api/saml2?sp=`
+shows the same.
+
 **THE FIELD NAMES ARE THE SCHEMA'S OWN, PREFIXED `field.`**, and both halves of
 that are deliberate. The prefix is what lets `applicationFieldsFrom()` tell an
 attribute from `name` or `action` without scanning the body for schema names, so

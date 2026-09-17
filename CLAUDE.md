@@ -113,7 +113,7 @@ these protocol families:
 
 - **Kerberos v5**: a KDC on TCP/UDP 88 and MS-KKDCP, a protected service, and SPNEGO (RFC 4559/4178).
 - **WS-Trust** 1.0–1.4.
-- **SAML 2.0**: assertions, and Web Browser SSO over three bindings with Single Logout.
+- **SAML 2.0**: assertions, and Web Browser SSO over four bindings (Redirect, POST, POST-SimpleSign, Artifact) with Single Logout.
 - **SAML 1.1**: assertions, Browser/POST and Browser/Artifact, and an attribute-authority responder.
 - **WS-Federation 1.2**: the passive requestor profile.
 - **Federation**: either end of a relationship with a foreign identity service, in five protocols.
@@ -855,7 +855,7 @@ the file the row names.
 | Enforce anything by default — `oauth2.rfc9700` and `oauth2.oauth21` (which turns it on) are the modes, off unless set | `oauth-oidc/CLAUDE.md` |
 | Federate with anybody it was not CONFIGURED to federate with — the one place it refuses by default, and not a mode | `federation/CLAUDE.md` |
 | Decrypt an assertion a federation partner encrypted, consume a federated sign-out, or re-check a federated person after the session exists | `federation/CLAUDE.md` |
-| Dial a URL a CALLER supplied to fetch something FROM (`jwks_uri`, `wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| Dial a URL a CALLER supplied to fetch something FROM (`jwks_uri`, `wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it. **The fourth is a SAML MDQ lookup (2026-09-17)** — the operator's `saml2.mdqBaseUrl`, with only a request's entityID as its path, never awaited | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md` |
 | ~~Ask anybody's permission before it issues something~~ — **reversed 2026-09-01**: `/oauth2/consent`, with `oauth2.consentRequired` ON by default | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer (`Access-Control-Allow-Origin: *` until 2026-09-13) — unless the origin is this service's own or an application lists it in `appCorsOrigin`, per client where the request names one; in both modes, on every path | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** — product verifies every presented password; a Kerberos ticket, a TOTP code and a recovery code are verified in BOTH modes | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
@@ -894,7 +894,7 @@ the file the row names.
 | ~~Fake WS-Federation's `wauth`~~ — **reversed 2026-09-17 (#36)**, as a step-up rather than a fake: an unmet demand sends the person to sign in again with the factor required, and is refused only if that fails | `ws-federation/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` — a URL in a query parameter to fetch the request from is a server-side request forgery | `ws-federation/CLAUDE.md` |
 | ~~Verify a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither checked~~ — **reversed 2026-09-17 (#37)**: a present signature is verified against the SP's registered certificate in every mode, an unsigned one refused where `saml2.requireSignedAuthnRequests` says, and consumed metadata registers the SP's endpoints and keys | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
-| Encrypt an assertion to a service provider it holds no certificate for — it sends it in CLEAR and says so loudly | `saml/CLAUDE.md` |
+| Encrypt an assertion it was asked to encrypt but holds no certificate for — **product refuses** (Responder, `STS-SAML-0011`); development sends it in CLEAR and says so; an SP whose metadata publishes an encryption key is encrypted to in both | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
 
 ## The parent project's paths into this repository

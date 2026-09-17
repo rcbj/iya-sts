@@ -1065,6 +1065,7 @@ what its api may dial.
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | How far to widen the validity window of every assertion this service ISSUES, at both ends: Conditions/NotBefore is backdated by this many seconds and NotOnOrAfter is extended by it. Both builders apply it, so it reaches SAML 2.0, SAML 1.1, WS-Trust and WS-Federation alike. IssueInstant and the authentication instant are NOT moved — those state when something happened. 0 to 300; 0 is what this service always did. It is NOT `oauth2.clockSkewS`, which is the tolerance applied when this service READS a document back. |
 | `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The SignatureMethod of every XML signature this service makes on a SAML assertion, response, LogoutRequest/Response, SAML or WS-Federation metadata and a signed federated AuthnRequest, and the Redirect binding's `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`. Inclusive c14n is not offered: an assertion is signed standalone and embedded, and inclusive c14n would fail at every relying party. |
+| `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service VERIFIES may use SHA-1 (SignatureMethod or any DigestMethod). Off in both modes: refused before any cryptography, on every path (SAML 2.0 and 1.1, federation, RFC 7522, WS-Trust, WS-Federation). On: verified and recorded `weak`. |
 | `saml.organizationName` | `STS_SAML_ORGANIZATION_NAME` | `sts` | yes | `<md:OrganizationName>` in `/saml2/metadata` and `/saml11/metadata`. Empty omits the whole `<md:Organization>`, in either mode. |
 | `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Mock security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the element. |
 | `saml.organizationUrl` | `STS_SAML_ORGANIZATION_URL` | *(empty)* | yes | `<md:OrganizationURL>`; empty means this service's own base URL. |
@@ -1096,6 +1097,10 @@ identity provider in a browser profile.
 | `saml2.mockSpContextTtlMin` | `STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock service provider at /saml2/sp remembers a RelayState it minted. |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Response on the HTTP Redirect binding longer than this is logged at WARN (and still sent). |
 | `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The cap on a service provider's metadata fetched by the refresh action or uploaded on the SAML 2.0 page. |
+| `saml2.spMetadataRefresh` | `STS_SAML2_SP_METADATA_REFRESH` | `true` | yes | Whether the background refresher fetches a stale service provider metadata document again (past its `cacheDuration`, or halfway to `validUntil`) from its URL or the MDQ responder. A failed fetch changes nothing. Expiry is enforced either way. |
+| `saml2.spMetadataRefreshIntervalS` | `STS_SAML2_SP_METADATA_REFRESH_INTERVAL_S` | `300` | yes | How often the refresher looks; one node per cluster refreshes each document. Also how long a failed MDQ lookup is remembered. |
+| `saml2.metadataTrustAnchors` | `STS_SAML2_METADATA_TRUST_ANCHORS` | *(empty)* | yes | Base64 DER certificates, comma-separated, a consumed metadata document may be signed with (a federation operator's keys). Set, every document must verify against one of them or the entry's own certificate. |
+| `saml2.mdqBaseUrl` | `STS_SAML2_MDQ_BASE_URL` | *(empty)* | yes | A Metadata Query Protocol responder: `<base>/entities/<entityID>`, asked by the `mdq-import` action, by the refresh of an entry with no URL, by the refresher, and — never awaited — for a service provider with no metadata. |
 
 #### SAML 1.1
 
@@ -4440,8 +4445,10 @@ type code `0x0004`, an endpoint index, the SHA-1 of the issuer's entityID as a
 
 **Where a `LogoutResponse` goes is a guess unless you declare it.** A
 `<samlp:LogoutRequest>` carries no return address — only SP metadata has one, in a
-`SingleLogoutService` element, and this service publishes metadata and does not
-consume it. So the address is looked for in three places in order: the
+`SingleLogoutService` element. So the address is looked for in four places in
+order: the `SingleLogoutService` endpoints of the service provider's consumed
+metadata (its `ResponseLocation` for a response, on the binding the request
+arrived on where it publishes one), then the
 `samlSingleLogoutService` attribute on the application's directory entry, then
 `saml2.defaultSingleLogoutService`, then the assertion consumer service URL that
 service provider last used — **which is a guess, and it is logged as one**. It is
@@ -4460,8 +4467,12 @@ federation-wide logout it cannot observe.
 
 **A service provider's signatures are verified** (2026-09-17, #37). A signed
 AuthnRequest, LogoutRequest or LogoutResponse — the HTTP Redirect binding's
-query-string signature over the parameters as they arrived, or an enveloped one
-on HTTP POST — is checked in every mode against the service provider's
+query-string signature over the parameters as they arrived, the
+HTTP-POST-SimpleSign binding's over the form values, or an enveloped one on
+HTTP POST — in any family this service verifies (RSA PKCS#1 v1.5 and PSS,
+ECDSA, EdDSA, DSA, ML-DSA and SLH-DSA; SHA-1 only with
+`saml.allowSha1Signatures`) — is checked in every mode against the service
+provider's
 **registered** signing certificates (`samlSigningCertificate`, from its consumed
 metadata or the console), never against the certificate the request carries,
 and refused when it does not verify. The certificate a request carries is
@@ -4472,23 +4483,36 @@ metadata says `AuthnRequestsSigned="true"`, and the metadata this identity
 provider publishes says `WantAuthnRequestsSigned` accordingly. The mock service
 provider at `/saml2/sp` signs its requests with this service's key.
 
-**A service provider's metadata is consumed** — by the explicit refresh, or an
-uploaded document, never while a flow runs: its AssertionConsumerService and
+**A service provider's metadata is consumed** — by the explicit refresh, an
+uploaded document, the Metadata Query Protocol (`saml2.mdqBaseUrl`) or the
+background refresher, never while a flow runs, and an EntitiesDescriptor is read
+for the one entity asked for: its AssertionConsumerService and
 SingleLogoutService endpoints become its registered return addresses (a request
 is then answered only at one of them, by index, by URL or by default, in every
 mode), its signing and encryption certificates are registered, a NameIDPolicy
 naming a format its metadata does not declare is answered `InvalidNameIDPolicy`,
-and `WantAssertionsSigned` is honoured in product. `validUntil` and
-`cacheDuration` are recorded and shown, and an already expired document is
-refused.
+and `WantAssertionsSigned` is honoured in product; a published encryption key
+means its assertions are encrypted in every mode. **The effective `validUntil`
+is enforced** — past it every request from that service provider is refused
+until newer metadata is consumed — and **a document past its `cacheDuration` is
+fetched again in the background** (`saml2.spMetadataRefresh`), a failed fetch
+leaving the last good one in force. A document must verify against a trust
+anchor — the entry's `samlSpMetadataSigningCertificate` or the realm's
+`saml2.metadataTrustAnchors` — whenever one is set.
+
+**The artifact resolution service authenticates its caller**: the resolver must
+be the service provider the artifact was issued to, and — where signed requests
+are required — show it, by signing the `ArtifactResolve` or by presenting its
+registered certificate as the TLS client certificate. `/saml11/responder` does
+the same for an artifact.
 
 **What it does not do**, stated rather than left to be discovered: there is no
 identity-provider-initiated SSO with an unsolicited Response, no ECP profile and
 its PAOS binding (refused **by name** rather than quietly answered over HTTP POST
 — a service provider that asked for PAOS and got a form post would conclude that
 PAOS worked), no Name Identifier Management and no Assertion Query and Request
-profile; an ECDSA request signature is not verified (RSA only); and a consumed
-metadata document's `validUntil` is not enforced after it was consumed.
+profile; and no MAC, MD5 or stateful hash-based (HSS/LMS, XMSS) signature is
+verified.
 
 `/admin/saml2` is the console page for it, and it answers the one question
 nothing else here can: **which metadata document do I configure this service

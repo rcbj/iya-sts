@@ -145,7 +145,7 @@ console, `/admin-api`, SCIM or LDAP on port 389.
 | SPIFFE authorities | a realm's X.509 SVID authorities, unpacked | per process | until the stored authorities change | — |
 | Kerberos keys | long-term keys derived for each principal | per trust realm, in the realm's own principal database | until the principal changes; never persisted | — |
 | SAML 1.1 assertions | issued assertions, kept so a Browser/Artifact request can be answered | per realm, persisted | the oldest is dropped past the limit | `saml11.assertionCacheMax` (500) |
-| SAML SP metadata | a service provider's metadata, stored as received, and what consuming it registered | the application entry | until refreshed from the application's page or re-uploaded on `/admin/saml2`; its `validUntil` and `cacheDuration` are shown and not enforced | — |
+| SAML SP metadata | a service provider's metadata, stored as received, and what consuming it registered | the application entry | until refreshed (the application's page, an upload on `/admin/saml2`, an MDQ import, or the background refresher once its `cacheDuration` has elapsed); past its effective `validUntil` it is EXPIRED and every request from that service provider is refused | — |
 | Dead-letter counts | an estimate of each Shared Signals stream's dead letters | per realm | recounted at each sweep | — |
 | Remote PEP policy | the policy set a remote PEP last pulled | the PEP container | until the next successful pull | — |
 | Debugger files | the embedded debugger's files with this service's address filled in | per process | until the file changes (400 entries) | — |
