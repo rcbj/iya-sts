@@ -93,6 +93,8 @@ const errorCodes = require('./error_codes');
 // Who a request came from, a LEAF (config, net, bunyan). See the
 // `x-forwarded-for` line in proxy() below.
 const clientAddress = require('./client_address');
+// A LEAF: the affinity maps below, described to `/admin/caches` (#74).
+const cacheRegistry = require('./cache_registry');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -894,6 +896,42 @@ let workers = [];
 const affinities = {};
 affinities[PROTOCOL_POOL] = new Map();
 affinities[SURFACE_POOL] = new Map();
+
+// Described to `/admin/caches` (#74, rule 3ap), one row per pin across both
+// pools. Only the FRONT process fills these, so a request worker drawing the
+// page lists none. Keys are session ids and flow values, shown digested.
+const affinityCount = cacheRegistry.register({
+  name: 'workers.request-affinity',
+  title: 'Request worker affinity',
+  description: 'Which request worker a browser session, a credential or a ' +
+    'flow is pinned to, one map per pool (protocol and surfaces), so a ' +
+    'multi-step flow stays on the worker that holds it.',
+  owner: 'common/request_pool.js',
+  scope: 'process',
+  settings: ['workers.requestCount', 'workers.surfaceCount'],
+  maxEntries: function () {
+    return AFFINITY_MAX * POOLS.length;
+  },
+  lifetime: function () {
+    return 'No expiry: forgotten when its worker exits; the oldest goes ' +
+      'first when a pool holds ' + AFFINITY_MAX + '. Front process only.';
+  },
+  entries: function () {
+    const out = [];
+    POOLS.forEach(function (pool) {
+      affinities[pool].forEach(function (pid, key) {
+        out.push({ key: pool + ' ' + cacheRegistry.digestKey(key) +
+                     ' → pid ' + pid,
+                   validUntil: null,
+                   valid: workers.some(function (one) {
+                     return one.pid === pid;
+                   }),
+                   basis: 'worker pool' });
+      });
+    });
+    return out;
+  }
+});
 
 let socketDir = '';
 let nextSocket = 1;
@@ -2864,6 +2902,11 @@ function heldWorker(key, pool) {
   const held = pid ? readyWorkers(pool).filter(function (one) {
     return one.pid === pid;
   })[0] : null;
+  if (held) {
+    affinityCount.hit();
+  } else {
+    affinityCount.miss();
+  }
   log.debug("Leaving heldWorker().");
   return held || null;
 }

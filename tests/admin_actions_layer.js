@@ -425,6 +425,11 @@ function checkNothingRequiresItEarly(t) {
                    // required at 18a, immediately after the console, so the
                    // require is a cache hit and moves no route.
                    'admin-ui/pki_admin.ts',
+                   // The caches page (#74, 2026-09-17), for `adminViews`'
+                   // paging only — one cache's entries. Required at 18g,
+                   // after the console, so the require is a cache hit and
+                   // moves no route.
+                   'admin-ui/caches_admin.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

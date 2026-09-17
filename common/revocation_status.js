@@ -256,6 +256,7 @@ const mode = require('./mode');
 // code non-enumerably through `mark()`, because verdicts are copied whole onto
 // `/tls/sign-in` and `/admin-api` replies and a code must never reach a client.
 const errorCodes = require('./error_codes');
+const cacheRegistry = require('./cache_registry');
 const keystore = require('./keystore');
 const pki = require('./pki');
 // Required for `isRevoked()` and the reason table, AND for its side effect:
@@ -402,6 +403,12 @@ function selfSigned(cert) {
 // ---------------------------------------------------------------------------
 const parsed = new Map();
 const PARSE_MEMO_ENTRIES = 256;
+// Registry counters (#74), assigned by `registerCaches()` at the foot of this
+// file; the no-op stands in until then.
+const NO_COUNT = { hit: function () {}, miss: function () {} };
+let parsedCount = NO_COUNT;
+let failuresCount = NO_COUNT;
+let pemFilesCount = NO_COUNT;
 
 function parsedTier(pem) {
   log.debug("Entering parsedTier().");
@@ -411,9 +418,11 @@ function parsedTier(pem) {
     return null;
   }
   if (parsed.has(key)) {
+    parsedCount.hit();
     log.debug("Leaving parsedTier().");
     return parsed.get(key);
   }
+  parsedCount.miss();
   const cert = x509Of(key);
   if (parsed.size >= PARSE_MEMO_ENTRIES) {
     parsed.clear();
@@ -1032,18 +1041,38 @@ function remember(cache, key, entry) {
   log.debug("Leaving remember().");
 }
 
+// The three caches `cached()` serves, each with its registry counter (#74),
+// filled where they are registered at the foot of this file.
+const lookupCounts = new Map();
+
+function countLookup(cache, hit) {
+  log.debug("Entering countLookup().");
+  const count = lookupCounts.get(cache);
+  if (count) {
+    if (hit) {
+      count.hit();
+    } else {
+      count.miss();
+    }
+  }
+  log.debug("Leaving countLookup().");
+}
+
 function cached(cache, key) {
   log.debug("Entering cached().");
   const entry = cache.get(key);
   if (!entry) {
+    countLookup(cache, false);
     log.debug("Leaving cached().");
     return null;
   }
   if (entry.expiresAt <= Date.now()) {
     cache.delete(key);
+    countLookup(cache, false);
     log.debug("Leaving cached().");
     return null;
   }
+  countLookup(cache, true);
   log.debug("Leaving cached().");
   return entry;
 }
@@ -1052,14 +1081,17 @@ function failedRecently(url) {
   log.debug("Entering failedRecently().");
   const failed = failures.get(url);
   if (!failed) {
+    failuresCount.miss();
     log.debug("Leaving failedRecently().");
     return null;
   }
   if (failed.until <= Date.now()) {
     failures.delete(url);
+    failuresCount.miss();
     log.debug("Leaving failedRecently().");
     return null;
   }
+  failuresCount.hit();
   log.debug("Leaving failedRecently().");
   return failed;
 }
@@ -1327,9 +1359,11 @@ function pemFileOf(settingKey) {
     stat = fs.statSync(file);
     const held = pemFiles.get(settingKey);
     if (held && held.file === file && held.mtimeMs === stat.mtimeMs) {
+      pemFilesCount.hit();
       log.debug('Leaving pemFileOf(). Unchanged.');
       return held;
     }
+    pemFilesCount.miss();
     text = fs.readFileSync(file, 'utf8');
   } catch (e) {
     if (settingKey === 'pki.revocationLdapCaFile') {
@@ -4017,6 +4051,176 @@ function cacheReport() {
   return { lists: out, ocspResponses: responses, failures: failures.size };
 }
 
+// ---------------------------------------------------------------------------
+// THE SIX CACHES ABOVE, DESCRIBED TO `/admin/caches` (#74, rule 3ap). Keys
+// only: a CRL's entries, an OCSP answer and a fetched certificate stay here.
+// The in-flight dedupe is not a cache — it holds a promise for the length of
+// one fetch — and is not registered.
+// ---------------------------------------------------------------------------
+function timedRows(cache, deadline) {
+  log.debug("Entering timedRows().");
+  const out = [];
+  cache.forEach(function (entry, key) {
+    out.push({ key: cacheRegistry.clipKey(key), validUntil: deadline(entry) });
+  });
+  log.debug("Leaving timedRows().");
+  return out;
+}
+
+function registerCaches() {
+  log.debug("Entering registerCaches().");
+  const bound = function () {
+    return cacheLimit();
+  };
+  const crlAge = function () {
+    return 'Until the earlier of the list\'s nextUpdate and ' +
+      'pki.revocationCrlMaxAgeS (' +
+      config.value('pki.revocationCrlMaxAgeS') + ' s) after it was ' +
+      'fetched; the oldest write goes first when full.';
+  };
+  lookupCounts.set(crlCache, cacheRegistry.register({
+    name: 'revocation.crl',
+    title: 'Certificate revocation lists',
+    description: 'CRLs fetched to check a presented certificate, parsed ' +
+      'and verified, keyed by distribution point URL and the ' +
+      'fingerprints of the signers they were verified against.',
+    owner: 'common/revocation_status.js',
+    scope: 'process',
+    settings: ['pki.revocationCrlCacheEntries', 'pki.revocationCrlMaxAgeS'],
+    maxEntries: bound,
+    lifetime: crlAge,
+    entries: function () {
+      return timedRows(crlCache, function (e) {
+        return e.expiresAt;
+      });
+    }
+  }));
+  lookupCounts.set(ocspCache, cacheRegistry.register({
+    name: 'revocation.ocsp',
+    title: 'OCSP responses',
+    description: 'OCSP answers about one certificate each, keyed by ' +
+      'responder URL, issuer fingerprint and serial number.',
+    owner: 'common/revocation_status.js',
+    scope: 'process',
+    settings: ['pki.revocationCrlCacheEntries', 'pki.revocationOcspMaxAgeS'],
+    maxEntries: bound,
+    lifetime: function () {
+      return 'Until the earlier of the answer\'s nextUpdate and ' +
+        'pki.revocationOcspMaxAgeS (' +
+        config.value('pki.revocationOcspMaxAgeS') + ' s); the oldest ' +
+        'write goes first when full.';
+    },
+    entries: function () {
+      return timedRows(ocspCache, function (e) {
+        return e.expiresAt;
+      });
+    }
+  }));
+  lookupCounts.set(certCache, cacheRegistry.register({
+    name: 'revocation.ca-certificates',
+    title: 'Fetched issuer certificates',
+    description: 'Certificates fetched from an Authority Information ' +
+      'Access caIssuers URL or an LDAP cACertificate attribute, to build a ' +
+      'path for a revocation check. Never trusted for being fetched.',
+    owner: 'common/revocation_status.js',
+    scope: 'process',
+    settings: ['pki.revocationCrlCacheEntries', 'pki.revocationCrlMaxAgeS'],
+    maxEntries: bound,
+    lifetime: crlAge,
+    entries: function () {
+      return timedRows(certCache, function (e) {
+        return e.expiresAt;
+      });
+    }
+  }));
+  failuresCount = cacheRegistry.register({
+    name: 'revocation.failures',
+    title: 'Failed revocation fetches',
+    description: 'A negative cache: a CRL, OCSP or certificate fetch that ' +
+      'failed is not tried again until its retry window has passed, and ' +
+      'the remembered failure is the answer meanwhile. A hit is a failure ' +
+      'reused.',
+    owner: 'common/revocation_status.js',
+    scope: 'process',
+    settings: ['pki.revocationFailureRetryS',
+               'pki.revocationCrlCacheEntries'],
+    maxEntries: bound,
+    lifetime: function () {
+      return 'pki.revocationFailureRetryS (' +
+        config.value('pki.revocationFailureRetryS') + ' s) after the ' +
+        'failure; zero remembers nothing.';
+    },
+    entries: function () {
+      return timedRows(failures, function (e) {
+        return e.until;
+      });
+    }
+  });
+  parsedCount = cacheRegistry.register({
+    name: 'revocation.parsed-tiers',
+    title: 'Parsed trust-anchor certificates',
+    description: 'This service\'s own CA certificates, parsed once per PEM ' +
+      'for the revocation register walk. Keyed by the PEM itself; a ' +
+      'replaced CA has a different PEM and a fresh entry.',
+    owner: 'common/revocation_status.js',
+    scope: 'process',
+    maxEntries: function () {
+      return PARSE_MEMO_ENTRIES;
+    },
+    lifetime: function () {
+      return 'No expiry: keyed by content. When full the whole memo is ' +
+        'emptied at once.';
+    },
+    entries: function () {
+      const out = [];
+      parsed.forEach(function (cert, pem) {
+        out.push({
+          key: cert && cert.subject
+            ? cert.subject.replace(/\n/g, ', ') + ' (' +
+              cert.fingerprint256.slice(0, 23) + '…)'
+            : 'unparsable PEM of ' + pem.length + ' characters',
+          validUntil: null,
+          basis: 'content-keyed'
+        });
+      });
+      return out;
+    }
+  });
+  pemFilesCount = cacheRegistry.register({
+    name: 'revocation.pem-files',
+    title: 'Trust files read from disk',
+    description: 'The PEM files named by revocation settings, read once ' +
+      'and kept until the file\'s modification time changes.',
+    owner: 'common/revocation_status.js',
+    scope: 'process',
+    maxEntries: function () {
+      return null;
+    },
+    lifetime: function () {
+      return 'Until the named file changes on disk, or the setting names ' +
+        'another file. One entry per setting.';
+    },
+    entries: function () {
+      const out = [];
+      pemFiles.forEach(function (entry, settingKey) {
+        let current = false;
+        try {
+          current = entry.file === String(config.value(settingKey) || '') &&
+            fs.statSync(entry.file).mtimeMs === entry.mtimeMs;
+        } catch (e) {
+          log.debug("Caught in registerCaches(): " +
+                    ((e && e.message) || e));
+          current = false;
+        }
+        out.push({ key: settingKey + ' → ' + entry.file, validUntil: null,
+                   valid: current, basis: 'file modification time' });
+      });
+      return out;
+    }
+  });
+  log.debug("Leaving registerCaches().");
+}
+
 // For a test: forget every cached list and failure.
 function resetCache() {
   log.debug("Entering resetCache().");
@@ -4029,6 +4233,8 @@ function resetCache() {
   pemFiles.clear();
   log.debug("Leaving resetCache().");
 }
+
+registerCaches();
 
 module.exports = {
   POLICIES: POLICIES,

@@ -5829,3 +5829,42 @@ things are this console's.
 
 `tests/admin_credential_controls.js` drives the actions, the portal page and the
 enrolment step in a child process; no owned browser job presses the section yet.
+
+## `/admin/caches`: EVERY CACHE AND REPLAY STORE, AND ONE STORE'S ENTRIES (#74, 2026-09-17)
+
+Monitoring → Caches, drawn by `caches_admin.ts` from
+`common/cache_registry.js` (`common/CLAUDE.md`, 3ap). It has two tables, in
+`docs/caches.md`'s order: the caches, then the replay caches and nonces. Each
+store shows:
+- its name, description, lifetime, scope, owner and settings;
+- its current size, valid and expired entries, and maximum size;
+- its hit ratio, with the counts beside it.
+
+`?cache=<name>` is the drill-down. It lists that store's entries, soonest
+deadline first, paged with the shared `pagedRows()` / `pageNavPair()` /
+`perPageForm()`. Each entry shows its realm, key, state, time still valid, and
+deadline.
+
+Five decisions:
+
+* **A QUERY PARAMETER, NOT A PATH SEGMENT**, because no console route has one.
+  `up` is `upTo('/admin/caches', title, {})` on every branch, the unknown one
+  included. The list has no filter or page of its own, so there is no
+  `LIST_PARAMS` row, and `perPageForm()` carries `cache` as its hidden input.
+* **AN UNKNOWN NAME IS A 200 PAGE** saying so, marked `STS-ADMIN-0021`. The
+  JSON is `found: false` with `known`, the names that exist.
+* **A SERVICE PAGE** (`SERVICE_PAGES` in `admin_scope.ts`). It shows every
+  realm's partition of every per-realm store, next to the process-wide ones.
+* **NO CONTROL.** Each owner has a test-only reset. An operator's lever is the
+  setting that bounds the store, and the page names those settings.
+* **`NOT_LISTED` is the one list this file keeps.** It holds:
+  - two things `docs/caches.md` names that this process does not hold in
+    memory: SP metadata on the application entry, and a remote PEP's policy;
+  - four single-value memos.
+
+  The page draws the list, for `encryption_admin.ts`'s reason: without it, the
+  page would answer "is X on it" by silence.
+
+`GET /admin-api/caches` (with `cache`, `page`, `per`) answers the same
+`cachesJson()` minus the drawing's `paging` (rule 7).
+`tests/cache_registry.js` covers the registry, the owners and the page.

@@ -1558,23 +1558,35 @@ function acceptsRows(realmId) {
   return !retired.has(partitionId(realmId));
 }
 
-function keyed(factory) {
+function keyed(factory, onLookup) {
   log.debug("Entering keyed().");
   const per = new Map();
+  // `onLookup(hit)` (#74): a cache built on this reports each lookup to the
+  // cache registry (`cache_registry.js`). Optional; it must be cheap, because
+  // it is on the path of every property read of `helpers.js`'s STS proxy.
+  const observe = typeof onLookup === 'function' ? onLookup : null;
   onRemove(function (id) { per.delete(id); });
   function forCurrent() {
     log.debug("Entering forCurrent().");
     const id = currentId();
-    if (!per.has(id)) {
+    const held = per.has(id);
+    if (!held) {
       per.set(id, factory(current()));
+    }
+    if (observe) {
+      observe(held);
     }
     log.debug("Leaving forCurrent().");
     return per.get(id);
   }
   forCurrent.of = function (id) {
     log.debug("Entering of().");
-    if (!per.has(id)) {
+    const held = per.has(id);
+    if (!held) {
       per.set(id, factory(get(id) || DEFAULT_REALM));
+    }
+    if (observe) {
+      observe(held);
     }
     log.debug("Leaving of().");
     return per.get(id);

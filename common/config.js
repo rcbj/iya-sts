@@ -4674,7 +4674,8 @@ const SETTINGS = [
                  'made after it.' },
 
   // RFC 9101, THE JWT-SECURED AUTHORIZATION REQUEST (2026-09-13). Eight rows
-  // (with RFC 9396's `authorizationDetailsMaxEntries` among them), and
+  // (ten since #35's two below; with RFC 9396's
+  // `authorizationDetailsMaxEntries` among them), and
   // `oauth-oidc/request_object.ts` argues each. Every one is runtime and may be
   // carried by a realm: the six about a REQUEST are read per request, and the
   // two about the ENCRYPTION KEY are read when a realm's key set is made,
@@ -4747,6 +4748,41 @@ const SETTINGS = [
                  'with invalid_request_object. OFF by default; with it off, ' +
                  'each is checked where present — `iss` must be the client ' +
                  'and `aud` this authorization server.' },
+
+  // #35 (2026-09-17): a request object's `jti`, remembered. Two rows, both
+  // runtime and so both settable on a trust realm; `request_object.ts` reads
+  // them where it looks and `oauth2.ts` where it spends.
+  { key: 'oauth2.requestObjectJtiOnce', group: 'OAuth 2.0 / OIDC',
+    label: 'A request object\'s jti is accepted once',
+    env: 'STS_OAUTH2_REQUEST_OBJECT_JTI_ONCE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Remember the `jti` of every RFC 9101 request object, and ' +
+                 'refuse with invalid_request_object one whose client and ' +
+                 '`jti` have already been used. A `jti` is spent when an ' +
+                 'authorization response is issued on the object, or when ' +
+                 'the pushed authorization request endpoint keeps it — not ' +
+                 'on the reads before and after the sign-in screen, which ' +
+                 'are one request. It is kept in the used-assertion history ' +
+                 'beside RFC 7523 JWTs, so it persists where that does. ON ' +
+                 'by default and in both modes; OFF accepts a replayed ' +
+                 'request object until it expires, which is what this ' +
+                 'service did until 2026-09-17. A request object with no ' +
+                 '`jti` is accepted either way: RFC 9101 does not require ' +
+                 'one.' },
+
+  { key: 'oauth2.requestObjectJtiRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'How long a request object\'s jti is kept without exp (s)',
+    env: 'STS_OAUTH2_REQUEST_OBJECT_JTI_RETENTION_S', type: 'int',
+    dflt: 3600, min: 60, max: 2592000, runtime: true,
+    description: 'How long a spent request object\'s `jti` is remembered ' +
+                 'when the object carries no `exp`. One with `exp` is ' +
+                 'remembered until then plus ' +
+                 'oauth2.clientAssertionSkewS, which is every moment it ' +
+                 'could be accepted. One without `exp` never stops being ' +
+                 'acceptable, so this is the window in which a replay of it ' +
+                 'is refused — and after it the replay is ACCEPTED. A client ' +
+                 'that wants its request objects refused for good sends ' +
+                 '`exp`.' },
 
   { key: 'oauth2.requestUriCacheS', group: 'OAuth 2.0 / OIDC',
     label: 'request_uri content cache (s)',

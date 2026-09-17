@@ -102,6 +102,7 @@ import errorCodes = require('../common/error_codes');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
 
 // A loose JSON-shaped object: a detail, a definition, a refusal.
 type Json = any;
@@ -123,6 +124,38 @@ const COMMON_STRINGS = ['identifier'];
 // bound only stops a process that has seen a great many from holding them all.
 const definitionCache = new Map();
 const MAX_CACHED_DEFINITIONS = 512;
+
+// Described to `/admin/caches` (#74, rule 3ap). A row names the type and how
+// long its definition is; the definition and its compiled schema stay here.
+const definitionCount = cacheRegistry.register({
+  name: 'oauth2.authorization-details-types',
+  title: 'Parsed authorization_details types',
+  description: 'RFC 9396 type definitions declared on resource ' +
+    'applications, parsed and their JSON Schemas compiled once per distinct ' +
+    'definition text. Shared by every realm, because the text is the key.',
+  owner: 'oauth-oidc/authorization_details.ts',
+  scope: 'process',
+  maxEntries: function (): number {
+    return MAX_CACHED_DEFINITIONS;
+  },
+  lifetime: function (): string {
+    return 'No expiry: keyed by the definition text, so an edited ' +
+      'definition is a new entry. The oldest goes first when full.';
+  },
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    definitionCache.forEach(function (parsed: Json, text: string): void {
+      out.push({
+        key: (parsed && parsed.type ? parsed.type : '(unusable)') +
+          ' — ' + text.length + ' characters' +
+          (parsed && parsed.problem ? ' — ' + parsed.problem : ''),
+        validUntil: null,
+        basis: 'content-keyed'
+      });
+    });
+    return out;
+  }
+});
 
 // ALLOW, ONCE: `username client digest` → expiry. Persisted, because the
 // consent POST and the authorization endpoint's second pass may be answered by
@@ -177,9 +210,11 @@ class AuthorizationDetails {
     log.debug("Entering AuthorizationDetails.definitionOf().");
     const key = String(value);
     if (definitionCache.has(key)) {
+      definitionCount.hit();
       log.debug("Leaving AuthorizationDetails.definitionOf(). Cached.");
       return definitionCache.get(key);
     }
+    definitionCount.miss();
     const parsed = applications.authorizationDetailsTypeOf(key);
     if (definitionCache.size >= MAX_CACHED_DEFINITIONS) {
       definitionCache.delete(definitionCache.keys().next().value);

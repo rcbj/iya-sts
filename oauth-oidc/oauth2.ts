@@ -214,6 +214,7 @@ import validation = require('../common/validation');
 // The registry of error codes, a leaf. Every refusal below is MARKED on the
 // response before it is sent, and a code is never written into one.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 // EVERY REFRESH TOKEN IS ENCRYPTED TO ITS REALM (2026-09-12). A LIBRARY that
 // registers no route — refreshToken() seals through it, and everything below
 // that reads a refresh token opens through it first.
@@ -479,6 +480,45 @@ const MAX_SIGNED_METADATA = 64;
 // the claims, serialised -> { signed, until }
 const signedMetadataCache = realms.map();
 
+// Described to `/admin/caches` (#74, rule 3ap). The key shown is the
+// algorithm, header choice, kid format and issuer — the claims half of the
+// real key is a whole metadata document.
+const signedMetadataCount = cacheRegistry.register({
+  name: 'oauth2.signed-metadata',
+  title: 'Signed authorization server metadata',
+  description: 'RFC 8414 signed_metadata JWTs, reused while the metadata ' +
+    'and signing settings they were built from are unchanged, so a busy ' +
+    'discovery endpoint does not sign on every fetch.',
+  owner: 'oauth-oidc/oauth2.ts',
+  scope: 'realm',
+  settings: ['oauth2.signedMetadataCacheS',
+             'oauth2.maxSignedMetadataEntries'],
+  maxEntries: function (): number {
+    return Number(config.value('oauth2.maxSignedMetadataEntries')) ||
+      MAX_SIGNED_METADATA;
+  },
+  lifetime: function (): string {
+    return 'oauth2.signedMetadataCacheS (' +
+      config.value('oauth2.signedMetadataCacheS') + ' s) after signing, ' +
+      'per realm; the oldest goes first when full.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmRows(
+      realms.list().map(function (r: { id: string }): string {
+        return r.id;
+      }),
+      function (id: string): Map<unknown, unknown> {
+        return signedMetadataCache.realmMap(id);
+      },
+      function (held: Json, key: unknown): Json {
+        const parts = String(key).split(' ');
+        return { key: parts.slice(0, 3).join(' ') + ' ' +
+                   String(held.issuer || ''),
+                 validUntil: held.until };
+      });
+  }
+});
+
 // THE DEFAULT OF `oauth2.authorizationCodeTtlS` (2026-09-12), kept under its
 // old name because four places below explain themselves in terms of it.
 // `authCodeTtlMs()` is the live value and what every reader uses; a code
@@ -538,6 +578,38 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes',
 // this behaves as the plain Map it replaced. See common/realms.js.
 // code -> the token set it was redeemed for
 const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes' });
+
+// Described to `/admin/caches` (#74, rule 3ap). The key is an authorization
+// code and the value holds the tokens it produced, so a row is the code's
+// digest, the client and when the record is dropped — nothing else.
+const redeemedCodesCount = cacheRegistry.register({
+  name: 'oauth2.redeemed-codes',
+  title: 'Redeemed authorization codes',
+  description: 'Each authorization code already exchanged at the token ' +
+    'endpoint, so a second exchange is recognised as a replay (RFC 9700 ' +
+    'section 4.5, RFC 6749 section 4.1.2).',
+  owner: 'oauth-oidc/oauth2.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a code already redeemed, presented again',
+  settings: ['oauth2.authorizationCodeTtlS'],
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'One code lifetime after the code would have expired. No size ' +
+      'limit.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, redeemedCodes,
+      function (done: Json, code: unknown): Json {
+        return { key: cacheRegistry.digestKey(code) + ' for ' +
+                   String((done && done.client_id) || '?'),
+                 validUntil: Number(done && done.forget) || null };
+      });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // THE ROLE GATE, ASKED ONCE PER KIND OF THING A TOKEN RESPONSE CARRIES.
@@ -1978,6 +2050,7 @@ class OAuth2Server {
     const now = Date.now();
     const held = signedMetadataCache.get(key);
     if (held && held.until > now) {
+      signedMetadataCount.hit();
       // Logged, because a reader of this log comparing two fetches has to be
       // able to tell a document that was signed again from one that was not —
       // they are byte-identical and nothing else would say which happened.
@@ -1986,6 +2059,7 @@ class OAuth2Server {
                 "s ago and is reused.");
       return held.signed;
     }
+    signedMetadataCount.miss();
     logArtifact('RFC 8414 signed_metadata', 'before signing', claims);
     try {
       const signed = self.signPublishedDocument(claims, meta.issuer, 3600,
@@ -1999,6 +2073,7 @@ class OAuth2Server {
         signedMetadataCache.delete(signedMetadataCache.keys().next().value);
       }
       signedMetadataCache.set(key, { signed: signed, at: now,
+                                     issuer: meta.issuer,
                                      until: now + self.signedMetadataTtlMs() });
       log.debug("Leaving OAuth2Server.signedMetadata().");
       return signed;
@@ -4697,7 +4772,7 @@ class OAuth2Server {
                                    issuedAcr?: Json): Promise<any> {
     const { log, logArtifact, randomId, hasScope, bcp, oauth21, frontchannel,
             applications, errorCodes, par, gate, debuggerAccess,
-            clusterClaims } = this.deps;
+            clusterClaims, requestObject } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.issueAuthorizationResponse().");
     // Everything minted below is this authorization server's, so the base it is
@@ -4941,6 +5016,26 @@ class OAuth2Server {
       }
       clusterClaims.releaseUnlessSucceeded(res, parClaim.handle);
       par.spend(pushedUri);
+    }
+
+    // RFC 9101: A REQUEST OBJECT'S `jti` IS SPENT HERE (#35), for the pushed
+    // request_uri's reason above — every pass before this one only looked at
+    // it (`request_object.ts`'s `lookUp()`). An atomic claim in the
+    // used-assertion history, bound to this response and kept by anything
+    // under 400: a redirect and a form_post page are what issuing looks like
+    // here. A pushed request carries no `once`; its push was its use.
+    if (req.stsJar && req.stsJar.once) {
+      const spent = await requestObject.spend({
+        once: req.stsJar.once, request: req, keepBelow: 400,
+        clientId: String(query.client_id)
+      });
+      if (!spent.ok) {
+        log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
+                  "request object's jti was not spent.");
+        errorCodes.mark(res, errorCodes.codeOf(spent) || 'STS-OAUTH-0374');
+        return self.oauthError(res, spent.status || 400, spent.error,
+                               spent.description);
+      }
     }
 
     // THE APPLICATION. Recorded here and not at the authentication funnel,
@@ -5380,7 +5475,8 @@ class OAuth2Server {
       if (result.used) {
         req.stsJar = { outer: outer, source: result.source, alg: result.alg,
                        encrypted: result.encrypted || '',
-                       pushed: result.pushed || null };
+                       pushed: result.pushed || null,
+                       once: result.once || null };
         Object.defineProperty(req, 'query', { value: result.params,
                                               writable: true,
                                               configurable: true,
@@ -7337,6 +7433,11 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.replayOrRefuseRedemption().");
     self.forgetStaleRedemptions();
     const done = redeemedCodes.get(code);
+    if (done) {
+      redeemedCodesCount.hit();
+    } else {
+      redeemedCodesCount.miss();
+    }
     if (!done) {
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). This " +
                 "server has no record " +
@@ -10592,6 +10693,8 @@ class OAuth2Server {
     let source = 'form';
     let objectAlg = '';
     let objectEncrypted = '';
+    // What a pushed request object is remembered by (#35), spent in step 7.
+    let pushedOnce: Json = null;
     if (body.request !== undefined && String(body.request) !== '') {
       // Section 3: the form carries the client's authentication and `request`,
       // and "all other request parameters ... MUST appear as claims of the
@@ -10634,6 +10737,7 @@ class OAuth2Server {
           'STS-OAUTH-0424');
       }
       params = Object.assign({}, verified.params);
+      pushedOnce = verified.once || null;
       source = 'request';
       objectAlg = String(verified.alg || '');
       objectEncrypted = String(verified.encrypted || '');
@@ -10733,6 +10837,22 @@ class OAuth2Server {
 
     // --- 7. KEPT, AND ANSWERED
     // ------------------------------------------------
+    // A PUSHED REQUEST OBJECT'S `jti` IS SPENT HERE (#35): the push is the
+    // object's one use, and the URN answered below resolves to the kept
+    // parameters without reading the object again. Below every refusal, so a
+    // push refused for anything spends nothing, and bound to this response —
+    // the 201 keeps it, a store refusal below releases it.
+    if (pushedOnce) {
+      const spent = await requestObject.spend({
+        once: pushedOnce, request: req, clientId: clientId
+      });
+      if (!spent.ok) {
+        log.debug("Leaving OAuth2Server.parRequest(). The request object's " +
+                  "jti was not spent.");
+        return refuse(spent.status || 400, spent.error, spent.description,
+                      errorCodes.codeOf(spent) || 'STS-OAUTH-0374');
+      }
+    }
     const kept = par.push({
       clientId: clientId,
       authorizationServer: self.profileOf(req),

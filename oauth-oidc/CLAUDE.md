@@ -1313,11 +1313,32 @@ so must `admin-ui/admin.ts`.
    console and `/admin-api`, all checked by `applications.requestObjectMetadataProblem()`
    (`STS-REG-0100`) and `requestObjectAttributeProblem()` (`STS-REG-0101`).
 
-   **NOT DONE**: a request object's `jti` is not remembered (RFC 9101 does not
-   ask, and the endpoint's two passes would meet their own replay); the product
-   media-type refusal (0348) is not reached by any test, because product also
-   refuses the plain-http `request_uri` a loopback test server can offer.
-   `tests/rfc9101_request_objects.js` holds the rest.
+   **A REQUEST OBJECT'S `jti` IS ACCEPTED ONCE (#35, 2026-09-17)** — this
+   paragraph said "NOT DONE" until then, on two grounds: RFC 9101 does not
+   ask, and the endpoint's two passes would meet their own replay. The second
+   is answered the way 3al answers it for a pushed `request_uri`: the `jti`
+   is LOOKED AT on every pass (`lookUp()`, `STS-OAUTH-0374`) and SPENT only
+   where something is issued on the object — `issueAuthorizationResponse()`,
+   below every refusal, kept by any status under 400 — or where the PAR
+   endpoint keeps a pushed object, kept by the 201; the URN spends nothing
+   again. It goes in `common/used_assertions.js` as a third use of a `jwt`
+   (`request-object`), keyed by the client and the `jti`, so a request
+   object and a client assertion with one `jti` are one document (RFC 7519
+   4.1.7), it persists wherever 3ae's history does, and the claim is atomic
+   on postgres. Kept until `exp` plus the skew, or for
+   `oauth2.requestObjectJtiRetentionS` when there is no `exp`, after which a
+   replay is accepted. `oauth2.requestObjectJtiOnce` (on, both modes) turns
+   it off. A full history refuses (`STS-OAUTH-0375`, 503) and a store that
+   cannot record refuses (`STS-OAUTH-0376`, 500); an object with no `jti` is
+   accepted — **there is no setting that requires one**, because no
+   specification asks and a client without one has chosen `exp` alone.
+   `used_assertions.peek()` answers a look and never refuses on a store
+   that cannot answer, because the spend fails closed on the same store.
+
+   **NOT DONE**: the product media-type refusal (0348) is not reached by any
+   test, because product also refuses the plain-http `request_uri` a loopback
+   test server can offer. `tests/rfc9101_request_objects.js` holds the rest,
+   and `tests/rfc9101_request_object_jti.js` the `jti`.
 
 3al. **`par.ts` IS RFC 9126, AND A PUSHED REQUEST IS VALIDATED BY THE
    AUTHORIZATION ENDPOINT'S OWN CHECKS (2026-09-13).** Two libraries (rule 3):

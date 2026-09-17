@@ -680,6 +680,14 @@ const CODES = [
       'whose TypeScript sources are not compiled, which only an image ' +
       'build does (#50).',
     spec: 'none — the process exits before listening' },
+  { code: 'STS-CORE-0094',
+    summary: 'A module registered a cache with the cache registry and left ' +
+      'out a member every descriptor must have (#74).',
+    spec: 'none — the module fails to load' },
+  { code: 'STS-CORE-0095',
+    summary: 'A registered cache threw while listing its entries for ' +
+      '/admin/caches, so the page shows it with no rows (#74).',
+    spec: 'none — logged; the page says the cache could not be listed' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -5090,6 +5098,22 @@ const CODES = [
   { code: 'STS-OAUTH-0373',
     summary: 'The authorization endpoint failed with an unexpected error ' +
       'while resolving a request object.',
+    spec: 'server_error (HTTP 500)' },
+  // #35 (2026-09-17): a request object's jti, remembered.
+  { code: 'STS-OAUTH-0374',
+    summary: 'A request object\'s jti has been used already: an ' +
+      'authorization response was issued on it, or a pushed authorization ' +
+      'request kept it, or a response on it is still being written.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0375',
+    summary: 'A request object\'s jti could not be recorded because the ' +
+      'used-assertion history for the realm is full of unexpired rows ' +
+      '(oauth2.assertionReplayCacheSize).',
+    spec: 'temporarily_unavailable (HTTP 503)' },
+  { code: 'STS-OAUTH-0376',
+    summary: 'A request object\'s jti could not be recorded because the ' +
+      'used-assertion history\'s store could not be written or asked; ' +
+      'nothing is issued on the object.',
     spec: 'server_error (HTTP 500)' },
   // PUSHED AUTHORIZATION REQUESTS (RFC 9126), 2026-09-13. Block 0400..0449;
   // oauth-oidc/par.ts and the PAR endpoint in oauth-oidc/oauth2.ts.
@@ -10173,8 +10197,8 @@ const CODES = [
     spec: 'HTTP 303 to the current realm' },
   { code: 'STS-ADMIN-0021',
     summary: 'A console drill-down named a record that does not exist: an ' +
-      'application, an authorization server profile, a trust realm or ' +
-      'a federation relationship.',
+      'application, an authorization server profile, a trust realm, ' +
+      'a federation relationship or a cache.',
     spec: 'HTTP 200 page saying there is no such record' },
   { code: 'STS-ADMIN-0022',
     summary: 'The realm switcher was given a return path that is not a ' +

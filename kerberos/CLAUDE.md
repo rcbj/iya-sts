@@ -408,6 +408,17 @@ two refusal warnings, which is the header's source when one was read. The UDP
 socket is not covered — a datagram has no stream to put a header in front of —
 so behind a load balancer Kerberos clients use TCP.
 
+**AND OWED AGAIN AS OF 2026-09-17: `common/cache_registry.js`** (#74).
+`common/helpers.js`, `keystore.js`, `revocation_status.js`, `jose_kid.js`,
+`jose_certificate_header.js`, `applications.js`, `federation/federation.js`
+and `kerberos/krb5_principals.js` require it to describe their caches to
+`/admin/caches`, so the commit that bumps the `sts/` pin across it needs `COPY
+sts/common/cache_registry.js ./sts/common/`. It requires only bunyan, `config`
+and `error_codes`, all already in the closure. `realms.js`'s `keyed()` gained an
+optional second argument in the same change, which adds no require.
+`krb5_service.js`'s replay cache is DESCRIBED from outside and not counted,
+because that file is not edited here.
+
 `MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
 says loudly that the run reflects an unpushed working copy.

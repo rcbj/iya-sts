@@ -114,10 +114,40 @@
 //     fetched: it is resolved by `oauth-oidc/par.ts` where that exists, and
 //     `request_uri_not_supported` where it does not.
 //
-// **NOT DONE, AND SAID:** a request object's `jti` is not remembered, so one
-// may be replayed within its lifetime — RFC 9101 does not ask for it, and the
-// authorization endpoint runs every request twice (before and after sign-in),
-// which a once-only rule would refuse.
+// **A REQUEST OBJECT'S `jti` IS ACCEPTED ONCE (#35, 2026-09-17).** Until
+// that day this header said the opposite — "not remembered, so one may be
+// replayed within its lifetime" — for two reasons, and neither survived being
+// looked at. RFC 9101 does not ASK for it, true; but a signed request object
+// is a bearer credential for the request inside it until it expires, which
+// is the argument `common/used_assertions.js` makes for an RFC 7523 JWT, and
+// this service remembers those. And the authorization endpoint runs every
+// request twice — before the sign-in screen and after it — which a
+// once-only rule AT THE READ would refuse; so the rule is not at the read.
+// It is where `par.ts` put a pushed request_uri's:
+//
+//   * LOOKED AT on every pass (`lookUp()`, from `resolve()`): a `jti` already
+//     spent, or reserved by a response still being written, is refused with
+//     invalid_request_object before anybody is asked to sign in. A look that
+//     cannot reach the store refuses nothing; the spend below decides.
+//   * SPENT where something is issued on the object (`spend()`): by
+//     `oauth2.ts`'s `issueAuthorizationResponse()`, below every refusal and
+//     beside the pushed request_uri's claim, kept by a redirect or a
+//     form_post page and released by a failure; and by the pushed
+//     authorization request endpoint just before it keeps a pushed object,
+//     kept by the 201. The push IS the object's one use — the URN it answers
+//     with resolves to the stored parameters and spends nothing again. A
+//     request REFUSED at the endpoint spends nothing, because an object that
+//     bought nothing has not been used.
+//   * KEPT in the used-assertion history as a third use of a `jwt`, keyed by
+//     the client and the `jti`, so it persists in every store that history
+//     does and is claimed atomically on postgres. Until `exp` plus
+//     `oauth2.clientAssertionSkewS`; without `exp`, for
+//     `oauth2.requestObjectJtiRetentionS`, after which a replay is accepted
+//     and that setting says so.
+//   * SWITCHABLE: `oauth2.requestObjectJtiOnce`, on by default in both modes,
+//     restores the old behaviour when off. An object with no `jti` is
+//     accepted either way — RFC 9101 does not require one, and there is
+//     nothing to remember it by.
 //
 // **A LIBRARY (rule 3).** It registers no route and requires `common/` modules
 // and `assertion_grant.js`, none of which requires it back.
@@ -150,6 +180,9 @@ import version = require('../common/version');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
+// The used-assertion history, where a request object's `jti` is kept (#35).
+import usedAssertions = require('../common/used_assertions');
 // `keysForParty()`: which of a client's registered keys may verify something it
 // signed. One answer for RFC 7523, the software statement and this.
 import assertionGrant = require('./assertion_grant');
@@ -178,6 +211,7 @@ interface RequestObjectDeps {
   version: typeof version;
   helpers: typeof helpers;
   assertionGrant: typeof assertionGrant;
+  usedAssertions: typeof usedAssertions;
   log: typeof helpers.log;
   // `oauth-oidc/par`, required at the moment a pushed request's URN arrives
   // (see pushedRequest()). It may throw.
@@ -211,6 +245,42 @@ const PAR_URN_PREFIX = 'urn:ietf:params:oauth:request_uri:';
 const requestUriCache = realms.map();
 
 const MAX_CACHED_REQUEST_URIS = 256;
+
+// Described to `/admin/caches` (#74, rule 3ap). Only lookups made while the
+// cache is on are counted: with `oauth2.requestUriCacheS` at 0 a fetch is not
+// a miss, because nothing was asked of the cache.
+const requestUriCount = cacheRegistry.register({
+  name: 'oauth2.request-uri',
+  title: 'Fetched request objects',
+  description: 'The content of a registered RFC 9101 request_uri, kept so a ' +
+    'client that sends the same URI again is not fetched again (OpenID ' +
+    'Connect Core section 6.2). Off unless oauth2.requestUriCacheS is set.',
+  owner: 'oauth-oidc/request_object.ts',
+  scope: 'realm',
+  settings: ['oauth2.requestUriCacheS'],
+  maxEntries: function (): number {
+    return MAX_CACHED_REQUEST_URIS;
+  },
+  lifetime: function (): string {
+    const seconds = Number(config.value('oauth2.requestUriCacheS')) || 0;
+    return seconds > 0
+      ? 'oauth2.requestUriCacheS (' + seconds + ' s) after the fetch, per ' +
+        'realm; the oldest goes first when full.'
+      : 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmRows(
+      realms.list().map(function (r: { id: string }): string {
+        return r.id;
+      }),
+      function (id: string): Map<unknown, unknown> {
+        return requestUriCache.realmMap(id);
+      },
+      function (held: Json, key: unknown): Json {
+        return { key: cacheRegistry.clipKey(key), validUntil: held.until };
+      });
+  }
+});
 
 // This service's own round-trip fields, which the sign-in and consent screens
 // put in the URL on the way back to the authorization endpoint. They are not
@@ -266,6 +336,7 @@ class RequestObject {
       version: version,
       helpers: helpers,
       assertionGrant: assertionGrant,
+      usedAssertions: usedAssertions,
       log: helpers.log,
       // Required LAZILY: `par.ts` requires this module for
       // `verifyObject()`, and a require back at load would close the cycle.
@@ -914,9 +985,11 @@ class RequestObject {
     if (ttl) {
       const held = requestUriCache.get(uri);
       if (held && held.until > now) {
+        requestUriCount.hit();
         log.debug("Leaving RequestObject.contentOf(). From the cache.");
         return { ok: true, jwt: held.jwt, cached: true };
       }
+      requestUriCount.miss();
     }
     const fetched = await self.fetchRequestUri(uri);
     if (!fetched.ok) {
@@ -1070,10 +1143,144 @@ class RequestObject {
     // `claims` is the verified claim set itself, for `par.ts`: RFC 9126 section
     // 3 refuses an authenticated client's object with NO `client_id` claim,
     // which `params` cannot show because section 6.3's assembly always fills
-    // one in.
+    // one in. `once` is what the object is remembered by, or null (#35).
     log.debug("Leaving RequestObject.verifyObject(). " + verified.alg + ".");
     return { ok: true, params: params, alg: verified.alg, encrypted: encrypted,
-             claims: claims };
+             claims: claims, once: self.onceOf(claims, clientId) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE `jti`, REMEMBERED (#35). See this file's header for the design.
+  //
+  // `onceOf()` answers what the used-assertion history knows a verified object
+  // by — `{ issuer, identifier, expiresAt }` — or null for an object with no
+  // `jti`, or while `oauth2.requestObjectJtiOnce` is off. The ISSUER is the
+  // client the object was verified for, not its `iss` claim: `iss` is
+  // optional, and where present `verifyObject()` has already required it to be
+  // that client.
+  // ---------------------------------------------------------------------------
+  onceOf(claims: Json, clientId: Json): Json {
+    const { config, log } = this.deps;
+    const self = this;
+    log.debug("Entering RequestObject.onceOf().");
+    if (!config.value('oauth2.requestObjectJtiOnce')) {
+      log.debug("Leaving RequestObject.onceOf(). Switched off.");
+      return null;
+    }
+    const jti = claims ? claims.jti : undefined;
+    if (jti === undefined || jti === null || String(jti) === '') {
+      log.debug("Leaving RequestObject.onceOf(). No jti.");
+      return null;
+    }
+    const exp = claims.exp === undefined ? NaN : Number(claims.exp);
+    // Until the object could no longer be accepted, which is its `exp` plus
+    // the skew `verify()` allowed; an object without one is acceptable for
+    // ever, so it is remembered for the retention window and no longer.
+    const expiresAt = isFinite(exp)
+      ? (exp + Number(self.skewSeconds() || 0)) * 1000
+      : Date.now() +
+        Number(config.value('oauth2.requestObjectJtiRetentionS')) * 1000;
+    log.debug("Leaving RequestObject.onceOf().");
+    return { issuer: String(clientId), identifier: String(jti),
+             expiresAt: expiresAt };
+  }
+
+  // The sentence both refusals of a replay end with.
+  private replayDescription(existing: Json): Json {
+    const { usedAssertions, log } = this.deps;
+    log.debug("Entering RequestObject.replayDescription().");
+    log.debug("Leaving RequestObject.replayDescription().");
+    return 'this request object has been used already' +
+      usedAssertions.usedAs(existing) + '. Its `jti` is remembered until ' +
+      'the object expires, because a signed request object captured off ' +
+      'the wire is a credential for the request inside it until then. Sign ' +
+      'a fresh one, with a new `jti`, for each authorization request.';
+  }
+
+  // The look every pass takes. Resolves null when the object may go on, or a
+  // refusal when its `jti` is already spent or reserved.
+  async lookUp(once: Json): Promise<Json> {
+    const { usedAssertions, log } = this.deps;
+    const self = this;
+    log.debug("Entering RequestObject.lookUp().");
+    if (!once) {
+      log.debug("Leaving RequestObject.lookUp(). Nothing to look for.");
+      return null;
+    }
+    const seen = await usedAssertions.peek({
+      format: 'jwt', issuer: once.issuer, identifier: once.identifier
+    });
+    if (!seen.used) {
+      log.debug("Leaving RequestObject.lookUp(). Not used" +
+                (seen.unknown ? ", as far as the store could say." : "."));
+      return null;
+    }
+    log.warn('request_object: client "' + once.issuer + '" sent a request ' +
+             'object whose jti ' + JSON.stringify(once.identifier) + ' has ' +
+             'been used already; it is refused.');
+    log.debug("Leaving RequestObject.lookUp(). A replay.");
+    return self.refusal('STS-OAUTH-0374', 'invalid_request_object',
+                        self.replayDescription(seen.existing));
+  }
+
+  // THE SPEND. `request` binds the claim to its response — a status under
+  // `keepBelow` keeps it, anything else releases it — and `clientId` is the
+  // client asking, for the console's row. Resolves `{ ok: true }` or a refusal
+  // carrying the HTTP `status` to answer it with.
+  async spend(opts: Json): Promise<Json> {
+    const { usedAssertions, errorCodes, log } = this.deps;
+    const self = this;
+    log.debug("Entering RequestObject.spend().");
+    const o = opts || {};
+    const once = o.once;
+    if (!once) {
+      log.debug("Leaving RequestObject.spend(). Nothing to spend.");
+      return { ok: true };
+    }
+    const spent = await usedAssertions.claim({
+      format: 'jwt', use: 'request-object',
+      issuer: once.issuer, identifier: once.identifier,
+      clientId: String(o.clientId || once.issuer),
+      expiresAt: once.expiresAt,
+      request: o.request, keepBelow: o.keepBelow
+    });
+    if (spent.ok) {
+      log.debug("Leaving RequestObject.spend(). Spent.");
+      return { ok: true };
+    }
+    if (spent.reason === 'replay') {
+      log.warn('request_object: client "' + once.issuer + '" used the ' +
+               'request object jti ' + JSON.stringify(once.identifier) +
+               ' again; nothing is issued on it.');
+      log.debug("Leaving RequestObject.spend(). A replay.");
+      return Object.assign(self.refusal('STS-OAUTH-0374',
+        'invalid_request_object', self.replayDescription(spent.existing)),
+        { status: 400 });
+    }
+    if (spent.reason === 'full') {
+      log.warn(errorCodes.tag('STS-OAUTH-0375') +
+               'request_object: the used-assertion history for this realm ' +
+               'is full of unexpired rows (oauth2.assertionReplayCacheSize ' +
+               '= ' + spent.cap + '), so a request object from "' +
+               once.issuer + '" is refused rather than a live one forgotten.');
+      log.debug("Leaving RequestObject.spend(). The history is full.");
+      return Object.assign(self.refusal('STS-OAUTH-0375',
+        'temporarily_unavailable',
+        'this authorization server is holding as many unexpired ' +
+        'documents as it is configured to remember ' +
+        '(oauth2.assertionReplayCacheSize), and it will not forget one that ' +
+        'could still be replayed in order to accept this request object. ' +
+        'Retry shortly.'), { status: 503 });
+    }
+    log.error(errorCodes.tag('STS-OAUTH-0376') +
+              'request_object: the used-assertion history could not record ' +
+              'the request object jti ' + JSON.stringify(once.identifier) +
+              ' from "' + once.issuer + '": ' + (spent.why || 'no reason') +
+              '. Nothing is issued on it.');
+    log.debug("Leaving RequestObject.spend(). The store could not be asked.");
+    return Object.assign(self.refusal('STS-OAUTH-0376', 'server_error',
+      'this authorization server could not record that the request object ' +
+      'has been used, so it has issued nothing on it.'), { status: 500 });
   }
 
   // A pushed authorization request's URN, handed to `par.ts` where it exists.
@@ -1133,8 +1340,8 @@ class RequestObject {
   //            nothing here
   //
   // Resolves `{ ok: true, used: false }` for a request that is not JWT-secured,
-  // `{ ok: true, used: true, params, source, alg, encrypted }` for one that is,
-  // or a refusal. NEVER rejects.
+  // `{ ok: true, used: true, params, source, alg, encrypted, once }` for one
+  // that is, or a refusal. NEVER rejects.
   // ---------------------------------------------------------------------------
   async resolve(opts: Json): Promise<Json> {
     const { applications, config, log } = this.deps;
@@ -1305,12 +1512,23 @@ class RequestObject {
       log.debug("Leaving RequestObject.resolve(). The object is refused.");
       return object;
     }
+    // #35: a `jti` already spent is refused on this pass, before or after the
+    // sign-in screen alike. The LAST refusal, so an object refused for
+    // anything above is not reported as a replay. A pushed request never
+    // reaches here with an object of its own to look at: its push was its
+    // use.
+    const replayed = pushedUrn ? null : await self.lookUp(object.once);
+    if (replayed) {
+      log.debug("Leaving RequestObject.resolve(). A replayed jti.");
+      return replayed;
+    }
     log.debug("Leaving RequestObject.resolve(). " +
               "" + (byValue ? 'By value' : 'By reference') +
               ", " + object.alg + ".");
     return { ok: true, used: true, params: object.params,
              source: byValue ? 'request' : 'request_uri', cached: cached,
-             alg: object.alg, encrypted: object.encrypted };
+             alg: object.alg, encrypted: object.encrypted,
+             once: pushedUrn ? null : object.once };
   }
 }
 
@@ -1345,5 +1563,8 @@ export = {
   fragmentProblem: slot.forward('fragmentProblem'),
   parametersFrom: slot.forward('parametersFrom'),
   verifyObject: slot.forward('verifyObject'),
+  onceOf: slot.forward('onceOf'),
+  lookUp: slot.forward('lookUp'),
+  spend: slot.forward('spend'),
   resolve: slot.forward('resolve')
 };
