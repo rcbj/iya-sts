@@ -85,6 +85,7 @@ const realms = require('../common/realms');
 // while the principal database is built at require time, before a request or
 // an audit ring exists to hold a row.
 const errorCodes = require('../common/error_codes');
+const cacheRegistry = require('../common/cache_registry');
 
 // ---------------------------------------------------------------------------
 // ONE PRINCIPAL DATABASE PER TRUST REALM (2026-09-15).
@@ -1140,6 +1141,50 @@ const principals = realms.map({ persist: 'krb5.principals',
                                              remove: reconcileRemoved } });
 
 // ---------------------------------------------------------------------------
+// THE LONG-TERM KEYS HELD ON EACH PRINCIPAL (`withKeyCache()`, below),
+// DESCRIBED TO `/admin/caches` (#74, rule 3ap). A row is a principal and an
+// encryption type — never the key. Only the principals in this register are
+// walked; a directory person's principal is built per request and its keys
+// go with it.
+// ---------------------------------------------------------------------------
+const derivedKeyCount = cacheRegistry.register({
+  name: 'krb5.long-term-keys',
+  title: 'Kerberos long-term keys',
+  description: 'Each registered principal\'s long-term keys, derived from ' +
+    'its password with string-to-key (or read from the key source) once ' +
+    'per encryption type and held for every ticket after it.',
+  owner: 'kerberos/krb5_principals.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    return 'No expiry: dropped with the principal, or when its record is ' +
+      'replaced (a password change or a restore), and never persisted.';
+  },
+  entries: function () {
+    return cacheRegistry.realmRows(
+      realms.list().map(function (r) {
+        return r.id;
+      }),
+      function (id) {
+        const out = new Map();
+        principals.realmMap(id).forEach(function (principal, name) {
+          if (principal && principal.keys instanceof Map) {
+            principal.keys.forEach(function (key, etype) {
+              out.set(name + ' — ' + kcrypto.etypeName(etype), etype);
+            });
+          }
+        });
+        return out;
+      },
+      function (etype, label) {
+        return { key: label, validUntil: null, basis: 'held with principal' };
+      });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // RIDs FOR THE ACCOUNTS MADE AT RUNTIME, DERIVED FROM THE NAME (2026-09-12).
 //
 // From 5000 up, well clear of the configured ones (the 1100s here, the 2100s in
@@ -2061,6 +2106,52 @@ function signedOutPrincipals() {
 // from the store or from another process simply has no cache, and gets an empty
 // one here — the keys are re-derived on demand, which is what a cache means.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE AUTHENTICATOR REPLAY CACHE, DESCRIBED FROM HERE (#74, rule 3ap). It
+// lives in `krb5_service.js`, which is the parent project's and is not edited
+// in this repository, so it is described from outside and NOT COUNTED. That
+// module requires this one, so it is required lazily, when the page is drawn.
+// Its value is the millisecond an authenticator was seen; the window is twice
+// `krb5.clockSkew`.
+// ---------------------------------------------------------------------------
+cacheRegistry.register({
+  name: 'krb5.authenticator-replay',
+  title: 'Kerberos authenticators',
+  description: 'Each authenticator the protected service accepted, so a ' +
+    'captured AP-REQ cannot be presented twice. Per trust realm: the realm ' +
+    'whose Kerberos realm issued the ticket.',
+  owner: 'kerberos/krb5_service.js',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  counted: false,
+  hitMeaning: 'an authenticator already seen, so the request was refused',
+  settings: ['krb5.replayCacheMaxEntries', 'krb5.clockSkew'],
+  maxEntries: function () {
+    return Number(config.value('krb5.replayCacheMaxEntries')) || null;
+  },
+  lifetime: function () {
+    return 'Twice krb5.clockSkew (' +
+      2 * Number(config.value('krb5.clockSkew')) + ' s) after it was ' +
+      'seen. Refuses new authenticators when full rather than forgetting ' +
+      'one.';
+  },
+  entries: function () {
+    const service = require('./krb5_service.js');
+    const windowMs = 2 * Number(config.value('krb5.clockSkew')) * 1000;
+    return cacheRegistry.realmRows(
+      realms.list().map(function (r) {
+        return r.id;
+      }),
+      function (id) {
+        return service.replayCache.realmMap(id);
+      },
+      function (seenAt, key) {
+        return { key: key, validUntil: Number(seenAt) + windowMs };
+      });
+  }
+});
+
 function withKeyCache(principal) {
   log.debug("Entering withKeyCache().");
   if (!principal) {
@@ -2682,9 +2773,11 @@ async function longTermKey(principal, etype) {
   log.debug("Entering longTermKey().");
   withKeyCache(principal);
   if (principal.keys.has(etype)) {
+    derivedKeyCount.hit();
     log.debug("Leaving longTermKey().");
     return principal.keys.get(etype);
   }
+  derivedKeyCount.miss();
   if (principal.directoryKeys) {
     const again = principal.storedServiceKey
       ? storedService(principal.name, principal.realm)

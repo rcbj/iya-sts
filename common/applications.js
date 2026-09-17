@@ -165,6 +165,7 @@ const audit = require('./audit');
 // `errorCodes.mark()` on the RESULT OBJECT — so a caller can read it with
 // `errorCodes.codeOf(result)` and the JSON a client receives is unchanged.
 const errorCodes = require('./error_codes');
+const cacheRegistry = require('./cache_registry');
 // THE ROLE REGISTER, for one string and one reason: `DEFAULT_REQUIRED_ROLE`.
 // A plain require in the ordinary direction and it can stay one — `roles.js`
 // is a leaf that requires `helpers` and `config` and nothing else here, so
@@ -3580,6 +3581,51 @@ const ssfAllowedCache = realms.keyed(function () {
   return { version: -1, answers: new Map() };
 });
 
+// Described to `/admin/caches` (#74, rule 3ap). A realm's answers are current
+// while its ou=applications has not changed since they were kept; the
+// version is AMBIENT, so each realm's is read inside that realm.
+const ssfAllowedCount = cacheRegistry.register({
+  name: 'applications.ssf-allowed-events',
+  title: 'Shared Signals receiver permissions',
+  description: 'Which application owns a Shared Signals stream and which ' +
+    'events it may receive, per principal, so a session event does not ' +
+    'walk every registered application.',
+  owner: 'common/applications.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    return 'Until anything under the realm\'s ou=applications changes; ' +
+      'the next lookup then empties that realm\'s answers.';
+  },
+  entries: function () {
+    const out = [];
+    ssfAllowedCache.existing().forEach(function (held, id) {
+      let current = false;
+      try {
+        current = realms.run(realms.get(id), function () {
+          const backing = store();
+          return !!backing &&
+            typeof backing.applicationsVersion === 'function' &&
+            backing.applicationsVersion() === held.version;
+        });
+      } catch (e) {
+        log.debug("Caught in the ssf-allowed-events entries(): " +
+                  ((e && e.message) || e));
+        current = false;
+      }
+      held.answers.forEach(function (found, principal) {
+        out.push({ realm: id, key: principal + ' → ' +
+                     (found ? 'an application' : 'nobody'),
+                   validUntil: null, valid: current,
+                   basis: 'ou=applications version' });
+      });
+    });
+    return out;
+  }
+});
+
 function ssfAllowedEventsFor(principal) {
   log.debug("Entering ssfAllowedEventsFor().");
   const wanted = String(principal == null ? '' : principal);
@@ -3597,9 +3643,11 @@ function ssfAllowedEventsFor(principal) {
       cache.answers.clear();
     }
     if (cache.answers.has(wanted)) {
+      ssfAllowedCount.hit();
       log.debug("Leaving ssfAllowedEventsFor(). Cached.");
       return cache.answers.get(wanted);
     }
+    ssfAllowedCount.miss();
   }
   const found = findSsfOwner(backing, wanted);
   if (cache) {

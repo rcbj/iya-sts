@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2685** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2687** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 47
+* [Service core (`STS-CORE`)](#sts-core) — 49
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 59
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
@@ -184,6 +184,8 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0091` | The subject resolver threw, and the person was given no subject (or a subject was treated as naming nobody). | none — logged |
 | `STS-CORE-0092` | A realm's key set could not be generated off the event loop; the first read of it generates it on the loop instead. | none — logged |
 | `STS-CORE-0093` | The service or its in-process suite was started from a tree whose TypeScript sources are not compiled, which only an image build does (#50). | none — the process exits before listening |
+| `STS-CORE-0094` | A module registered a cache with the cache registry and left out a member every descriptor must have (#74). | none — the module fails to load |
+| `STS-CORE-0095` | A registered cache threw while listing its entries for /admin/caches, so the page shows it with no rows (#74). | none — logged; the page says the cache could not be listed |
 
 ## STS-WORKER
 
@@ -2643,7 +2645,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0018` | The new-user form was posted with an action other than create or fill. | HTTP 200 form page with a warning, or HTTP 400 JSON |
 | `STS-ADMIN-0019` | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
 | `STS-ADMIN-0020` | The realm switcher named a trust realm that is not defined; the browser was sent back to the current realm. | HTTP 303 to the current realm |
-| `STS-ADMIN-0021` | A console drill-down named a record that does not exist: an application, an authorization server profile, a trust realm or a federation relationship. | HTTP 200 page saying there is no such record |
+| `STS-ADMIN-0021` | A console drill-down named a record that does not exist: an application, an authorization server profile, a trust realm, a federation relationship or a cache. | HTTP 200 page saying there is no such record |
 | `STS-ADMIN-0022` | The realm switcher was given a return path that is not a single-slash-rooted path (a possible open redirect); /admin was used instead. | HTTP 303 to /admin in the chosen realm |
 | `STS-ADMIN-0500` | An admin console control or management API action named an operation its resource does not have. | HTTP 400 (API JSON errors) or a 303 back to the console page with error= |
 | `STS-ADMIN-0501` | An admin action needs a module that is not loaded in this process (the logout reader, the directory or group writer, the Shared Signals reporters, the XACML pages, or the client-certificate truststore), so there is nothing to act on. | HTTP 400 (API) or a 303 with error= |

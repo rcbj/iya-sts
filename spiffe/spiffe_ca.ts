@@ -117,6 +117,7 @@ import config = require('../common/config');
 // refusals carry a code as `errorCode` on the result for the caller that
 // records the row, and its own failures are tagged on the log line.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 import spiffeId = require('./spiffe_id');
 import keys = require('../common/vendored/key_material');
 import x509 = require('../common/vendored/x509');
@@ -188,7 +189,51 @@ interface SpiffeCaDeps {
 class SpiffeCa {
   constructor(private readonly deps: SpiffeCaDeps) {
     deps.log.debug("Entering SpiffeCa.constructor().");
+    SpiffeCa.describeCache(this);
     deps.log.debug("Leaving SpiffeCa.constructor().");
+  }
+
+  // `x509Unpacked`, described to `/admin/caches` (#74, rule 3ap). Registered
+  // by the instance, because an entry is current only while the realm's
+  // stored array is the one it was unpacked from, and only an instance can
+  // read that; a second instance replaces the first's row.
+  static describeCache(ca: SpiffeCa): void {
+    helpers.log.debug("Entering SpiffeCa.describeCache().");
+    x509Count = cacheRegistry.register({
+      name: 'spiffe.x509-authorities',
+      title: 'Unpacked SPIFFE X.509 authorities',
+      description: 'Each realm\'s stored X.509 authorities, turned from ' +
+        'their stored form into certificates once, for every SVID signed ' +
+        'and every bundle served.',
+      owner: 'spiffe/spiffe_ca.ts',
+      scope: 'realm',
+      maxEntries: function (): null {
+        return null;
+      },
+      lifetime: function (): string {
+        return 'Until the realm\'s authorities are rotated or restored, ' +
+          'which replaces the stored list the entry was unpacked from.';
+      },
+      entries: function (): unknown[] {
+        const out: unknown[] = [];
+        x509Unpacked.forEach(function (held: any, id: string): void {
+          let current = false;
+          try {
+            current = (ca.authoritiesIn(id).get('x509') || []) === held.from;
+          } catch (e) {
+            helpers.log.debug("Caught in SpiffeCa.describeCache(): " +
+                              ((e && e.message) || e));
+            current = false;
+          }
+          out.push({ realm: id, key: held.list.length + ' authorit' +
+                       (held.list.length === 1 ? 'y' : 'ies'),
+                     validUntil: null, valid: current,
+                     basis: 'stored authority list' });
+        });
+        return out;
+      }
+    });
+    helpers.log.debug("Leaving SpiffeCa.describeCache().");
   }
 
   // What the composition root passes, from the real modules.
@@ -444,7 +489,10 @@ class SpiffeCa {
     const id = this.realmIdOf(realmId);
     const raw = this.authoritiesIn(id).get('x509') || [];
     const held = x509Unpacked.get(id);
-    if (!held || held.from !== raw) {
+    if (held && held.from === raw) {
+      x509Count.hit();
+    } else {
+      x509Count.miss();
       x509Unpacked.set(id,
                        { from: raw,
                          list: raw.map(this.unpackX509.bind(this)) });
@@ -2727,6 +2775,8 @@ const authorities = realms.map({ persist: 'spiffe.authorities' });
 // answer. Keyed anyway: a permanent miss in the memo on the path of every SVID
 // is the thing this memo exists to prevent.
 const x509Unpacked = new Map();
+// Its registry counter; `SpiffeCa.describeCache()` assigns it.
+let x509Count = cacheRegistry.counter('spiffe.x509-authorities');
 
 // The foreign trust domains this one federates with, keyed by trust domain
 // name. Each holds the bundle document exactly as it was given — see

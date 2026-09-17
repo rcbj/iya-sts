@@ -77,6 +77,7 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
 import subjects = require('./ssf_subjects');
 import events = require('./ssf_events');
 
@@ -211,6 +212,38 @@ let queueSequence = 0;
 // `restore` and not through here — and `sweepDeadLetters()` rebuilds it from a
 // scan each sweep, which is when the cap is enforced exactly.
 const deadCounts = realms.keyed(function () { return new Map(); });
+
+// Described to `/admin/caches` (#74, rule 3ap): a row per stream. A hit is a
+// dead letter added to a stream whose count was already held.
+const deadCountsCount = cacheRegistry.register({
+  name: 'ssf.dead-letter-counts',
+  title: 'Shared Signals dead-letter counts',
+  description: 'An estimate of each stream\'s dead letters, kept so a new ' +
+    'one can be checked against the per-stream cap without counting the ' +
+    'queue. Letters another process wrote are not in it until the next ' +
+    'sweep.',
+  owner: 'ssf/ssf_streams.ts',
+  scope: 'realm',
+  settings: ['ssf.deadLetterMaxPerStream'],
+  maxEntries: function (): number | null {
+    return Number(config.value('ssf.maxStreams')) || null;
+  },
+  lifetime: function (): string {
+    return 'No expiry: recounted at each dead-letter sweep, one entry per ' +
+      'stream.';
+  },
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    deadCounts.existing().forEach(function (counts: Map<string, number>,
+                                            id: string): void {
+      counts.forEach(function (n: number, stream: string): void {
+        out.push({ realm: id, key: 'stream ' + stream + ': ' + n,
+                   validUntil: null, basis: 'until the next sweep' });
+      });
+    });
+    return out;
+  }
+});
 
 // ---------------------------------------------------------------------------
 // WHAT WAS DEAD-LETTERED SINCE THE LAST SWEEP, per process and per realm —
@@ -1374,6 +1407,11 @@ class SsfStreams {
     deadLetters.set(this.queueKey(record.stream_id, entry.jti), letter);
     record.counters.deadLettered = (record.counters.deadLettered || 0) + 1;
     const counts = deadCounts();
+    if (counts.has(record.stream_id)) {
+      deadCountsCount.hit();
+    } else {
+      deadCountsCount.miss();
+    }
     const held = (counts.get(record.stream_id) || 0) + 1;
     counts.set(record.stream_id, held);
     const max = this.limit('ssf.deadLetterMaxPerStream', 1000);

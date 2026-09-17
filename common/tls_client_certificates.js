@@ -84,6 +84,7 @@ const { log } = require('./helpers');
 const config = require('./config');
 const realms = require('./realms');
 const errorCodes = require('./error_codes');
+const cacheRegistry = require('./cache_registry');
 const pki = require('./pki');
 const keyMaterial = require('./vendored/key_material');
 
@@ -614,6 +615,40 @@ function trustAnchorPem() {
 const memo = new Map();
 const MEMO_ENTRIES = 256;
 
+// Described to `/admin/caches` (#74, rule 3ap). A row is the leaf's digest
+// and what it was mapped to — the identity's kind and name, never the
+// certificate.
+const memoCount = cacheRegistry.register({
+  name: 'tls.client-certificate-identities',
+  title: 'Client certificate identities',
+  description: 'What a verified TLS client certificate was mapped to — a ' +
+    'person or application in a realm, or a refusal — keyed by the leaf\'s ' +
+    'digest and the authorities held when it was walked.',
+  owner: 'common/tls_client_certificates.js',
+  scope: 'process',
+  maxEntries: function () {
+    return MEMO_ENTRIES;
+  },
+  lifetime: function () {
+    return 'No expiry: a replaced Issuing CA changes the key. When full the ' +
+      'whole memo is emptied at once.';
+  },
+  entries: function () {
+    const out = [];
+    memo.forEach(function (answer, key) {
+      out.push({
+        realm: answer && answer.realm ? answer.realm : null,
+        key: key.slice(0, 16) + '… → ' + (answer && answer.accepted
+          ? String(answer.kind) + ' ' + String(answer.username)
+          : 'not accepted'),
+        validUntil: null,
+        basis: 'content-keyed'
+      });
+    });
+    return out;
+  }
+});
+
 function subjectCnOf(x509) {
   log.debug("Entering subjectCnOf().");
   const found = /(?:^|\n)CN=([^\n]*)/
@@ -703,9 +738,11 @@ function identityOf(input) {
   const key = nodeCrypto.createHash('sha256').update(leafBytes)
     .digest('hex') + '|' + heldKey;
   if (memo.has(key)) {
+    memoCount.hit();
     log.debug("Leaving identityOf(). Memoised.");
     return currentHolderOf(memo.get(key));
   }
+  memoCount.miss();
   const walked = status.walk(input);
   const links = (walked && walked.links) || [];
   const held = links.filter(function (one) {

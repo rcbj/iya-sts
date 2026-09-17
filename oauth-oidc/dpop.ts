@@ -72,6 +72,7 @@ import InstanceSlot = require('../common/instance_slot');
 // The registry of error codes: a leaf. A refusal is MARKED on the response and
 // named on the refusal object this module hands back; neither is serialised.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 // RFC 8705 — the other sender constraint. A library like this one: it
 // registers nothing and requires only helpers.js, config.js and
 // common/crypto.js, so requiring it here cannot create a cycle. It is required
@@ -298,6 +299,75 @@ const issuedNonces = realms.map({ persist: 'dpop.issuedNonces' });
 // reason IAT_SKEW_SECONDS is.
 const NONCE_TTL_SECONDS = 300;
 
+// The two stores above, described to `/admin/caches` (#74, rule 3ap). Both
+// values are the SECOND something was seen or issued; the deadline is that
+// plus the window, read from the same settings the pruning reads.
+function secondsSetting(key: string, dflt: number): number {
+  helpers.log.debug("Entering secondsSetting().");
+  const seconds = Number(config.value(key));
+  helpers.log.debug("Leaving secondsSetting().");
+  return isFinite(seconds) && seconds > 0 ? seconds : dflt;
+}
+
+const seenJtisCount = cacheRegistry.register({
+  name: 'dpop.proof-ids',
+  title: 'DPoP proof IDs',
+  description: 'The jti of every DPoP proof accepted, so a proof is good ' +
+    'for one request (RFC 9449 section 11.1).',
+  owner: 'oauth-oidc/dpop.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a proof already used, so the request was refused',
+  settings: ['oauth2.dpopIatSkewS'],
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'Twice oauth2.dpopIatSkewS (' +
+      2 * secondsSetting('oauth2.dpopIatSkewS', IAT_SKEW_SECONDS) +
+      ' s) after the proof was seen. No size limit: pruned by time only.';
+  },
+  entries: function (): unknown[] {
+    const windowS = 2 * secondsSetting('oauth2.dpopIatSkewS',
+                                       IAT_SKEW_SECONDS);
+    return cacheRegistry.realmMapRows(realms, seenJtis,
+      function (seenS: unknown, jti: unknown): Json {
+        return { key: String(jti),
+                 validUntil: (Number(seenS) + windowS) * 1000 };
+      });
+  }
+});
+
+const issuedNoncesCount = cacheRegistry.register({
+  name: 'dpop.nonces',
+  title: 'DPoP nonces',
+  description: 'Server-issued DPoP nonces (RFC 9449 section 8), so a ' +
+    'proof carrying one can be checked against what was handed out.',
+  owner: 'oauth-oidc/dpop.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a nonce found current, so the proof was accepted',
+  settings: ['oauth2.dpopNonceTtlS'],
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'oauth2.dpopNonceTtlS (' +
+      secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS) +
+      ' s) after it was issued.';
+  },
+  entries: function (): unknown[] {
+    const ttlS = secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS);
+    return cacheRegistry.realmMapRows(realms, issuedNonces,
+      function (issuedS: unknown, nonce: unknown): Json {
+        return { key: cacheRegistry.digestKey(nonce),
+                 validUntil: (Number(issuedS) + ttlS) * 1000 };
+      });
+  }
+});
+
 class Dpop {
   static readonly PROOF_TYP = PROOF_TYP;
   static readonly SIGNING_ALGS = SIGNING_ALGS;
@@ -499,6 +569,11 @@ class Dpop {
     log.debug('Entering Dpop.nonceIsCurrent().');
     this.pruneNonces();
     const ok = !!nonce && issuedNonces.has(String(nonce));
+    if (ok) {
+      issuedNoncesCount.hit();
+    } else {
+      issuedNoncesCount.miss();
+    }
     log.debug('Leaving Dpop.nonceIsCurrent(). ok=' + ok);
     return ok;
   }
@@ -854,7 +929,13 @@ class Dpop {
 
     // Section 11.1: replay. A proof is good for one request.
     this.pruneJtis();
-    if (seenJtis.has(String(claims.jti))) {
+    const replayed = seenJtis.has(String(claims.jti));
+    if (replayed) {
+      seenJtisCount.hit();
+    } else {
+      seenJtisCount.miss();
+    }
+    if (replayed) {
       log.debug("Leaving Dpop.verifyProof().");
       return fail('STS-OAUTH-0110',
                   'This DPoP proof has already been used (jti ' +

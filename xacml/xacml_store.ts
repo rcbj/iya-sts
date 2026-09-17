@@ -86,6 +86,7 @@ import helpers = require('../common/helpers');
 // This module is not one the remote PEP container copies, so the require costs
 // that image nothing.
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
 // The engine's vocabulary. Nothing here reads it, but the original required it
 // at this point, and an `import` whose name is unused is dropped by the
@@ -220,6 +221,38 @@ let changeObserver: ((what: string) => void) | null = null;
 // door — the console, `/admin-api`, an `ldapmodify` on 389, an LDIF restore —
 // invalidates it without anything having to remember to.
 const parsed = new Map();
+
+// Described to `/admin/caches` (#74, rule 3ap). Unbounded, and said so: the
+// entries are the policy documents that have ever been read in this process,
+// and a document that is edited leaves its old parse behind.
+const parsedCount = cacheRegistry.register({
+  name: 'xacml.parsed-policies',
+  title: 'Parsed XACML policies',
+  description: 'Policies and policy sets from ou=policies, parsed and ' +
+    'statically validated once per document text, keyed by the SHA-256 of ' +
+    'that text so a change through any door is a new entry.',
+  owner: 'xacml/xacml_store.ts',
+  scope: 'process',
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'No expiry and no bound: keyed by content, so an edited policy ' +
+      'is a new entry and the old parse stays until the process restarts.';
+  },
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    parsed.forEach(function (policy: any, digest: string): void {
+      out.push({
+        key: String((policy && policy.id) || '(no id)') + ' — sha256 ' +
+          digest.slice(0, 16) + '…',
+        validUntil: null,
+        basis: 'content-keyed'
+      });
+    });
+    return out;
+  }
+});
 
 // ---------------------------------------------------------------------------
 // THE SEEDED POLICY.
@@ -440,9 +473,11 @@ class XacmlStore {
     const digest = sha256Hex(document);
     const cached = parsed.get(digest);
     if (cached) {
+      parsedCount.hit();
       log.debug('Leaving XacmlStore.parseDocument(). Cached.');
       return cached;
     }
+    parsedCount.miss();
     const policy = xml.parsePolicy(document);
     parsed.set(digest, policy);
     log.debug('Leaving XacmlStore.parseDocument(). Parsed and cached as ' +

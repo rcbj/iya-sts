@@ -128,6 +128,8 @@ const realms = require('./realms');
 // log; the refusals are the three verifiers' to code, because each answers in
 // its own protocol's vocabulary.
 const errorCodes = require('./error_codes');
+// A LEAF: the history, described to `/admin/caches` (#74).
+const cacheRegistry = require('./cache_registry');
 
 // Registered with `config.js` like `persistence.js`'s own, so the level
 // follows `global.logLevel` rather than being read once here.
@@ -188,6 +190,43 @@ let store = {
 // realm id -> Map(key -> row). The memory store, and the ldif store's working
 // copy. A database store keeps nothing here.
 const partitions = new Map();
+
+// Described to `/admin/caches` (#74, rule 3ap). The key is the history's own
+// digest, and the row names the format, use and issuer — never the
+// assertion. On postgres the rows live in the database and this process
+// holds none, which the lifetime says; the counts are kept in both.
+const historyCount = cacheRegistry.register({
+  name: 'oauth2.used-assertions',
+  title: 'Used assertions',
+  description: 'Every RFC 7523 JWT and RFC 7522 SAML assertion accepted, ' +
+    'for a grant or for client authentication, so each is accepted once ' +
+    'ever.',
+  owner: 'common/used_assertions.js',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'an assertion already used, so the request was refused',
+  settings: ['oauth2.assertionReplayCacheSize'],
+  maxEntries: function () {
+    return capOf();
+  },
+  lifetime: function () {
+    return 'Until the assertion itself expires. Refuses new assertions ' +
+      'when full rather than forgetting one. On a database store the rows ' +
+      'are in the database and none is listed here.';
+  },
+  entries: function () {
+    const out = [];
+    partitions.forEach(function (rows, id) {
+      rows.forEach(function (row, key) {
+        out.push({ realm: id, key: String(key).slice(0, 16) + '… ' +
+                     row.format + ' ' + row.use + ' from ' + row.issuer,
+                   validUntil: row.expiresAt });
+      });
+    });
+    return out;
+  }
+});
 
 // Realms whose snapshot has changed since it was last written.
 const dirtyRealms = new Set();
@@ -526,11 +565,13 @@ function claimInMemory(row, cap, now) {
   const rows = partitionOf(row.realm);
   const existing = rows.get(row.key);
   if (existing) {
+    historyCount.hit();
     lastKnownLive.set(row.realm, live);
     log.debug("Leaving claimInMemory(). A replay.");
     return Promise.resolve({ ok: false, reason: 'replay',
                              existing: publicRow(existing) });
   }
+  historyCount.miss();
   if (live >= cap) {
     lastKnownLive.set(row.realm, live);
     log.debug("Leaving claimInMemory(). Full.");
@@ -575,11 +616,14 @@ function claimInDatabase(row, cap, now) {
       lastKnownLive.set(row.realm, a.live);
     }
     if (a.claimed) {
+      historyCount.miss();
       return { ok: true, claim: handleOf(row) };
     }
     if (a.existing) {
+      historyCount.hit();
       return { ok: false, reason: 'replay', existing: publicRow(a.existing) };
     }
+    historyCount.miss();
     return { ok: false, reason: 'full', live: a.live, cap: cap };
   }, function (e) {
     log.error(errorCodes.tag('STS-STORE-0046') +

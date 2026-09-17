@@ -66,6 +66,7 @@ import realms = require('../common/realms');
 import clusterClaims = require('../cluster/cluster_claims');
 import capabilities = require('../cluster/cluster_capabilities');
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 
 // The parts of a `realms.map()` store this module uses. Rows are JSON
 // (header), so `any`.
@@ -125,6 +126,36 @@ const resources = realms.map({ persist: 'gnap.resources' });
 // cache is: across request workers a proof refused by one and accepted by
 // another is the replay the cache exists to stop.
 const replay = realms.map({ persist: 'gnap.replay' });
+
+// Described to `/admin/caches` (#74, rule 3ap). The key is already a digest
+// of the signature; `until` is in seconds.
+const replayCount = cacheRegistry.register({
+  name: 'gnap.signatures',
+  title: 'GNAP signatures',
+  description: 'Each signed GNAP request accepted (HTTP message signatures ' +
+    'and attached or detached JWS), so a captured request cannot be sent ' +
+    'again.',
+  owner: 'gnap/gnap_store.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'a signature already seen, so the request was refused',
+  settings: ['gnap.signatureMaxAgeS'],
+  maxEntries: function (): null {
+    return null;
+  },
+  lifetime: function (): string {
+    return 'Twice gnap.signatureMaxAgeS after it was seen. No size limit: ' +
+      'pruned by time only.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, replay,
+      function (seen: any, key: unknown): object {
+        return { key: String(key).slice(0, 16) + '…',
+                 validUntil: Number(seen && seen.until) * 1000 };
+      });
+  }
+});
 
 // Grant states, RFC 9635 section 1.5.
 const STATE = { PROCESSING: 'processing', PENDING: 'pending',
@@ -596,9 +627,11 @@ class GnapStore {
     const hashed = this.digest(key);
     const seen = replay.get(hashed);
     if (seen && seen.until > now) {
+      replayCount.hit();
       log.debug("Leaving GnapStore.remember().");
       return false;
     }
+    replayCount.miss();
     replay.set(hashed, { until: now + Math.max(1, Number(lifetimeS) || 1) });
     log.debug("Leaving GnapStore.remember().");
     return true;

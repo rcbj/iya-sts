@@ -180,6 +180,7 @@ import version = require('../common/version');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
 // The used-assertion history, where a request object's `jti` is kept (#35).
 import usedAssertions = require('../common/used_assertions');
 // `keysForParty()`: which of a client's registered keys may verify something it
@@ -244,6 +245,42 @@ const PAR_URN_PREFIX = 'urn:ietf:params:oauth:request_uri:';
 const requestUriCache = realms.map();
 
 const MAX_CACHED_REQUEST_URIS = 256;
+
+// Described to `/admin/caches` (#74, rule 3ap). Only lookups made while the
+// cache is on are counted: with `oauth2.requestUriCacheS` at 0 a fetch is not
+// a miss, because nothing was asked of the cache.
+const requestUriCount = cacheRegistry.register({
+  name: 'oauth2.request-uri',
+  title: 'Fetched request objects',
+  description: 'The content of a registered RFC 9101 request_uri, kept so a ' +
+    'client that sends the same URI again is not fetched again (OpenID ' +
+    'Connect Core section 6.2). Off unless oauth2.requestUriCacheS is set.',
+  owner: 'oauth-oidc/request_object.ts',
+  scope: 'realm',
+  settings: ['oauth2.requestUriCacheS'],
+  maxEntries: function (): number {
+    return MAX_CACHED_REQUEST_URIS;
+  },
+  lifetime: function (): string {
+    const seconds = Number(config.value('oauth2.requestUriCacheS')) || 0;
+    return seconds > 0
+      ? 'oauth2.requestUriCacheS (' + seconds + ' s) after the fetch, per ' +
+        'realm; the oldest goes first when full.'
+      : 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.';
+  },
+  entries: function (): unknown[] {
+    return cacheRegistry.realmRows(
+      realms.list().map(function (r: { id: string }): string {
+        return r.id;
+      }),
+      function (id: string): Map<unknown, unknown> {
+        return requestUriCache.realmMap(id);
+      },
+      function (held: Json, key: unknown): Json {
+        return { key: cacheRegistry.clipKey(key), validUntil: held.until };
+      });
+  }
+});
 
 // This service's own round-trip fields, which the sign-in and consent screens
 // put in the URL on the way back to the authorization endpoint. They are not
@@ -948,9 +985,11 @@ class RequestObject {
     if (ttl) {
       const held = requestUriCache.get(uri);
       if (held && held.until > now) {
+        requestUriCount.hit();
         log.debug("Leaving RequestObject.contentOf(). From the cache.");
         return { ok: true, jwt: held.jwt, cached: true };
       }
+      requestUriCount.miss();
     }
     const fetched = await self.fetchRequestUri(uri);
     if (!fetched.ok) {

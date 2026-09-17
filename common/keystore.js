@@ -121,6 +121,7 @@ const secrets = require('./secrets');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. NOT audit.js, which requires helpers.js, which requires this.
 const errorCodes = require('./error_codes');
+const cacheRegistry = require('./cache_registry');
 // THE THREE-WAY MERGE OF A CERTIFICATE AUTHORITY ROW (#46). A LEAF that
 // requires config and bunyan and nothing here, so it cannot close a cycle.
 const pkiMerge = require('./pki_merge');
@@ -179,6 +180,60 @@ let kek = null;
 // if somebody reads it as "the key is not in memory".
 // ---------------------------------------------------------------------------
 const material = new Map();
+
+// ---------------------------------------------------------------------------
+// THE DECRYPTED HALF OF `material`, DESCRIBED TO `/admin/caches` (#74, rule
+// 3ap). A row is a realm and when its plaintext will be dropped — NEVER the
+// key, which `cache_registry.js` could not carry anyway. Only entries holding
+// plaintext are rows: the ciphertext is the stored record, not a cache. A hit
+// is a signature that found the key already decrypted; a miss is a decrypt.
+// ---------------------------------------------------------------------------
+const plaintextCount = cacheRegistry.register({
+  name: 'keys.plaintext',
+  title: 'Decrypted signing keys',
+  description: 'A realm\'s signing-key material, decrypted from the ' +
+    'persistence store under the key-encryption key and held for an idle ' +
+    'window so steady signing does not pay a decrypt each time. Product ' +
+    'mode only; development keys are never stored encrypted.',
+  owner: 'common/keystore.js',
+  scope: 'realm',
+  settings: ['keys.plaintextRetention', 'keys.plaintextTtlS'],
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    const policy = retention();
+    if (policy === 'resident') {
+      return 'keys.plaintextRetention=resident: held until the process ' +
+        'stops.';
+    }
+    if (policy === 'per-use' || plaintextTtlMs() === 0) {
+      return 'keys.plaintextRetention=per-use: dropped at the end of the ' +
+        'event-loop turn that used it.';
+    }
+    return 'keys.plaintextRetention=timed: dropped keys.plaintextTtlS (' +
+      Math.floor(plaintextTtlMs() / 1000) + ' s) after the last use.';
+  },
+  entries: function () {
+    const out = [];
+    const policy = retention();
+    material.forEach(function (entry, id) {
+      if (!entry.plain && !entry.parsed) {
+        return;
+      }
+      out.push({
+        realm: id || 'default',
+        key: 'signing-key material',
+        validUntil: policy === 'resident' ? null
+          : (typeof entry.purgeAt === 'number' ? entry.purgeAt : null),
+        valid: true,
+        basis: policy === 'resident' ? 'held until the process stops'
+          : 'idle timeout'
+      });
+    });
+    return out;
+  }
+});
 
 // The store's own hooks, filled by `persistence.js` at require time. An
 // INVERTED HOOK for the reason every other one on this path is (rule 3e):
@@ -301,6 +356,7 @@ function purgeFor(realmId) {
   entry.buffer = null;
   entry.plain = null;
   entry.parsed = null;
+  entry.purgeAt = null;
   log.debug('purgeFor(): the "' + id + '" realm\'s decrypted signing key was ' +
             'dropped.');
   log.debug("Leaving purgeFor().");
@@ -360,6 +416,7 @@ function armPurge(realmId) {
       return;
     }
     entry.immediate = true;
+    entry.purgeAt = Date.now();
     setImmediate(function () {
       // Re-read the policy: it is runtime-settable, and an immediate queued
       // under `per-use` must not purge a key the operator has since asked to
@@ -374,6 +431,7 @@ function armPurge(realmId) {
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
+  entry.purgeAt = Date.now() + ttl;
   entry.timer = setTimeout(function () { purgeFor(id); }, ttl);
   if (typeof entry.timer.unref === 'function') entry.timer.unref();
   log.debug("Leaving armPurge().");
@@ -1134,10 +1192,12 @@ function storedFor(realmId) {
     return null;
   }
   if (entry.plain) {
+    plaintextCount.hit();
     armPurge(id);
     log.debug("Leaving storedFor().");
     return entry.plain;
   }
+  plaintextCount.miss();
   if (!kek) {
     // Not an assertion about the caller: `start()` refuses to finish without a
     // KEK, so reaching here means somebody called `reset()` and did not start
@@ -1749,6 +1809,35 @@ function open(ciphertext, label) {
 // ---------------------------------------------------------------------------
 const PKI_ROW_PREFIX = 'pki:';
 const pkiHeld = new Map();       // realm id -> the hierarchy, in the clear
+
+// Described to `/admin/caches` (#74, rule 3ap): a row is a scope and
+// nothing of the hierarchy, which holds CA private keys. A hit is a signing
+// or path check that found the scope's hierarchy held; a miss found none.
+const pkiHeldCount = cacheRegistry.register({
+  name: 'keys.ca-hierarchies',
+  title: 'Certificate authorities',
+  description: 'Each scope\'s certificate authority hierarchy — the service ' +
+    'Root, a realm\'s Intermediate and its Issuing CAs — held decrypted ' +
+    'for signing, read from the store at start or adopted from another ' +
+    'process.',
+  owner: 'common/keystore.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    return 'No expiry: replaced when the hierarchy changes here or on ' +
+      'another node, and dropped with its realm.';
+  },
+  entries: function () {
+    const out = [];
+    pkiHeld.forEach(function (chain, id) {
+      out.push({ realm: id || 'default', key: 'CA hierarchy',
+                 validUntil: null, basis: 'until the hierarchy changes' });
+    });
+    return out;
+  }
+});
 let pkiPublisher = null;
 
 // Filled by whoever owns the IPC channel — `request_pool.js` in the front
@@ -1801,8 +1890,14 @@ function pkiAll() {
 // anchors inside a client-authentication check.
 function pkiFor(realmId) {
   log.debug("Entering pkiFor().");
+  const held = pkiHeld.get(String(realmId || '')) || null;
+  if (held) {
+    pkiHeldCount.hit();
+  } else {
+    pkiHeldCount.miss();
+  }
   log.debug("Leaving pkiFor().");
-  return pkiHeld.get(String(realmId || '')) || null;
+  return held;
 }
 
 // Record it, share it, and write it down. `null` REMOVES the hierarchy, which

@@ -82,6 +82,7 @@ const stsCrypto = require('./crypto');
 // failure this module sees — a key it cannot compute a thumbprint for — is
 // `tag()`ged onto its log line.
 const errorCodes = require('./error_codes');
+const cacheRegistry = require('./cache_registry');
 
 // A logger of its own, for `jose_certificate_header.js`'s reason: `helpers.js`
 // requires this file.
@@ -132,6 +133,33 @@ const uris = new Map();
 // logs it once rather than once per token.
 const warned = new Map();
 
+// Described to `/admin/caches` (#74, rule 3ap). `warned` is a log
+// de-duplication set, not a cache, and is not registered.
+const urisCount = cacheRegistry.register({
+  name: 'jose.kid-thumbprint-uris',
+  title: 'RFC 9278 key identifiers',
+  description: 'The JWK Thumbprint URI published as a kid under ' +
+    'keys.kidFormat=jwk-thumbprint-uri, keyed by the internal kid, so a ' +
+    'token signature does not re-read the key out of its certificate.',
+  owner: 'common/jose_kid.js',
+  scope: 'process',
+  settings: ['keys.kidFormat'],
+  maxEntries: function () {
+    return CACHE_LIMIT;
+  },
+  lifetime: function () {
+    return 'No expiry: an internal kid is derived from the key, so its ' +
+      'answer never changes. The oldest goes first when full.';
+  },
+  entries: function () {
+    const out = [];
+    uris.forEach(function (uri, kid) {
+      out.push({ key: kid, validUntil: null, basis: 'content-keyed' });
+    });
+    return out;
+  }
+});
+
 function remember(map, key, value) {
   log.debug("Entering remember().");
   while (map.size >= CACHE_LIMIT) {
@@ -149,9 +177,11 @@ function thumbprintUriFor(internalKid, publicJwkOf) {
   log.debug("Entering thumbprintUriFor().");
   const cacheKey = String(internalKid || '');
   if (cacheKey && uris.has(cacheKey)) {
+    urisCount.hit();
     log.debug("Leaving thumbprintUriFor(). Cached.");
     return uris.get(cacheKey);
   }
+  urisCount.miss();
   const jwk = typeof publicJwkOf === 'function' ? publicJwkOf() : publicJwkOf;
   if (!jwk) {
     log.debug("Leaving thumbprintUriFor(). No such key.");

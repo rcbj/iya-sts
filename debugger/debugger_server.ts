@@ -101,6 +101,7 @@ import mode = require('../common/mode');
 import realms = require('../common/realms');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
+import cacheRegistry = require('../common/cache_registry');
 // The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY, installed in
 // listen() like every TCP listener's.
 import proxyProtocol = require('../common/proxy_protocol');
@@ -754,9 +755,11 @@ class DebuggerServer {
     log.debug("Entering DebuggerServer.servedText().");
     const key = file + '\n' + stat.mtimeMs + '\n' + stsUrl;
     if (substitutedCache.has(key)) {
+      substitutedCount.hit();
       log.debug("Leaving DebuggerServer.servedText(). Cached.");
       return substitutedCache.get(key);
     }
+    substitutedCount.miss();
     const text = fs.readFileSync(file, 'utf8').split(STS_URL_PLACEHOLDER)
       .join(stsUrl);
     if (substitutedCache.size >= SUBSTITUTED_CACHE_MAX) {
@@ -1332,6 +1335,44 @@ let anchorCheckedAt = 0;
 // ---------------------------------------------------------------------------
 const substitutedCache = new Map();
 const SUBSTITUTED_CACHE_MAX = 400;
+
+// Described to `/admin/caches` (#74, rule 3ap). An entry is current while the
+// file on disk still has the modification time it was read at; an older
+// version stays until it is pushed out, and is counted as expired.
+const substitutedCount = cacheRegistry.register({
+  name: 'debugger.static-files',
+  title: 'Embedded debugger static files',
+  description: 'The embedded debugger\'s client files with this service\'s ' +
+    'address substituted in, kept per file version and address so the ' +
+    'debugger listener does not rewrite a file on every request.',
+  owner: 'debugger/debugger_server.ts',
+  scope: 'process',
+  maxEntries: function (): number {
+    return SUBSTITUTED_CACHE_MAX;
+  },
+  lifetime: function (): string {
+    return 'Until the file changes on disk (a new modification time is a ' +
+      'new entry); the oldest goes first when full.';
+  },
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    substitutedCache.forEach(function (text: string, key: string): void {
+      const parts = key.split('\n');
+      let current = false;
+      try {
+        current = String(fs.statSync(parts[0]).mtimeMs) === parts[1];
+      } catch (e) {
+        helpers.log.debug("Caught in the debugger.static-files entries(): " +
+                          ((e && e.message) || e));
+        current = false;
+      }
+      out.push({ key: path.basename(parts[0]) + ' for ' + parts[2],
+                 validUntil: null, valid: current,
+                 basis: 'file modification time' });
+    });
+    return out;
+  }
+});
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();

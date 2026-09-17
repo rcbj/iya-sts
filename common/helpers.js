@@ -90,6 +90,7 @@ const mode = require('./mode');
 // which requires this file: a failure logged here leads with
 // `errorCodes.tag()` rather than writing a row.
 const errorCodes = require('./error_codes');
+const cacheRegistry = require('./cache_registry');
 // WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES, per use case and per realm
 // (2026-09-13). It requires `config`, `realms` and `error_codes` and reaches
 // back into this file only lazily, inside a function, so this require closes
@@ -1115,6 +1116,20 @@ function lazyKeySet(realmId, stored) {
       log.debug("Leaving set().");
     }
   });
+  // WHETHER THIS SET HOLDS A POST-QUANTUM SET, ANSWERED WITHOUT THE GETTER
+  // ABOVE (#74): `/admin/caches` must not decrypt to draw a row. Held means
+  // generated in this process, or present in the stored blob — which the
+  // getter would decrypt on first use. Non-enumerable, so the JWKS builder's
+  // spread and the stored form never see it.
+  const storedPq = (stored.pqKeys || []).length > 0;
+  Object.defineProperty(set, 'pqHeld', {
+    enumerable: false, configurable: true,
+    value: function () {
+      log.debug("Entering pqHeld().");
+      log.debug("Leaving pqHeld().");
+      return pqGenerated ? 'generated' : (storedPq ? 'stored' : '');
+    }
+  });
   // ---------------------------------------------------------------------
   // **THE OPENID4VCI REQUEST-ENCRYPTION KEY, PUBLIC HALF RESIDENT AND PRIVATE
   // HALF A GETTER (2026-09-12)** — the curve keys' arrangement exactly, and
@@ -1343,6 +1358,87 @@ keystore.onAdopt(function (realmId) {
 // thing that used to (`STS.privateKey = …`) is now part of what the factory
 // returns.
 // ---------------------------------------------------------------------------
+// Described to `/admin/caches` (#74, rule 3ap): a row is a realm and its
+// RSA key's kid, never the key. A hit is a read that found the realm's set
+// already built; a miss builds it (or reads it out of the key store).
+const stsKeysCount = cacheRegistry.register({
+  name: 'keys.signing-sets',
+  title: 'Signing key sets',
+  description: 'Each trust realm\'s signing keys (RSA, EC, and the ' +
+    'post-quantum set once asked for), built or read from the key store on ' +
+    'first use and held for every signature after it.',
+  owner: 'common/helpers.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    return 'No expiry: dropped when the realm is removed, its keys are ' +
+      'rotated, or another process\'s stored keys are adopted. One entry ' +
+      'per realm that has signed.';
+  },
+  entries: function () {
+    const out = [];
+    stsKeysFor.existing().forEach(function (keys, id) {
+      out.push({ realm: id || 'default',
+                 // `kid` only: `pqKeys` and the private halves are GETTERS
+                 // that decrypt in product mode, and a page must not.
+                 key: String((keys && keys.kid) || '(no kid)'),
+                 validUntil: null, basis: 'until rotated or adopted' });
+    });
+    return out;
+  }
+});
+
+// The post-quantum half of each set, described separately because it is
+// made separately — on the first use that needs it, not with the set (#74).
+// Read through `pqHeld()` or a plain data property, never through the
+// decrypting getter. A hit is a use that found the realm's set already made.
+function pqStateOf(keys) {
+  log.debug("Entering pqStateOf().");
+  if (!keys) {
+    log.debug("Leaving pqStateOf(). No set.");
+    return '';
+  }
+  if (typeof keys.pqHeld === 'function') {
+    log.debug("Leaving pqStateOf(). A stored set.");
+    return keys.pqHeld();
+  }
+  const d = Object.getOwnPropertyDescriptor(keys, 'pqKeys');
+  log.debug("Leaving pqStateOf().");
+  return d && 'value' in d && d.value && d.value.length ? 'generated' : '';
+}
+
+const pqKeysCount = cacheRegistry.register({
+  name: 'keys.post-quantum-sets',
+  title: 'Post-quantum key sets',
+  description: 'Each realm\'s ML-DSA and SLH-DSA keys, generated (or read ' +
+    'from the stored set) the first time something needs them, and held ' +
+    'with the realm\'s key set after that.',
+  owner: 'common/helpers.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return null;
+  },
+  lifetime: function () {
+    return 'As for the realm\'s key set: no expiry, dropped when the realm ' +
+      'is removed or its keys are replaced.';
+  },
+  entries: function () {
+    const out = [];
+    stsKeysFor.existing().forEach(function (keys, id) {
+      const state = pqStateOf(keys);
+      if (!state) {
+        return;
+      }
+      out.push({ realm: id || 'default',
+                 key: 'post-quantum set (' + state + ')',
+                 validUntil: null, basis: 'until rotated or adopted' });
+    });
+    return out;
+  }
+});
+
 const stsKeysFor = realms.keyed(function (realm) {
   // ---------------------------------------------------------------------
   // THE STORED KEYS FIRST, WHERE THERE ARE ANY (2026-09-06).
@@ -1535,6 +1631,12 @@ const stsKeysFor = realms.keyed(function (realm) {
   // ---------------------------------------------------------------------
   const written = keystore.storedFor(realm.id);
   return written ? lazyKeySet(realm.id, written) : keys;
+}, function (hit) {
+  if (hit) {
+    stsKeysCount.hit();
+  } else {
+    stsKeysCount.miss();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -2372,7 +2474,10 @@ function oauthError(res, status, error, description) {
 // ---------------------------------------------------------------------------
 function pqKeysFor(keys) {
   log.debug("Entering pqKeysFor().");
-  if (!keys.pqKeys) {
+  if (keys.pqKeys) {
+    pqKeysCount.hit();
+  } else {
+    pqKeysCount.miss();
     const started = Date.now();
     keys.pqKeys = pqJose.PQ_ALGS.map(function (alg) {
       const pair = pqJose.generate(alg);
@@ -2427,6 +2532,7 @@ function pqKeysFor(keys) {
 function pqKeysForAsync(keys) {
   log.debug("Entering pqKeysForAsync().");
   if (keys.pqKeys) {
+    pqKeysCount.hit();
     log.debug("Leaving pqKeysForAsync(). Already made.");
     return Promise.resolve(keys.pqKeys);
   }
@@ -2434,6 +2540,7 @@ function pqKeysForAsync(keys) {
     log.debug("Leaving pqKeysForAsync(). One is already in flight.");
     return keys.pqKeysPromise;
   }
+  pqKeysCount.miss();
   const started = Date.now();
   keys.pqKeysPromise = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
     return pqJose.generateAsync(alg).then(function (pair) {

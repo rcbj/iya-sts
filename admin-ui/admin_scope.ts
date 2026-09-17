@@ -98,6 +98,8 @@ const SERVICE_PAGES = [
   '/admin/database',
   '/admin/encryption',
   '/admin/secrets',
+  // Every realm's partition of every cache, and the process-wide ones (#74).
+  '/admin/caches',
   '/admin/debugger',
   '/admin/tls',
   // `/admin/kerberos` and `/admin/kerberos/principals` LEFT THIS LIST on
