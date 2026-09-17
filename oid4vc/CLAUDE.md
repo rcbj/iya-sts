@@ -162,11 +162,23 @@ carrying alice's subject, gets a credential signed by this realm, naming
 alice, bound to the writer's key. `tests/oid4vp_sign_in.js` 6e–6g issue exactly
 that credential and present it.
 
+**A DISOWNED TOKEN IS NOT A VERIFIED ONE (2026-09-17).** A sign-out marks the
+session's access tokens revoked, and a token inside its `exp` still verifies.
+Until this date `signInSubjectOf()` counted it, so whoever still held a
+signed-out person's token could mint a credential and sign that person back in
+at `/authn/wallet` — a sign-out undone by the token it was meant to cut off.
+The credential is still ISSUED on a disowned token, as it always was (the
+credential endpoint has never consulted revocation, and refusing there is a
+separate decision); it no longer gets the register row.
+`tests/oid4vp_sign_in.js` 6g-ii–6g-iv, and the same test without the check
+signs the person in.
+
 So the fact is recorded where it is known: at issuance. `rememberIssued()`
 writes a row — keyed by the SHA-256 of the issuer-signed JWT, holding the
 subject, the holder key's RFC 7638 thumbprint, the format and the expiry, never
 the credential — only when `subjectFromToken()` says the token (a) verified
-against this realm's key, (b) names a `urn:uuid:` subject, (c) whose entry
+against this realm's key and was NOT DISOWNED — its `jti` is not marked
+revoked (`stats.isRevoked()`) — (b) names a `urn:uuid:` subject, (c) whose entry
 exists now and has that subject, and (d) was granted for credential issuance
 (one of `VCI_CONFIGS`' scopes or an `openid_credential` authorization detail —
 without (d), any access token a client holds for somebody would be convertible

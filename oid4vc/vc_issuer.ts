@@ -1292,14 +1292,29 @@ class VcIssuer {
   // claim in the credential could prove to anybody but this realm, which has
   // the register anyway.
   // ---------------------------------------------------------------------------
+  //
+  // **A DISOWNED TOKEN COUNTS AS UNVERIFIED HERE (2026-09-17).** A sign-out
+  // marks the session's access tokens revoked (`stats.revoke()`), and a token
+  // still inside its `exp` verifies all the same. Counted as verified, it let
+  // whoever still held it mint a credential that signs its subject in at
+  // `/authn/wallet` — a sign-out undone by the token it was meant to cut off.
+  // The credential is still ISSUED on such a token, as it always was (this
+  // endpoint has never consulted revocation, and refusing is a separate
+  // decision); what it no longer gets is the register row.
   private signInSubjectOf(presented: any): string {
-    const { log, vcIssued, VCI_CONFIGS } = this.deps;
+    const { log, stats, vcIssued, VCI_CONFIGS } = this.deps;
     log.debug("Entering VcIssuer.signInSubjectOf().");
     const scopes = Object.keys(VCI_CONFIGS).map(function (id) {
       return VCI_CONFIGS[id].scope;
     });
-    const subject = vcIssued.subjectFromToken(presented && presented.claims,
-      !!(presented && presented.verified), scopes);
+    const claims = presented && presented.claims;
+    const disowned = !!(claims && claims.jti && stats.isRevoked(claims.jti));
+    if (disowned) {
+      log.debug("VcIssuer.signInSubjectOf(): the access token was disowned " +
+                "by a sign-out, so it verifies nobody for sign-in.");
+    }
+    const subject = vcIssued.subjectFromToken(claims,
+      !!(presented && presented.verified) && !disowned, scopes);
     log.debug("Leaving VcIssuer.signInSubjectOf(). " +
               (subject ? "A person this realm verified." : "Nobody."));
     return subject;

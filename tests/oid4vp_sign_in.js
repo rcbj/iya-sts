@@ -662,6 +662,31 @@ function childMain() {
                                    aud);
                   }, true, 'STS-VC-0059');
 
+    // A token of THIS realm, genuinely issued, then DISOWNED by a sign-out
+    // (`revoke()` is where every sign-out's `revokeWhere()` ends) while it is
+    // still inside its `exp`.
+    const dsKey = holderKey();
+    const dsLive = await issue('wsi-alice', holderKey());
+    const dsJti = dsLive.accessToken && decode(dsLive.accessToken).jti;
+    await realms.run(DEFAULT, function () {
+      return stats.revoke(dsJti, 'test: sign-out');
+    });
+    const dsCredential = await issue('wsi-alice', dsKey,
+                                     { token: dsLive.accessToken });
+    note(!!dsJti && dsCredential.credential,
+         '6g-ii. a disowned but unexpired token still gets a credential, as ' +
+         'it always has', dsCredential.error);
+    const dsKept = await realms.run(DEFAULT, function () {
+      return issuedRegister.lookup(dsCredential.credential);
+    });
+    note(!dsKept, '6g-iii. but that credential is NOT recorded as one ' +
+         'that may sign anybody in');
+    await refusal('6g-iv. and it VERIFIES and signs nobody in, STS-VC-0059',
+                  function (req) {
+                    return present(dsCredential.credential, dsKey,
+                                   req.nonce, aud);
+                  }, true, 'STS-VC-0059');
+
     // A trusted foreign issuer.
     const partner = await realms.run(DEFAULT, function () {
       return require(ROOT + '/common/crypto').selfSignedRsaCertificate(
