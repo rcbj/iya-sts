@@ -147,6 +147,10 @@ interface RequestSignatureDeps {
   xmldom: typeof xmldom;
 }
 
+// The key rawParameters() records repeated names under: a Symbol, so no
+// parameter in a query can collide with it.
+const REPEATED = Symbol('repeated');
+
 class RequestSignature {
   constructor(private readonly deps: RequestSignatureDeps) {
     deps.log.debug("Entering RequestSignature.constructor().");
@@ -258,6 +262,7 @@ class RequestSignature {
     const { log } = this.deps;
     log.debug("Entering RequestSignature.rawParameters().");
     const out: Record<string, string> = {};
+    const repeated: Record<string, boolean> = {};
     String(rawQuery || '').split('&').forEach(function (pair) {
       if (!pair) {
         return;
@@ -274,8 +279,12 @@ class RequestSignature {
       }
       if (!Object.prototype.hasOwnProperty.call(out, decodedName)) {
         out[decodedName] = value;
+      } else {
+        repeated[decodedName] = true;
       }
     });
+    // Which names came more than once, under a key no query can name.
+    Object.defineProperty(out, REPEATED, { value: repeated });
     log.debug("Leaving RequestSignature.rawParameters(). " +
               Object.keys(out).length + " parameter(s).");
     return out;
@@ -287,6 +296,20 @@ class RequestSignature {
     const { log } = this.deps;
     log.debug("Entering RequestSignature.redirectOctets().");
     const raw = this.rawParameters(rawQuery);
+    // A SIGNED PARAMETER THAT COMES TWICE IS NOT CHECKABLE. The octets are
+    // built from the first occurrence, but the handler reads the query through
+    // express, which hands it BOTH — so a second RelayState appended to a
+    // validly signed URL would travel on, altered, under a signature that
+    // verified. Incomplete octets refuse it (STS-SAML-0062).
+    const repeated = (raw as any)[REPEATED] || {};
+    if ([messageField, 'RelayState', 'SigAlg', 'Signature'].some(
+        function (name) {
+          return !!repeated[name];
+        })) {
+      log.debug("Leaving RequestSignature.redirectOctets(). A signed " +
+                "parameter was repeated.");
+      return '';
+    }
     if (!Object.prototype.hasOwnProperty.call(raw, messageField) ||
         !Object.prototype.hasOwnProperty.call(raw, 'SigAlg')) {
       log.debug("Leaving RequestSignature.redirectOctets(). Incomplete.");

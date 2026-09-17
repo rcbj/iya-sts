@@ -422,6 +422,19 @@ function run(t) {
   t.check(badRelay.statusCode === 403 && codeOf(badRelay) === 'STS-SAML-0061',
           'RelayState changed after signing is REFUSED, STS-SAML-0061',
           badRelay.statusCode + ' ' + codeOf(badRelay));
+  // A second RelayState APPENDED to a validly signed URL: the octets are
+  // built from the first occurrence, and express hands the handler both.
+  const repeatedRelay = getSso(signedRaw + '&RelayState=evil');
+  t.check(repeatedRelay.statusCode === 403 &&
+          codeOf(repeatedRelay) === 'STS-SAML-0062',
+          'a signed parameter repeated after signing (a second RelayState) ' +
+          'is REFUSED, STS-SAML-0062',
+          repeatedRelay.statusCode + ' ' + codeOf(repeatedRelay));
+  const repeatedRequest = getSso(signedRaw + '&SAMLRequest=x');
+  t.check(repeatedRequest.statusCode === 403 &&
+          codeOf(repeatedRequest) === 'STS-SAML-0062',
+          'and so is a repeated SAMLRequest, STS-SAML-0062',
+          repeatedRequest.statusCode + ' ' + codeOf(repeatedRequest));
   const tamperedAlg = signedRaw.replace(
     'SigAlg=' + encodeURIComponent(RSA_SHA256),
     'SigAlg=' + encodeURIComponent(RSA_SHA512));
