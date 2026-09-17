@@ -122,6 +122,17 @@
 // doing the requiring. Idempotent, so the parent having done it costs nothing.
 require('./config_file').resolveConfigFile();
 
+// SECOND: THIS PROCESS HAS A COMPOSITION ROOT, AND SAYS SO BEFORE IT LOADS
+// ANYTHING THE ROOT BUILDS (#50, R2). `service_state` just below requires
+// converted modules (`cluster/cluster_secrets` among them) long before
+// `start()` loads `protocol_stack.ts`; without this, each would build its
+// own default instance as it loaded, and the root's install would then be
+// refused — which is how every worker failed to start on 2026-09-17, with
+// memory and postgres modes green because `server.js` requires nothing the
+// root builds ahead of the stack. Nothing here USES those modules before the
+// stack has loaded: `serviceState.start()` runs after it.
+require('./instance_slot').deferToRoot();
+
 const http = require('http');
 const fs = require('fs');
 const bunyan = require('bunyan');
