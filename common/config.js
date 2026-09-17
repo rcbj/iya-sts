@@ -4965,8 +4965,10 @@ const SETTINGS = [
   // (admin_stats.js's note that no token here carries a session identifier).
   // The reasoning behind that note is kept and is why this is switchable: a
   // claim is added because a specification needs it, and Front-Channel Logout
-  // section 3 is that specification. Turning this OFF restores the tokens and
-  // the metadata this service issued before the feature existed, exactly.
+  // section 3 is that specification. Turning this OFF restores the metadata
+  // this service issued before the feature existed; the tokens are restored
+  // only with `oauth2.backchannelLogout` off as well (2026-09-17, #36), because
+  // Back-Channel Logout needs the same `sid`.
   // ---------------------------------------------------------------------
   { key: 'oauth2.frontchannelLogout', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Front-Channel Logout',
@@ -4981,10 +4983,87 @@ const SETTINGS = [
                  'relying party that registered a frontchannel_logout_uri, ' +
                  'with iss and sid on it where the client registered ' +
                  'frontchannel_logout_session_required. Off, none of the ' +
-                 'three happens and the tokens are byte-for-byte what this ' +
-                 'service issued before the feature existed. A client that ' +
+                 'three happens — except the `sid` claim while ' +
+                 'oauth2.backchannelLogout is on, which needs it too; with ' +
+                 'both off the tokens are byte-for-byte what this service ' +
+                 'issued before either feature existed. A client that ' +
                  'registers no logout URI is never notified either way, and ' +
                  '/logout says so on its row rather than leaving it out.' },
+
+  // ---------------------------------------------------------------------
+  // OPENID CONNECT BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36), AND THE SAME
+  // SHAPE AS THE ROW ABOVE FOR THE SAME REASON: ONE SWITCH OVER THE CLAIM, THE
+  // ADVERTISEMENT AND THE FAN-OUT.
+  //
+  // `backchannel_logout_supported` and `backchannel_logout_session_supported`
+  // in discovery, the `sid` claim an RP needs to match a Logout Token to its
+  // session, and the POST of a signed Logout Token to every relying party on an
+  // ending session that registered a `backchannel_logout_uri`. ON by default,
+  // for the row above's reason: a capability, refusing nothing. The `sid`
+  // claim is on while EITHER of the two is on — both specifications need it —
+  // so only turning both off restores the tokens issued before either existed.
+  //
+  // The four tunables below it are the delivery's, which is ASYNCHRONOUS with
+  // bounded retry: the sign-out answers at once, and a relying party that is
+  // down is tried `attempts` times, `backoffMs` apart and doubling, each try
+  // bounded by `timeoutMs`. `oauth-oidc/backchannel_logout.ts` argues them.
+  // ---------------------------------------------------------------------
+  { key: 'oauth2.backchannelLogout', group: 'OAuth 2.0 / OIDC',
+    label: 'OpenID Connect Back-Channel Logout',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Advertise and perform OpenID Connect Back-Channel Logout ' +
+                 '1.0. With it on: the discovery document says ' +
+                 'backchannel_logout_supported and ' +
+                 'backchannel_logout_session_supported, an ID Token issued ' +
+                 'on a browser sign-on session carries `sid`, and when a ' +
+                 'session ends by any sign-out — /oauth2/logout, /logout, ' +
+                 'wsignout1.0, SAML Single Logout, the console and ' +
+                 '/admin-api — every relying party on it that registered a ' +
+                 'backchannel_logout_uri is POSTed a Logout Token signed ' +
+                 'like its ID Token. The POSTs go out after the sign-out has ' +
+                 'answered, through the outbound policy ' +
+                 '(federation.outbound, https unless ' +
+                 'federation.outboundAllowInsecure, and no ' +
+                 'internal address in product mode), and each outcome is an ' +
+                 'audit row. A session that EXPIRES sends nothing. Off, none ' +
+                 'of it happens; `sid` stays while ' +
+                 'oauth2.frontchannelLogout is on.' },
+  { key: 'oauth2.backchannelLogoutTokenTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel Logout Token lifetime (seconds)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_TOKEN_TTL_S', type: 'int', dflt: 120,
+    min: 10, max: 3600, runtime: true,
+    description: 'How far in the future a Logout Token\'s exp is. Section 4 ' +
+                 'of the specification encourages "at most two minutes", ' +
+                 'which is the default. A token is signed once and resent ' +
+                 'unchanged on a retry, so this must outlast the retries ' +
+                 '(attempts, timeout and backoff below) or the last try ' +
+                 'carries a token the relying party must refuse.' },
+  { key: 'oauth2.backchannelLogoutAttempts', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout delivery attempts',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_ATTEMPTS', type: 'int', dflt: 3,
+    min: 1, max: 10, runtime: true,
+    description: 'How many times one Logout Token is POSTed before its ' +
+                 'delivery is recorded as failed. Only a failure worth ' +
+                 'repeating is retried — a timeout, a connection failure, a ' +
+                 '5xx, 408 or 429. A 400 is final (section 2.8 makes it the ' +
+                 'relying party\'s refusal), and so is a refusal by the ' +
+                 'outbound policy. 1 is a single try.' },
+  { key: 'oauth2.backchannelLogoutTimeoutMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout request timeout (ms)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 60000, runtime: true,
+    description: 'How long one POST of a Logout Token may take. Nobody is ' +
+                 'waiting on it — the sign-out has already answered — so ' +
+                 'this bounds how long a dead relying party holds a socket ' +
+                 'open, not how long a person waits.' },
+  { key: 'oauth2.backchannelLogoutBackoffMs', group: 'OAuth 2.0 / OIDC',
+    label: 'Back-channel logout retry backoff (ms)',
+    env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_BACKOFF_MS', type: 'int', dflt: 1000,
+    min: 0, max: 60000, runtime: true,
+    description: 'The wait before the second attempt; it doubles before ' +
+                 'each one after. 0 retries at once, which is what a test ' +
+                 'wants and a relying party that is down does not.' },
 
   // --- The admin console ---------------------------------------------------
   //

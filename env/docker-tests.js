@@ -66,9 +66,15 @@ var config = {
 
     // OpenID Connect Front-Channel Logout 1.0: the two discovery members,
     // the `sid` claim on an ID Token issued on a browser session, and the
-    // iframe fan-out every sign-out renders. ON, and turning it off restores
-    // the tokens and the metadata this service issued before it existed.
+    // iframe fan-out every sign-out renders. ON. `sid` stays while either
+    // this or the back-channel row below is on.
     frontchannelLogout: true,
+
+    // OpenID Connect Back-Channel Logout 1.0 (#36): the two discovery
+    // members, and a signed Logout Token POSTed to every relying party on an
+    // ending session that registered a backchannel_logout_uri, after the
+    // sign-out has answered and through the outbound policy. ON.
+    backchannelLogout: true,
 
     // What the mode compares redirect_uri against, by exact string match, for
     // any client that did not register its own. Empty, so the mode refuses

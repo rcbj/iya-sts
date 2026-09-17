@@ -253,9 +253,12 @@ either, so several refusals are kept deliberately reachable:
 - **`oauth2.breakIdTokenNonce`** puts a deliberately wrong `nonce` in every ID
   Token. Off by default, and *not* part of RFC 9700 mode: a compliance flag that
   also broke tokens is a flag nobody would turn on.
-- **WS-Federation's `wauth`** is refused rather than faked. A relying party
-  demanding multi-factor against a password-only session gets an error and two
-  ways forward, not an assertion claiming a second factor that did not happen.
+- **WS-Federation's `wauth`** is never faked. A relying party demanding
+  multi-factor (or a hardware token) against a session that does not have it
+  sends you back through the sign-in with the second factor required, and the
+  assertion reports what you actually did. If that one attempt still does not
+  produce the factor, the request is refused with two ways forward — never
+  answered with a second factor that did not happen.
 - **A SAML 2.0 `ProtocolBinding` this service does not implement is refused by
   name.** A service provider that asked for PAOS and received a form post would
   conclude that PAOS worked.

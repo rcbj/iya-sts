@@ -157,6 +157,11 @@ import oauth2 = require('../oauth-oidc/oauth2');
 // The front-channel fan-out, shared with /oauth2/logout so that both sign-outs
 // notify the same relying parties in the same way.
 import frontchannel = require('../oauth-oidc/frontchannel_logout');
+// The back-channel deliveries (2026-09-17, #36): a session this module ends
+// sends its Logout Tokens from `authn.dropSession()`, and this module lists
+// them on the result — and sends one itself when a single relying party is
+// forgotten on a session that stays.
+import backchannel = require('../oauth-oidc/backchannel_logout');
 // The two federated lists that live ON the session, each built by the module
 // that wrote it. See their own headers for why the builder is not here.
 import wsfed = require('../ws-federation/wsfed');
@@ -205,6 +210,7 @@ interface LogoutDeps {
   authn: typeof authn;
   oauth2: typeof oauth2;
   frontchannel: typeof frontchannel;
+  backchannel: typeof backchannel;
   wsfed: typeof wsfed;
   saml2Sso: typeof saml2Sso;
   vcOffers: typeof vcOffers;
@@ -254,6 +260,7 @@ class Logout {
       authn: authn,
       oauth2: oauth2,
       frontchannel: frontchannel,
+      backchannel: backchannel,
       wsfed: wsfed,
       saml2Sso: saml2Sso,
       vcOffers: vcOffers,
@@ -398,8 +405,9 @@ class Logout {
   // the header: those rows are the honest half of this page.
   // ---------------------------------------------------------------------------
   private buildFamilies() {
-    const { log, authn, config, frontchannel, krb5Principals, ldapServer,
-      oauth2, saml2Sso, stats, vcOffers, vcVerifier, wsfed } = this.deps;
+    const { log, authn, config, frontchannel, backchannel, krb5Principals,
+      ldapServer, oauth2, saml2Sso, stats, vcOffers, vcVerifier,
+      wsfed } = this.deps;
     log.debug("Entering Logout.buildFamilies().");
     log.debug("Leaving Logout.buildFamilies().");
     return [
@@ -482,13 +490,16 @@ class Logout {
       { id: 'oidc-rp', endOrder: 10,
         label: 'OpenID Connect relying parties',
         protocol: 'OAuth 2.0 / OIDC',
-        spec: 'OpenID Connect Front-Channel Logout 1.0',
+        spec: 'OpenID Connect Front-Channel Logout 1.0 and Back-Channel ' +
+              'Logout 1.0',
         what: 'The clients this session was issued an authorization ' +
               'response for. Ending one sends that relying party a ' +
               'front-channel notification at its registered ' +
-              'frontchannel_logout_uri and forgets it here; the tokens it ' +
-              'already holds are a separate row, because a notified relying ' +
-              'party that kept a live refresh token is not signed out.',
+              'frontchannel_logout_uri, POSTs a signed Logout Token to its ' +
+              'registered backchannel_logout_uri, and forgets it here; the ' +
+              'tokens it already holds are a separate row, because a ' +
+              'notified relying party that kept a live refresh token is not ' +
+              'signed out.',
         collect: (ctx) => {
           log.debug("Entering oidc-rp.collect().");
           const rows = [];
@@ -532,6 +543,16 @@ class Logout {
             return one.clientId === clientId;
           })[0];
           if (note) ctx.notifications.push(note);
+          // THE BACK-CHANNEL HALF, planned before the client is forgotten for
+          // the same reason, and sent from here because the session may
+          // STAY: `dropSession()` sends for the clients still on a session it
+          // ends, and this one will no longer be. Sent by the process that
+          // handled this request, outside the session-end claim — a relying
+          // party row is ended by one request, so it is sent once.
+          const told = backchannel.plan(session, {
+            via: ctx.by || 'the protocol-independent logout',
+            clients: [clientId], issuer: ctx.issuer });
+          backchannel.dispatch(told);
           if (session.oidcClients) delete session.oidcClients[clientId];
           log.debug("Leaving oidc-rp.terminate().");
           return { ok: true,
@@ -539,7 +560,10 @@ class Logout {
                             session.id + (note && note.url ?
                                           ' and notified at ' + note.uri
                                               : ' (there was nowhere to ' +
-                                                'notify it)') };
+                                                'notify it)') +
+                            (told.length ? '; a back-channel Logout Token ' +
+                                           'was queued for ' + told[0].uri
+                                         : '') };
         } },
 
       // -----------------------------------------------------------------------
@@ -1863,10 +1887,14 @@ class Logout {
   // them and the wrong one for anything that does — so state it.
   // ---------------------------------------------------------------------------
   terminate(key?, selection?, opts?) {
-    const { log, audit, config, errorCodes, ldapServer } = this.deps;
+    const { log, audit, config, errorCodes, ldapServer,
+            backchannel } = this.deps;
     log.debug("Entering Logout.terminate(). key=" + key + ", selected=" +
               ((selection && selection.length) || 'all'));
     const options = opts || {};
+    // Where the back-channel register stood before this act, so the result
+    // lists what THIS act queued (2026-09-17, #36).
+    const backchannelMark = backchannel.mark();
     const ctx = this.contextFor(key, options.issuer, options.by);
     const wanted = (selection || []).map(String).filter(Boolean);
     const global = !wanted.length;
@@ -1973,6 +2001,15 @@ class Logout {
 
     const unknownIds = Object.keys(unknown);
 
+    // THE BACK-CHANNEL DELIVERIES THIS ACT QUEUED, with the state each has
+    // now — `pending` for nearly all of them, because they are sent after
+    // this answer (see `oauth-oidc/backchannel_logout.ts`). Read for every
+    // session the act started from, which covers both triggers: a session
+    // ended, and a relying party forgotten on one that stays.
+    const backchannelRows = backchannel.deliveriesFor(
+      ctx.sessions.map((session) => { return session.id; }), backchannelMark);
+    const backchannelSummary = backchannel.summarize(backchannelRows);
+
     // ONE audit row for the ACT, and not one per thing ended. Every termination
     // that has an audit row of its own already wrote it — `session.end` from
     // dropSession(), the revocation's own log line — and a second row per item
@@ -2025,6 +2062,9 @@ class Logout {
       notifications: ctx.notifications,
       cleanups: ctx.cleanups,
       logoutRequests: ctx.logoutRequests,
+      // What this process sends by itself, with no browser: the back-channel
+      // Logout Tokens, each with its state at the moment of this answer.
+      backchannel: backchannelRows,
       message: (global ? 'Global logout for ' : 'Logout for ') + ctx.key +
                ': ' + done.length + ' item(s) ended' +
                (skipped.length ? ', ' + skipped.length + ' that could not be' :
@@ -2035,7 +2075,8 @@ class Logout {
                  ? ' Other nodes were instructed to close this identity\'s ' +
                    'directory connections and do so as they apply the change ' +
                    'log.'
-                 : '')
+                 : '') +
+               (backchannelSummary ? ' ' + backchannelSummary : '')
     };
     if (acrossCluster.length) {
       result.acrossCluster = acrossCluster;
@@ -2213,7 +2254,7 @@ class Logout {
   // and the three things only the BROWSER can do — the front-channel iframes,
   // the WS-Federation cleanup images, and the SAML LogoutRequests as links.
   private resultPage(base?, result?, inventory?) {
-    const { log, app, frontchannel, xmlEscape } = this.deps;
+    const { log, app, frontchannel, backchannel, xmlEscape } = this.deps;
     log.debug("Entering Logout.resultPage().");
     const listOf = (rows, cls) => {
       log.debug("Entering listOf().");
@@ -2268,6 +2309,7 @@ class Logout {
       (result.notifications.length
         ? frontchannel.render(result.notifications)
         : '') +
+      backchannel.render(result.backchannel || []) +
       (result.cleanups.length
         ? '<h2>WS-Federation cleanup ' +
           'requests</h2><table><thead><tr><th>Realm</th><th>Cleanup ' +

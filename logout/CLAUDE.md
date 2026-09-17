@@ -55,7 +55,7 @@ termination is a call into that same module:
 | Family | Read from | Ended by |
 |---|---|---|
 | Browser sign-on session | `authn.js` | `authn.endSessionById()` |
-| OIDC relying parties | `frontchannel_logout.js`, off the session | forgotten there, notified by iframe |
+| OIDC relying parties | `frontchannel_logout.js`, off the session | forgotten there, notified by iframe, and POSTed a Logout Token by `backchannel_logout.ts` |
 | WS-Federation realms | `wsfed.cleanupTargetsFor()` | forgotten, cleanup image |
 | SAML 2.0 service providers | `saml2_sso.logoutTargetsFor()` | forgotten, LogoutRequest link |
 | Tokens | `admin_stats.js` | `stats.revoke()` — the ONE revocation set |
@@ -216,8 +216,37 @@ they live rather than here:
   future family whose thing is a FILE DESCRIPTOR rather than a row will fail the
   same way and will not be caught by anything this file does.
 
-And one that is a whole specification: **OpenID Connect Front-Channel Logout
-1.0**, in `oauth-oidc/frontchannel_logout.ts`. See `oauth-oidc/CLAUDE.md`.
+And two that are whole specifications: **OpenID Connect Front-Channel Logout
+1.0**, in `oauth-oidc/frontchannel_logout.ts`, and **OpenID Connect
+Back-Channel Logout 1.0** (2026-09-17, #36), in
+`oauth-oidc/backchannel_logout.ts`. See `oauth-oidc/CLAUDE.md` (3n, 3aq).
+
+### The back-channel half is not a FAMILY's fan-out, and that is deliberate
+
+Front-channel notifications are collected into `ctx.notifications` by the
+`oidc-rp` family and drawn by this module's result page, because an iframe is
+something only a page can make happen. A Logout Token needs no page, so it is
+NOT sent from here for a session that ends: `authn.dropSession()` sends it,
+because every door that ends a session goes through that function —
+`/oauth2/logout`, `wsignout1.0` and SAML Single Logout as much as this module.
+What this module does is two smaller things:
+
+* **The `oidc-rp` row sends one itself.** Forgetting one relying party leaves
+  the session alive, so `dropSession()` will never send for it; the row plans
+  and dispatches a delivery for that one client before it is forgotten, and
+  the session end that may follow no longer lists it — so no client is told
+  twice. **In a GLOBAL logout that row is ended for every relying party**,
+  ahead of the session (`endOrder` 10 against 90), so it is this row, not
+  `dropSession()`, that sends for them — from the one process handling the
+  request, outside the `authn.session-end` claim. The claim still decides for
+  every other door, and for a client added to the session between the
+  inventory and the drop.
+* **`terminate()` lists what the act queued** — `result.backchannel`, read
+  with `backchannel.deliveriesFor(sessions, mark)` for every session the act
+  started from, and the result page draws it. The state is the one it has AT
+  THAT MOMENT: `pending` for nearly every row, because they are sent after the
+  answer, and `/admin/logout` lists the recent deliveries with the state they
+  reached. The message counts them.
 
 **SPIFFE is deliberately absent from `FAMILIES` and that is an answer rather
 than a gap.** A SPIFFE identity is a WORKLOAD, attested per call and holding no

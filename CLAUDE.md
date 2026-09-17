@@ -486,6 +486,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3q | `persistence.js`, the override-store slot in `config.js`, the directory slot it offers, and why `realms.onChange()` is an event rather than a third slot | `persistence/CLAUDE.md` |
 | 3m | `logout/logout.ts` holds no state, and the reading order is not the ending order | `logout/CLAUDE.md` |
 | 3n | `frontchannel_logout.js` | `oauth-oidc/CLAUDE.md` |
+| 3aq | `backchannel_logout.ts`, OpenID Connect Back-Channel Logout 1.0: triggered where a session ends, never on expiry, asynchronous with bounded retry through `federation_http.deliverForm()`, and which process sends | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -889,8 +890,9 @@ the file the row names.
 | Dial its database in the clear — and it does not authenticate that server either | `persistence/CLAUDE.md` |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
 | Recall anything it has already ISSUED — it DISOWNS them, which is a different claim | `logout/CLAUDE.md`, `common/CLAUDE.md` |
-| Perform back-channel logout. Front-channel IS implemented | `oauth-oidc/CLAUDE.md` |
-| Fake WS-Federation's `wauth`, or dereference `wreqptr` | `ws-federation/CLAUDE.md` |
+| ~~Perform back-channel logout. Front-channel IS implemented~~ — **reversed 2026-09-17 (#36)**: a signed Logout Token POSTed, after the answer and with bounded retry, to every relying party on a session any sign-out ends; an expiry sends none | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
+| ~~Fake WS-Federation's `wauth`~~ — **reversed 2026-09-17 (#36)**, as a step-up rather than a fake: an unmet demand sends the person to sign in again with the factor required, and is refused only if that fails | `ws-federation/CLAUDE.md` |
+| Dereference WS-Federation's `wreqptr` — a URL in a query parameter to fetch the request from is a server-side request forgery | `ws-federation/CLAUDE.md` |
 | Verify a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither checked | `saml/CLAUDE.md` |
 | Encrypt an assertion to a service provider it holds no certificate for — it sends it in CLEAR and says so loudly | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |

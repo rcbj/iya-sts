@@ -1750,11 +1750,33 @@ const SPECS: Spec[] = [
               'succeeded, so every URL is printed as a link beside its ' +
               'iframe rather than reported as sent. ' +
               'oauth2.frontchannelLogout turns all of it off, including the ' +
-              'claim and the advertisement, which is the only honest way to ' +
-              'switch it — a document advertising a capability whose claim ' +
-              'is off would be a document that lies. BACK-CHANNEL logout is ' +
-              'a different specification and is NOT implemented; the ' +
-              'metadata says so.' },
+              'advertisement, which is the only honest way to switch it — a ' +
+              'document advertising a capability that is off would be a ' +
+              'document that lies; the sid claim stays while back-channel ' +
+              'logout, which needs it too, is on.' },
+  { id: 'oidc-bclogout', name: 'OpenID Connect Back-Channel Logout 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-backchannel-1_0.html',
+    coverage: 'full for the provider (2026-09-17): the two discovery ' +
+              'members, the two per-client registration members (http or ' +
+              'https, no fragment, at registration, the console, /admin-api ' +
+              'and again when read), the sid claim, and a Logout Token — ' +
+              'typ logout+jwt, iss, aud, iat, exp two minutes on, jti, the ' +
+              'events member, sub and sid, no nonce, signed like the ' +
+              'client\'s ID Token and never with none — POSTed form-encoded ' +
+              'to every relying party on a session ended by ANY sign-out: ' +
+              '/oauth2/logout, /logout, wsignout1.0, SAML Single Logout, the ' +
+              'console and /admin-api. Asynchronous with bounded retry (a ' +
+              'timeout, a connection failure, 5xx, 408 and 429 retried; 200 ' +
+              'and 204 success; 400 final, section 2.8), through the ' +
+              'outbound policy (https unless ' +
+              'federation.outboundAllowInsecure, no internal address in ' +
+              'product mode), one audit row per ' +
+              'outcome and each delivery listed pending/sent/failed on the ' +
+              'sign-out result and on /admin/logout. A session that EXPIRES ' +
+              'sends nothing, by decision; encrypted Logout Tokens are not ' +
+              'offered. oauth2.backchannelLogout turns the members, the ' +
+              'claim contribution and the fan-out off together.' },
   { id: 'oidc-discovery', name: 'OpenID Connect Discovery 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html',
@@ -1773,9 +1795,8 @@ const SPECS: Spec[] = [
     coverage: 'mock: end_session_endpoint really does end the session, but ' +
               'id_token_hint is neither required nor checked and ' +
               'post_logout_redirect_uri is not validated against any ' +
-              'registration. Front-channel and back-channel logout are not ' +
-              'implemented and the discovery document says so rather than ' +
-              'staying silent.' },
+              'registration. Front-channel and back-channel logout are ' +
+              'implemented beside it and are rows of their own.' },
   { id: 'oid4vci', name: 'OpenID for Verifiable Credential Issuance 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html',
@@ -5313,7 +5334,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // ---------------------------------------------------------------------------
   { path: '/admin/oauth2', group: 'Admin', name: 'OAuth 2.0 / OIDC settings',
     specs: ['rfc6749', 'oidc', 'rfc9700', 'oauth21', 'oidc-fclogout',
-            'rfc7523', 'rfc7522'],
+            'oidc-bclogout', 'rfc7523', 'rfc7522'],
     effect: 'changes what the authorization server will accept and what it ' +
             'puts into what it issues',
     what: 'NON-SPEC. The oauth2.* settings, on the page for the ' +
@@ -5431,9 +5452,9 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The one wsfed.* setting, and where the rest of what a ' +
           'relying party receives is configured — the assertion is a SAML ' +
           '1.1 one, so saml.issuer and /admin/saml-attributes decide its ' +
-          'issuer and its contents. The page also states the two things this ' +
-          'profile deliberately does not do: wauth is recorded and not ' +
-          'honoured, and wreqptr is never dereferenced. Add ?format=json.' },
+          'issuer and its contents. The page also states how wauth is ' +
+          'answered — a demand the session cannot meet is a step-up — and ' +
+          'that wreqptr is never dereferenced. Add ?format=json.' },
   { path: '/admin/tls', group: 'Admin', name: 'TLS / mutual TLS settings',
     specs: ['rfc8446', 'rfc5280', 'rfc8705'],
     effect: 'changes the certificate both sockets share, on the next start',
@@ -6803,9 +6824,9 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/wsfed', group: 'Management API', name: 'WS-Federation ' +
       'settings',
     specs: ['ws-federation', 'openapi'],
-    what: 'GET /admin/wsfed over JSON: the one wsfed.* setting, and the two ' +
-          'things this profile deliberately does not do — wauth is recorded ' +
-          'and not honoured, wreqptr is never dereferenced. Read-only.' },
+    what: 'GET /admin/wsfed over JSON: the one wsfed.* setting, how wauth ' +
+          'is answered (a step-up where the session cannot meet it) and that ' +
+          'wreqptr is never dereferenced. Read-only.' },
   { path: '/admin-api/tls', group: 'Management API', name: 'TLS / mutual TLS ' +
       'settings',
     specs: ['rfc8446', 'rfc5280', 'openapi'],
@@ -7106,7 +7127,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'request to every relying party it signed into; wsignoutcleanup1.0 ' +
           'ends it without fanning out. Reads wtrealm (required, and the ' +
           'audience), wreply (optional — defaults to /wsfed/rp), wctx ' +
-          '(echoed byte for byte), wct, wfresh (MINUTES), wauth, whr and a ' +
+          '(echoed byte for byte), wct, wfresh (MINUTES), wauth (a hardware ' +
+          'or multi-factor demand the session does not meet is a step-up ' +
+          'through the sign-in, refused only if that fails), whr and a ' +
           'wreq RST by value. The token is a SAML 1.1 assertion by default ' +
           'because that is what AD FS issues; ?tokenType=saml2 and ' +
           '?trust=1.3 are NON-SPEC switches for the other token type and the ' +
@@ -7446,7 +7469,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'identifier carries a path.' },
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
-    specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'rfc8414',
+    specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
+            'rfc8414',
                                                    'rfc9207', 'rfc9449'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
@@ -7536,8 +7560,8 @@ const ENDPOINTS: EndpointEntry[] = [
   // and deliberately not under any protocol, which is the whole point of it.
   // ---------------------------------------------------------------------
   { path: '/logout', group: 'Authentication', name: 'Sign out of everything',
-    specs: ['oidc-fclogout', 'rfc7009', 'ws-federation', 'saml2', 'rfc4120',
-            'rfc4511'],
+    specs: ['oidc-fclogout', 'oidc-bclogout', 'rfc7009', 'ws-federation',
+            'saml2', 'rfc4120', 'rfc4511'],
     what: 'THE PROTOCOL-INDEPENDENT SIGN-OUT, and the only endpoint here ' +
           'that is about all sixteen families at once. GET lists everything ' +
           'this service is still holding for one identity — every browser ' +

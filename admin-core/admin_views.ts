@@ -157,6 +157,10 @@ import krb5Principals = require('../kerberos/krb5_principals');
 // `admin_actions.ts` gives beside its own.
 import krb5PersonKeys = require('../kerberos/krb5_person_keys');
 import oauth2 = require('../oauth-oidc/oauth2');
+// The recent back-channel logout deliveries (2026-09-17, #36), which the
+// sign-out page lists so a delivery queued as `pending` can be seen to have
+// arrived or not. A library that registers no route.
+import backchannel = require('../oauth-oidc/backchannel_logout');
 // RFC 7591 section 2.3 (2026-09-13): what a statement on an entry says, and the
 // settings that decide what one is worth. A library that registers no route.
 import softwareStatement = require('../oauth-oidc/software_statement');
@@ -406,6 +410,7 @@ interface AdminViewsDeps {
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
   oauth2: typeof oauth2;
+  backchannel: typeof backchannel;
   softwareStatement: typeof softwareStatement;
   assertionGrant: typeof assertionGrant;
   tlsClientCertificates: typeof tlsClientCertificates;
@@ -474,6 +479,7 @@ class AdminViews {
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
       oauth2: oauth2,
+      backchannel: backchannel,
       softwareStatement: softwareStatement,
       assertionGrant: assertionGrant,
       tlsClientCertificates: tlsClientCertificates,
@@ -6344,17 +6350,27 @@ class AdminViews {
   // first version answered the json directly on its two early paths and a model
   // on the third, which left the management API calling it twice to find out
   // which it had been given.
+  //
+  // `backchannelDeliveries` (2026-09-17, #36) is on EVERY branch: the most
+  // recent back-channel Logout Token deliveries in this realm, newest first,
+  // with the state each reached. A sign-out answers before its deliveries
+  // are made, so this is where `pending` turns into `sent` or `failed`. It is
+  // THIS PROCESS's list — see `oauth-oidc/backchannel_logout.ts` — and the
+  // `logout.backchannel` audit rows are the record every node shares.
   logoutJson(req) {
-    const { log, stats } = this.deps;
+    const { log, stats, backchannel } = this.deps;
     log.debug("Entering AdminViews.logoutJson().");
     const wantedUser = String((req.query || {}).user || '').trim();
     const gate = this.gateStateFor(req);
     const params = this.pageParamsOf(req.query);
     const families = this.logoutFamilies();
+    const backchannelDeliveries = backchannel.recent(25);
     if (!wantedUser) {
       log.debug("Leaving AdminViews.logoutJson(). Nobody was named.");
       return { families: families,
-               json: { user: '', known: false, families: families } };
+               backchannelDeliveries: backchannelDeliveries,
+               json: { user: '', known: false, families: families,
+                       backchannelDeliveries: backchannelDeliveries } };
     }
     const key = stats.identityKeyOf(wantedUser);
     const inventory = this.logoutInventoryFor(key);
@@ -6363,8 +6379,10 @@ class AdminViews {
     if (!inventory) {
       log.debug("Leaving AdminViews.logoutJson(). No logout reader.");
       return { inventory: null,
+               backchannelDeliveries: backchannelDeliveries,
                json: { user: wantedUser, known: false,
-                       error: 'no logout reader is installed' } };
+                       error: 'no logout reader is installed',
+                       backchannelDeliveries: backchannelDeliveries } };
     }
 
     // Flattened, because this table filters and pages ACROSS families — see the
@@ -6390,10 +6408,12 @@ class AdminViews {
       wantedUser: wantedUser, gate: gate, params: params, families: families,
       key: key, inventory: inventory, all: all, wantedFamily: wantedFamily,
       filtered: filtered, pg: pg, canWrite: canWrite,
+      backchannelDeliveries: backchannelDeliveries,
       json: Object.assign({ user: wantedUser, known: true, canWrite: canWrite },
                           inventory,
                           { rows: pg.shown,
-                            paging: this.pagingJson(pg.paging) })
+                            paging: this.pagingJson(pg.paging),
+                            backchannelDeliveries: backchannelDeliveries })
     };
   }
 
