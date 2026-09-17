@@ -5724,12 +5724,17 @@ const SETTINGS = [
     dflt: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
     runtime: true,
     description: 'The Format on the NameID when the AuthnRequest\'s ' +
-                 'NameIDPolicy asks for none. A request that DOES name one ' +
-                 'is answered with the one it named — any of them, including ' +
-                 'a format this service has never heard of, because a ' +
-                 'service provider being told its own format back is the ' +
-                 'behaviour worth exercising and refusing with ' +
-                 'InvalidNameIDPolicy would remove the test case.' },
+                 'NameIDPolicy asks for none — or, where the service ' +
+                 'provider\'s consumed metadata lists NameIDFormats and this ' +
+                 'value is not among them, the first of those this identity ' +
+                 'provider publishes. A request that DOES name one is ' +
+                 'answered with the one it named — any of them, including a ' +
+                 'format this service has never heard of, because a service ' +
+                 'provider being told its own format back is the behaviour ' +
+                 'worth exercising — UNLESS that service provider\'s ' +
+                 'consumed metadata declares its formats and this is not one ' +
+                 'of them, which is answered InvalidNameIDPolicy ' +
+                 '(saml-core-2.0-os section 3.4.1.1).' },
 
   { key: 'saml2.artifactTtlS', group: 'SAML 2.0 assertions',
     label: 'Artifact ' +
@@ -5768,11 +5773,14 @@ const SETTINGS = [
                  'refusal to issue would be a mock that stopped answering, ' +
                  'and silently sending plaintext while a page said ' +
                  '"encrypted" would be worse than either. The certificate is ' +
-                 'taken from the service provider\'s metadata if this ' +
-                 'service holds any, then samlEncryptionCertificate on its ' +
-                 'entry, then samlSigningCertificate — which is captured off ' +
-                 'a signed AuthnRequest, so a service provider that signs ' +
-                 'its requests needs no configuration at all. The assertion ' +
+                 'taken from samlEncryptionCertificate on its entry (which ' +
+                 'consuming its metadata writes), then its registered ' +
+                 'samlSigningCertificate, then — in development mode only — ' +
+                 'the OBSERVED certificate off a signed AuthnRequest, so a ' +
+                 'service provider that signs its requests needs no ' +
+                 'configuration there; product encrypts to an observed ' +
+                 'certificate only once an operator confirms it. The ' +
+                 'assertion ' +
                  'is SIGNED FIRST and then encrypted, which is the order ' +
                  'every service provider expects: the signature is inside ' +
                  'the ciphertext and is what survives decryption.' },
@@ -5837,18 +5845,48 @@ const SETTINGS = [
                  'wants before their directory has ten thousand entries in ' +
                  'it.' },
 
+  // --- REQUEST SIGNATURES (2026-09-17, #37) ------------------------------
+  // `auto` is how the requirement defaults by mode, through
+  // `mode.acceptsUnsignedSamlRequests()`, rather than through a literal —
+  // `pki.revocationCheck`'s arrangement. A signature that is PRESENT is
+  // verified whatever this says; this row decides only whether one may be
+  // ABSENT. `saml/request_signature.ts` argues both halves.
+  { key: 'saml2.requireSignedAuthnRequests', group: 'SAML 2.0',
+    label: 'Require signed requests from service providers',
+    env: 'STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS', type: 'enum',
+    enumValues: ['auto', 'on', 'off'], dflt: 'auto', runtime: true,
+    description: 'Whether an UNSIGNED <samlp:AuthnRequest> — and an ' +
+                 'unsigned <samlp:LogoutRequest> from a service provider — ' +
+                 'is refused. **`auto` is ON in product mode and OFF in ' +
+                 'development.** `on` and `off` decide regardless of the ' +
+                 'mode; a service provider whose consumed metadata says ' +
+                 'AuthnRequestsSigned="true" is held to it even when this ' +
+                 'is off. It is also what the WantAuthnRequestsSigned in ' +
+                 'this identity provider\'s metadata says.\n\nA signature ' +
+                 'that is PRESENT is verified in every mode — the HTTP ' +
+                 'Redirect binding\'s query-string signature (section ' +
+                 '3.4.4.1) or the HTTP POST binding\'s enveloped one — ' +
+                 'against the service provider\'s REGISTERED signing ' +
+                 'certificates (samlSigningCertificate, from its metadata or ' +
+                 'set on the SAML 2.0 page), never against the certificate ' +
+                 'the request carries, and a signature that does not verify ' +
+                 'is refused. With no registered certificate a signature is ' +
+                 'recorded as not verified, which counts as UNSIGNED when ' +
+                 'this is on.' },
+
   { key: 'saml2.defaultSingleLogoutService', group: 'SAML 2.0',
     label: 'Fallback logout return address',
     env: 'STS_SAML2_DEFAULT_SLO_SERVICE', type: 'string', dflt: '',
     runtime: true,
     description: 'Where a <samlp:LogoutResponse> goes when the service ' +
-                 'provider has no SingleLogoutService recorded on its ' +
-                 'application entry. A LogoutRequest carries no return ' +
-                 'address of its own — only SP metadata has one, and this ' +
-                 'service does not consume SP metadata — so without this the ' +
-                 'fallback is the assertion consumer service URL that ' +
-                 'application last used, which is stated on the page rather ' +
-                 'than done quietly. Set it to remove the guess.' },
+                 'provider has no SingleLogoutService registered — neither ' +
+                 'from its consumed metadata nor declared on its application ' +
+                 'entry. A LogoutRequest carries no return address of its ' +
+                 'own, so without this the fallback is the assertion ' +
+                 'consumer service URL that application last used, which is ' +
+                 'stated on the page rather than done quietly. Set it, or ' +
+                 'consume the service provider\'s metadata, to remove the ' +
+                 'guess.' },
 
   { key: 'saml2.requestTtlMin', group: 'SAML 2.0',
     label: 'Held AuthnRequest lifetime (minutes)',
@@ -5886,7 +5924,9 @@ const SETTINGS = [
     env: 'STS_SAML2_SP_METADATA_MAX_BYTES', type: 'int', dflt: 524288,
     min: 1024, max: 16777216, runtime: true,
     description: 'The cap on a service provider\'s metadata fetched by the ' +
-                 'refresh action (samlSpMetadataUrl). A metadata document is ' +
+                 'refresh action (samlSpMetadataUrl), and on one uploaded on ' +
+                 'the SAML 2.0 page or with POST ' +
+                 '/admin-api/saml2/upload-metadata. A metadata document is ' +
                  'kilobytes; the cap is what stops an endless response being ' +
                  'read into this process.' },
 

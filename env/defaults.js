@@ -491,6 +491,7 @@ var config = {
     keyTransportAlgorithm: "rsa-oaep-mgf1p",                               // Key transport algorithm
     encryptLogoutNameId: false,                                            // Encrypt the NameID in a LogoutRequest
     autocreateApplications: true,                                          // Register a service provider on sight
+    requireSignedAuthnRequests: "auto",                                    // Require signed requests from service providers
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)

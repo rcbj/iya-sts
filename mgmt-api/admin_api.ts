@@ -6455,7 +6455,15 @@ class AdminApi {
                      'what has been recorded about it — and answers 200 with ' +
                      '`found: false` for an entityID that is not registered, ' +
                      'whose metadata is still served and whose AuthnRequest ' +
-                     'would still be answered.',
+                     'would still be answered.\n\nThe `?sp=` reply also ' +
+                     'says what checking its requests\' signatures found ' +
+                     '(`lastRequestVerification`), what they are verified ' +
+                     'against (`signingCertificates`), the certificate a ' +
+                     'request carried that nobody has confirmed ' +
+                     '(`observedSigningCertificate`), whether signed ' +
+                     'requests are required of it and why ' +
+                     '(`signedRequestsRequired`), and everything consuming ' +
+                     'its metadata registered (`metadata`).',
         mirrors: 'GET /admin/saml2',
         parameters: [
           { name: 'sp', in: 'query', required: false,
@@ -6522,9 +6530,11 @@ class AdminApi {
             summary:
               'Declare where this service provider\'s LogoutResponse goes',
             description: 'A `<samlp:LogoutRequest>` CARRIES NO RETURN ' +
-                         'ADDRESS — only SP metadata does, and this service ' +
-                         'does not consume SP metadata. With nothing ' +
-                         'declared the profile falls back to ' +
+                         'ADDRESS — only SP metadata does. The ' +
+                         'SingleLogoutService endpoints of the service ' +
+                         'provider\'s CONSUMED metadata are used first; ' +
+                         'with none, what is declared here; then the ' +
+                         'profile falls back to ' +
                          '`saml2.defaultSingleLogoutService` and then to the ' +
                          'assertion consumer service URL that service ' +
                          'provider last used, WHICH IS A GUESS and is logged ' +
@@ -6572,36 +6582,209 @@ class AdminApi {
 
           { action: 'set-signing-certificate',
             operationId: 'setSaml2SigningCertificate',
-            summary: 'Record the certificate this service provider signs with',
-            description: 'Base64 DER — PEM armour and whitespace are ' +
-                         'stripped, because what the attribute holds is what ' +
-                         'a `ds:X509Certificate` carries, and a PEM stored ' +
-                         'there would be something no reader of it expects ' +
-                         'with nothing to say so until the day one tried to ' +
-                         'use it.\n\n**IT IS NOT CHECKED AGAINST ANYTHING.** ' +
-                         'This service records whether an AuthnRequest was ' +
-                         'signed and verifies no signature, which is the ' +
-                         'same posture it takes to every credential — see ' +
-                         '`saml/CLAUDE.md`. This is the material a ' +
-                         'verification would read the day one is wanted, and ' +
-                         'it is public key material, so unlike a client ' +
-                         'secret it is worth nothing to whoever reads ' +
-                         'this directory. An empty value clears it.',
+            summary: 'Replace the certificates this service provider\'s ' +
+                     'signatures are verified against',
+            description: '**THE TRUST ANCHOR FOR THIS SERVICE PROVIDER\'S ' +
+                         'SIGNATURES** (2026-09-17). A signed AuthnRequest, ' +
+                         'LogoutRequest or LogoutResponse from it is ' +
+                         'VERIFIED against `samlSigningCertificate` in every ' +
+                         'mode, and refused when it verifies against none — ' +
+                         'never against the certificate the request ' +
+                         'carries. The attribute is a LIST (a metadata ' +
+                         'rollover publishes two keys); this REPLACES it ' +
+                         'with the one certificate given, and an empty ' +
+                         '`value` clears it. Consuming the service ' +
+                         'provider\'s metadata writes the same list.' +
+                         '\n\nBase64 DER or PEM — the armour and whitespace ' +
+                         'are stripped, because what the attribute holds is ' +
+                         'what a `ds:X509Certificate` carries. A value that ' +
+                         'is not an RSA certificate is refused and nothing ' +
+                         'changes: the verifier here is RSA, and an ' +
+                         'unusable certificate would make every signature ' +
+                         'from this service provider fail. Public key ' +
+                         'material, worth nothing to whoever reads the ' +
+                         'directory.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: {
                 sp: { type: 'string' },
                 value: { type: 'string',
-                         description: 'Base64 DER, or a PEM to ' +
-                                                      'be stripped.' }
+                         description: 'Base64 DER or PEM; empty clears ' +
+                                      'the list.' }
               },
               required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml', value: '' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'remove-signing-certificate',
+            operationId: 'removeSaml2SigningCertificate',
+            summary: 'Take one registered signing certificate off a service ' +
+                     'provider',
+            description: 'By value — the base64 DER exactly as `GET ' +
+                         '/admin-api/saml2?sp=` lists it in ' +
+                         '`signingCertificates` (a PEM is accepted and ' +
+                         'normalised). Signatures made with that key stop ' +
+                         'verifying from the next request. Removing the ' +
+                         'last one leaves this service provider\'s ' +
+                         'signatures recorded as `no-certificate` and not ' +
+                         'verified.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                sp: { type: 'string' },
+                value: { type: 'string',
+                         description: 'The certificate to remove.' }
+              },
+              required: ['sp', 'value'],
               examples: [{ sp: 'https://sp.example.com/saml',
                            value: 'MIIC...' }],
               additionalProperties: false
             },
-            responseDescription: 'The application entry as it now stands.' }
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'confirm-signing-certificate',
+            operationId: 'confirmSaml2SigningCertificate',
+            summary: 'Trust the certificate a signed request carried',
+            description: 'A signed request\'s `ds:KeyInfo` certificate that ' +
+                         'is not registered is recorded as OBSERVED ' +
+                         '(`observedSigningCertificate` on `GET ' +
+                         '/admin-api/saml2?sp=`, the attribute ' +
+                         '`samlObservedSigningCertificate`) and verifies ' +
+                         'NOTHING — anybody can sign a request and attach ' +
+                         'the key that verifies it. Development mode still ' +
+                         'encrypts an assertion to it when nothing else is ' +
+                         'on the entry; product does not.\n\nThis MOVES it ' +
+                         'onto `samlSigningCertificate`, so this service ' +
+                         'provider\'s signatures are verified against it ' +
+                         'from the next request. Refused when nothing is ' +
+                         'observed, and for a certificate that is not RSA. ' +
+                         'Confirm only a key you know is the service ' +
+                         'provider\'s: this is the registration.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'discard-signing-certificate',
+            operationId: 'discardSaml2SigningCertificate',
+            summary: 'Discard the certificate a signed request carried',
+            description: 'The opposite answer to ' +
+                         '`confirm-signing-certificate`: the observed ' +
+                         'certificate is taken off the entry. It was never ' +
+                         'trusted; a signed request carrying it again ' +
+                         'records it again. Refused when nothing is ' +
+                         'observed.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'set-metadata-signing-certificate',
+            operationId: 'setSaml2MetadataSigningCertificate',
+            summary: 'Require this service provider\'s metadata to be ' +
+                     'signed with one key',
+            description: 'Writes `samlSpMetadataSigningCertificate`. With it ' +
+                         'set, consuming a metadata document — a refresh ' +
+                         'or an upload — REFUSES one that is unsigned or ' +
+                         'whose signature does not verify against this ' +
+                         'certificate, and changes nothing. Without it a ' +
+                         'signed document is consumed and recorded as ' +
+                         '`signed-not-verified`: the trust act is then the ' +
+                         'administrator\'s choice of URL or document. ' +
+                         'Base64 DER or PEM, RSA; empty clears it.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                sp: { type: 'string' },
+                value: { type: 'string',
+                         description: 'Base64 DER or PEM; empty clears it.' }
+              },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml', value: '' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'upload-metadata',
+            operationId: 'uploadSaml2Metadata',
+            summary: 'Consume a service provider\'s metadata document',
+            description: 'The same CONSUMPTION `POST ' +
+                         '/admin-api/applications/refresh-metadata` ' +
+                         'performs on a fetched document, for a document ' +
+                         'given here — a service provider whose metadata ' +
+                         'this service cannot reach. It REGISTERS what the ' +
+                         '`<md:SPSSODescriptor>` says: every ' +
+                         'AssertionConsumerService (binding, location, ' +
+                         'index, isDefault) as a return address — an ' +
+                         'AuthnRequest is then answered only at one of ' +
+                         'them, by index, by URL or by default, in every ' +
+                         'mode — every SingleLogoutService, every signing ' +
+                         'certificate (`use="signing"` or no `use`) as what ' +
+                         'its requests are verified against, the encryption ' +
+                         'certificate, its NameIDFormats (a NameIDPolicy ' +
+                         'naming another is then InvalidNameIDPolicy), and ' +
+                         'AuthnRequestsSigned and WantAssertionsSigned. ' +
+                         'validUntil and cacheDuration are recorded and ' +
+                         'shown.\n\nREFUSED, changing nothing, for: a ' +
+                         'document that is not a single EntityDescriptor ' +
+                         'with a SAML 2.0 SPSSODescriptor; an entityID that ' +
+                         'is not this service provider\'s; a validUntil ' +
+                         'already passed; an encryption certificate this ' +
+                         'service cannot encrypt to; a signature that does ' +
+                         'not verify against ' +
+                         '`samlSpMetadataSigningCertificate` when one is set ' +
+                         '(or no signature then); and a ' +
+                         'document over `saml2.spMetadataMaxBytes`. A ' +
+                         'signing certificate that is not RSA is skipped and ' +
+                         'named in `skipped`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                sp: { type: 'string',
+                      description: 'The service provider\'s entityID — ' +
+                                   'which the document must name.' },
+                document: { type: 'string',
+                            description: 'The metadata document, as XML.' }
+              },
+              required: ['sp', 'document'],
+              examples: [{
+                sp: 'https://sp.example.com/saml',
+                document: '<md:EntityDescriptor ' +
+                  'xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" ' +
+                  'entityID="https://sp.example.com/saml">' +
+                  '<md:SPSSODescriptor ' +
+                  'protocolSupportEnumeration=' +
+                  '"urn:oasis:names:tc:SAML:2.0:protocol">' +
+                  '<md:NameIDFormat>' +
+                  'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress' +
+                  '</md:NameIDFormat>' +
+                  '<md:AssertionConsumerService index="0" isDefault="true" ' +
+                  'Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" ' +
+                  'Location="https://sp.example.com/saml/acs"/>' +
+                  '</md:SPSSODescriptor></md:EntityDescriptor>'
+              }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed: `signature`, the ' +
+                                 'endpoint locations, how many signing ' +
+                                 'certificates were registered, and ' +
+                                 '`skipped`.' }
         ] },
 
       { method: 'GET', path: BASE + '/saml11', tag: 'SAML 1.1',
@@ -7681,15 +7864,19 @@ class AdminApi {
 
           { action: 'refresh-metadata',
             operationId: 'refreshApplicationMetadata',
-            summary: 'Fetch this service provider\'s SAML metadata and store ' +
-                     'its encryption certificate',
+            summary: 'Fetch this service provider\'s SAML metadata and ' +
+                     'consume it',
             description: 'Dials the `samlSpMetadataUrl` ON THE ENTRY — never ' +
-                         'a URL in the request body — parses the document, ' +
-                         'and writes `samlSpMetadata` and ' +
-                         '`samlEncryptionCertificate` back. That certificate ' +
-                         'is what an assertion for this service provider is ' +
-                         'encrypted to when `saml2.encryptAssertion` (or ' +
-                         '`saml2EncryptAssertion` on the entry) is on.\n\nIT ' +
+                         'a URL in the request body — and CONSUMES the ' +
+                         'document exactly as `POST ' +
+                         '/admin-api/saml2/upload-metadata` does: its ' +
+                         'endpoints become REGISTERED return addresses, its ' +
+                         'signing certificates what its requests are ' +
+                         'verified against, its encryption certificate what ' +
+                         'an assertion is encrypted to, and its ' +
+                         'NameIDFormats, AuthnRequestsSigned and ' +
+                         'WantAssertionsSigned are applied. That operation ' +
+                         'lists what is refused.\n\nIT ' +
                          'IS THE ONLY OPERATION IN THIS API THAT MAKES AN ' +
                          'OUTBOUND REQUEST, and the second surface in this ' +
                          'service that makes one at all — federation is the ' +
@@ -7703,14 +7890,11 @@ class AdminApi {
                          'FAILURE CHANGES NOTHING — not the document, not ' +
                          'the certificate — so an application that was ' +
                          'working does not stop working because a metadata ' +
-                         'host was down.\n\nThe `use="encryption"` ' +
-                         'KeyDescriptor ' +
-                         'is taken, falling back to ' +
-                         'one with no `use` at all; a ' +
-                         '`use="signing"` descriptor is deliberately NOT ' +
-                         'taken. ' +
-                         'The endpoints in the document are REPORTED and not ' +
-                         'applied.',
+                         'host was down.\n\nFor ENCRYPTION the ' +
+                         '`use="encryption"` KeyDescriptor is taken, falling ' +
+                         'back to one with no `use` at all; a ' +
+                         '`use="signing"` descriptor is never an encryption ' +
+                         'key, and is registered as a signing certificate.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

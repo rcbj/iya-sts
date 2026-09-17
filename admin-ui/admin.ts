@@ -15708,22 +15708,28 @@ class AdminConsole {
         ? '<h2>Service provider metadata</h2>' +
           this.note('Fetches <code>' +
                     this.esc(this.firstFieldValue(row, 'samlSpMetadataUrl')) +
-          '</code> and stores what it finds: the document on ' +
-          '<code>samlSpMetadata</code> and the <code>use="encryption"</code> ' +
-          'certificate on <code>samlEncryptionCertificate</code>, which is ' +
-          'what an assertion for this service provider is then encrypted to. ' +
-          'A fetch that fails changes NOTHING, so whatever certificate is in ' +
-          'force stays in force. The endpoints in the document are reported ' +
-          'and not applied — a response still goes where the request asks.') +
+          '</code> and CONSUMES it: the document on ' +
+          '<code>samlSpMetadata</code>, its AssertionConsumerService and ' +
+          'SingleLogoutService endpoints as REGISTERED return addresses, its ' +
+          'signing certificates as what its requests are verified against, ' +
+          'its <code>use="encryption"</code> certificate on ' +
+          '<code>samlEncryptionCertificate</code>, and its NameIDFormats, ' +
+          'AuthnRequestsSigned and WantAssertionsSigned. A fetch that fails ' +
+          'changes NOTHING, so whatever is registered stays in force. <a ' +
+          'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
+          '">The SAML 2.0 page</a> shows what was consumed and takes an ' +
+          'uploaded document.') +
           '<form method="post" action="/admin/applications">' + carryBack +
           '<div class="formrow">' +
           '<input type="hidden" name="action" value="refresh-metadata">' +
           '<input type="hidden" name="application" value="' +
           this.esc(row.identifier) + '"><button ' +
           'type="submit">Refresh the metadata</button><span class="sub">' +
-          (this.firstFieldValue(row, 'samlEncryptionCertificate')
-            ? 'It already holds an encryption certificate; this replaces it.'
-            : 'It holds no encryption certificate yet.') +
+          (this.firstFieldValue(row, 'samlSpMetadataConsumedAt')
+            ? 'Metadata was last consumed ' +
+              this.esc(this.firstFieldValue(row, 'samlSpMetadataConsumedAt')) +
+              '; this replaces what it registered.'
+            : 'No metadata has been consumed yet.') +
           ' This is one of two places in this service that dials anything at ' +
           'all.</span></div></form>'
         : '') +
@@ -16165,12 +16171,14 @@ class AdminConsole {
       '<h3>Where SAML 2.0 encryption gets this service provider\'s key</h3>' +
       this.note('Encrypting an assertion needs the RECIPIENT\'S certificate, ' +
       'and this service does not consume metadata unless it is told to. It ' +
-      'looks in two places, most specific first: ' +
-      '<code>samlEncryptionCertificate</code> below, then ' +
-      '<code>samlSigningCertificate</code> — which is captured off a SIGNED ' +
-      'AuthnRequest, so a service provider that signs its requests needs ' +
-      'nothing here at all. With neither, an assertion that was meant to be ' +
-      'encrypted goes out <strong>in clear</strong> and says so in the log.') +
+      'looks in three places, most specific first: ' +
+      '<code>samlEncryptionCertificate</code> below, then a REGISTERED ' +
+      '<code>samlSigningCertificate</code>, then — in development mode only ' +
+      '— the certificate a signed AuthnRequest carried, which is recorded as ' +
+      'observed and not trusted. With none, an assertion that was meant to ' +
+      'be encrypted goes out <strong>in clear</strong> in development and ' +
+      'says so in the log, and is refused in product. A metadata document ' +
+      'pasted below is CONSUMED when the application is created.') +
       '<table><tr><th>Attribute</th><th>What</th><th>Value</th><th>Notes</th>' +
       '</tr>' +
       rows + '</table></div>';
@@ -17275,6 +17283,9 @@ class AdminConsole {
         '<td>' + (slo ? self.codeList(Array.isArray(slo) ? slo : [slo])
                       : '<span class="sub">not declared &mdash; ' +
                         'guessed</span>') +
+        '</td><td>' +
+        self.esc(String(row.fields.samlAuthnRequestVerification || '')
+                   .split(' ')[0] || '—') +
         '</td><td>' + self.esc(String(row.authentications)) + '</td><td>' +
         self.esc(row.lastSeen ? row.lastSeen.replace('T', ' ').slice(0, 19) :
                  '') +
@@ -17315,7 +17326,8 @@ class AdminConsole {
       (rows
         ? '<table><thead><tr><th>Service provider (entityID)</th><th>Its ' +
           'metadata</th><th>Assertion consumer service</th><th>Single logout ' +
-          'service</th><th>Responses</th><th>Last ' +
+          'service</th><th>Last request\'s signature</th><th>Responses</th>' +
+          '<th>Last ' +
           'seen</th></tr></thead><tbody>' + rows + '</tbody></table>' + nav.foot
         : this.note('No service provider has used this profile yet' +
           (needle ? ' under that filter' : '') + '. Start one at <a ' +
@@ -17363,6 +17375,8 @@ class AdminConsole {
     const fields = view.fields;
     const acs = view.acs;
     const slo = view.slo;
+    const verification = view.json.lastRequestVerification;
+    const required = view.json.signedRequestsRequired;
     const listView = this.listViewOf('/admin/saml2', req.query);
     const carryBack = '<input type="hidden" name="back" value="' +
       this.esc(queryWith(listView, {})) + '">';
@@ -17425,24 +17439,37 @@ class AdminConsole {
           ? this.codeList(valuesFor(fields.samlResponseBinding)) : '<span ' +
               'class="sub">none</span>') +
         '</td></tr>' +
-      '<tr><td>Its last AuthnRequest was signed</td><td>' +
-        (fields.samlAuthnRequestSigned === 'TRUE' ? 'yes' :
-          (fields.samlAuthnRequestSigned === 'FALSE' ? 'no' : '<span ' +
-              'class="sub">unknown</span>')) +
-        ' <span class="sub">&mdash; RECORDED AND NOT CHECKED. This service ' +
-        'verifies no request signature, which is the same posture it takes ' +
-        'to every credential; the certificate below is what a verification ' +
-        'would read.</span></td></tr><tr><td>Responses issued to ' +
+      '<tr><td>Its last AuthnRequest\'s signature</td><td>' +
+        (verification.outcome
+          ? '<strong>' + this.esc(verification.outcome) + '</strong>' +
+            (verification.binding
+              ? ' <span class="sub">(' + this.esc(verification.binding) +
+                ' binding, ' + this.esc(verification.signatureMethod ||
+                                        'no SigAlg') +
+                (verification.weak ? ', SHA-1 — weak' : '') + ')</span>'
+              : '')
+          : '<span class="sub">unknown</span>') +
+        ' <span class="sub">&mdash; VERIFIED against the registered signing ' +
+        'certificates below, never against the one a request carries. ' +
+        '<code>no-certificate</code> means it was signed and nothing is ' +
+        'registered to check it against.</span></td></tr>' +
+        '<tr><td>Signed requests required</td><td>' +
+        (required.required ? '<strong>yes</strong>' : 'no') +
+        ' <span class="sub">&mdash; ' + this.esc(required.why) +
+        '. An unsigned AuthnRequest or LogoutRequest is refused when this ' +
+        'is yes; a signature that does not verify is refused ' +
+        'always.</span></td></tr><tr><td>Responses issued to ' +
         'it</td><td>' + this.esc(String((row && row.authentications) || 0)) +
         '</td></tr>' +
       '</tbody></table>' +
       '<h2>Where its LogoutResponse goes</h2>' +
       this.note('A <code>&lt;samlp:LogoutRequest&gt;</code> carries no ' +
-      'return address — only SP metadata does, and this service does not ' +
-      'consume SP metadata. So with nothing declared here the profile falls ' +
-      'back to <code>saml2.defaultSingleLogoutService</code> and then to the ' +
-      'assertion consumer service URL this service provider last used, ' +
-      '<strong>which is a guess and is logged as one</strong>. Declaring it ' +
+      'return address — only SP metadata does. The SingleLogoutService ' +
+      'endpoints of its CONSUMED metadata (below) are used first; with none, ' +
+      'what is declared here; then <code>saml2.defaultSingleLogoutService' +
+      '</code>; and then the assertion consumer service URL this service ' +
+      'provider last used, <strong>which is a guess and is logged as ' +
+      'one</strong>. Consuming its metadata, or declaring an address here, ' +
       'removes the guess.') +
       (slo.length
         ? '<table><thead><tr><th>Declared</th><th></th></tr></thead><tbody>' +
@@ -17470,26 +17497,11 @@ class AdminConsole {
       '<span ' +
       'class="note">Writes <code>samlSingleLogoutService</code> on the ' +
       'entry. An <code>ldapmodify</code> of the same attribute does exactly ' +
-      'this.</span></div></form><h2>Its signing certificate</h2><p ' +
-      'class="sub">Taken off the <code>ds:KeyInfo</code> of a signed ' +
-      'AuthnRequest when one carries it, and settable here. It is public key ' +
-      'material, so unlike a client secret it is worth nothing to whoever ' +
-      'reads this directory — and nothing reads it today, because no request ' +
-      'signature is verified. It is here so that a verification has ' +
-      'somewhere to read from the day one is wanted.</p>' +
-      (fields.samlSigningCertificate
-        ? '<pre>' +
-          this.esc(String(fields.samlSigningCertificate)
-            .replace(/(.{72})/g, '$1\n')) +
-          '</pre>'
-        : '<p>None recorded.</p>') +
-      '<form method="post" action="/admin/saml2">' + carryBack + '<div ' +
-      'class="formrow"><input type="hidden" name="action" ' +
-      'value="set-signing-certificate"><input type="hidden" name="sp" ' +
-      'value="' + this.esc(identifier) + '"><label ' +
-      'for="cert">Set it</label><input type="text" id="cert" name="value" ' +
-      'placeholder="base64 DER, no PEM header"><button>Set</button><span ' +
-      'class="note">Empty clears it.</span></div></form><p class="sub"><a ' +
+      'this.</span></div></form>' +
+      this.saml2SigningCertificatesSection(identifier, view.json,
+                                           carryBack) +
+      this.saml2MetadataSection(identifier, view.json, carryBack) +
+      '<p class="sub"><a ' +
       'href="' + this.esc(facts.metadataUrl) + '">its ' +
       'metadata</a> &middot; <a href="/saml2">the profile</a>' +
       (row ? ' &middot; <a href="/admin/applications?application=' +
@@ -17502,6 +17514,198 @@ class AdminConsole {
       inner: inner,
       json: view.json
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGNING CERTIFICATES (#37): what this service provider's signatures
+  // are verified against, and the one a request carried that nobody has
+  // vouched for. Each registered value has a Remove; the observed one has
+  // Confirm and Discard. Values on ONE entry, bounded by what a person or a
+  // metadata document registered, so the list is drawn whole — the same as
+  // the endpoint lists above it.
+  // ---------------------------------------------------------------------------
+  saml2SigningCertificatesSection(identifier, json, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.saml2SigningCertificatesSection().");
+    const hidden = function (action) {
+      log.debug("Entering hidden().");
+      log.debug("Leaving hidden().");
+      return '<form method="post" action="/admin/saml2">' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="sp" value="' + self.esc(identifier) +
+        '">';
+    };
+    const certs = json.signingCertificates || [];
+    const shown = function (der) {
+      log.debug("Entering shown().");
+      log.debug("Leaving shown().");
+      return '<pre>' + self.esc(String(der).replace(/(.{72})/g, '$1\n')) +
+             '</pre>';
+    };
+    const html = '<h2>Its signing certificates</h2>' +
+      this.note('What this service provider\'s AuthnRequests, ' +
+      'LogoutRequests and LogoutResponses are <strong>VERIFIED</strong> ' +
+      'against, in every mode — a signature that verifies against none of ' +
+      'them is refused. Written by consuming its metadata, by the form ' +
+      'below, or by confirming an observed certificate. The certificate a ' +
+      'request carries in its <code>ds:KeyInfo</code> is never trusted by ' +
+      'arriving: it is shown as OBSERVED until you confirm it. RSA ' +
+      'certificates only, because the verifier here is RSA.') +
+      (certs.length
+        ? '<table><thead><tr><th>Registered</th><th></th></tr></thead>' +
+          '<tbody>' + certs.map(function (der) {
+            return '<tr><td>' + shown(der) + '</td><td>' +
+              hidden('remove-signing-certificate') +
+              '<input type="hidden" name="value" value="' + self.esc(der) +
+              '"><button class="secondary">Remove</button></form></td></tr>';
+          }).join('') + '</tbody></table>'
+        : this.note('None registered, so a signed request from this service ' +
+                    'provider is recorded as <code>no-certificate</code> ' +
+                    'and not verified.')) +
+      hidden('set-signing-certificate') + '<div class="formrow"><label ' +
+      'for="cert">Replace them with</label><input type="text" id="cert" ' +
+      'name="value" placeholder="base64 DER or PEM"><button>Set</button>' +
+      '<span class="note">The list becomes this one certificate; empty ' +
+      'clears it.</span></div></form>' +
+      '<h3>Observed</h3>' +
+      (json.observedSigningCertificate
+        ? this.note('The last signed request carried this certificate, and ' +
+          'it is not registered. It verifies <strong>nothing</strong>. ' +
+          'Development mode encrypts an assertion to it when nothing else ' +
+          'is on the entry; product does not. Confirm it only if it is ' +
+          'genuinely this service provider\'s.') +
+          shown(json.observedSigningCertificate) +
+          '<div class="formrow">' + hidden('confirm-signing-certificate') +
+          '<button>Confirm — trust it</button></form> ' +
+          hidden('discard-signing-certificate') +
+          '<button class="secondary">Discard</button></form></div>'
+        : this.note('No request has carried a certificate that is not ' +
+                    'already registered.'));
+    log.debug("Leaving AdminConsole.saml2SigningCertificatesSection().");
+    return html;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONSUMED METADATA (#37): what the last refresh or upload registered,
+  // and the upload form. The refresh button is on the application's own page,
+  // beside the URL it dials, and this links there rather than drawing a second
+  // copy of it.
+  // ---------------------------------------------------------------------------
+  saml2MetadataSection(identifier, json, carryBack) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.saml2MetadataSection().");
+    const meta = json.metadata || {};
+    const yes = function (flag) {
+      log.debug("Entering yes().");
+      log.debug("Leaving yes().");
+      return flag ? 'true' : 'false';
+    };
+    const acsRows = (meta.assertionConsumerServices || []).map(function (e) {
+      return '<tr><td>' + self.esc(e.index || '—') + '</td><td>' +
+        (e.isDefault === true ? 'yes' : (e.isDefault === false ? 'no' : '—')) +
+        '</td><td><code>' + self.esc(e.binding) + '</code></td><td><code>' +
+        self.esc(e.location) + '</code></td></tr>';
+    }).join('');
+    const sloRows = (meta.singleLogoutServices || []).map(function (e) {
+      return '<tr><td><code>' + self.esc(e.binding) + '</code></td><td><code>' +
+        self.esc(e.location) + '</code></td><td>' +
+        (e.responseLocation ? '<code>' + self.esc(e.responseLocation) +
+                              '</code>' : '—') + '</td></tr>';
+    }).join('');
+    const facts = meta.consumed
+      ? '<table><tbody>' +
+        '<tr><td>Consumed</td><td>' + self.esc(meta.consumedAt) + ' (' +
+          self.esc(meta.how) + ')' +
+          (meta.url ? ' from <code>' + self.esc(meta.url) + '</code>' : '') +
+          '</td></tr>' +
+        '<tr><td>The document\'s own signature</td><td>' +
+          self.esc(meta.signature || 'unknown') + '</td></tr>' +
+        '<tr><td>validUntil</td><td>' +
+          (meta.validUntil
+            ? self.esc(meta.validUntil) +
+              (meta.expired ? ' <strong>— EXPIRED.</strong> <span ' +
+                              'class="sub">Shown, not enforced: what it ' +
+                              'registered is still in use. Refresh or ' +
+                              're-upload it.</span>' : '')
+            : '<span class="sub">none stated</span>') + '</td></tr>' +
+        '<tr><td>cacheDuration</td><td>' +
+          (meta.cacheDuration ? self.esc(meta.cacheDuration) +
+           ' <span class="sub">— recorded; this service never refetches on ' +
+           'its own</span>' : '<span class="sub">none stated</span>') +
+          '</td></tr>' +
+        '<tr><td>AuthnRequestsSigned</td><td>' +
+          yes(meta.authnRequestsSigned) + '</td></tr>' +
+        '<tr><td>WantAssertionsSigned</td><td>' +
+          yes(meta.wantAssertionsSigned) + '</td></tr>' +
+        '<tr><td>NameIDFormats</td><td>' +
+          ((meta.nameIdFormats || []).length
+            ? this.codeList(meta.nameIdFormats) + ' <span class="sub">— a ' +
+              'NameIDPolicy asking for another is answered ' +
+              'InvalidNameIDPolicy</span>'
+            : '<span class="sub">none declared — any format asked for is ' +
+              'answered</span>') + '</td></tr>' +
+        '<tr><td>Encryption certificate</td><td>' +
+          (meta.encryptionCertificate ? 'on the entry' : 'none') +
+          '</td></tr>' +
+        '</tbody></table>' +
+        '<h3>Registered assertion consumer services</h3>' +
+        (acsRows
+          ? '<table><thead><tr><th>index</th><th>isDefault</th>' +
+            '<th>Binding</th><th>Location</th></tr></thead><tbody>' +
+            acsRows + '</tbody></table>'
+          : this.note('The document registered none.')) +
+        '<h3>Registered single logout services</h3>' +
+        (sloRows
+          ? '<table><thead><tr><th>Binding</th><th>Location</th>' +
+            '<th>ResponseLocation</th></tr></thead><tbody>' + sloRows +
+            '</tbody></table>'
+          : this.note('The document registered none.'))
+      : this.note('No metadata has been consumed for this service provider, ' +
+                  'so its return addresses and signing certificates are ' +
+                  'whatever was recorded or declared above.');
+    const html = '<h2>Its metadata</h2>' +
+      this.note('Consuming a service provider\'s metadata REGISTERS what it ' +
+      'says: its AssertionConsumerService endpoints (a request is answered ' +
+      'only at one of them, in every mode), its SingleLogoutService ' +
+      'endpoints, its signing certificates, its encryption certificate, its ' +
+      'NameIDFormats, AuthnRequestsSigned and WantAssertionsSigned. It ' +
+      'happens only when you refresh the URL on <a ' +
+      'href="/admin/applications?application=' +
+      encodeURIComponent(identifier) + '">its application page</a> or ' +
+      'upload a document here — never while somebody is signing in.') +
+      facts +
+      '<form method="post" action="/admin/saml2" ' +
+      'enctype="multipart/form-data">' + carryBack +
+      '<input type="hidden" name="action" value="upload-metadata">' +
+      '<input type="hidden" name="sp" value="' + self.esc(identifier) + '">' +
+      '<div class="formrow"><label for="md-doc">Upload a document</label>' +
+      '<textarea id="md-doc" name="document" rows="4" cols="60" ' +
+      'placeholder="paste &lt;md:EntityDescriptor&gt;…"></textarea></div>' +
+      '<div class="formrow"><label for="md-file">or a file</label>' +
+      '<input type="file" id="md-file" name="file" accept=".xml,' +
+      'application/samlmetadata+xml,application/xml,text/xml">' +
+      '<button>Consume it</button><span class="note">Its entityID must be ' +
+      'this service provider\'s. Nothing changes if it is refused.</span>' +
+      '</div></form>' +
+      '<h3>The certificate its metadata must be signed with</h3>' +
+      this.note(meta.signingCertificateConfigured
+        ? 'Set: a document that is unsigned, or not signed with this key, ' +
+          'is refused.'
+        : 'Not set: a signed document is consumed and recorded as ' +
+          '<code>signed-not-verified</code>, and the trust act is your ' +
+          'choice of URL or document.') +
+      '<form method="post" action="/admin/saml2">' + carryBack +
+      '<div class="formrow"><input type="hidden" name="action" ' +
+      'value="set-metadata-signing-certificate"><input type="hidden" ' +
+      'name="sp" value="' + self.esc(identifier) + '"><label ' +
+      'for="md-cert">Metadata signing certificate</label><input type="text" ' +
+      'id="md-cert" name="value" placeholder="base64 DER or PEM">' +
+      '<button>Set</button><span class="note">Empty clears it.</span>' +
+      '</div></form>';
+    log.debug("Leaving AdminConsole.saml2MetadataSection().");
+    return html;
   }
 
   saml2View(req) {
@@ -37668,15 +37872,17 @@ const SAML_KEY_SOURCE_FIELDS = [
           'fetched until you press Refresh on the entry — an assertion never ' +
           'waits on somebody else\'s web server.' },
   { attribute: 'samlEncryptionCertificate', label: 'Encryption certificate',
-    what: 'The certificate an assertion is encrypted to, base64 or PEM. The ' +
-          'metadata refresh writes this; set it by hand for a service ' +
-          'provider whose metadata cannot be reached. With none here the ' +
-          'SIGNING certificate off a signed AuthnRequest is used, and with ' +
-          'neither the assertion goes out in clear.' },
+    what: 'The certificate an assertion is encrypted to, base64 or PEM. ' +
+          'Consuming the metadata writes this; set it by hand for a service ' +
+          'provider whose metadata cannot be reached. With none here a ' +
+          'registered signing certificate is used, then (development only) ' +
+          'the one a signed AuthnRequest carried.' },
   { attribute: 'samlSpMetadata', label: 'Metadata document', multi: true,
-    what: 'The metadata itself, cached by the refresh or pasted here. ' +
-          'Pasting it is the way to configure an air-gapped service ' +
-          'provider, or one behind a proxy this service cannot dial.' }
+    what: 'The metadata itself. Pasted here, it is CONSUMED when the ' +
+          'application is created — endpoints, signing and encryption ' +
+          'certificates, NameIDFormats — exactly as a refresh would, which ' +
+          'is the way to configure an air-gapped service provider, or one ' +
+          'behind a proxy this service cannot dial.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -37835,11 +38041,14 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
     '<code>oauth2.redirectUris</code> setting, which is most of the reason ' +
     'to create an entry before the application connects. ' +
     '<code>samlAssertionConsumerService</code> and ' +
-    '<code>wsfedReplyUrl</code> are RECORDED AND NOT CHECKED: a SAML ' +
-    'response goes wherever the AuthnRequest asked and a ' +
+    '<code>wsfedReplyUrl</code> are checked in PRODUCT mode only: in ' +
+    'development a SAML response goes wherever the AuthnRequest asked and a ' +
     '<code>wsignin1.0</code> response goes to whatever <code>wreply</code> ' +
     'named, because a mock that refused would remove a test case rather than ' +
-    'add one. The SAML one is READ for something else &mdash; it is the ' +
+    'add one &mdash; unless the SAML service provider\'s metadata has been ' +
+    'consumed, when a request is answered only at an endpoint it ' +
+    'registered, in every mode. The SAML one is READ for something else ' +
+    '&mdash; it is the ' +
     'fallback used when a Single Logout has nowhere else to go, which is why ' +
     'WS-Federation\'s <code>wreply</code> stopped being written into it on ' +
     '2026-08-25 and has a ' +

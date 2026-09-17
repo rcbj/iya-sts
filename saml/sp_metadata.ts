@@ -3,18 +3,28 @@
 // File: sp_metadata.ts
 //
 // ===========================================================================
-// A SERVICE PROVIDER'S OWN METADATA: PARSING IT, AND FETCHING IT.
+// A SERVICE PROVIDER'S OWN METADATA: PARSING IT, FETCHING IT, AND CONSUMING
+// IT.
 //
 // Added 2026-08-27 with SAML 2.0 encryption, because encrypting to a service
 // provider means holding its public key and this service had nowhere to get one
-// from. `saml/CLAUDE.md` said for months that this profile "does not consume SP
-// metadata"; it does now, in exactly one direction and for exactly one value.
+// from. It then read exactly one value — the encryption certificate — and
+// REPORTED the endpoints without applying them.
+//
+// **SINCE 2026-09-17 (#37) IT CONSUMES THE WHOLE SPSSODescriptor**: the
+// AssertionConsumerService and SingleLogoutService endpoints become the
+// service provider's REGISTERED return addresses, its signing certificates
+// become what its requests are VERIFIED against, and its NameIDFormats,
+// AuthnRequestsSigned and WantAssertionsSigned are written onto the entry and
+// read by `saml2_sso.ts`. `consume()` is the one place that happens, for a
+// refreshed document and an uploaded one alike, and `saml/CLAUDE.md` argues
+// why an operator's refresh or upload is the trust act.
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY. It registers no route (rule 3), and it is required by
-// `admin-core/admin_actions.ts` for the refresh action and by `saml2_sso.ts`
-// for the parse. It requires `common/` libraries (`helpers`, `config`,
-// `applications`, `audit`, `error_codes`, `version`) and
+// `admin-core/admin_actions.ts` for the refresh and upload actions and by
+// `saml2_sso.ts`. It requires `common/` libraries (`helpers`, `config`,
+// `applications`, `audit`, `error_codes`, `version`, `crypto`) and
 // `federation/federation_http.ts`, none of which requires it, so it closes no
 // cycle and moves nothing in the router.
 //
@@ -25,7 +35,8 @@
 // `refresh()` is called from a console button and from
 // `POST /admin-api/applications/refresh-metadata`. It writes what it found onto
 // the application entry, and ISSUING READS THE ENTRY. Nothing in the sign-on
-// path dials anything.
+// path dials anything — which stays true now that far more is read off the
+// entry than a certificate.
 //
 // The alternative — resolve the URL when an assertion is being built — is what
 // a real identity provider does with a cache, and it was rejected for a reason
@@ -106,6 +117,9 @@ import config = require('../common/config');
 // reaches back here, so this closes no cycle.
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
+// The one verifier (rule 3r), for a metadata document's own signature
+// (2026-09-17). A leaf, so this require closes no cycle.
+import stsCrypto = require('../common/crypto');
 import applications = require('../common/applications');
 // The outbound policy — the kill switch, the scheme rule and the insecure
 // switch — from the module that owns it. A library that registers nothing and
@@ -124,10 +138,24 @@ interface ParsedMetadata {
   entityId?: string;
   certificate?: string;
   certificateUse?: string;
-  acs?: Array<Record<string, unknown>>;
-  slo?: Array<Record<string, unknown>>;
+  signingCertificates?: string[];
+  acs?: string[];
+  slo?: string[];
+  acsEndpoints?: Array<Record<string, string>>;
+  sloEndpoints?: Array<Record<string, string>>;
+  nameIdFormats?: string[];
+  authnRequestsSigned?: boolean;
+  wantAssertionsSigned?: boolean;
+  validUntil?: string;
+  cacheDuration?: string;
+  signed?: boolean;
+  skipped?: string[];
   [member: string]: unknown;
 }
+
+// The SAML 2.0 protocol namespace, which an SPSSODescriptor's
+// protocolSupportEnumeration must name to be read here.
+const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
 
 // What fetchMetadata() resolves to.
 interface FetchAnswer {
@@ -150,6 +178,7 @@ interface SpMetadataDeps {
   audit: typeof audit;
   applications: typeof applications;
   fedHttp: typeof fedHttp;
+  stsCrypto: typeof stsCrypto;
 }
 
 class SpMetadata {
@@ -174,7 +203,8 @@ class SpMetadata {
       errorCodes: errorCodes,
       audit: audit,
       applications: applications,
-      fedHttp: fedHttp
+      fedHttp: fedHttp,
+      stsCrypto: stsCrypto
     };
   }
 
@@ -196,21 +226,43 @@ class SpMetadata {
   // ---------------------------------------------------------------------------
   // PARSE, and it answers rather than throws.
   //
-  // `{ ok, certificate, entityId, acs[], slo[], why }`. What the caller wants
-  // is `certificate`; the rest is reported because a person looking at a
-  // metadata document wants to know this service read the same one they did.
+  // Until 2026-09-17 this read ONE value — the encryption certificate — and
+  // reported the endpoints without applying them. Since #37 the whole
+  // <md:SPSSODescriptor> is read, because `consume()` below writes it onto the
+  // entry and the Single Sign-On and Single Logout services USE it:
+  //
+  //   entityId              the EntityDescriptor's entityID
+  //   acsEndpoints          [{ binding, location, index, isDefault }]
+  //   sloEndpoints          [{ binding, location, responseLocation }]
+  //   signingCertificates   every X509Certificate in a KeyDescriptor marked
+  //                         use="signing" or with no `use`
+  //   certificate           the ENCRYPTION certificate, as before
+  //   nameIdFormats         the <md:NameIDFormat> values
+  //   authnRequestsSigned   the SPSSODescriptor's attribute, as a boolean
+  //   wantAssertionsSigned  likewise
+  //   validUntil            the EARLIER of the two elements' validUntil
+  //   cacheDuration         the SPSSODescriptor's, else the EntityDescriptor's
+  //   signed                whether the EntityDescriptor carries its own
+  //                         ds:Signature (checked by `consume()`, not here)
+  //
+  // `acs` and `slo` stay as the plain location lists they always were, for
+  // the callers that report them.
   //
   // WHICH KEY IS THE ENCRYPTION KEY, in the order the specification implies: a
   // KeyDescriptor with `use="encryption"`, then one with NO `use` at all —
   // which section 2.4.1.1 says serves both purposes — and never one marked
-  // `use="signing"`, which is the key that would look right and be wrong. A
-  // document with a signing key only therefore yields no certificate here, and
-  // the CALLER falls back to `samlSigningCertificate` if it wants to; making
-  // that decision here would hide it inside a parser.
+  // `use="signing"`, which is the key that would look right and be wrong.
+  //
+  // ONLY THE SPSSODescriptor IS READ. An entity that is both an identity
+  // provider and a service provider publishes keys and endpoints under each
+  // role, and a key from the IDPSSODescriptor is not the one its requests are
+  // signed with in this role. A document with no SAML 2.0 SPSSODescriptor is
+  // not this kind of metadata and is refused.
   // ---------------------------------------------------------------------------
   parse(xml: string): ParsedMetadata {
     const { log } = this.deps.helpers;
     const { DOMParser } = this.deps.xmldom;
+    const self = this;
     log.debug("Entering SpMetadata.parse().");
     const text = String(xml || '').trim();
     if (!text) {
@@ -247,65 +299,178 @@ class SpMetadata {
                'of them this application is, and picking the first would ' +
                'encrypt to whoever happens to be listed first' };
     }
+    if (root.localName !== 'EntityDescriptor') {
+      log.debug("Leaving SpMetadata.parse(). Not an EntityDescriptor.");
+      return { ok: false, why: 'the document is <' + root.localName +
+               '>, not an <md:EntityDescriptor>' };
+    }
+    const sp = this.childrenByLocal(root, 'SPSSODescriptor').filter(
+        function (one) {
+      return String(one.getAttribute('protocolSupportEnumeration') || '')
+        .split(/\s+/).indexOf(NS_SAMLP) >= 0;
+    })[0];
+    if (!sp) {
+      log.debug("Leaving SpMetadata.parse(). No SAML 2.0 SPSSODescriptor.");
+      return { ok: false, why: 'the EntityDescriptor has no ' +
+               '<md:SPSSODescriptor> whose protocolSupportEnumeration names ' +
+               'SAML 2.0, so it does not describe a SAML 2.0 service ' +
+               'provider' };
+    }
 
     const out: ParsedMetadata = {
       ok: true,
       entityId: root.getAttribute('entityID') || '',
       certificate: '',
       certificateUse: '',
+      signingCertificates: [],
       acs: [],
-      slo: []
+      slo: [],
+      acsEndpoints: [],
+      sloEndpoints: [],
+      nameIdFormats: [],
+      authnRequestsSigned:
+        String(sp.getAttribute('AuthnRequestsSigned') || '') === 'true',
+      wantAssertionsSigned:
+        String(sp.getAttribute('WantAssertionsSigned') || '') === 'true',
+      validUntil: this.earliest([root.getAttribute('validUntil') || '',
+                                 sp.getAttribute('validUntil') || '']),
+      cacheDuration: sp.getAttribute('cacheDuration') ||
+                     root.getAttribute('cacheDuration') || '',
+      signed: this.childrenByLocal(root, 'Signature').length > 0,
+      skipped: []
     };
 
-    const descriptors = doc.getElementsByTagNameNS('*', 'KeyDescriptor');
+    const signing: string[] = [];
     let unqualified = '';
-    for (let n = 0; n < descriptors.length; n++) {
-      const use = (descriptors[n].getAttribute('use') || '').trim();
-      const certs =
-        descriptors[n].getElementsByTagNameNS('*', 'X509Certificate');
-      if (!certs.length) continue;
-      const value = (certs[0].textContent || '').replace(/\s+/g, '');
-      if (!value) continue;
-      if (use === 'encryption') {
-        out.certificate = value;
-        out.certificateUse = 'encryption';
-        break;
+    this.childrenByLocal(sp, 'KeyDescriptor').forEach(function (descriptor) {
+      const use = (descriptor.getAttribute('use') || '').trim();
+      const certs = descriptor.getElementsByTagNameNS('*', 'X509Certificate');
+      for (let n = 0; n < certs.length; n++) {
+        const value = (certs[n].textContent || '').replace(/\s+/g, '');
+        if (!value) {
+          continue;
+        }
+        if (use === 'encryption' && !out.certificate) {
+          out.certificate = value;
+          out.certificateUse = 'encryption';
+        }
+        if (!use && !unqualified) {
+          unqualified = value;
+        }
+        if ((use === 'signing' || !use) && signing.indexOf(value) < 0) {
+          signing.push(value);
+        }
       }
-      if (!use && !unqualified) unqualified = value;
-    }
+    });
     if (!out.certificate && unqualified) {
       out.certificate = unqualified;
       out.certificateUse = 'unspecified';
     }
+    out.signingCertificates = signing;
 
-    // The endpoints, reported and NOT written anywhere. This service already
-    // learns an assertion consumer service URL from the request that named one,
-    // which is a fact about what actually happened; a URL from metadata is a
-    // claim about what should happen, and quietly preferring it would change
-    // where responses go on the strength of a document somebody pasted.
-    const collect = function (element, into) {
-      log.debug("Entering collect().");
-      const els = doc.getElementsByTagNameNS('*', element);
-      for (let n = 0; n < els.length; n++) {
-        const location = els[n].getAttribute('Location') || '';
-        if (location && into.indexOf(location) < 0) into.push(location);
+    this.childrenByLocal(sp, 'AssertionConsumerService').forEach(
+        function (el) {
+      const location = String(el.getAttribute('Location') || '').trim();
+      const binding = String(el.getAttribute('Binding') || '').trim();
+      if (!self.endpointProblem(location, binding, out.skipped,
+                                'AssertionConsumerService')) {
+        const isDefault = el.getAttribute('isDefault');
+        out.acsEndpoints.push({
+          binding: binding, location: location,
+          index: String(el.getAttribute('index') || '').trim(),
+          isDefault: isDefault === 'true' ? 'true'
+            : (isDefault === 'false' ? 'false' : '-')
+        });
+        if (out.acs.indexOf(location) < 0) {
+          out.acs.push(location);
+        }
       }
-      log.debug("Leaving collect().");
-    };
-    collect('AssertionConsumerService', out.acs);
-    collect('SingleLogoutService', out.slo);
-
-    if (!out.certificate) {
-      out.ok = false;
-      out.why = 'the metadata carries no <md:KeyDescriptor> with an ' +
-                'X509Certificate that can be used for encryption. A ' +
-                'descriptor ' +
-                'marked use="signing" is deliberately not taken — it is the ' +
-                'key that would look right and be wrong';
-    }
-    log.debug("Leaving SpMetadata.parse(). certificate=" +
+    });
+    this.childrenByLocal(sp, 'SingleLogoutService').forEach(function (el) {
+      const location = String(el.getAttribute('Location') || '').trim();
+      const binding = String(el.getAttribute('Binding') || '').trim();
+      const response = String(el.getAttribute('ResponseLocation') || '').trim();
+      if (!self.endpointProblem(location, binding, out.skipped,
+                                'SingleLogoutService') &&
+          !(response && self.endpointProblem(response, binding, out.skipped,
+                                             'SingleLogoutService ' +
+                                             'ResponseLocation'))) {
+        out.sloEndpoints.push({ binding: binding, location: location,
+                                responseLocation: response });
+        if (out.slo.indexOf(location) < 0) {
+          out.slo.push(location);
+        }
+      }
+    });
+    this.childrenByLocal(sp, 'NameIDFormat').forEach(function (el) {
+      const format = String(el.textContent || '').trim();
+      if (format && out.nameIdFormats.indexOf(format) < 0) {
+        out.nameIdFormats.push(format);
+      }
+    });
+    log.debug("Leaving SpMetadata.parse(). " + out.acsEndpoints.length +
+              " ACS, " + out.sloEndpoints.length + " SLO, " +
+              signing.length + " signing certificate(s), encryption " +
               (out.certificate ? out.certificateUse : 'none'));
     return out;
+  }
+
+  // The direct children of `parent` with this local name. Direct, because a
+  // KeyDescriptor or an endpoint inside an <md:Extensions> or a nested role is
+  // not this role's.
+  private childrenByLocal(parent, localName) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.childrenByLocal(). " + localName);
+    const out = [];
+    for (let child = parent.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1 && child.localName === localName) {
+        out.push(child);
+      }
+    }
+    log.debug("Leaving SpMetadata.childrenByLocal(). " + out.length);
+    return out;
+  }
+
+  // Whether an endpoint can be written as a return address, and when it
+  // cannot, the sentence is pushed onto `skipped` and true comes back. A
+  // Location has to be an absolute http(s) URL with no space in it — the
+  // stored form puts the URL last and splits on spaces — and a binding has to
+  // be named.
+  private endpointProblem(location, binding, skipped, what) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.endpointProblem().");
+    let problem = '';
+    if (!binding || /\s/.test(binding)) {
+      problem = 'it names no Binding';
+    } else if (!/^https?:\/\/[^\s]+$/i.test(location)) {
+      problem = 'its location "' + location + '" is not an absolute http ' +
+                'or https URL';
+    }
+    if (problem) {
+      skipped.push('an <md:' + what + '> was not registered: ' + problem);
+    }
+    log.debug("Leaving SpMetadata.endpointProblem(). " + (problem || 'ok'));
+    return !!problem;
+  }
+
+  // The earliest of some xs:dateTime values, '' for none, and an unparseable
+  // one is kept as written rather than dropped — the page shows it and says it
+  // could not be read.
+  private earliest(values) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.earliest().");
+    let best = '';
+    values.forEach(function (one) {
+      const text = String(one || '').trim();
+      if (!text) {
+        return;
+      }
+      if (!best || (Date.parse(text) < Date.parse(best))) {
+        best = text;
+      }
+    });
+    log.debug("Leaving SpMetadata.earliest(). " + (best || 'none'));
+    return best;
   }
 
   // A base64 DER certificate as a PEM, which is what forge and the encryptor
@@ -534,14 +699,12 @@ class SpMetadata {
   }
 
   // ---------------------------------------------------------------------------
-  // THE WHOLE ACT: fetch what the entry names, parse it, and write back what
-  // was found. This is what the console button and the management API both
-  // call.
+  // THE WHOLE ACT: fetch what the entry names and CONSUME it. This is what the
+  // console button and `POST /admin-api/applications/refresh-metadata` call.
   //
-  // IT WRITES THREE ATTRIBUTES — the document, the certificate and nothing else
-  // — and it writes NOTHING when anything fails, so a refresh that could not
-  // reach the host leaves the last good certificate in place. An application
-  // that was working does not stop working because a metadata server was down.
+  // A FAILURE WRITES NOTHING, so a refresh that could not reach the host leaves
+  // the last good registration in place. An application that was working does
+  // not stop working because a metadata server was down.
   // ---------------------------------------------------------------------------
   refresh(identifier) {
     const { applications } = this.deps;
@@ -576,71 +739,287 @@ class SpMetadata {
           answer.why + '. Nothing on the entry was changed, so whatever ' +
           'certificate it already had is still in force.'] };
       }
-      const parsed = self.parse(answer.xml);
-      if (!parsed.ok) {
-        log.debug("Leaving SpMetadata.refresh(). The document is unusable.");
-        self.refreshRefused('STS-SAML-0052', identifier,
-                       'the fetched metadata document is unusable: ' +
-                       parsed.why);
-        return { ok: false, errors: ['The document at "' + wanted + '" was ' +
-            'fetched but ' +
-          parsed.why + '. Nothing on the entry was changed.'] };
+      const consumed = self.consume(identifier, answer.xml, 'refresh');
+      if (consumed.ok) {
+        consumed.url = wanted;
       }
-      const bad = self.certificateProblem(parsed.certificate);
+      return consumed;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN UPLOADED DOCUMENT (2026-09-17, #37): the console's SAML 2.0 page and
+  // `POST /admin-api/saml2/upload-metadata`. The same consumption as a
+  // refresh, with the document supplied by an operator rather than fetched
+  // from the URL an operator put on the entry — which is the same trust act
+  // (see `consume()`), and the way to register a service provider whose
+  // metadata this service cannot reach.
+  // ---------------------------------------------------------------------------
+  upload(identifier, xml, actor?) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.upload(). identifier=" + identifier);
+    const text = String(xml == null ? '' : xml);
+    const cap = this.maxMetadataBytes();
+    if (Buffer.byteLength(text, 'utf8') > cap) {
+      this.refreshRefused('STS-SAML-0067', identifier, 'the uploaded ' +
+                          'document is larger than ' + cap + ' bytes');
+      log.debug("Leaving SpMetadata.upload(). Too large.");
+      return { ok: false, errors: ['The document is larger than ' + cap +
+               ' bytes (saml2.spMetadataMaxBytes), which no service provider ' +
+               'metadata is. Nothing on the entry was changed.'] };
+    }
+    const answer = this.consume(identifier, text, 'upload', actor);
+    log.debug("Leaving SpMetadata.upload(). ok=" + answer.ok);
+    return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // CONSUMING A DOCUMENT: check it, then write everything it registers onto
+  // the entry in ONE save (`applications.replaceSamlMetadataFields()`).
+  //
+  // **THE TRUST ACT IS THE OPERATOR'S**, and it is worth being exact about
+  // what that means, because this writes signing certificates that every
+  // later request from the service provider is verified against. A refresh
+  // dials ONLY the `samlSpMetadataUrl` an administrator put on the entry, over
+  // https with the certificate checked unless
+  // `federation.outboundAllowInsecure` says otherwise, and only when an
+  // administrator presses the button; an
+  // upload is a document an administrator chose. That is the same act as
+  // pasting the certificate into the entry by hand, which is what every
+  // identity provider's "import metadata" amounts to — and a request NEVER
+  // reaches this code.
+  //
+  // **A SIGNED DOCUMENT IS VERIFIED WHEN THERE IS SOMETHING TO VERIFY IT
+  // AGAINST**: `samlSpMetadataSigningCertificate` on the entry. With it set, an
+  // unsigned document, or one whose signature does not verify, is refused.
+  // Without it the signature is recorded as `signed-not-verified` and the
+  // document consumed — the operator's choice of source stands in for it, as
+  // above, and saying "verified" about a signature checked against the key
+  // inside the same document would be the decoration `request_signature.ts`
+  // refuses for requests.
+  //
+  // THREE MORE REFUSALS: the document's entityID must be this application's
+  // (a document for somebody else would register somebody else's keys); a
+  // document whose validUntil has passed is expired and is not consumed
+  // (saml-metadata-2.0-os section 2.2.1); and an encryption certificate this
+  // service cannot encrypt to refuses the whole document, as it always did. A
+  // SIGNING certificate that is not RSA is SKIPPED and reported rather than
+  // refusing the document, because a service provider may publish an EC key
+  // beside an RSA one and the RSA one is still worth registering.
+  //
+  // `validUntil` and `cacheDuration` are RECORDED and shown, and nothing
+  // enforces them after consumption — this service never refetches on its
+  // own. Stated on the page rather than implied.
+  // ---------------------------------------------------------------------------
+  consume(identifier, xml, how, actor?): Record<string, any> {
+    const { applications, stsCrypto } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.consume(). identifier=" + identifier +
+              ", how=" + how);
+    const record = applications.get(identifier);
+    if (!record) {
+      this.refreshRefused('STS-SAML-0044', identifier, 'there is no such ' +
+                          'application');
+      log.debug("Leaving SpMetadata.consume(). No such application.");
+      return { ok: false, errors: ['There is no application "' + identifier +
+               '" in this registry. Create it (or register the service ' +
+               'provider) first.'] };
+    }
+    const fields = record.fields || {};
+    const parsed = this.parse(xml);
+    if (!parsed.ok) {
+      this.refreshRefused('STS-SAML-0052', identifier,
+                          'the metadata document is unusable: ' + parsed.why);
+      log.debug("Leaving SpMetadata.consume(). Unusable.");
+      return { ok: false, errors: ['The metadata document is unusable: ' +
+               parsed.why + '. Nothing on the entry was changed.'] };
+    }
+    const names = [identifier].concat(
+      this.valuesOf(fields.samlEntityId));
+    if (names.indexOf(String(parsed.entityId)) < 0) {
+      this.refreshRefused('STS-SAML-0066', identifier, 'the document ' +
+                          'describes "' + parsed.entityId + '"');
+      log.debug("Leaving SpMetadata.consume(). Somebody else's entityID.");
+      return { ok: false, errors: ['The document describes the entityID "' +
+               parsed.entityId + '", which is not this application ("' +
+               identifier + '"). Consuming it would register another ' +
+               'service provider\'s keys and endpoints here. Nothing on the ' +
+               'entry was changed.'] };
+    }
+    if (parsed.validUntil && Date.parse(parsed.validUntil) <= Date.now()) {
+      this.refreshRefused('STS-SAML-0068', identifier, 'the document ' +
+                          'expired at ' + parsed.validUntil);
+      log.debug("Leaving SpMetadata.consume(). Expired.");
+      return { ok: false, errors: ['The document\'s validUntil (' +
+               parsed.validUntil + ') has passed, so it is expired ' +
+               '(saml-metadata-2.0-os section 2.2.1). Nothing on the entry ' +
+               'was changed.'] };
+    }
+
+    // The document's own signature.
+    const anchor = this.first(fields.samlSpMetadataSigningCertificate);
+    let signature = parsed.signed ? 'signed-not-verified' : 'unsigned';
+    if (anchor) {
+      const verdict = parsed.signed
+        ? stsCrypto.verifyXmlSignature(String(xml),
+          { element: 'EntityDescriptor', certPem: this.toPem(anchor) })
+        : { ok: false, why: 'the document is unsigned' };
+      if (!verdict.ok) {
+        this.refreshRefused('STS-SAML-0065', identifier, 'the document\'s ' +
+                            'signature was not verified: ' + verdict.why);
+        log.debug("Leaving SpMetadata.consume(). Signature refused.");
+        return { ok: false, errors: ['samlSpMetadataSigningCertificate is ' +
+                 'set on this application, so its metadata must be signed ' +
+                 'with that key, and ' + verdict.why + '. Nothing on the ' +
+                 'entry was changed.'] };
+      }
+      signature = 'verified';
+    }
+
+    // The encryption certificate, as it always was.
+    if (parsed.certificate) {
+      const bad = this.certificateProblem(parsed.certificate);
       if (bad) {
-        log.debug("Leaving SpMetadata.refresh(). The certificate is unusable.");
-        self.refreshRefused('STS-SAML-0053', identifier,
-                       'the metadata carries a certificate this service ' +
-                       'cannot ' +
-                       'use: ' + bad);
-        return { ok: false, errors: ['The metadata at "' + wanted + '" ' +
-                                                                    'carries ' +
-          'a certificate this service cannot ' +
-          'use: ' + bad + '. Nothing on the entry was ' +
-                                              'changed.'] };
+        this.refreshRefused('STS-SAML-0053', identifier, 'the metadata ' +
+                            'carries a certificate this service cannot use: ' +
+                            bad);
+        log.debug("Leaving SpMetadata.consume(). Unusable encryption key.");
+        return { ok: false, errors: ['The metadata carries an encryption ' +
+                 'certificate this service cannot use: ' + bad + '. Nothing ' +
+                 'on the entry was changed.'] };
       }
-      const stored = [
-        applications.updateApplication(identifier,
-          { mode: 'set', attribute: 'samlSpMetadata', value: answer.xml }),
-        applications.updateApplication(identifier,
-          { mode: 'set', attribute: 'samlEncryptionCertificate',
-            value: parsed.certificate })
-      ];
-      const failed = stored.filter(function (one) { return !one.ok; });
-      if (failed.length) {
-        log.debug("Leaving SpMetadata.refresh(). The entry would not take it.");
-        self.refreshRefused('STS-SAML-0054', identifier,
-                       'the application entry would not take the fetched ' +
-                       'metadata');
-        return { ok: false, errors: failed.reduce(function (all, one) {
-          return all.concat(one.errors || []);
-        }, []) };
+    }
+    const skipped = (parsed.skipped || []).slice(0);
+    const signing = (parsed.signingCertificates || []).filter(function (one) {
+      const problem = applications.samlCertificateProblem(one);
+      if (problem) {
+        skipped.push('a signing certificate was not registered: ' + problem);
       }
-      log.info('saml2: refreshed the metadata for ' + identifier + ' from ' +
-               wanted +
-               '. Its encryption certificate is the ' + parsed.certificateUse +
-               ' KeyDescriptor; entityID "' + parsed.entityId + '", ' +
-               parsed.acs.length +
-               ' assertion consumer service(s) and ' + parsed.slo.length +
-               ' single logout service(s) are described and are REPORTED ' +
-               'ONLY ' +
-               '— this service still sends a response where the request ' +
-               'asked.');
-      log.debug("Leaving SpMetadata.refresh(). Stored.");
-      return { ok: true, application: identifier, url: wanted,
-               entityId: parsed.entityId,
-               certificateUse: parsed.certificateUse,
-               assertionConsumerServices: parsed.acs,
-               singleLogoutServices: parsed.slo,
-               message: 'The metadata was fetched and its ' +
-                        parsed.certificateUse +
-                        ' certificate is now on the entry, so an assertion ' +
-                        'for ' +
-                        'this service provider can be encrypted to it. The ' +
-                        'endpoints in the document are reported and NOT ' +
-                        'applied — a response still goes where the request ' +
-                        'asks, which is what actually happened rather than ' +
-                        'what a document claims should.' };
+      return !problem;
+    });
+
+    const lastOf = function (value) {
+      log.debug("Entering lastOf().");
+      const parts = String(value).split(' ');
+      log.debug("Leaving lastOf().");
+      return parts[parts.length - 1];
+    };
+    const secondOf = function (value) {
+      log.debug("Entering secondOf().");
+      log.debug("Leaving secondOf().");
+      return String(value).split(' ')[1] || '';
+    };
+    const replacements: Record<string, unknown> = {
+      samlSpMetadata: String(xml),
+      samlAcsEndpoint: parsed.acsEndpoints.map(function (e) {
+        return [e.index || '-', e.isDefault, e.binding, e.location].join(' ');
+      }),
+      samlSloEndpoint: parsed.sloEndpoints.map(function (e) {
+        return [e.binding, e.location].concat(
+          e.responseLocation ? [e.responseLocation] : []).join(' ');
+      }),
+      samlAssertionConsumerService: parsed.acs,
+      samlSingleLogoutService: parsed.slo,
+      samlSpNameIdFormat: parsed.nameIdFormats,
+      samlSpAuthnRequestsSigned: parsed.authnRequestsSigned ? 'TRUE' : 'FALSE',
+      samlSpWantAssertionsSigned:
+        parsed.wantAssertionsSigned ? 'TRUE' : 'FALSE',
+      samlSpMetadataValidUntil: parsed.validUntil,
+      samlSpMetadataCacheDuration: parsed.cacheDuration,
+      samlSpMetadataConsumedAt: new Date().toISOString() + ' ' + how,
+      samlSpMetadataSignature: signature
+    };
+    // A document that names signing keys REPLACES the registered set: it is
+    // the service provider's own statement of what it signs with, and a key it
+    // has rotated away from must stop verifying. One that names none leaves
+    // what an operator registered by hand.
+    if (signing.length) {
+      replacements.samlSigningCertificate = signing;
+    }
+    // Likewise the encryption certificate: replaced when the document names
+    // one, left alone when it does not.
+    if (parsed.certificate) {
+      replacements.samlEncryptionCertificate = parsed.certificate;
+    }
+    const written = applications.replaceSamlMetadataFields(identifier,
+      replacements, {
+        how: how, actor: actor || '',
+        retire: {
+          samlAssertionConsumerService:
+            this.valuesOf(fields.samlAcsEndpoint).map(lastOf),
+          samlSingleLogoutService:
+            this.valuesOf(fields.samlSloEndpoint).map(secondOf)
+        }
+      });
+    if (!written.ok) {
+      this.refreshRefused('STS-SAML-0054', identifier, 'the application ' +
+                          'entry would not take the consumed metadata');
+      log.debug("Leaving SpMetadata.consume(). The entry would not take it.");
+      return { ok: false, errors: written.errors || [] };
+    }
+    skipped.forEach(function (why) {
+      log.warn('saml2: consuming the metadata for ' + identifier + ': ' + why +
+               '.');
+    });
+    log.info('saml2: consumed the metadata for ' + identifier + ' (' + how +
+             '): ' + parsed.acsEndpoints.length + ' assertion consumer ' +
+             'service(s), ' + parsed.sloEndpoints.length + ' single logout ' +
+             'service(s), ' + signing.length + ' signing certificate(s), ' +
+             (parsed.certificate ? 'an ' + parsed.certificateUse +
+                                   ' certificate' : 'no encryption ' +
+                                                    'certificate') +
+             '; signature ' + signature + '.');
+    log.debug("Leaving SpMetadata.consume(). Consumed.");
+    return {
+      ok: true, application: identifier, how: how,
+      entityId: parsed.entityId,
+      signature: signature,
+      certificateUse: parsed.certificate ? parsed.certificateUse : '',
+      signingCertificates: signing.length,
+      assertionConsumerServices: parsed.acs,
+      singleLogoutServices: parsed.slo,
+      nameIdFormats: parsed.nameIdFormats,
+      authnRequestsSigned: !!parsed.authnRequestsSigned,
+      wantAssertionsSigned: !!parsed.wantAssertionsSigned,
+      validUntil: parsed.validUntil,
+      cacheDuration: parsed.cacheDuration,
+      skipped: skipped,
+      message: 'The metadata was consumed: ' +
+               parsed.acsEndpoints.length + ' assertion consumer ' +
+               'service(s) and ' + parsed.sloEndpoints.length +
+               ' single logout service(s) are now REGISTERED and used, ' +
+               signing.length + ' signing certificate(s) verify this ' +
+               'service provider\'s requests' +
+               (parsed.certificate
+                 ? ', its ' + parsed.certificateUse + ' certificate is what ' +
+                   'an assertion is encrypted to'
+                 : '') +
+               '. The document\'s own signature: ' + signature + '.' +
+               (skipped.length ? ' Not registered: ' + skipped.join('; ') +
+                                 '.' : '')
+    };
+  }
+
+  // The first value of a single- or multi-valued field, trimmed.
+  private first(value) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.first().");
+    const one = Array.isArray(value) ? value[0] : value;
+    log.debug("Leaving SpMetadata.first().");
+    return String(one == null ? '' : one).trim();
+  }
+
+  // Every value of a field as trimmed non-empty strings.
+  private valuesOf(value) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.valuesOf().");
+    const list = Array.isArray(value) ? value
+      : (value === undefined || value === null ? [] : [value]);
+    log.debug("Leaving SpMetadata.valuesOf().");
+    return list.map(function (one) {
+      return String(one).trim();
+    }).filter(function (one) {
+      return one !== '';
     });
   }
 }
@@ -672,5 +1051,7 @@ export = {
   certificateProblem: slot.forward('certificateProblem'),
   urlProblem: slot.forward('urlProblem'),
   fetchMetadata: slot.forward('fetchMetadata'),
-  refresh: slot.forward('refresh')
+  refresh: slot.forward('refresh'),
+  upload: slot.forward('upload'),
+  consume: slot.forward('consume')
 };

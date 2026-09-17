@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2687** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2706** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 59
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 58
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 60
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 173
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 177
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 411
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 60
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 72
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 74
@@ -77,11 +77,11 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 167
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 168
 * [Management API (`STS-API`)](#sts-api) — 71
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 92
+* [Registries (`STS-REG`)](#sts-reg) — 96
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
@@ -407,6 +407,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0056` | A queued write of a signing-key or certificate-authority row failed in a way its own handler did not report. | — |
 | `STS-KEYS-0057` | A certificate authority row was changed by another node at the same moment, and that node's CA tier or certificate slot was kept over this one's (first writer wins). | — |
 | `STS-KEYS-0058` | A signing-key or certificate-authority row another process wrote could not be decrypted or parsed, so it was not adopted. | — |
+| `STS-KEYS-0059` | A detached HTTP Redirect binding signature does not verify against the certificate it was checked with. | the caller's own refusal |
+| `STS-KEYS-0060` | A detached HTTP Redirect binding signature could not be checked: no certificate, no Signature, an unreadable certificate, a Signature that is not base64, or a SigAlg the verifier does not implement (anything but RSA). | the caller's own refusal |
 
 ## STS-PKI
 
@@ -1494,6 +1496,18 @@ Raised from: saml/.
 | `STS-SAML-0058` | A SAML 1.1 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution. | samlp:Response with StatusCode samlp:Requester (HTTP 200) |
 | `STS-SAML-0059` | The cluster claim store could not be asked whether a SAML artifact (2.0 or 1.1) was already resolved, so it was refused rather than resolved unproven. | StatusCode Responder (HTTP 200) |
 | `STS-SAML-0060` | An artifact resolution (2.0 or 1.1) failed while its answer was being built or sent, after the artifact had been spent. | StatusCode Responder (HTTP 200) when nothing was sent yet |
+| `STS-SAML-0061` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest or LogoutResponse carried a signature (the Redirect binding's query signature or an enveloped one) that does not verify against any of its registered signing certificates. Refused in every mode. | an HTTP 403 page; no Response is sent and no session ends |
+| `STS-SAML-0062` | A SAML 2.0 service provider's request signature could not be checked at all — an algorithm this service has no verifier for, a reference naming something other than the message (signature wrapping), a malformed signature, or a Signature parameter without the SAMLRequest and SigAlg it signs. Refused in every mode. | an HTTP 403 page; no Response is sent and no session ends |
+| `STS-SAML-0063` | An unsigned SAML 2.0 AuthnRequest, LogoutRequest or LogoutResponse — or a signed one with no registered certificate to verify it — was refused because signed requests are required (saml2.requireSignedAuthnRequests, on in product by default, or the service provider's metadata saying AuthnRequestsSigned). | an HTTP 403 page; no Response is sent and no session ends |
+| `STS-SAML-0064` | A SAML 2.0 service provider's request was signed with an inclusive canonicalization, which this service does not verify. | an HTTP 403 page |
+| `STS-SAML-0065` | A service provider's metadata document was not consumed: samlSpMetadataSigningCertificate is set and the document is unsigned or its signature does not verify against that certificate. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0066` | A service provider's metadata document was not consumed: its entityID is not the application it was refreshed or uploaded for. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0067` | An uploaded service provider metadata document exceeded saml2.spMetadataMaxBytes and was not read. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0068` | A service provider's metadata document was not consumed: its validUntil has already passed. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-SAML-0069` | An AuthnRequest named an AssertionConsumerServiceIndex that no endpoint in the service provider's consumed metadata has, or whose endpoint is on a binding this identity provider does not deliver on. | an HTTP 400 page; no Response is sent |
+| `STS-SAML-0070` | An AuthnRequest named an AssertionConsumerServiceURL that is not one of the endpoints in the service provider's consumed metadata (in every mode). | an HTTP 400 page; no Response is sent |
+| `STS-SAML-0071` | An AuthnRequest's NameIDPolicy asked for a Format the service provider's consumed metadata does not declare. | a Response with StatusCode Requester / InvalidNameIDPolicy |
+| `STS-SAML-0072` | An AuthnRequest named no assertion consumer service, and no endpoint in the service provider's consumed metadata is on a binding this identity provider delivers on (or on the ProtocolBinding asked for). | an HTTP 400 page; no Response is sent |
 
 ## STS-WSTRUST
 
@@ -2792,6 +2806,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0788` | A realm administrator posted a setting that names the whole service rather than their realm. | HTTP 403 on /admin |
 | `STS-ADMIN-0789` | A new trust realm's bootstrap administrator could not be given its generated password in product mode. | none — logged |
 | `STS-ADMIN-0790` | The realm chooser in front of /admin was asked for a realm that is not defined. | HTTP 400 on /admin |
+| `STS-ADMIN-0791` | Uploading a SAML 2.0 service provider's metadata document failed — none was sent, or consuming it was refused. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 
@@ -3050,6 +3065,10 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0140` | A console or /admin-api write put a value on oauthStepUpAcrValues that cannot be an acr value. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0141` | A console or /admin-api write put a value on oauthStepUpMaxAge that is not a whole number of seconds. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0150` | A console or /admin-api write put a value on appCorsOrigin that is not an exact origin — a path, a wildcard, null, a user name, or no host. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0160` | A SAML signing certificate (samlSigningCertificate or samlSpMetadataSigningCertificate, or an observed one being confirmed) is not an RSA X.509 certificate, so nothing was written. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0161` | Consuming SAML metadata tried to write an attribute that is not one of the metadata fields — a programming error, refused. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0162` | The application entry would not take the consumed SAML metadata (the directory refused the write). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0163` | A confirm or discard of a SAML service provider's observed signing certificate found none on the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-DBG
 

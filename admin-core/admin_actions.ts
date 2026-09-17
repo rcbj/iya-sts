@@ -2632,8 +2632,29 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0530', result);
       }
       const declared = result.application.allowedProtocols || [];
+      // A METADATA DOCUMENT GIVEN WITH THE CREATE IS CONSUMED (#37), exactly
+      // as an upload on the SAML 2.0 page is, so the form's promise — paste
+      // it here to configure a service provider this service cannot reach —
+      // is kept. A document that is refused leaves the entry created and says
+      // why; the create itself is not undone.
+      const created = this.applicationFieldsFrom(body);
+      const pasted = String(created.samlSpMetadata || '');
+      let consumed = null;
+      if (pasted.trim()) {
+        consumed = spMetadata.consume(result.application.identifier, pasted,
+                                      'upload');
+      }
+      const consumedSentence = !consumed ? ''
+        : consumed.ok
+          ? ' ' + consumed.message
+          : ' The metadata document given with it was stored and NOT ' +
+            'consumed: ' + (consumed.errors || []).join(' ');
       log.debug("Leaving AdminActions.applicationsAction().");
-      return { ok: true, application: result.application,
+      return { ok: true,
+               application: consumed && consumed.ok
+                 ? (applications.get(result.application.identifier) ||
+                    result.application)
+                 : result.application,
                message: '"' + result.application.identifier + '" is in the ' +
                         'registry. It has authenticated nothing yet — the ' +
                         'counters are zero and the entry says it was created ' +
@@ -2660,7 +2681,8 @@ class AdminActions {
                             'mode will judge it against them; without them a ' +
                             'redirect_uri is judged against the ' +
                             'oauth2.redirectUris setting instead — and in ' +
-                            'OAuth 2.1 mode it is refused.') };
+                            'OAuth 2.1 mode it is refused.') +
+                        consumedSentence };
     }
 
     if (action === 'set' || action === 'add' || action === 'remove') {
@@ -3070,29 +3092,155 @@ class AdminActions {
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0531', result);
     }
+    // ---------------------------------------------------------------------
+    // THE SIGNING CERTIFICATES (#37). `samlSigningCertificate` is what a
+    // service provider's request signatures are VERIFIED against since
+    // 2026-09-17, and it is a list — a rollover publishes two keys.
+    //
+    // `set-signing-certificate` REPLACES the list with the one certificate
+    // given (and an empty value clears it), which is what the action always
+    // meant while the attribute held one value; `remove-signing-certificate`
+    // takes one off by value. Both go through `updateApplication()`, which
+    // strips PEM armour and whitespace — the schema holds base64 DER, what a
+    // ds:X509Certificate carries — and refuses a value that is not an RSA
+    // certificate before anything is written.
+    // ---------------------------------------------------------------------
     if (action === 'set-signing-certificate') {
-      const result = applications.updateApplication(identifier, {
-        attribute: 'samlSigningCertificate', mode: 'set',
-        // Whitespace and any PEM armour stripped, because what the schema holds
-        // is base64 DER — which is what a ds:X509Certificate carries and what
-        // the metadata publishes. A PEM pasted in here would be stored as
-        // something no reader of that attribute expects, and nothing would say
-        // so until the day something tried to use it.
-        value: String(body.value || '').replace(/-----[^-]+-----/g, '')
-                                       .replace(/\s+/g, '')
-      });
+      const result = this.replaceSigningCertificates(identifier,
+                                                     String(body.value || ''));
       log.debug("Leaving AdminActions.saml2Action(). set-signing-certificate " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0531', result);
     }
+    if (action === 'remove-signing-certificate') {
+      const result = applications.updateApplication(identifier, {
+        attribute: 'samlSigningCertificate', mode: 'remove',
+        value: String(body.value || '')
+      });
+      log.debug("Leaving AdminActions.saml2Action(). " +
+                "remove-signing-certificate " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0531', result);
+    }
+    // THE OBSERVED CERTIFICATE — the one a signed request carried, which
+    // verifies nothing until an operator says it is the service provider's.
+    // `confirm-address`'s pair, for a key rather than an address.
+    if (action === 'confirm-signing-certificate' ||
+        action === 'discard-signing-certificate') {
+      const result = action === 'confirm-signing-certificate'
+        ? applications.confirmSigningCertificate(identifier)
+        : applications.discardSigningCertificate(identifier);
+      log.debug("Leaving AdminActions.saml2Action(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0531', result);
+    }
+    // The certificate the service provider's METADATA must be signed with.
+    if (action === 'set-metadata-signing-certificate') {
+      const result = applications.updateApplication(identifier, {
+        attribute: 'samlSpMetadataSigningCertificate', mode: 'set',
+        value: String(body.value || '')
+      });
+      log.debug("Leaving AdminActions.saml2Action(). " +
+                "set-metadata-signing-certificate " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0531', result);
+    }
+    // AN UPLOADED METADATA DOCUMENT, consumed exactly as a refresh consumes a
+    // fetched one — `sp_metadata.ts`'s `consume()`. `document` is a pasted
+    // document; `file` is what the console's file input carries, as text.
+    if (action === 'upload-metadata') {
+      const text = String(body.document || '') ||
+                   (typeof body.file === 'string' ? body.file :
+                     String((body.file && body.file.text) || ''));
+      if (!text.trim()) {
+        log.debug("Leaving AdminActions.saml2Action(). No document.");
+        return this.refused('STS-ADMIN-0791', { ok: false, errors: ['Send ' +
+                            'the metadata document in `document`.'] });
+      }
+      const result = spMetadata.upload(identifier, text, body.actor || '');
+      log.debug("Leaving AdminActions.saml2Action(). upload-metadata " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0791', result);
+    }
     log.debug("Leaving AdminActions.saml2Action(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The four are: register, ' +
+                                 'The nine are: register, ' +
                                       'set-logout-service, ' +
                                       'remove-logout-service, ' +
-                                      'set-signing-certificate.'] });
+                                      'set-signing-certificate, ' +
+                                      'remove-signing-certificate, ' +
+                                      'confirm-signing-certificate, ' +
+                                      'discard-signing-certificate, ' +
+                                      'set-metadata-signing-certificate, ' +
+                                      'upload-metadata.'] });
   }
+
+  // Replace a service provider's registered signing certificates with one —
+  // or with none, for an empty value. The NEW one is added first, so a
+  // refused certificate leaves the old list exactly as it was.
+  private replaceSigningCertificates(identifier, value) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.replaceSigningCertificates().");
+    const row = applications.get(identifier);
+    if (!row) {
+      log.debug("Leaving AdminActions.replaceSigningCertificates(). No " +
+                "such application.");
+      return this.refused('STS-REG-0021', { ok: false, errors: ['There is ' +
+        'no application called "' + identifier + '" in this registry. ' +
+        'Register the service provider first.'] });
+    }
+    const wanted = applications.samlCertificateBase64(value);
+    const before = row.fields ? row.fields.samlSigningCertificate : [];
+    const current = (Array.isArray(before) ? before : (before ? [before] : []))
+      .map(function (one) { return String(one); });
+    let last = null;
+    let changed = false;
+    if (wanted) {
+      last = applications.updateApplication(identifier, {
+        attribute: 'samlSigningCertificate', mode: 'add', value: wanted
+      });
+      if (!last.ok) {
+        log.debug("Leaving AdminActions.replaceSigningCertificates(). " +
+                  "Refused.");
+        return last;
+      }
+      changed = !!last.changed;
+    }
+    let removed = 0;
+    current.forEach(function (one) {
+      if (one === wanted) {
+        return;
+      }
+      last = applications.updateApplication(identifier, {
+        attribute: 'samlSigningCertificate', mode: 'remove', value: one
+      });
+      removed++;
+      changed = true;
+    });
+    if (!last) {
+      log.debug("Leaving AdminActions.replaceSigningCertificates(). Nothing " +
+                "to change.");
+      return { ok: true, changed: false, application: row,
+               message: 'Nothing changed: samlSigningCertificate was ' +
+                        'already empty.' };
+    }
+    log.debug("Leaving AdminActions.replaceSigningCertificates().");
+    return Object.assign({}, last, {
+      changed: changed,
+      message: !changed
+        ? 'Nothing changed: samlSigningCertificate already held exactly ' +
+          'this certificate.'
+        : wanted
+          ? 'samlSigningCertificate now holds exactly this certificate' +
+            (removed ? ' (' + removed + ' other(s) removed)' : '') +
+            '. This service provider\'s signatures are verified against it.'
+          : 'samlSigningCertificate was cleared (' + removed + ' removed). ' +
+            'This service provider\'s signatures are now recorded and not ' +
+            'verified.'
+    });
+  }
+
 
   // ONE action, where /admin/saml2 has four, and the three it does not have are
   // the three SAML 1.1 has no protocol for: a logout service to declare, a

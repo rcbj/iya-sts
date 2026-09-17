@@ -389,6 +389,10 @@ class ProtocolStack {
                'FederationHttp');
     this.build('saml/sp_metadata', require('../saml/sp_metadata'),
                'SpMetadata');
+    // Whether a service provider's request is signed by it (#37). A library
+    // `saml2_sso.ts` requires, built before that module's instance.
+    this.build('saml/request_signature', require('../saml/request_signature'),
+               'RequestSignature');
     this.build('saml/saml2_sso', require('../saml/saml2_sso'), 'Saml2Sso');
     this.register(app, require('../saml/saml2_sso'), 'saml/saml2_sso');
     // SAML 1.1's two browser profiles, and the SAML responder behind one of
