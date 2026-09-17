@@ -86,17 +86,20 @@
 // policy store, the engine, the PIP, the templates and the monitor through its
 // constructor (`XacmlRolePepDeps`).
 //
-// **THE ARMING STILL HAPPENS AT LOAD, AND IN THE ORIGINAL ORDER.** The
-// TRANSITIONAL code at the bottom builds one instance from the real modules,
-// then — exactly where the original did, after everything else in this file —
-// requires `admin-ui/admin`, fills its `setRolePreviewer()` slot, and fills
-// `common/issuance_gate.js`'s decider with the instance's `decide`, bound
+// **THE ARMING STILL HAPPENS AT LOAD, AND IN THE ORIGINAL ORDER.** Since
+// #50's R2 the composition root builds the instance and installs it here, and
+// every old name is exported as a FACADE forwarding to it. The code at the
+// bottom — exactly where the original did, after everything else in this
+// file — requires `admin-ui/admin`, fills its `setRolePreviewer()` slot, and
+// fills `common/issuance_gate.js`'s decider with the `decide` facade, built
 // ONCE so the function the gate holds is the function this module exports.
-// Every old name is still exported, from that instance; it goes when the
-// composition root exists, and `XacmlRolePep` is exported beside it.
+// Passing a facade resolves nothing, so both fills stay at load and need no
+// `wire` step. A process without the root builds a default when this module
+// loads. `XacmlRolePep` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import audit = require('../common/audit');
 // The error-code registry (a leaf): a refused issuance's code rides on the
@@ -215,6 +218,27 @@ class XacmlRolePep {
   constructor(private readonly deps: XacmlRolePepDeps) {
     deps.log.debug("Entering XacmlRolePep.constructor().");
     deps.log.debug("Leaving XacmlRolePep.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlRolePepDeps {
+    helpers.log.debug("Entering XacmlRolePep.defaultDeps().");
+    helpers.log.debug("Leaving XacmlRolePep.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      audit: audit,
+      errorCodes: errorCodes,
+      applications: applications,
+      roles: roles,
+      gate: gate,
+      model: model,
+      store: store,
+      monitor: monitor,
+      pdp: pdp,
+      pip: pip,
+      templates: templates
+    };
   }
 
   issuancePolicyName(): string {
@@ -671,31 +695,32 @@ class XacmlRolePep {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one. `decide` is bound ONCE, so the gate and
-// this module's exports hold the same function.
-const pep = new XacmlRolePep({
-  log: helpers.log,
-  config: config,
-  audit: audit,
-  errorCodes: errorCodes,
-  applications: applications,
-  roles: roles,
-  gate: gate,
-  model: model,
-  store: store,
-  monitor: monitor,
-  pdp: pdp,
-  pip: pip,
-  templates: templates
-});
-const decide = pep.decide.bind(pep) as XacmlRolePep['decide'];
-const preview = pep.preview.bind(pep) as XacmlRolePep['preview'];
-const issuancePolicyState = pep.issuancePolicyState.bind(pep) as
-  XacmlRolePep['issuancePolicyState'];
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlRolePep>(
+  'xacml/xacml_role_pep',
+  () => new XacmlRolePep(XacmlRolePep.defaultDeps()),
+  null,
+  helpers.log);
+
+// `decide` is a facade built ONCE, so the gate and this module's exports hold
+// the same function.
+const decide = slot.forward('decide');
+const preview = slot.forward('preview');
+const issuancePolicyState = slot.forward('issuancePolicyState');
 
 // ---------------------------------------------------------------------------
 // FILL THE SLOT.
+//
+// With FACADES, so both fills stay at load (#50, R2): a facade resolves the
+// instance only when it is called, which is not before a request.
 //
 // At require time, which is what `xacml/xacml.ts` requiring this file at 23c
 // buys: from that moment every issuance site's call to
@@ -737,16 +762,19 @@ if (typeof gate.setDecider === 'function') {
                    'the XACML family is unaffected.');
 }
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   XacmlRolePep: XacmlRolePep,
+  installInstance: (instance: XacmlRolePep): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   decide: decide,
-  builtInPolicy: pep.builtInPolicy.bind(pep) as XacmlRolePep['builtInPolicy'],
+  builtInPolicy: slot.forward('builtInPolicy'),
   issuancePolicyState: issuancePolicyState,
   preview: preview,
-  issuancePolicy: pep.issuancePolicy.bind(pep) as
-    XacmlRolePep['issuancePolicy'],
-  issuancePolicyName: pep.issuancePolicyName.bind(pep) as
-    XacmlRolePep['issuancePolicyName'],
-  buildRequest: pep.buildRequest.bind(pep) as XacmlRolePep['buildRequest'],
+  issuancePolicy: slot.forward('issuancePolicy'),
+  issuancePolicyName: slot.forward('issuancePolicyName'),
+  buildRequest: slot.forward('buildRequest'),
   ATTRIBUTE: XacmlRolePep.ATTRIBUTE
 };

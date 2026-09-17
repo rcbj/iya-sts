@@ -100,19 +100,21 @@
 //     pages, then the role PEP (which fills `common/issuance_gate.js`'s
 //     decider), then the access PEP (which fills `common/access_gate.ts`'s).
 //   * **THE MODULE STILL EXPORTS `decide`, `enforce`, `description`,
-//     `enabled`, `pipMaxDesignators` AND `nudgeRegisteredPeps`**, bound to a
-//     TRANSITIONAL instance built at the bottom from the real modules, whose
-//     `registerRoutes(app)` the module exports and `common/protocol_stack.ts`
-//     calls (#50, R1) — right after `xacml_admin.ts`'s, which is where
-//     requiring this module used to register them; requiring it registers
-//     nothing. `xacml_admin.ts` requires this module
-//     lazily and the tests require it by name. The instance goes when the
-//     composition root exists; `XacmlSurface` is exported beside it for that
-//     root. As before, the exports are assigned last.
+//     `enabled`, `pipMaxDesignators` AND `nudgeRegisteredPeps`**, as FACADES
+//     forwarding to the instance the composition root builds and installs
+//     (#50, R2); a process without the root builds a default when this
+//     module loads. The module exports that instance's `registerRoutes(app)`,
+//     which `common/protocol_stack.ts` calls (#50, R1) — right after
+//     `xacml_admin.ts`'s, which is where requiring this module used to
+//     register them; requiring it registers nothing. `xacml_admin.ts`
+//     requires this module lazily and the tests require it by name.
+//     `XacmlSurface` is exported for the root. As before, the exports are
+//     assigned last.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 // **What it adds here is narrow, and deliberately so.** The XACML request
@@ -353,6 +355,43 @@ class XacmlSurface {
   constructor(private readonly deps: XacmlSurfaceDeps) {
     deps.log.debug("Entering XacmlSurface.constructor().");
     deps.log.debug("Leaving XacmlSurface.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlSurfaceDeps {
+    helpers.log.debug("Entering XacmlSurface.defaultDeps().");
+    helpers.log.debug("Leaving XacmlSurface.defaultDeps().");
+    return {
+      log: log,
+      xmlEscape: xmlEscape,
+      baseUrlOf: baseUrlOf,
+      parseBody: parseBody,
+      validation: validation,
+      websecurity: websecurity,
+      config: config,
+      audit: audit,
+      errorCodes: errorCodes,
+      model: model,
+      json: json,
+      pdp: pdp,
+      store: store,
+      pip: pip,
+      datatypes: datatypes,
+      xml: xml,
+      validate: validate,
+      mtls: mtls,
+      peps: peps,
+      pepHttp: pepHttp,
+      monitor: monitor,
+      roles: roles,
+      accessGate: accessGate,
+      loadBarrier: function (): Barrier {
+        return require('../cluster/cluster_barrier');
+      },
+      loadPersistence: function (): CommitWaiter {
+        return require('../persistence/persistence');
+      }
+    };
   }
 
   enabled(): boolean {
@@ -2563,62 +2602,42 @@ class XacmlSurface {
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one. Its routes are registered by the
-// composition root (below), which still happens after the three arming
-// requires at the top, because those run when this module is required.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const surface = new XacmlSurface({
-  log: log,
-  xmlEscape: xmlEscape,
-  baseUrlOf: baseUrlOf,
-  parseBody: parseBody,
-  validation: validation,
-  websecurity: websecurity,
-  config: config,
-  audit: audit,
-  errorCodes: errorCodes,
-  model: model,
-  json: json,
-  pdp: pdp,
-  store: store,
-  pip: pip,
-  datatypes: datatypes,
-  xml: xml,
-  validate: validate,
-  mtls: mtls,
-  peps: peps,
-  pepHttp: pepHttp,
-  monitor: monitor,
-  roles: roles,
-  accessGate: accessGate,
-  loadBarrier: function (): Barrier {
-    return require('../cluster/cluster_barrier');
-  },
-  loadPersistence: function (): CommitWaiter {
-    return require('../persistence/persistence');
-  }
-});
+const slot = new InstanceSlot<XacmlSurface>(
+  'xacml/xacml',
+  () => new XacmlSurface(XacmlSurface.defaultDeps()),
+  null,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => surface.registerRoutes(target),
+  registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   XacmlSurface: XacmlSurface,
-  decide: surface.decide.bind(surface) as XacmlSurface['decide'],
-  enforce: surface.enforce.bind(surface) as XacmlSurface['enforce'],
-  description: surface.description.bind(surface) as
-    XacmlSurface['description'],
-  enabled: surface.enabled.bind(surface) as XacmlSurface['enabled'],
+  installInstance: (instance: XacmlSurface): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  decide: slot.forward('decide'),
+  enforce: slot.forward('enforce'),
+  description: slot.forward('description'),
+  enabled: slot.forward('enabled'),
   // The designator cap a PIP query is held to, for
   // `tests/scan_and_rate_limits.js` (2026-09-12).
-  pipMaxDesignators: surface.pipMaxDesignators.bind(surface) as
-    XacmlSurface['pipMaxDesignators'],
+  pipMaxDesignators: slot.forward('pipMaxDesignators'),
   // The repository change observer, for
   // `tests/cluster_observation_counters.js` (2026-09-15):
   // a clustered node nudges only after the commit.
-  nudgeRegisteredPeps: surface.nudgeRegisteredPeps.bind(surface) as
-    XacmlSurface['nudgeRegisteredPeps']
+  nudgeRegisteredPeps: slot.forward('nudgeRegisteredPeps')
 };

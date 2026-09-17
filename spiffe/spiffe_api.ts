@@ -80,10 +80,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeApi` takes the modules it uses through its constructor
-// (`SpiffeApiDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeApi` is exported beside them for the
-// composition root.
+// (`SpiffeApiDeps`), and since #50's R2 the composition root builds the
+// instance and installs it here. The module still exports its old names as
+// FACADES forwarding to it, for the callers that are not converted; a process
+// without the root builds a default when this module loads. `SpiffeApi` is
+// exported for the root.
 //
 // **THE TABLES WHOSE ENTRIES CALL THIS MODULE** (`entryHandlers`,
 // `agentHandlers`, `bundleHandlers`, `svidHandlers`, `trustDomainHandlers`,
@@ -93,6 +94,7 @@
 
 import crypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log, nowSec } = helpers;
 import config = require('../common/config');
 import audit = require('../common/audit');
@@ -147,6 +149,34 @@ class SpiffeApi {
   constructor(private readonly deps: SpiffeApiDeps) {
     deps.log.debug("Entering SpiffeApi.constructor().");
     deps.log.debug("Leaving SpiffeApi.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeApiDeps {
+    helpers.log.debug("Entering SpiffeApi.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeApi.defaultDeps().");
+    return {
+      crypto: crypto,
+      log: log,
+      nowSec: nowSec,
+      config: config,
+      audit: audit,
+      errorCodes: errorCodes,
+      stats: stats,
+      spiffeId: spiffeId,
+      ca: ca,
+      registry: registry,
+      rpc: rpc,
+      auth: auth,
+      claims: claims,
+      status: status,
+      loadPkijs: function () {
+        return require('pkijs');
+      },
+      loadAsn1js: function () {
+        return require('asn1js');
+      }
+    };
   }
 
   trustDomain() {
@@ -565,6 +595,27 @@ class SpiffeApi {
   // ===========================================================================
   // THE ENTRY SERVICE.
   // ===========================================================================
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: building each service's handlers, in the order loading this
+  // module registered them with `spiffe_grpc.ts`, and the table of them.
+  static wire(instance: SpiffeApi): void {
+    helpers.log.debug("Entering SpiffeApi.wire().");
+    const byName = {
+      entry: instance.buildEntryHandlers(),
+      agent: instance.buildAgentHandlers(),
+      bundle: instance.buildBundleHandlers(),
+      svid: instance.buildSvidHandlers(),
+      trustdomain: instance.buildTrustDomainHandlers(),
+      debug: instance.buildDebugHandlers()
+    };
+    SERVICE_HANDLERS = SERVICE_ROWS.map(function (row) {
+      return { name: row.name, label: row.label, handlers: byName[row.name],
+               what: row.what };
+    });
+    helpers.log.debug("Leaving SpiffeApi.wire().");
+  }
+
   buildEntryHandlers() {
     const { log, rpc, registry, errorCodes, status } = this.deps;
     const self = this;
@@ -2310,33 +2361,20 @@ class SpiffeApi {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeApi = new SpiffeApi({
-  crypto: crypto,
-  log: log,
-  nowSec: nowSec,
-  config: config,
-  audit: audit,
-  errorCodes: errorCodes,
-  stats: stats,
-  spiffeId: spiffeId,
-  ca: ca,
-  registry: registry,
-  rpc: rpc,
-  auth: auth,
-  claims: claims,
-  status: status,
-  loadPkijs: function () {
-    return require('pkijs');
-  },
-  loadAsn1js: function () {
-    return require('asn1js');
-  }
-});
-
-const entryHandlers = spiffeApi.buildEntryHandlers();
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeApi>(
+  'spiffe/spiffe_api',
+  () => new SpiffeApi(SpiffeApi.defaultDeps()),
+  SpiffeApi.wire,
+  helpers.log);
 
 // ===========================================================================
 // THE AGENT SERVICE.
@@ -2386,16 +2424,6 @@ const entryHandlers = spiffeApi.buildEntryHandlers();
 // as `oid4vc/vc_offers.ts`'s deferred access tokens.
 const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
 
-const agentHandlers = spiffeApi.buildAgentHandlers();
-
-const bundleHandlers = spiffeApi.buildBundleHandlers();
-
-const svidHandlers = spiffeApi.buildSvidHandlers();
-
-const trustDomainHandlers = spiffeApi.buildTrustDomainHandlers();
-
-const debugHandlers = spiffeApi.buildDebugHandlers();
-
 // ===========================================================================
 // WHAT THIS SURFACE IMPLEMENTS, for the pages that describe it.
 //
@@ -2431,45 +2459,62 @@ const NOT_IMPLEMENTED = {
     'same refusal it gives wreqptr and jwks_uri. Push the bundle in instead.'
 };
 
-const SERVICE_HANDLERS = [
-  { name: 'entry', label: 'Entry', handlers: entryHandlers,
+// The six services, in the order the surface is published. The handlers of
+// each are built by `SpiffeApi.wire()` when the instance is installed (#50,
+// R2), which joins them into `SERVICE_HANDLERS` with these rows.
+const SERVICE_ROWS = [
+  { name: 'entry', label: 'Entry',
     what: 'Registration entries: what identity a workload gets, under which ' +
           'parent, matching which selectors. The store is the LDAP directory ' +
           'under ou=entries,ou=spiffe, so an ldapmodify and a ' +
           'BatchUpdateEntry are two doors onto one entry.' },
-  { name: 'agent', label: 'Agent', handlers: agentHandlers,
+  { name: 'agent', label: 'Agent',
     what: 'Attesting, listing, banning and join tokens. NODE ATTESTATION IS ' +
           'NEVER VERIFIED — whatever attestor an agent names and whatever ' +
           'payload it sends are taken on trust — but the CSR is real, a join ' +
           'token is single-use, and a ban is enforced.' },
-  { name: 'bundle', label: 'Bundle', handlers: bundleHandlers,
+  { name: 'bundle', label: 'Bundle',
     what: 'This trust domain\'s bundle, and every federated one. Appending ' +
           'to this trust domain\'s own is refused with a reason; federated ' +
           'bundles are accepted from a caller and never fetched.' },
-  { name: 'svid', label: 'SVID', handlers: svidHandlers,
+  { name: 'svid', label: 'SVID',
     what: 'Minting on demand and signing an agent\'s CSRs. Only the public ' +
           'key is read out of a CSR except at MintX509SVID, where there is ' +
           'no entry to take the identity from and the CSR is the only ' +
           'statement of what is wanted.' },
-  { name: 'trustdomain', label: 'TrustDomain', handlers: trustDomainHandlers,
+  { name: 'trustdomain', label: 'TrustDomain',
     what: 'Federation relationships: which trust domain, which bundle ' +
           'endpoint, which profile. RefreshBundle is refused — see its ' +
           'message.' },
-  { name: 'debug', label: 'Debug', handlers: debugHandlers,
+  { name: 'debug', label: 'Debug',
     what: 'GetInfo: uptime, and how many entries, agents and federated ' +
           'bundles this server holds. The cheapest health check here.' }
 ];
 
+// Every service with its handlers, built by `SpiffeApi.wire()`.
+let SERVICE_HANDLERS: Array<{ name: string; label: string; handlers: any;
+                              what: string }> | null = null;
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   SpiffeApi: SpiffeApi,
-  SERVICE_HANDLERS: SERVICE_HANDLERS,
+  installInstance: (instance: SpiffeApi): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  // Built by `SpiffeApi.wire()`, so read once the instance exists.
+  get SERVICE_HANDLERS(): Array<{ name: string; label: string;
+                                  handlers: any; what: string }> {
+    log.debug("Entering SERVICE_HANDLERS().");
+    slot.get();
+    log.debug("Leaving SERVICE_HANDLERS().");
+    return SERVICE_HANDLERS;
+  },
   NOT_IMPLEMENTED: NOT_IMPLEMENTED,
   // Exported so the console can show what a join token is worth without a
   // second store — the one-store rule, applied to something that never reaches
   // the directory because a credential does not belong in one.
   joinTokens: joinTokens,
-  entryToProto: spiffeApi.entryToProto.bind(spiffeApi) as
-    SpiffeApi['entryToProto'],
-  entryFromProto: spiffeApi.entryFromProto.bind(spiffeApi) as
-    SpiffeApi['entryFromProto']
+  entryToProto: slot.forward('entryToProto'),
+  entryFromProto: slot.forward('entryFromProto')
 };

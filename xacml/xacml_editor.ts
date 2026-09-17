@@ -61,12 +61,14 @@
 // JavaScript because the remote PEP's image copies them by name) through its
 // constructor. The menus and the grammar table stay module-level constants,
 // built at load exactly as before, and are also static members of the class.
-// The module still exports every old name, bound to a TRANSITIONAL instance
-// built at the bottom from the real modules, for `xacml_admin.ts` and
-// `tests/xacml_pap.js`; it goes when the composition root exists.
+// The module still exports every old name, each function a FACADE forwarding
+// to the instance the composition root builds and installs (#50's R2), for
+// `xacml_admin.ts` and `tests/xacml_pap.js`; a process without the root
+// builds a default when this module loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import model = require('./xacml_model');
 import datatypes = require('./xacml_datatypes');
 import functions = require('./xacml_functions');
@@ -336,6 +338,18 @@ class XacmlEditor {
   constructor(private readonly deps: XacmlEditorDeps) {
     deps.log.debug("Entering XacmlEditor.constructor().");
     deps.log.debug("Leaving XacmlEditor.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlEditorDeps {
+    helpers.log.debug("Entering XacmlEditor.defaultDeps().");
+    helpers.log.debug("Leaving XacmlEditor.defaultDeps().");
+    return {
+      log: helpers.log,
+      model: model,
+      datatypes: datatypes,
+      functions: functions
+    };
   }
 
 
@@ -1976,44 +1990,46 @@ class XacmlEditor {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const editor = new XacmlEditor({
-  log: helpers.log,
-  model: model,
-  datatypes: datatypes,
-  functions: functions
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlEditor>(
+  'xacml/xacml_editor',
+  () => new XacmlEditor(XacmlEditor.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   XacmlEditor: XacmlEditor,
-  nodeAt: editor.nodeAt.bind(editor) as XacmlEditor['nodeAt'],
-  enclosingPolicy: editor.enclosingPolicy.bind(editor) as
-    XacmlEditor['enclosingPolicy'],
-  isPolicySet: editor.isPolicySet.bind(editor) as XacmlEditor['isPolicySet'],
-  variablesInScope: editor.variablesInScope.bind(editor) as
-    XacmlEditor['variablesInScope'],
-  describeExpression: editor.describeExpression.bind(editor) as
-    XacmlEditor['describeExpression'],
-  shortAlgorithm: editor.shortAlgorithm.bind(editor) as
-    XacmlEditor['shortAlgorithm'],
-  xpathVersionGaps: editor.xpathVersionGaps.bind(editor) as
-    XacmlEditor['xpathVersionGaps'],
-  algorithmMenuFor: editor.algorithmMenuFor.bind(editor) as
-    XacmlEditor['algorithmMenuFor'],
-  kindAt: editor.kindAt.bind(editor) as XacmlEditor['kindAt'],
-  optionsAt: editor.optionsAt.bind(editor) as XacmlEditor['optionsAt'],
-  applyEdit: editor.applyEdit.bind(editor) as XacmlEditor['applyEdit'],
-  tree: editor.tree.bind(editor) as XacmlEditor['tree'],
-  matchFunctions: editor.matchFunctions.bind(editor) as
-    XacmlEditor['matchFunctions'],
-  applyFunctions: editor.applyFunctions.bind(editor) as
-    XacmlEditor['applyFunctions'],
-  typeMenu: editor.typeMenu.bind(editor) as XacmlEditor['typeMenu'],
-  shortName: editor.shortName.bind(editor) as XacmlEditor['shortName'],
-  shortType: editor.shortType.bind(editor) as XacmlEditor['shortType'],
-  categoryLabel: editor.categoryLabel.bind(editor) as
-    XacmlEditor['categoryLabel'],
+  installInstance: (instance: XacmlEditor): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  nodeAt: slot.forward('nodeAt'),
+  enclosingPolicy: slot.forward('enclosingPolicy'),
+  isPolicySet: slot.forward('isPolicySet'),
+  variablesInScope: slot.forward('variablesInScope'),
+  describeExpression: slot.forward('describeExpression'),
+  shortAlgorithm: slot.forward('shortAlgorithm'),
+  xpathVersionGaps: slot.forward('xpathVersionGaps'),
+  algorithmMenuFor: slot.forward('algorithmMenuFor'),
+  kindAt: slot.forward('kindAt'),
+  optionsAt: slot.forward('optionsAt'),
+  applyEdit: slot.forward('applyEdit'),
+  tree: slot.forward('tree'),
+  matchFunctions: slot.forward('matchFunctions'),
+  applyFunctions: slot.forward('applyFunctions'),
+  typeMenu: slot.forward('typeMenu'),
+  shortName: slot.forward('shortName'),
+  shortType: slot.forward('shortType'),
+  categoryLabel: slot.forward('categoryLabel'),
   CATEGORY_MENU: XacmlEditor.CATEGORY_MENU,
   RULE_ALG_MENU: XacmlEditor.RULE_ALG_MENU,
   POLICY_ALG_MENU: XacmlEditor.POLICY_ALG_MENU,

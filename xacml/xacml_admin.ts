@@ -77,20 +77,23 @@
 //   * **`registerRoutes(app)` HOLDS EVERY ROUTE, IN THE ORIGINAL ORDER**, and
 //     `installSlot()` fills `admin.setXacmlPages()`, which the original did
 //     after the last route.
-//   * **THE MODULE STILL EXPORTS EVERY OLD NAME**, bound to a TRANSITIONAL
-//     instance built at the bottom from the real modules, which fills the slot
-//     at load. It no longer registers the routes (#50, R1): the module exports
-//     `registerRoutes(app)` and `common/protocol_stack.ts` calls it at the
-//     point in the route order where requiring `./xacml` used to register
-//     them — just before `xacml.ts`'s own — so the route order is what it
-//     was. The slot is now filled BEFORE the routes exist rather than after;
-//     nothing reads it until a request arrives. It goes when the
-//     composition root exists. `XacmlAdmin` is exported beside it for that
-//     root, and the three action lists are its static members as well.
+//   * **THE MODULE STILL EXPORTS EVERY OLD NAME**, each function a FACADE
+//     forwarding to the instance the composition root builds and installs
+//     (#50, R2); installing it runs `XacmlAdmin.wire()`, which fills the slot,
+//     and a process without the root builds and wires a default when this
+//     module loads. It no longer registers the routes (#50, R1): the module
+//     exports `registerRoutes(app)` and `common/protocol_stack.ts` calls it
+//     at the point in the route order where requiring `./xacml` used to
+//     register them — just before `xacml.ts`'s own — so the route order is
+//     what it was. The slot is now filled BEFORE the routes exist rather
+//     than after; nothing reads it until a request arrives. `XacmlAdmin` is
+//     exported for the root, and the three action lists are its static
+//     members as well.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import audit = require('../common/audit');
 // The error-code registry (a leaf). An action's refusal carries its code as a
@@ -233,6 +236,43 @@ class XacmlAdmin {
   constructor(private readonly deps: XacmlAdminDeps) {
     deps.log.debug("Entering XacmlAdmin.constructor().");
     deps.log.debug("Leaving XacmlAdmin.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlAdminDeps {
+    helpers.log.debug("Entering XacmlAdmin.defaultDeps().");
+    helpers.log.debug("Leaving XacmlAdmin.defaultDeps().");
+    return {
+      log: helpers.log,
+      parseBody: helpers.parseBody,
+      config: config,
+      audit: audit,
+      errorCodes: errorCodes,
+      admin: admin,
+      esc: admin.esc,
+      model: model,
+      xml: xml,
+      store: store,
+      editor: editor,
+      templates: templates,
+      validate: validate,
+      alfa: alfa,
+      pip: pip,
+      peps: peps,
+      pepHttp: pepHttp,
+      pepTls: pepTls,
+      pki: pki,
+      monitor: monitor,
+      loadXacml: function (): XacmlRoutes {
+        return require('./xacml');
+      },
+      loadRolePep: function (): RolePep {
+        return require('./xacml_role_pep');
+      },
+      loadAccessPep: function (): AccessPep {
+        return require('./xacml_access_pep');
+      }
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -2813,73 +2853,64 @@ class XacmlAdmin {
     }
     log.debug("Leaving XacmlAdmin.installSlot().");
   }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: the console's slot fill. The root installs this instance
+  // before it registers the routes, so the slot is still filled before they
+  // exist; nothing reads it until a request arrives.
+  static wire(instance: XacmlAdmin): void {
+    helpers.log.debug("Entering XacmlAdmin.wire().");
+    instance.installSlot();
+    helpers.log.debug("Leaving XacmlAdmin.wire().");
+  }
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules. Its routes are registered by the composition root (below), at the
-// point where requiring this module used to register them; the console's slot
-// is filled here, at load, which is now BEFORE those routes exist rather than
-// after them — harmless, because nothing reads the slot before a request.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const pages = new XacmlAdmin({
-  log: helpers.log,
-  parseBody: helpers.parseBody,
-  config: config,
-  audit: audit,
-  errorCodes: errorCodes,
-  admin: admin,
-  esc: admin.esc,
-  model: model,
-  xml: xml,
-  store: store,
-  editor: editor,
-  templates: templates,
-  validate: validate,
-  alfa: alfa,
-  pip: pip,
-  peps: peps,
-  pepHttp: pepHttp,
-  pepTls: pepTls,
-  pki: pki,
-  monitor: monitor,
-  loadXacml: function (): XacmlRoutes {
-    return require('./xacml');
-  },
-  loadRolePep: function (): RolePep {
-    return require('./xacml_role_pep');
-  },
-  loadAccessPep: function (): AccessPep {
-    return require('./xacml_access_pep');
-  }
-});
+const slot = new InstanceSlot<XacmlAdmin>(
+  'xacml/xacml_admin',
+  () => new XacmlAdmin(XacmlAdmin.defaultDeps()),
+  XacmlAdmin.wire,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
-pages.installSlot();
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => pages.registerRoutes(target),
+  registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   XacmlAdmin: XacmlAdmin,
-  overviewJson: pages.overviewJson.bind(pages) as XacmlAdmin['overviewJson'],
-  pepsJson: pages.pepsJson.bind(pages) as XacmlAdmin['pepsJson'],
+  installInstance: (instance: XacmlAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  overviewJson: slot.forward('overviewJson'),
+  pepsJson: slot.forward('pepsJson'),
   // The monitor's view, for GET /admin-api/xacml/monitor. Rule 7: every page
   // of this console has an operation. There is no action beside it because
   // that page HAS no control — it reports and changes nothing, deliberately
   // (see the header: a console that could zero its own monitoring would make
   // every number on it a number somebody might have zeroed).
-  monitorJson: pages.monitorJson.bind(pages) as XacmlAdmin['monitorJson'],
-  pepAction: pages.pepAction.bind(pages) as XacmlAdmin['pepAction'],
+  monitorJson: slot.forward('monitorJson'),
+  pepAction: slot.forward('pepAction'),
   PEP_ACTIONS: XacmlAdmin.PEP_ACTIONS,
-  combinedAction: pages.combinedAction.bind(pages) as
-    XacmlAdmin['combinedAction'],
-  actionNames: pages.actionNames.bind(pages) as XacmlAdmin['actionNames'],
+  combinedAction: slot.forward('combinedAction'),
+  actionNames: slot.forward('actionNames'),
   EDITOR_ACTIONS: XacmlAdmin.EDITOR_ACTIONS,
-  editorJson: pages.editorJson.bind(pages) as XacmlAdmin['editorJson'],
-  editorAction: pages.editorAction.bind(pages) as XacmlAdmin['editorAction'],
-  decideJson: pages.decideJson.bind(pages) as XacmlAdmin['decideJson'],
-  policiesJson: pages.policiesJson.bind(pages) as XacmlAdmin['policiesJson'],
-  policyAction: pages.policyAction.bind(pages) as XacmlAdmin['policyAction'],
+  editorJson: slot.forward('editorJson'),
+  editorAction: slot.forward('editorAction'),
+  decideJson: slot.forward('decideJson'),
+  policiesJson: slot.forward('policiesJson'),
+  policyAction: slot.forward('policyAction'),
   POLICY_ACTIONS: XacmlAdmin.POLICY_ACTIONS
 };

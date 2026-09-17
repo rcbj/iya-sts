@@ -138,12 +138,15 @@
 // declaration; the catalogue is built once at load by
 // `XacmlMonitor.catalogue()`, from the real logger and settings, because its
 // `bias` members read the setting when they are called. The module still
-// exports `PEPS`, `record`, `snapshot` and `resetForTests` from a TRANSITIONAL
-// instance, for the unconverted modules that require it; it goes when the
-// composition root exists. `XacmlMonitor` is exported beside it for that root.
+// exports `PEPS`, and `record`, `snapshot` and `resetForTests` as FACADES
+// forwarding to the instance the composition root builds and installs (#50's
+// R2), for the unconverted modules that require it; a process without the
+// root builds a default when this module loads. `XacmlMonitor` is exported
+// for the root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // The error-code registry (a leaf). Tagged log lines only: an audit row per
 // failed counter would be a second record on the path of every decision.
@@ -264,6 +267,23 @@ class XacmlMonitor {
       byId[row.id] = row;
     });
     deps.log.debug("Leaving XacmlMonitor.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlMonitorDeps {
+    helpers.log.debug("Entering XacmlMonitor.defaultDeps().");
+    helpers.log.debug("Leaving XacmlMonitor.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      errorCodes: errorCodes,
+      realms: realms,
+      replication: replication,
+      peps: peps,
+      catalogue: PEPS,
+      counters: counters,
+      startedAt: startedAt
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -774,32 +794,37 @@ const counters = realms.map({ persist: 'xacml_monitor.counters',
 // WHEN THE COUNTING STARTED. Declared here, above its one reader, because a
 // module-level `const` used by a function defined above it is legal and reads
 // like a bug — and this one is stamped at require time, which is the fact the
-// page reports. (Since #50 its one reader is the instance below, which is
-// handed it.)
+// page reports. (Since #50 its one reader is the instance, which is handed
+// it by `XacmlMonitor.defaultDeps()`.)
 const startedAt = new Date().toISOString();
 
 // THE CATALOGUE, built once at load — see `XacmlMonitor.catalogue()`.
 const PEPS = XacmlMonitor.catalogue(helpers.log, config);
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const monitor = new XacmlMonitor({
-  log: helpers.log,
-  config: config,
-  errorCodes: errorCodes,
-  realms: realms,
-  replication: replication,
-  peps: peps,
-  catalogue: PEPS,
-  counters: counters,
-  startedAt: startedAt
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlMonitor>(
+  'xacml/xacml_monitor',
+  () => new XacmlMonitor(XacmlMonitor.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   XacmlMonitor: XacmlMonitor,
+  installInstance: (instance: XacmlMonitor): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PEPS: PEPS,
-  record: monitor.record.bind(monitor) as XacmlMonitor['record'],
-  snapshot: monitor.snapshot.bind(monitor) as XacmlMonitor['snapshot'],
-  resetForTests: monitor.resetForTests.bind(monitor) as
-    XacmlMonitor['resetForTests']
+  record: slot.forward('record'),
+  snapshot: slot.forward('snapshot'),
+  resetForTests: slot.forward('resetForTests')
 };

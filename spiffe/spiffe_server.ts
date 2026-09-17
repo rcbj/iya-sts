@@ -50,10 +50,11 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeServer` takes the modules it uses through its constructor
-// (`SpiffeServerDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeServer` is exported beside them for the
-// composition root.
+// (`SpiffeServerDeps`), and since #50's R2 the composition root builds the
+// instance and installs it here. The module still exports its old names as
+// FACADES forwarding to it, for the callers that are not converted; a process
+// without the root builds a default when this module loads. `SpiffeServer` is
+// exported for the root.
 //
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
 // exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
@@ -63,6 +64,7 @@
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log, xmlEscape, baseUrlOf } = helpers;
 import config = require('../common/config');
 // The realm registry, for the per-realm listeners below. A LIBRARY (rule 3)
@@ -143,6 +145,27 @@ class SpiffeServer {
   constructor(private readonly deps: SpiffeServerDeps) {
     deps.log.debug("Entering SpiffeServer.constructor().");
     deps.log.debug("Leaving SpiffeServer.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeServerDeps {
+    helpers.log.debug("Entering SpiffeServer.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeServer.defaultDeps().");
+    return {
+      log: log,
+      xmlEscape: xmlEscape,
+      baseUrlOf: baseUrlOf,
+      config: config,
+      realms: realms,
+      audit: audit,
+      errorCodes: errorCodes,
+      ca: ca,
+      registry: registry,
+      rpc: rpc,
+      workload: workload,
+      serverApi: serverApi,
+      auth: auth
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1387,26 +1410,52 @@ class SpiffeServer {
     });
     log.debug("Leaving SpiffeServer.registerRoutes().");
   }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed, in the order the module used to do it: the realm-change
+  // subscription that reconciles the listeners, then the console's reader.
+  static wire(instance: SpiffeServer): void {
+    helpers.log.debug("Entering SpiffeServer.wire().");
+    // A realm created, changed or removed. `realms.setOverride()` fires this,
+    // so turning a realm's SPIFFE on is what binds its sockets — see
+    // reconcile().
+    realms.onChange(function () {
+      const running = instance.reconcile();
+      if (running && typeof running.catch === 'function') {
+        // Never thrown into the caller: this is a notification, and the
+        // caller is whoever happened to write a setting. A listener that
+        // would not bind is reported on `GET /spiffe` like every other one.
+        running.catch(function (e) {
+          log.error(errorCodes.tag('STS-SPIFFE-0074') +
+                    'spiffe: the listeners could not be reconciled after a ' +
+                    'realm changed: ' + e.message);
+        });
+      }
+    });
+
+    admin.setSpiffeReader(function () {
+      const now = instance.bindingsNow();
+      return { workload: now.workload, api: now.api, bundlePath: BUNDLE_PATH };
+    });
+    helpers.log.debug("Leaving SpiffeServer.wire().");
+  }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeServer = new SpiffeServer({
-  log: log,
-  xmlEscape: xmlEscape,
-  baseUrlOf: baseUrlOf,
-  config: config,
-  realms: realms,
-  audit: audit,
-  errorCodes: errorCodes,
-  ca: ca,
-  registry: registry,
-  rpc: rpc,
-  workload: workload,
-  serverApi: serverApi,
-  auth: auth
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeServer>(
+  'spiffe/spiffe_server',
+  () => new SpiffeServer(SpiffeServer.defaultDeps()),
+  SpiffeServer.wire,
+  helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
@@ -1442,39 +1491,22 @@ const spiffeServer = new SpiffeServer({
 // caller expects: everything asked for up to this point has been done.
 let pending = Promise.resolve([]);
 
-// A realm created, changed or removed. `realms.setOverride()` fires this, so
-// turning a realm's SPIFFE on is what binds its sockets — see reconcile().
-realms.onChange(function () {
-  const running = spiffeServer.reconcile();
-  if (running && typeof running.catch === 'function') {
-    // Never thrown into the caller: this is a notification, and the caller is
-    // whoever happened to write a setting. A listener that would not bind is
-    // reported on `GET /spiffe` like every other one.
-    running.catch(function (e) {
-      log.error(errorCodes.tag('STS-SPIFFE-0074') +
-                'spiffe: the listeners could not be reconciled after a realm ' +
-                'changed: ' + e.message);
-    });
-  }
-});
-
-admin.setSpiffeReader(function () {
-  const now = spiffeServer.bindingsNow();
-  return { workload: now.workload, api: now.api, bundlePath: BUNDLE_PATH };
-});
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => spiffeServer.registerRoutes(target),
+  registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   SpiffeServer: SpiffeServer,
-  listen: spiffeServer.listen.bind(spiffeServer) as SpiffeServer['listen'],
-  close: spiffeServer.close.bind(spiffeServer) as SpiffeServer['close'],
-  description: spiffeServer.description.bind(spiffeServer) as
-    SpiffeServer['description'],
+  installInstance: (instance: SpiffeServer): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  listen: slot.forward('listen'),
+  close: slot.forward('close'),
+  description: slot.forward('description'),
   BUNDLE_PATH: BUNDLE_PATH,
   bindings: function () {
     log.debug("Entering bindings().");
     log.debug("Leaving bindings().");
-    return spiffeServer.bindingsNow();
+    return slot.get().bindingsNow();
   },
   // What a test and `/spiffe` need that the two flat lists cannot carry: which
   // realms have sockets at all. Exported rather than derived from the rows
@@ -1485,6 +1517,5 @@ export = {
     log.debug("Leaving realmsListening().");
     return Array.from(listeners.keys());
   },
-  reconcile: spiffeServer.reconcile.bind(spiffeServer) as
-    SpiffeServer['reconcile']
+  reconcile: slot.forward('reconcile')
 };

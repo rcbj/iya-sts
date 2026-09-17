@@ -107,14 +107,16 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeAuth` takes the modules it uses through its constructor
-// (`SpiffeAuthDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeAuth` is exported beside them for the
-// composition root.
+// (`SpiffeAuthDeps`), and since #50's R2 the composition root builds the
+// instance and installs it here. The module still exports its old names as
+// FACADES forwarding to it, for the callers that are not converted; a process
+// without the root builds a default when this module loads. `SpiffeAuth` is
+// exported for the root.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log, nowSec } = helpers;
 import config = require('../common/config');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
@@ -286,6 +288,26 @@ class SpiffeAuth {
   constructor(private readonly deps: SpiffeAuthDeps) {
     deps.log.debug("Entering SpiffeAuth.constructor().");
     deps.log.debug("Leaving SpiffeAuth.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeAuthDeps {
+    helpers.log.debug("Entering SpiffeAuth.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeAuth.defaultDeps().");
+    return {
+      crypto: crypto,
+      log: log,
+      nowSec: nowSec,
+      config: config,
+      mode: mode,
+      errorCodes: errorCodes,
+      stats: stats,
+      spiffeId: spiffeId,
+      ca: ca,
+      registry: registry,
+      tls: tls,
+      revocationStatus: revocationStatus
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1257,23 +1279,20 @@ class SpiffeAuth {
   }
 }
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeAuth = new SpiffeAuth({
-  crypto: crypto,
-  log: log,
-  nowSec: nowSec,
-  config: config,
-  mode: mode,
-  errorCodes: errorCodes,
-  stats: stats,
-  spiffeId: spiffeId,
-  ca: ca,
-  registry: registry,
-  tls: tls,
-  revocationStatus: revocationStatus
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeAuth>(
+  'spiffe/spiffe_auth',
+  () => new SpiffeAuth(SpiffeAuth.defaultDeps()),
+  null,
+  helpers.log);
 
 // The metadata key an asserted selector arrives under. Deliberately NOT one any
 // specification names, and deliberately ugly: a client author who copies it
@@ -1310,42 +1329,31 @@ const ASSERTED_SELECTOR_KEY = 'x-sts-workload-selector';
 const recordedConnections =
     realms.map({ persist: 'spiffe.recordedConnections' });
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   SpiffeAuth: SpiffeAuth,
+  installInstance: (instance: SpiffeAuth): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   ENTITIES: ENTITIES,
   POLICY: POLICY,
   ASSERTED_SELECTOR_KEY: ASSERTED_SELECTOR_KEY,
-  authRequired: spiffeAuth.authRequired.bind(spiffeAuth) as
-    SpiffeAuth['authRequired'],
-  trustLocalSocket: spiffeAuth.trustLocalSocket.bind(spiffeAuth) as
-    SpiffeAuth['trustLocalSocket'],
-  attestWorkloads: spiffeAuth.attestWorkloads.bind(spiffeAuth) as
-    SpiffeAuth['attestWorkloads'],
-  acceptAssertedSelectors:
-    spiffeAuth.acceptAssertedSelectors.bind(spiffeAuth) as
-      SpiffeAuth['acceptAssertedSelectors'],
-  adminIds: spiffeAuth.adminIds.bind(spiffeAuth) as SpiffeAuth['adminIds'],
-  transportOf: spiffeAuth.transportOf.bind(spiffeAuth) as
-    SpiffeAuth['transportOf'],
-  callerOf: spiffeAuth.callerOf.bind(spiffeAuth) as SpiffeAuth['callerOf'],
-  describeCaller: spiffeAuth.describeCaller.bind(spiffeAuth) as
-    SpiffeAuth['describeCaller'],
-  authorize: spiffeAuth.authorize.bind(spiffeAuth) as SpiffeAuth['authorize'],
-  recordIdentity: spiffeAuth.recordIdentity.bind(spiffeAuth) as
-    SpiffeAuth['recordIdentity'],
-  recordCaller: spiffeAuth.recordCaller.bind(spiffeAuth) as
-    SpiffeAuth['recordCaller'],
-  workloadSelectors: spiffeAuth.workloadSelectors.bind(spiffeAuth) as
-    SpiffeAuth['workloadSelectors'],
-  endpointFor: spiffeAuth.endpointFor.bind(spiffeAuth) as
-    SpiffeAuth['endpointFor'],
-  peerSelectorValue: spiffeAuth.peerSelectorValue.bind(spiffeAuth) as
-    SpiffeAuth['peerSelectorValue'],
-  spiffeIdFromCertificate:
-    spiffeAuth.spiffeIdFromCertificate.bind(spiffeAuth) as
-      SpiffeAuth['spiffeIdFromCertificate'],
-  verifyPresentedCertificate:
-    spiffeAuth.verifyPresentedCertificate.bind(spiffeAuth) as
-      SpiffeAuth['verifyPresentedCertificate'],
-  state: spiffeAuth.state.bind(spiffeAuth) as SpiffeAuth['state']
+  authRequired: slot.forward('authRequired'),
+  trustLocalSocket: slot.forward('trustLocalSocket'),
+  attestWorkloads: slot.forward('attestWorkloads'),
+  acceptAssertedSelectors: slot.forward('acceptAssertedSelectors'),
+  adminIds: slot.forward('adminIds'),
+  transportOf: slot.forward('transportOf'),
+  callerOf: slot.forward('callerOf'),
+  describeCaller: slot.forward('describeCaller'),
+  authorize: slot.forward('authorize'),
+  recordIdentity: slot.forward('recordIdentity'),
+  recordCaller: slot.forward('recordCaller'),
+  workloadSelectors: slot.forward('workloadSelectors'),
+  endpointFor: slot.forward('endpointFor'),
+  peerSelectorValue: slot.forward('peerSelectorValue'),
+  spiffeIdFromCertificate: slot.forward('spiffeIdFromCertificate'),
+  verifyPresentedCertificate: slot.forward('verifyPresentedCertificate'),
+  state: slot.forward('state')
 };

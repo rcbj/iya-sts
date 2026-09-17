@@ -184,13 +184,16 @@
 //     each row's `attempt` and `challenge` are its methods, and
 //     `DIGEST_ALGORITHMS` is filtered by it for the same reason it always was
 //     filtered at require time: the warning names what this build lacks.
-//   * The require-time log line and `capabilities.provide()` run after the
-//     TRANSITIONAL instance is built, which is still at require time.
+//   * `capabilities.provide()` still runs at require time. The require-time
+//     log line names the instance's schemes, so since #50's R2 it is logged
+//     by `ScimAuth.wire()`, when the instance is installed.
 //
-// The module still exports every old name from that TRANSITIONAL instance,
-// because `scim.ts`, `admin-ui/crypto_metadata.ts` and the tests are not
-// converted and require it by those names. `ScimAuth` is exported beside
-// them for the composition root.
+// Since #50's R2 the composition root builds the instance and installs it
+// here. The module still exports every old name, as FACADES forwarding to
+// that instance (and getters for `SCHEMES` and `DIGEST_ALGORITHMS`), because
+// `scim.ts`, `admin-ui/crypto_metadata.ts` and the tests are not converted
+// and require it by those names; a process without the root builds a default
+// when this module loads. `ScimAuth` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -203,6 +206,7 @@ import credentials = require('../common/credentials');
 import mode = require('../common/mode');
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // The challenge and replay stores below are per trust realm. A LEAF.
 import realms = require('../common/realms');
@@ -391,6 +395,59 @@ class ScimAuth {
     this.SCHEMES = this.buildSchemes();
     this.DIGEST_ALGORITHMS = this.filterDigestAlgorithms();
     deps.log.debug("Leaving ScimAuth.constructor().");
+  }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: the log line naming the schemes the instance offers.
+  static wire(instance: ScimAuth): void {
+    helpers.log.debug("Entering ScimAuth.wire().");
+    helpers.log.info('scim: the SCIM endpoints authenticate through ' +
+      instance.enabledSchemes().map(function (row) {
+        return row.name;
+      }).join(', ') +
+      (instance.authRequired() ? '. A credential is REQUIRED' :
+        '. A credential is OPTIONAL (authentication is off)') +
+      '; every one of them is permissive, ' +
+      'and the access control policy is on GET /scim.');
+    helpers.log.debug("Leaving ScimAuth.wire().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): ScimAuthDeps {
+    helpers.log.debug("Entering ScimAuth.defaultDeps().");
+    helpers.log.debug("Leaving ScimAuth.defaultDeps().");
+    return {
+      log: helpers.log,
+      crypto: crypto,
+      stsCrypto: stsCrypto,
+      credentials: credentials,
+      mode: mode,
+      baseUrlOf: helpers.baseUrlOf,
+      parseBody: helpers.parseBody,
+      hasScope: helpers.hasScope,
+      capturingResponse: helpers.capturingResponse,
+      capturedDescription: helpers.capturedDescription,
+      config: config,
+      dpop: dpop,
+      stats: stats,
+      authn: authn,
+      accessGate: accessGate,
+      tlsServer: tlsServer,
+      directory: directory,
+      errorCodes: errorCodes,
+      audit: audit,
+      clusterClaims: clusterClaims,
+      loadTlsClientCertificates: function loadTlsClientCertificates() {
+        helpers.log.debug("Entering loadTlsClientCertificates().");
+        helpers.log.debug("Leaving loadTlsClientCertificates().");
+        return require('../common/tls_client_certificates');
+      },
+      digestNonces: digestNonces,
+      digestCounts: digestCounts,
+      hobaChallenges: hobaChallenges,
+      hobaSeen: hobaSeen
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -2883,48 +2940,20 @@ class ScimAuth {
 
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const scimAuth = new ScimAuth({
-  log: helpers.log,
-  crypto: crypto,
-  stsCrypto: stsCrypto,
-  credentials: credentials,
-  mode: mode,
-  baseUrlOf: helpers.baseUrlOf,
-  parseBody: helpers.parseBody,
-  hasScope: helpers.hasScope,
-  capturingResponse: helpers.capturingResponse,
-  capturedDescription: helpers.capturedDescription,
-  config: config,
-  dpop: dpop,
-  stats: stats,
-  authn: authn,
-  accessGate: accessGate,
-  tlsServer: tlsServer,
-  directory: directory,
-  errorCodes: errorCodes,
-  audit: audit,
-  clusterClaims: clusterClaims,
-  loadTlsClientCertificates: function loadTlsClientCertificates() {
-    helpers.log.debug("Entering loadTlsClientCertificates().");
-    helpers.log.debug("Leaving loadTlsClientCertificates().");
-    return require('../common/tls_client_certificates');
-  },
-  digestNonces: digestNonces,
-  digestCounts: digestCounts,
-  hobaChallenges: hobaChallenges,
-  hobaSeen: hobaSeen
-});
-
-helpers.log.info('scim: the SCIM endpoints authenticate through ' +
-  scimAuth.enabledSchemes().map(function (row) {
-    return row.name;
-  }).join(', ') +
-  (scimAuth.authRequired() ? '. A credential is REQUIRED' :
-    '. A credential is OPTIONAL (authentication is off)') +
-  '; every one of them is permissive, ' +
-  'and the access control policy is on GET /scim.');
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ScimAuth>(
+  'scim/scim_auth',
+  () => new ScimAuth(ScimAuth.defaultDeps()),
+  ScimAuth.wire,
+  helpers.log);
 
 // DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason: the Digest
 // nonces and HOBA challenges are persisted stores, and a nonce count or a
@@ -2932,38 +2961,43 @@ helpers.log.info('scim: the SCIM endpoints authenticate through ' +
 // calls.
 capabilities.provide('scim.challenge-state');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   ScimAuth: ScimAuth,
-  SCHEMES: scimAuth.SCHEMES,
+  installInstance: (instance: ScimAuth): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  // Built by the instance's constructor, so read from it when asked.
+  get SCHEMES(): SchemeRow[] {
+    helpers.log.debug("Entering SCHEMES().");
+    helpers.log.debug("Leaving SCHEMES().");
+    return slot.get().SCHEMES;
+  },
   // The two algorithm tables, for `admin-ui/crypto_metadata.ts`.
   // DIGEST_ALGORITHMS is already filtered by what this node build can actually
   // compute, which is exactly what that page should report — a console that
   // listed SHA-512-256 on a build without it would be naming an algorithm no
   // challenge will ever offer.
-  DIGEST_ALGORITHMS: scimAuth.DIGEST_ALGORITHMS,
+  get DIGEST_ALGORITHMS(): DigestAlgorithm[] {
+    helpers.log.debug("Entering DIGEST_ALGORITHMS().");
+    helpers.log.debug("Leaving DIGEST_ALGORITHMS().");
+    return slot.get().DIGEST_ALGORITHMS;
+  },
   HOBA_ALG_RSA_SHA256: ScimAuth.HOBA_ALG_RSA_SHA256,
   REFUSED_PASSWORD: ScimAuth.REFUSED_PASSWORD,
-  authRequired: scimAuth.authRequired.bind(scimAuth) as
-    ScimAuth['authRequired'],
-  authDiscovery: scimAuth.authDiscovery.bind(scimAuth) as
-    ScimAuth['authDiscovery'],
-  realm: scimAuth.realm.bind(scimAuth) as ScimAuth['realm'],
-  scopeRead: scimAuth.scopeRead.bind(scimAuth) as ScimAuth['scopeRead'],
-  scopeWrite: scimAuth.scopeWrite.bind(scimAuth) as ScimAuth['scopeWrite'],
-  challenges: scimAuth.challenges.bind(scimAuth) as ScimAuth['challenges'],
-  authenticate: scimAuth.authenticate.bind(scimAuth) as
-    ScimAuth['authenticate'],
-  authenticateSpent: scimAuth.authenticateSpent.bind(scimAuth) as
-    ScimAuth['authenticateSpent'],
-  registerHobaKey: scimAuth.registerHobaKey.bind(scimAuth) as
-    ScimAuth['registerHobaKey'],
-  schemesForConfig: scimAuth.schemesForConfig.bind(scimAuth) as
-    ScimAuth['schemesForConfig'],
-  schemesBeyondTheCanonicalList:
-    scimAuth.schemesBeyondTheCanonicalList.bind(scimAuth) as
-      ScimAuth['schemesBeyondTheCanonicalList'],
-  primarySchemeId: scimAuth.primarySchemeId.bind(scimAuth) as
-    ScimAuth['primarySchemeId'],
-  describe: scimAuth.describe.bind(scimAuth) as ScimAuth['describe'],
-  schemeIds: scimAuth.schemeIds.bind(scimAuth) as ScimAuth['schemeIds']
+  authRequired: slot.forward('authRequired'),
+  authDiscovery: slot.forward('authDiscovery'),
+  realm: slot.forward('realm'),
+  scopeRead: slot.forward('scopeRead'),
+  scopeWrite: slot.forward('scopeWrite'),
+  challenges: slot.forward('challenges'),
+  authenticate: slot.forward('authenticate'),
+  authenticateSpent: slot.forward('authenticateSpent'),
+  registerHobaKey: slot.forward('registerHobaKey'),
+  schemesForConfig: slot.forward('schemesForConfig'),
+  schemesBeyondTheCanonicalList: slot.forward('schemesBeyondTheCanonicalList'),
+  primarySchemeId: slot.forward('primarySchemeId'),
+  describe: slot.forward('describe'),
+  schemeIds: slot.forward('schemeIds')
 };

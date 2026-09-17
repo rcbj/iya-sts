@@ -58,15 +58,19 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `XacmlPip` takes the logger, the error-code registry, the engine's
 // vocabulary and its datatypes through its constructor. The directory slot
-// (`setDirectory()`) is a method of it and is still exported under its old
-// name, as are `resolverFor`, `locateSubject`, `rawAttribute`,
-// `directoryAttributeFor`, `subjectOf`, `available` and `ATTRIBUTE_PREFIX` —
-// bound to a TRANSITIONAL instance built at the bottom, for
-// `ldap/ldap_server.js` and the other callers that are not converted. It goes
-// when the composition root exists; `XacmlPip` is exported beside it.
+// (`setDirectory()`) is a STATIC method of it, because `ldap/ldap_server.js`
+// fills it before the composition root builds the instance (#50, R2), and is
+// still exported under its old name, as are `ATTRIBUTE_PREFIX` and — as
+// FACADES — `resolverFor`, `locateSubject`, `rawAttribute`,
+// `directoryAttributeFor`, `subjectOf` and `available`, forwarding to the
+// instance the composition root builds and installs — for
+// `ldap/ldap_server.js` and the other callers that are not converted. A
+// process without the root builds a default when this module loads.
+// `XacmlPip` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The error-code registry (a leaf), for the one data failure below whose only
 // record is a log line. Not a module the remote PEP container copies.
 import errorCodes = require('../common/error_codes');
@@ -122,8 +126,26 @@ class XacmlPip {
     deps.log.debug("Leaving XacmlPip.constructor().");
   }
 
-  setDirectory(fns: PipDirectory | null | undefined): void {
-    const { log } = this.deps;
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlPipDeps {
+    helpers.log.debug("Entering XacmlPip.defaultDeps().");
+    helpers.log.debug("Leaving XacmlPip.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      model: model,
+      datatypes: datatypes
+    };
+  }
+
+  // STATIC, BECAUSE THE SLOT IS FILLED BEFORE THE ROOT BUILDS THE INSTANCE
+  // (#50, R2). `ldap/ldap_server.js` fills it at ITS load, which happens
+  // inside the require that loads this module and so before
+  // `common/protocol_stack.ts` reaches this module's build line; a facade
+  // there would build a default instance and the root's install would be
+  // refused. What it installs is module-level, so it needs no instance.
+  static setDirectory(fns: PipDirectory | null | undefined): void {
+    const { log } = helpers;
     log.debug('Entering XacmlPip.setDirectory().');
     directory = fns || null;
     log.debug('Leaving XacmlPip.setDirectory(). The PIP ' +
@@ -365,24 +387,34 @@ class XacmlPip {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const pip = new XacmlPip({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  model: model,
-  datatypes: datatypes
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlPip>(
+  'xacml/xacml_pip',
+  () => new XacmlPip(XacmlPip.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   XacmlPip: XacmlPip,
-  setDirectory: pip.setDirectory.bind(pip) as XacmlPip['setDirectory'],
-  resolverFor: pip.resolverFor.bind(pip) as XacmlPip['resolverFor'],
-  locateSubject: pip.locateSubject.bind(pip) as XacmlPip['locateSubject'],
-  rawAttribute: pip.attributeOf.bind(pip) as XacmlPip['attributeOf'],
-  directoryAttributeFor: pip.directoryAttributeFor.bind(pip) as
-    XacmlPip['directoryAttributeFor'],
-  subjectOf: pip.subjectOf.bind(pip) as XacmlPip['subjectOf'],
-  available: pip.available.bind(pip) as XacmlPip['available'],
+  installInstance: (instance: XacmlPip): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  setDirectory: XacmlPip.setDirectory,
+  resolverFor: slot.forward('resolverFor'),
+  locateSubject: slot.forward('locateSubject'),
+  rawAttribute: slot.forward('attributeOf'),
+  directoryAttributeFor: slot.forward('directoryAttributeFor'),
+  subjectOf: slot.forward('subjectOf'),
+  available: slot.forward('available'),
   ATTRIBUTE_PREFIX: XacmlPip.ATTRIBUTE_PREFIX
 };

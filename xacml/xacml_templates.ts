@@ -69,13 +69,15 @@
 //     (adding a template is a row and nothing else), and `XacmlTemplates`
 //     takes it, the logger and nothing more through its constructor.
 //   * **THE MODULE STILL EXPORTS `ISSUANCE_ATTRIBUTE`, `TEMPLATES`, `lookup`,
-//     `build`, `catalogue`, `listOf` AND `slug`**, the functions bound to a
-//     TRANSITIONAL instance built at the bottom, for the callers that are not
-//     converted. It goes when the composition root exists; both classes are
-//     exported beside it for that root.
+//     `build`, `catalogue`, `listOf` AND `slug`**, for the callers that are
+//     not converted: `lookup`, `build` and `catalogue` are FACADES forwarding
+//     to the `XacmlTemplates` the composition root builds and installs
+//     (#50's R2), and a process without the root builds a default when this
+//     module loads. Both classes are exported.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import model = require('./xacml_model');
 
 const { log } = helpers;
@@ -997,6 +999,16 @@ class XacmlTemplates {
     deps.log.debug("Leaving XacmlTemplates.constructor().");
   }
 
+  // What the composition root passes: the real table and logger.
+  static defaultDeps(): XacmlTemplatesDeps {
+    helpers.log.debug("Entering XacmlTemplates.defaultDeps().");
+    helpers.log.debug("Leaving XacmlTemplates.defaultDeps().");
+    return {
+      log: log,
+      templates: TEMPLATES
+    };
+  }
+
   lookup(id: string): TemplateRow | null {
     const { log, templates } = this.deps;
     log.debug("Entering XacmlTemplates.lookup().");
@@ -1067,22 +1079,34 @@ class XacmlTemplates {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real table and
-// logger, as the composition root will build one.
-const catalogue = new XacmlTemplates({
-  log: log,
-  templates: TEMPLATES
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlTemplates>(
+  'xacml/xacml_templates',
+  () => new XacmlTemplates(XacmlTemplates.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   XacmlTemplates: XacmlTemplates,
+  installInstance: (instance: XacmlTemplates): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
   TEMPLATES: XacmlTemplates.TEMPLATES,
-  lookup: catalogue.lookup.bind(catalogue) as XacmlTemplates['lookup'],
-  build: catalogue.build.bind(catalogue) as XacmlTemplates['build'],
-  catalogue: catalogue.catalogue.bind(catalogue) as
-    XacmlTemplates['catalogue'],
+  lookup: slot.forward('lookup'),
+  build: slot.forward('build'),
+  catalogue: slot.forward('catalogue'),
   listOf: PolicyBuilders.listOf,
   slug: PolicyBuilders.slug
 };

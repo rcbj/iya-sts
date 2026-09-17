@@ -136,11 +136,13 @@
 // shape: `ScimMap` takes the logger and the credential claim catalogue
 // (`vc_claims.ts`'s CANONICAL_NAMES) through its constructor, and the two
 // mapping tables, the schema URNs and OWN_NAMES are its static members. The
-// module still exports every old name from a TRANSITIONAL instance, because
-// `scim.ts`, `admin-ui/admin.ts`, `admin-core/admin_views.ts` and
+// module still exports every old name, the functions as FACADES forwarding
+// to the instance the composition root builds and installs (#50, R2),
+// because `scim.ts`, `admin-ui/admin.ts`, `admin-core/admin_views.ts` and
 // `ldap/ldap_server.js` are not converted and require it by those names. The
-// spelling check that ran at require time runs when that instance is built,
-// which is still at require time.
+// spelling check that ran at require time runs in `ScimMap.wire()`, when that
+// instance is installed — or, in a process without the root, when the
+// default is built at the end of loading this module.
 //
 // The two row functions on `addresses.formatted` (`toScim`, `fromScim`) are
 // DATA in a module-scope table built before any instance exists, so they log
@@ -149,6 +151,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import vcClaims = require('../oid4vc/vc_claims');
 
 // The logger the two row functions in USER_ATTRIBUTES use — see above.
@@ -414,6 +417,26 @@ class ScimMap {
   constructor(private readonly deps: ScimMapDeps) {
     deps.log.debug("Entering ScimMap.constructor().");
     deps.log.debug("Leaving ScimMap.constructor().");
+  }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: the spelling check, which ran at require time as it always
+  // did and now runs when the instance is installed.
+  static wire(instance: ScimMap): void {
+    helpers.log.debug("Entering ScimMap.wire().");
+    instance.checkSpellings();
+    helpers.log.debug("Leaving ScimMap.wire().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): ScimMapDeps {
+    helpers.log.debug("Entering ScimMap.defaultDeps().");
+    helpers.log.debug("Leaving ScimMap.defaultDeps().");
+    return {
+      log: helpers.log,
+      canonicalNames: vcClaims.CANONICAL_NAMES
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -1158,33 +1181,41 @@ class ScimMap {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one; the spelling check runs here, at
-// require time, as it always did.
-const scimMap = new ScimMap({
-  log: helpers.log,
-  canonicalNames: vcClaims.CANONICAL_NAMES
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<ScimMap>(
+  'scim/scim_map',
+  () => new ScimMap(ScimMap.defaultDeps()),
+  ScimMap.wire,
+  helpers.log);
 
-scimMap.checkSpellings();
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   ScimMap: ScimMap,
+  installInstance: (instance: ScimMap): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   USER_SCHEMA: ScimMap.USER_SCHEMA,
-  describeRow: scimMap.describeRow.bind(scimMap) as ScimMap['describeRow'],
-  describeMapping:
-    scimMap.describeMapping.bind(scimMap) as ScimMap['describeMapping'],
+  describeRow: slot.forward('describeRow'),
+  describeMapping: slot.forward('describeMapping'),
   GROUP_SCHEMA: ScimMap.GROUP_SCHEMA,
   ENTERPRISE_SCHEMA: ScimMap.ENTERPRISE_SCHEMA,
   USER_ATTRIBUTES: ScimMap.USER_ATTRIBUTES,
   GROUP_ATTRIBUTES: ScimMap.GROUP_ATTRIBUTES,
   OWN_NAMES: ScimMap.OWN_NAMES,
-  toScimUser: scimMap.toScimUser.bind(scimMap) as ScimMap['toScimUser'],
-  fromScimUser: scimMap.fromScimUser.bind(scimMap) as ScimMap['fromScimUser'],
-  toScimGroup: scimMap.toScimGroup.bind(scimMap) as ScimMap['toScimGroup'],
-  fromScimGroup:
-    scimMap.fromScimGroup.bind(scimMap) as ScimMap['fromScimGroup'],
-  prune: scimMap.prune.bind(scimMap) as ScimMap['prune'],
-  valuesOf: scimMap.valuesOf.bind(scimMap) as ScimMap['valuesOf'],
-  firstOf: scimMap.firstOf.bind(scimMap) as ScimMap['firstOf']
+  toScimUser: slot.forward('toScimUser'),
+  fromScimUser: slot.forward('fromScimUser'),
+  toScimGroup: slot.forward('toScimGroup'),
+  fromScimGroup: slot.forward('fromScimGroup'),
+  prune: slot.forward('prune'),
+  valuesOf: slot.forward('valuesOf'),
+  firstOf: slot.forward('firstOf')
 };

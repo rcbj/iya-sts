@@ -87,13 +87,15 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SpiffeCa` takes the modules it uses through its constructor
-// (`SpiffeCaDeps`), and the module still exports its old names from a
-// TRANSITIONAL instance built from the real modules, for the callers that
-// are not converted. `SpiffeCa` is exported beside them for the
-// composition root.
+// (`SpiffeCaDeps`). Since #50's R2 the composition root builds the instance
+// and installs it here, and the module still exports its old names as
+// FACADES forwarding to it, for the callers that are not converted; a
+// process without the root builds a default when this module loads.
+// `SpiffeCa` is exported for the root.
 //
 // **THE TABLES WHOSE ENTRIES CALL THIS MODULE** (`readyPromise`) are built by
-// `build…()` methods, called at load where each was declared.
+// `build…()` methods, called from `SpiffeCa.wire()` when the instance is
+// installed, into the module-level variable declared where each was.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -107,6 +109,7 @@ import stsCrypto = require('../common/crypto');
 import pkijs = require('pkijs');
 import asn1js = require('asn1js');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 const { log, b64u, nowSec, dnRfc4514 } = helpers;
 import config = require('../common/config');
 // THE ERROR CODES. A LEAF, so it cannot close a cycle from here — which is the
@@ -186,6 +189,35 @@ class SpiffeCa {
   constructor(private readonly deps: SpiffeCaDeps) {
     deps.log.debug("Entering SpiffeCa.constructor().");
     deps.log.debug("Leaving SpiffeCa.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): SpiffeCaDeps {
+    helpers.log.debug("Entering SpiffeCa.defaultDeps().");
+    helpers.log.debug("Leaving SpiffeCa.defaultDeps().");
+    return {
+      crypto: crypto,
+      realms: realms,
+      jwt: jwt,
+      stsCrypto: stsCrypto,
+      pkijs: pkijs,
+      log: log,
+      b64u: b64u,
+      nowSec: nowSec,
+      dnRfc4514: dnRfc4514,
+      config: config,
+      errorCodes: errorCodes,
+      spiffeId: spiffeId,
+      keys: keys,
+      x509: x509,
+      pki: pki,
+      loadKeystore: function () {
+        return require('../common/keystore');
+      },
+      loadClusterClaims: function () {
+        return require('../cluster/cluster_claims');
+      }
+    };
   }
 
   // What CONFIGURATION says this realm's trust domain is. Read through the
@@ -984,6 +1016,16 @@ class SpiffeCa {
     });
     log.debug("Leaving SpiffeCa.buildReadyPromise().");
     return readyPromise;
+  }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: starting the build of the trust material, whose promise
+  // `ready()` awaits.
+  static wire(instance: SpiffeCa): void {
+    helpers.log.debug("Entering SpiffeCa.wire().");
+    readyPromise = instance.buildReadyPromise();
+    helpers.log.debug("Leaving SpiffeCa.wire().");
   }
 
   async establishOnce(realmId, kind, present, make) {
@@ -2793,36 +2835,26 @@ let startError = null;
 // ===========================================================================
 import pki = require('../common/pki');
 
-// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
-// composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
-const spiffeCa = new SpiffeCa({
-  crypto: crypto,
-  realms: realms,
-  jwt: jwt,
-  stsCrypto: stsCrypto,
-  pkijs: pkijs,
-  log: log,
-  b64u: b64u,
-  nowSec: nowSec,
-  dnRfc4514: dnRfc4514,
-  config: config,
-  errorCodes: errorCodes,
-  spiffeId: spiffeId,
-  keys: keys,
-  x509: x509,
-  pki: pki,
-  loadKeystore: function () {
-    return require('../common/keystore');
-  },
-  loadClusterClaims: function () {
-    return require('../cluster/cluster_claims');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SpiffeCa>(
+  'spiffe/spiffe_ca',
+  () => new SpiffeCa(SpiffeCa.defaultDeps()),
+  SpiffeCa.wire,
+  helpers.log);
 
 const SPIFFE_USE_CASE = 'spiffe';
 
-const readyPromise = spiffeCa.buildReadyPromise();
+// Built by `SpiffeCa.wire()` when the instance is installed (#50, R2): it
+// starts the instance building its trust material.
+let readyPromise: ReturnType<SpiffeCa['buildReadyPromise']> | null = null;
 
 // ---------------------------------------------------------------------------
 // ONE BUILD PER REALM, AND THE MAP IS WHAT MAKES THAT TRUE.
@@ -2906,8 +2938,13 @@ const MAX_RETAINED_AUTHORITIES = 4;
 import capabilities = require('../cluster/cluster_capabilities');
 capabilities.provide('spiffe.authority-agreement');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   SpiffeCa: SpiffeCa,
+  installInstance: (instance: SpiffeCa): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   KEY_TYPES: KEY_TYPES,
   // A GETTER, so that `admin-core/admin_views.ts` — which reads this member to
   // print the cap — reports the value `spiffe.retainedAuthorities` holds in the
@@ -2915,7 +2952,7 @@ export = {
   get MAX_RETAINED_AUTHORITIES() {
     log.debug("Entering MAX_RETAINED_AUTHORITIES().");
     log.debug("Leaving MAX_RETAINED_AUTHORITIES().");
-    return spiffeCa.retainedAuthorities();
+    return slot.get().retainedAuthorities();
   },
   DEFAULT_RETAINED_AUTHORITIES: MAX_RETAINED_AUTHORITIES,
   // BOTH TAKE AN OPTIONAL REALM and fall back to the AMBIENT one, which is
@@ -2926,63 +2963,47 @@ export = {
   trustDomain: function (realmId?) {
     log.debug("Entering trustDomain().");
     log.debug("Leaving trustDomain().");
-    return spiffeCa.trustDomainOf(realmId);
+    return slot.get().trustDomainOf(realmId);
   },
   trustDomainId: function (realmId?) {
     log.debug("Entering trustDomainId().");
     log.debug("Leaving trustDomainId().");
-    return spiffeId.trustDomainId(spiffeCa.trustDomainOf(realmId));
+    return spiffeId.trustDomainId(slot.get().trustDomainOf(realmId));
   },
-  trustDomainDrift: spiffeCa.trustDomainDrift.bind(spiffeCa) as
-    SpiffeCa['trustDomainDrift'],
+  trustDomainDrift: slot.forward('trustDomainDrift'),
   processTrustDomain: function () {
     log.debug("Entering processTrustDomain().");
     log.debug("Leaving processTrustDomain().");
     return PROCESS_TRUST_DOMAIN;
   },
-  ready: spiffeCa.ready.bind(spiffeCa) as SpiffeCa['ready'],
-  state: spiffeCa.state.bind(spiffeCa) as SpiffeCa['state'],
-  mintX509Svid: spiffeCa.mintX509Svid.bind(spiffeCa) as
-    SpiffeCa['mintX509Svid'],
-  signCsr: spiffeCa.signCsr.bind(spiffeCa) as SpiffeCa['signCsr'],
-  downstreamCa: spiffeCa.downstreamCa.bind(spiffeCa) as
-    SpiffeCa['downstreamCa'],
-  mintJwtSvid: spiffeCa.mintJwtSvid.bind(spiffeCa) as SpiffeCa['mintJwtSvid'],
-  validateJwtSvid: spiffeCa.validateJwtSvid.bind(spiffeCa) as
-    SpiffeCa['validateJwtSvid'],
-  bundle: spiffeCa.bundle.bind(spiffeCa) as SpiffeCa['bundle'],
-  x509BundleDer: spiffeCa.x509BundleDer.bind(spiffeCa) as
-    SpiffeCa['x509BundleDer'],
-  federatedX509BundleDer: spiffeCa.federatedX509BundleDer.bind(spiffeCa) as
-    SpiffeCa['federatedX509BundleDer'],
-  setFederatedBundle: spiffeCa.setFederatedBundle.bind(spiffeCa) as
-    SpiffeCa['setFederatedBundle'],
-  deleteFederatedBundle: spiffeCa.deleteFederatedBundle.bind(spiffeCa) as
-    SpiffeCa['deleteFederatedBundle'],
-  federatedBundle: spiffeCa.federatedBundle.bind(spiffeCa) as
-    SpiffeCa['federatedBundle'],
-  federatedBundles: spiffeCa.federatedBundles.bind(spiffeCa) as
-    SpiffeCa['federatedBundles'],
-  checkBundleDocument: spiffeCa.checkBundleDocument.bind(spiffeCa) as
-    SpiffeCa['checkBundleDocument'],
-  rotateX509Authority: spiffeCa.rotateX509Authority.bind(spiffeCa) as
-    SpiffeCa['rotateX509Authority'],
-  rotateJwtAuthority: spiffeCa.rotateJwtAuthority.bind(spiffeCa) as
-    SpiffeCa['rotateJwtAuthority'],
+  ready: slot.forward('ready'),
+  state: slot.forward('state'),
+  mintX509Svid: slot.forward('mintX509Svid'),
+  signCsr: slot.forward('signCsr'),
+  downstreamCa: slot.forward('downstreamCa'),
+  mintJwtSvid: slot.forward('mintJwtSvid'),
+  validateJwtSvid: slot.forward('validateJwtSvid'),
+  bundle: slot.forward('bundle'),
+  x509BundleDer: slot.forward('x509BundleDer'),
+  federatedX509BundleDer: slot.forward('federatedX509BundleDer'),
+  setFederatedBundle: slot.forward('setFederatedBundle'),
+  deleteFederatedBundle: slot.forward('deleteFederatedBundle'),
+  federatedBundle: slot.forward('federatedBundle'),
+  federatedBundles: slot.forward('federatedBundles'),
+  checkBundleDocument: slot.forward('checkBundleDocument'),
+  rotateX509Authority: slot.forward('rotateX509Authority'),
+  rotateJwtAuthority: slot.forward('rotateJwtAuthority'),
   // The realm's active X.509 authority, for a caller that needs to say what
   // signed an SVID without drawing the whole of `state()`.
-  activeX509Authority: spiffeCa.activeX509Authority.bind(spiffeCa) as
-    SpiffeCa['activeX509Authority'],
-  trustAnchors: spiffeCa.trustAnchorsIn.bind(spiffeCa) as
-    SpiffeCa['trustAnchorsIn'],
+  activeX509Authority: slot.forward('activeX509Authority'),
+  trustAnchors: slot.forward('trustAnchorsIn'),
   sequence: function (realmId?) {
     log.debug("Entering sequence().");
     log.debug("Leaving sequence().");
-    return spiffeCa.sequenceNow(realmId);
+    return slot.get().sequenceNow(realmId);
   },
   // For tests/cluster_key_pki_agreement.js (#46): that two establishments
   // racing across nodes make ONE authority is a protocol over a claim, a sync
   // and a commit, asserted with those three stubbed.
-  establishOnce: spiffeCa.establishOnce.bind(spiffeCa) as
-    SpiffeCa['establishOnce']
+  establishOnce: slot.forward('establishOnce')
 };

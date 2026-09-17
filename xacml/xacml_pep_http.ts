@@ -95,10 +95,11 @@
 // shape: `PepNotifier` takes the settings, the logger, the audit log, node's
 // two transports and the User-Agent string through its constructor
 // (`PepNotifierDeps`). The module still exports `MAX_BODY_BYTES` and the
-// seven functions it always did, bound to a TRANSITIONAL instance built at
-// the bottom from the real modules, for `xacml.ts`, `xacml_admin.ts` and
-// `tests/xacml_pep.js`. That instance goes when the composition root exists;
-// `PepNotifier` is exported beside it for that root.
+// seven functions it always did, as FACADES forwarding to the instance the
+// composition root builds and installs (#50's R2), for `xacml.ts`,
+// `xacml_admin.ts` and `tests/xacml_pep.js`. A process without the root
+// builds a default when this module loads. `PepNotifier` is exported for the
+// root.
 // ---------------------------------------------------------------------------
 
 import https = require('https');
@@ -106,6 +107,7 @@ import http = require('http');
 import url = require('url');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The audit log and the error-code registry, for a nudge that was not
 // delivered. `audit.js` requires `helpers`, `config`, `realms`, the
 // replication module and the registry, none of which reaches back here, so the
@@ -166,6 +168,20 @@ class PepNotifier {
   constructor(private readonly deps: PepNotifierDeps) {
     deps.log.debug('Entering PepNotifier.constructor().');
     deps.log.debug('Leaving PepNotifier.constructor().');
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): PepNotifierDeps {
+    helpers.log.debug("Entering PepNotifier.defaultDeps().");
+    helpers.log.debug("Leaving PepNotifier.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log,
+      audit: audit,
+      http: http,
+      https: https,
+      userAgent: version.userAgent('xacml-pdp-notify')
+    };
   }
 
   notifyAllowed(): boolean {
@@ -445,29 +461,34 @@ class PepNotifier {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one.
-const notifier = new PepNotifier({
-  config: config,
-  log: helpers.log,
-  audit: audit,
-  http: http,
-  https: https,
-  userAgent: version.userAgent('xacml-pdp-notify')
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<PepNotifier>(
+  'xacml/xacml_pep_http',
+  () => new PepNotifier(PepNotifier.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   PepNotifier: PepNotifier,
+  installInstance: (instance: PepNotifier): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   MAX_BODY_BYTES: PepNotifier.MAX_BODY_BYTES,
-  notifyAllowed: notifier.notifyAllowed.bind(notifier) as
-    PepNotifier['notifyAllowed'],
-  allowInsecure: notifier.allowInsecure.bind(notifier) as
-    PepNotifier['allowInsecure'],
-  allowedHosts: notifier.allowedHosts.bind(notifier) as
-    PepNotifier['allowedHosts'],
-  timeoutMs: notifier.timeoutMs.bind(notifier) as PepNotifier['timeoutMs'],
-  urlProblem: notifier.urlProblem.bind(notifier) as
-    PepNotifier['urlProblem'],
-  nudge: notifier.nudge.bind(notifier) as PepNotifier['nudge'],
-  nudgeAll: notifier.nudgeAll.bind(notifier) as PepNotifier['nudgeAll']
+  notifyAllowed: slot.forward('notifyAllowed'),
+  allowInsecure: slot.forward('allowInsecure'),
+  allowedHosts: slot.forward('allowedHosts'),
+  timeoutMs: slot.forward('timeoutMs'),
+  urlProblem: slot.forward('urlProblem'),
+  nudge: slot.forward('nudge'),
+  nudgeAll: slot.forward('nudgeAll')
 };

@@ -195,16 +195,18 @@
 // document's first application, the console's reader slot and the start-up
 // line are methods too.
 //
-// **THE TRANSITIONAL CODE AT THE BOTTOM** builds ONE instance from the real
-// modules and calls those methods at load, in the order the statements used
-// to run — capabilities, User, Group, the slot, the log line — EXCEPT the
-// routes: since #50's R1 it exports `registerRoutes(app)` and
+// **THE INSTANCE IS BUILT BY THE COMPOSITION ROOT** (#50, R2), which installs
+// it here; `Scim.wire()` then calls those methods, in the order the
+// statements used to run at load — capabilities, User, Group, the slot, the
+// log line. A process without the root builds and wires a default when this
+// module loads. The routes are not among them: since #50's R1 the module
+// exports `registerRoutes(app)` and
 // `common/protocol_stack.ts` calls it at the point in the route order where
 // requiring this module used to register them, so requiring it registers
 // nothing. The route order (rule 1) and what scimmy holds when the first
-// request arrives are unchanged. It exports `BASE`, `REFUSED_USERNAME`,
-// `enabled` and `description` as before, and `Scim` beside them for the
-// composition root.
+// request arrives are unchanged. It exports `BASE`, `REFUSED_USERNAME`, and
+// `enabled` and `description` as FACADES forwarding to the instance, and
+// `Scim` for the composition root.
 // ---------------------------------------------------------------------------
 
 // `any` for the type checker (#50): scimmy's declared types are stricter than
@@ -214,6 +216,7 @@ const SCIMMY: any = scimmyModule;
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 
 // The input validator. A LEAF (rule 3): it registers no route and closes no
 // cycle. What it adds HERE is narrow on purpose — scimmy already enforces RFC
@@ -366,6 +369,28 @@ class Scim {
   constructor(private readonly deps: ScimDeps) {
     deps.log.debug("Entering Scim.constructor().");
     deps.log.debug("Leaving Scim.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): ScimDeps {
+    helpers.log.debug("Entering Scim.defaultDeps().");
+    helpers.log.debug("Leaving Scim.defaultDeps().");
+    return {
+      SCIMMY: SCIMMY,
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      baseUrlOf: helpers.baseUrlOf,
+      validation: validation,
+      config: config,
+      stats: stats,
+      audit: audit,
+      directory: directory,
+      createClaims: createClaims,
+      scimAuth: scimAuth,
+      scimMap: scimMap,
+      errorCodes: errorCodes,
+      adminConsole: adminConsole
+    };
   }
 
   enabled(): boolean {
@@ -2650,43 +2675,52 @@ class Scim {
              'deactivates nobody. GET /scim says what else it will not do.');
     log.debug("Leaving Scim.announce().");
   }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed, in the order the statements used to run: capabilities, User,
+  // Group, the console's slot, the log line. The routes are not here — the
+  // composition root registers them, after it has installed the instance.
+  static wire(instance: Scim): void {
+    helpers.log.debug("Entering Scim.wire().");
+    instance.applyCapabilities();
+    instance.declareResources();
+    instance.fillConsoleSlot();
+    instance.announce();
+    helpers.log.debug("Leaving Scim.wire().");
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one, and driven through the
-// load-time steps in the order the statements used to run — all but the
-// routes, which the composition root registers (below).
-const scim = new Scim({
-  SCIMMY: SCIMMY,
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape,
-  baseUrlOf: helpers.baseUrlOf,
-  validation: validation,
-  config: config,
-  stats: stats,
-  audit: audit,
-  directory: directory,
-  createClaims: createClaims,
-  scimAuth: scimAuth,
-  scimMap: scimMap,
-  errorCodes: errorCodes,
-  adminConsole: adminConsole
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<Scim>(
+  'scim/scim',
+  () => new Scim(Scim.defaultDeps()),
+  Scim.wire,
+  helpers.log);
 
-scim.applyCapabilities();
-scim.declareResources();
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
-scim.fillConsoleSlot();
-scim.announce();
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => scim.registerRoutes(target),
+  registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   Scim: Scim,
+  installInstance: (instance: Scim): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   BASE: Scim.BASE,
   REFUSED_USERNAME: Scim.REFUSED_USERNAME,
-  enabled: scim.enabled.bind(scim) as Scim['enabled'],
-  description: scim.description.bind(scim) as Scim['description']
+  enabled: slot.forward('enabled'),
+  description: slot.forward('description')
 };

@@ -58,16 +58,19 @@
 // the policy store, the engine, the PIP, the templates and the monitor through
 // its constructor (`XacmlAccessPepDeps`).
 //
-// **THE ARMING STILL HAPPENS AT LOAD, AND IN THE ORIGINAL ORDER.** The
-// TRANSITIONAL code at the bottom builds one instance from the real modules
-// and fills `common/access_gate.ts`'s decider with its `decide` — bound ONCE,
-// so the gate holds the function this module exports — then logs that the PEP
-// is armed, exactly as the original did. Every old name is still exported,
-// from that instance; it goes when the composition root exists, and
-// `XacmlAccessPep` is exported beside it.
+// **THE ARMING STILL HAPPENS AT LOAD, AND IN THE ORIGINAL ORDER.** Since
+// #50's R2 the composition root builds the instance and installs it here, and
+// every old name is exported as a FACADE forwarding to it. The code at the
+// bottom fills `common/access_gate.ts`'s decider with the `decide` facade —
+// built ONCE, so the gate holds the function this module exports — at load,
+// as the original did. The banner that says the PEP is armed names the
+// instance's policy, so `XacmlAccessPep.wire()` logs it when the instance is
+// installed. A process without the root builds and wires a default when this
+// module loads. `XacmlAccessPep` is exported for the root.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import gate = require('../common/access_gate');
 // The audit log, for the refusals. A LEAF in the ordinary direction (rule
@@ -144,6 +147,26 @@ class XacmlAccessPep {
   constructor(private readonly deps: XacmlAccessPepDeps) {
     deps.log.debug("Entering XacmlAccessPep.constructor().");
     deps.log.debug("Leaving XacmlAccessPep.constructor().");
+  }
+
+  // What the composition root passes, from the real modules.
+  static defaultDeps(): XacmlAccessPepDeps {
+    helpers.log.debug("Entering XacmlAccessPep.defaultDeps().");
+    helpers.log.debug("Leaving XacmlAccessPep.defaultDeps().");
+    return {
+      log: helpers.log,
+      config: config,
+      audit: audit,
+      errorCodes: errorCodes,
+      roles: roles,
+      applications: applications,
+      templates: templates,
+      model: model,
+      pdp: pdp,
+      pip: pip,
+      store: store,
+      monitor: monitor
+    };
   }
 
   // The policy this PEP evaluates. BUILT IN and called rather than seeded, for
@@ -585,46 +608,61 @@ class XacmlAccessPep {
                       : 'Not evaluated.'));
     return out;
   }
+
+  // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
+  // run by `common/instance_slot.ts` once for whichever instance is
+  // installed: the banner that says the gate is armed, which names the
+  // instance's policy. The arming itself is a facade and stays at load.
+  static wire(instance: XacmlAccessPep): void {
+    helpers.log.debug("Entering XacmlAccessPep.wire().");
+    helpers.log.info('xacml: the embedded access PEP is armed. Every access ' +
+                     'decision in this service — the admin console, the ' +
+                     'management API, the User Portal, SCIM and the SPIRE ' +
+                     'Server API — is now a XACML decision against the "' +
+                     instance.accessPolicyName() + '" policy, with the ' +
+                     'SUBJECT taken from the session\'s security context and ' +
+                     'the subject\'s own directory entry available to the ' +
+                     'policy through the PIP.');
+    helpers.log.debug("Leaving XacmlAccessPep.wire().");
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one. `decide` is bound ONCE, so the gate and
-// this module's exports hold the same function.
-const pep = new XacmlAccessPep({
-  log: helpers.log,
-  config: config,
-  audit: audit,
-  errorCodes: errorCodes,
-  roles: roles,
-  applications: applications,
-  templates: templates,
-  model: model,
-  pdp: pdp,
-  pip: pip,
-  store: store,
-  monitor: monitor
-});
-const decide = pep.decide.bind(pep) as XacmlAccessPep['decide'];
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<XacmlAccessPep>(
+  'xacml/xacml_access_pep',
+  () => new XacmlAccessPep(XacmlAccessPep.defaultDeps()),
+  XacmlAccessPep.wire,
+  helpers.log);
+
+// `decide` is a facade built ONCE, so the gate and this module's exports hold
+// the same function.
+const decide = slot.forward('decide');
 
 // ARMING THE GATE, at require time, which is what `xacml.ts` requiring this
-// module at 23c does. Before that line every access decision is allowed.
+// module at 23c does. Before that line every access decision is allowed. A
+// facade resolves nothing until it is called, so this stays at load (#50,
+// R2); the banner that names the policy reads the instance, and is logged by
+// `XacmlAccessPep.wire()`.
 gate.setDecider(decide);
-helpers.log.info('xacml: the embedded access PEP is armed. Every access ' +
-                 'decision in this service — the admin console, the ' +
-                 'management API, the User Portal, SCIM and the SPIRE Server ' +
-                 'API — is now a XACML decision against the "' +
-                 pep.accessPolicyName() + '" policy, with the SUBJECT taken ' +
-                 'from the session\'s security context and the subject\'s ' +
-                 'own directory entry available to the policy through the ' +
-                 'PIP.');
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   XacmlAccessPep: XacmlAccessPep,
+  installInstance: (instance: XacmlAccessPep): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   decide: decide,
-  accessPolicy: pep.accessPolicy.bind(pep) as XacmlAccessPep['accessPolicy'],
-  accessPolicyName: pep.accessPolicyName.bind(pep) as
-    XacmlAccessPep['accessPolicyName'],
-  accessPolicyState: pep.accessPolicyState.bind(pep) as
-    XacmlAccessPep['accessPolicyState'],
-  buildRequest: pep.buildRequest.bind(pep) as XacmlAccessPep['buildRequest']
+  accessPolicy: slot.forward('accessPolicy'),
+  accessPolicyName: slot.forward('accessPolicyName'),
+  accessPolicyState: slot.forward('accessPolicyState'),
+  buildRequest: slot.forward('buildRequest')
 };
