@@ -478,7 +478,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3ac | `error_codes.js`, the three ways a code is recorded, why a returned refusal carries its code under a Symbol, and the three changes it made to `audit.js` | `common/CLAUDE.md` |
 | 3ae | `used_assertions.js`, why an RFC 7523 or RFC 7522 assertion is accepted once EVER — one history for both uses, persisted in every store with one and in both modes, claimed atomically on postgres, and spent only when tokens are issued | `common/CLAUDE.md` |
 | 3ag | `cert_enrollment.js`, the core ACME, EST and SCEP issue through: the identity rule, the profiles, the proof of possession, names from the entry, storage on the entry, the two entry-bound credentials | `common/CLAUDE.md` |
-| 3aq | `vc_issued.ts`, the register of credentials this realm issued for a person on an access token it verified, and why a credential's own `sub` cannot say whom a presentation signs in | `oid4vc/CLAUDE.md` |
+| 3ar | `vc_issued.ts`, the register of credentials this realm issued for a person on an access token it verified, and why a credential's own `sub` cannot say whom a presentation signs in | `oid4vc/CLAUDE.md` |
 | 3ap | `cache_registry.js`, every cache and replay store describing itself to `/admin/caches`: why a leaf in JavaScript, why a row is five members, where a lookup is counted, and why valid is the owner's call | `common/CLAUDE.md` |
 | 3p | `user_graph.js`, and why the union of two registers is a library rather than a page | `common/CLAUDE.md` |
 | 3o | `federation.js`, why four modules may require it, and why `PATHS` is not beside the routes | `federation/CLAUDE.md` |

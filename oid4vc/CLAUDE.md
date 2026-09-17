@@ -11,7 +11,7 @@ DID Core with DIF domain linkage.
 | `vc_verifier_config.ts` | What the mock Verifier ASKS FOR, and in which of the three formats. |
 | `vc_issuer.ts` | The three credential endpoints. |
 | `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
-| `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3aq). A library. |
+| `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
 | `vc_signin.ts` | Signing in with a wallet: `/authn/wallet` and `/authn/wallet/wait`. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
 
@@ -151,7 +151,7 @@ are; a wallet sign-in cannot, because the transaction has to be bound to
 something the browser started and the record is that something. A door reached
 with nothing pending answers `STS-VC-0053`.
 
-### Whom it signs in: rule 3aq, `vc_issued.ts`
+### Whom it signs in: rule 3ar, `vc_issued.ts`
 
 **Only a holder-bound SD-JWT VC this realm issued, and only as the directory
 entry it was issued for.** The obvious reading — the credential's `sub` is
