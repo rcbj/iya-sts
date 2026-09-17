@@ -538,6 +538,97 @@ function signQueryString(queryString, privateKeyPem, sigAlg) {
   return signature;
 }
 
+// ---------------------------------------------------------------------------
+// AND ITS VERIFIER (2026-09-17, #37), for a service provider's request on the
+// HTTP Redirect binding.
+//
+// **THE CALLER BUILDS THE OCTETS, from the parameters AS THEY ARRIVED** —
+// still URL-encoded, in the specification's order — for the reason the signer
+// above gives: only the caller has the raw query string, and a verifier that
+// re-encoded decoded values would fail every signature made by a service
+// provider whose percent-encoding differs from node's (lower-case hex is the
+// usual one).
+//
+// **THE CERTIFICATE IS REQUIRED.** A detached signature carries no KeyInfo, so
+// there is nothing to fall back to, and the vendored verifier says so — but
+// this wrapper refuses before asking it, because a verifier that could be
+// called with no key is one somebody will call with no key. The key is RSA:
+// the vendored engine implements RSA (PKCS#1 v1.5 and PSS) and nothing else,
+// and an ECDSA `SigAlg` is refused by name rather than reported as a signature
+// that failed.
+//
+// It ANSWERS RATHER THAN THROWS, like `verifyXmlSignature()`, and `ok` is
+// separate from `usable`: "this signature is wrong" and "this could not be
+// checked at all" are refused under different codes.
+// ---------------------------------------------------------------------------
+function verifyQueryString(queryString, opts) {
+  log.debug('Entering verifyQueryString().');
+  const options = opts || {};
+  const sigAlg = String(options.sigAlg || '');
+  if (!options.certPem) {
+    log.debug('Leaving verifyQueryString(). No certificate.');
+    return errorCodes.mark({ ok: false, usable: false,
+                             signatureMethod: sigAlg,
+                             why: 'no certificate was given to verify the ' +
+                                  'detached signature against' },
+                           'STS-KEYS-0060');
+  }
+  if (!options.signature) {
+    log.debug('Leaving verifyQueryString(). No signature.');
+    return errorCodes.mark({ ok: false, usable: false,
+                             signatureMethod: sigAlg,
+                             why: 'there is no Signature parameter' },
+                           'STS-KEYS-0060');
+  }
+  let result;
+  try {
+    result = xmldsig.verifyQueryString(String(queryString), {
+      signature: String(options.signature).replace(/\s+/g, ''),
+      sigAlg: sigAlg,
+      certPem: options.certPem
+    });
+  } catch (e) {
+    // The vendored verifier answers rather than throws for everything it
+    // anticipates; this is the case it did not, and it is a signature that
+    // could not be checked rather than one that was wrong.
+    log.debug('Caught in verifyQueryString(): ' + ((e && e.message) || e));
+    log.debug('Leaving verifyQueryString(). It threw.');
+    return errorCodes.mark({ ok: false, usable: false,
+                             signatureMethod: sigAlg,
+                             why: (e && e.message) || String(e) },
+                           'STS-KEYS-0060');
+  }
+  if (result.valid) {
+    log.debug('Leaving verifyQueryString(). Verified.');
+    return { ok: true, usable: true,
+             signatureMethod: result.signatureMethod || sigAlg,
+             signerSubject: result.signerSubject || '', why: '' };
+  }
+  // `error` is set when the check could not be made — an unknown or non-RSA
+  // SigAlg, an unreadable certificate, a Signature that is not base64 — AND
+  // when the RSA verification itself threw, which forge does for a signature
+  // made with a different key ("Encryption block is invalid"). The vendored
+  // verifier reports the second with `signerSubject` beside the error, having
+  // read the certificate, and that one is a signature that is WRONG — unless
+  // what threw was the engine saying it has no verifier for the family.
+  const threwVerifying = result.error &&
+    Object.prototype.hasOwnProperty.call(result, 'signerSubject') &&
+    !/needs a verifier|No RSA public key/.test(String(result.error));
+  if (result.error && !threwVerifying) {
+    log.debug('Leaving verifyQueryString(). Not checkable: ' + result.error);
+    return errorCodes.mark({ ok: false, usable: false,
+                             signatureMethod: result.signatureMethod || sigAlg,
+                             why: result.error }, 'STS-KEYS-0060');
+  }
+  log.debug('Leaving verifyQueryString(). It did not verify.');
+  return errorCodes.mark({ ok: false, usable: true,
+                           signatureMethod: result.signatureMethod || sigAlg,
+                           why: 'the Signature parameter does not verify ' +
+                                'against the certificate over the ' +
+                                'parameters as they arrived' },
+                         'STS-KEYS-0059');
+}
+
 // ===========================================================================
 // SECTION 2 — XML ENCRYPTION
 // ===========================================================================
@@ -3881,6 +3972,7 @@ module.exports = {
   signXml: signXml,
   verifyXmlSignature: verifyXmlSignature,
   signQueryString: signQueryString,
+  verifyQueryString: verifyQueryString,
   idOf: idOf,
   // --- XML encryption ---
   encryptElement: encryptElement,

@@ -893,7 +893,7 @@ the file the row names.
 | ~~Perform back-channel logout. Front-channel IS implemented~~ — **reversed 2026-09-17 (#36)**: a signed Logout Token POSTed, after the answer and with bounded retry, to every relying party on a session any sign-out ends; an expiry sends none | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
 | ~~Fake WS-Federation's `wauth`~~ — **reversed 2026-09-17 (#36)**, as a step-up rather than a fake: an unmet demand sends the person to sign in again with the factor required, and is refused only if that fails | `ws-federation/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` — a URL in a query parameter to fetch the request from is a server-side request forgery | `ws-federation/CLAUDE.md` |
-| Verify a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither checked | `saml/CLAUDE.md` |
+| ~~Verify a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither checked~~ — **reversed 2026-09-17 (#37)**: a present signature is verified against the SP's registered certificate in every mode, an unsigned one refused where `saml2.requireSignedAuthnRequests` says, and consumed metadata registers the SP's endpoints and keys | `saml/CLAUDE.md`, `saml/request_signature.ts`, `saml/sp_metadata.ts` |
 | Encrypt an assertion to a service provider it holds no certificate for — it sends it in CLEAR and says so loudly | `saml/CLAUDE.md` |
 | Dial a service provider's metadata URL WHILE ISSUING | `saml/CLAUDE.md` |
 

@@ -9,7 +9,8 @@ provider for each of them**.
 | `saml11.ts` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
 | `saml2_sso.ts` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
 | `saml11_sso.ts` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
-| `sp_metadata.ts` | A service provider's metadata: parsing it, and fetching it by an explicit refresh — through `../federation/federation_http.ts`'s outbound policy since 2026-09-12. Registers nothing. |
+| `sp_metadata.ts` | A service provider's metadata: parsing it, fetching it by an explicit refresh — through `../federation/federation_http.ts`'s outbound policy since 2026-09-12 — and, since 2026-09-17 (#37), CONSUMING it (`consume()`, for a refreshed or an uploaded document). Registers nothing. |
+| `request_signature.ts` | **Whether a service provider's request is signed by that service provider** (2026-09-17, #37): the verification policy for an AuthnRequest, LogoutRequest or LogoutResponse on either binding, and whether a signature may be absent. Registers nothing. |
 | `authn_context.ts` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
 | `document_settings.ts` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
@@ -78,19 +79,24 @@ change was mostly a prose sweep.
   certificate to encrypt to unless SP metadata was consumed; the answer was to
   consume it, in one direction and for one value, and to fall back to the
   signing certificate off a signed AuthnRequest when there is none.
-* **No AuthnRequest signature is verified.** It is RECORDED — whether the request
-  was signed, and the certificate off its `ds:KeyInfo` — and never checked. That
-  is the same posture as the rest of this service (no password, no access token,
-  no workload attestation), it is why the metadata advertises
-  `WantAuthnRequestsSigned="false"`, and it is why `samlSigningCertificate` is on
-  the application entry: so the check has somewhere to READ FROM the day it is
-  wanted.
-* **No SP metadata is consumed** beyond the encryption certificate an explicit
-  refresh writes. Two consequences follow and both are visible: an assertion
-  consumer service URL comes off the request rather than out of a registration —
-  **in development mode; in product mode it must be registered on the entry**
-  (see the 2026-09-12 section below) — and a service provider's logout return
-  address has to be DECLARED or it is guessed.
+* ~~**No AuthnRequest signature is verified.**~~ **REVERSED 2026-09-17 (#37)** —
+  see *A SERVICE PROVIDER'S SIGNATURE, AND ITS METADATA* below. A present
+  signature is verified against the service provider's REGISTERED certificate in
+  every mode; the certificate off `ds:KeyInfo` is OBSERVED, never trusted.
+* ~~**No SP metadata is consumed** beyond the encryption certificate an explicit
+  refresh writes.~~ **REVERSED 2026-09-17 (#37)** — the same section. The
+  SPSSODescriptor's endpoints, keys, NameIDFormats and the two flags are
+  consumed by the refresh and by an upload, and used.
+* **No ECDSA request signature is verified**: the XML signature engine here
+  (`common/vendored/xmldsig.js`) implements RSA and nothing else, so an EC
+  signing certificate is refused when it is registered and skipped (and named)
+  when metadata carries one.
+* **A consumed document's `validUntil` and `cacheDuration` are not ENFORCED
+  after it was consumed** — they are recorded and shown, and a document that has
+  already expired is refused when it is consumed. Nothing here refetches on its
+  own, which is the point of the next item.
+* **No POST-SimpleSign binding**, whose signature this service would neither
+  produce nor check.
 * **No service provider's metadata URL is dialled WHILE ISSUING** — the fetch is
   an explicit action that writes the certificate onto the entry, so no sign-in
   waits on somebody else's web server.
@@ -174,9 +180,11 @@ on the ask, and the application entry is created by the first valid AuthnRequest
 — which is why there is no `configureX` step for it anywhere in those launchers,
 and why the digest is the only thing they have to know.
 
-The other four: any entityID is accepted and nothing is verified; the assertion
-is built by `saml2.ts` and not by that file; the Response is signed as well as
-the assertion and both are settings; and an artifact is one-shot.
+The other four: any entityID is accepted — and, since 2026-09-17, a service
+provider's signature IS verified (decision 3 was "nothing is verified" until
+#37); the assertion is built by `saml2.ts` and not by that file; the Response is
+signed as well as the assertion and both are settings; and an artifact is
+one-shot.
 
 ### An artifact is one-shot ACROSS THE CLUSTER (2026-09-14, #46) — capability `saml.artifacts-once`
 
@@ -348,11 +356,15 @@ a message somebody encrypted to that key would make the key a lie.
 what a service provider verifies is what it decrypted. The other order produces
 a document that verifies without anybody being able to say what was signed.
 
-**THE CERTIFICATE COMES FROM THREE PLACES, MOST SPECIFIC FIRST**:
-`samlEncryptionCertificate` (which the metadata refresh writes, or a person
-types), then `samlSigningCertificate` — captured off a SIGNED AuthnRequest, so a
-service provider that signs its requests needs no configuration at all — then
-nothing.
+**THE CERTIFICATE COMES FROM FOUR PLACES, MOST SPECIFIC FIRST**:
+`samlEncryptionCertificate` (which consuming the metadata writes, or a person
+types), then a REGISTERED `samlSigningCertificate`, then — **in development mode
+only since 2026-09-17** (`mode.encryptsToObservedCertificates()`) — the OBSERVED
+`samlObservedSigningCertificate` off a signed AuthnRequest, so a service provider
+that signs its requests needs no configuration there, then nothing. Until #37 the
+third was the second: the request's own certificate was written straight onto
+`samlSigningCertificate`, and product encrypted to a key anybody could have put
+in a request.
 
 **AND "NOTHING" IS THE CASE THE DESIGN TURNS ON.** With no certificate the
 document goes out IN CLEAR and is logged at WARN, every time, naming the
@@ -664,8 +676,10 @@ this profile with the same assertions they drive Keycloak with, which is the
 arrangement `tests/wsfed_sso.js` already had — and the one that catches a mock
 being quietly more permissive than the real thing.
 
-What is still missing for **2.0** is the negatives that are awkward from a
-browser: an artifact resolved twice, an artifact minted for one service provider
+**The request-signature and metadata negatives are covered in process** since
+2026-09-17: `tests/saml_request_signatures.js` (see the section at the end of
+this file). What is still missing for **2.0** is the other negatives that are
+awkward from a browser: an artifact resolved twice, an artifact minted for one service provider
 and resolved by another, a RelayState past 80 bytes, a Response over the Redirect
 binding long enough to be truncated, and the `saml2.*` settings turned off one at
 a time — especially `signAssertion`, since an unsigned assertion being ACCEPTED
@@ -800,3 +814,161 @@ keeps the session and moves `auth_time` (`authn/CLAUDE.md`), which is what the f
 `AuthnInstant` in the Response comes from. `tests/saml2_force_authn.js` pins all of it
 over HTTP; four mutants, all caught — the cancellation one only after the test asserted
 HOW the cancellation was reported.
+
+---
+
+## A SERVICE PROVIDER'S SIGNATURE, AND ITS METADATA (2026-09-17, #37)
+
+**THIS REVERSED A DOCUMENTED NON-GOAL**, and the root `CLAUDE.md`'s row *Verify
+a SAML AuthnRequest's signature, or consume SP metadata — both recorded, neither
+checked* is struck for it. rcbj's direction was that the list of things this
+project does not do is being eliminated. `request_signature.ts` is the policy
+and its header argues it; `sp_metadata.ts`'s `consume()` is the metadata half.
+What follows is what a reader needs before changing either.
+
+### The signature: verify when a certificate is known, in every mode
+
+| A request that is… | Development | Product |
+|---|---|---|
+| signed, and verifies against a REGISTERED certificate | accepted, `verified` | accepted, `verified` |
+| signed, and verifies against none of them | **refused**, `STS-SAML-0061` | **refused**, `STS-SAML-0061` |
+| signed, and not checkable (non-RSA, wrapping, no octets) | **refused**, `STS-SAML-0062` | **refused**, `STS-SAML-0062` |
+| signed with inclusive c14n | **refused**, `STS-SAML-0064` | **refused**, `STS-SAML-0064` |
+| signed, and nothing registered | accepted, `no-certificate` | **refused**, `STS-SAML-0063` |
+| unsigned | accepted, `unsigned` | **refused**, `STS-SAML-0063` |
+
+The last two rows are `saml2.requireSignedAuthnRequests` — `auto` (the default,
+`mode.acceptsUnsignedSamlRequests()`), `on`, `off` — and a service provider whose
+consumed metadata says `AuthnRequestsSigned="true"` is in the product column
+whatever the setting says. **The same table governs a LogoutRequest and a
+LogoutResponse from a service provider** (saml-profiles-2.0-os section 4.4.3.1),
+and a refused LogoutRequest ends no session. A refusal is a PAGE (403), not a
+Response: the AssertionConsumerServiceURL a Response would go to is part of what
+the signature protected. **This was judged in scope rather than deferred**,
+because "the service provider's signatures are checked" is not true while a
+forged LogoutRequest can end somebody's session.
+
+**Four things to keep, and each is the thing somebody will propose changing:**
+
+* **The anchor is `samlSigningCertificate` and never the request's `ds:KeyInfo`.**
+  `common/crypto.js`'s verifier falls back to the document's own certificate when
+  it is given none, so every call here passes `certPem`. The one implicit anchor
+  is this service's own certificate for its own mock service provider
+  (`<base>/saml2/sp`), which signs its requests with this service's key — only
+  this process can make such a signature, and the key changes on every
+  development start, so it is not stored.
+* **The Redirect binding's octets are the RAW query string**, read off
+  `req.originalUrl` — section 3.4.4.1 signs the parameters as they arrived,
+  URL-encoded, and a service provider that percent-encodes in lower case would
+  otherwise fail every time. RelayState is in the octets when the parameter is
+  present. The check runs ONCE, on the first arrival — the only moment the raw
+  query exists — and its outcome rides on the held request (`pendingRequests`),
+  which is the server's copy.
+* **SHA-1 is accepted and marked `weak`**, in both modes: `mode.js` has no
+  weak-algorithm policy to ask, and inventing one for this family alone would be
+  a second answer to a question the service has not asked. RSA only; exclusive
+  c14n only.
+* **The outcome is recorded three ways**: `samlAuthnRequestVerification` on the
+  entry (`<outcome> <binding> <SigAlg> [weak]`, AuthnRequests only), an audit
+  row `saml2.request.signature` for EVERY checked message (with the code on a
+  refusal), and the detail on the sign-in screen and `/admin/saml2`.
+
+### The observed certificate, and the storage shape
+
+`samlSigningCertificate` was single-valued and written from every signed
+request's `ds:KeyInfo`. **It is multi-valued now and nothing a request carries is
+written to it.** The certificate a request brings goes on
+`samlObservedSigningCertificate` — ONE value, the last, so a stream of requests
+carrying invented keys cannot grow the entry — and verifies nothing in either
+mode. An operator CONFIRMS it (it moves onto `samlSigningCertificate` in one
+save; an explicit add of the same value does the same) or DISCARDS it, on
+`/admin/saml2` or `/admin-api/saml2/confirm-signing-certificate` and
+`/discard-signing-certificate`. **This mirrors the observed return address**
+(`appReturnAddressObserved`) and differs from it in one deliberate way: the
+return-address mark sits on a value in the trusted attribute and development
+believes it anyway, while an observed certificate lives in an attribute of its
+own and development does NOT verify against it — a return address a mock
+believes is a test case, and a signing key a mock believes is a forgery nobody
+can see.
+
+**What changed for encryption**: the observed certificate is still the
+zero-configuration encryption fallback in DEVELOPMENT; product encrypts to it
+only once it is confirmed (`mode.encryptsToObservedCertificates()`).
+
+**What this cannot fix**: a `samlSigningCertificate` written before 2026-09-17
+was captured off a request and carries no provenance, and it is now TRUSTED. It
+can only make a request that used to be accepted fail (a service provider that
+rotated its key) — before this, nothing was checked at all — but a realm switched
+to product should review those values, exactly as it reviews unmarked return
+addresses.
+
+### Consuming the metadata, and why an operator's refresh is the trust act
+
+`consume()` writes, in ONE save through `applications.replaceSamlMetadataFields()`
+(whose attribute list is closed, because it writes derived attributes no door may
+edit): the document, every AssertionConsumerService (`samlAcsEndpoint`, and its
+location on `samlAssertionConsumerService`), every SingleLogoutService
+(`samlSloEndpoint`, and `samlSingleLogoutService`), every signing certificate
+(`use="signing"` or no `use`) as the REPLACEMENT registered set, the encryption
+certificate, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`,
+`samlSpWantAssertionsSigned`, `samlSpMetadataValidUntil`,
+`samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt` and
+`samlSpMetadataSignature`. A later consumption retires the endpoint locations
+the previous one wrote and leaves the ones an operator added by hand.
+
+**It is a trust act because only an operator can cause it**: a refresh dials the
+URL an administrator put on the entry (never one from a request), when an
+administrator presses the button, through the federation outbound policy; an
+upload is a document an administrator chose. That is what pasting a certificate
+into the entry is, and what every identity provider's "import metadata" is. No
+request reaches `consume()`, and nothing issuing dials anything.
+
+**A metadata signature is verified only against `samlSpMetadataSigningCertificate`**
+— and with that set, an unsigned document is refused too. Without it a signed
+document is recorded `signed-not-verified`: verifying it against a key inside
+the same document would be the decoration the request check refuses.
+
+**Refused, writing nothing**: not a single EntityDescriptor with a SAML 2.0
+SPSSODescriptor; an entityID that is not this application's (`STS-SAML-0066`); a
+passed validUntil (`0068`); an unusable encryption certificate (`0053`, as
+before); a metadata signature that does not verify (`0065`); an upload over
+`saml2.spMetadataMaxBytes` (`0067`). **A document with no encryption certificate
+is no longer refused** — it was, while the encryption certificate was the only
+thing a refresh wrote — and it leaves `samlEncryptionCertificate` as it was.
+
+### What the SSO and SLO services do with it
+
+* **The assertion consumer service** (`registeredAcsFor()`): once metadata is
+  consumed, an `AssertionConsumerServiceIndex` selects an endpoint and its
+  binding (`0069` for an unknown one); an `AssertionConsumerServiceURL` must be
+  a registered location **in every mode** (`0070`) — the operator registered the
+  endpoints, so development's "anything goes" no longer applies to this service
+  provider; neither selects the default (isDefault, else the first not marked
+  false, else the first; `0072` when none is deliverable). The chosen address
+  then passes `return_address.ts` like any other.
+* **NameIDPolicy**: a Format the consumed metadata does not declare is a Response
+  with `InvalidNameIDPolicy` (`0071`); `unspecified` always passes. With no
+  Format asked for, the default comes from the declared list when the setting's
+  value is not in it.
+* **WantAssertionsSigned** signs the assertion even with `saml2.signAssertion`
+  off — in product (`mode.sendsWeakerThanAsked()`); development honours the
+  setting, which is the test case, and logs that the service provider asked.
+* **WantAuthnRequestsSigned** in `/saml2/metadata[/{sp}]` is the table above's
+  product column: true when the setting (or, per service provider, its metadata)
+  requires signed requests.
+* **Single Logout** answers at the consumed SingleLogoutService — its
+  ResponseLocation for a response, on the arrival binding where published —
+  before the declared one, the setting and the guess.
+
+### The tests
+
+`tests/saml_request_signatures.js`, in process — a Redirect signature verified
+and recorded, RelayState and SigAlg tampering refused, a POST enveloped
+signature verified, an altered request and a wrapping attempt refused, a
+KeyInfo-only certificate observed and not trusted (and confirmable), the setting
+in both modes and its product default, `WantAuthnRequestsSigned` following it,
+metadata consumed into the entry with index, URL and default selection, the
+NameIDPolicy refusal, and a LogoutRequest's signature. No parent-owned vendored
+job signs an AuthnRequest or relies on the KeyInfo certificate:
+`sts_saml_encryption.js` sets `samlEncryptionCertificate` directly and sends
+unsigned requests, which development still accepts.

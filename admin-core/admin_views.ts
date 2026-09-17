@@ -175,6 +175,9 @@ import mtls = require('../oauth-oidc/mtls');
 // pages publish.
 import saml2 = require('../saml/saml2_sso');
 import saml11 = require('../saml/saml11_sso');
+// Whether a service provider's requests must be signed (#37), for the
+// drill-down. A library that registers nothing.
+import requestSignature = require('../saml/request_signature');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
 // The receiver half of Shared Signals, which the three reports below draw
@@ -417,6 +420,7 @@ interface AdminViewsDeps {
   certificateSubject: typeof certificateSubject;
   mtls: typeof mtls;
   saml2: typeof saml2;
+  requestSignature: typeof requestSignature;
   saml11: typeof saml11;
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
@@ -486,6 +490,7 @@ class AdminViews {
       certificateSubject: certificateSubject,
       mtls: mtls,
       saml2: saml2,
+      requestSignature: requestSignature,
       saml11: saml11,
       authorizationServers: authorizationServers,
       federation: federation,
@@ -4169,7 +4174,10 @@ class AdminViews {
                 self.valuesFor(row.fields.samlSingleLogoutService),
               nameIdFormats: self.valuesFor(row.fields.samlNameIdFormat),
               responseBindings: self.valuesFor(row.fields.samlResponseBinding),
-              lastRequestSigned: row.fields.samlAuthnRequestSigned === 'TRUE'
+              lastRequestSigned: row.fields.samlAuthnRequestSigned === 'TRUE',
+              lastRequestVerification:
+                String(row.fields.samlAuthnRequestVerification || '')
+                  .split(' ')[0]
             });
           }),
           paging: paging,
@@ -4194,7 +4202,7 @@ class AdminViews {
   }
 
   saml2DetailJson(req, identifier) {
-    const { log, baseUrlOf, applications } = this.deps;
+    const { log, baseUrlOf, applications, requestSignature } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml2DetailJson(). identifier=" +
               identifier);
@@ -4217,9 +4225,83 @@ class AdminViews {
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
           responseBindings: self.valuesFor(fields.samlResponseBinding),
           lastRequestSigned: fields.samlAuthnRequestSigned === 'TRUE',
-          signingCertificate: fields.samlSigningCertificate || ''
+          // THE SIGNATURE CHECK (#37). `signingCertificate` is kept, as the
+          // first registered certificate, for the callers that read it when
+          // the attribute held one value; `signingCertificates` is the list
+          // requests are verified against.
+          lastRequestVerification: self.verificationOf(
+            fields.samlAuthnRequestVerification),
+          signingCertificate:
+            self.valuesFor(fields.samlSigningCertificate)[0] || '',
+          signingCertificates: self.valuesFor(fields.samlSigningCertificate),
+          observedSigningCertificate:
+            String(fields.samlObservedSigningCertificate || ''),
+          signedRequestsRequired: requestSignature.requiresSignedRequests(
+            fields),
+          metadata: self.consumedMetadataOf(fields)
       });
       }())
+    };
+  }
+
+  // `<outcome> <binding> <sigAlg> [weak]`, as the SSO service records it, as
+  // an object.
+  verificationOf(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.verificationOf().");
+    const parts = String(value || '').split(' ');
+    log.debug("Leaving AdminViews.verificationOf().");
+    return {
+      outcome: parts[0] || '',
+      binding: parts[1] && parts[1] !== '-' ? parts[1] : '',
+      signatureMethod: parts[2] && parts[2] !== '-' ? parts[2] : '',
+      weak: parts[3] === 'weak'
+    };
+  }
+
+  // WHAT CONSUMING THE SERVICE PROVIDER'S METADATA WROTE (#37), as the page
+  // and `GET /admin-api/saml2?sp=` show it. `consumed` is false for an entry
+  // no document has been consumed onto; `expired` compares validUntil with
+  // now, which is displayed and not enforced.
+  consumedMetadataOf(fields) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.consumedMetadataOf().");
+    const consumedAt = String(fields.samlSpMetadataConsumedAt || '');
+    const validUntil = String(fields.samlSpMetadataValidUntil || '');
+    const when = Date.parse(validUntil);
+    log.debug("Leaving AdminViews.consumedMetadataOf().");
+    return {
+      consumed: !!consumedAt,
+      consumedAt: consumedAt.split(' ')[0] || '',
+      how: consumedAt.split(' ')[1] || '',
+      url: self.valuesFor(fields.samlSpMetadataUrl)[0] || '',
+      signature: String(fields.samlSpMetadataSignature || ''),
+      signingCertificateConfigured:
+        !!String(fields.samlSpMetadataSigningCertificate || ''),
+      validUntil: validUntil,
+      expired: !!validUntil && isFinite(when) && when <= Date.now(),
+      cacheDuration: String(fields.samlSpMetadataCacheDuration || ''),
+      authnRequestsSigned: fields.samlSpAuthnRequestsSigned === 'TRUE',
+      wantAssertionsSigned: fields.samlSpWantAssertionsSigned === 'TRUE',
+      nameIdFormats: self.valuesFor(fields.samlSpNameIdFormat),
+      assertionConsumerServices: self.valuesFor(fields.samlAcsEndpoint)
+        .map(function (value) {
+          const parts = value.split(' ');
+          return { index: parts[0] === '-' ? '' : parts[0],
+                   isDefault: parts[1] === 'true' ? true
+                     : (parts[1] === 'false' ? false : null),
+                   binding: parts[2] || '',
+                   location: parts.slice(3).join(' ') };
+        }),
+      singleLogoutServices: self.valuesFor(fields.samlSloEndpoint)
+        .map(function (value) {
+          const parts = value.split(' ');
+          return { binding: parts[0] || '', location: parts[1] || '',
+                   responseLocation: parts[2] || '' };
+        }),
+      encryptionCertificate:
+        !!self.valuesFor(fields.samlEncryptionCertificate).length
     };
   }
 

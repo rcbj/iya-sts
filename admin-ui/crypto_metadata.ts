@@ -870,8 +870,9 @@ class CryptoMetadata {
   //
   // An empty string for a verb means this service does not do it in that
   // family, and every one of those is a documented non-goal rather than an
-  // oversight — `saml/CLAUDE.md` on verifying an AuthnRequest signature,
-  // `federation/CLAUDE.md` on decrypting a partner's assertion. The page prints
+  // oversight — `federation/CLAUDE.md` on decrypting a partner's assertion
+  // (`saml/CLAUDE.md` on verifying an AuthnRequest signature was the other,
+  // until #37 reversed it on 2026-09-17). The page prints
   // them as "—" and the `whatItDoesNot` line beside them says which.
   // ---------------------------------------------------------------------------
   private buildFamilies(): Family[] {
@@ -1407,8 +1408,16 @@ class CryptoMetadata {
                'specification\'s doing rather than this service\'s: it is a ' +
                'DETACHED signature over the octets of the query string, with ' +
                '`SigAlg` naming the algorithm as a parameter.',
-        verifies: 'Its own artifacts, and a service provider\'s ' +
-                  '`<EncryptedID>` is decrypted rather than verified.',
+        verifies: 'A service provider\'s AuthnRequest, LogoutRequest and ' +
+                  'LogoutResponse signatures (since 2026-09-17) — the ' +
+                  'Redirect binding\'s detached query signature or an ' +
+                  'enveloped one — against the service provider\'s ' +
+                  'REGISTERED RSA certificates, never the one in the ' +
+                  'request, exclusive canonicalization only; a consumed ' +
+                  'metadata document\'s own signature when a certificate ' +
+                  'for it is set; and its own artifacts. A service ' +
+                  'provider\'s `<EncryptedID>` is decrypted rather than ' +
+                  'verified.',
         encrypts: 'The assertion in a Response, as `<EncryptedAssertion>`, ' +
                   'and the NameID in a LogoutRequest as `<EncryptedID>` — ' +
                   'per application, to the certificate held on its entry. ' +
@@ -1420,11 +1429,13 @@ class CryptoMetadata {
         hashes: 'SHA-256 for the Reference digest; SHA-1 inside ' +
                 'RSA-OAEP-MGF1P, because that is what the URI MEANS rather ' +
                 'than a choice this service made.',
-        whatItDoesNot: 'It does not verify an AuthnRequest\'s signature and ' +
-                       'it does not consume service provider metadata — both ' +
-                       'are recorded, neither is checked. A service provider ' +
+        whatItDoesNot: 'It does not verify an ECDSA request signature — ' +
+                       'the verifier here is RSA — and it does not enforce a ' +
+                       'consumed metadata document\'s validUntil or ' +
+                       'cacheDuration after consuming it. A service provider ' +
                        'it holds no certificate for gets the assertion IN ' +
-                       'CLEAR, loudly, rather than being refused.',
+                       'CLEAR, loudly, in development, and is refused in ' +
+                       'product.',
         envelopes: ['xmldsig', 'xmlenc', 'c14n'],
         algorithms: function () {
           log.debug("Entering algorithms().");

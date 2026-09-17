@@ -1493,6 +1493,16 @@ const CODES = [
     summary: 'A signing-key or certificate-authority row another process ' +
       'wrote could not be decrypted or parsed, so it was not adopted.',
     spec: '' },
+  { code: 'STS-KEYS-0059',
+    summary: 'A detached HTTP Redirect binding signature does not verify ' +
+      'against the certificate it was checked with.',
+    spec: 'the caller\'s own refusal' },
+  { code: 'STS-KEYS-0060',
+    summary: 'A detached HTTP Redirect binding signature could not be ' +
+      'checked: no certificate, no Signature, an unreadable certificate, a ' +
+      'Signature that is not base64, or a SigAlg the verifier does not ' +
+      'implement (anything but RSA).',
+    spec: 'the caller\'s own refusal' },
   // ===== PKI ===============================================================
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -5826,6 +5836,67 @@ const CODES = [
     summary: 'An artifact resolution (2.0 or 1.1) failed while its answer ' +
       'was being built or sent, after the artifact had been spent.',
     spec: 'StatusCode Responder (HTTP 200) when nothing was sent yet' },
+  { code: 'STS-SAML-0061',
+    summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest or ' +
+      'LogoutResponse carried a signature (the Redirect binding\'s query ' +
+      'signature or an enveloped one) that does not verify against any of ' +
+      'its registered signing certificates. Refused in every mode.',
+    spec: 'an HTTP 403 page; no Response is sent and no session ends' },
+  { code: 'STS-SAML-0062',
+    summary: 'A SAML 2.0 service provider\'s request signature could not be ' +
+      'checked at all — an algorithm this service has no verifier for, a ' +
+      'reference naming something other than the message (signature ' +
+      'wrapping), a malformed signature, or a Signature parameter without ' +
+      'the SAMLRequest and SigAlg it signs. Refused in every mode.',
+    spec: 'an HTTP 403 page; no Response is sent and no session ends' },
+  { code: 'STS-SAML-0063',
+    summary: 'An unsigned SAML 2.0 AuthnRequest, LogoutRequest or ' +
+      'LogoutResponse — or a signed one with no registered certificate to ' +
+      'verify it — was refused because signed requests are required ' +
+      '(saml2.requireSignedAuthnRequests, on in product by default, or the ' +
+      'service provider\'s metadata saying AuthnRequestsSigned).',
+    spec: 'an HTTP 403 page; no Response is sent and no session ends' },
+  { code: 'STS-SAML-0064',
+    summary: 'A SAML 2.0 service provider\'s request was signed with an ' +
+      'inclusive canonicalization, which this service does not verify.',
+    spec: 'an HTTP 403 page' },
+  { code: 'STS-SAML-0065',
+    summary: 'A service provider\'s metadata document was not consumed: ' +
+      'samlSpMetadataSigningCertificate is set and the document is unsigned ' +
+      'or its signature does not verify against that certificate.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0066',
+    summary: 'A service provider\'s metadata document was not consumed: its ' +
+      'entityID is not the application it was refreshed or uploaded for.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0067',
+    summary: 'An uploaded service provider metadata document exceeded ' +
+      'saml2.spMetadataMaxBytes and was not read.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0068',
+    summary: 'A service provider\'s metadata document was not consumed: its ' +
+      'validUntil has already passed.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0069',
+    summary: 'An AuthnRequest named an AssertionConsumerServiceIndex that no ' +
+      'endpoint in the service provider\'s consumed metadata has, or whose ' +
+      'endpoint is on a binding this identity provider does not deliver on.',
+    spec: 'an HTTP 400 page; no Response is sent' },
+  { code: 'STS-SAML-0070',
+    summary: 'An AuthnRequest named an AssertionConsumerServiceURL that is ' +
+      'not one of the endpoints in the service provider\'s consumed ' +
+      'metadata (in every mode).',
+    spec: 'an HTTP 400 page; no Response is sent' },
+  { code: 'STS-SAML-0071',
+    summary: 'An AuthnRequest\'s NameIDPolicy asked for a Format the service ' +
+      'provider\'s consumed metadata does not declare.',
+    spec: 'a Response with StatusCode Requester / InvalidNameIDPolicy' },
+  { code: 'STS-SAML-0072',
+    summary: 'An AuthnRequest named no assertion consumer service, and no ' +
+      'endpoint in the service provider\'s consumed metadata is on a binding ' +
+      'this identity provider delivers on (or on the ProtocolBinding asked ' +
+      'for).',
+    spec: 'an HTTP 400 page; no Response is sent' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -10941,6 +11012,10 @@ const CODES = [
     summary: 'The realm chooser in front of /admin was asked for a realm ' +
       'that is not defined.',
     spec: 'HTTP 400 on /admin' },
+  { code: 'STS-ADMIN-0791',
+    summary: 'Uploading a SAML 2.0 service provider\'s metadata document ' +
+      'failed — none was sent, or consuming it was refused.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   // ===== API ===============================================================
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
@@ -11922,6 +11997,23 @@ const CODES = [
     summary: 'A console or /admin-api write put a value on appCorsOrigin ' +
       'that is not an exact origin — a path, a wildcard, null, a user name, ' +
       'or no host.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0160',
+    summary: 'A SAML signing certificate (samlSigningCertificate or ' +
+      'samlSpMetadataSigningCertificate, or an observed one being ' +
+      'confirmed) is not an RSA X.509 certificate, so nothing was written.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0161',
+    summary: 'Consuming SAML metadata tried to write an attribute that is ' +
+      'not one of the metadata fields — a programming error, refused.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0162',
+    summary: 'The application entry would not take the consumed SAML ' +
+      'metadata (the directory refused the write).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0163',
+    summary: 'A confirm or discard of a SAML service provider\'s observed ' +
+      'signing certificate found none on the entry.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

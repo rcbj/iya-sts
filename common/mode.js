@@ -419,6 +419,36 @@ function acceptsLooseRequestUris() {
   return !isProduct();
 }
 
+// May a SAML 2.0 service provider's AuthnRequest — or LogoutRequest — arrive
+// UNSIGNED (2026-09-17, #37)? This is what `saml2.requireSignedAuthnRequests`'s
+// default, `auto`, resolves to. Development answers yes: most service
+// providers under test send unsigned requests, and a refusal there removes the
+// case they run. Product answers no — an unsigned request is an
+// AssertionConsumerServiceURL, a NameIDPolicy and a RelayState anybody can
+// write, and saml-profiles-2.0-os section 4.4.3.1 asks for a logout message to
+// be authenticated. A signature that is PRESENT is verified against the
+// service provider's registered certificate in BOTH modes, whatever this
+// answers; `saml/request_signature.ts` argues why that half is not a mode.
+function acceptsUnsignedSamlRequests() {
+  log.debug("Entering acceptsUnsignedSamlRequests().");
+  log.debug("Leaving acceptsUnsignedSamlRequests().");
+  return !isProduct();
+}
+
+// May an assertion be ENCRYPTED to a certificate nobody confirmed (2026-09-17,
+// #37)? The certificate off a signed AuthnRequest's `ds:KeyInfo` is recorded
+// as OBSERVED (`samlObservedSigningCertificate`) and is never a trust anchor
+// for a signature in either mode. Development still encrypts to it when the
+// entry holds no other certificate, which is the zero-configuration behaviour
+// SAML 2.0 encryption has had since 2026-08-27. Product does not: the key in a
+// request anybody can send is a key anybody can hold, and encrypting an
+// assertion to it hands the assertion to whoever sent the request.
+function encryptsToObservedCertificates() {
+  log.debug("Entering encryptsToObservedCertificates().");
+  log.debug("Leaving encryptsToObservedCertificates().");
+  return !isProduct();
+}
+
 // Does this process embed the identity protocol debugger (2026-09-13)?
 // `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
 // is this predicate's own answer: yes in development, where the debugger is
@@ -742,6 +772,25 @@ const REQUIREMENTS = [
     product: 'A value comes from the person\'s directory entry or is omitted.',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts' },
+  { id: 'saml-request-signatures',
+    what: 'A SAML 2.0 service provider\'s request is signed',
+    development: 'An unsigned AuthnRequest or LogoutRequest is accepted ' +
+                 '(saml2.requireSignedAuthnRequests=auto) unless the service ' +
+                 'provider\'s consumed metadata says AuthnRequestsSigned. A ' +
+                 'signature that IS present is verified against the service ' +
+                 'provider\'s registered certificate and refused if it does ' +
+                 'not verify; with no registered certificate it is recorded ' +
+                 'as not verified. The certificate a request carries in its ' +
+                 'KeyInfo is recorded as OBSERVED — never a trust anchor — ' +
+                 'and an assertion may still be encrypted to it when the ' +
+                 'entry holds no other certificate.',
+    product: 'An unsigned AuthnRequest or LogoutRequest is refused ' +
+             '(STS-SAML-0063). A signature is verified exactly as in ' +
+             'development, and one with no registered certificate to check ' +
+             'it against is refused as unsigned. An OBSERVED certificate is ' +
+             'not encrypted to until an operator confirms it on the SAML 2.0 ' +
+             'page or with POST /admin-api/saml2/confirm-signing-certificate.',
+    where: 'saml/request_signature.ts, saml/saml2_sso.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -1092,6 +1141,8 @@ module.exports = {
   opensIntrospection: opensIntrospection,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
+  acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,
+  encryptsToObservedCertificates: encryptsToObservedCertificates,
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,

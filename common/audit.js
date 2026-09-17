@@ -674,6 +674,13 @@ const ACTIONS = [
   // GNAP (RFC 9635 + RFC 9767), 2026-09-12. In the protocol category, beside
   // `protocol.call`: every one of these is a protocol act a client or resource
   // server performed, and the person investigating one is debugging that party.
+  // SAML 2.0 (2026-09-17, #37): what checking the signature on a service
+  // provider's AuthnRequest, LogoutRequest or LogoutResponse found — verified,
+  // failed, unsigned or no-certificate. One row per message, because the
+  // outcome is the thing a person integrating a service provider is asking
+  // about and the call-log row beside it cannot say it.
+  { action: 'saml2.request.signature', category: 'protocol',
+    label: 'A SAML 2.0 service provider\'s request signature was checked' },
   { action: 'gnap.grant.request', category: 'protocol',
     label: 'A GNAP grant was requested' },
   { action: 'gnap.grant.consent', category: 'protocol',

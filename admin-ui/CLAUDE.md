@@ -5869,3 +5869,34 @@ Five decisions:
 `GET /admin-api/caches` (with `cache`, `page`, `per`) answers the same
 `cachesJson()` minus the drawing's `paging` (rule 7).
 `tests/cache_registry.js` covers the registry, the owners and the page.
+
+---
+
+## `/admin/saml2?sp=` GREW TWO SECTIONS (2026-09-17, #37)
+
+The drill-down now answers the two questions #37 made real: **what is this
+service provider's signature checked against**, and **what did consuming its
+metadata register**. `saml/CLAUDE.md` argues the behaviour; three decisions
+here are the page's own.
+
+* **Every control has an operation** (rule 7) and they are the same action
+  function: `set-`, `remove-`, `confirm-` and `discard-signing-certificate`,
+  `set-metadata-signing-certificate` and `upload-metadata` on
+  `saml2Action()`, and `POST /admin-api/saml2/<action>` for each. The unknown-
+  action sentence says "The nine are", which is what the parity check reads.
+* **The refresh button is NOT drawn a second time here.** It stays on the
+  application's own page, beside the URL it dials — the only control there that
+  reaches off this machine — and this page links to it. Two buttons for one
+  outbound request would be two places to reason about who may cause one.
+* **The lists are drawn whole, not paginated.** The registered certificates and
+  the consumed endpoints are values on ONE entry, bounded by what an operator
+  typed or one metadata document (itself capped by
+  `saml2.spMetadataMaxBytes`) carried — the same argument the endpoint lists
+  already on this page were drawn under. The pagination rule is about lists of
+  entries, which grow with the deployment.
+
+The upload form is `multipart/form-data` with a textarea beside the file input,
+so a person with no file can paste; `parseBody()` hands the file part over as
+text under `file`, and `saml2Action()` takes `document` first. The list page
+gained one column, the last request's signature outcome, read off
+`samlAuthnRequestVerification`.

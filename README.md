@@ -114,7 +114,7 @@ is written down in
 | **SPNEGO (RFC 4178) over HTTP (RFC 4559)** | a **protected web page**: `/spnego` advertises it — the SPN, the realm, the mechanisms, the hosts it will answer for (`acceptsAnySpnForHosts`) and three knobs that break the negotiation one way each — and the 401 itself carries `X-Krb5-Service-Principal` and `X-Krb5-Accepts-Spn-Hosts`, which are nobody's standard and exist because SPNEGO carries no SPN at all: a client has to guess `HTTP/<url host>`, and that guess being wrong is the commonest SPNEGO failure there is — and `/spnego/protected` answers `401 WWW-Authenticate: Negotiate` to an unauthenticated request and `200` with an AP-REP in that header to a valid one. NegTokenInit with the optimistic mechToken, NegTokenResp in all four negStates, and the mechListMIC in both directions with section 5's rule for when it is mandatory. Only Kerberos is offered: NTLM is recognised in a client's list and never selected, because advertising a mechanism this service cannot perform would be a lie a client would act on. **Every Kerberos check is the protected service's, unchanged** — this is a transport and a negotiation, and no protocol code of its own. **And since 2026-08-26 the same handshake is also a SIGN-IN**: `/authn/spnego` verifies the ticket through the same acceptor and mints the browser session every protocol family here reads, so a person holding a Kerberos credential completes an OAuth authorization request, a `wsignin1.0`, a SAML `AuthnRequest` or the admin console without typing anything. It is available to every application and registered for none — a button on the sign-in screen, `appAuthnMechanism: spnego` on an application entry, or `fedAuthnMechanism: spnego` on a federation relationship. **It is the one sign-in in this service that rests on a credential the service genuinely verified**; what the session then claims is read off the ticket's own flags (`pre-authent` → `amr ["pwd"]`, `hw-authent` → `["hwk"]`, neither → nothing at all, because this service will not name a factor no credential evidenced) |
 | **WS-Trust 1.0–1.4** | Issue / Renew / Validate / Cancel, WS-Security, WS-Addressing, optional XML-DSIG and XML-Enc. **In product mode** (2026-09-12) every operation requires a credential — a UsernameToken verified against the directory, or a SAML assertion this STS signed that is inside its Conditions — an `OnBehalfOf`/`ActAs` requires the requester's own credential and an assertion this STS signed inside it, and `?encrypt=1` that cannot encrypt is a Fault rather than plaintext. In both modes a requested `wst:Lifetime` is clamped to `wstrust.maxTokenLifetimeMin`, the JWT carries a `jti` and a `kid`, the assertion's AuthnContext names the credential (`PreviousSession` for an assertion, `unspecified` for none or a delegation) rather than a password, and a delegation starts no session for the subject |
 | **SAML 2.0 and SAML 1.1** | signed assertions of both vintages, the metadata a relying party needs, and **a browser-facing identity provider for each** — SAML 2.0's Web Browser SSO profile over all three bindings with Single Logout, and SAML 1.1's Browser/POST and Browser/Artifact profiles with a SOAP responder that is also an attribute authority. They are separate implementations: SAML 1.1 has no request message and no Single Logout. 1.1 is also what a WS-Federation relying party expects by default |
-| **SAML 2.0 Web Browser SSO** | a full identity provider at `/saml2`: the Single Sign-On service over **HTTP Redirect** and **HTTP POST**, and the Response over **HTTP POST, HTTP Redirect or HTTP Artifact** — the third with a **SOAP Artifact Resolution Service** behind it, where the assertion never passes through the browser at all and an artifact resolves **exactly once**. Plus **Single Logout** in both directions, and **signed metadata PER SERVICE PROVIDER**: `/saml2/metadata/{sp}` names an identity provider of its own with its own endpoints, the way Okta and Ping do, and **it is minted for any entityID asked for** — nothing has to be provisioned before a service provider can be pointed here, and the first valid AuthnRequest creates its application entry. It accepts every entityID and verifies no request signature (both are recorded); `NameIDPolicy`, `ForceAuthn`, `IsPassive` (answered with `NoPassive`, not a screen) and `RequestedAuthnContext` are all honoured, and a `ProtocolBinding` it does not implement is refused **by name**. It has no sign-in screen of its own — see below for the SameSite hop that makes that possible — and a mock service provider at `/saml2/sp` verifies a response check by check |
+| **SAML 2.0 Web Browser SSO** | a full identity provider at `/saml2`: the Single Sign-On service over **HTTP Redirect** and **HTTP POST**, and the Response over **HTTP POST, HTTP Redirect or HTTP Artifact** — the third with a **SOAP Artifact Resolution Service** behind it, where the assertion never passes through the browser at all and an artifact resolves **exactly once**. Plus **Single Logout** in both directions, and **signed metadata PER SERVICE PROVIDER**: `/saml2/metadata/{sp}` names an identity provider of its own with its own endpoints, the way Okta and Ping do, and **it is minted for any entityID asked for** — nothing has to be provisioned before a service provider can be pointed here, and the first valid AuthnRequest creates its application entry. It accepts every entityID; **a service provider's request signature is VERIFIED** against its registered certificate (since 2026-09-17, and an unsigned request is refused in product by default), and **its metadata is CONSUMED** by an explicit refresh or upload — endpoints, keys, NameIDFormats; `NameIDPolicy`, `ForceAuthn`, `IsPassive` (answered with `NoPassive`, not a screen) and `RequestedAuthnContext` are all honoured, and a `ProtocolBinding` it does not implement is refused **by name**. It has no sign-in screen of its own — see below for the SameSite hop that makes that possible — and a mock service provider at `/saml2/sp` verifies a response check by check |
 | **WS-Federation 1.2** | the Web (Passive) Requestor Profile of section 13 — `wsignin1.0` with `wtrealm`, `wreply`, `wctx`, `wct`, `wfresh`, `wauth` (a demand the session cannot meet is a step-up through the sign-in), `whr` and `wreq`, the response as a **form POST**, `wsignout1.0` with front-channel cleanup, signed federation metadata at AD FS's path, and a mock relying party that verifies the response check by check |
 | **Federation, in five of those protocols** | this service as **either end** of a relationship with a foreign identity service — SAML 2.0, SAML 1.1, WS-Federation 1.2, OpenID Connect and OAuth 2.0. As a **service provider** it sends the request, consumes what comes back at `/federation/acs/{id}`, **verifies it against a certificate configured on that relationship**, maps the attributes onto an entry under `ou=users` and starts a session — the SAME session every other protocol here reads, which is what lets a federated identity satisfy an OAuth 2.0 authorization request, a WS-Federation `wsignin1.0` or a SAML `AuthnRequest` without any of those knowing federation exists. `/authn/login` grows a button per usable partner for exactly that reason. As an **identity provider** it marks a partner as a federation partner rather than a test client and decides **which attributes are released to it**. **It is the one feature here that has to be configured before it will do anything, and the one that refuses by default** — see *Federation* below, where that inversion is argued rather than assumed: "accept any SAML Response" is not a permissive mock, it is an authentication bypass for every protocol in the process. It is also the only thing here that makes an **outbound** request, and `jwks_uri` on an application entry and WS-Federation's `wreqptr` are still never followed — the difference is a URL an administrator configured against a URL a caller supplied |
 | **OAuth 2.0** | a full authorization server: RFC 8414 metadata plus every endpoint it advertises — authorize (which redirects to the authentication service when nobody is signed in), token, userinfo, introspect, revoke, register (RFC 7591 with software statements — verified against this realm's key or a declared publisher's, and issued from the console — and the RFC 7592 read/update/delete operations), jwks. Introspection answers as RFC 7662 JSON or, when asked, as an **RFC 9701 JWT** signed and optionally encrypted for the resource server that asked. Authorization requests may be **JWT-secured (RFC 9101)** — a signed, optionally encrypted request object by value or from a `request_uri` the client registered — or **pushed first (RFC 9126)** to `/oauth2/par`, authenticated as at the token endpoint, for a one-time `request_uri`. PKCE (RFC 7636), **Rich Authorization Requests (RFC 9396)** — `authorization_details` of every type a resource application declares, with JSON Schemas, consent drawn per detail and the token addressed to that resource — the `iss` authorization response parameter (RFC 9207), and every one of the seven grant types its metadata advertises — including **Token Exchange (RFC 8693)**. It is permissive by design, and it can be told not to be: `oauth2.rfc9700` puts the authorization flow into **RFC 9700** mode — exact-string redirect URI matching with RFC 8252's loopback port exception, no open redirector at either redirecting endpoint, PKCE required of public clients with S256 only, the PKCE downgrade and value reuse refused, and no response type that issues an access token from the authorization endpoint, refresh token rotation with replay detection that revokes the whole chain, no password grant, no CORS at the authorization endpoint, and the one client credential this service checks — and it turns port 8081 itself into an **HTTPS** listener, on the certificate LDAPS 636 and the embedded debugger's listener already share, so the issuer and every endpoint in every metadata document follow. Off by default; `GET /oauth2/rfc9700` says what it does and does not enforce |
@@ -577,15 +577,19 @@ which is what a service provider encrypts an `EncryptedID` to.
 
 1. `samlSpMetadata` / `samlSpMetadataUrl` on the entry. Set the URL and press
    **Refresh the metadata** on the application page (or
-   `POST /admin-api/applications/refresh-metadata`); the `use="encryption"`
-   KeyDescriptor is extracted into `samlEncryptionCertificate`. The document can
-   also be pasted for a service provider this service cannot reach.
+   `POST /admin-api/applications/refresh-metadata`), or upload the document on
+   `/admin/saml2` (`POST /admin-api/saml2/upload-metadata`); consuming it
+   extracts the `use="encryption"` KeyDescriptor into
+   `samlEncryptionCertificate`, among everything else it registers.
 2. `samlEncryptionCertificate`, typed.
-3. `samlSigningCertificate` — captured off a signed AuthnRequest, so a service
-   provider that signs its requests needs no configuration at all.
-4. Nothing: the assertion goes out **in clear** and says so at WARN. It is not
-   refused, because a mock that stopped issuing when a key was missing is
-   useless exactly when somebody is setting it up.
+3. A REGISTERED `samlSigningCertificate` — from the metadata or the console.
+4. In development mode only, the OBSERVED certificate a signed AuthnRequest
+   carried (`samlObservedSigningCertificate`), so a service provider that signs
+   its requests needs no configuration there. Product encrypts to it only once
+   an operator confirms it.
+5. Nothing: the assertion goes out **in clear** and says so at WARN in
+   development — a mock that stopped issuing when a key was missing is useless
+   exactly when somebody is setting it up — and product refuses.
 
 **The fetch never happens while a flow is running.** It is an explicit action
 that writes the certificate onto the entry, and issuing reads the entry — so no
@@ -1086,11 +1090,12 @@ identity provider in a browser profile.
 | `saml2.keyTransportAlgorithm` | `STS_SAML2_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | How the content key is wrapped: `rsa-oaep-mgf1p` or `rsa-1_5`. The second is Bleichenbacher-broken and is offered because many deployed service providers accept nothing else. Per application with `saml2KeyTransportAlgorithm`. |
 | `saml2.encryptLogoutNameId` | `STS_SAML2_ENCRYPT_LOGOUT_NAMEID` | `false` | yes | Send `<saml:EncryptedID>` rather than `<saml:NameID>` in a LogoutRequest — the only encryptable thing in a SAML 2.0 request. Reading one is never gated. Per application with `saml2EncryptLogoutNameId`. |
 | `saml2.autocreateApplications` | `STS_SAML2_AUTOCREATE_APPLICATIONS` | `true` | yes | ON by default: an entityID this service has not seen before gets an application entry under ou=applications the moment it appears in a valid AuthnRequest — or the moment somebody asks for its metadata — so nothing has to be provisioned before a service provider can be pointed here. OFF still ANSWERS the request; it simply records nothing, which is what somebody driving a fuzzer at this endpoint wants before their directory has ten thousand entries in it. |
-| `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a <samlp:LogoutResponse> goes when the service provider has no SingleLogoutService recorded on its application entry. A LogoutRequest carries no return address of its own — only SP metadata has one, and this service does not consume SP metadata — so without this the fallback is the assertion consumer service URL that application last used, which is stated on the page rather than done quietly. Set it to remove the guess. |
+| `saml2.requireSignedAuthnRequests` | `STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS` | `auto` | yes | Whether an UNSIGNED AuthnRequest — and an unsigned LogoutRequest from a service provider — is refused. `auto` is on in product mode and off in development; a service provider whose consumed metadata says `AuthnRequestsSigned="true"` is held to it regardless. A signature that is present is verified against the service provider's REGISTERED certificates in every mode, never against the one the request carries. It is also what the metadata's `WantAuthnRequestsSigned` says. |
+| `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a <samlp:LogoutResponse> goes when the service provider has no SingleLogoutService registered — neither from its consumed metadata nor declared on its entry. Without this the fallback is the assertion consumer service URL that application last used, which is stated on the page rather than done quietly. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the browser is at the sign-in screen. |
 | `saml2.mockSpContextTtlMin` | `STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock service provider at /saml2/sp remembers a RelayState it minted. |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Response on the HTTP Redirect binding longer than this is logged at WARN (and still sent). |
-| `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The cap on a service provider's metadata fetched by the refresh action. |
+| `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The cap on a service provider's metadata fetched by the refresh action or uploaded on the SAML 2.0 page. |
 
 #### SAML 1.1
 
@@ -4453,18 +4458,37 @@ one-pixel image, and a SAML `LogoutRequest` is a signed message that a service
 provider *answers*, so firing those blind would produce a page claiming a
 federation-wide logout it cannot observe.
 
-**What it does not do**, stated rather than left to be discovered: no assertion
-is encrypted (WS-Trust's `/sts?encrypt=1` still is — a passive AuthnRequest
-carries no recipient certificate to encrypt to unless SP metadata is consumed,
-and it is not); **no AuthnRequest signature is verified**, which is why the
-metadata advertises `WantAuthnRequestsSigned="false"` and why the signing
-certificate off a signed request is *recorded* on the application entry — so the
-check has somewhere to read from the day it is wanted; no SP metadata is
-consumed; and there is no identity-provider-initiated SSO with an unsolicited
-Response, no ECP profile and its PAOS binding (refused **by name** rather than
-quietly answered over HTTP POST — a service provider that asked for PAOS and got
-a form post would conclude that PAOS worked), no Name Identifier Management and
-no Assertion Query and Request profile.
+**A service provider's signatures are verified** (2026-09-17, #37). A signed
+AuthnRequest, LogoutRequest or LogoutResponse — the HTTP Redirect binding's
+query-string signature over the parameters as they arrived, or an enveloped one
+on HTTP POST — is checked in every mode against the service provider's
+**registered** signing certificates (`samlSigningCertificate`, from its consumed
+metadata or the console), never against the certificate the request carries,
+and refused when it does not verify. The certificate a request carries is
+recorded as *observed* and is trusted only once an operator confirms it. An
+unsigned request is refused where `saml2.requireSignedAuthnRequests` says so
+(`auto`: on in product, off in development) or where the service provider's own
+metadata says `AuthnRequestsSigned="true"`, and the metadata this identity
+provider publishes says `WantAuthnRequestsSigned` accordingly. The mock service
+provider at `/saml2/sp` signs its requests with this service's key.
+
+**A service provider's metadata is consumed** — by the explicit refresh, or an
+uploaded document, never while a flow runs: its AssertionConsumerService and
+SingleLogoutService endpoints become its registered return addresses (a request
+is then answered only at one of them, by index, by URL or by default, in every
+mode), its signing and encryption certificates are registered, a NameIDPolicy
+naming a format its metadata does not declare is answered `InvalidNameIDPolicy`,
+and `WantAssertionsSigned` is honoured in product. `validUntil` and
+`cacheDuration` are recorded and shown, and an already expired document is
+refused.
+
+**What it does not do**, stated rather than left to be discovered: there is no
+identity-provider-initiated SSO with an unsolicited Response, no ECP profile and
+its PAOS binding (refused **by name** rather than quietly answered over HTTP POST
+— a service provider that asked for PAOS and got a form post would conclude that
+PAOS worked), no Name Identifier Management and no Assertion Query and Request
+profile; an ECDSA request signature is not verified (RSA only); and a consumed
+metadata document's `validUntil` is not enforced after it was consumed.
 
 `/admin/saml2` is the console page for it, and it answers the one question
 nothing else here can: **which metadata document do I configure this service

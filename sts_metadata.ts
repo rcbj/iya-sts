@@ -1043,9 +1043,13 @@ const SPECS: Spec[] = [
               '2026-08-24 in a <samlp:Response> of its own — THERE IS A WEB ' +
               'BROWSER SSO PROFILE NOW, at /saml2, and the three rows below ' +
               'cover its bindings, profiles and metadata. What is still ' +
-              'absent: no AuthnRequest signature is verified, and no ' +
-              '<samlp:AttributeQuery> is answered (assertions ARE encrypted ' +
-              'since 2026-08-27). The AuthnContextClassRef names how the ' +
+              'absent: no <samlp:AttributeQuery> is answered (assertions ' +
+              'ARE encrypted since 2026-08-27, and a service provider\'s ' +
+              'AuthnRequest signature IS verified since 2026-09-17 — ' +
+              'against its registered certificate, in every mode). A ' +
+              'NameIDPolicy naming a Format the service provider\'s ' +
+              'consumed metadata does not declare is InvalidNameIDPolicy. ' +
+              'The AuthnContextClassRef names how the ' +
               'session really authenticated — a certificate is TLSClient, a ' +
               'SPNEGO ticket Kerberos, the unauthenticated session ' +
               'unspecified — where until 2026-09-12 all of those were ' +
@@ -1063,8 +1067,14 @@ const SPECS: Spec[] = [
               'artifact and the one-shot rule of 3.6.4.1, and SOAP over HTTP ' +
               '(3.2.3) for the artifact resolution back channel. NOT here: ' +
               'PAOS (3.3), which is refused by name rather than quietly ' +
-              'answered over POST, and the URI binding (3.7). A request ' +
-              'signature is recorded and never verified.' },
+              'answered over POST, the URI binding (3.7) and ' +
+              'POST-SimpleSign. A service provider\'s request signature — ' +
+              'the 3.4.4.1 query signature over the parameters as received, ' +
+              'or an enveloped one on POST — IS VERIFIED since 2026-09-17 ' +
+              'against its REGISTERED certificate (never its KeyInfo), in ' +
+              'every mode, RSA only, exclusive c14n only; an unsigned one is ' +
+              'refused where saml2.requireSignedAuthnRequests (on in ' +
+              'product) or its metadata requires a signature.' },
   { id: 'saml2-profiles', name: 'SAML 2.0 Profiles',
     where: 'OASIS saml-profiles-2.0-os',
     url:
@@ -1082,7 +1092,12 @@ const SPECS: Spec[] = [
               'AssertionConsumerServiceURL is accepted as sent in ' +
               'development mode and must be registered on the service ' +
               'provider\'s entry in PRODUCT mode (2026-09-12), with no ' +
-              'fallback to the mock service provider.' },
+              'fallback to the mock service provider — and, once its ' +
+              'metadata has been consumed, must be one of the endpoints it ' +
+              'registered in EVERY mode, with AssertionConsumerServiceIndex ' +
+              'and the default endpoint honoured. A LogoutRequest from a ' +
+              'service provider is authenticated by its signature (4.4.3.1) ' +
+              'under the same policy as an AuthnRequest.' },
   { id: 'saml2-metadata', name: 'SAML 2.0 Metadata',
     where: 'OASIS saml-metadata-2.0-os',
     url:
@@ -1090,16 +1105,22 @@ const SPECS: Spec[] = [
     coverage: 'partial: a signed EntityDescriptor holding one ' +
               'IDPSSODescriptor, and ONE PER SERVICE PROVIDER — a distinct ' +
               'entityID and its own endpoints, which is what Okta and Ping ' +
-              'publish. It is minted for any entityID asked for. This ' +
-              'service PUBLISHES metadata and does not CONSUME it: there is ' +
-              'no SPSSODescriptor ingest, which is why a service provider\'s ' +
-              'logout return address has to be declared and why an assertion ' +
-              'consumer service URL is taken from the request rather than ' +
-              'looked up — in development mode; in product mode it must be ' +
-              'one registered on the entry. The certificate in a service ' +
-              'provider\'s metadata IS consumed, by an explicit refresh, for ' +
-              'encryption. <md:Organization> is saml.organizationName and ' +
-              'its siblings, and is omitted when the name is emptied.' },
+              'publish, with WantAuthnRequestsSigned following what is ' +
+              'enforced. It is minted for any entityID asked for. A service ' +
+              'provider\'s metadata IS CONSUMED since 2026-09-17, by an ' +
+              'explicit refresh of its samlSpMetadataUrl or an uploaded ' +
+              'document and never while issuing: the SPSSODescriptor\'s ' +
+              'AssertionConsumerService and SingleLogoutService endpoints ' +
+              'become its registered return addresses, its signing and ' +
+              'encryption KeyDescriptors, NameIDFormats, AuthnRequestsSigned ' +
+              'and WantAssertionsSigned are applied, the document\'s own ' +
+              'signature is verified when samlSpMetadataSigningCertificate ' +
+              'is set, and an already expired validUntil is refused. NOT ' +
+              'here: an EntitiesDescriptor (one entity per document), ' +
+              'enforcing validUntil or cacheDuration after consumption ' +
+              '(recorded and shown only), and any role but ' +
+              'SPSSODescriptor. <md:Organization> is saml.organizationName ' +
+              'and its siblings, and is omitted when the name is emptied.' },
   { id: 'saml11', name: 'SAML 1.1 Core',
     where: 'OASIS oasis-sstc-saml-core-1.1',
     url: 'https://www.oasis-open.org/committees/download.php/3406/oasis-sstc-saml-core-1.1.pdf',
@@ -7215,8 +7236,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'turned into a GET so the SameSite=Lax session cookie is visible, ' +
           'and the screen is /authn/login. ANY entityID is accepted, and the ' +
           'first valid request from one creates its application entry. A ' +
-          'request signature is RECORDED AND NOT CHECKED, like every ' +
-          'credential here.' },
+          'request signature is VERIFIED against the service provider\'s ' +
+          'registered certificate and refused when it does not verify; an ' +
+          'unsigned request is refused where ' +
+          'saml2.requireSignedAuthnRequests (on in product) or the service ' +
+          'provider\'s metadata requires a signature.' },
   { path: '/saml2/sso/:sp', group: 'SAML 2.0',
     name: 'Single Sign-On service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
@@ -7249,10 +7273,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'session and is answered with a LogoutResponse on the binding it ' +
           'arrived on; a bare GET ends the session and NAMES every service ' +
           'provider it signed into, with a LogoutRequest built for each. ' +
-          'WHERE THE LogoutResponse GOES IS A GUESS unless it was declared — ' +
-          'a LogoutRequest carries no return address, only SP metadata does, ' +
-          'and this service does not consume SP metadata. Declare it on ' +
-          '/admin/saml2 or with saml2.defaultSingleLogoutService.' },
+          'A LogoutRequest\'s or LogoutResponse\'s signature is verified ' +
+          'under the same policy as an AuthnRequest\'s, and one that is ' +
+          'refused ends no session. The LogoutResponse goes to the ' +
+          'SingleLogoutService of the service provider\'s consumed ' +
+          'metadata, else a declared one, else ' +
+          'saml2.defaultSingleLogoutService — and is otherwise a GUESS, ' +
+          'said out loud.' },
   { path: '/saml2/slo/:sp', group: 'SAML 2.0',
     name: 'Single Logout service for ONE service provider',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles'],

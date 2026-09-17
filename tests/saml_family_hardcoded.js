@@ -638,8 +638,18 @@ function run(t) {
   t.equal(devSso.statusCode, 303,
           'development: an unregistered AssertionConsumerServiceURL goes on ' +
           'to the sign-in screen');
+  // THE SIGNATURE POLICY IS TURNED OFF FOR THIS ONE CALL (2026-09-17, #37):
+  // product refuses an UNSIGNED AuthnRequest before it looks at the address
+  // (`saml2.requireSignedAuthnRequests` is on there by default), and what this
+  // check is about is the address rule. `tests/saml_request_signatures.js`
+  // holds the signature rule.
   const prodSso = withMode(config, 'product', function () {
-    return callSso('https://prod-sp-' + stamp + '.test');
+    config.setOverride('saml2.requireSignedAuthnRequests', 'off');
+    try {
+      return callSso('https://prod-sp-' + stamp + '.test');
+    } finally {
+      config.clearOverride('saml2.requireSignedAuthnRequests');
+    }
   });
   t.check(prodSso.statusCode === 400 && /not registered/.test(prodSso.body),
           'PRODUCT: the same AuthnRequest is refused on a page, and no ' +
