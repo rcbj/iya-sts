@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2738** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2753** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -61,7 +61,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 177
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 178
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 424
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 72
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
@@ -72,7 +72,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 70
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 85
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
@@ -1007,6 +1007,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
 | `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
+| `STS-AUTHN-0196` | A password presented as the second factor after a wallet sign-in was refused. | HTTP 200 page at /authn/password-factor, with the reason |
 
 ## STS-OAUTH
 
@@ -2142,7 +2143,7 @@ Raised from: oid4vc/.
 | `STS-VC-0051` | The cluster claim store could not be asked about an OpenID4VCI single-use value — a pre-authorized code, a c_nonce or a Transaction Code attempt — so the request was refused rather than accepted unproven. | invalid_grant or invalid_proof (HTTP 400) |
 | `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 page |
 | `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 page |
-| `STS-VC-0054` | A wallet sign-in was refused for a request that demanded two factors: a presentation proves possession of one key. | HTTP 403 page |
+| `STS-VC-0054` *(retired)* | A wallet sign-in was refused for a request that demanded two factors (retired: it is now followed by a second factor). | HTTP 403 page |
 | `STS-VC-0055` | A wallet sign-in was asked about by a browser that did not start it (no binding cookie, or the wrong one), so it was not finished there. | HTTP 403 page |
 | `STS-VC-0056` | A wallet sign-in's transaction is unknown, has expired, or belongs to a different pending authentication. | HTTP 400 page |
 | `STS-VC-0057` | A second OpenID4VP response arrived for a sign-in's transaction, which is answered once. | invalid_request (HTTP 400) |
@@ -2159,6 +2160,21 @@ Raised from: oid4vc/.
 | `STS-VC-0068` | An issued credential could not be recorded as one that may sign its subject in; the credential was issued anyway. | — |
 | `STS-VC-0069` | A wallet sign-in request carried a malformed query parameter. | HTTP 400 page |
 | `STS-VC-0070` | A wallet sign-in was withdrawn by a sign-out after the wallet had presented and before the browser collected the session. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0071` | A presentation verified and signed nobody in: the credential was disowned — by a global sign-out, an administrator's revocation, or its status-list entry. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0072` | A presented credential's status list says it is revoked or suspended, or no statement about its status could be made (the list could not be fetched or verified, or the credential names none). | invalid_request (HTTP 400); HTTP 403 page at a sign-in |
+| `STS-VC-0073` | A Digital Credentials API answer was not a openid4vp-v1-signed DigitalCredential, was not in the response mode the request asked for, or its encrypted response could not be opened. | HTTP 400 page at /authn/wallet/dc-api |
+| `STS-VC-0074` | A Digital Credentials API answer was posted from a page on an origin other than the one the request named in expected_origins. | HTTP 403 page at /authn/wallet/dc-api |
+| `STS-VC-0075` | No status-list index could be allocated for a credential: the claim store could not be asked, or the list is full. | server_error (HTTP 500) at the credential endpoint |
+| `STS-VC-0076` | A status list (Token Status List or Bitstring Status List credential) could not be built or signed. | HTTP 500 |
+| `STS-VC-0077` | A historical status list was asked for (the time parameter), which this issuer does not keep. | HTTP 501 |
+| `STS-VC-0078` | A Bitstring Status List was asked for a purpose this issuer does not publish. | HTTP 404 |
+| `STS-VC-0079` | A credential could not be built (its status index, its signature, or its proof). | server_error (HTTP 500) |
+| `STS-VC-0080` | An ldp_vc credential was asked for a holder key no Data Integrity cryptosuite here can prove (RSA, secp256k1, Ed448, a composite). | invalid_proof (HTTP 400) |
+| `STS-VC-0081` | The Digital Credentials API form was submitted with no answer — the page's script did not run — and the same-device link was offered instead. | HTTP 400 page at /authn/wallet/dc-api |
+| `STS-VC-0082` | A status-list entry could not be changed from the console or the management API: no such index, an unknown status, or an INVALID entry asked to become valid again. | HTTP 400 / HTTP 404 |
+| `STS-VC-0083` | A Digital Credentials API answer arrived for a sign-in that was not offered through the Digital Credentials API. | HTTP 400 page at /authn/wallet/dc-api |
+| `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0085` | A certificate in oid4vci.keyAttestationTrustedCertificates could not be read and was ignored. | — |
 
 ## STS-SSF
 

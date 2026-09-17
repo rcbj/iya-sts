@@ -3706,6 +3706,10 @@ const CODES = [
       'hashes) could not be sealed under the key-encryption key when it was ' +
       'rewritten, so the change was not stored.',
     spec: 'none — the spend that asked is refused (STS-AUTHN-0093)' },
+  { code: 'STS-AUTHN-0196',
+    summary: 'A password presented as the second factor after a wallet ' +
+      'sign-in was refused.',
+    spec: 'HTTP 200 page at /authn/password-factor, with the reason' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -8164,10 +8168,13 @@ const CODES = [
       'started, expired, or already used — so there was nothing to sign in ' +
       'to.',
     spec: 'HTTP 400 page' },
+  // Retired 2026-09-17 (#38's follow-ups): a wallet sign-in under a demand
+  // for two factors is now followed by a second factor rather than refused.
+  // Kept, because a code is never reused.
   { code: 'STS-VC-0054',
     summary: 'A wallet sign-in was refused for a request that demanded two ' +
-      'factors: a presentation proves possession of one key.',
-    spec: 'HTTP 403 page' },
+      'factors (retired: it is now followed by a second factor).',
+    spec: 'HTTP 403 page', retired: true },
   { code: 'STS-VC-0055',
     summary: 'A wallet sign-in was asked about by a browser that did not ' +
       'start it (no binding cookie, or the wrong one), so it was not ' +
@@ -8235,6 +8242,77 @@ const CODES = [
     summary: 'A wallet sign-in was withdrawn by a sign-out after the wallet ' +
       'had presented and before the browser collected the session.',
     spec: 'HTTP 403 page at /authn/wallet/wait' },
+  // --- #38's follow-ups: disowning, status lists, the Digital Credentials
+  // API, every format, key attestations -------------------------------------
+  { code: 'STS-VC-0071',
+    summary: 'A presentation verified and signed nobody in: the credential ' +
+      'was disowned — by a global sign-out, an administrator\'s revocation, ' +
+      'or its status-list entry.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0072',
+    summary: 'A presented credential\'s status list says it is revoked or ' +
+      'suspended, or no statement about its status could be made (the list ' +
+      'could not be fetched or verified, or the credential names none).',
+    spec: 'invalid_request (HTTP 400); HTTP 403 page at a sign-in' },
+  { code: 'STS-VC-0073',
+    summary: 'A Digital Credentials API answer was not a ' +
+      'openid4vp-v1-signed DigitalCredential, was not in the response mode ' +
+      'the request asked for, or its encrypted response could not be ' +
+      'opened.',
+    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0074',
+    summary: 'A Digital Credentials API answer was posted from a page on an ' +
+      'origin other than the one the request named in expected_origins.',
+    spec: 'HTTP 403 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0075',
+    summary: 'No status-list index could be allocated for a credential: the ' +
+      'claim store could not be asked, or the list is full.',
+    spec: 'server_error (HTTP 500) at the credential endpoint' },
+  { code: 'STS-VC-0076',
+    summary: 'A status list (Token Status List or Bitstring Status List ' +
+      'credential) could not be built or signed.',
+    spec: 'HTTP 500' },
+  { code: 'STS-VC-0077',
+    summary: 'A historical status list was asked for (the time parameter), ' +
+      'which this issuer does not keep.',
+    spec: 'HTTP 501' },
+  { code: 'STS-VC-0078',
+    summary: 'A Bitstring Status List was asked for a purpose this issuer ' +
+      'does not publish.',
+    spec: 'HTTP 404' },
+  { code: 'STS-VC-0079',
+    summary: 'A credential could not be built (its status index, its ' +
+      'signature, or its proof).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-VC-0080',
+    summary: 'An ldp_vc credential was asked for a holder key no Data ' +
+      'Integrity cryptosuite here can prove (RSA, secp256k1, Ed448, a ' +
+      'composite).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0081',
+    summary: 'The Digital Credentials API form was submitted with no answer ' +
+      '— the page\'s script did not run — and the same-device link was ' +
+      'offered instead.',
+    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0082',
+    summary: 'A status-list entry could not be changed from the console or ' +
+      'the management API: no such index, an unknown status, or an ' +
+      'INVALID entry asked to become valid again.',
+    spec: 'HTTP 400 / HTTP 404' },
+  { code: 'STS-VC-0083',
+    summary: 'A Digital Credentials API answer arrived for a sign-in that ' +
+      'was not offered through the Digital Credentials API.',
+    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+  { code: 'STS-VC-0084',
+    summary: 'A wallet could not be the second factor: the step had ' +
+      'expired, its first factor was already a wallet, or the credential ' +
+      'was issued to somebody other than the person whose password was ' +
+      'entered.',
+    spec: 'HTTP 403 page at /authn/wallet/wait' },
+  { code: 'STS-VC-0085',
+    summary: 'A certificate in oid4vci.keyAttestationTrustedCertificates ' +
+      'could not be read and was ignored.',
+    spec: '' },
   // ===== SSF ===============================================================
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +

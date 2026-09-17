@@ -580,7 +580,11 @@ var config = {
     domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
     generatedDidCredentialLifetimeS: 3600,                 // /did/generate credential lifetime (s)
     sdJwtIssuerDid: false,                                 // Name the SD-JWT VC issuer by DID; restart to apply
-    ldpVcIssuerDid: false                                  // Name the ldp_vc issuer by DID; restart to apply
+    ldpVcIssuerDid: false,                                 // Name the ldp_vc issuer by DID; restart to apply
+    statusListTtlS: 300,                                   // Status list time to live (s)
+    statusListLifetimeS: 86400,                            // Status list lifetime (s)
+    keyAttestationRequired: false,                         // Require a key attestation
+    keyAttestationTrustedCertificates: ""                  // Trusted key attesters (PEM)
   },
 
   // --- OID4VP ----------------------------------------------------------
@@ -598,7 +602,10 @@ var config = {
     signIn: true,                                      // Sign in with a wallet
     signInTtlS: 300,                                   // Wallet sign-in lifetime (s)
     signInPollS: 3,                                    // Wallet sign-in page refresh (s)
-    signInCrossDevice: true                            // Wallet sign-in QR code (cross-device)
+    signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
+    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
+    signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
+    statusListMaxCacheS: 3600                          // Longest a fetched status list is kept (s)
   },
 
   // --- Kerberos --------------------------------------------------------

@@ -6616,11 +6616,21 @@ const SETTINGS = [
   { key: 'oid4vci.credentialSigningAlgorithm', group: 'OID4VCI',
     label: 'Algorithm credentials are signed with',
     env: 'OID4VCI_CREDENTIAL_SIGNING_ALGORITHM', type: 'enum',
+    // THE POST-QUANTUM ALGORITHMS SINCE #38's FOLLOW-UPS: the credential
+    // builders sign asynchronously now, so an ML-DSA, SLH-DSA or composite
+    // signature is made in the worker pool, and the Verifier accepts one as
+    // this realm's (vc_verifier.ts, verifyIssuerSignatureAsync()).
     enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
-                 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA'],
+                 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
+                 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-SHA2-128s',
+                 'SLH-DSA-SHAKE-128s', 'ML-DSA-44-ES256', 'ML-DSA-65-ES256',
+                 'ML-DSA-87-ES384', 'ML-DSA-44-Ed25519', 'ML-DSA-65-Ed25519',
+                 'ML-DSA-87-Ed448'],
     dflt: 'RS256', runtime: true,
     description: 'The JWS algorithm dc+sd-jwt and jwt_vc_json credentials ' +
-                 'are signed with, and the one the DID Configuration\'s ' +
+                 'are signed with — post-quantum ones included — and the ' +
+                 'one this realm\'s status lists are signed with, and the ' +
+                 'one the DID Configuration\'s ' +
                  'Domain Linkage Credential and /did/generate\'s did:web ' +
                  'credential use. The metadata\'s ' +
                  'credential_signing_alg_values_supported names it, ' +
@@ -6849,11 +6859,16 @@ const SETTINGS = [
     label: 'Sign in with a wallet',
     env: 'OID4VP_SIGN_IN', type: 'bool', dflt: true, runtime: true,
     description: 'Offer "Sign in with a wallet" on /authn/login and answer ' +
-                 '/authn/wallet: an OpenID4VP request for an SD-JWT VC this ' +
-                 'realm issued, whose verified presentation — Key Binding ' +
-                 'JWT included — starts a session for the directory entry ' +
-                 'the credential was issued for, and carries on with ' +
-                 'whatever flow was waiting at the sign-in screen. A ' +
+                 '/authn/wallet: an OpenID4VP request — through the Digital ' +
+                 'Credentials API, or by link on the same device — for a ' +
+                 'credential this realm issued, in any format ' +
+                 'oid4vp.signInFormats names, whose verified presentation ' +
+                 '— a fresh holder proof included — starts a session for ' +
+                 'the directory entry the credential was issued for, and ' +
+                 'carries on with whatever flow was waiting at the sign-in ' +
+                 'screen. A wallet may also be the second factor after a ' +
+                 'password, and a second factor is asked for after a ' +
+                 'wallet where the request demands two. A ' +
                  'credential from any other issuer, or one issued on an ' +
                  'access token this service did not issue, still verifies ' +
                  'and signs nobody in. Off removes the button and closes ' +
@@ -6873,20 +6888,109 @@ const SETTINGS = [
     label: 'Wallet sign-in page refresh (s)',
     env: 'OID4VP_SIGN_IN_POLL_S', type: 'int', dflt: 3, min: 1, max: 60,
     runtime: true,
-    description: 'How often the page a browser waits on while the wallet ' +
-                 'answers reloads itself. It is a <meta> refresh and not a ' +
-                 'script, so every reload is a whole page.' },
+    description: 'How often the QR-code page (oid4vp.signInCrossDevice) ' +
+                 'reloads itself while a wallet on another device answers. ' +
+                 'It is a <meta> refresh and not a script, so every reload ' +
+                 'is a whole page. The Digital Credentials API page does ' +
+                 'not reload: a reload would close the browser\'s wallet ' +
+                 'dialog.' },
 
+  // OFF BY DEFAULT IN EVERY MODE SINCE #38's FOLLOW-UPS (rcbj): the plain QR
+  // code is the one wallet sign-in path a relay works on, and the Digital
+  // Credentials API reaches a wallet on another device without it, with a
+  // proximity check the QR code cannot make. A deployment that needs it —
+  // a wallet the browser cannot reach — turns it on and is told what it
+  // costs.
   { key: 'oid4vp.signInCrossDevice', group: 'OID4VP',
-    label: 'Wallet sign-in QR code (cross-device)',
-    env: 'OID4VP_SIGN_IN_CROSS_DEVICE', type: 'bool', dflt: true,
+    label: 'Wallet sign-in QR code (cross-device, relayable)',
+    env: 'OID4VP_SIGN_IN_CROSS_DEVICE', type: 'bool', dflt: false,
     runtime: true,
-    description: 'Draw a QR code on the wallet sign-in page, so a wallet on ' +
-                 'another device can answer. Only the browser that started ' +
-                 'the sign-in can be signed in by it; what no Verifier can ' +
-                 'prevent is somebody showing their own code to a victim ' +
-                 'who scans it, which is why this can be turned off and the ' +
-                 'same-device link kept.' },
+    description: 'Offer a plain QR code on the wallet sign-in page, for a ' +
+                 'wallet on another device that the browser\'s Digital ' +
+                 'Credentials API cannot reach. OFF by default: only the ' +
+                 'browser that started the sign-in can be signed in by it, ' +
+                 'and that is exactly what a relay exploits — somebody ' +
+                 'shows their own code to a victim who scans it and signs ' +
+                 'the attacker\'s browser in. The Digital Credentials API ' +
+                 'path proves the wallet is near the browser and is not ' +
+                 'affected by this setting.' },
+
+  { key: 'oid4vp.signInFormats', group: 'OID4VP',
+    label: 'Wallet sign-in credential formats',
+    env: 'OID4VP_SIGN_IN_FORMATS', type: 'csv',
+    dflt: 'dc+sd-jwt,jwt_vc_json,ldp_vc', runtime: true,
+    description: 'The credential formats a wallet sign-in asks for, in ' +
+                 'order of preference: one DCQL credential query each, and ' +
+                 'a credential set saying any one will do. Each signs in ' +
+                 'only with a fresh holder proof — a Key Binding JWT, a VP ' +
+                 'JWT, or a Data Integrity proof — for this request. ' +
+                 'Unknown names are ignored; none at all means all three. ' +
+                 'A wallet that answers only the first query it reads ' +
+                 'answers in the first format here.' },
+
+  { key: 'oid4vp.signInDcApiResponseMode', group: 'OID4VP',
+    label: 'Digital Credentials API response mode',
+    env: 'OID4VP_SIGN_IN_DC_API_RESPONSE_MODE', type: 'enum',
+    enumValues: ['dc_api.jwt', 'dc_api'], dflt: 'dc_api.jwt', runtime: true,
+    description: 'How a wallet answers a sign-in through the Digital ' +
+                 'Credentials API (OpenID4VP Appendix A): dc_api.jwt — ' +
+                 'encrypted (ECDH-ES) to a key only this sign-in holds, so ' +
+                 'the page\'s script carries a JWE — or dc_api, in the ' +
+                 'clear, for a wallet that cannot encrypt.' },
+
+  { key: 'oid4vp.statusListMaxCacheS', group: 'OID4VP',
+    label: 'Longest a fetched status list is kept (s)',
+    env: 'OID4VP_STATUS_LIST_MAX_CACHE_S', type: 'int', dflt: 3600, min: 0,
+    max: 86400, runtime: true,
+    description: 'The most the Verifier keeps a status list a trusted ' +
+                 'foreign issuer published, whatever its ttl says — and ' +
+                 'what it keeps one for whose token names no ttl. A list ' +
+                 'is never kept past its own exp. 0 fetches for every ' +
+                 'presentation.' },
+
+  // --- status lists (#38's follow-ups) ------------------------------------
+  { key: 'oid4vci.statusListTtlS', group: 'OID4VCI',
+    label: 'Status list time to live (s)',
+    env: 'OID4VCI_STATUS_LIST_TTL_S', type: 'int', dflt: 300, min: 1,
+    max: 86400, runtime: true,
+    description: 'The ttl this realm\'s status lists carry ' +
+                 '(draft-ietf-oauth-status-list section 5): how long a ' +
+                 'verifier may keep one before fetching it again, and so ' +
+                 'how long a revocation can take to be seen. Also the ' +
+                 'HTTP max-age.' },
+
+  { key: 'oid4vci.statusListLifetimeS', group: 'OID4VCI',
+    label: 'Status list lifetime (s)',
+    env: 'OID4VCI_STATUS_LIST_LIFETIME_S', type: 'int', dflt: 86400,
+    min: 60, max: 31536000, runtime: true,
+    description: 'How long after it is signed a status list token says it ' +
+                 'is valid (its exp), and a Bitstring Status List ' +
+                 'credential\'s validUntil.' },
+
+  { key: 'oid4vci.keyAttestationRequired', group: 'OID4VCI',
+    label: 'Require a key attestation',
+    env: 'OID4VCI_KEY_ATTESTATION_REQUIRED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Require every Credential Request to carry a key ' +
+                 'attestation (OpenID4VCI Appendix D) — in a jwt proof\'s ' +
+                 'key_attestation header, or as the attestation proof ' +
+                 'type — and say so in the metadata ' +
+                 '(key_attestations_required). Off, an attestation that is ' +
+                 'sent is still verified and recorded. What it attests ' +
+                 'decides what a wallet sign-in claims: hwk for key storage ' +
+                 'resisting Moderate attack potential, and acr "mfa" where ' +
+                 'user authentication does too.' },
+
+  { key: 'oid4vci.keyAttestationTrustedCertificates', group: 'OID4VCI',
+    label: 'Trusted key attesters (PEM)',
+    env: 'OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES', type: 'string',
+    dflt: '', runtime: true,
+    description: 'PEM certificates, concatenated, of the Wallet Providers ' +
+                 'and key storage components whose key attestations this ' +
+                 'issuer believes: an attestation must verify against one ' +
+                 'of these keys, or be signed by a certificate (its x5c) ' +
+                 'one of them issued. Empty trusts none, and a key ' +
+                 'attestation is then refused.' },
 
   // --- Kerberos ------------------------------------------------------------
   //
