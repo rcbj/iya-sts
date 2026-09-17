@@ -364,14 +364,15 @@ async function runBody(t) {
   const k1Jwt = await pki.registerCertificate(undefined, {
     identifier: APP, purpose: 'jwt', certificatePem: k1Leaf,
     chainPem: interPem + rootPem });
-  t.check(codeOf(k1Saml) === 'STS-PKI-0146' && k1Jwt.ok &&
-          k1Jwt.registered.jwsAlg === 'ES256K',
-          'a secp256k1 key is ES256K for RFC 7523 and refused for RFC 7522, ' +
-          'which has no ECDSA over that curve',
+  t.check(k1Saml.ok && k1Jwt.ok && k1Jwt.registered.jwsAlg === 'ES256K',
+          'a secp256k1 key is ES256K for RFC 7523 and ACCEPTED for RFC 7522 ' +
+          'since the #37 follow-up — its XML Signature verifier takes any ' +
+          'curve node knows, and the ECDSA URIs name none',
           sentence(k1Saml) + ' / ' + sentence(k1Jwt));
-  t.check(codeOf(edSaml) === 'STS-PKI-0146' && edJwt.ok,
-          'an Ed25519 key is refused for RFC 7522 — XML Signature here has ' +
-          'no EdDSA — and accepted for RFC 7523, whose verifier does',
+  t.check(edSaml.ok && edJwt.ok,
+          'and an Ed25519 key is accepted for BOTH — RFC 7523\'s verifier ' +
+          'has EdDSA and, since the #37 follow-up, so does the XML ' +
+          'Signature one (RFC 9231\'s eddsa-ed25519)',
           sentence(edSaml) + ' / ' + sentence(edJwt));
 
   // -------------------------------------------------------------------------

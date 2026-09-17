@@ -484,6 +484,7 @@ var config = {
     clockSkewS: 0,                                          // Assertion clock skew (s)
     signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
     canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
+    allowSha1Signatures: false,                             // Accept SHA-1 XML signatures
     organizationName: "sts",                                // Metadata OrganizationName
     organizationDisplayName: "Mock security token service", // Metadata OrganizationDisplayName
     organizationUrl: ""                                     // Metadata OrganizationURL
@@ -508,7 +509,11 @@ var config = {
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
-    spMetadataMaxBytes: 524288                                             // Largest SP metadata document fetched (bytes)
+    spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
+    spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
+    spMetadataRefreshIntervalS: 300,                                       // Metadata refresher interval (seconds)
+    metadataTrustAnchors: "",                                              // Metadata signing trust anchors
+    mdqBaseUrl: ""                                                         // Metadata Query (MDQ) responder
   },
 
   // --- SAML 1.1 --------------------------------------------------------

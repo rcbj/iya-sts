@@ -552,6 +552,7 @@ const SAML_METADATA_FIELDS = [
   'samlAssertionConsumerService', 'samlAcsEndpoint',
   'samlSingleLogoutService', 'samlSloEndpoint', 'samlSpNameIdFormat',
   'samlSpAuthnRequestsSigned', 'samlSpWantAssertionsSigned',
+  'samlSpWantAssertionsEncrypted',
   'samlSpMetadataValidUntil', 'samlSpMetadataCacheDuration',
   'samlSpMetadataConsumedAt', 'samlSpMetadataSignature'
 ];
@@ -1979,22 +1980,36 @@ const SCHEMA = {
             'saml2SignAssertion) is off — in product mode; development ' +
             'honours the setting, which is a test case, and logs that the ' +
             'service provider asked otherwise.' },
+    { name: 'samlSpWantAssertionsEncrypted', kind: 'single',
+      from: 'consumed metadata',
+      what: 'TRUE when the consumed metadata publishes a KeyDescriptor ' +
+            'marked use="encryption" — the service provider saying it has a ' +
+            'key for encrypted assertions, which SAML 2.0 metadata has no ' +
+            'attribute of its own for (the interoperability profiles read ' +
+            'the key as the request). The assertion is then ENCRYPTED to ' +
+            'that key in every mode, whatever saml2.encryptAssertion says.' },
     { name: 'samlSpMetadataValidUntil', kind: 'single',
       from: 'consumed metadata',
-      what: 'The validUntil of the consumed document (the earliest one on ' +
-            'the EntityDescriptor and its SPSSODescriptor). A document that ' +
-            'had already expired is refused when consumed; one that expires ' +
-            'LATER is shown as expired on the SAML 2.0 page and is NOT ' +
-            'otherwise enforced — refresh it.' },
+      what: 'The EFFECTIVE validUntil of the consumed document — the ' +
+            'earliest on any enclosing EntitiesDescriptor, the ' +
+            'EntityDescriptor and its SPSSODescriptor. A document already ' +
+            'expired is refused when consumed; once this passes, every ' +
+            'request from the service provider is REFUSED (STS-SAML-0074) ' +
+            'until a newer document is consumed.' },
     { name: 'samlSpMetadataCacheDuration', kind: 'single',
       from: 'consumed metadata',
-      what: 'The cacheDuration of the consumed document, as the xs:duration ' +
-            'it carried. Recorded and shown; this service never refetches ' +
-            'on its own, so nothing enforces it.' },
+      what: 'The EFFECTIVE cacheDuration of the consumed document (the ' +
+            'shortest in its chain), as the xs:duration it carried. Once it ' +
+            'has elapsed since the document was consumed, the document is ' +
+            'STALE: the background refresher fetches it again where it can ' +
+            '(saml2.spMetadataRefresh), and it keeps working until its ' +
+            'validUntil.' },
     { name: 'samlSpMetadataConsumedAt', kind: 'single',
       from: 'consumed metadata',
       what: 'When the document was last consumed, and how: `<ISO instant> ' +
-            '<refresh|upload>`.' },
+            '<refresh|upload|mdq>` — `mdq` for one fetched from the Metadata ' +
+            'Query responder, which the background refresher can fetch ' +
+            'again.' },
     { name: 'samlSpMetadataSignature', kind: 'single',
       from: 'consumed metadata',
       what: 'What checking the consumed document\'s own signature found: ' +
@@ -7625,11 +7640,12 @@ function updateApplication(identifier, change) {
   // A SAML SIGNING CERTIFICATE IS A TRUST ANCHOR SINCE 2026-09-17 (#37), so
   // it is normalised to base64 DER — PEM armour and whitespace off, which is
   // what `ds:X509Certificate` carries and what every reader compares — and a
-  // value that is not an RSA certificate is refused at the door rather than at
-  // the next signed request, where the only symptom would be every signature
-  // from that service provider being refused. A REMOVE is normalised and not
-  // checked, the asymmetry every rule here has: it names a value already on
-  // the entry.
+  // value whose key signs nothing this service verifies (any key
+  // `common/crypto.js` section 1a knows, not only RSA) is refused at the door
+  // rather than at the next signed request, where the only symptom would be
+  // every signature from that service provider being refused. A REMOVE is
+  // normalised and not checked, the asymmetry every rule here has: it names a
+  // value already on the entry.
   // ---------------------------------------------------------------------------
   if (SAML_CERTIFICATE_ATTRIBUTES.indexOf(attribute) >= 0 && value) {
     value = samlCertificateBase64(value);
@@ -7638,8 +7654,11 @@ function updateApplication(identifier, change) {
       if (problem) {
         log.debug("Leaving updateApplication(). Not a usable certificate.");
         return errorCodes.mark({ ok: false, errors: ['`' + attribute + '` ' +
-                                 'must be an RSA certificate, base64 DER or ' +
-                                 'PEM, and this one is not: ' + problem +
+                                 'must be an X.509 certificate whose key ' +
+                                 'makes an XML signature this service ' +
+                                 'verifies, ' +
+                                 'base64 DER or PEM, and this one is not: ' +
+                                 problem +
                                  '. Nothing was written.'] },
                                'STS-REG-0160');
       }
@@ -8119,11 +8138,11 @@ function samlCertificateBase64(value) {
     .replace(/\s+/g, '');
 }
 
-// '' for an RSA X.509 certificate, and otherwise a sentence. RSA because the
-// XML signature engine this service verifies with implements RSA (PKCS#1 v1.5
-// and PSS) and nothing else — an EC certificate registered here would make
-// every signature from its holder fail, and the failure would read as a bad
-// signature rather than as the wrong kind of key.
+// '' for an X.509 certificate whose key makes an XML signature this service
+// verifies, and otherwise a sentence. Until the #37 follow-up that meant RSA
+// only, because nothing verified anything else; `common/crypto.js` section 1a
+// now verifies EC, EdDSA, DSA and the post-quantum families too, and asking
+// it keeps the door and the verifier from disagreeing.
 function samlCertificateProblem(value) {
   log.debug("Entering samlCertificateProblem().");
   const der = samlCertificateBase64(value);
@@ -8135,20 +8154,12 @@ function samlCertificateProblem(value) {
     log.debug("Leaving samlCertificateProblem(). Not base64.");
     return 'it is not base64';
   }
-  let certificate;
-  try {
-    certificate = new crypto.X509Certificate(Buffer.from(der, 'base64'));
-  } catch (e) {
-    log.debug("Caught in samlCertificateProblem(): " +
-              ((e && e.message) || e));
-    log.debug("Leaving samlCertificateProblem(). Not a certificate.");
-    return 'it is not an X.509 certificate (' + ((e && e.message) || e) + ')';
-  }
-  const keyType = certificate.publicKey.asymmetricKeyType;
-  if (keyType !== 'rsa' && keyType !== 'rsa-pss') {
-    log.debug("Leaving samlCertificateProblem(). A " + keyType + " key.");
-    return 'its public key is ' + keyType + ', and this service verifies ' +
-           'RSA signatures only';
+  // ANY KEY `common/crypto.js` VERIFIES AN XML SIGNATURE WITH (section 1a,
+  // since the #37 follow-up): RSA, EC, Ed25519, Ed448, DSA, ML-DSA, SLH-DSA.
+  const problem = stsCrypto.xmlSignatureKeyProblem(der);
+  if (problem) {
+    log.debug("Leaving samlCertificateProblem(). " + problem);
+    return problem;
   }
   log.debug("Leaving samlCertificateProblem(). Usable.");
   return '';

@@ -178,6 +178,10 @@ import saml11 = require('../saml/saml11_sso');
 // Whether a service provider's requests must be signed (#37), for the
 // drill-down. A library that registers nothing.
 import requestSignature = require('../saml/request_signature');
+// How current a service provider's consumed metadata is, and what the
+// background refresher last found (#37 follow-up). Already required by
+// `admin_actions.ts`, so this closes no cycle.
+import spMetadata = require('../saml/sp_metadata');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
 // The receiver half of Shared Signals, which the three reports below draw
@@ -421,6 +425,7 @@ interface AdminViewsDeps {
   mtls: typeof mtls;
   saml2: typeof saml2;
   requestSignature: typeof requestSignature;
+  spMetadata: typeof spMetadata;
   saml11: typeof saml11;
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
@@ -491,6 +496,7 @@ class AdminViews {
       mtls: mtls,
       saml2: saml2,
       requestSignature: requestSignature,
+      spMetadata: spMetadata,
       saml11: saml11,
       authorizationServers: authorizationServers,
       federation: federation,
@@ -4238,7 +4244,7 @@ class AdminViews {
             String(fields.samlObservedSigningCertificate || ''),
           signedRequestsRequired: requestSignature.requiresSignedRequests(
             fields),
-          metadata: self.consumedMetadataOf(fields)
+          metadata: self.consumedMetadataOf(fields, identifier)
       });
       }())
     };
@@ -4261,17 +4267,31 @@ class AdminViews {
 
   // WHAT CONSUMING THE SERVICE PROVIDER'S METADATA WROTE (#37), as the page
   // and `GET /admin-api/saml2?sp=` show it. `consumed` is false for an entry
-  // no document has been consumed onto; `expired` compares validUntil with
-  // now, which is displayed and not enforced.
-  consumedMetadataOf(fields) {
-    const { log } = this.deps;
+  // no document has been consumed onto. Since the #37 follow-up `state` is
+  // `sp_metadata.ts`'s freshness — fresh, stale or expired, ENFORCED — and
+  // `refresh` is what the background refresher last found.
+  consumedMetadataOf(fields, entityId?) {
+    const { log, spMetadata, config } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.consumedMetadataOf().");
     const consumedAt = String(fields.samlSpMetadataConsumedAt || '');
     const validUntil = String(fields.samlSpMetadataValidUntil || '');
-    const when = Date.parse(validUntil);
+    const fresh = spMetadata.freshness(fields);
+    const identifier = entityId || self.valuesFor(fields.samlEntityId)[0] ||
+                       '';
     log.debug("Leaving AdminViews.consumedMetadataOf().");
     return {
+      state: fresh.state,
+      stateWhy: fresh.why,
+      expiresAt: fresh.expiresAt,
+      staleAt: fresh.staleAt,
+      refreshable: fresh.refreshable,
+      refresh: identifier ? spMetadata.refreshStatus(identifier) : null,
+      refresherEnabled: !!config.value('saml2.spMetadataRefresh'),
+      refresherRunning: spMetadata.refresherRunning(),
+      trustAnchors: spMetadata.trustAnchorsFor(fields).length,
+      trustAnchorProblems: spMetadata.anchorProblems(),
+      mdqUrl: identifier ? spMetadata.mdqUrlFor(identifier) : '',
       consumed: !!consumedAt,
       consumedAt: consumedAt.split(' ')[0] || '',
       how: consumedAt.split(' ')[1] || '',
@@ -4280,10 +4300,12 @@ class AdminViews {
       signingCertificateConfigured:
         !!String(fields.samlSpMetadataSigningCertificate || ''),
       validUntil: validUntil,
-      expired: !!validUntil && isFinite(when) && when <= Date.now(),
+      expired: fresh.state === 'expired',
       cacheDuration: String(fields.samlSpMetadataCacheDuration || ''),
       authnRequestsSigned: fields.samlSpAuthnRequestsSigned === 'TRUE',
       wantAssertionsSigned: fields.samlSpWantAssertionsSigned === 'TRUE',
+      wantAssertionsEncrypted:
+        fields.samlSpWantAssertionsEncrypted === 'TRUE',
       nameIdFormats: self.valuesFor(fields.samlSpNameIdFormat),
       assertionConsumerServices: self.valuesFor(fields.samlAcsEndpoint)
         .map(function (value) {

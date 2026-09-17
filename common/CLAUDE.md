@@ -227,6 +227,55 @@ DIRECT CHILD, and additionally refuses a signature whose reference names
 something else, which none of the four ever checked. `tests/crypto_module.js`
 asserts all of it and was mutation-tested against eight mutants.
 
+**EVERY SIGNATURE FAMILY NODE VERIFIES IS VERIFIED, AND SHA-1 IS A SETTING
+(2026-09-17, #37 follow-up; section 1a of the file).** Until then every XML
+signature this service checked had to be RSA: the vendored engine implements
+RSA itself and takes any other family through an injected `verifier`, and
+nothing here injected one — so an ECDSA signature was "not checkable" and an EC
+certificate could not even be registered. Four decisions, each the one somebody
+will want to undo:
+
+* **The verifier is ALWAYS injected and it is node's OpenSSL**, for RSA too:
+  PKCS#1 v1.5 and RSASSA-PSS (with and without RSAPSSParams), ECDSA (r||s, DER
+  tolerated), EdDSA Ed25519/Ed448, DSA, and the post-quantum ML-DSA and
+  SLH-DSA rows the vendored registry names (a DRAFT's identifiers —
+  draft-eastlake-rfc9231bis-xmlsec-uris; no standard has any yet). The vendored
+  engine still does the canonicalization, the transforms, the references and
+  the digests, so the "both ends canonicalize with the same code" argument
+  above still holds. The key comes from the certificate the CALLER named, read
+  by node, and the engine is shown the signature with its certificate text
+  emptied, because it would try to read that with forge (RSA only).
+* **The new URIs are REGISTERED into the vendored module's exported
+  `SIG_METHODS` and `DIGEST_METHODS`**, additively — a row the vendored table
+  has is never touched — because the engine refuses an unknown SignatureMethod
+  or DigestMethod before it calls any verifier. It is the one place this file
+  writes another module's state, and the alternative was a second
+  canonicalizing verifier here, which is the drift this file exists to end.
+  The SHA-224, SHA-3 and RIPEMD-160 digest rows are node hashes dressed as
+  forge's.
+* **What is not verified is refused BY NAME as not checkable
+  (`STS-KEYS-0061`)**, never as a wrong signature: MD5/MD2, HMAC and the other
+  MACs (a SAML party registers a certificate, not a shared secret),
+  Whirlpool/RIPEMD-128 (not in node's default provider), ESIGN, pre-hashed and
+  context EdDSA, and the stateful HSS/LMS and XMSS (OpenSSL 3.5 has none).
+* **SHA-1 is `saml.allowSha1Signatures`, off by default in both modes**, and it
+  is enforced HERE — on the SignatureMethod and on every DigestMethod, before
+  any cryptography (`STS-KEYS-0062`) — so every XML signature path in the
+  service gets one answer: SAML 2.0 requests and metadata, artifact
+  resolution, federation, RFC 7522, WS-Trust, WS-Federation, SAML 1.1, GNAP.
+  With it on, SHA-1 verifies and the verdict still says `weak` (RIPEMD-160 is
+  `weak` too and no setting refuses it). A consequence worth knowing: setting
+  `saml.signatureAlgorithm` to `rsa-sha1` makes this service's own verifiers
+  refuse what it signs unless the setting is on as well.
+
+One more thing the same change fixed: **an INCLUSIVE-canonicalization signature
+never verified here, even on a root element**, because the engine
+canonicalizes the SignedInfo from the Signature serialized on its own, which
+loses the namespace declarations inclusive c14n renders from the ancestors. The
+in-scope declarations are now copied onto the Signature first; a NESTED
+element under inclusive c14n is still refused (`STS-KEYS-0010`), for the
+reason above.
+
 **XML ENCRYPTION MOVED RATHER THAN BEING REPLACED**, and it is the one place the
 vendored file did not win. It was never duplicated — one implementation, two
 callers — and the vendored `encryptXml()` produces a byte-compatible document,

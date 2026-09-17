@@ -1500,9 +1500,22 @@ const CODES = [
   { code: 'STS-KEYS-0060',
     summary: 'A detached HTTP Redirect binding signature could not be ' +
       'checked: no certificate, no Signature, an unreadable certificate, a ' +
-      'Signature that is not base64, or a SigAlg the verifier does not ' +
-      'implement (anything but RSA).',
+      'Signature that is not base64, or an unreadable certificate. (An ' +
+      'algorithm this service does not verify is STS-KEYS-0061 since ' +
+      '2026-09-17; SHA-1 refused by policy is STS-KEYS-0062.)',
     spec: 'the caller\'s own refusal' },
+  { code: 'STS-KEYS-0061',
+    summary: 'An XML signature (enveloped, or an HTTP binding\'s detached ' +
+      'one) names a SignatureMethod or DigestMethod this service does not ' +
+      'verify — MD5, a MAC, Whirlpool, ESIGN, pre-hashed EdDSA, HSS/LMS or ' +
+      'an unknown URI — or RSASSA-PSS parameters node cannot express. ' +
+      'Refused as not checkable, on every XML signature path.',
+    spec: 'refusal by the calling protocol' },
+  { code: 'STS-KEYS-0062',
+    summary: 'An XML signature uses SHA-1 (its SignatureMethod or a ' +
+      'DigestMethod) and saml.allowSha1Signatures is off (the default), so ' +
+      'it was refused before any cryptography, on every XML signature path.',
+    spec: 'refusal by the calling protocol' },
   // ===== PKI ===============================================================
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -5905,7 +5918,8 @@ const CODES = [
     spec: 'an HTTP 403 page; no Response is sent and no session ends' },
   { code: 'STS-SAML-0062',
     summary: 'A SAML 2.0 service provider\'s request signature could not be ' +
-      'checked at all — an algorithm this service has no verifier for, a ' +
+      'checked at all — an algorithm common/crypto.js does not verify (MD5, ' +
+      'a MAC, HSS/LMS…), an unreadable key, a ' +
       'reference naming something other than the message (signature ' +
       'wrapping), a malformed signature, or a Signature parameter without ' +
       'the SAMLRequest and SigAlg it signs. Refused in every mode.',
@@ -5919,8 +5933,10 @@ const CODES = [
     spec: 'an HTTP 403 page; no Response is sent and no session ends' },
   { code: 'STS-SAML-0064',
     summary: 'A SAML 2.0 service provider\'s request was signed with an ' +
-      'inclusive canonicalization, which this service does not verify.',
-    spec: 'an HTTP 403 page' },
+      'inclusive canonicalization, which this service did not verify. ' +
+      'Retired 2026-09-17: the signed element is the message root, so ' +
+      'inclusive c14n is verified like exclusive.',
+    spec: 'an HTTP 403 page', retired: true },
   { code: 'STS-SAML-0065',
     summary: 'A service provider\'s metadata document was not consumed: ' +
       'samlSpMetadataSigningCertificate is set and the document is unsigned ' +
@@ -5958,6 +5974,52 @@ const CODES = [
       'this identity provider delivers on (or on the ProtocolBinding asked ' +
       'for).',
     spec: 'an HTTP 400 page; no Response is sent' },
+  { code: 'STS-SAML-0073',
+    summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest, ' +
+      'LogoutResponse or ArtifactResolve was signed with SHA-1 (its ' +
+      'SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is ' +
+      'off, the default. Refused in every mode.',
+    spec: 'an HTTP 403 page (a SOAP ArtifactResponse with StatusCode ' +
+      'Requester for ArtifactResolve); no Response is sent' },
+  { code: 'STS-SAML-0074',
+    summary: 'A SAML 2.0 service provider\'s AuthnRequest, LogoutRequest, ' +
+      'LogoutResponse or ArtifactResolve was refused because the metadata ' +
+      'consumed for it has EXPIRED — its effective validUntil (the ' +
+      'earliest on the EntitiesDescriptor, EntityDescriptor and ' +
+      'SPSSODescriptor) has passed. Refused in every mode until a newer ' +
+      'document is consumed.',
+    spec: 'an HTTP 403 page (a SOAP ArtifactResponse with StatusCode ' +
+      'Requester for ArtifactResolve); no Response is sent' },
+  { code: 'STS-SAML-0075',
+    summary: 'A Metadata Query (MDQ) import was asked for and ' +
+      'saml2.mdqBaseUrl is not set in the realm.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-SAML-0076',
+    summary: 'The background refresh of a service provider\'s stale ' +
+      'metadata failed (the fetch, or consuming what it fetched). Recorded ' +
+      'when the state changes and summarised hourly while it persists; the ' +
+      'last good document stays in force until its validUntil.',
+    spec: '' },
+  { code: 'STS-SAML-0077',
+    summary: 'A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came ' +
+      'from a caller that is not authenticated — no signature verifying ' +
+      'against the party\'s registered certificates and no TLS client ' +
+      'certificate that is one of them — where authenticated callers are ' +
+      'required (saml2.requireSignedAuthnRequests, on in product by ' +
+      'default). The artifact is not spent.',
+    spec: 'a SOAP response with StatusCode Requester (HTTP 200)' },
+  { code: 'STS-SAML-0078',
+    summary: 'An artifact was asked for by a party other than the one it ' +
+      'was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 ' +
+      'responder path, names another). Refused in every mode; the artifact ' +
+      'is not spent.',
+    spec: 'a SOAP response with StatusCode Requester (HTTP 200)' },
+  { code: 'STS-SAML-0079',
+    summary: 'A service provider metadata fetch (a refresh, the background ' +
+      'refresher or an MDQ lookup) was refused because the host resolves to ' +
+      'a loopback, private, link-local or reserved address, or did not ' +
+      'resolve, in product mode (federation_http.ts vetHost()).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -12085,7 +12147,9 @@ const CODES = [
   { code: 'STS-REG-0160',
     summary: 'A SAML signing certificate (samlSigningCertificate or ' +
       'samlSpMetadataSigningCertificate, or an observed one being ' +
-      'confirmed) is not an RSA X.509 certificate, so nothing was written.',
+      'confirmed) is not an X.509 certificate whose key makes an XML ' +
+      'signature this service verifies (RSA, EC, EdDSA, DSA, ML-DSA, ' +
+      'SLH-DSA), so nothing was written.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0161',
     summary: 'Consuming SAML metadata tried to write an attribute that is ' +

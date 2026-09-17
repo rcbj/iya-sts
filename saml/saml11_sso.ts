@@ -250,6 +250,11 @@ import personAttributes = require('./person_attributes');
 // saml2_sso.ts's spendArtifact(), whose comment argues it. A library that
 // registers no route and requires persistence lazily.
 import clusterClaims = require('../cluster/cluster_claims');
+// WHO IS RESOLVING AN ARTIFACT (#37 follow-up): the SAML 2.0 request policy,
+// and the TLS client certificate read the one way this service reads it.
+// Both libraries; neither requires anything reaching back here.
+import requestSignature = require('./request_signature');
+import mtls = require('../oauth-oidc/mtls');
 
 // --- the vocabulary --------------------------------------------------------
 // SAML 1.1's namespaces carry `1.0` and that is not a typo anywhere in this
@@ -504,6 +509,8 @@ interface Saml11SsoDeps {
   returnAddress: typeof returnAddress;
   personAttributes: typeof personAttributes;
   clusterClaims: typeof clusterClaims;
+  requestSignature: typeof requestSignature;
+  mtls: typeof mtls;
 }
 
 class Saml11Sso {
@@ -551,7 +558,9 @@ class Saml11Sso {
       documentSettings: documentSettings,
       returnAddress: returnAddress,
       personAttributes: personAttributes,
-      clusterClaims: clusterClaims
+      clusterClaims: clusterClaims,
+      requestSignature: requestSignature,
+      mtls: mtls
     };
   }
 
@@ -1876,6 +1885,51 @@ class Saml11Sso {
     return nameId ? (nameId.textContent || '').trim() : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ARTIFACT'S RESOLVER (#37 follow-up), SAML 1.1's form of
+  // `saml2_sso.ts`'s check. saml-bindings-1.1 section 3.1.3 asks the responder
+  // to authenticate the requester, and saml-profiles-1.1 section 4.1.1.4
+  // (Browser/Artifact) to give the assertion only to the relying party the
+  // artifact was issued for. A SAML 1.1 Request names no issuer, so the party
+  // is the artifact's own (`rpId`) — and a path segment naming another is
+  // refused (`STS-SAML-0078`). Authentication is a signature on the
+  // <samlp:Request> or a TLS client certificate, against that party's
+  // registered `samlSigningCertificate`, under the SAML 2.0 request policy
+  // (`saml2.requireSignedAuthnRequests`: product requires it). Nothing is
+  // spent by a refusal.
+  // ---------------------------------------------------------------------------
+  private authenticateArtifactCaller(req, request, scoped, held): any {
+    const { applications, log, mtls, requestSignature } = this.deps;
+    log.debug("Entering Saml11Sso.authenticateArtifactCaller().");
+    const intended = String(held.rpId || '');
+    if (scoped.id && intended && scoped.id !== intended) {
+      log.warn(this.deps.errorCodes.tag('STS-SAML-0078') + 'saml11: an ' +
+               'artifact issued to "' + intended + '" was asked for at the ' +
+               'responder of "' + scoped.id + '".');
+      log.debug("Leaving Saml11Sso.authenticateArtifactCaller(). Wrong RP.");
+      return { refuse: true, errorCode: 'STS-SAML-0078',
+               why: 'that artifact was issued to another relying party' };
+    }
+    const row = intended ? applications.get(intended) : null;
+    const peer = mtls.peerCertificate(req);
+    const revoked = req.certificateRevocation &&
+                    req.certificateRevocation.refused;
+    const caller = requestSignature.authenticateSoapCaller({
+      xml: new xmldom.XMLSerializer().serializeToString(request),
+      rootLocalName: 'Request', fields: (row && row.fields) || {},
+      tlsCertificate: peer && !revoked
+        ? Buffer.from(peer.raw).toString('base64') : ''
+    });
+    if (caller.refuse) {
+      log.warn(this.deps.errorCodes.tag(caller.errorCode) + 'saml11: ' +
+               'refused an artifact request for "' + intended + '": ' +
+               caller.why + '.');
+    }
+    log.debug("Leaving Saml11Sso.authenticateArtifactCaller(). via=" +
+              caller.via + (caller.refuse ? ', refused' : ''));
+    return caller;
+  }
+
   private respond(req, res) {
     const { CONFIRMATION_BEARER, baseUrlOf, buildSaml11Assertion, clusterClaims,
             errorCodes, firstByLocal, iso, log, logArtifact, mode, sessionsOf,
@@ -1948,6 +2002,17 @@ class Saml11Sso {
     if (artifactEl) {
       const artifact = (artifactEl.textContent || '').trim();
       const held = artifacts.get(artifact);
+      if (held) {
+        // WHO IS ASKING, before the artifact is spent (#37 follow-up) — see
+        // authenticateArtifactCaller().
+        const caller = this.authenticateArtifactCaller(req, request, scoped,
+                                                       held);
+        if (caller.refuse) {
+          log.debug("Leaving Saml11Sso.respond(). The caller was refused.");
+          errorCodes.mark(res, caller.errorCode || 'STS-SAML-0077');
+          return answer(STATUS_REQUESTER, caller.why, '', requestId, '');
+        }
+      }
       if (!held) {
         // The one refusal here worth making loudly, because it is the same
         // answer for three different mistakes and a relying party cannot tell
@@ -3116,11 +3181,18 @@ class Saml11Sso {
         'leaned on.</td></tr><tr><td><code>&lt;samlp:AuthenticationQuery&gt;' +
         '</code></td><td>an assertion carrying the authentication statement ' +
         'alone.</td></tr></tbody></table><div class="meta"><div><strong>' +
-        'Nothing authenticates a caller here.</strong> Anybody who can reach ' +
-        'this port can ask this responder for an assertion about anybody, by ' +
-        'name, with no credential and no attribute release policy. A real ' +
-        'attribute authority uses mutual TLS and a policy. Every query is ' +
-        'logged saying so.</div><div>The fifth SAML 1.1 request type, <code>' +
+        'Nothing authenticates a caller here for a QUERY.</strong> In ' +
+        'development anybody who can reach this port can ask this responder ' +
+        'for an assertion about anybody, by name, with no credential and no ' +
+        'attribute release policy; product mode refuses both query types. A ' +
+        'real attribute authority uses mutual TLS and a policy. Every query ' +
+        'is logged saying so.</div><div><strong>An ARTIFACT is different:' +
+        '</strong> it is resolved only for the relying party it was issued ' +
+        'to, and that party must be authenticated — a signature on the ' +
+        '<code>&lt;samlp:Request&gt;</code> or its registered certificate as ' +
+        'the TLS client certificate — wherever ' +
+        '<code>saml2.requireSignedAuthnRequests</code> requires it (product, ' +
+        'by default).</div><div>The fifth SAML 1.1 request type, <code>' +
         'AuthorizationDecisionQuery</code>, is refused by name: this service ' +
         'makes no authorization decisions.</div></div>');
       log.debug("Leaving the SAML 1.1 responder description.");

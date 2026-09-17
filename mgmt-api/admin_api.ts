@@ -6622,11 +6622,19 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API SAML 2.0 action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.saml2Action(self.withAction(req, body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0047');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
+          // Two actions dial out and answer with a promise (#37 follow-up).
+          Promise.resolve(adminActions.saml2Action(self.withAction(req, body)))
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0047');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+            }, function (e) {
+              errorCodes.mark(res, 'STS-API-0047');
+              self.sendJson(res, 400, { ok: false, errors: [
+                'The action failed: ' + ((e && e.message) || e)] });
+            });
           log.debug("Leaving the management API SAML 2.0 action endpoint.");
         },
         actions: [
@@ -6731,10 +6739,12 @@ class AdminApi {
                          '\n\nBase64 DER or PEM — the armour and whitespace ' +
                          'are stripped, because what the attribute holds is ' +
                          'what a `ds:X509Certificate` carries. A value that ' +
-                         'is not an RSA certificate is refused and nothing ' +
-                         'changes: the verifier here is RSA, and an ' +
-                         'unusable certificate would make every signature ' +
-                         'from this service provider fail. Public key ' +
+                         'is not a certificate whose key makes an XML ' +
+                         'signature this service verifies (RSA, EC, EdDSA, ' +
+                         'DSA, ML-DSA, SLH-DSA) is refused and nothing ' +
+                         'changes: an unusable certificate would make every ' +
+                         'signature from this service provider fail. Public ' +
+                         'key ' +
                          'material, worth nothing to whoever reads the ' +
                          'directory.',
             requestBodyRequired: true,
@@ -6794,7 +6804,8 @@ class AdminApi {
                          'onto `samlSigningCertificate`, so this service ' +
                          'provider\'s signatures are verified against it ' +
                          'from the next request. Refused when nothing is ' +
-                         'observed, and for a certificate that is not RSA. ' +
+                         'observed, and for a certificate whose key signs ' +
+                         'nothing this service verifies. ' +
                          'Confirm only a key you know is the service ' +
                          'provider\'s: this is the registration.',
             requestBodyRequired: true,
@@ -6838,7 +6849,9 @@ class AdminApi {
                          'signed document is consumed and recorded as ' +
                          '`signed-not-verified`: the trust act is then the ' +
                          'administrator\'s choice of URL or document. ' +
-                         'Base64 DER or PEM, RSA; empty clears it.',
+                         'Base64 DER or PEM, any key an XML signature is ' +
+                         'verified with here; empty clears it. The realm\'s ' +
+                         '`saml2.metadataTrustAnchors` are accepted as well.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -6852,6 +6865,50 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The application entry as it now stands.' },
+
+          { action: 'refresh-metadata',
+            operationId: 'refreshSaml2Metadata',
+            summary: 'Fetch a service provider\'s metadata again, now',
+            description: 'Fetches the document from the entry\'s ' +
+                         '`samlSpMetadataUrl` — or, for an entry with ' +
+                         'none, from the realm\'s Metadata Query responder ' +
+                         '(`saml2.mdqBaseUrl`) — through the federation ' +
+                         'outbound policy, and CONSUMES it exactly as ' +
+                         '`upload-metadata` does. The background refresher ' +
+                         'does the same once a document is past its ' +
+                         'cacheDuration. A failure changes nothing.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed, or why nothing was.' },
+
+          { action: 'mdq-import',
+            operationId: 'importSaml2MetadataFromMdq',
+            summary: 'Import a service provider from the MDQ responder',
+            description: 'Asks `saml2.mdqBaseUrl` for ' +
+                         '`<base>/entities/<percent-encoded entityID>` ' +
+                         '(the Metadata Query Protocol), and — when the ' +
+                         'answer describes that entity — creates the ' +
+                         'application entry if it does not exist and ' +
+                         'consumes the document, held to the realm\'s ' +
+                         '`saml2.metadataTrustAnchors`. Refused with no ' +
+                         'responder configured; an entry it created is ' +
+                         'removed again if the document is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { sp: { type: 'string' } },
+              required: ['sp'],
+              examples: [{ sp: 'https://sp.example.com/saml' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was consumed (with `created`), or why ' +
+                                 'nothing was.' },
 
           { action: 'upload-metadata',
             operationId: 'uploadSaml2Metadata',
@@ -6872,19 +6929,26 @@ class AdminApi {
                          'certificate, its NameIDFormats (a NameIDPolicy ' +
                          'naming another is then InvalidNameIDPolicy), and ' +
                          'AuthnRequestsSigned and WantAssertionsSigned. ' +
-                         'validUntil and cacheDuration are recorded and ' +
-                         'shown.\n\nREFUSED, changing nothing, for: a ' +
-                         'document that is not a single EntityDescriptor ' +
-                         'with a SAML 2.0 SPSSODescriptor; an entityID that ' +
+                         'The EFFECTIVE validUntil (earliest in the chain) ' +
+                         'is enforced — past it every request from the ' +
+                         'service provider is refused — and past the ' +
+                         'cacheDuration a document with a URL is fetched ' +
+                         'again in the background. An EntitiesDescriptor ' +
+                         'is read for this entity.\n\nREFUSED, changing ' +
+                         'nothing, for: a document that is not an ' +
+                         'EntityDescriptor (or an aggregate holding exactly ' +
+                         'one for this entity) with a SAML 2.0 ' +
+                         'SPSSODescriptor; an entityID that ' +
                          'is not this service provider\'s; a validUntil ' +
                          'already passed; an encryption certificate this ' +
                          'service cannot encrypt to; a signature that does ' +
                          'not verify against ' +
-                         '`samlSpMetadataSigningCertificate` when one is set ' +
-                         '(or no signature then); and a ' +
-                         'document over `saml2.spMetadataMaxBytes`. A ' +
-                         'signing certificate that is not RSA is skipped and ' +
-                         'named in `skipped`.',
+                         '`samlSpMetadataSigningCertificate` or a realm ' +
+                         'trust anchor when any is set (or no signature ' +
+                         'then); and a document over ' +
+                         '`saml2.spMetadataMaxBytes`. A signing certificate ' +
+                         'no XML signature method uses is skipped and named ' +
+                         'in `skipped`.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

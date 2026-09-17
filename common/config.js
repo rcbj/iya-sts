@@ -5776,6 +5776,32 @@ const SETTINGS = [
                  'refuses inclusive c14n on a nested element for that ' +
                  'reason.' },
 
+  // SHA-1 IN AN INBOUND XML SIGNATURE (2026-09-17, #37 follow-up). A plain
+  // default rather than a `mode.js` predicate: rcbj asked for OFF by default,
+  // and a development service that accepted SHA-1 would tell the person
+  // testing a partner that its SHA-1 signing works everywhere. In the SAML
+  // group because `common/crypto.js` applies it to EVERY XML signature this
+  // service verifies — SAML 2.0 and 1.1, federation, RFC 7522, WS-Trust,
+  // WS-Federation — and a signature that is refused on one path and accepted
+  // on the next would be two answers to one question.
+  { key: 'saml.allowSha1Signatures', group: 'SAML',
+    label: 'Accept SHA-1 XML signatures',
+    env: 'STS_SAML_ALLOW_SHA1_SIGNATURES', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether an XML signature this service VERIFIES may use ' +
+                 'SHA-1 — as its SignatureMethod (rsa-sha1, ecdsa-sha1, ' +
+                 'dsa-sha1, sha1-rsa-MGF1) or as any Reference\'s ' +
+                 'DigestMethod. OFF (the default, in both modes): such a ' +
+                 'signature is refused before any cryptography ' +
+                 '(STS-KEYS-0062, and on a service provider\'s request ' +
+                 'STS-SAML-0073). ON: it is verified like any other and ' +
+                 'still recorded as `weak`. It governs every inbound path — ' +
+                 'a SAML 2.0 service provider\'s requests and metadata, the ' +
+                 'artifact resolution service, a federation partner\'s ' +
+                 'Response, an RFC 7522 assertion, WS-Trust and ' +
+                 'WS-Federation, SAML 1.1 — and none of what this service ' +
+                 'SIGNS, which is saml.signatureAlgorithm.' },
+
   { key: 'saml.organizationName', group: 'SAML',
     label: 'Metadata OrganizationName',
     env: 'STS_SAML_ORGANIZATION_NAME', type: 'string', dflt: 'sts',
@@ -6081,6 +6107,71 @@ const SETTINGS = [
                  '/admin-api/saml2/upload-metadata. A metadata document is ' +
                  'kilobytes; the cap is what stops an endless response being ' +
                  'read into this process.' },
+
+  // --- SERVICE PROVIDER METADATA AFTER IT IS CONSUMED (#37 follow-up) -------
+  // Four rows, and each is per trust realm like every runtime row: a realm is
+  // a federation of its own, with its own operator keys and responder.
+  { key: 'saml2.spMetadataRefresh', group: 'SAML 2.0',
+    label: 'Refresh stale SP metadata in the background',
+    env: 'STS_SAML2_SP_METADATA_REFRESH', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the background refresher fetches a service ' +
+                 'provider\'s metadata again once its cacheDuration has ' +
+                 'passed (or, with none, halfway to its validUntil) — from ' +
+                 'the entry\'s samlSpMetadataUrl, or from the MDQ responder ' +
+                 'for an entity imported from one — through the federation ' +
+                 'outbound policy. A failed fetch changes nothing, so the ' +
+                 'last good document keeps working until its validUntil. ' +
+                 'OFF: nothing is fetched on its own and a document is ' +
+                 'simply refused once it expires. EXPIRY is enforced ' +
+                 'whatever this says: past validUntil the service ' +
+                 'provider\'s requests are refused (STS-SAML-0074). Nothing ' +
+                 'is ever dialled while a request is being answered.' },
+
+  { key: 'saml2.spMetadataRefreshIntervalS', group: 'SAML 2.0',
+    label: 'Metadata refresher interval (seconds)',
+    env: 'STS_SAML2_SP_METADATA_REFRESH_INTERVAL_S', type: 'int', dflt: 300,
+    min: 10, max: 86400, runtime: true,
+    description: 'How often the background refresher looks for stale ' +
+                 'metadata, and how long a failed MDQ lookup is remembered ' +
+                 'before the same entityID is asked for again. Across a ' +
+                 'cluster each document is refreshed by one node per ' +
+                 'interval (a cluster claim).' },
+
+  { key: 'saml2.metadataTrustAnchors', group: 'SAML 2.0',
+    label: 'Metadata signing trust anchors',
+    env: 'STS_SAML2_METADATA_TRUST_ANCHORS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Certificates, base64 DER and comma-separated, that a ' +
+                 'consumed service provider metadata document may be SIGNED ' +
+                 'with — a federation operator\'s aggregate-signing keys. ' +
+                 'SET: every document consumed in this realm (a refresh, an ' +
+                 'upload, an MDQ answer) must carry a signature that ' +
+                 'verifies against one of these or against the entry\'s own ' +
+                 'samlSpMetadataSigningCertificate, or it is refused ' +
+                 '(STS-SAML-0065). An <md:EntitiesDescriptor> is verified by ' +
+                 'its own signature, else by the entity\'s. EMPTY, the ' +
+                 'default: only an entry with its own certificate is held ' +
+                 'to one. Any key an XML signature is verified with here ' +
+                 'will do — RSA, EC, EdDSA, ML-DSA, SLH-DSA; a value that is ' +
+                 'not one is named on the SAML 2.0 page and ignored.' },
+
+  { key: 'saml2.mdqBaseUrl', group: 'SAML 2.0',
+    label: 'Metadata Query (MDQ) responder',
+    env: 'STS_SAML2_MDQ_BASE_URL', type: 'string', dflt: '', runtime: true,
+    description: 'The base URL of a Metadata Query Protocol responder ' +
+                 '(draft-young-md-query and its SAML profile). A service ' +
+                 'provider\'s metadata is fetched from <base>/entities/' +
+                 '<percent-encoded entityID> — by the Import from MDQ ' +
+                 'action on the SAML 2.0 page or POST ' +
+                 '/admin-api/saml2/mdq-import, by the refresh of an entry ' +
+                 'with no samlSpMetadataUrl, by the background refresher, ' +
+                 'and, never waited on, when a request arrives from a ' +
+                 'service provider with no consumed metadata (that request ' +
+                 'is answered as unknown NOW; the next one finds the ' +
+                 'registration). Through the federation outbound policy: ' +
+                 'https, federation.outbound, the timeout. EMPTY, the ' +
+                 'default: no responder.' },
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for
