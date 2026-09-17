@@ -76,13 +76,15 @@
 // its constructor as `WsTrustDeps`, and its three endpoints are registered by
 // `registerRoutes(app)`; xmldom is a library and is used directly. The module
 // still exports `handleRst()`, `issuerDisagreement()`, `checkedAssertion()`,
-// `buildToken()` and `soapFault()` from a TRANSITIONAL instance, for the
-// modules and tests that require it by them. That instance registers NOTHING
-// at load (#50, R1): the module exports `registerRoutes(app)`, and
-// `common/protocol_stack.ts` calls it at the point in the route order where
-// requiring this module always registered them (rule 1). At load the
-// instance still logs the startup issuer check, as the module did — now
-// before the routes are registered rather than after.
+// `buildToken()` and `soapFault()`, for the modules and tests that require it
+// by them. It registers NOTHING at load (#50, R1): the module exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the point
+// in the route order where requiring this module always registered them
+// (rule 1). Since R2 that root also builds the instance and installs it, and
+// the exported functions are FACADES that forward to it. `WsTrust.wire()`
+// logs the startup issuer check, as the module did — when the root installs
+// the instance, still before the routes are registered rather than after;
+// a process without the root builds a default instance and logs it at load.
 // ---------------------------------------------------------------------------
 
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -94,6 +96,7 @@ import app = require('../common/app');
 // mock relying party), and a second copy of a reader that has to cope with
 // four trust namespaces is a second copy that gets one of them wrong.
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // The input validator. A LEAF (rule 3): it registers no route and requires only
 // `config`, `error_codes`, bunyan, zod, zlib and @xmldom/xmldom, so it closes
 // no cycle.
@@ -209,6 +212,48 @@ class WsTrust {
   constructor(private readonly deps: WsTrustDeps) {
     deps.log.debug("Entering WsTrust.constructor().");
     deps.log.debug("Leaving WsTrust.constructor().");
+  }
+
+  // What the composition root passes: the deps the module built its
+  // own instance from before R2, from the same imports.
+  static defaultDeps(): WsTrustDeps {
+    helpers.log.debug("Entering WsTrust.defaultDeps().");
+    helpers.log.debug("Leaving WsTrust.defaultDeps().");
+    return {
+      stsCrypto: stsCrypto,
+      config: config,
+      validation: validation,
+      buildSamlAssertion: saml2.buildSamlAssertion,
+      encryptAssertion: saml2.encryptAssertion,
+      stats: stats,
+      applications: applications,
+      gate: gate,
+      delegation: delegation,
+      authn: authn,
+      credentials: credentials,
+      mode: mode,
+      authnContext: authnContext,
+      errorCodes: errorCodes,
+      log: helpers.log,
+      logArtifact: helpers.logArtifact,
+      STS: helpers.STS,
+      xmlEscape: helpers.xmlEscape,
+      iso: helpers.iso,
+      randomId: helpers.randomId,
+      signJwtAs: helpers.signJwtAs,
+      firstByLocal: helpers.firstByLocal,
+      textByLocal: helpers.textByLocal,
+      subjectForName: helpers.subjectForName,
+      hasSubjectResolver: helpers.hasSubjectResolver
+    };
+  }
+
+  // The work loading this module did with its own instance before R2,
+  // run once for whichever instance is installed.
+  static wire(instance: WsTrust): void {
+    helpers.log.debug("Entering WsTrust.wire().");
+    instance.warnAtStartup();
+    helpers.log.debug("Leaving WsTrust.wire().");
   }
 
   // -------------------------------------------------------------------------
@@ -1598,50 +1643,37 @@ class WsTrust {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules; it makes the startup issuer check at load, as the module always
-// did. The routes are registered by the composition root, below.
-const wsTrust = new WsTrust({
-  stsCrypto: stsCrypto,
-  config: config,
-  validation: validation,
-  buildSamlAssertion: saml2.buildSamlAssertion,
-  encryptAssertion: saml2.encryptAssertion,
-  stats: stats,
-  applications: applications,
-  gate: gate,
-  delegation: delegation,
-  authn: authn,
-  credentials: credentials,
-  mode: mode,
-  authnContext: authnContext,
-  errorCodes: errorCodes,
-  log: helpers.log,
-  logArtifact: helpers.logArtifact,
-  STS: helpers.STS,
-  xmlEscape: helpers.xmlEscape,
-  iso: helpers.iso,
-  randomId: helpers.randomId,
-  signJwtAs: helpers.signJwtAs,
-  firstByLocal: helpers.firstByLocal,
-  textByLocal: helpers.textByLocal,
-  subjectForName: helpers.subjectForName,
-  hasSubjectResolver: helpers.hasSubjectResolver
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` when this module loads (see
+// `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<WsTrust>(
+  'ws-trust/wstrust',
+  () => new WsTrust(WsTrust.defaultDeps()),
+  WsTrust.wire,
+  helpers.log);
+
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
-wsTrust.warnAtStartup();
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => wsTrust.registerRoutes(target),
+  registerRoutes: slot.forward('registerRoutes'),
   WsTrust: WsTrust,
-  handleRst: wsTrust.handleRst.bind(wsTrust) as WsTrust['handleRst'],
-  issuerDisagreement: wsTrust.issuerDisagreement.bind(wsTrust) as
-    WsTrust['issuerDisagreement'],
-  checkedAssertion: wsTrust.checkedAssertion.bind(wsTrust) as
-    WsTrust['checkedAssertion'],
-  buildToken: wsTrust.buildToken.bind(wsTrust) as WsTrust['buildToken'],
-  soapFault: wsTrust.soapFault.bind(wsTrust) as WsTrust['soapFault']
+  installInstance: (instance: WsTrust): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  handleRst: slot.forward('handleRst'),
+  issuerDisagreement: slot.forward('issuerDisagreement'),
+  checkedAssertion: slot.forward('checkedAssertion'),
+  buildToken: slot.forward('buildToken'),
+  soapFault: slot.forward('soapFault')
 };
