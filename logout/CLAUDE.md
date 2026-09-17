@@ -225,10 +225,25 @@ session; an SVID already minted cannot be recalled any more than an assertion
 can. The registry CAN end an identity's ability to obtain another one, and that
 is a ban rather than a logout — a different claim, made at `/admin/spiffe`.
 
-**OID4VP presentation transactions are absent for a different reason**: they
-carry no user. The Verifier does not know who will present until a presentation
-arrives, so a transaction cannot appear in a per-person inventory without
-inventing a link that is not there.
+**The bar door's OID4VP presentation transactions are absent for a different
+reason**: they carry no user. The Verifier does not know who will present until
+a presentation arrives, so a transaction cannot appear in a per-person inventory
+without inventing a link that is not there.
+
+**A WALLET SIGN-IN'S TRANSACTION IS PRESENT, as `wallet-signin` (2026-09-17,
+#38), and the sentence above is why it had to be argued rather than assumed.**
+Before the wallet answers it names nobody, exactly like the bar door's. Once the
+wallet's presentation is accepted it names a PERSON (`signInOutcome()`), and it
+goes on naming them until the browser that started the sign-in comes back for
+the session — one poll, `oid4vp.signInPollS`. A sign-out in that window that did
+not see it would be followed by a session beginning after it. So the family
+lists the answered-and-uncollected ones (`vc_verifier.signInsAwaitingCollection()`),
+and ending one WITHDRAWS it (`withdrawSignIn()`): the browser is told a sign-out
+ended it (`STS-VC-0070`) and nobody is signed in. `endOrder` 25, with the other
+credentials — it depends on no session. Once collected, the sign-in IS a
+session, and the `session` family is what ends it; nothing about that row
+changed, because the wallet door goes through `startSession()` like every other
+door, and CAEP's `session-established` and `session-revoked` follow from that.
 
 ---
 
@@ -248,7 +263,7 @@ acts on something other than the row it sits beside. The button therefore calls
 `terminate(key, [id])`, the same function a global logout goes through, with a
 selection of one — same audit row, same settings honoured, same refusals.
 
-**THREE OF THE TEN FAMILIES HAVE A SESSION AND THE OTHER SEVEN DO NOT**, and the
+**THREE OF THE ELEVEN FAMILIES HAVE A SESSION AND THE OTHER EIGHT DO NOT**, and the
 distinction is the page's whole subject rather than a simplification. A session
 is state THIS SERVICE holds that makes somebody currently authenticated; a
 token, an assertion, a code and an SVID are things it has HANDED OUT, they

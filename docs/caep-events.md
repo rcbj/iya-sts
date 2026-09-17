@@ -145,6 +145,7 @@ by construction rather than by six call sites remembering to do it. The callers:
 | The same screen reached from a SAML 2.0 `AuthnRequest` | `SAML 2.0` |
 | The same screen reached from a SAML 1.1 inter-site transfer | `SAML 1.1` |
 | A Kerberos ticket spent at `/authn/spnego` — integrated authentication, no screen | `Kerberos v5 (SPNEGO)` |
+| A wallet's presentation, collected at `/authn/wallet/wait` by the browser that started the sign-in (since 2026-09-17) | `OpenID4VP (a wallet)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person signed in at a *foreign* identity provider | `Federation (SAML 2.0)`, and the same for the other four federation protocols |
 
 A re-authentication is a *new* session and therefore a new
@@ -482,7 +483,10 @@ session in CAEP's sense:
   expiring;
 - an **LDAP** bind or unbind, though the connection *is* a session in RFC 4511's
   sense (`/admin/sessions` lists it as one);
-- **WS-Trust**, **SCIM**, **SPIFFE**, **OpenID4VCI** and **OpenID4VP** requests;
+- **WS-Trust**, **SCIM**, **SPIFFE**, **OpenID4VCI** and **OpenID4VP** requests
+  — a presentation at the Verifier's own pages included. A wallet sign-in at
+  `/authn/wallet` is the exception, because it ends in a browser sign-on
+  session like any other door;
 - the **token, refresh, introspection, revocation and UserInfo** endpoints —
   including revoking every token a person holds;
 - reading the **admin console**, which presents the same session on every page

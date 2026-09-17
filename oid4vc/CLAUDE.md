@@ -10,7 +10,9 @@ DID Core with DIF domain linkage.
 | `vc_claims.ts` | Which LDAP attribute types an issued credential carries, plus the invented persona. |
 | `vc_verifier_config.ts` | What the mock Verifier ASKS FOR, and in which of the three formats. |
 | `vc_issuer.ts` | The three credential endpoints. |
-| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`. |
+| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
+| `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3aq). A library. |
+| `vc_signin.ts` | Signing in with a wallet: `/authn/wallet` and `/authn/wallet/wait`. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
@@ -99,24 +101,169 @@ consumers of that definition, not co-owners of it.
   gating only the credential would have let an invented value reach the
   directory one step earlier and come back out as a `directory` value. Nothing reads a credential claim back either:
   no token, assertion or PAC carries one and no endpoint decides anything on one.
-* **A presentation that VERIFIES is not a sign-on either.** The OID4VP Verifier
-  checks properly — issuer signature, every Disclosure digest against `_sd`, the Key
-  Binding JWT including `sd_hash`, the nonce, the audience, the validity window and
-  whether the claims asked for arrived — and then says yes on a web page and stops.
-  No session starts, no token is issued and nothing else in this service reads what
-  was presented. **It IS recorded, which is a different claim and the two must
-  not be merged** — the distinction a verified TLS client certificate drew
-  until 2026-09-05, when it became a sign-on (`GET /tls/sign-in` since
-  2026-09-16). The holder goes through `recordAuthentication()` like every other
-  accepted credential, so it appears on `/admin/users` and the directory seeds
-  an entry for it; what the row says is that an identity presented a credential
-  here and it verified, and nothing more. What it asks for is configuration
+* ~~**A presentation that VERIFIES is not a sign-on either.**~~ — **reversed
+  2026-09-17 (#38)** for one door and one kind of credential; *Signing in with
+  a wallet* below is the argument. **The bar door still is not one.** The
+  OID4VP Verifier checks properly — issuer signature, every Disclosure digest
+  against `_sd`, the Key Binding JWT including `sd_hash`, the nonce, the
+  audience, the validity window and whether the claims asked for arrived — and
+  a presentation made at `/oid4vp/verifier` then says yes on a web page and
+  stops: nobody there asked to be signed in, and a session started because a
+  bar door was shown a credential would be one nobody requested. **It IS
+  recorded, which is a different claim and the two must not be merged** — the
+  holder goes through `recordAuthentication()` like every other accepted
+  credential, so it appears on `/admin/users` and the directory seeds an entry
+  for it; what the row says is that an identity presented a credential here
+  and it verified, and nothing more. What it asks for is configuration
   (`/admin/vc-verifier-config`) and
   is deliberately a SEPARATE setting from what the issuer mints (`/admin/vc`), so
   that asking for a claim no credential here carries stays reachable: that is the
   only way to exercise a wallet's "I cannot satisfy this request" path, and one page
   setting both would make it impossible to produce. Asking for NO claim is a setting
   too — DCQL reads an absent `claims` member as the whole credential.
+
+---
+
+## SIGNING IN WITH A WALLET (2026-09-17, #38)
+
+rcbj's direction for the issue was *we are eliminating the list of things this
+project does not do*, and the row *Turn a verified presentation into a sign-on*
+went with it. What replaced it is deliberately narrow, and each narrowing is a
+decision with a reason.
+
+### The door, and why it is here
+
+`/authn/wallet?authn={id}` and `/authn/wallet/wait` are `vc_signin.ts`'s, and
+the shape is `kerberos/spnego_authn.ts`'s followed on purpose: a door in
+`/authn/*` whose two paths `authn.ts` declares (`WALLET_PATH`,
+`WALLET_WAIT_PATH`) and links to from the sign-in screen, reached only with an
+`?authn=` naming a pending record, and leaving through `startSession()` and
+`completeAuthentication()`. So every protocol that reaches the screen through
+`beginAuthentication()` — OAuth/OIDC, SAML 2.0 and 1.1, WS-Federation, the
+console, the portal — can be answered by a wallet without being told one
+exists. It lives in this directory because what it drives is the Verifier
+(`buildVpRequest()` with `signIn`, `transactionFor()`, `saveTransaction()`,
+`signInOutcome()`), required at 11–14; `authn.ts` at #8 requires nothing here,
+so no slot and no cycle — rule 3e's test answered the way SPNEGO answered it.
+
+**It needs a pending record.** SPNEGO can be used directly and says who you now
+are; a wallet sign-in cannot, because the transaction has to be bound to
+something the browser started and the record is that something. A door reached
+with nothing pending answers `STS-VC-0053`.
+
+### Whom it signs in: rule 3aq, `vc_issued.ts`
+
+**Only a holder-bound SD-JWT VC this realm issued, and only as the directory
+entry it was issued for.** The obvious reading — the credential's `sub` is
+`urn:uuid:<entryUUID>`, so sign in whoever that names — is wrong, and the
+reason is in `vc_issuer.ts`: the credential endpoint accepts access tokens it
+did not issue and reads their claims unverified. A token anybody wrote,
+carrying alice's subject, gets a credential signed by this realm, naming
+alice, bound to the writer's key. `tests/oid4vp_sign_in.js` 6e–6g issue exactly
+that credential and present it.
+
+So the fact is recorded where it is known: at issuance. `rememberIssued()`
+writes a row — keyed by the SHA-256 of the issuer-signed JWT, holding the
+subject, the holder key's RFC 7638 thumbprint, the format and the expiry, never
+the credential — only when `subjectFromToken()` says the token (a) verified
+against this realm's key, (b) names a `urn:uuid:` subject, (c) whose entry
+exists now and has that subject, and (d) was granted for credential issuance
+(one of `VCI_CONFIGS`' scopes or an `openid_credential` authorization detail —
+without (d), any access token a client holds for somebody would be convertible
+into a way to sign them in). A deferred issuance decides this on the ORIGINAL
+request and carries it on the deferred record. **The credential is unchanged**:
+nothing a claim in it could say is something any party but this realm, which
+holds the register, could check.
+
+`signInOutcome()` then asks, in order: the presentation verified (so the Key
+Binding JWT verified against the credential's `cnf` key, for this nonce and this
+audience, fresh, over exactly these bytes — `STS-VC-0061`); this realm's key
+signed it, not a certificate in `oid4vp.trustedIssuerCertificates`
+(`STS-VC-0058`); the register holds it (`STS-VC-0059`); its subject and holder
+key agree with the row (`STS-VC-0066`); the subject still names an entry with
+that subject (`STS-VC-0060`). The issuance policy is asked by `startSession()`
+as at every door (`STS-VC-0064`). **There is no disabled flag to ask beyond
+that** — `scimActive: false` deactivates nobody, which is a root `CLAUDE.md`
+row of its own. **There is no status list**: the issuer publishes none, and the
+register's expiry and `forget()` are the closest thing.
+
+**Only `dc+sd-jwt` is asked for**: `jwt_vc_json`'s VP JWT has no freshness check
+here and discloses the whole credential, and `ldp_vc`'s derived proof has no
+holder key and is unlinkable to the credential by design. The request is always
+BY REFERENCE (signed, so a wallet can show where it is presenting), names this
+issuer's `vct` whatever `oid4vp.expectedVct` says (frozen on the transaction as
+`expectedVct`), and asks for `sub` only.
+
+**Another realm's credential** fails twice: its signature does not verify here,
+and this realm's partition of the register never held it.
+
+### What the session says
+
+`amr ["pop"]`, `acr "1"`. RFC 8176's `pop` is proof of possession of a key
+whose storage is unspecified, which is exactly what is known — a JWK says
+nothing about hardware, and the issuer accepts no key attestation — so `hwk` or
+`swk` would claim knowledge nobody has, and `user` would claim a presence test
+nobody made. One factor, so the button is withheld under `forceMfa` and the door
+refuses such a record (`STS-VC-0054`). `authn.ts`'s `methodPhraseFor()` grew a
+`pop` branch. The presentation is RECORDED by `startSession()` when the session
+is started, and not by the response endpoint as well — two records for one
+sign-in is the defect federation and SPNEGO each fixed; a presentation that
+signs nobody in is recorded at the response endpoint exactly as before.
+
+### The browser it belongs to
+
+The wallet's `direct_post` is the wallet's request, so the session is minted on
+the browser's next request to `/authn/wallet/wait`, and only in the browser that
+started the sign-in: `sts_wallet_binding` (HttpOnly, SameSite=Lax, one per
+browser, reused) is hashed onto the transaction and compared in constant time
+(`STS-VC-0055`). A same-device wallet is answered with a `redirect_uri`
+carrying a one-time `response_code` (OpenID4VP section 8.2; its hash is kept),
+and a wait request carrying one must carry the right one (`STS-VC-0065`). The
+transaction lives `oid4vp.signInTtlS` — enforced at the response endpoint too,
+for a sign-in only (`STS-VC-0056`; the bar door's late answers are still
+verified as before) — and is answered once and finished once (above).
+
+**The cross-device relay is not prevented, and says so**: somebody who starts a
+sign-in and shows their own QR code to a victim holds the binding cookie. The
+signed request lets the wallet say where the presentation goes, the lifetime is
+five minutes, and `oid4vp.signInCrossDevice` drops the code.
+
+**A browser holding a DIFFERENT person's session** has it replaced, not joined:
+`startSession()`'s `sameIdentity()` decides, as for every door
+(`tests/oid4vp_sign_in.js` 5b).
+
+### No script
+
+The wait page reloads itself with `<meta http-equiv="refresh">` every
+`oid4vp.signInPollS` seconds and the QR code is an SVG drawn here, under the
+base policy's `img-src 'self' data:`. A polling page looks like the case for a
+script and is not: the reload is the poll and the answer is a page this server
+draws. The `meta` target is not an `href`, so `app.js` does not rewrite it for a
+realm and `vc_signin.ts` passes it through `realms.href()` itself.
+
+### Settings
+
+`oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),
+`oid4vp.signInCrossDevice` (on) — group OID4VP, so `/admin/oid4vp` and
+`/admin-api/config` carry them. **On by default in both modes**: the screen
+offers every mechanism the service supports, and this one signs in only an
+entry this realm issued a credential for on a token it verified — in product
+mode, a token from a person who signed in with a verified credential of their
+own, since the offer page is gated there.
+
+### Logout and signals
+
+Nothing new: the session is an `authn.ts` session, so `/logout`,
+`/admin/sessions` and CAEP see it as they see every other
+(`logout/CLAUDE.md`). `tests/oid4vp_sign_in.js` 3f checks the live-session
+list.
+
+### What has no test
+
+The parent project's debugger wallet has not been driven against
+`/authn/wallet`: `tests/oid4vp_sign_in.js` is a wallet written for the test, and
+whether the debugger's `vc-presentation-1.html` answers a DCQL query naming only
+`sub` is not established here.
 
 ---
 
@@ -239,9 +386,16 @@ redemption, the proof, or the wrong-code attempt uncounted.
 `tests/cluster_single_use_protocols.js` section 2 holds each against a node
 still holding the value, with the empty-store control.
 
-**OpenID4VP is not in this list, and not by omission.** Its `request_uri` is
-served as often as it is fetched and a second `direct_post` response overwrites
-the verdict — neither is single-use even in one process, so there is no "once"
-for a cluster to break. Making them single-use would be a behaviour change of
-its own, not a clustering fix.
+**The bar door's OpenID4VP transactions are not in this list, and not by
+omission.** Its `request_uri` is served as often as it is fetched and a second
+`direct_post` response overwrites the verdict — neither is single-use even in
+one process, so there is no "once" for a cluster to break.
+
+**A SIGN-IN'S TRANSACTION IS, since 2026-09-17 (#38)** — scope
+`oid4vp.sign-in`, the same capability. The response endpoint refuses a second
+`direct_post` for it (`STS-VC-0057`), because there the verdict decides whom a
+waiting browser is signed in as, and `/authn/wallet/wait` claims the state before it
+starts a session, so two polls on two nodes cannot both sign somebody in
+(`STS-VC-0062`; a store that cannot be asked, `STS-VC-0063`). The bar door's
+behaviour is unchanged.
 

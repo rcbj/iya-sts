@@ -4692,7 +4692,8 @@ mint a fresh set.
 What was added is the act the old label promised, and **it is not a second
 implementation**: the form posts to `/admin/logout` with `action=global`, so it
 reaches `logoutReader.terminate(key, [], …)` — the same function, through the
-sixth slot, walking the same ten families in the same `endOrder`. A sign-out
+sixth slot, walking the same families (ten then, eleven since the wallet
+sign-in of 2026-09-17) in the same `endOrder`. A sign-out
 built here would have been a SECOND answer to "what is a live session", which is
 exactly what rule 3m exists to prevent, and it would have got the order wrong the
 same way `terminate()` did the first time: the notifications are built off the
