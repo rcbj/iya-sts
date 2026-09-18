@@ -688,7 +688,7 @@ class CertEnrollment {
     }
     const cfg: any = applications.clientConfigOf(view.identifier) || {};
     const expected = String(cfg.client_secret || '');
-    if (mode.requiresClientSecret()) {
+    if (mode.requiresConfidentialClientAuthentication()) {
       if (!expected || !self.secretsEqual(secret, expected)) {
         log.debug("Leaving CertEnrollment.authenticateApplication(). Secret " +
                   "refused.");

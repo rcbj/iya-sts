@@ -827,6 +827,49 @@ const SETTINGS = [
                  'account of this name keeps its password and is only ' +
                  'given the two roles.' },
 
+  // THE BOOTSTRAP PASSWORD, WHERE THE LOG IS THE WRONG PLACE FOR IT
+  // (2026-09-17). The generated-and-logged-once arrangement above is what
+  // Keycloak, Grafana and Jenkins do, and it has one property a deployment
+  // does not want: the only way into a fresh service is in a log, so the log
+  // is sensitive and the credential is unrecoverable the moment it rolls off.
+  // An operator who has a secret store already can put the password there
+  // INSTEAD, before the service starts, and this is how they name it.
+  { key: 'admin.bootstrapPassword', group: 'Admin console',
+    label: 'Bootstrap administrator password',
+    path: 'admin.bootstrapPassword', env: 'STS_ADMIN_BOOTSTRAP_PASSWORD',
+    type: 'string', dflt: '', runtime: false,
+    // PROCESS-WIDE for `admin.bootstrapUsername`'s reason: it decides who
+    // administers the service.
+    perProcess: true,
+    secret: true,
+    restartReason: 'the bootstrap runs once, between the persistence store ' +
+                   'opening and the listener binding, so a change after that ' +
+                   'has nothing left to set',
+    description: 'The password given to the bootstrap administrator instead ' +
+                 'of a generated one, in PRODUCT MODE and only where nobody ' +
+                 'in the realm holds a credential — the same single moment ' +
+                 'admin.bootstrapUsername describes, under exactly the same ' +
+                 'conditions. It cannot overwrite anybody\'s password and ' +
+                 'it does nothing in development mode.\n\n**WHY IT EXISTS: ' +
+                 'SO THAT THE ONLY WAY IN IS NOT IN A LOG.** A generated ' +
+                 'password is announced once and never again, so the log is ' +
+                 'sensitive, and the credential is gone once that line has ' +
+                 'rolled off. An operator with a secret store can put the ' +
+                 'value there before the service starts and read it back ' +
+                 'whenever they need it — which is what the AWS deployment ' +
+                 'does, through Secrets Manager (deploy/aws/CLAUDE.md).\n\n' +
+                 '**IT IS HELD TO THE PASSWORD POLICY, and a value the ' +
+                 'policy refuses is REFUSED rather than quietly replaced.** ' +
+                 'Generating one instead would put a working credential in ' +
+                 'the log of a deployment whose operator asked for it not ' +
+                 'to be there, and leave the value in their secret store ' +
+                 'not working with nothing saying so. The refusal names the ' +
+                 'rules it broke (STS-AUTHN-0205).\n\n**IT IS NEVER ' +
+                 'LOGGED** — not at startup, not on /admin/config, not ' +
+                 'through /admin-api. It is already wherever the operator ' +
+                 'put it, and this service printing it would undo the point ' +
+                 'of setting it.' },
+
   // -------------------------------------------------------------------------
   // GNAP (RFC 9635 and RFC 9767), 2026-09-12. Every row is runtime and every
   // row may be set per trust realm, because each realm runs its own GNAP

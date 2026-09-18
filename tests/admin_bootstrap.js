@@ -97,6 +97,108 @@ function childMain() {
     };
 
     // ======================================================================
+    // 8. A BOOTSTRAP PASSWORD THE OPERATOR SUPPLIED (2026-09-17) — a child of
+    // its own, because it needs product mode BEFORE anything has a
+    // credential, which is the one moment `bootstrap()` acts in, and the
+    // parts above give the default realm an administrator.
+    //
+    // The claims are the three the setting makes: the configured value is
+    // what the account gets, the log does NOT carry it, and a value the
+    // password policy refuses is refused rather than quietly replaced with a
+    // generated one.
+    // ======================================================================
+    if (process.env.AB_PART === 'configured') {
+      config.setOverride('global.mode', 'product');
+
+      // WHAT THE PROCESS PRINTED WHILE THE BOOTSTRAP RAN. bunyan writes to
+      // stdout, so this is the whole of what an operator would find in
+      // CloudWatch — which is exactly the claim being tested, and it cannot
+      // be tested by asking the function what it returned.
+      let printed = '';
+      const realWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = function (chunk) {
+        printed += String(chunk);
+        return true;
+      };
+      let ran;
+      try {
+        ran = inDefault(function () {
+          return credentials.bootstrap({ username: 'admin' });
+        });
+      } finally {
+        // Restored in a `finally` so that a throw inside the bootstrap does
+        // not leave this child unable to report anything at all.
+        process.stdout.write = realWrite;
+      }
+      // Read from the SETTING and not from the environment variable behind
+      // it: what section 8a claims is that the account gets what the service
+      // was configured with.
+      const supplied = String(config.value('admin.bootstrapPassword') || '');
+      const verified = inDefault(function () {
+        return credentials.verify('admin', supplied,
+                                  { via: 'the sign-in screen',
+                                    allowPasswordReset: true });
+      });
+      note(ran.ran === true && ran.supplied === true && verified.ok === true,
+           '8a. the configured password is what the bootstrap account gets',
+           JSON.stringify([ran, verified.ok, verified.reason]));
+      note(printed.indexOf(supplied) === -1 && printed.length > 0,
+           '8b. and it is NOT printed — the log says where it came from and ' +
+           'not what it is',
+           JSON.stringify({ printedChars: printed.length,
+                            carriesIt: printed.indexOf(supplied) !== -1 }));
+      note(printed.indexOf('admin.bootstrapPassword') !== -1,
+           '8c. the announcement names the setting, so a reader knows where ' +
+           'to look for the value');
+
+      require('fs').writeFileSync(OUT, JSON.stringify(findings));
+      process.exit(0);
+    }
+
+    // ======================================================================
+    // 9. A CONFIGURED PASSWORD THE POLICY REFUSES (2026-09-17) — a child of
+    // its own because the setting is RESTART-ONLY: it is read once, at the
+    // one moment the bootstrap acts, so an override set while running is a
+    // value nothing reads. The first attempt at this section set one and
+    // measured the previous child's password instead.
+    // ======================================================================
+    if (process.env.AB_PART === 'refused') {
+      config.setOverride('global.mode', 'product');
+      let printed = '';
+      const realWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = function (chunk) {
+        printed += String(chunk);
+        return true;
+      };
+      let refused;
+      try {
+        refused = inDefault(function () {
+          return credentials.bootstrap({ username: 'admin' });
+        });
+      } finally {
+        process.stdout.write = realWrite;
+      }
+      const weak = String(config.value('admin.bootstrapPassword') || '');
+      const nobody = inDefault(function () {
+        return credentials.verify('admin', weak,
+                                  { via: 'the sign-in screen',
+                                    allowPasswordReset: true });
+      });
+      note(refused.ran === false && nobody.ok !== true,
+           '9a. a configured password the policy refuses creates no account',
+           JSON.stringify([refused, nobody.ok, nobody.reason]));
+      note(printed.indexOf('STS-AUTHN-0205') !== -1,
+           '9b. and says so under its own error code',
+           JSON.stringify({ printedChars: printed.length }));
+      note(printed.indexOf('SHOWN ONCE AND NEVER AGAIN') === -1,
+           '9c. and NOT by generating one instead — which would put a ' +
+           'working credential in the log of a deployment that asked for it ' +
+           'not to be there');
+      require('fs').writeFileSync(OUT, JSON.stringify(findings));
+      process.exit(0);
+    }
+
+    // ======================================================================
     // 4. AN ALREADY-ADMINISTERED ROSTER IS NOT RE-OPENED — a child of its own,
     // because it needs a default realm in which somebody held a role BEFORE
     // anything was seeded, and `admin.bootstrapUsername` is restart-only.
@@ -253,11 +355,26 @@ function childMain() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
 
+    // PKCE ON EVERY REQUEST, INCLUDING THE DEVELOPMENT ONES (2026-09-17).
+    // `ab-client` is never registered here — development mode creates it
+    // because it was named — so this service cannot see it to be confidential
+    // and RFC 9700 section 2.1.1 requires PKCE of it. Product mode enforces
+    // the BCP since public clients were allowed (`common/mode.js`,
+    // `enforcesOauthSecurityBcp()`), so without this the product half of
+    // section 7 got no `authn` id at all and failed at the step after.
+    // Sending it in both modes keeps ONE helper rather than two that differ
+    // in the parameter the mode is about.
+    const VERIFIER = 'ab-verifier-0123456789-0123456789-0123456789';
+    const CHALLENGE = require('crypto').createHash('sha256')
+      .update(VERIFIER).digest('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const startSignIn = async function () {
       const r = await request(port, 'GET', '/oauth2/authorize?' +
         new URLSearchParams({ client_id: 'ab-client', response_type: 'code',
                               redirect_uri: 'https://rp.ab.example/cb',
-                              scope: 'openid', state: 's' }).toString());
+                              scope: 'openid', state: 's',
+                              code_challenge: CHALLENGE,
+                              code_challenge_method: 'S256' }).toString());
       const location = String(r.headers.location || '');
       return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
     };
@@ -307,7 +424,17 @@ function childMain() {
     note(r.status === 400, '7e. the step is spent', r.status);
 
     // Product: the policy decides what a new password may be.
+    //
+    // AND THE REDIRECT URI IS REGISTERED FIRST (2026-09-17). Product mode
+    // enforces RFC 9700 since it began allowing public clients, and section
+    // 2.1 compares a redirect_uri by exact string against the ones REGISTERED
+    // for the client. `ab-client` is never registered — development mode made
+    // it because it was named — so in product mode its redirect URI matched
+    // nothing and the authorization endpoint refused it before any sign-in.
+    // That is the rule working; what this section tests is the change step,
+    // so the URI is registered the way the refusal itself says to.
     config.setOverride('global.mode', 'product');
+    config.setOverride('oauth2.redirectUris', ['https://rp.ab.example/cb']);
     inDefault(function () {
       credentials.setPassword('admin', strong, { generated: true });
       return credentials.setPasswordResetRequired('admin', true);
@@ -333,6 +460,7 @@ function childMain() {
          '7g. product: the password policy refuses a weak new password on the ' +
          'change page', r.status + ' ' + r.text.slice(0, 80));
     config.clearOverride('global.mode');
+    config.clearOverride('oauth2.redirectUris');
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
@@ -345,7 +473,7 @@ function childMain() {
   });
 }
 
-function inAChild(t, part) {
+function inAChild(t, part, extra) {
   log.debug("Entering inAChild(). part=" + part);
   const out = path.join(os.tmpdir(), 'admin-bootstrap-' + process.pid + '-' +
                         Math.random().toString(36).slice(2) + '.json');
@@ -360,7 +488,12 @@ function inAChild(t, part) {
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean,
                          { LOG_LEVEL: 'fatal', AB_ROOT: ROOT, AB_OUT: out,
-                           AB_PART: part }),
+                           AB_PART: part },
+                         // The `clean` copy above strips every STS_ and
+                         // ADMIN_ variable, which is what keeps one part's
+                         // settings out of the next; a part that needs one
+                         // passes it here, after the strip.
+                         extra || {}),
       encoding: 'utf8', timeout: 180000, cwd: ROOT
     });
   let findings = null;
@@ -391,10 +524,26 @@ function inAChild(t, part) {
   log.debug("Leaving inAChild().");
 }
 
+// A password that satisfies the default policy — twelve characters, an
+// uppercase letter, a digit and a symbol — because the point of section 8 is
+// what happens to a value the policy ACCEPTS. Section 8d supplies one it does
+// not.
+const SUPPLIED = 'Secrets-Manager-Put-This-Here-7!';
+
 async function run(t) {
   log.debug("Entering run().");
   inAChild(t, 'main');
   inAChild(t, 'administered');
+  // `info` and not the `fatal` the other two run at: section 8b asserts what
+  // the bootstrap PRINTS, and a child whose service logger is silenced would
+  // pass it without testing anything.
+  inAChild(t, 'configured', { STS_LOG_LEVEL: 'info',
+                              STS_ADMIN_BOOTSTRAP_PASSWORD: SUPPLIED });
+  // `short` breaks three of the four default rules at once (length, an
+  // uppercase letter, a digit) and is the shape of the mistake somebody makes
+  // when they put a placeholder in a secret store.
+  inAChild(t, 'refused', { STS_LOG_LEVEL: 'info',
+                           STS_ADMIN_BOOTSTRAP_PASSWORD: 'short' });
   log.debug("Leaving run().");
 }
 
@@ -402,6 +551,7 @@ module.exports = {
   name: 'bootstrap administrator',
   describe: 'the default realm\'s admin account: seeded into both roles, ' +
             'forced password change, the open console until it signs in, ' +
-            'and undeletable',
+            'undeletable, and a bootstrap password an operator supplied ' +
+            'rather than one generated into the log',
   run: run
 };

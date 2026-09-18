@@ -104,7 +104,7 @@ function requireSharedModule(candidates, what) {
 // THE MOCK'S OWN LAYOUT IS NOT FLAT ANY MORE, AND THIS IS WHERE THAT IS
 // ABSORBED.
 //
-// Until mock-sts 0f986b3 ("Reorganizing source code.") every module in that
+// Until iya-sts 0f986b3 ("Reorganizing source code.") every module in that
 // repository sat in its root, so `sts/krb5_kdc.js` was the whole of the
 // question. That commit moved all of them into subdirectories — `common/`,
 // `kerberos/`, `oauth-oidc/`, `oid4vc/`, `saml/`, `scim/`, `authn/`, `ldap/`,
@@ -260,7 +260,7 @@ function mockStsModule(name, warn) {
     alignConfigFileForMockSts(siblingRoot, say);
     say("USING AN UNPUSHED WORKING COPY: " + sibling + ". The sts/ submodule does not carry " +
       name + " yet, so this run reflects a sibling checkout rather than the commit this " +
-      "repository's gitlink points at. Push mock-sts and bump the gitlink before trusting a " +
+      "repository's gitlink points at. Push iya-sts and bump the gitlink before trusting a " +
       "green result here.");
     return sibling;
   }

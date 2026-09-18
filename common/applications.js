@@ -3403,6 +3403,34 @@ function declarationAttributes() {
     // that exists on one of them exists on all three.
     note(family.secretAttribute, 'secret', family);
   });
+  // THE CORS ORIGINS (2026-09-18) — the one declaration that belongs to NO
+  // family, and so the one row this walk cannot reach through PROTOCOLS.
+  //
+  // `appCorsOrigin` configures CORS on EVERY endpoint this service publishes:
+  // `common/cors.js` asks it for a request that names this application as its
+  // client, whatever the family, and asks every application's list for one
+  // that names nobody (discovery, a JWKS, a DID document, every preflight).
+  // The schema row says so by carrying no `families`, and familyRefusal() lets
+  // it through on an entry declared for nothing at all.
+  //
+  // IT WAS ON NO FORM UNTIL THIS ROW. `createApplication()` accepted it and
+  // the management API took it — both read `fields` whole — but the create
+  // form draws a section PER ROLE out of this list, and an attribute that was
+  // not in the list was a field nobody could type into from the console. A
+  // row here puts it in all three readers at once, which is the reason this
+  // is a table rather than a form.
+  //
+  // `families: []` and `everyFamily: true`, rather than every family listed:
+  // an empty list is what makes the form's section UNCONDITIONAL (a section
+  // carries the union of its rows' families, and none means no `pf` class, so
+  // it is shown whatever is ticked), and `everyFamily` is what lets a reader
+  // tell "applies to all" from "applies to none" without inferring it.
+  const cors = ATTRIBUTE_BY_NAME.appCorsOrigin;
+  if (cors) {
+    rows.push({ attribute: 'appCorsOrigin', role: 'cors', kind: cors.kind,
+                editable: cors.editable, sensitive: !!cors.sensitive,
+                what: cors.what, families: [], everyFamily: true });
+  }
   log.debug("Leaving declarationAttributes(). " + rows.length + " " +
       "attribute(s) for " +
             PROTOCOLS.length + " family/families.");
@@ -7199,6 +7227,49 @@ function createApplication(detail) {
              '(slugOf() belongs to saml/saml2_sso.ts, and requiring it here ' +
              'would point this module at a protocol). Set samlEntityId ' +
              'explicitly to use a different name.');
+  }
+  // ---------------------------------------------------------------------
+  // AN APPLICATION DECLARED FOR OAUTH 2.0 OR OIDC GETS A CLIENT
+  // AUTHENTICATION METHOD, added 2026-09-18.
+  //
+  // A create that ticked OAuth 2.0 or OpenID Connect and named no
+  // `oauthTokenEndpointAuthMethod` used to write none at all, and an entry
+  // with no method is read two ways: `oauth2_bcp.js`'s `isConfidential()`
+  // calls it public (it cannot SEE a confidential client), while product
+  // mode's gate applies RFC 7591 section 2's default, client_secret_basic,
+  // and requires a credential. So a browser application created by hand with
+  // no secret was refused `invalid_client` at the token endpoint on its
+  // first code exchange, by a log line calling it public — found on
+  // test-idp.iyasec.io the day product mode began allowing public clients.
+  //
+  // THE METHOD FOLLOWS THE CREDENTIAL THE CREATE CARRIED, because that is
+  // what the person filling in the form said: a secret is
+  // client_secret_basic (RFC 7591's own default for a client that has one),
+  // a JWK Set or its URI is private_key_jwt, and NOTHING is `none` — a public
+  // client, held to PKCE and RFC 9700 in product mode rather than refused.
+  // An explicit `oauthTokenEndpointAuthMethod` wins, as samlEntityId's does
+  // above; this only fills a gap, so every entry this create writes for
+  // those families says what it will be held to.
+  const declaredOauth = asked.protocols.filter(function (id) {
+    return id === 'oauth2' || id === 'oidc';
+  });
+  if (declaredOauth.length &&
+      !valuesOf(record.fields.oauthTokenEndpointAuthMethod).length) {
+    const has = function (name) {
+      return valuesOf(record.fields[name]).some(function (v) {
+        return String(v).trim() !== '';
+      });
+    };
+    const method = has('oauthClientSecret') ? 'client_secret_basic' :
+      (has('oauthJwks') || has('oauthJwksUri')) ? 'private_key_jwt' : 'none';
+    setField(record, 'oauthTokenEndpointAuthMethod', method);
+    log.info('applications: "' + identifier + '" is declared for ' +
+             declaredOauth.join(' and ') + ' and named no ' +
+             'token_endpoint_auth_method, so it is ' + method +
+             (method === 'none' ?
+              ' — a PUBLIC client, since the create carried no credential' :
+              ', from the credential the create carried') +
+             '. Set oauthTokenEndpointAuthMethod explicitly to change it.');
   }
   // WHERE IT CAME FROM, said on the entry itself. An application created here
   // has never authenticated anything and its counters are zero; without this

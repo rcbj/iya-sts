@@ -1183,7 +1183,7 @@ class Credentials {
   // account with a password that changes nothing and a log line that alarms
   // people.
   bootstrap(opts?) {
-    const { log, mode, errorCodes } = this.deps;
+    const { log, mode, errorCodes, config } = this.deps;
     const directory = this.directory;
     log.debug('Entering Credentials.bootstrap().');
     const options = opts || {};
@@ -1235,8 +1235,37 @@ class Credentials {
                   'could not be created: ' + e.message);
       }
     }
-    const password = this.generatePassword(username);
-    const written = this.setPassword(username, password, { generated: true });
+    // A PASSWORD THE OPERATOR ALREADY PUT SOMEWHERE, IF THERE IS ONE
+    // (2026-09-17). `admin.bootstrapPassword` exists so that the only way
+    // into a fresh deployment is not in a log — the AWS deployment puts it in
+    // Secrets Manager before the first node starts. Everything above this
+    // line is unchanged and still decides WHETHER to bootstrap at all; this
+    // decides only what the password is.
+    const supplied = String(config.value('admin.bootstrapPassword') || '');
+    const password = supplied || this.generatePassword(username);
+    // `generated` is TRUE only for one this service made up: it is what tells
+    // `preparePassword()` to skip the checks that are about a person choosing
+    // a password. A SUPPLIED one is somebody's choice and is held to the
+    // policy, so that a value the policy refuses is found here rather than at
+    // the first sign-in that cannot happen.
+    const written = this.setPassword(username, password,
+                                     { generated: !supplied });
+    if (!written.ok && supplied) {
+      // NOT REPLACED WITH A GENERATED ONE. Falling back would put a working
+      // credential in the log of a deployment whose operator set this setting
+      // precisely so that it would not be there, and would leave the value in
+      // their secret store not working with nothing saying which.
+      log.error(errorCodes.tag('STS-AUTHN-0205') +
+                'credentials: PRODUCT MODE AND NOBODY CAN SIGN IN. The ' +
+                'password given in admin.bootstrapPassword was refused by ' +
+                'the password policy: ' + (written.errors || []).join(' ') +
+                ' It was NOT replaced with a generated one. Put a password ' +
+                'the policy accepts where that setting reads from and ' +
+                'restart; /admin/policies is the policy in force.');
+      log.debug('Leaving Credentials.bootstrap(). The supplied password was ' +
+                'refused.');
+      return { ran: false, why: (written.errors || []).join(' ') };
+    }
     if (!written.ok) {
       log.error(errorCodes.tag('STS-AUTHN-0064') +
                 'credentials: PRODUCT MODE AND NOBODY CAN SIGN IN. A ' +
@@ -1246,6 +1275,25 @@ class Credentials {
                 'development mode, provision one, and restart.');
       log.debug('Leaving Credentials.bootstrap(). The write failed.');
       return { ran: false, why: (written.errors || []).join(' ') };
+    }
+    // TWO ANNOUNCEMENTS, AND THE DIFFERENCE IS THE ONE THING THAT MATTERS: a
+    // generated password is printed because nothing else holds it, and a
+    // supplied one is NOT, because the operator already has it and printing
+    // it would undo the reason they set it.
+    if (supplied) {
+      log.warn('=======================================================\n' +
+               'PRODUCT MODE BOOTSTRAP — an account was created.\n' +
+               '\n' +
+               '  username: ' + username + '\n' +
+               '  password: from admin.bootstrapPassword — NOT PRINTED, and ' +
+               'not printed anywhere else either.\n\nNobody in this ' +
+               'realm\'s directory held a credential, so this account was ' +
+               'given the password you configured. It is stored as a scrypt ' +
+               'hash and CANNOT be read back — only reset.\n\nCHANGE IT. ' +
+               'Sign in at /admin, or POST /admin-api/users/set-password.\n' +
+               '=======================================================');
+      log.debug('Leaving Credentials.bootstrap(). A configured password.');
+      return { ran: true, username: username, supplied: true };
     }
     log.warn('=======================================================\n' +
              'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +

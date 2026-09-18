@@ -1034,6 +1034,75 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // THE CONSENT REGISTER, ONE PAGE OF EACH HALF (2026-09-18).
+  //
+  // What `/admin/consent` draws and what `GET /admin-api/consent` answers,
+  // computed ONCE, for `usedAssertionsView()`'s reason: two doors onto one
+  // list come to disagree the first time either of them grows a filter the
+  // other does not have.
+  //
+  // **BOTH HALVES GROW WITHOUT A BOUND, AND ONLY ONE OF THEM WAS PAGED WHERE IT
+  // MATTERED.** The console page paged both tables; the API returned
+  // `consentView()` whole — every recorded consent is one row per (person,
+  // application, scope), so a service driven for an afternoon holds thousands,
+  // and every read of the API carried all of them. So the reply is the page
+  // asked for of each half, with the paging beside it, and `counts` still says
+  // how many there are in total.
+  //
+  // **TWO PAGERS AND ONE SIZE.** `globalsPage` and `usersPage` move their
+  // own tables and not each other's (the console's links carry both, through
+  // `pageParamsOf()`), and `per` sizes both — the arrangement `/admin/pki`'s
+  // two tables have. **Each pager is named after the ARRAY it pages** —
+  // `globals` by `globalsPage`/`globalsPaging`, `users` by
+  // `usersPage`/`usersPaging` — which is the management API's rule for a reply
+  // holding several lists (`detailPagingParameters()`): a caller that can read
+  // the reply can write the request. The recorded half's pager was
+  // `consentsPage` until this change, beside an array called `users`.
+  //
+  // The search `q` narrows the RECORDED half only, over the person, the
+  // application and the scope; the overrides are configuration, one row per
+  // thing somebody typed, and are paged rather than searched.
+  // ---------------------------------------------------------------------------
+  consentPageView(query) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.consentPageView().");
+    const asked = query || {};
+    const register = this.consentView();
+    const q = String((Array.isArray(asked.q) ? asked.q[0] : asked.q) || '')
+      .trim().toLowerCase();
+    const matched = q
+      ? register.users.filter(function (one) {
+          return String(one.username).toLowerCase().indexOf(q) >= 0 ||
+                 String(one.client).toLowerCase().indexOf(q) >= 0 ||
+                 String(one.scope).toLowerCase().indexOf(q) >= 0;
+        })
+      : register.users;
+    const globalPage = this.pagedRows(asked, register.globals,
+      { name: 'globals', noun: 'overrides',
+        defaultPer: DELEGATION_PER_PAGE });
+    const consentPage = this.pagedRows(asked, matched,
+      { name: 'users', noun: 'consents',
+        defaultPer: DELEGATION_PER_PAGE });
+    // The register's own members with its two lists REPLACED by one page of
+    // each — never beside them, which would be every row twice and the reply
+    // exactly as unbounded as before.
+    const json = Object.assign({}, register, {
+      globals: globalPage.shown,
+      users: consentPage.shown,
+      matched: matched.length,
+      globalsPaging: this.pagingJson(globalPage.paging),
+      usersPaging: this.pagingJson(consentPage.paging),
+      query: { q: q }
+    });
+    log.debug("Leaving AdminViews.consentPageView(). " +
+              globalPage.shown.length + " of " + register.globals.length +
+              " override(s), " + consentPage.shown.length + " of " +
+              matched.length + " consent(s).");
+    return { json: json, register: register, q: q, matched: matched,
+             globalPage: globalPage, consentPage: consentPage };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE REGISTER, IN ONE PLACE so that the page, `?format=json` and
   // `GET /admin-api/roles` cannot come to disagree about what is in it — the
   // same property `consentView()` and `permissionsView()` give their registers.
@@ -6731,6 +6800,7 @@ export = {
   xacmlMonitorView: slot.forward('xacmlMonitorView'),
   directoryPageJson: slot.forward('directoryPageJson'),
   consentView: slot.forward('consentView'),
+  consentPageView: slot.forward('consentPageView'),
   rolesRegister: slot.forward('rolesRegister'),
   rolesView: slot.forward('rolesView'),
   passwordPoliciesView: slot.forward('passwordPoliciesView'),

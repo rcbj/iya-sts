@@ -69,7 +69,10 @@ locals {
     # WHERE A CERTIFICATE SAYS ITS CRL AND OCSP ADDRESSES ARE. Without these
     # the node writes its own container ports on `localhost`, which no relying
     # party can follow; sts_pki_distribution_points follows them as written.
-    PKI_DISTRIBUTION_BASE_URL  = "http://${local.public_host}:${local.published_ports.pki.listener}"
+    # THE FRONT-END PORT, not the container's: the address is read from outside
+    # the load balancer, and `locals.tf` leaves a default port out of the URL
+    # altogether (`pki_public_url`).
+    PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
     PKI_DISTRIBUTION_LDAP_HOST = local.public_host
     PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
 
@@ -78,7 +81,19 @@ locals {
     # (variables.tf, reset-environment.js).
     LDAP_MAX_ENTRIES     = tostring(var.ldap_max_entries)
     STS_APPLICATIONS_MAX = tostring(var.applications_max)
-  }, var.extra_environment)
+    },
+    # THE PUBLIC CERTIFICATE, WHERE THERE IS ONE. `cert-init` has written both
+    # files into the shared volume before this container is allowed to start, so
+    # the node serves the ACM leaf on its own 8081 rather than the self-signed
+    # one it would otherwise make — and the load balancer, passing TCP through,
+    # is not in the handshake at all. The service leaves a supplied certificate
+    # alone rather than re-issuing it under its own Root (tls/CLAUDE.md).
+    # Both settings or neither: one alone is refused at startup by name.
+    local.public_name ? {
+      STS_TLS_CERT_FILE = local.tls_cert
+      STS_TLS_KEY_FILE  = local.tls_keyfile
+    } : {},
+  var.extra_environment)
 }
 
 resource "aws_ecs_task_definition" "node" {
@@ -97,7 +112,49 @@ resource "aws_ecs_task_definition" "node" {
     cpu_architecture        = "X86_64"
   }
 
-  container_definitions = jsonencode([
+  # THE SHARED VOLUME cert-init WRITES AND mock-sts READS. Ephemeral and of
+  # the task's own — no host path, no EFS: the certificate is fetched from ACM
+  # on every start, so there is nothing here worth surviving the task, and a
+  # private key that outlived the task would be a private key on a disk
+  # somebody has to remember to wipe.
+  #
+  # `dynamic`, and not an unconditional block that costs nothing, because it
+  # would cost exactly one thing: A NEW TASK DEFINITION REVISION IN `dev` AND
+  # `ci`, and with it a redeploy of three services in environments whose whole
+  # job is to be the unchanged standard. Every addition here defaults to what
+  # they already did.
+  dynamic "volume" {
+    for_each = local.public_name ? [1] : []
+    content {
+      name = local.tls_volume
+    }
+  }
+
+  container_definitions = jsonencode(concat(local.public_name ? [
+    {
+      name      = "cert-init"
+      image     = "${local.ecr_repository_url}:${local.cert_image_tag}"
+      essential = false
+      environment = [
+        # The VALIDATED certificate's ARN, so the export cannot run against
+        # one that has not been issued yet.
+        { name = "STS_ACM_CERTIFICATE_ARN", value = aws_acm_certificate_validation.public[0].certificate_arn },
+        { name = "STS_TLS_DIR", value = local.tls_dir },
+        { name = "AWS_REGION", value = local.region },
+      ]
+      mountPoints = [
+        { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = false },
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = data.aws_cloudwatch_log_group.containers.name
+          awslogs-region        = local.region
+          awslogs-stream-prefix = "${var.environment}-${each.key}"
+        }
+      }
+    },
+    ] : [], [
     {
       name      = "schema-init"
       image     = "${local.ecr_repository_url}:${local.schema_image_tag}"
@@ -122,11 +179,18 @@ resource "aws_ecs_task_definition" "node" {
         }
       }
     },
-    {
+    merge({
       name      = "mock-sts"
       image     = "${local.ecr_repository_url}:${var.image_tag}"
       essential = true
-      dependsOn = [{ containerName = "schema-init", condition = "SUCCESS" }]
+      # BOTH INIT CONTAINERS MUST HAVE SUCCEEDED. A node that could not get
+      # the public certificate must not start: it would serve a self-signed
+      # one under a public name, which is the single error this deployment
+      # exists to avoid, and it would do it looking healthy.
+      dependsOn = concat(
+        [{ containerName = "schema-init", condition = "SUCCESS" }],
+        local.public_name ? [{ containerName = "cert-init", condition = "SUCCESS" }] : [],
+      )
       portMappings = [
         for p in values(local.published_ports) :
         { containerPort = p.container, protocol = "tcp" }
@@ -135,9 +199,20 @@ resource "aws_ecs_task_definition" "node" {
         for k, v in merge(local.node_environment, { STS_CLUSTER_NODE_NAME = each.key }) :
         { name = k, value = v }
       ]
-      secrets = [
-        { name = "ADMIN_API_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.main["admin-api-client-secret"].arn },
-      ]
+      secrets = concat(
+        [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.main["admin-api-client-secret"].arn }],
+        # THE BOOTSTRAP ADMINISTRATOR'S PASSWORD, in product mode. Injected by
+        # ECS from Secrets Manager rather than written into the task
+        # definition, like the three secrets beside it: a task definition is
+        # readable by anybody with `ecs:DescribeTaskDefinition`, and this one
+        # is the way in. The service takes it instead of generating one and
+        # prints it nowhere (common/credentials.ts, admin.bootstrapPassword),
+        # so the value exists only in Secrets Manager and in the scrypt hash
+        # on the entry.
+        local.bootstrap_secret ? [
+          { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = aws_secretsmanager_secret.main["bootstrap-admin-password"].arn },
+        ] : [],
+      )
       # The main port is HTTPS on a certificate the cluster issues itself, so
       # the probe does not verify it; it asks whether the service answers.
       # Loopback connections are served without the PROXY header.
@@ -157,8 +232,17 @@ resource "aws_ecs_task_definition" "node" {
           awslogs-stream-prefix = "${var.environment}-${each.key}"
         }
       }
-    },
-  ])
+      },
+      # MERGED IN RATHER THAN WRITTEN ABOVE AS `[]`, for the reason the volume
+      # is `dynamic`: an empty `mountPoints` where there was no key at all is
+      # a difference, and `dev` and `ci` are meant to see none. READ-ONLY —
+      # the node reads the certificate and must never be able to change it.
+      local.public_name ? {
+        mountPoints = [
+          { sourceVolume = local.tls_volume, containerPath = local.tls_dir, readOnly = true },
+        ]
+    } : {}),
+  ]))
 }
 
 locals {

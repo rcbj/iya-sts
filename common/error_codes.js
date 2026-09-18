@@ -3749,6 +3749,14 @@ const CODES = [
       'was answered with something else — a one-time code, a recovery ' +
       'code — or the account holds a second factor and no key to present.',
     spec: 'HTTP 400 invalid_request, or the sign-in screen again' },
+  { code: 'STS-AUTHN-0205',
+    summary: 'The product-mode bootstrap was given a password through ' +
+      'admin.bootstrapPassword that the password policy refuses, so no ' +
+      'bootstrap account was created and nobody can sign in. It is NOT ' +
+      'replaced with a generated one: the operator set it so that the only ' +
+      'way in would not be in a log, and generating one would put a working ' +
+      'credential there and leave theirs not working.',
+    spec: 'none — logged, and the service starts with nobody able to sign in' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -4546,10 +4554,14 @@ const CODES = [
       'has no entry for, so it could not authenticate.',
     spec: 'invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0194',
-    summary: 'In product mode, a Token Request came from a public client ' +
-      '(token_endpoint_auth_method none); product mode has no public ' +
-      'clients.',
-    spec: 'invalid_client (HTTP 401)' },
+    summary: 'A Token Request came from a PUBLIC client ' +
+      '(token_endpoint_auth_method none), which presented no credential — ' +
+      'correctly. An OBSERVATION, recorded so the role gate and ' +
+      '/admin/delegation know what the client is; since 2026-09-17 no mode ' +
+      'refuses on it, because product mode allows public clients and holds ' +
+      'them to RFC 9700 instead. It read "product mode has no public ' +
+      'clients" and was answered 401 until then.',
+    spec: 'none — an observation; the request is answered' },
   { code: 'STS-OAUTH-0195',
     summary: 'In product mode, a confidential client has nothing on its ' +
       'entry to authenticate it against.',
@@ -5652,6 +5664,24 @@ const CODES = [
     summary: 'A token request — any grant carrying a person, a refresh ' +
       'token included — was refused because the account is disabled.',
     spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0552',
+    summary: 'A PUBLIC client (token_endpoint_auth_method="none") asked for ' +
+      'the client credentials grant in product mode. RFC 6749 section 4.4 ' +
+      'defines that grant for a client that HAS credentials and OAuth 2.1 ' +
+      'section 4.2 limits it to confidential clients; a public client using ' +
+      'it would mint a token for anybody who knows the client_id.',
+    spec: 'unauthorized_client (HTTP 400)' },
+  { code: 'STS-OAUTH-0553',
+    summary: 'A client whose application entry declares NO ' +
+      'token_endpoint_auth_method presented no credential. Product mode ' +
+      'reads the omission as RFC 7591 section 2\'s default, ' +
+      'client_secret_basic, and refuses it at the token endpoint and at PAR; ' +
+      'development records it as an unauthenticated client and answers. ' +
+      'Setting oauthTokenEndpointAuthMethod to "none" makes it a public ' +
+      'client. An application created from the console or /admin-api has ' +
+      'been given a method since 2026-09-18, so this is an entry made ' +
+      'before that or by another door.',
+    spec: 'invalid_client (HTTP 401) in product mode; none in development' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +

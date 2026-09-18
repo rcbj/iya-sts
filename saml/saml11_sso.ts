@@ -1326,6 +1326,13 @@ class Saml11Sso {
       // naming the SOAP caller.
       this.stashArtifact(artifact, {
         assertion: opts.assertion, rpId: opts.rpId, providerId: opts.providerId,
+        // BOTH NAMES THE RELYING PARTY HAD IN THIS FLOW. `scopedId` is the
+        // `{rp}` segment the browser arrived on and is what the responder is
+        // reached at later; `rpId` may be the `providerId` parameter instead.
+        // Recorded at MINT TIME rather than worked out at resolution, so an
+        // artifact's fate depends on the flow that produced it and not on
+        // what the application registry says minutes afterwards.
+        scopedId: opts.scopedId,
         subject: opts.subject, createdAt: Date.now()
       });
       let url = opts.destination +
@@ -1756,7 +1763,15 @@ class Saml11Sso {
     this.issueSignIn(res, req, {
       session: session, rpId: rpId, providerId: providerId, acsUrl: acsUrl,
       profile: wanted.profile, target: String(carried.TARGET || ''),
-      nameIdFormat: String(carried.format || ''), how: who
+      nameIdFormat: String(carried.format || ''), how: who,
+      // THE PATH SEGMENT THIS FLOW ARRIVED ON, carried beside `rpId` because
+      // they are two different NAMES for the same relying party and only one
+      // of them is what an artifact is later resolved at. `rpId` is
+      // relyingPartyFor()'s answer, which prefers the `providerId` parameter
+      // — a service provider's own entity ID — while the artifact responder
+      // is reached at `/saml11/responder/{rp}`, an application here. See
+      // authenticateArtifactCaller(), which compares them.
+      scopedId: scoped.id
     });
     log.debug("Leaving Saml11Sso.interSiteTransfer(). An assertion went to " +
               rpId + ".");
@@ -1821,7 +1836,7 @@ class Saml11Sso {
     this.deliver(res, {
       profile: ctx.profile, destination: ctx.acsUrl, assertion: assertion,
       target: ctx.target,
-      providerId: ctx.providerId, rpId: ctx.rpId,
+      providerId: ctx.providerId, rpId: ctx.rpId, scopedId: ctx.scopedId,
       subject: (session.user && session.user.username) || '',
       note: { title: 'Signing in — SAML 1.1', who: 'the relying party',
                    sub: 'saml-profile-1.1 section 4.2, the Browser/POST ' +
@@ -1891,8 +1906,31 @@ class Saml11Sso {
   // to authenticate the requester, and saml-profiles-1.1 section 4.1.1.4
   // (Browser/Artifact) to give the assertion only to the relying party the
   // artifact was issued for. A SAML 1.1 Request names no issuer, so the party
-  // is the artifact's own (`rpId`) — and a path segment naming another is
-  // refused (`STS-SAML-0078`). Authentication is a signature on the
+  // is the artifact's own — and a path segment naming another is
+  // refused (`STS-SAML-0078`).
+  //
+  // **A RELYING PARTY HAS TWO NAMES HERE AND THE ARTIFACT RECORDS BOTH**
+  // (2026-09-18). `rpId` is `relyingPartyFor()`'s answer and that function
+  // prefers the `providerId` PARAMETER — a service provider's own entity ID
+  // — over the `{rp}` path segment. The responder, though, is reached at
+  // `/saml11/responder/{rp}`, which is an application here. So a service
+  // provider that does what this service's own error message tells it to do
+  // (*"Send providerId, or use /saml11/sso/{rp}"*) and does BOTH was minted
+  // an artifact named one way and refused it when it came back named the
+  // other: every artifact, for the one caller this check exists to protect,
+  // while this service's own mock relying party never noticed because
+  // `resolveForMockSp()` resolves in process and never reaches here.
+  //
+  // `scopedId` is therefore stashed beside `rpId` at mint time — see
+  // `deliver()` — and the segment has to match one of the two. It is not a
+  // lookup: resolving either name through the application registry would make
+  // an artifact's fate depend on what that registry says minutes after the
+  // artifact was minted, and these two are facts about the flow that minted
+  // it. Section 4.1.1.4 is unchanged by this: both names belong to the party
+  // the assertion was issued for, and a segment naming a THIRD party is
+  // refused exactly as before.
+  //
+  // Authentication is a signature on the
   // <samlp:Request> or a TLS client certificate, against that party's
   // registered `samlSigningCertificate`, under the SAML 2.0 request policy
   // (`saml2.requireSignedAuthnRequests`: product requires it). Nothing is
@@ -1902,10 +1940,18 @@ class Saml11Sso {
     const { applications, log, mtls, requestSignature } = this.deps;
     log.debug("Entering Saml11Sso.authenticateArtifactCaller().");
     const intended = String(held.rpId || '');
-    if (scoped.id && intended && scoped.id !== intended) {
+    // The `{rp}` segment this flow arrived on, when it had one. An artifact
+    // minted before this was recorded carries none, and then the comparison
+    // is the one it always was.
+    const scopedAt = String(held.scopedId || '');
+    const namesIt = scoped.id === intended ||
+                    (scopedAt !== '' && scoped.id === scopedAt);
+    if (scoped.id && intended && !namesIt) {
       log.warn(this.deps.errorCodes.tag('STS-SAML-0078') + 'saml11: an ' +
-               'artifact issued to "' + intended + '" was asked for at the ' +
-               'responder of "' + scoped.id + '".');
+               'artifact issued to "' + intended + '"' +
+               (scopedAt && scopedAt !== intended
+                 ? ' (on /' + scopedAt + ')' : '') +
+               ' was asked for at the responder of "' + scoped.id + '".');
       log.debug("Leaving Saml11Sso.authenticateArtifactCaller(). Wrong RP.");
       return { refuse: true, errorCode: 'STS-SAML-0078',
                why: 'that artifact was issued to another relying party' };

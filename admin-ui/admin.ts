@@ -14624,6 +14624,98 @@ class AdminConsole {
   // Only the families that are declared or recorded are listed. Sixteen rows of
   // "no, no" on every drill-down would be a table nobody reads, and the ones
   // that say nothing are exactly the ones with nothing to say.
+  // ---------------------------------------------------------------------------
+  // THE CORS ORIGINS ON AN APPLICATION'S PAGE (2026-09-18).
+  //
+  // `appCorsOrigin` configures CORS on every endpoint this service publishes
+  // (`common/cors.js`), and it is a LIST — so it is edited the way this
+  // console edits every other list a person maintains by hand (the claims on
+  // /admin/claims, the trust anchors on /admin/tls): one row per value, a
+  // Remove button ON the row, and one box beneath to add another. The generic
+  // Set / Add to / Remove from controls further down reach the same attribute
+  // and still do; they make a person retype a value to remove it, which for
+  // an origin is exactly the string most likely to be mistyped.
+  //
+  // **THE REMOVE BUTTON POSTS THE VALUE AS STORED, NOT AS NORMALISED.** A
+  // write through this service stores the normalised origin, but an
+  // `ldapmodify` stores what it was given, and `updateApplication()` removes
+  // the value as typed or, failing that, its normalised spelling. Posting the
+  // normalised form of a value that was stored in mixed case would match
+  // neither, and the button would do nothing while looking as if it worked.
+  //
+  // THIS PAGE DOES NOT DECIDE ANYTHING: both forms post `add` and `remove` to
+  // /admin/applications, which is `updateApplication()` — the origin check
+  // (`STS-REG-0150`) and the normalisation are there, and
+  // `POST /admin-api/applications/add|remove` reaches the same function.
+  // ---------------------------------------------------------------------------
+  applicationCorsSection(row, carryBack) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationCorsSection().");
+    const held = [].concat((row.fields && row.fields.appCorsOrigin) || [])
+      .map(function (one) { return String(one); })
+      .filter(function (one) { return one !== ''; });
+    const rows = held.map(function (stored) {
+      // A value an `ldapmodify` wrote in another spelling is shown with the
+      // origin a browser would actually send, because that is the string the
+      // Origin header is compared against — and a reader wondering why a
+      // listed origin is refused needs to see the two side by side. Asked of
+      // the registry's own reader one value at a time, so this is the
+      // normalisation `common/cors.js` compares against and not a copy of it.
+      const canonical = applications.corsOriginsOf(
+        { appCorsOrigin: [stored] })[0] || '';
+      const differs = canonical && canonical !== stored;
+      return '<tr><td><code>' + self.esc(stored) + '</code>' +
+        (differs ? '<br><span class="sub">matched as <code>' +
+                   self.esc(canonical) + '</code></span>' : '') +
+        '</td><td><form method="post" action="/admin/applications" ' +
+        'class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="remove">' +
+        '<input type="hidden" name="application" value="' +
+        self.esc(row.identifier) + '">' +
+        '<input type="hidden" name="attribute" value="appCorsOrigin">' +
+        '<input type="hidden" name="value" value="' + self.esc(stored) + '">' +
+        '<button type="submit" class="secondary" title="' +
+        self.esc('A page on ' + stored + ' stops being able to read this ' +
+                 'service\'s answers for this application on its next ' +
+                 'request.') + '">Remove</button></form></td></tr>';
+    }).join('');
+    log.debug("Leaving AdminConsole.applicationCorsSection(). " +
+              held.length + " origin(s).");
+    return '<h2>Web origins allowed to call it (CORS)</h2>' +
+      '<p><strong>These origins configure CORS on every published protocol ' +
+      'endpoint of this service</strong> for this application &mdash; a ' +
+      'browser page on one of them may read the answers to requests that ' +
+      'name this application as their client, whatever the protocol. They ' +
+      'are this entry\'s <code>appCorsOrigin</code>.</p>' +
+      this.note('A request that names NO client &mdash; discovery, a JWKS, a ' +
+      'DID document, a CORS preflight &mdash; is answered for an origin ' +
+      'listed on ANY application in this realm, so an origin added here ' +
+      'also lets that page read those. Empty allows no third-party origin, ' +
+      'in both modes; this service\'s own origins and ' +
+      '<code>global.corsOrigins</code> never need listing.') +
+      '<table><tr><th>Origin</th><th></th></tr>' +
+      (rows || '<tr><td colspan="2"><span class="state-none">None &mdash; ' +
+       'no page on another origin may read this service\'s answers for ' +
+       'this application.</span></td></tr>') +
+      '</table>' +
+      '<form method="post" action="/admin/applications">' + carryBack +
+      '<div class="formrow">' +
+      '<input type="hidden" name="action" value="add">' +
+      '<input type="hidden" name="application" value="' +
+      this.esc(row.identifier) + '">' +
+      '<input type="hidden" name="attribute" value="appCorsOrigin">' +
+      '<label for="add-cors-origin">Add an origin</label>' +
+      '<input type="text" id="add-cors-origin" name="value" size="42" ' +
+      'required placeholder="https://app.example.com">' +
+      '<button type="submit">Add</button></div></form>' +
+      this.note('One exact origin &mdash; a scheme, a host and an optional ' +
+      'port, with no path and no wildcard. It is stored normalised, so ' +
+      '<code>HTTPS://App.Example.com:443</code> is kept as ' +
+      '<code>https://app.example.com</code>, and one that is not an origin ' +
+      'is refused with the reason (<code>STS-REG-0150</code>).');
+  }
+
   protocolFamilySection(row) {
     const { log, applications } = this.deps;
     const self = this;
@@ -15731,6 +15823,10 @@ class AdminConsole {
         : '<span class="state-none">nothing recorded</span>') + '</td></tr>' +
       '</table>' +
       this.protocolFamilySection(row) +
+      // WHAT BROWSER PAGES MAY CALL IT, beside what protocols it is for: both
+      // are what this application is allowed to do, and the CORS list is the
+      // one of the two a person edits value by value.
+      this.applicationCorsSection(row, carryBack) +
       // THE CREDENTIALS, above the raw entry because they are what a reader
       // most often opens this page to find — see the section's header.
       this.applicationCredentialsSection(req, view, carryBack) +
@@ -16096,9 +16192,15 @@ class AdminConsole {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.declarationFieldRow().");
-    const families = row.families.map(function (one) {
-      return self.esc(one.label);
-    }).join(', ');
+    // A row that belongs to EVERY family (`appCorsOrigin`, 2026-09-18) has an
+    // empty `families` on purpose — that is what keeps its section
+    // unconditional — so the cell says what the emptiness means rather than
+    // being blank, which would read as "applies to nothing".
+    const families = row.everyFamily
+      ? '<strong>every family</strong> &mdash; every published endpoint'
+      : row.families.map(function (one) {
+        return self.esc(one.label);
+      }).join(', ');
     // The attribute's sentence, on the control itself. The schema's name is
     // unfriendly on purpose (see the header above) — it is the name an
     // ldapsearch and the management API both use — so the one place a reader
@@ -16982,6 +17084,15 @@ class AdminConsole {
         return self.protocolChoiceRow(row, ticked.indexOf(row.id) >= 0);
       }).join('') +
       '</table>' +
+
+      // THE CORS ORIGINS, ABOVE THE LINE (2026-09-18). Every section below
+      // the hint depends on which families are ticked; this one does not —
+      // its row belongs to every family, so it carries no `pf` class and is
+      // always shown — and putting it below the hint would make the hint's
+      // first sentence false.
+      this.declarationFieldsSection('cors',
+                                    'Which web origins may call it (CORS)',
+                                    NEW_APPLICATION_CORS_INTRO) +
 
       // THE PROMPT THAT STANDS IN FOR THE HIDDEN FIELDS. It is inside the form
       // so the `:has()` rule that hides it can reach it, and it is always in
@@ -22814,16 +22925,23 @@ class AdminConsole {
     ((state && state.nodes) || []).forEach(function (node) {
       nameOf[node.nodeId] = node.name;
     });
+    // A TIME AGAINST THE DATABASE'S CLOCK, never this process's. Tenths of a
+    // second up to two minutes, because every lifetime and every heartbeat on
+    // this page is seconds long and a tenth is the difference between a node
+    // that is late and one that is dead; past two minutes it is a duration,
+    // because "7200s ago" is a number a reader has to divide (2026-09-17, the
+    // roster — a node that left hours ago is on this page now).
     const ago = function (at) {
       if (!state || !at) {
         return '—';
       }
       const ms = state.now - at;
-      return ms >= 0 ? consoleSelf.esc(String(Math.round(ms / 100) / 10)) +
-                   's ago'
-                     : 'in ' +
-                       consoleSelf.esc(String(Math.round(-ms / 100) / 10)) +
-                       's';
+      const size = Math.abs(ms);
+      const much = size >= 120000
+        ? consoleSelf.durationText(size)
+        : String(Math.round(size / 100) / 10) + 's';
+      return ms >= 0 ? consoleSelf.esc(much) + ' ago'
+                     : 'in ' + consoleSelf.esc(much);
     };
 
     const rows = [
@@ -22867,33 +22985,237 @@ class AdminConsole {
         : 'off — only active-active nodes wait for each other\'s writes']
     ];
 
-    const nodeTable = off || !state ? ''
-      : '<h2>Members</h2><p>As of ' +
-        this.esc(String(Math.round((snap.ageMs || 0) /
-          100) / 10)) + 's ago. A row whose lifetime has passed is DEAD and ' +
-        'stays dead: its node exits rather than renew it.</p>' +
-        '<table><tr><th>Node</th><th>Mode</th><th>Version</th>' +
-        '<th>Started</th><th>Heartbeat</th><th>Expires</th>' +
-        '<th>Settings agree</th></tr>' +
-        state.nodes.map(function (node) {
-          const dead = node.leftAt || node.expiresAt <= state.now;
-          return '<tr><td><strong>' + consoleSelf.esc(node.name) +
-                 '</strong><br><code>' +
-            consoleSelf.esc(node.nodeId) + '</code>' +
-            (node.nodeId === self.nodeId ? ' (this node)' : '') + '</td><td>' +
-            consoleSelf.esc(node.mode) + '</td><td>' +
-            consoleSelf.esc(node.version) + '</td><td>' +
-            ago(node.startedAt) + '</td><td>' + ago(node.heartbeatAt) +
-            '</td><td>' + (node.leftAt ? 'left ' + ago(node.leftAt)
-              : (dead ? '<strong>expired</strong> ' : '') +
-                ago(node.expiresAt)) + '</td><td>' +
-            (node.agrees === null ? 'not known here'
-              : (node.agrees ? 'yes' : '<strong>NO</strong>')) + '</td></tr>';
-        }).join('') + '</table>' +
-        '<h2>Leases</h2><table><tr><th>Lease</th><th>Holder</th>' +
+    // =======================================================================
+    // THE ROSTER (2026-09-17): WHO IS RUNNING, AND WHEN ANYTHING LAST HEARD
+    // FROM THEM.
+    //
+    // The first question an operator brings to this page is whether the other
+    // container is up and when it was last seen, and until this it was
+    // answered by one table that mixed the live members in with every row the
+    // store has kept and left out everything the membership row's `info`
+    // carries. So the LIVE members come first, one row each, with what only
+    // that node can say about itself — where it runs, how long its process has
+    // been up, how many processes answer requests there, whether its event
+    // loop has stalled — and the rows that have left or expired are folded
+    // underneath rather than thrown away, because #46's own failure mode is a
+    // node whose row expired while its process kept running and the operator
+    // needs to see that it was here.
+    //
+    // **EVERY TIME HERE IS THE DATABASE'S CLOCK** (`state.now`), never this
+    // process's: two containers' clocks differ, and `cluster.js` measures a
+    // lease against the store's clock for exactly that reason. `info.uptimeMs`
+    // is the one exception and is labelled as the node's own, because no other
+    // clock can state how long a process has been running.
+    //
+    // **AND IT IS DRAWN EVEN WHEN THIS PROCESS IS NOT CLUSTERED.** A section
+    // that disappears in `off` mode reads as a page that has not loaded; one
+    // that says there is no membership to list answers the question.
+    // =======================================================================
+    const nodes = state ? state.nodes : [];
+    const now = state ? state.now : 0;
+    const isLive = function (node) {
+      return !node.leftAt && node.expiresAt > now;
+    };
+    const live = nodes.filter(isLive);
+    const gone = nodes.filter(function (node) {
+      return !isLive(node);
+    });
+
+    // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
+    // a released lease is expired and never deleted (the fencing token must
+    // never go back to 1), so a page that listed every row would say a node
+    // holds what it gave up.
+    const leasesOf = {};
+    ((state && state.leases) || []).forEach(function (lease) {
+      if (lease.expiresAt <= now) {
+        return;
+      }
+      if (!leasesOf[lease.holder]) {
+        leasesOf[lease.holder] = [];
+      }
+      leasesOf[lease.holder].push(lease);
+    });
+
+    // WHAT A LIVE NODE IS DOING is not the same question as whether it is
+    // alive, and the difference is the whole of active-passive mode: one
+    // member holds the service lease and serves, and every other one is a
+    // standby that has restored nothing and bound nothing. The LEASE TABLE is
+    // the only thing that says which, so it is read rather than guessed from
+    // the node's own mode.
+    const roleOf = function (node) {
+      const mine = leasesOf[node.nodeId] || [];
+      const serving = node.mode === 'active-active' || mine.some(
+        function (lease) {
+          return lease.name === cluster.SERVICE_LEASE;
+        });
+      return serving ? { label: 'serving', cls: 'state-valid' }
+                     : { label: 'standby', cls: 'state-none' };
+    };
+
+    // WHERE THE CONTAINER IS, out of the membership row's `info` — the only
+    // channel a node has to tell the others anything about itself, rewritten
+    // on its join and on every heartbeat (`cluster/cluster.js`, `nodeInfo()`).
+    // A row written by an older build simply has fewer members in it, so
+    // nothing below assumes any one of them is there.
+    const whereOf = function (node) {
+      const info = node.info || {};
+      const parts = [];
+      if (info.host) {
+        parts.push('<code>' + consoleSelf.esc(String(info.host)) +
+                   (info.port ? ':' + consoleSelf.esc(String(info.port)) : '') +
+                   '</code>');
+      }
+      if (info.pid) {
+        parts.push('pid ' + consoleSelf.esc(String(info.pid)));
+      }
+      if (info.workers) {
+        parts.push(consoleSelf.esc(String(info.workers)) +
+                   ' request worker(s)');
+      }
+      return parts.length ? parts.join('<br>') : '—';
+    };
+
+    // HOW LONG THE PROCESS HAS BEEN UP, which the node states itself, falling
+    // back to how long its membership row has existed. They are different
+    // facts and the second is the weaker one — a row is written after the
+    // process starts and survives a restart that reuses no node id — so it is
+    // only used where the node said nothing.
+    const upOf = function (node) {
+      const info = node.info || {};
+      if (info.uptimeMs) {
+        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs));
+      }
+      return 'joined ' + ago(node.startedAt);
+    };
+
+    // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
+    // the stall that explains a late heartbeat. A blocked event loop cannot
+    // heartbeat, so the last stall a node saw is the first thing to look at
+    // when its row is close to expiring, and it is the reason `cluster.js`
+    // logs `STS-CLUSTER-0025` at all. It is the MOST RECENT stall rather than
+    // the worst one, which is what `status()` reports as `lastStallMs` too.
+    const seenOf = function (node) {
+      const info = node.info || {};
+      const stall = Number(info.lastStallMs) || 0;
+      return ago(node.heartbeatAt) + (stall
+        ? '<br><strong>last stall ' +
+          consoleSelf.esc(String(Math.round(stall / 100) / 10)) + 's</strong>'
+        : '');
+    };
+
+    const leasesCell = function (node) {
+      const mine = leasesOf[node.nodeId] || [];
+      if (!mine.length) {
+        return 'none';
+      }
+      return mine.map(function (lease) {
+        return '<code>' + consoleSelf.esc(lease.name) + '</code> at token ' +
+               consoleSelf.esc(String(lease.token));
+      }).join('<br>');
+    };
+
+    const agreesCell = function (node) {
+      if (node.agrees === null) {
+        return 'not known here';
+      }
+      return node.agrees ? 'yes'
+        : '<strong>NO</strong> — two nodes with different values answer ' +
+          'the same request two ways';
+    };
+
+    const liveRows = live.map(function (node) {
+      const role = roleOf(node);
+      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
+        '</strong>' + (node.nodeId === self.nodeId
+          ? ' <em>(this node)</em>' : '') +
+        '<br><code>' + consoleSelf.esc(node.nodeId) + '</code></td><td>' +
+        whereOf(node) + '</td><td><span class="' + role.cls + '">' +
+        consoleSelf.esc(role.label) + '</span><br>' +
+        consoleSelf.esc(node.mode) + '</td><td>' +
+        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
+        upOf(node) + '</td><td>' + seenOf(node) + '</td><td>' +
+        ago(node.expiresAt) + '</td><td>' + leasesCell(node) + '</td><td>' +
+        agreesCell(node) + '</td></tr>';
+    }).join('');
+
+    const goneRows = gone.map(function (node) {
+      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
+        '</strong><br><code>' + consoleSelf.esc(node.nodeId) +
+        '</code></td><td>' + whereOf(node) + '</td><td>' +
+        consoleSelf.esc(node.mode) + '</td><td>' +
+        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
+        ago(node.startedAt) + '</td><td>' + ago(node.heartbeatAt) +
+        '</td><td>' + (node.leftAt
+          ? 'left cleanly ' + ago(node.leftAt)
+          : '<strong>expired</strong> ' + ago(node.expiresAt)) +
+        '</td></tr>';
+    }).join('');
+
+    const goneTable = !gone.length ? ''
+      : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
+        ' node(s) that have left or expired</summary><div class="foldbody">' +
+        '<p>A node that stopped cleanly released its leases on the way out, ' +
+        'so another member took them over within one heartbeat. A node that ' +
+        'EXPIRED did not, and its leases waited out their lifetime — and it ' +
+        'is dead for good either way: the heartbeat refuses to renew an ' +
+        'expired row, so its process exits rather than come back quietly.</p>' +
+        this.wideTable('Nodes that have left or expired',
+          '<table><tr><th>Node</th><th>Where</th><th>Mode</th>' +
+          '<th>Version</th><th>Started</th><th>Last seen</th><th>Ended</th>' +
+          '</tr>' + goneRows + '</table>') + '</div></details>';
+
+    // TWO DIFFERENT REASONS FOR NO LIST, AND THEY MUST NOT SHARE A SENTENCE
+    // (2026-09-18). `off` is a fact about the configuration. No `state` on a
+    // clustered process is a fact about THIS PROCESS: it has not read the
+    // member list yet — a request worker reads it when it attaches and then
+    // at most once a heartbeat, and a page drawn in the gap has nothing to
+    // show. The first version said "cluster.mode resolved to off" for both,
+    // and on testidp, where `/admin` is served by a worker, told somebody
+    // looking at a healthy three-node cluster that it was not clustered.
+    const noList = off
+      ? this.note('There is no membership to list: <code>cluster.mode</code> ' +
+                  'resolved to <code>off</code>, so this process is not a ' +
+                  'node of anything and writes nothing another node could ' +
+                  'fence. What runs here is one container, which is correct ' +
+                  'for one container and WRONG for several against one store.')
+      : this.note('<strong>This process has not read the member list ' +
+                  'yet.</strong> The node is clustered (' +
+                  this.esc(self.mode) + '); the ' +
+                  (self.role === 'worker' ? 'request worker' : 'process') +
+                  ' drawing this page reads the membership from the store ' +
+                  'when it starts and then at most once a heartbeat, and ' +
+                  'this page was drawn before the first read came back. ' +
+                  'Reload it.');
+    const nodeTable = '<h2>Members</h2>' + (off || !state
+      ? noList
+      : '<div class="tiles">' +
+        this.tile(live.length, 'running') +
+        this.tile(Object.keys(leasesOf).length, 'nodes holding a lease') +
+        this.tile(gone.length, 'left or expired') +
+        '</div><p>As of ' +
+        this.esc(String(Math.round((snap.ageMs || 0) / 100) / 10)) +
+        's ago, read at most one heartbeat apart by whichever process drew ' +
+        'this page. <strong>Every time below is the database\'s ' +
+        'clock</strong>, which a lifetime is measured against — two ' +
+        'containers\' clocks differ, and a lease that expires by ' +
+        'whoever-is-asking\'s ' +
+        'clock is a lease two nodes both hold. <em>Up</em> is the exception: ' +
+        'it is the node\'s own process uptime, which no other clock can ' +
+        'state.</p>' +
+        this.wideTable('Running cluster members',
+          '<table><tr><th>Node</th><th>Where</th><th>State</th>' +
+          '<th>Version</th><th>Up</th><th>Last seen</th><th>Expires</th>' +
+          '<th>Leases</th><th>Settings agree</th></tr>' +
+          (liveRows || '<tr><td colspan="9">no live member rows — this ' +
+           'node\'s own row arrives on its first heartbeat</td></tr>') +
+          '</table>') + goneTable +
+        '<h2>Leases</h2><p>A lease is a named role ONE node holds, with a ' +
+        'fencing token that goes up every time it changes hands. A released ' +
+        'lease is expired and never deleted, so the token never goes back ' +
+        'to 1.</p><table><tr><th>Lease</th><th>Holder</th>' +
         '<th>Token</th><th>Expires</th></tr>' +
         (state.leases.length ? state.leases.map(function (lease) {
-          const lapsed = lease.expiresAt <= state.now;
+          const lapsed = lease.expiresAt <= now;
           return '<tr><td><code>' + consoleSelf.esc(lease.name) +
                  '</code></td><td>' +
             consoleSelf.esc(nameOf[lease.holder] || lease.holder) +
@@ -22901,7 +23223,7 @@ class AdminConsole {
             consoleSelf.esc(String(lease.token)) + '</td><td>' +
             (lapsed ? 'released or expired' : ago(lease.expiresAt)) +
             '</td></tr>';
-        }).join('') : '<tr><td colspan="4">none</td></tr>') + '</table>';
+        }).join('') : '<tr><td colspan="4">none</td></tr>') + '</table>');
 
     const caps = self.capabilities;
     const capabilityTable = '<h2>What active-active depends on</h2><p>' +
@@ -30896,36 +31218,28 @@ class AdminConsole {
 
     app.get('/admin/consent', function (req, res) {
       log.debug("Entering the admin consent page.");
-      const register = consentView();
+      // ONE PAGE OF EACH HALF, AND THE SAME ONE THE API ANSWERS
+      // (2026-09-18). The search and both pagers were computed here, and
+      // `GET /admin-api/consent` answered the whole register — so the one
+      // door that grew without a bound was the one a script reads.
+      // `adminViews.consentPageView()` is both now; what is left here is
+      // markup.
+      //
+      // THE SEARCH IS OVER THE RECORDED HALF ONLY. The overrides table is one
+      // row per thing somebody typed; the recorded table grows by one row for
+      // every scope every person agrees to. It matches the person, the
+      // application OR the scope, because a reader arrives at this page
+      // holding exactly one of those three and does not know which column it
+      // is in.
+      const view = adminViews.consentPageView(req.query);
+      const register = view.register;
+      const q = view.q;
+      const globalPage = view.globalPage;
+      const consentPage = view.consentPage;
       const listView = self.listViewOf('/admin/consent', req.query);
       const navParams = pageParamsOf(req.query);
-
-      // THE SEARCH IS OVER THE RECORDED HALF ONLY. The overrides table is one
-      // row per thing somebody typed, so it is short by construction; the
-      // recorded table grows by one row for every scope every person agrees to,
-      // which on a service driven for an afternoon is hundreds. It matches the
-      // person, the application OR the scope, because a reader arrives at this
-      // page holding exactly one of those three and does not know which column
-      // it is in.
-      const q = String((Array.isArray(req.query.q) ? req.query.q[0] :
-                        req.query.q) || '')
-        .trim().toLowerCase();
-      const matched = q
-        ? register.users.filter(function (one) {
-            return String(one.username).toLowerCase().indexOf(q) >= 0 ||
-                   String(one.client).toLowerCase().indexOf(q) >= 0 ||
-                   String(one.scope).toLowerCase().indexOf(q) >= 0;
-          })
-        : register.users;
-
-      const globalPage = pagedRows(req.query, register.globals,
-        { name: 'globals', noun: 'overrides',
-          defaultPer: DELEGATION_PER_PAGE });
       const globalsNav = self.pageNavPair('/admin/consent', navParams,
                                           globalPage.paging);
-      const consentPage = pagedRows(req.query, matched,
-        { name: 'consents', noun: 'consents',
-          defaultPer: DELEGATION_PER_PAGE });
       const consentsNav = self.pageNavPair('/admin/consent', navParams,
                                            consentPage.paging);
 
@@ -31039,7 +31353,7 @@ class AdminConsole {
           // The list this search narrows, so that a new search starts at page 1
           // rather than at whatever page the reader happened to be on when the
           // list was longer — which reads as "nothing matched".
-          pageParam: 'consentsPage', label: 'Search',
+          pageParam: 'usersPage', label: 'Search',
           placeholder: 'a person, an application or a scope'
         }) +
         consentsNav.head +
@@ -31091,13 +31405,7 @@ class AdminConsole {
         '/admin/ldap/directory</code> shows them as they are, and they ' +
         'persist wherever the directory does.');
 
-      const json = Object.assign({}, register, {
-        matched: matched.length,
-        globalsPaging: pagingJson(globalPage.paging),
-        consentsPaging: pagingJson(consentPage.paging),
-        query: { q: q }
-      });
-      self.respond(req, res, json, 'Consent', '/admin/consent', inner);
+      self.respond(req, res, view.json, 'Consent', '/admin/consent', inner);
       log.debug("Leaving the admin consent page.");
     });
 
@@ -37125,7 +37433,7 @@ const LIST_PARAMS = {
   // `options.name` exists for. `q` searches the recorded half only; the
   // overrides table is one row per (application, scope) and is short by
   // construction, because somebody typed every one of them.
-  '/admin/consent': ['q', 'per', 'page', 'globalsPage', 'consentsPage'],
+  '/admin/consent': ['q', 'per', 'page', 'globalsPage', 'usersPage'],
   // The CAEP page's SESSION CHOOSER (2026-09-03), which replaced a
   // `<select name="session_id">` for the reason chooserPane() gives about the
   // application one: a control here must be the same size whatever the
@@ -38251,6 +38559,45 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
     'here, it grants nothing: a federation partner declared here federates ' +
     'with nobody until a ' +
     'relationship under <code>ou=federations</code> says so.');
+});
+
+// THE CORS SECTION'S INTRO (2026-09-18). Its first sentence is the one the
+// section exists to say, and it is unfolded on purpose: `note()` folds prose
+// longer than a line under its opening sentence, so whatever comes first is
+// what a reader sees without opening anything.
+let NEW_APPLICATION_CORS_INTRO: string;
+WIRE_STEPS.push(function (instance: AdminConsole): void {
+  NEW_APPLICATION_CORS_INTRO =
+    '<p><strong>These origins configure CORS on every published protocol ' +
+    'endpoint of this service</strong> &mdash; OAuth 2.0 and OpenID Connect, ' +
+    'SAML, WS-Federation, OpenID4VCI and OpenID4VP, DID, SCIM, GNAP, the ' +
+    'certificate enrollment protocols and the management API alike. A ' +
+    'browser page on one of them may read this service\'s answers; a page ' +
+    'on any other origin may not.</p>' +
+    instance.note('<strong>Which list is asked depends on the request, not ' +
+    'on the family.</strong> A request that names this application as its ' +
+    'client &mdash; a <code>client_id</code>, a Basic credential, a client ' +
+    'assertion, or an access token issued to it &mdash; is answered with ' +
+    '<code>Access-Control-Allow-Origin</code> only for an origin listed ' +
+    'HERE. A request that names no client at all &mdash; discovery, a ' +
+    'JWKS, a DID document, every CORS preflight &mdash; is answered for an ' +
+    'origin listed on ANY application in this realm. That is why this field ' +
+    'is shown whatever families are ticked below: it is not a property of ' +
+    'one protocol.') +
+    instance.note('<strong>One exact origin per line</strong> &mdash; ' +
+    '<code>https://app.example.com</code>, or with a port, ' +
+    '<code>https://app.example.com:8443</code> &mdash; with no path and no ' +
+    'wildcard. Each is stored normalised: scheme and host lower-cased and a ' +
+    'default port dropped, so two spellings of one origin are one value. A ' +
+    'value that is not an origin refuses the whole create ' +
+    '(<code>STS-REG-0150</code>) rather than being written beside the ' +
+    'others.') +
+    instance.note('<strong>Empty allows no third-party origin, in both ' +
+    'modes.</strong> This service\'s own origins &mdash; its listeners, ' +
+    '<code>global.publicBaseUrl</code>, the embedded debugger and ' +
+    '<code>global.corsOrigins</code> &mdash; never need listing. After the ' +
+    'application exists, its page lists these origins one per row, with a ' +
+    'Remove button on each and a box to add another.');
 });
 
 let NEW_APPLICATION_REDIRECTS_INTRO: string;

@@ -2229,12 +2229,20 @@ const SCHEMAS = {
         type: 'array',
         description: 'THE FIELDS THE CREATE FORM IS DRAWN FROM, in the order ' +
                      'it draws them: one row per ATTRIBUTE a protocol family ' +
-                     'names as its identifier or as where its responses go ' +
-                     'back to, each `{attribute, role, kind, editable, ' +
-                     'sensitive, what, families}`. `role` is `identifier` or ' +
-                     '`redirect`; `kind` is `multi` where the attribute ' +
-                     'holds a list; `families` names every family the ' +
-                     'attribute serves.\n\n**It is DEDUPED BY ATTRIBUTE, so ' +
+                     'names, each `{attribute, role, kind, editable, ' +
+                     'sensitive, what, families}`. `role` is the form ' +
+                     'section it is drawn in — `identifier`, `redirect`, ' +
+                     '`logout`, `secret`, `delivery`, `events` or `cors`; ' +
+                     '`kind` is `multi` where the attribute holds a list; ' +
+                     '`families` names every family the attribute ' +
+                     'serves.\n\n**`cors` is the one row that belongs to no ' +
+                     'family** (2026-09-18): `appCorsOrigin`, the origins a ' +
+                     'browser page may call this service from for this ' +
+                     'application, which configures CORS on EVERY published ' +
+                     'protocol endpoint. It carries `families: []` and ' +
+                     '`everyFamily: true`, and a create accepts it whatever ' +
+                     'families are declared, or none.\n\n**It is DEDUPED BY ' +
+                     'ATTRIBUTE, so ' +
                      'it is shorter than `protocols` above.** Three families ' +
                      'name `oauthClientId` — an OpenID Connect relying party ' +
                      'IS an OAuth client and an OpenID4VCI wallet ' +

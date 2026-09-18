@@ -12,11 +12,24 @@
 # testidp-destroy.yml.
 #
 # What makes it different from `dev` and `ci`, and why:
-#   * a public name and certificate — test-idp.iyasec.io, TLS ended at the
-#     load balancer on an ACM certificate (dns.tf)
+#   * a public name and certificate — test-idp.iyasec.io, an EXPORTABLE ACM
+#     certificate (dns.tf) that the NODES present on their own 8081. The load
+#     balancer passes TLS through, as it does for dev and ci, so a client
+#     certificate still reaches the service; `cert-init` exports the
+#     certificate into the task before the node starts. It terminated at the
+#     load balancer for one day and that cost the client certificate —
+#     deploy/aws/CLAUDE.md, *TLS passes through the NLB*
+#   * the plain-HTTP CRL/OCSP listener published on PORT 80 rather than 8082,
+#     which is where a relying party expects an http:// address it read out of
+#     a certificate. The container is still on 8082; the front-end port is what
+#     goes inside every certificate this service signs
+#     (`PKI_DISTRIBUTION_BASE_URL`, ecs.tf), so `http://test-idp.iyasec.io/pki/
+#     …` is what a client follows
 #   * product mode with the request dispatcher — the `dispatch` row of
-#     tests/tools/modes.sh with STS_MODE=product. The bootstrap administrator's
-#     password is logged ONCE by the node that wins the bootstrap claim.
+#     tests/tools/modes.sh with STS_MODE=product. THE BOOTSTRAP
+#     ADMINISTRATOR'S PASSWORD IS IN SECRETS MANAGER (2026-09-17), at
+#     mock-sts/testidp/bootstrap-admin-password, and is printed nowhere; it
+#     was a log line in whichever node won the bootstrap claim until then.
 #   * larger nodes: five node processes per task (front, three request
 #     workers, one surface worker)
 #   * no suite runner. Backups are deleted with the environment: it is
@@ -24,6 +37,10 @@
 # ---------------------------------------------------------------------------
 public_hostname  = "test-idp.iyasec.io"
 public_zone_name = "iyasec.io"
+
+# The front-end port for the plain-HTTP CRL/OCSP/caIssuers listener. The
+# container stays on 8082; `dev` and `ci` keep 8082 on both sides.
+pki_listener_port = 80
 
 sts_mode                = "product"
 workers_request_count   = 3

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2780** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2783** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -61,8 +61,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 183
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 431
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 184
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 433
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1015,6 +1015,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0202` | Disabling or enabling an account could not write pwdAccountLockedTime onto the person's entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-AUTHN-0203` | An account was disabled and ending what the person held (the global logout) failed; the lock stands and every door refuses them. | none — logged; the disable's reply says what failed |
 | `STS-AUTHN-0204` | A sign-in that demands a security key (a WS-Federation HardwareToken wauth, or OAuth acr_values naming only key aliases) was answered with something else — a one-time code, a recovery code — or the account holds a second factor and no key to present. | HTTP 400 invalid_request, or the sign-in screen again |
+| `STS-AUTHN-0205` | The product-mode bootstrap was given a password through admin.bootstrapPassword that the password policy refuses, so no bootstrap account was created and nobody can sign in. It is NOT replaced with a generated one: the operator set it so that the only way in would not be in a log, and generating one would put a working credential there and leave theirs not working. | none — logged, and the service starts with nobody able to sign in |
 
 ## STS-OAUTH
 
@@ -1217,7 +1218,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0191` | The issuance policy (the role gate) refused a token the token endpoint was about to issue. | access_denied (HTTP 400) |
 | `STS-OAUTH-0192` | In product mode, a Token Request came from a client that did not authenticate, and no more specific cause was named (fallback). | invalid_client (HTTP 401) |
 | `STS-OAUTH-0193` | In product mode, a Token Request named a client this service has no entry for, so it could not authenticate. | invalid_client (HTTP 401) |
-| `STS-OAUTH-0194` | In product mode, a Token Request came from a public client (token_endpoint_auth_method none); product mode has no public clients. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0194` | A Token Request came from a PUBLIC client (token_endpoint_auth_method none), which presented no credential — correctly. An OBSERVATION, recorded so the role gate and /admin/delegation know what the client is; since 2026-09-17 no mode refuses on it, because product mode allows public clients and holds them to RFC 9700 instead. It read "product mode has no public clients" and was answered 401 until then. | none — an observation; the request is answered |
 | `STS-OAUTH-0195` | In product mode, a confidential client has nothing on its entry to authenticate it against. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0196` | A Token Request is malformed (the input validator refused it). | invalid_request (HTTP 400) |
 | `STS-OAUTH-0197` | A Token Request asked for a grant type this authorization server profile does not advertise. | unsupported_grant_type (HTTP 400) |
@@ -1455,6 +1456,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0549` | The back-channel logout delivery sweep failed in a realm. | none — logged; the next sweep runs as scheduled |
 | `STS-OAUTH-0550` | A retry of a back-channel Logout Token delivery was refused: no delivery was named, it is unknown or not a dead letter, or the client has no usable backchannel_logout_uri or recorded issuer. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-OAUTH-0551` | A token request — any grant carrying a person, a refresh token included — was refused because the account is disabled. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0552` | A PUBLIC client (token_endpoint_auth_method="none") asked for the client credentials grant in product mode. RFC 6749 section 4.4 defines that grant for a client that HAS credentials and OAuth 2.1 section 4.2 limits it to confidential clients; a public client using it would mint a token for anybody who knows the client_id. | unauthorized_client (HTTP 400) |
+| `STS-OAUTH-0553` | A client whose application entry declares NO token_endpoint_auth_method presented no credential. Product mode reads the omission as RFC 7591 section 2's default, client_secret_basic, and refuses it at the token endpoint and at PAR; development records it as an unauthenticated client and answers. Setting oauthTokenEndpointAuthMethod to "none" makes it a public client. An application created from the console or /admin-api has been given a method since 2026-09-18, so this is an entry made before that or by another door. | invalid_client (HTTP 401) in product mode; none in development |
 
 ## STS-SAML
 

@@ -102,11 +102,6 @@ function childMain() {
     });
   }
 
-  function payloadOf(jwt) {
-    return JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url')
-                            .toString('utf8'));
-  }
-
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
@@ -155,80 +150,63 @@ function childMain() {
          '1b. development: the reserved password "invalid" is still refused',
          r.status);
 
+    // ======================================================================
+    // PRODUCT MODE NO LONGER HAS A PASSWORD GRANT (2026-09-17).
+    //
+    // Sections 1c-1f and 2a-2e drove the ROPC grant in product mode to prove
+    // two things: that a password is VERIFIED there, and that no claim is
+    // INVENTED. Product mode now implies RFC 9700 mode — which is what makes
+    // it safe to allow public clients (`common/mode.js`,
+    // `enforcesOauthSecurityBcp()`) — and section 2.4 of that document says
+    // the resource owner password credentials grant MUST NOT be used. So the
+    // grant is refused in product mode for EVERY client, confidential or not,
+    // and a test that drove it was measuring a door that is now closed.
+    //
+    // **THE TWO FACTS IT PROVED ARE NOT LOST, THEY MOVED.** A password is
+    // verified in product mode at every door that still takes one — the
+    // sign-in screen, an LDAP bind, SCIM Basic — and
+    // `tests/public_clients_product.js` proves both through the flow product
+    // mode DOES support: the authorization code flow with PKCE, which is
+    // where an ID Token's claims can be inspected. What is asserted here is
+    // the refusal itself, because that is this file's subject: what product
+    // mode changes.
+    // ======================================================================
     config.setOverride('global.mode', 'product');
     r = await request(port, 'POST', '/oauth2/token', { form: Object.assign({
       grant_type: 'password', username: 'hc-alice',
+      password: PASSWORD, scope: 'openid profile email' }, client) });
+    const rightAnswer = r.json || {};
+    note(r.status === 400 && rightAnswer.error === 'unsupported_grant_type',
+         '1c. PRODUCT: the password grant is refused outright — RFC 9700 ' +
+         'section 2.4, which product mode enforces since it began allowing ' +
+         'public clients',
+         r.status + ' ' + r.text.slice(0, 200));
+    r = await request(port, 'POST', '/oauth2/token', { form: Object.assign({
+      grant_type: 'password', username: 'hc-alice',
       password: 'not-the-password' }, client) });
-    note(r.status === 400 && r.json && r.json.error === 'invalid_grant',
-         '1c. PRODUCT: a wrong password is refused invalid_grant',
-         r.status + ' ' + r.text.slice(0, 160));
-    note(r.json &&
-         /Authentication failed for user hc-alice\.$/.test(
-             r.json.error_description || ''),
-         '1d. and the description is the one protocol answer, naming no ' +
-         'reason (no enumeration)',
-         r.json && r.json.error_description);
+    const wrongAnswer = r.json || {};
+    note(r.status === 400 && wrongAnswer.error === 'unsupported_grant_type',
+         '1e. PRODUCT: and a WRONG password is refused the same way — the ' +
+         'grant is gone, so the answer cannot depend on the password',
+         r.status + ' ' + r.text.slice(0, 200));
+    // NON-ENUMERATION, stated as the property rather than as a wording.
+    // Which rule refuses first is the metadata check (RFC 9700 mode takes
+    // `password` out of grant_types_supported, and "what its metadata says
+    // is what it does" fires before the section 2.4 rule), and asserting a
+    // section number would pin that ordering rather than the thing that
+    // matters: the right password and a wrong one get the SAME answer, and
+    // it does not name the person.
+    note(rightAnswer.error_description === wrongAnswer.error_description &&
+         !/hc-alice/.test(rightAnswer.error_description || ''),
+         '1d. and the right and the wrong password get the IDENTICAL ' +
+         'answer, naming nobody — nothing is enumerated',
+         rightAnswer.error_description);
 
-    r = await request(port, 'POST', '/oauth2/token', { form: Object.assign({
-      grant_type: 'password', username: 'hc-alice', password: PASSWORD,
-      scope: 'openid profile email' }, client) });
-    note(r.status === 200 && r.json && r.json.access_token,
-         '1e. PRODUCT: the right password is issued tokens',
-         r.status + ' ' + r.text.slice(0, 160));
-
-    // ======================================================================
-    // 2. THE PROFILE CLAIMS COME FROM THE DIRECTORY, AND NOTHING IS INVENTED
-    // ======================================================================
-    if (r.json && r.json.id_token) {
-      const idt = payloadOf(r.json.id_token);
-      note(idt.name === 'Alice Liddell' && idt.given_name === 'Alice' &&
-           idt.family_name === 'Liddell' && idt.email === 'alice@hc.example',
-           '2a. PRODUCT: the ID Token\'s name, given_name, family_name and ' +
-           'email are the person\'s own cn, givenName, sn and ' +
-           'mail', JSON.stringify(idt));
-      note(!('email_verified' in idt),
-           '2b. and it asserts NO email_verified, because nothing verified ' +
-           'that mailbox',
-           idt.email_verified);
-      // The person's own subject, from the directory (2026-09-14): the
-      // entry's `entryUUID`, the same in product mode as in development.
-      note(idt.sub === require(ROOT + '/common/helpers')
-                         .subjectForName('hc-alice') &&
-           /^urn:uuid:/.test(idt.sub),
-           '2c. and sub is the person\'s urn:uuid:<entryUUID>', idt.sub);
-    } else {
-      note(false, '2a. PRODUCT: an ID Token came back to inspect',
-           r.text.slice(0, 160));
-    }
-    if (r.json && r.json.access_token) {
-      const info = await request(port, 'GET', '/oauth2/userinfo',
-        { headers: { authorization: 'Bearer ' + r.json.access_token } });
-      note(info.status === 200 && info.json &&
-           info.json.family_name === 'Liddell' &&
-           info.json.email === 'alice@hc.example' &&
-           !('email_verified' in info.json),
-           '2d. PRODUCT: UserInfo answers profile and email from the ' +
-           'directory, without ' +
-           'email_verified', info.status + ' ' + info.text.slice(0, 200));
-    }
-    r = await request(port, 'POST', '/oauth2/token', { form: Object.assign({
-      grant_type: 'password', username: 'hc-bare', password: PASSWORD,
-      scope: 'openid profile email' }, client) });
-    if (r.json && r.json.id_token) {
-      const bare = payloadOf(r.json.id_token);
-      const invented = ['name', 'given_name', 'family_name', 'email',
-                        'email_verified']
-        .filter(function (k) { return k in bare; });
-      note(invented.length === 0,
-           '2e. PRODUCT: a person whose entry holds none of them gets NO ' +
-           'profile claims — absent rather than invented, and never ' +
-           '"undefined"', JSON.stringify(bare));
-    } else {
-      note(false, '2e. PRODUCT: a token for the bare person came back',
-           r.text.slice(0, 160));
-    }
-
-    // 1f. A SECOND FACTOR CANNOT BE BYPASSED THROUGH THE PASSWORD GRANT.
+    // 1f. THE SECOND-FACTOR BYPASS IS GONE WITH THE GRANT. This stubbed
+    // `mechanismsFor()` to give the person a second factor and checked that
+    // the password grant refused them by name. There is no password grant in
+    // product mode to bypass anything through, which is a stronger answer
+    // than the one it used to assert.
     const realMechanisms = credentials.mechanismsFor;
     credentials.mechanismsFor = function (name) {
       const out = realMechanisms(name);
@@ -239,11 +217,11 @@ function childMain() {
       grant_type: 'password', username: 'hc-alice',
       password: PASSWORD }, client) });
     credentials.mechanismsFor = realMechanisms;
-    note(r.status === 400 &&
-         /second factor/.test((r.json || {}).error_description || ''),
-         '1f. PRODUCT: a person holding a second factor is refused the ' +
-         'password grant, with the door that does ask for it ' +
-         'named', r.status + ' ' + r.text.slice(0, 200));
+    note(r.status === 400 && r.json &&
+         r.json.error === 'unsupported_grant_type',
+         '1f. PRODUCT: a person holding a second factor cannot be bypassed ' +
+         'through the password grant, because there is no password grant',
+         r.status + ' ' + r.text.slice(0, 200));
 
     // ======================================================================
     // 3. POST /dpop/nonce-mode — PRODUCT REFUSES, DEVELOPMENT IS PER REALM

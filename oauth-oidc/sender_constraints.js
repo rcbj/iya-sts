@@ -56,6 +56,9 @@
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 const oauth21 = require('./oauth21');
+// The third source of the rotation requirement since 2026-09-17; see
+// `rotationRequired()`. A leaf beneath `config`, as it is in oauth2_bcp.js.
+const mode = require('../common/mode');
 
 // The two grants that carry a refresh token to a client which authenticated
 // with its certificate rather than a secret. RFC 8705 section 7.1 lets such a
@@ -92,14 +95,24 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 // may demand DPoP while the next does not, and the realm is ambient.
 // ---------------------------------------------------------------------------
 
-// Rotation is the one question with three answers rather than two, because a
-// compliance mode already answers it. `oauth2_bcp.js`'s `enabled()` is
-// deliberately NOT called here — it requires this file — so the two keys are
-// read the same way it reads them. If that ever drifts, the test that catches
-// it is tests/refresh_rotation_policy.js.
+// Rotation is the one question with FOUR answers rather than two, because two
+// compliance modes and product mode already answer it. `oauth2_bcp.js`'s
+// `enabled()` is deliberately NOT called here — it requires this file — so the
+// same three sources are read the same way it reads them. If that ever drifts,
+// tests/refresh_rotation_policy.js catches it for the two settings and
+// tests/public_clients_product.js (sections 0a and 0d, both in product mode)
+// for the third.
+//
+// **PRODUCT MODE IS THE FOURTH (2026-09-17)**, and it is not decoration:
+// RFC 9700 section 4.14.2 and OAuth 2.1 section 4.3.1 say a PUBLIC client's
+// refresh token must be sender-constrained or one-time use, and product mode
+// allows public clients now. Rotation is the limb that asks nothing of the
+// client, which is the right one to require of an application that cannot keep
+// a secret either.
 function rotationRequired() {
   log.debug("Entering rotationRequired().");
   const answer = !!config.value('oauth2.rfc9700') || oauth21.enabled() ||
+                 mode.enforcesOauthSecurityBcp() ||
                  !!config.value('oauth2.refreshTokenRotation');
   log.debug("Leaving rotationRequired(). " + answer);
   return answer;
@@ -117,6 +130,13 @@ function rotationSource() {
   if (oauth21.enabled()) {
     log.debug("Leaving rotationSource(). OAuth 2.1 mode.");
     return 'OAuth 2.1 mode';
+  }
+  // Ahead of the setting for the reason a mode is: product mode cannot be
+  // turned off by `oauth2.refreshTokenRotation`, and a reader who saw the
+  // setting named would try.
+  if (mode.enforcesOauthSecurityBcp()) {
+    log.debug("Leaving rotationSource(). Product mode.");
+    return 'product mode (it enforces RFC 9700)';
   }
   if (config.value('oauth2.refreshTokenRotation')) {
     log.debug("Leaving rotationSource(). The setting.");

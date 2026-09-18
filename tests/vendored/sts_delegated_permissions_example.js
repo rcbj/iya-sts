@@ -901,8 +901,10 @@ async function theTokenSaysBothHalves() {
   });
   // THE CLIENT AUTHENTICATES WITH THE SECRET ITS ENTRY HOLDS (2026-09-12),
   // by the method the entry declares. Development checks it nowhere outside
-  // RFC 9700 mode; product mode has no public clients and refuses this request
-  // without it — and this example is meant to be copied.
+  // RFC 9700 mode; product mode refuses this request without it — the grant
+  // is client_credentials, which product mode refuses to a PUBLIC client
+  // outright (RFC 6749 section 4.4) and requires a CONFIDENTIAL one to
+  // authenticate for — and this example is meant to be copied.
   const body = "grant_type=client_credentials&client_id=" +
       encodeURIComponent(SPENDER.id) +
       "&client_secret=" +

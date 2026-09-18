@@ -750,12 +750,27 @@ function childMain() {
          '3e11. OAuth 2.1 mode: a push with no redirect_uri takes the one ' +
          'registered (section 4.1.1)', r.status + ' ' + r.text.slice(0, 160));
 
+    // PRODUCT MODE AND A PUBLIC CLIENT (rewritten 2026-09-17). This asserted
+    // that product mode refused ANY unauthenticated push, and `par-public` is
+    // registered `token_endpoint_auth_method=none` — so what it actually
+    // measured was product mode refusing a PUBLIC client, which is the
+    // behaviour that changed. A public client may push now, exactly as it may
+    // redeem a code; what product mode refuses is a client whose own
+    // registration declares a credential and does not present it, and
+    // `par-a` (client_secret_basic) is one.
     config.setOverride('global.mode', 'product');
     try {
       r = await push('par-public', {}, { basic: false });
+      note(r.status === 201 && r.json && r.json.request_uri,
+           '3e12. product mode: a PUBLIC client may push without a ' +
+           'credential — RFC 9126 section 2 authenticates as the token ' +
+           'endpoint does, and there a public client presents nothing',
+           r.status + ' ' + r.text.slice(0, 160));
+      r = await push('par-a', {}, { basic: false });
       note(r.status === 401 && r.json.error === 'invalid_client',
-           '3e12. product mode: an unauthenticated client is refused 401 at ' +
-           'PAR', r.status + ' ' + r.text.slice(0, 160));
+           '3e13. product mode: a CONFIDENTIAL client that presents no ' +
+           'credential is still refused 401',
+           r.status + ' ' + r.text.slice(0, 160));
     } finally {
       config.clearOverride('global.mode');
     }
