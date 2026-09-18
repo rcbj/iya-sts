@@ -1338,7 +1338,13 @@ class AdminApi {
                      'this node\'s resolved mode, identity, heartbeat and ' +
                      'leases; a snapshot of every member row and every ' +
                      'lease, read by the database clock and at most one ' +
-                     'heartbeat old (`status.snapshotAgeMs`); the capability ' +
+                     'heartbeat old (`status.snapshotAgeMs`) — each member ' +
+                     'row carrying what only that node can say about itself ' +
+                     'in `nodes[].info` (host, port, pid, `uptimeMs`, the ' +
+                     'count of processes answering requests there, and ' +
+                     '`lastStallMs`, the event-loop stall that explains a ' +
+                     'late heartbeat), which is what the console draws its ' +
+                     'member list from; the capability ' +
                      'table active-active mode is held to ' +
                      '(`status.self.capabilities`, with `missing` and ' +
                      '`acceptedMissing`); where each shared secret\'s value ' +

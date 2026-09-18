@@ -22814,16 +22814,23 @@ class AdminConsole {
     ((state && state.nodes) || []).forEach(function (node) {
       nameOf[node.nodeId] = node.name;
     });
+    // A TIME AGAINST THE DATABASE'S CLOCK, never this process's. Tenths of a
+    // second up to two minutes, because every lifetime and every heartbeat on
+    // this page is seconds long and a tenth is the difference between a node
+    // that is late and one that is dead; past two minutes it is a duration,
+    // because "7200s ago" is a number a reader has to divide (2026-09-17, the
+    // roster — a node that left hours ago is on this page now).
     const ago = function (at) {
       if (!state || !at) {
         return '—';
       }
       const ms = state.now - at;
-      return ms >= 0 ? consoleSelf.esc(String(Math.round(ms / 100) / 10)) +
-                   's ago'
-                     : 'in ' +
-                       consoleSelf.esc(String(Math.round(-ms / 100) / 10)) +
-                       's';
+      const size = Math.abs(ms);
+      const much = size >= 120000
+        ? consoleSelf.durationText(size)
+        : String(Math.round(size / 100) / 10) + 's';
+      return ms >= 0 ? consoleSelf.esc(much) + ' ago'
+                     : 'in ' + consoleSelf.esc(much);
     };
 
     const rows = [
@@ -22867,33 +22874,219 @@ class AdminConsole {
         : 'off — only active-active nodes wait for each other\'s writes']
     ];
 
-    const nodeTable = off || !state ? ''
-      : '<h2>Members</h2><p>As of ' +
-        this.esc(String(Math.round((snap.ageMs || 0) /
-          100) / 10)) + 's ago. A row whose lifetime has passed is DEAD and ' +
-        'stays dead: its node exits rather than renew it.</p>' +
-        '<table><tr><th>Node</th><th>Mode</th><th>Version</th>' +
-        '<th>Started</th><th>Heartbeat</th><th>Expires</th>' +
-        '<th>Settings agree</th></tr>' +
-        state.nodes.map(function (node) {
-          const dead = node.leftAt || node.expiresAt <= state.now;
-          return '<tr><td><strong>' + consoleSelf.esc(node.name) +
-                 '</strong><br><code>' +
-            consoleSelf.esc(node.nodeId) + '</code>' +
-            (node.nodeId === self.nodeId ? ' (this node)' : '') + '</td><td>' +
-            consoleSelf.esc(node.mode) + '</td><td>' +
-            consoleSelf.esc(node.version) + '</td><td>' +
-            ago(node.startedAt) + '</td><td>' + ago(node.heartbeatAt) +
-            '</td><td>' + (node.leftAt ? 'left ' + ago(node.leftAt)
-              : (dead ? '<strong>expired</strong> ' : '') +
-                ago(node.expiresAt)) + '</td><td>' +
-            (node.agrees === null ? 'not known here'
-              : (node.agrees ? 'yes' : '<strong>NO</strong>')) + '</td></tr>';
-        }).join('') + '</table>' +
-        '<h2>Leases</h2><table><tr><th>Lease</th><th>Holder</th>' +
+    // =======================================================================
+    // THE ROSTER (2026-09-17): WHO IS RUNNING, AND WHEN ANYTHING LAST HEARD
+    // FROM THEM.
+    //
+    // The first question an operator brings to this page is whether the other
+    // container is up and when it was last seen, and until this it was
+    // answered by one table that mixed the live members in with every row the
+    // store has kept and left out everything the membership row's `info`
+    // carries. So the LIVE members come first, one row each, with what only
+    // that node can say about itself — where it runs, how long its process has
+    // been up, how many processes answer requests there, whether its event
+    // loop has stalled — and the rows that have left or expired are folded
+    // underneath rather than thrown away, because #46's own failure mode is a
+    // node whose row expired while its process kept running and the operator
+    // needs to see that it was here.
+    //
+    // **EVERY TIME HERE IS THE DATABASE'S CLOCK** (`state.now`), never this
+    // process's: two containers' clocks differ, and `cluster.js` measures a
+    // lease against the store's clock for exactly that reason. `info.uptimeMs`
+    // is the one exception and is labelled as the node's own, because no other
+    // clock can state how long a process has been running.
+    //
+    // **AND IT IS DRAWN EVEN WHEN THIS PROCESS IS NOT CLUSTERED.** A section
+    // that disappears in `off` mode reads as a page that has not loaded; one
+    // that says there is no membership to list answers the question.
+    // =======================================================================
+    const nodes = state ? state.nodes : [];
+    const now = state ? state.now : 0;
+    const isLive = function (node) {
+      return !node.leftAt && node.expiresAt > now;
+    };
+    const live = nodes.filter(isLive);
+    const gone = nodes.filter(function (node) {
+      return !isLive(node);
+    });
+
+    // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
+    // a released lease is expired and never deleted (the fencing token must
+    // never go back to 1), so a page that listed every row would say a node
+    // holds what it gave up.
+    const leasesOf = {};
+    ((state && state.leases) || []).forEach(function (lease) {
+      if (lease.expiresAt <= now) {
+        return;
+      }
+      if (!leasesOf[lease.holder]) {
+        leasesOf[lease.holder] = [];
+      }
+      leasesOf[lease.holder].push(lease);
+    });
+
+    // WHAT A LIVE NODE IS DOING is not the same question as whether it is
+    // alive, and the difference is the whole of active-passive mode: one
+    // member holds the service lease and serves, and every other one is a
+    // standby that has restored nothing and bound nothing. The LEASE TABLE is
+    // the only thing that says which, so it is read rather than guessed from
+    // the node's own mode.
+    const roleOf = function (node) {
+      const mine = leasesOf[node.nodeId] || [];
+      const serving = node.mode === 'active-active' || mine.some(
+        function (lease) {
+          return lease.name === cluster.SERVICE_LEASE;
+        });
+      return serving ? { label: 'serving', cls: 'state-valid' }
+                     : { label: 'standby', cls: 'state-none' };
+    };
+
+    // WHERE THE CONTAINER IS, out of the membership row's `info` — the only
+    // channel a node has to tell the others anything about itself, rewritten
+    // on its join and on every heartbeat (`cluster/cluster.js`, `nodeInfo()`).
+    // A row written by an older build simply has fewer members in it, so
+    // nothing below assumes any one of them is there.
+    const whereOf = function (node) {
+      const info = node.info || {};
+      const parts = [];
+      if (info.host) {
+        parts.push('<code>' + consoleSelf.esc(String(info.host)) +
+                   (info.port ? ':' + consoleSelf.esc(String(info.port)) : '') +
+                   '</code>');
+      }
+      if (info.pid) {
+        parts.push('pid ' + consoleSelf.esc(String(info.pid)));
+      }
+      if (info.workers) {
+        parts.push(consoleSelf.esc(String(info.workers)) +
+                   ' request worker(s)');
+      }
+      return parts.length ? parts.join('<br>') : '—';
+    };
+
+    // HOW LONG THE PROCESS HAS BEEN UP, which the node states itself, falling
+    // back to how long its membership row has existed. They are different
+    // facts and the second is the weaker one — a row is written after the
+    // process starts and survives a restart that reuses no node id — so it is
+    // only used where the node said nothing.
+    const upOf = function (node) {
+      const info = node.info || {};
+      if (info.uptimeMs) {
+        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs));
+      }
+      return 'joined ' + ago(node.startedAt);
+    };
+
+    // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
+    // the stall that explains a late heartbeat. A blocked event loop cannot
+    // heartbeat, so the last stall a node saw is the first thing to look at
+    // when its row is close to expiring, and it is the reason `cluster.js`
+    // logs `STS-CLUSTER-0025` at all. It is the MOST RECENT stall rather than
+    // the worst one, which is what `status()` reports as `lastStallMs` too.
+    const seenOf = function (node) {
+      const info = node.info || {};
+      const stall = Number(info.lastStallMs) || 0;
+      return ago(node.heartbeatAt) + (stall
+        ? '<br><strong>last stall ' +
+          consoleSelf.esc(String(Math.round(stall / 100) / 10)) + 's</strong>'
+        : '');
+    };
+
+    const leasesCell = function (node) {
+      const mine = leasesOf[node.nodeId] || [];
+      if (!mine.length) {
+        return 'none';
+      }
+      return mine.map(function (lease) {
+        return '<code>' + consoleSelf.esc(lease.name) + '</code> at token ' +
+               consoleSelf.esc(String(lease.token));
+      }).join('<br>');
+    };
+
+    const agreesCell = function (node) {
+      if (node.agrees === null) {
+        return 'not known here';
+      }
+      return node.agrees ? 'yes'
+        : '<strong>NO</strong> — two nodes with different values answer ' +
+          'the same request two ways';
+    };
+
+    const liveRows = live.map(function (node) {
+      const role = roleOf(node);
+      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
+        '</strong>' + (node.nodeId === self.nodeId
+          ? ' <em>(this node)</em>' : '') +
+        '<br><code>' + consoleSelf.esc(node.nodeId) + '</code></td><td>' +
+        whereOf(node) + '</td><td><span class="' + role.cls + '">' +
+        consoleSelf.esc(role.label) + '</span><br>' +
+        consoleSelf.esc(node.mode) + '</td><td>' +
+        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
+        upOf(node) + '</td><td>' + seenOf(node) + '</td><td>' +
+        ago(node.expiresAt) + '</td><td>' + leasesCell(node) + '</td><td>' +
+        agreesCell(node) + '</td></tr>';
+    }).join('');
+
+    const goneRows = gone.map(function (node) {
+      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
+        '</strong><br><code>' + consoleSelf.esc(node.nodeId) +
+        '</code></td><td>' + whereOf(node) + '</td><td>' +
+        consoleSelf.esc(node.mode) + '</td><td>' +
+        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
+        ago(node.startedAt) + '</td><td>' + ago(node.heartbeatAt) +
+        '</td><td>' + (node.leftAt
+          ? 'left cleanly ' + ago(node.leftAt)
+          : '<strong>expired</strong> ' + ago(node.expiresAt)) +
+        '</td></tr>';
+    }).join('');
+
+    const goneTable = !gone.length ? ''
+      : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
+        ' node(s) that have left or expired</summary><div class="foldbody">' +
+        '<p>A node that stopped cleanly released its leases on the way out, ' +
+        'so another member took them over within one heartbeat. A node that ' +
+        'EXPIRED did not, and its leases waited out their lifetime — and it ' +
+        'is dead for good either way: the heartbeat refuses to renew an ' +
+        'expired row, so its process exits rather than come back quietly.</p>' +
+        this.wideTable('Nodes that have left or expired',
+          '<table><tr><th>Node</th><th>Where</th><th>Mode</th>' +
+          '<th>Version</th><th>Started</th><th>Last seen</th><th>Ended</th>' +
+          '</tr>' + goneRows + '</table>') + '</div></details>';
+
+    const nodeTable = '<h2>Members</h2>' + (off || !state
+      ? this.note('There is no membership to list: <code>cluster.mode</code> ' +
+                  'resolved to <code>off</code>, so this process is not a ' +
+                  'node of anything and writes nothing another node could ' +
+                  'fence. What runs here is one container, which is correct ' +
+                  'for one container and WRONG for several against one store.')
+      : '<div class="tiles">' +
+        this.tile(live.length, 'running') +
+        this.tile(Object.keys(leasesOf).length, 'nodes holding a lease') +
+        this.tile(gone.length, 'left or expired') +
+        '</div><p>As of ' +
+        this.esc(String(Math.round((snap.ageMs || 0) / 100) / 10)) +
+        's ago, read at most one heartbeat apart by whichever process drew ' +
+        'this page. <strong>Every time below is the database\'s ' +
+        'clock</strong>, which a lifetime is measured against — two ' +
+        'containers\' clocks differ, and a lease that expires by ' +
+        'whoever-is-asking\'s ' +
+        'clock is a lease two nodes both hold. <em>Up</em> is the exception: ' +
+        'it is the node\'s own process uptime, which no other clock can ' +
+        'state.</p>' +
+        this.wideTable('Running cluster members',
+          '<table><tr><th>Node</th><th>Where</th><th>State</th>' +
+          '<th>Version</th><th>Up</th><th>Last seen</th><th>Expires</th>' +
+          '<th>Leases</th><th>Settings agree</th></tr>' +
+          (liveRows || '<tr><td colspan="9">no live member rows — this ' +
+           'node\'s own row arrives on its first heartbeat</td></tr>') +
+          '</table>') + goneTable +
+        '<h2>Leases</h2><p>A lease is a named role ONE node holds, with a ' +
+        'fencing token that goes up every time it changes hands. A released ' +
+        'lease is expired and never deleted, so the token never goes back ' +
+        'to 1.</p><table><tr><th>Lease</th><th>Holder</th>' +
         '<th>Token</th><th>Expires</th></tr>' +
         (state.leases.length ? state.leases.map(function (lease) {
-          const lapsed = lease.expiresAt <= state.now;
+          const lapsed = lease.expiresAt <= now;
           return '<tr><td><code>' + consoleSelf.esc(lease.name) +
                  '</code></td><td>' +
             consoleSelf.esc(nameOf[lease.holder] || lease.holder) +
@@ -22901,7 +23094,7 @@ class AdminConsole {
             consoleSelf.esc(String(lease.token)) + '</td><td>' +
             (lapsed ? 'released or expired' : ago(lease.expiresAt)) +
             '</td></tr>';
-        }).join('') : '<tr><td colspan="4">none</td></tr>') + '</table>';
+        }).join('') : '<tr><td colspan="4">none</td></tr>') + '</table>');
 
     const caps = self.capabilities;
     const capabilityTable = '<h2>What active-active depends on</h2><p>' +

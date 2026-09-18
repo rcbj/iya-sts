@@ -471,11 +471,48 @@ function versionString() {
   }
 }
 
+// HOW MANY PROCESSES ANSWER REQUESTS ON THIS NODE, for the row below. A LAZY
+// require, for `versionString()`'s reason and one of its own: this module is
+// loaded before the request pool and is called from inside the store's own
+// gate, and a require at the top of the file would pull the keystore in there
+// — which is exactly what `gate()` exists to happen after. By the first
+// heartbeat the pool is in node's module cache, so this costs a lookup; a
+// build that cannot reach it reports nothing rather than failing a heartbeat.
+function requestWorkerCount() {
+  log.debug("Entering requestWorkerCount().");
+  try {
+    const stats = require('../common/request_pool').stats();
+    log.debug("Leaving requestWorkerCount().");
+    return Number(stats.running) || 0;
+  } catch (e) {
+    log.debug("Caught in requestWorkerCount(): " + ((e && e.message) || e));
+    log.debug("Leaving requestWorkerCount(). Unknown.");
+    return 0;
+  }
+}
+
+// WHAT THIS NODE TELLS THE OTHERS ABOUT ITSELF. The membership row's `info` is
+// the ONLY channel there is: another node reads the row and cannot ask this
+// process anything, so whatever an operator needs on `/admin/cluster`'s member
+// list has to be in here. What is in it is where the container is (host, port
+// and pid — which is how an operator finds the log), how long this process has
+// been up, how many processes answer requests here, and how long the event
+// loop was blocked the LAST time a heartbeat ran late — the same number
+// `status()` reports as `lastStallMs` — because a stall is what makes a
+// heartbeat late and is invisible from every other node (`STS-CLUSTER-0025`;
+// `cluster/CLAUDE.md`, *A node's thread and its lifetime*).
+//
+// IT IS WRITTEN ON THE JOIN AND ON EVERY HEARTBEAT, so everything here is
+// cheap and nothing here grows: a member that cost a query would put that
+// query on the heartbeat that a node's life depends on.
 function nodeInfo() {
   log.debug("Entering nodeInfo().");
   log.debug("Leaving nodeInfo().");
   return { pid: process.pid, host: os.hostname(),
-           port: config.value('global.port') };
+           port: config.value('global.port'),
+           uptimeMs: Math.round(process.uptime() * 1000),
+           workers: requestWorkerCount(),
+           lastStallMs: lastStall ? lastStall.ms : 0 };
 }
 
 // A worker of this node: no row of its own and no heartbeat, the same fence.

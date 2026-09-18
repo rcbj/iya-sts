@@ -481,7 +481,8 @@ so must `admin-ui/admin.ts`.
    used to spend the `jti`, so the second met a replay of the request's own
    document: the client was OBSERVED as unauthenticated, a role requiring
    `ALL_AUTHENTICATED_APPLICATIONS` refused it, and product mode's
-   `requiresClientSecret()` would have refused it `invalid_client`.
+   `requiresClientSecret()` (renamed `requiresConfidentialClientAuthentication()`
+   on 2026-09-17) would have refused it `invalid_client`.
    `verifiedOnce()` keeps the promise for a document on the request object under
    a Symbol, keyed by method, client, type and the document itself.
    `tests/vendored/sts_jwt_bearer_grant.js` section 14 is the over-HTTP proof and
@@ -2678,6 +2679,75 @@ the policy function performs, so a token request from one now does that work
 whether or not the mode is on. That is affordable — one signature check on a
 request about to mint several — and the alternative was a third state, "we did
 not look", that every caller would have had to decide what to do about.
+
+## PUBLIC CLIENTS IN PRODUCT MODE, AND WHAT THEY ARE HELD TO INSTEAD OF A SECRET (2026-09-17)
+
+**Product mode refused every client that did not authenticate until
+2026-09-17**, at the token endpoint and at PAR, including one registered
+`token_endpoint_auth_method=none`. So it could not exercise the commonest kind
+of OAuth client there is — a browser or native application that cannot keep a
+secret. It allows one now, and **what makes that compliant rather than merely
+permissive is the other half, decided with it: PRODUCT MODE IMPLIES RFC 9700
+MODE.** rcbj's three answers:
+
+1. **Product mode implies the whole BCP, for every client** — not a
+   public-client subset. `common/mode.js`'s `enforcesOauthSecurityBcp()` is
+   read by `oauth2_bcp.js`'s `enabled()` and by `sender_constraints.js`'s
+   `rotationRequired()` (which reads the sources directly because it is
+   required BY `oauth2_bcp.js`; `tests/refresh_rotation_policy.js` holds the
+   two together). **A realm cannot turn it off**: `oauth2.rfc9700` is
+   `realmRuntime`, and product mode is the process's floor under every realm.
+2. **A public client may use the authorization code and refresh grants only.**
+   The client credentials grant is refused to it at the token endpoint
+   (`STS-OAUTH-0552`, `unauthorized_client`) and at registration
+   (`checkClientRegistration()`), because RFC 6749 section 4.4 defines it for
+   a client that HAS credentials. The password grant is NOT refused by a
+   public-client rule — RFC 9700 section 2.4 refuses it to EVERY client, and
+   that rule is now always on in product mode.
+3. **A public client's refresh tokens rotate**, with reuse revoking the family
+   — the limb of RFC 9700 section 4.14.2 / OAuth 2.1 section 4.3.1 that asks
+   nothing of a client that cannot keep a secret. It follows from (1).
+
+So in product mode a public client is held to: PKCE with S256, an exactly
+matched registered redirect URI, a challenge and nonce that cannot be replayed,
+a nonce with any ID Token, no response type issuing a token from the
+authorization endpoint, rotating refresh tokens, and code + refresh only.
+
+### `declaredPublic()` IS NOT `!isConfidential()`, and the first version got that wrong
+
+The gate asks `bcp.declaredPublic()` — an EXPLICIT `none` on a REGISTERED
+client — and the first draft asked `!bcp.isConfidential()`. They differ on one
+case and it is a hole: a client whose registration declares **no method at
+all**. `isConfidential()` answers *can this server SEE the client to be
+confidential*, which is no for it, and that is right for PKCE (RFC 9700 section
+2.1.1 requires PKCE of every client not seen to be confidential). But RFC 7591
+section 2 says an omitted method means `client_secret_basic`, so for "must it
+authenticate" that client is CONFIDENTIAL. Reading `!isConfidential()` would
+have let a client that never declared itself public through with no credential
+— far more than "public clients are allowed". `tests/public_clients_product.js`
+section 0b is the assertion that caught it; section 0c holds the other half
+(PKCE is still required of that client).
+
+### What changed for things that were not about public clients
+
+**The password grant is gone in product mode, for confidential clients too.**
+That is RFC 9700 section 2.4 and it is the largest consequence of (1): the
+hard-coded-value sweep (`tests/oauth_oid4vc_hardcoded.js`) used ROPC to prove
+product mode verifies passwords and invents no claims, and now asserts the
+refusal instead; the claim assertions moved to `tests/public_clients_product.js`,
+which gets its token through the code flow product mode does support. A
+password is still verified in product mode at every door that takes one — the
+sign-in screen, an LDAP bind, SCIM Basic.
+
+**An unregistered client's redirect URI matches nothing in product mode**
+(section 2.1, exact match against what is registered). Development mode
+creates a client because it was named, product mode never did, and product
+mode now also requires the URI to be registered — `oauth2.redirectUris` or
+the client's own `redirect_uris`. `tests/admin_bootstrap.js` section 7 was the
+test that relied on the old looseness and registers the URI now.
+
+`STS-OAUTH-0194` — a public client presenting no credential — is an
+OBSERVATION and never a refusal since this change; it was product mode's 401.
 
 ## `issuanceSubjectOf()` HELD TWO CONSTANTS DRESSED AS FACTS
 

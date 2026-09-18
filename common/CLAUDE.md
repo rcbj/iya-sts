@@ -5848,6 +5848,40 @@ service is reachable through and the password an operator generates on the
 console are the same strength by construction rather than by both happening to
 say 32.
 
+**AND THE PASSWORD CAN BE ONE THE OPERATOR ALREADY PUT SOMEWHERE
+(2026-09-17): `admin.bootstrapPassword`.** The generated-and-logged-once
+arrangement above is what Keycloak, Grafana and Jenkins do, and it has one
+property a real deployment does not want — *the only way in is in a log*, so
+the log is sensitive and the credential is gone the moment that line rolls off
+(and on a cluster it is in whichever node won the bootstrap claim). Set the
+setting and the account is given that value instead, at exactly the same
+moment and under exactly the same conditions: product mode, nobody in the realm
+holding a credential, nothing overwritten.
+
+Three things about it, and each is a decision rather than a detail:
+
+* **It is HELD TO THE PASSWORD POLICY**, where a generated one is not.
+  `generated: true` is what tells `preparePassword()` to skip the rules that
+  are about a person CHOOSING a password, and a supplied one is somebody's
+  choice — so a value the policy refuses is found at startup rather than at
+  the first sign-in that cannot happen.
+* **A refused value is REFUSED, not quietly replaced** (`STS-AUTHN-0205`).
+  Generating one instead would put a working credential in the log of a
+  deployment whose operator set this setting precisely so that it would not be
+  there, and leave the value in their secret store not working with nothing
+  saying which. The service starts with nobody able to sign in, which is the
+  loud version of the same fact.
+* **It is never printed.** The bootstrap still announces itself — an account
+  was created, change it — but names the SETTING instead of the value. Printing
+  it would undo the whole point.
+
+`deploy/aws/` is what it was built for: Terraform generates the password,
+stores it in Secrets Manager and injects it, so an operator reads it back with
+one `get-secret-value` whenever they want rather than hunting a log stream
+(`deploy/aws/CLAUDE.md`, *The bootstrap administrator's password*).
+`tests/admin_bootstrap.js` sections 8 and 9 hold all three claims, the middle
+one by capturing what the process actually printed.
+
 **AND `POST /admin-api/users/set-password` NOW EXISTS.** This file NAMED it
 twice — in the sentence a refused sign-in gets, and in the bootstrap banner that
 tells an operator to change the generated password — and the operation had never

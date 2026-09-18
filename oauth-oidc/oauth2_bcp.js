@@ -145,6 +145,10 @@ const clientAuth = require('./client_auth');
 // to oauth2.redirectUris), plus the refusals 2.1 adds at the checks already
 // in this file. `oauth-oidc/CLAUDE.md` rule 3ah.
 const oauth21 = require('./oauth21');
+// PRODUCT MODE IMPLIES THIS MODE (2026-09-17) — `enabled()` below. A leaf
+// beneath `config`: `mode.js` requires config and bunyan and nothing else, so
+// this require closes no cycle and moves no route.
+const mode = require('../common/mode');
 // THE FIVE SETTINGS THAT ASK FOR MORE THAN EITHER SPECIFICATION DOES (#34,
 // 2026-09-15). A leaf requiring helpers.js, config.js and oauth21.js, so this
 // closes no cycle — and it must never require this file back, because
@@ -1392,10 +1396,27 @@ const REQUIREMENTS = [
 // 2.0 with the best current practices applied, and every row in REQUIREMENTS
 // is one of those. So a realm carrying only `oauth2.oauth21` gets every check
 // here as well as oauth21.js's own, and `state()` says which flag did it.
+// WHAT TURNS THIS MODE ON: the setting, OAuth 2.1 mode (which is a superset),
+// and — since 2026-09-17 — PRODUCT MODE, which implies it.
+//
+// **PRODUCT MODE IMPLIES IT BECAUSE THAT IS WHAT LETS A PUBLIC CLIENT IN.**
+// Product mode used to refuse any client that did not authenticate, so there
+// were no public clients and nothing to protect them. It allows one now, and
+// the thing a public client is held to instead of a credential is this mode:
+// PKCE with S256, an exactly matched redirect URI, a challenge that cannot be
+// replayed, no token from the authorization endpoint. `common/mode.js`'s
+// `enforcesOauthSecurityBcp()` carries the argument.
+//
+// **A REALM CANNOT TURN IT OFF IN PRODUCT MODE.** `oauth2.rfc9700` is
+// `realmRuntime`, so a realm may turn this mode ON while the process is not in
+// it; the product-mode term is the process's and is a FLOOR — `||`, never
+// `&&`. A realm able to opt out would be a realm whose public clients had
+// neither a credential nor the rules that replace one.
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
-  return !!config.value('oauth2.rfc9700') || oauth21.enabled();
+  return !!config.value('oauth2.rfc9700') || oauth21.enabled() ||
+         mode.enforcesOauthSecurityBcp();
 }
 
 // OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
@@ -1487,6 +1508,44 @@ function isConfidential(client) {
   const method = String(client.token_endpoint_auth_method || '').trim();
   log.debug("Leaving isConfidential().");
   return method !== '' && method !== 'none';
+}
+
+// ---------------------------------------------------------------------------
+// DECLARED PUBLIC — AND WHY IT IS NOT `!isConfidential()` (2026-09-17).
+//
+// `isConfidential()` above answers "can this server SEE this client to be
+// confidential", and it answers no for a client whose registration declares no
+// method at all. That is the right answer for the PKCE rule it was written
+// for: RFC 9700 section 2.1.1 requires PKCE of every client the server cannot
+// see to be confidential, and a client that declared nothing is one of those.
+//
+// **IT IS THE WRONG ANSWER FOR "MUST THIS CLIENT AUTHENTICATE", AND THE
+// DIFFERENCE IS A HOLE.** RFC 7591 section 2 says an omitted
+// `token_endpoint_auth_method` means `client_secret_basic` — so a client that
+// declared nothing is CONFIDENTIAL for that question, and product mode must
+// require a credential of it. Reading `!isConfidential()` there would let a
+// client that never declared itself public through with none, which is a good
+// deal more than "public clients are allowed" and is exactly what
+// `tests/public_clients_product.js` section 0b exists to catch. (It caught it:
+// the first version of the product-mode gate asked `!isConfidential()`.)
+//
+// So PUBLIC, for authentication, is an EXPLICIT `none` and nothing else. The
+// two functions are not redundant and neither is a replacement for the other;
+// the header above `observeClientAuthentication()` says they must agree about
+// a client that DECLARED a method, and they do — it is only the undeclared
+// case they read differently, because only one of them has RFC 7591's default
+// to apply.
+function declaredPublic(registered) {
+  log.debug("Entering declaredPublic().");
+  if (!registered || !registered.known) {
+    // Not registered here at all. Not public — unknown, which is a different
+    // fact every caller already handles for itself.
+    log.debug("Leaving declaredPublic(). No registration.");
+    return false;
+  }
+  const method = String(registered.token_endpoint_auth_method || '').trim();
+  log.debug("Leaving declaredPublic().");
+  return method === 'none';
 }
 
 function parseUri(value) {
@@ -2138,6 +2197,37 @@ function checkClientRegistration(metadata) {
                           'access token from that endpoint and are ' +
                           'registrable.' };
   }
+  // PRODUCT MODE: A PUBLIC CLIENT MAY NOT REGISTER FOR client_credentials
+  // (2026-09-17). OAuth 2.1 refuses the same combination in its own mode
+  // (`oauth21.registrationRefusal()`, just below), and product mode refuses it
+  // for the reason the token endpoint does: RFC 6749 section 4.4 defines that
+  // grant for a client that HAS credentials. Written here rather than by
+  // loosening OAuth 2.1's gate, because it is a PRODUCT-MODE rule and not part
+  // of the BCP — plain `oauth2.rfc9700` mode is unchanged, and a reader who
+  // found this under OAuth 2.1's function would conclude the opposite.
+  //
+  // THE REGISTRATION DOOR IS NOT THE ONLY DOOR. A client can be created from
+  // `/admin/applications`, `/admin-api` or an `ldapmodify`, none of which
+  // comes through here, which is why the token endpoint refuses the grant as
+  // well rather than trusting this.
+  if (mode.requiresConfidentialClientAuthentication() &&
+      String(meta.token_endpoint_auth_method || '').trim() === 'none' &&
+      grants.indexOf('client_credentials') >= 0) {
+    log.debug("Leaving checkClientRegistration(). Product mode: " +
+              "client_credentials for a public client.");
+    return { ok: false, errorCode: 'STS-OAUTH-0552',
+             error: 'invalid_client_metadata',
+             requirement: 'client-credentials-confidential-only',
+             description: 'RFC 6749 section 4.4: the client credentials ' +
+                          'grant is for a client that HAS credentials, and ' +
+                          'this registration asks for it with ' +
+                          'token_endpoint_auth_method="none". In product ' +
+                          'mode a public client may register for the ' +
+                          'authorization code and refresh grants; declare a ' +
+                          'confidential token_endpoint_auth_method to use ' +
+                          'the client credentials grant.' };
+  }
+
   // OAuth 2.1's own registration mirrors — SAML client authentication and a
   // public client asking for client_credentials.
   const stricter = oauth21.registrationRefusal(meta);
@@ -3620,6 +3710,7 @@ module.exports = {
   REQUIREMENTS: REQUIREMENTS,
   enabled: enabled,
   isConfidential: isConfidential,
+  declaredPublic: declaredPublic,
   credentialOnFile: credentialOnFile,
   checkGrantType: checkGrantType,
   checkClientAuthentication: checkClientAuthentication,

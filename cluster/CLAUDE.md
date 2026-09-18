@@ -121,6 +121,43 @@ the load that caused it and the sentence that reported it.
   releases the lease and hands over in one heartbeat either way, and in
   active-active serving never waited on the lifetime. The fence is unchanged.
 
+### The roster on `/admin/cluster` (2026-09-17)
+
+`admin-ui/admin.ts`'s `clusterStatusBlock()` lists the members, and **the only
+thing one node knows about another is that node's row**: there is no channel
+between two containers but the store, so anything the page shows about a member
+had to be written into `sts_cluster_nodes.info` by that member first.
+`nodeInfo()` is what goes in it and is rewritten on the join and **on every
+heartbeat**, which is why nothing in it is computed and nothing in it grows — a
+member that cost a query would put that query on the beat a node's life depends
+on. What is in it: the host, the port and the pid (which is how an operator
+finds the log), the process's uptime, how many processes answer requests there,
+and `lastStallMs` — the stall that explains a late heartbeat and that no other
+node can see. The worker count is a LAZY require of `common/request_pool`,
+`versionString()`'s pattern and for a reason of its own: this module is called
+from inside the store's own gate, and a require at the top of the file would
+pull the keystore in there, which is the thing `gate()` exists to run before.
+
+Three things the page decides rather than reads:
+
+* **Live and gone are separated**, and the gone fold under a `<details>`. A row
+  whose lifetime has passed is dead for good, and a node that expired while its
+  process kept running is this file's own failure mode — so the rows are folded
+  rather than dropped.
+* **Serving or standby is read from the LEASE TABLE and not from the node's own
+  mode.** In active-passive one member holds the service lease and serves while
+  every other one has restored nothing and bound nothing, and a member's row
+  cannot say which of the two it is.
+* **Every time on it is the database's clock** (`state.now`), for the reason
+  the rest of this file gives. `info.uptimeMs` is the one exception and is
+  labelled as the node's own, because no other clock can say how long a process
+  has been running.
+
+The section is drawn in `off` mode too, saying there is no membership to list:
+a section that disappears reads as a page that has not loaded. `GET
+/admin-api/cluster` answers the same rows under `status.nodes[]`, `info`
+included (rule 7).
+
 ## Leases and the fence
 
 A lease is a named role one node holds, with a **fencing token that goes up

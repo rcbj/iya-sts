@@ -46,8 +46,21 @@
 //      an authorization server. An unknown name is a refusal, which is what
 //      makes the register a statement about the deployment rather than a log of
 //      what has been tried.
-//   3. EVERY OAUTH 2.0 / OIDC APPLICATION HOLDS A SECRET, and authenticates
-//      with it. There are no public clients in product mode.
+//   3. EVERY OAUTH 2.0 / OIDC APPLICATION THAT DECLARED A CONFIDENTIAL METHOD
+//      AUTHENTICATES WITH IT — and a PUBLIC client is allowed (2026-09-17).
+//      It said *there are no public clients in product mode* until then, which
+//      made this service unable to exercise the single commonest kind of OAuth
+//      client there is: a browser or native application that cannot keep a
+//      secret. What replaced the refusal is the compliance the specifications
+//      ask for instead of a secret — product mode now ENFORCES THE OAUTH 2.0
+//      SECURITY BCP (RFC 9700), so a public client is held to PKCE with S256,
+//      exact redirect-URI matching, a transaction-specific challenge, refresh
+//      tokens that rotate, and no response type that issues a token from the
+//      authorization endpoint. A public client may use the authorization code
+//      and refresh grants and NOT the client credentials or resource owner
+//      password grants, which the specifications define for confidential
+//      clients (RFC 6749 section 4.4) and deprecate outright (RFC 9700
+//      section 2.4).
 //   4. `/admin-api` IS GATED. It was ungated in development on purpose — it
 //      is what the tests drive and the way back in when nobody holds a role —
 //      and that is a total authentication bypass which cannot survive into a
@@ -160,13 +173,57 @@ function autoCreates() {
   return !isProduct();
 }
 
-// Must an OAuth 2.0 / OpenID Connect application hold a client secret and
-// authenticate with it? There are no public clients in product mode — which
-// also means no PKCE-only public client, and a deployment that wants one wants
-// development mode or a different product.
-function requiresClientSecret() {
-  log.debug("Entering requiresClientSecret().");
-  log.debug("Leaving requiresClientSecret().");
+// Must an OAuth 2.0 / OpenID Connect application that DECLARED A CONFIDENTIAL
+// METHOD present its credential and have it verify? (2026-09-17.)
+//
+// **THIS IS NOT "MUST EVERY CLIENT HOLD A SECRET" ANY MORE, AND THE RENAME IS
+// THE CHANGE.** It was `requiresClientSecret()` and it answered a question
+// about every client; product mode refused a client registered
+// `token_endpoint_auth_method=none` at the token endpoint and at PAR, so this
+// service could not exercise a browser or native application at all in the
+// mode a deployment runs in. A PUBLIC CLIENT IS NOW ALLOWED. What product mode
+// requires of it is not a secret it cannot keep — it is the compliance the
+// specifications ask for INSTEAD of one, which is
+// `enforcesOauthSecurityBcp()` below.
+//
+// What is unchanged is the other half, and it is the half that was doing the
+// security work: a client whose registration declares a confidential method —
+// which is every method but `none`, RFC 7591 section 2's default applying
+// where a registration omitted it — must present that credential and it must
+// verify. `oauth-oidc/oauth2_bcp.js`'s `isConfidential()` is the one test for
+// which kind a client is, and its header says why it must stay one function.
+function requiresConfidentialClientAuthentication() {
+  log.debug("Entering requiresConfidentialClientAuthentication().");
+  log.debug("Leaving requiresConfidentialClientAuthentication().");
+  return isProduct();
+}
+
+// Does this service enforce the OAuth 2.0 Security Best Current Practice
+// (RFC 9700) whatever `oauth2.rfc9700` says? (2026-09-17.)
+//
+// **PRODUCT MODE IMPLIES THE BCP, AND THAT IS WHAT MAKES A PUBLIC CLIENT SAFE
+// TO ALLOW.** The two go together and were decided together: what a
+// confidential client proves with a credential, a public client proves with
+// PKCE, an exactly-matched redirect URI, a challenge that cannot be replayed
+// and a refresh token that rotates. Allowing the one without the other would
+// have made product mode LESS compliant than `oauth2.rfc9700` mode, which is
+// the opposite of what product mode is for.
+//
+// **A REALM CANNOT TURN IT OFF.** `oauth2.rfc9700` is `realmRuntime`, so a
+// realm may turn the mode ON while the process is not in it; product mode is
+// the process's and is a FLOOR under every realm. A realm that could opt out
+// of the BCP in product mode would be a realm that could opt out of the only
+// thing holding its public clients together.
+//
+// It is read by `oauth2_bcp.js`'s `enabled()` and by
+// `sender_constraints.js`'s `rotationRequired()`, which reads the same
+// sources directly rather than calling `enabled()` (it is required BY that
+// module). `tests/public_clients_product.js` sections 0a and 0d assert both
+// answer yes in product mode, which is what catches this predicate reaching
+// one of them and not the other.
+function enforcesOauthSecurityBcp() {
+  log.debug("Entering enforcesOauthSecurityBcp().");
+  log.debug("Leaving enforcesOauthSecurityBcp().");
   return isProduct();
 }
 
@@ -654,11 +711,47 @@ const REQUIREMENTS = [
              'Secret Manager, Azure Key Vault or HashiCorp Vault.',
     where: 'common/keystore.js, common/secrets.js' },
   { id: 'client-secret',
-    what: 'An OAuth 2.0 / OIDC application holds a secret',
-    development: 'A client may be public and send nothing but a client_id.',
-    product: 'Every application must hold a client secret and authenticate ' +
-             'with it. There are no public clients.',
-    where: 'oauth-oidc/client_auth.js' },
+    what: 'An OAuth 2.0 / OIDC application authenticates as what it ' +
+          'registered as',
+    development: 'Nothing is required of anybody: a client may send nothing ' +
+                 'but a client_id, whatever its registration declares.',
+    product: 'A CONFIDENTIAL client — one whose registration declares any ' +
+             'token_endpoint_auth_method but "none", which includes a ' +
+             'registration that declared none at all (RFC 7591 section 2 ' +
+             'defaults it to client_secret_basic) — must present that ' +
+             'credential and it must verify. A PUBLIC client (an explicit ' +
+             'token_endpoint_auth_method=none) is ALLOWED and presents ' +
+             'nothing, which is correct; what it is held to instead is the ' +
+             'row below. It was "there are no public clients" until ' +
+             '2026-09-17.',
+    where: 'oauth-oidc/oauth2.ts, oauth-oidc/oauth2_bcp.js, ' +
+           'oauth-oidc/client_auth.js' },
+  { id: 'oauth-security-bcp',
+    what: 'The OAuth 2.0 Security BCP (RFC 9700) is enforced',
+    development: 'Only where oauth2.rfc9700 or oauth2.oauth21 is set, per ' +
+                 'process or per realm. Off, this service answers a request ' +
+                 'the BCP would refuse — which is how a client is exercised ' +
+                 'against both answers.',
+    product: 'ALWAYS, whatever those settings say, and a realm cannot turn ' +
+             'it off. PKCE with S256 required of a public client, exact ' +
+             'redirect-URI matching, no open redirect, no http redirect URI ' +
+             'off the loopback, a challenge or nonce that cannot be ' +
+             'replayed, a nonce with any id_token, no response type that ' +
+             'issues an access token from the authorization endpoint, and ' +
+             'refresh tokens that rotate with reuse detection. It is what a ' +
+             'public client is held to INSTEAD of a credential, and it is ' +
+             'why one can be allowed at all (2026-09-17).',
+    where: 'common/mode.js, oauth-oidc/oauth2_bcp.js, ' +
+           'oauth-oidc/sender_constraints.js' },
+  { id: 'public-client-grants',
+    what: 'Which grants a public client may use',
+    development: 'Every grant this service offers, to anybody.',
+    product: 'The authorization code and refresh grants, and not the client ' +
+             'credentials grant (RFC 6749 section 4.4 defines it for ' +
+             'confidential clients; OAuth 2.1 section 4.2 says so outright) ' +
+             'or the resource owner password grant (RFC 9700 section 2.4: ' +
+             'it MUST NOT be used). A confidential client is unaffected.',
+    where: 'oauth-oidc/oauth2.ts' },
   { id: 'introspection',
     what: 'A caller of /oauth2/introspect authenticates',
     development: 'An RFC 7662 JSON introspection answers anybody who holds ' +
@@ -1122,7 +1215,9 @@ module.exports = {
   isDevelopment: isDevelopment,
   verifiesCredentials: verifiesCredentials,
   autoCreates: autoCreates,
-  requiresClientSecret: requiresClientSecret,
+  requiresConfidentialClientAuthentication:
+    requiresConfidentialClientAuthentication,
+  enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
   gatesManagementApi: gatesManagementApi,
   seedsDemoData: seedsDemoData,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,

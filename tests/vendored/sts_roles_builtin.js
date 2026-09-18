@@ -173,8 +173,14 @@ const REALM = ("builtin-" + names.runStamp()).toLowerCase()
 // applications and on PUBLIC_CLIENT. Three of the six sections are ABOUT
 // whether a client authenticated — ALL_UNAUTHENTICATED_APPLICATIONS needs a
 // client with no credential to have a positive case at all — so this job
-// exercises a development-mode behaviour on purpose, and product mode (where
-// there are no public clients) cannot reach those sections.
+// exercises a development-mode behaviour on purpose. Product mode ALLOWS a
+// public client since 2026-09-17, but only one REGISTERED
+// `token_endpoint_auth_method=none`, and it holds that client to RFC 9700
+// (PKCE, an exactly registered redirect URI) — which these six applications,
+// registered with no method and so confidential under RFC 7591 section 2,
+// are not set up for. The suite runs every mode in development, so none of
+// that is reached here; it is stated so a reader does not assume the old
+// "product mode has no public clients" still holds.
 const PERSON = "builtin-person";
 const PASSWORD = "roles-builtin-Passw0rd!-" + names.runStamp();
 const ANON = "anonymous";        // authn.js's ANONYMOUS_USERNAME

@@ -2639,7 +2639,9 @@ class OAuth2Server {
   // here is which client is being claimed. The exceptions are RFC 9700 and
   // OAuth 2.1 mode, where a client that declared a confidential method must
   // present its credential (`bcp.checkClientAuthentication()`, `oauth21.js`),
-  // product mode (`mode.requiresClientSecret()`), and a caller of
+  // product mode — which implies RFC 9700 mode and holds the same
+  // confidential clients to the same rule
+  // (`mode.requiresConfidentialClientAuthentication()`) — and a caller of
   // `/oauth2/introspect` that RFC 9701 requires to authenticate; this function
   // is where the value those checks compare comes from. It is read for every
   // request either way, because a function that returned the secret only in one
@@ -8475,13 +8477,40 @@ class OAuth2Server {
     }
 
     // ---------------------------------------------------------------------
-    // PRODUCT MODE: THERE ARE NO PUBLIC CLIENTS (2026-09-06).
+    // PRODUCT MODE: A CONFIDENTIAL CLIENT AUTHENTICATES. A PUBLIC ONE IS
+    // ALLOWED (2026-09-06, narrowed 2026-09-17).
     //
     // The observation above is exactly that — an observation, made in both
     // modes because `/admin/delegation` and the role gate both want to know
     // what the client IS. This is the ENFORCEMENT, and it is the third of the
-    // four things product mode requires: every OAuth 2.0 and OpenID Connect
-    // application holds a secret and authenticates with it.
+    // four things product mode requires.
+    //
+    // **IT SAID "THERE ARE NO PUBLIC CLIENTS" AND REFUSED EVERY CLIENT THAT
+    // DID NOT AUTHENTICATE, INCLUDING ONE REGISTERED `none`.** That is the
+    // commonest kind of OAuth client there is — a browser or native
+    // application that cannot keep a secret — and product mode could not
+    // exercise one at all. `bcp.declaredPublic()` is now what this asks, so
+    // the refusal falls only on a client whose own registration does NOT say
+    // it is public: a `token_endpoint_auth_method` of anything but `none`,
+    // INCLUDING a registration that declared none at all, which RFC 7591
+    // section 2 reads as `client_secret_basic`. A client that declared `none`
+    // presents nothing and that is CORRECT (RFC 6749 section 3.2.1).
+    //
+    // **IT IS `declaredPublic()` AND NOT `!isConfidential()`**, which is a
+    // distinction that cost a real hole in the first version of this block:
+    // that function answers "can this server SEE the client to be
+    // confidential", which is `false` for a client that declared no method —
+    // so a client that never declared itself public would have been let
+    // through with no credential. That function's own header says why it must
+    // keep answering the way it does for PKCE.
+    //
+    // **WHAT REPLACES THE SECRET FOR A PUBLIC CLIENT IS NOT NOTHING.** Product
+    // mode implies RFC 9700 mode (`mode.enforcesOauthSecurityBcp()`), so a
+    // public client here is held to PKCE with S256, an exactly matched
+    // redirect URI, a challenge it cannot replay, a refresh token that rotates
+    // and no response type that issues a token from the authorization
+    // endpoint — and to the grant policy below, which is the other half of
+    // what the specifications say instead of "hold a secret".
     //
     // **IT IS HERE AND NOT IN `client_auth.js`** because that module answers
     // "did this credential verify" and this is a different question — "was one
@@ -8494,7 +8523,9 @@ class OAuth2Server {
     // client that failed to authenticate — not `unauthorized_client`, which is
     // about the GRANT a client may use and would send an author looking at
     // their grant type.
-    if (mode.requiresClientSecret() && !clientObservation.authenticated) {
+    if (mode.requiresConfidentialClientAuthentication() &&
+        bcp.declaredPublic(registeredClient) === false &&
+        !clientObservation.authenticated) {
       log.info('oauth2: product mode refused the token request from "' +
                String(client.client_id || '(unnamed)') + '": ' +
                clientObservation.why);
@@ -8513,12 +8544,69 @@ class OAuth2Server {
       res.status(401).type('application/json').send(JSON.stringify({
         error: 'invalid_client',
         error_description: oauth21.sanitizeDescription('This service is in ' +
-          'product mode, where every application must hold a client secret ' +
-          'and authenticate with it — there are no public clients. ' +
-          clientObservation.why)
+          'product mode, where an application that registered a ' +
+          'token_endpoint_auth_method other than "none" must present that ' +
+          'credential and it must verify. A client registered ' +
+          'token_endpoint_auth_method="none" is public, is allowed, and is ' +
+          'held to PKCE instead. ' + clientObservation.why)
       }));
       log.debug("Leaving the token endpoint. Product mode refused an " +
                 "unauthenticated client.");
+      return;
+    }
+
+    // ---------------------------------------------------------------------
+    // WHICH GRANTS A PUBLIC CLIENT MAY USE, IN PRODUCT MODE (2026-09-17).
+    //
+    // The other half of allowing public clients. A public client is allowed to
+    // present no credential; it is NOT allowed to use the two grants the
+    // specifications define around having one:
+    //
+    //   * **client_credentials.** RFC 6749 section 4.4 is the grant a client
+    //     uses "to obtain an access token using only its client credentials",
+    //     and a client with none has nothing to obtain it with — the token
+    //     would be minted for anybody who knows the client_id. OAuth 2.1
+    //     section 4.2 says it outright: confidential clients only.
+    //     `oauth21.registrationRefusal()` already refuses to REGISTER that
+    //     combination in OAuth 2.1 mode; this is the same rule at the door
+    //     where it matters, because a client can be created through the
+    //     console, `/admin-api` or an `ldapmodify` and never meet the
+    //     registration endpoint.
+    // **THE PASSWORD GRANT IS NOT HERE, AND THAT IS DELIBERATE.** RFC 9700
+    // section 2.4 says it MUST NOT be used by ANY client, and
+    // `oauth2_bcp.js`'s `no-ropc` rule already refuses it at this endpoint
+    // whenever the mode is on — which product mode now makes always. A second
+    // refusal here, scoped to public clients, would fire FIRST and answer
+    // `unauthorized_client` where every other client gets
+    // `unsupported_grant_type`: two errors for one fact, decided by which kind
+    // of client asked. The stronger rule is the right one and it is already
+    // written.
+    //
+    // `unauthorized_client` and not `invalid_client`: RFC 6749 section 5.2
+    // says this code is for a client "not authorized to use this
+    // authorization grant type", which is precisely the fact. The client
+    // authenticated (or correctly did not); the GRANT is what is refused.
+    if (mode.requiresConfidentialClientAuthentication() &&
+        bcp.declaredPublic(registeredClient) &&
+        grant === 'client_credentials') {
+      log.info('oauth2: product mode refused the client credentials grant ' +
+               'to public client "' +
+               String(client.client_id || '(unnamed)') + '".');
+      errorCodes.mark(res, 'STS-OAUTH-0552');
+      res.status(400).type('application/json').send(JSON.stringify({
+        error: 'unauthorized_client',
+        error_description: oauth21.sanitizeDescription('This client is ' +
+          'PUBLIC (token_endpoint_auth_method="none"), and in product mode a ' +
+          'public client may use the authorization code and refresh grants ' +
+          'only. RFC 6749 section 4.4 defines the client credentials grant ' +
+          'for a client that HAS credentials, and OAuth 2.1 section 4.2 ' +
+          'limits it to confidential clients outright; a public client using ' +
+          'it would mint a token for anybody who knows the client_id. ' +
+          'Register this client with a confidential ' +
+          'token_endpoint_auth_method and a credential to use it.')
+      }));
+      log.debug("Leaving the token endpoint. A grant a public client may " +
+                "not use.");
       return;
     }
 
@@ -10740,7 +10828,12 @@ class OAuth2Server {
       return refuse(401, declared.error, declared.description,
                     declared.errorCode, null);
     }
-    if (mode.requiresClientSecret() && !observation.authenticated) {
+    // The token endpoint's rule, at the endpoint RFC 9126 section 2 says
+    // authenticates a client as that one does — a CONFIDENTIAL client only
+    // since 2026-09-17, so a public client may push a request here as it may
+    // redeem a code there.
+    if (mode.requiresConfidentialClientAuthentication() &&
+        bcp.declaredPublic(registered) === false && !observation.authenticated) {
       const overLimit = await self.countSecretFailure(req, clientId, presented,
                                                  registered);
       if (overLimit) {
@@ -10753,9 +10846,11 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.parRequest(). Product mode refused a " +
                 "public client.");
       return refuse(401, 'invalid_client', 'This service is in product mode, ' +
-        'where every application must authenticate — at the pushed ' +
+        'where an application that registered a confidential ' +
+        'token_endpoint_auth_method must authenticate — at the pushed ' +
         'authorization request endpoint as at the token endpoint (RFC 9126 ' +
-        'section 2). ' + (observation.why || ''),
+        'section 2). A public client may push without one. ' +
+        (observation.why || ''),
         observation.errorCode || 'STS-OAUTH-0423',
         presented.basic ? { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
