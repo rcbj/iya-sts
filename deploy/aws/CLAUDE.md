@@ -384,6 +384,29 @@ Checked against `dev` on 2026-09-15 with the deployer user's key: `output`,
 
 ## Running it by hand
 
+**`terraform-local.sh` NEVER LEAVES THE STATE LOCKED ON A LONG RUN OR AN
+INTERRUPT (2026-09-18)**, which it did twice on testidp, each time costing a
+`force-unlock` and a round of `terraform import`. There were two causes, and each has a fix:
+
+* **Expired credentials.** An `aws login` session was handed to the container as a
+  snapshot that lasted about fifteen minutes, and an apply that creates an RDS
+  replica lasts longer. The launcher now serves your host session through
+  `host-credentials.js`: a token-guarded endpoint on 127.0.0.1, in the ECS
+  container-credentials shape, which the SDKs ask again before expiry. The
+  container runs on the host network to reach it. Static `AWS_*` keys in the
+  environment still travel as a snapshot.
+* **An interrupt that killed rather than stopped.** Bash as the container's PID 1 never passed a
+  signal on to terraform, and the launcher's foreground `docker run` was
+  not interruptible either. Now INT or TERM to the launcher becomes `docker kill
+  -s INT` on its named container, and `entrypoint.sh`'s `tf` passes that to
+  terraform as an interrupt. Terraform finishes what is in flight, writes
+  state and releases the lock (checked by interrupting a plan mid-refresh).
+  The credentials helper ignores the interrupt and exits when the launcher's
+  pipe closes, because terraform needs credentials to shut down cleanly.
+
+`TF_CLI_ARGS_apply` (and `_plan`, `_destroy`) pass through, so
+`TF_CLI_ARGS_apply='-target=…'` applies one resource.
+
 ```bash
 deploy/aws/bootstrap-state.sh                         # once, administrator
 terraform -chdir=deploy/aws/foundation init -backend-config=bucket=mock-sts-terraform-state-<account>

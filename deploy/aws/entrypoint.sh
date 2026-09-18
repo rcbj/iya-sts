@@ -145,6 +145,27 @@ then
 fi
 say "state: s3://${bucket}/${STATE_KEY}"
 
+# TERRAFORM IS A CHILD OF THIS SCRIPT, AND THIS SCRIPT IS PID 1 (2026-09-18).
+# `docker stop`, `docker kill -s INT` and the launcher's own interrupt reach
+# PID 1 only, and bash does not pass a signal on to its foreground child — so
+# an interrupted apply was a terraform KILLED when the container went, with
+# the S3 state lock still held (twice on testidp). `tf` runs terraform in the
+# background and relays INT and TERM to it as an INTERRUPT, which terraform
+# answers by finishing what is in flight, writing state and releasing the
+# lock. `wait` returns early when a trapped signal arrives, hence the loop.
+tf() {
+  terraform "$@" &
+  TF_PID=$!
+  trap 'kill -INT "${TF_PID}" 2>/dev/null || true' INT TERM
+  local rc=0
+  while :; do
+    wait "${TF_PID}" && rc=0 || rc=$?
+    kill -0 "${TF_PID}" 2>/dev/null || break
+  done
+  trap - INT TERM
+  return "${rc}"
+}
+
 say "terraform init"
 if [ "${TF_STACK}" = "environment" ];
 then
@@ -158,17 +179,17 @@ fi
 case "${TF_ACTION}" in
   init)     say "init only." ;;
   validate) terraform validate -no-color ;;
-  plan)     terraform plan -input=false -no-color "${VAR_FILE_ARGS[@]}" ;;
-  apply)    terraform apply -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" ;;
+  plan)     tf plan -input=false -no-color "${VAR_FILE_ARGS[@]}" ;;
+  apply)    tf apply -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" ;;
   destroy)
     # A destroy that fails half way leaves resources running and billing; the
     # usual cause is an ENI a stopped task has not released yet. Once more,
     # after a minute, before giving up.
-    if ! terraform destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}";
+    if ! tf destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}";
     then
       say "destroy failed; retrying once in 60 seconds"
       sleep 60
-      terraform destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" || \
+      tf destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" || \
         die "DESTROY FAILED TWICE — '${TF_ENV}' may still be running and billing. Re-run the destroy."
     fi
     ;;
