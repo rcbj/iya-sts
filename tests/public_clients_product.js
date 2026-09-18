@@ -30,6 +30,9 @@
 //      the assertions that used to ride the password grant in
 //      `oauth_oid4vc_hardcoded.js`, which product mode no longer offers
 //      (RFC 9700 section 2.4).
+//   8. AN APPLICATION CREATED BY HAND DECLARES ITS METHOD (2026-09-18): none
+//      with no credential, so a public client made on the console redeems its
+//      code, and an entry with no method at all is not called public.
 //
 // IN A CHILD PROCESS, for `admin_bootstrap.js`'s reason: it flips
 // `global.mode` for the whole process, and product mode now changes the OAuth
@@ -344,19 +347,19 @@ function childMain() {
           client_id: 'pcp-public' } });
         note(once.status === 200 && once.json && once.json.refresh_token &&
              once.json.refresh_token !== issued.refresh_token,
-             '5a. a public client\'s refresh returns a NEW refresh token',
+             '7a. a public client\'s refresh returns a NEW refresh token',
              once.status + ' ' + once.text.slice(0, 160));
         const twice = await request(port, 'POST', '/oauth2/token', { form: {
           grant_type: 'refresh_token', refresh_token: issued.refresh_token,
           client_id: 'pcp-public' } });
         note(twice.status === 400 && twice.json &&
              twice.json.error === 'invalid_grant',
-             '5b. and the SPENT one is refused — one-time use, which is the ' +
+             '7b. and the SPENT one is refused — one-time use, which is the ' +
              'limb of RFC 9700 section 4.14.2 that asks nothing of a client ' +
              'that cannot keep a secret',
              twice.status + ' ' + twice.text.slice(0, 160));
       } else {
-        note(false, '5a. a refresh token came back to rotate',
+        note(false, '7a. a refresh token came back to rotate',
              JSON.stringify(Object.keys(issued)));
       }
 
@@ -425,6 +428,64 @@ function childMain() {
       note(r.status === 200 && r.json && r.json.access_token,
            '4b. and presenting it is issued tokens',
            r.status + ' ' + r.text.slice(0, 200));
+
+      // =====================================================================
+      // 8. AN APPLICATION CREATED BY HAND SAYS WHAT IT WILL BE HELD TO
+      //    (2026-09-18). test-idp.iyasec.io's first public client was made on
+      //    /admin/applications/new with OAuth ticked and no secret, got no
+      //    method at all, and was refused 401 here by a log line calling it
+      //    public. The create now writes the method its credential implies.
+      //    Mutation-tested: the default switched off fails 8a and 8b (8b with
+      //    the very 401 that client got); the undeclared branch in
+      //    observeClientAuthentication() switched off fails 8c.
+      // =====================================================================
+      const methodOf = function (id) {
+        const view = applications.get(id);
+        const value = view && view.fields ?
+          view.fields.oauthTokenEndpointAuthMethod : undefined;
+        return String([].concat(value === undefined ? [] : value)[0] || '');
+      };
+      applications.createApplication({ identifier: 'pcp-by-hand',
+        protocols: ['oauth2', 'oidc'],
+        fields: { oauthClientId: 'pcp-by-hand',
+                  oauthRedirectUri: [REDIRECT] } });
+      applications.createApplication({ identifier: 'pcp-by-hand-secret',
+        protocols: ['oauth2'],
+        fields: { oauthClientId: 'pcp-by-hand-secret',
+                  oauthClientSecret: SECRET,
+                  oauthRedirectUri: [REDIRECT] } });
+      applications.createApplication({ identifier: 'pcp-by-hand-explicit',
+        protocols: ['oidc'],
+        fields: { oauthClientId: 'pcp-by-hand-explicit',
+                  oauthClientSecret: SECRET,
+                  oauthTokenEndpointAuthMethod: 'client_secret_post',
+                  oauthRedirectUri: [REDIRECT] } });
+      note(methodOf('pcp-by-hand') === 'none' &&
+           methodOf('pcp-by-hand-secret') === 'client_secret_basic' &&
+           methodOf('pcp-by-hand-explicit') === 'client_secret_post',
+           '8a. a create declared for OAuth 2.0 / OIDC is given a method: ' +
+           'none with no credential, client_secret_basic with a secret, and ' +
+           'an explicit one is kept',
+           JSON.stringify({ bare: methodOf('pcp-by-hand'),
+                            secret: methodOf('pcp-by-hand-secret'),
+                            explicit: methodOf('pcp-by-hand-explicit') }));
+      flow = await codeFlow('pcp-by-hand', 'pcp-alice');
+      r = await request(port, 'POST', '/oauth2/token', { form: {
+        grant_type: 'authorization_code', code: flow.code || '',
+        redirect_uri: REDIRECT, client_id: 'pcp-by-hand',
+        code_verifier: flow.verifier } });
+      note(r.status === 200 && r.json && r.json.access_token,
+           '8b. and that public client redeems its code in product mode',
+           r.status + ' ' + r.text.slice(0, 220));
+      const undeclared = await bcp.observeClientAuthentication({
+        clientId: 'pcp-undeclared', registered: { known: true },
+        request: { headers: {}, body: {} }, body: {} });
+      note(undeclared.errorCode === 'STS-OAUTH-0553' &&
+           !/PUBLIC client/.test(undeclared.why) &&
+           /oauthTokenEndpointAuthMethod/.test(undeclared.why),
+           '8c. an entry that declares NO method is not called public: its ' +
+           'own code, and a reason naming the attribute to set',
+           JSON.stringify(undeclared));
     } finally {
       // In a `finally` so that a throw above cannot leave product mode on for
       // whatever runs next in this process.

@@ -2749,6 +2749,28 @@ test that relied on the old looseness and registers the URI now.
 `STS-OAUTH-0194` — a public client presenting no credential — is an
 OBSERVATION and never a refusal since this change; it was product mode's 401.
 
+### An application created by hand declares its method (2026-09-18)
+
+**The undeclared case above was not hypothetical: it was every application
+created on `/admin/applications/new`.** A create that ticked OAuth 2.0 or OIDC
+and supplied no secret wrote no `oauthTokenEndpointAuthMethod` at all, so the
+first public client on test-idp.iyasec.io was refused `invalid_client` at its
+first code exchange — by a log line that called it a PUBLIC client, because
+`observeClientAuthentication()` put "declares none (or none at all)" in one
+sentence. Two changes:
+
+* `common/applications.js`'s `createApplication()` — the console's and
+  `/admin-api`'s one door — writes the method the create's credential
+  implies when none was named: a secret is `client_secret_basic`, a JWK Set
+  or its URI `private_key_jwt`, nothing is `none`. An explicit method wins,
+  as an explicit `samlEntityId` does. An entry made before this, or by a door
+  that sets fields one at a time, can still be undeclared.
+* An entry with NO method is observed as `STS-OAUTH-0553`, with a reason
+  that says product mode read it as `client_secret_basic` and names the
+  attribute to set; `STS-OAUTH-0194` is an explicit `none` only.
+
+`tests/public_clients_product.js` section 8 holds both.
+
 ## `issuanceSubjectOf()` HELD TWO CONSTANTS DRESSED AS FACTS
 
 Until 2026-09-05 it returned `authenticated: true` for both kinds of party.

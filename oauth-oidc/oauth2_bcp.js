@@ -2405,13 +2405,34 @@ async function observeClientAuthentication(opts) {
              why: 'this service has no entry for this client, so there was ' +
                   'nothing to authenticate it against.' };
   }
+  // AN ENTRY THAT DECLARES NO METHOD IS NOT A PUBLIC CLIENT, and until
+  // 2026-09-18 this said it was: the two cases shared one branch and one
+  // sentence — "declares none (or none at all)" — while product mode's gate
+  // (`declaredPublic()`) reads an omission as RFC 7591 section 2's
+  // client_secret_basic and REFUSES it. So the refusal a person read called
+  // their client public in the same line that refused it for not being
+  // public. The observation is unchanged (neither presented a credential and
+  // neither authenticated); what differs is the sentence and the code, so
+  // the refusal says which field to set.
+  if (!isConfidential(registered) &&
+      String(registered.token_endpoint_auth_method || '').trim() === '') {
+    log.debug("Leaving observeClientAuthentication(). No method declared.");
+    return { authenticated: false, method: 'none', errorCode: 'STS-OAUTH-0553',
+             why: 'its entry declares NO token_endpoint_auth_method. ' +
+                  'Development mode reads that as a public client; product ' +
+                  'mode reads it as RFC 7591 section 2\'s default, ' +
+                  'client_secret_basic, so it must present a credential, ' +
+                  'and it presented none. Set the application\'s ' +
+                  'oauthTokenEndpointAuthMethod to "none" for a public ' +
+                  'client (held to PKCE), or give it a credential and the ' +
+                  'method that presents it.' };
+  }
   if (!isConfidential(registered)) {
     log.debug("Leaving observeClientAuthentication(). A public client.");
     return { authenticated: false, method: 'none', errorCode: 'STS-OAUTH-0194',
              why: 'this is a PUBLIC client: its entry declares ' +
-                  'token_endpoint_auth_method="none" (or none at all), so it ' +
-                  'has no credential to present and presenting none is ' +
-                  'correct.' };
+                  'token_endpoint_auth_method="none", so it has no ' +
+                  'credential to present and presenting none is correct.' };
   }
   const method = String(registered.token_endpoint_auth_method).trim();
   const haveCredential = credentialOnFile(registered);

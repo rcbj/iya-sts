@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2782** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2783** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 184
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 432
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 433
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1457,6 +1457,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0550` | A retry of a back-channel Logout Token delivery was refused: no delivery was named, it is unknown or not a dead letter, or the client has no usable backchannel_logout_uri or recorded issuer. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-OAUTH-0551` | A token request — any grant carrying a person, a refresh token included — was refused because the account is disabled. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0552` | A PUBLIC client (token_endpoint_auth_method="none") asked for the client credentials grant in product mode. RFC 6749 section 4.4 defines that grant for a client that HAS credentials and OAuth 2.1 section 4.2 limits it to confidential clients; a public client using it would mint a token for anybody who knows the client_id. | unauthorized_client (HTTP 400) |
+| `STS-OAUTH-0553` | A client whose application entry declares NO token_endpoint_auth_method presented no credential. Product mode reads the omission as RFC 7591 section 2's default, client_secret_basic, and refuses it at the token endpoint and at PAR; development records it as an unauthenticated client and answers. Setting oauthTokenEndpointAuthMethod to "none" makes it a public client. An application created from the console or /admin-api has been given a method since 2026-09-18, so this is an entry made before that or by another door. | invalid_client (HTTP 401) in product mode; none in development |
 
 ## STS-SAML
 

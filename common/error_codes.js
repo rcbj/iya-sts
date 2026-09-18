@@ -5671,6 +5671,17 @@ const CODES = [
       'section 4.2 limits it to confidential clients; a public client using ' +
       'it would mint a token for anybody who knows the client_id.',
     spec: 'unauthorized_client (HTTP 400)' },
+  { code: 'STS-OAUTH-0553',
+    summary: 'A client whose application entry declares NO ' +
+      'token_endpoint_auth_method presented no credential. Product mode ' +
+      'reads the omission as RFC 7591 section 2\'s default, ' +
+      'client_secret_basic, and refuses it at the token endpoint and at PAR; ' +
+      'development records it as an unauthenticated client and answers. ' +
+      'Setting oauthTokenEndpointAuthMethod to "none" makes it a public ' +
+      'client. An application created from the console or /admin-api has ' +
+      'been given a method since 2026-09-18, so this is an entry made ' +
+      'before that or by another door.',
+    spec: 'invalid_client (HTTP 401) in product mode; none in development' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +

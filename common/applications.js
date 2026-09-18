@@ -7200,6 +7200,49 @@ function createApplication(detail) {
              'would point this module at a protocol). Set samlEntityId ' +
              'explicitly to use a different name.');
   }
+  // ---------------------------------------------------------------------
+  // AN APPLICATION DECLARED FOR OAUTH 2.0 OR OIDC GETS A CLIENT
+  // AUTHENTICATION METHOD, added 2026-09-18.
+  //
+  // A create that ticked OAuth 2.0 or OpenID Connect and named no
+  // `oauthTokenEndpointAuthMethod` used to write none at all, and an entry
+  // with no method is read two ways: `oauth2_bcp.js`'s `isConfidential()`
+  // calls it public (it cannot SEE a confidential client), while product
+  // mode's gate applies RFC 7591 section 2's default, client_secret_basic,
+  // and requires a credential. So a browser application created by hand with
+  // no secret was refused `invalid_client` at the token endpoint on its
+  // first code exchange, by a log line calling it public — found on
+  // test-idp.iyasec.io the day product mode began allowing public clients.
+  //
+  // THE METHOD FOLLOWS THE CREDENTIAL THE CREATE CARRIED, because that is
+  // what the person filling in the form said: a secret is
+  // client_secret_basic (RFC 7591's own default for a client that has one),
+  // a JWK Set or its URI is private_key_jwt, and NOTHING is `none` — a public
+  // client, held to PKCE and RFC 9700 in product mode rather than refused.
+  // An explicit `oauthTokenEndpointAuthMethod` wins, as samlEntityId's does
+  // above; this only fills a gap, so every entry this create writes for
+  // those families says what it will be held to.
+  const declaredOauth = asked.protocols.filter(function (id) {
+    return id === 'oauth2' || id === 'oidc';
+  });
+  if (declaredOauth.length &&
+      !valuesOf(record.fields.oauthTokenEndpointAuthMethod).length) {
+    const has = function (name) {
+      return valuesOf(record.fields[name]).some(function (v) {
+        return String(v).trim() !== '';
+      });
+    };
+    const method = has('oauthClientSecret') ? 'client_secret_basic' :
+      (has('oauthJwks') || has('oauthJwksUri')) ? 'private_key_jwt' : 'none';
+    setField(record, 'oauthTokenEndpointAuthMethod', method);
+    log.info('applications: "' + identifier + '" is declared for ' +
+             declaredOauth.join(' and ') + ' and named no ' +
+             'token_endpoint_auth_method, so it is ' + method +
+             (method === 'none' ?
+              ' — a PUBLIC client, since the create carried no credential' :
+              ', from the credential the create carried') +
+             '. Set oauthTokenEndpointAuthMethod explicitly to change it.');
+  }
   // WHERE IT CAME FROM, said on the entry itself. An application created here
   // has never authenticated anything and its counters are zero; without this
   // line a reader would have to infer that from the zeros, and "created by
