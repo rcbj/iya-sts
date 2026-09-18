@@ -25,6 +25,8 @@
 #     goes inside every certificate this service signs
 #     (`PKI_DISTRIBUTION_BASE_URL`, ecs.tf), so `http://test-idp.iyasec.io/pki/
 #     …` is what a client follows
+#   * the KDC published on TCP 88 (publish_kerberos), so a Kerberos client
+#     can reach it directly as well as over MS-KKDCP at /KdcProxy on 443
 #   * product mode with the request dispatcher — the `dispatch` row of
 #     tests/tools/modes.sh with STS_MODE=product. THE BOOTSTRAP
 #     ADMINISTRATOR'S PASSWORD IS IN SECRETS MANAGER (2026-09-17), at
@@ -41,6 +43,10 @@ public_zone_name = "iyasec.io"
 # The front-end port for the plain-HTTP CRL/OCSP/caIssuers listener. The
 # container stays on 8082; `dev` and `ci` keep 8082 on both sides.
 pki_listener_port = 80
+
+# The KDC on TCP 88, through the load balancer like every other port
+# (2026-09-18). TCP only — see the variable. `dev` and `ci` do not publish it.
+publish_kerberos = true
 
 sts_mode                = "product"
 workers_request_count   = 3

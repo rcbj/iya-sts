@@ -8,7 +8,7 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the permissions boundary, the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 636, and the plain-HTTP CRL/OCSP port — 8082, or 80 in `testidp`), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 389, 636, and the plain-HTTP CRL/OCSP port — 8082, or 80 in `testidp` — plus TCP 88 for the KDC in `testidp`), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -99,6 +99,18 @@ trust. Measured on a real handshake: both ports present the same SHA-256.
 **No suite job dials 636 yet** — it is published because a directory ought to
 be reachable over TLS, and a job that wants it needs an `STS_LDAPS_URL` beside
 the two LDAP variables in `environment/runner.tf`.
+
+**AND TCP 88 IN `testidp` (2026-09-18, `var.publish_kerberos`)** — the KDC,
+as a fifth row merged into the same map, so it costs what the others do and
+reaches ECS's five-target-group limit. **Pure TCP**: a TCP listener, a TCP
+target group behind PROXY v2 (which `server.js` installs on the KDC's TCP
+socket) and a TCP-connect health check — nothing on it is HTTP. **UDP 88 is
+not published, by rcbj's decision**: Kerberos over UDP does not do well across
+the open internet, and a datagram could not carry the PROXY header anyway; a
+client is pointed at TCP (`udp_preference_limit = 1`). Gated by a variable
+rather than added for every environment because `dev` and `ci` have no job that
+speaks raw Kerberos to the load balancer — the suite uses MS-KKDCP on 443 — and
+they render the four rows they always did.
 
 **Adding it re-deploys `dev` and `ci` once.** Every listener, target group,
 security-group rule pair and container port mapping iterates

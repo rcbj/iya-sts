@@ -240,6 +240,29 @@ variable "cert_init_image_tag" {
   default     = ""
 }
 
+variable "publish_kerberos" {
+  description = <<-EOT
+    Publish the KDC on the load balancer: TCP 88 outside and inside, through a
+    PROXY v2 target group like every other published port (server.js installs
+    the PROXY protocol on the KDC's TCP listener). FALSE (the default) keeps
+    the test arrangement, where no job speaks raw Kerberos to the load balancer
+    — the suite uses MS-KKDCP over 443 — and `testidp` sets it true.
+
+    PURE TCP, AND UDP 88 IS NOT PUBLISHED — rcbj's decision (2026-09-18):
+    Kerberos over UDP does not do well across the open internet (fragmented
+    and dropped datagrams, no retransmission a client can rely on), so the KDC
+    is offered on the one transport that does. It is also the only one that
+    fits here: an NLB target group cannot put a PROXY header on a datagram, and
+    every row in `published_ports` is TCP behind one. A client that tries UDP
+    first is told to use TCP (MIT: `udp_preference_limit = 1`). Nothing on this
+    listener is HTTP — a TCP listener, a TCP target group and a TCP-connect
+    health check, as 389 and 636 have. It is the fifth target group on each ECS
+    service, which is the limit.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "pki_listener_port" {
   description = <<-EOT
     The load balancer's FRONT-END port for the plain-HTTP CRL, OCSP and
