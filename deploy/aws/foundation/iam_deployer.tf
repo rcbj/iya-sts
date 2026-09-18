@@ -96,11 +96,12 @@ resource "aws_iam_role" "deployer" {
 # ---------------------------------------------------------------------------
 # THE BOUNDARY EVERY ROLE THE DEPLOYER CREATES MUST CARRY.
 #
-# The union of what the ECS task role (mock-sts reading its two secrets), the
-# ECS execution role (pulling the images, writing logs, injecting the
-# environment's secrets) and the suite runner's role (uploading its report)
-# can do. A role's effective permissions are the intersection of its own policy
-# and this, so a policy that grants more is inert.
+# The union of what the ECS task role (mock-sts reading its two secrets, and
+# cert-init exporting the public certificate), the ECS execution role (pulling
+# the images, writing logs, injecting the environment's secrets) and the suite
+# runner's role (uploading its report) can do. A role's effective permissions
+# are the intersection of its own policy and this, so a policy that grants
+# more is inert.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "workload_boundary" {
   statement {
@@ -139,6 +140,26 @@ data "aws_iam_policy_document" "workload_boundary" {
     sid       = "WriteTestReports"
     actions   = ["s3:PutObject", "s3:AbortMultipartUpload"]
     resources = ["${local.arn.reports}/*"]
+  }
+  # THE PUBLIC CERTIFICATE THE NODE SERVES (2026-09-17). `cert-init`
+  # (deploy/aws/cert-init/) exports it into the task on every start, because
+  # the load balancer no longer terminates TLS and a node cannot present a
+  # certificate whose key it does not hold. EXPORT ONLY — not
+  # `RequestCertificate`, not `DeleteCertificate`, not `ImportCertificate`:
+  # this ceiling is what a mock-sts CONTAINER may ever do, and a container
+  # that could issue or remove a certificate for a public name is a different
+  # thing entirely.
+  #
+  # The resource is every certificate in this account and region rather than
+  # one ARN, because a boundary is written once in `foundation/` and cannot
+  # name a certificate an environment has not created yet. The ENVIRONMENT's
+  # own task-role policy names the single ARN (environment/iam.tf), and the
+  # effective permission is the intersection — so the container reaches
+  # exactly one certificate.
+  statement {
+    sid       = "ExportThePublicCertificate"
+    actions   = ["acm:ExportCertificate"]
+    resources = [local.arn.acm]
   }
 }
 

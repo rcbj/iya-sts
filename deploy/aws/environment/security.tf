@@ -3,7 +3,13 @@
 # the suite runner's, which accepts only the nodes (below).
 #
 #   allowed_cidrs ─┐
-#   runner's NAT ──┴─443,389,8082─▶ nlb ─8081,389,8082─▶ nodes ─5432─▶ database
+#   runner's NAT ──┴─443,389,636,pki─▶ nlb ─8081,389,636,8082─▶ nodes ─5432─▶ db
+#
+# `pki` is the plain-HTTP CRL/OCSP front-end port — 8082 in the test
+# environments and 80 in `testidp` (locals.tf, `var.pki_listener_port`) —
+# and the node behind it is on 8082 either way. 636 (LDAPS) joined the list
+# on 2026-09-17. Every rule below iterates `published_ports`, so neither side
+# is written here.
 #                                                                   │
 #   runner ◀──────────── any TCP (GNAP push, the PEP's notify) ─────┘
 #

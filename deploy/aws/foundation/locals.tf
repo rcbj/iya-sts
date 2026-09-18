@@ -23,6 +23,7 @@ locals {
     ecs          = "arn:${local.partition}:ecs:${local.region}:${local.account_id}"
     elb          = "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}"
     ecr_repo     = "arn:${local.partition}:ecr:${local.region}:${local.account_id}:repository/${var.name}"
+    acm          = "arn:${local.partition}:acm:${local.region}:${local.account_id}:certificate/*"
     state_bucket = "arn:${local.partition}:s3:::${local.state_bucket}"
     reports      = "arn:${local.partition}:s3:::${local.reports_bucket}"
   }

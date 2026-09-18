@@ -18,11 +18,21 @@
 # client's. `STS_TRUSTED_PROXIES` is the public subnets, where the NLB's
 # addresses are.
 #
-# TLS TERMINATED HERE WHEN `public_hostname` IS SET (dns.tf): the https
-# listener becomes TLS on the public ACM certificate and its target group TLS,
-# so the load balancer opens a new TLS connection to the node's own leaf.
-# PROXY v2 still precedes that handshake, as it does with passthrough. The
-# other two ports are TCP either way.
+# TLS IS PASSED THROUGH IN EVERY ENVIRONMENT, INCLUDING A NAMED ONE
+# (2026-09-17). The https listener and its target group are TCP whatever
+# `public_hostname` says, and what a client's TLS reaches is the node.
+#
+# IT TERMINATED HERE WHEN A NAME WAS SET, FOR ONE DAY, AND THAT WAS THE BUG.
+# The listener became TLS on the public ACM certificate so that a browser
+# trusted the name — and **an NLB cannot pass a client certificate through a
+# TLS listener**, so the main port saw none and `GET /tls/sign-in` and RFC
+# 8705 stopped working on the one deployment anybody would point a real client
+# at. The public certificate moved to the NODE instead (dns.tf,
+# deploy/aws/cert-init/): it is exported into the task before the node starts
+# and served through `tls.certificateFile`, so the name is trusted AND the
+# client certificate arrives. Nothing here is conditional on the name any
+# more, which is why `var.tls_policy` and the certificate ARN are gone from
+# this file.
 #
 # CROSS-ZONE ON. Without it an NLB address in one AZ reaches only that AZ's
 # node, and `sts_cluster_alternation` — which requires every node to answer —
@@ -43,7 +53,7 @@ resource "aws_lb_target_group" "nodes" {
 
   name                   = "${local.prefix}-${each.value.container}"
   port                   = each.value.container
-  protocol               = each.key == "https" && local.public_name ? "TLS" : "TCP"
+  protocol               = "TCP"
   target_type            = "ip"
   vpc_id                 = aws_vpc.main.id
   proxy_protocol_v2      = true
@@ -67,9 +77,7 @@ resource "aws_lb_listener" "ports" {
 
   load_balancer_arn = aws_lb.main.arn
   port              = each.value.listener
-  protocol          = each.key == "https" && local.public_name ? "TLS" : "TCP"
-  certificate_arn   = each.key == "https" && local.public_name ? aws_acm_certificate_validation.public[0].certificate_arn : null
-  ssl_policy        = each.key == "https" && local.public_name ? var.tls_policy : null
+  protocol          = "TCP"
 
   default_action {
     type             = "forward"

@@ -9,7 +9,7 @@ output "public_hostname" {
 }
 
 output "public_certificate_arn" {
-  description = "The ACM certificate the 443 listener presents, when public_hostname is set."
+  description = "The exportable ACM certificate every NODE presents on 8081, when public_hostname is set; the load balancer passes TLS through."
   value       = local.public_name ? aws_acm_certificate.public[0].arn : ""
 }
 

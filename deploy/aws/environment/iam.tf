@@ -7,8 +7,17 @@
 # project key, only through Secrets Manager. Nothing else: no S3, no RDS API,
 # no other secret. The schema-init container shares it and uses none of it.
 #
+# AND, WHERE THERE IS A PUBLIC NAME, ONE MORE THING — `acm:ExportCertificate`
+# on THAT ONE CERTIFICATE, which the `cert-init` container uses and the other
+# two never call (2026-09-17). It is scoped to the certificate's own ARN
+# rather than `*`, so the credential cannot be turned on any other certificate
+# in the account, and it is absent entirely in `dev` and `ci`, which request
+# none. The statement is useless without the matching one in the foundation's
+# WORKLOAD BOUNDARY, which an administrator applies — a permissions boundary
+# is a ceiling, and a role policy cannot rise above it.
+#
 # EXECUTION ROLE — what ECS itself does on the task's behalf before a container
-# runs: pull the two images, write to the log group, and inject the three
+# runs: pull the images, write to the log group, and inject the three
 # secrets that arrive as environment variables (the admin API client secret
 # into mock-sts; the master and application passwords into schema-init).
 #
@@ -56,6 +65,19 @@ data "aws_iam_policy_document" "task" {
       values   = ["secretsmanager.${local.region}.amazonaws.com"]
     }
   }
+
+  # cert-init, and only where there is a certificate to export. ACM encrypts
+  # the key under a passphrase the caller supplies, so this action alone does
+  # not hand anybody a usable key — but it is the whole of what it takes to
+  # get one, so it names the certificate.
+  dynamic "statement" {
+    for_each = local.public_name ? [1] : []
+    content {
+      sid       = "ExportThePublicCertificateForTheNodeToServe"
+      actions   = ["acm:ExportCertificate"]
+      resources = [aws_acm_certificate.public[0].arn]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "task" {
@@ -95,6 +117,23 @@ data "aws_iam_policy_document" "execution" {
       aws_secretsmanager_secret.main["db-master-password"].arn,
       aws_secretsmanager_secret.main["db-app-password"].arn,
     ]
+  }
+
+  # THE FOURTH, IN PRODUCT MODE (2026-09-17): the bootstrap administrator's
+  # password, injected into mock-sts so that the only way into a fresh
+  # deployment is in Secrets Manager rather than in a log (secrets.tf).
+  #
+  # A statement of its own rather than a fourth ARN in the one above, so that
+  # the policy `dev` and `ci` render is the policy they rendered before —
+  # their whole job is to be the unchanged standard, and even a sid that says
+  # "three" when it means four is a diff on their next apply.
+  dynamic "statement" {
+    for_each = local.bootstrap_secret ? [1] : []
+    content {
+      sid       = "InjectTheBootstrapAdministratorPassword"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [aws_secretsmanager_secret.main["bootstrap-admin-password"].arn]
+    }
   }
   statement {
     sid       = "DecryptThemThroughSecretsManager"

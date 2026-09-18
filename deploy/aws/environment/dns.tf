@@ -3,16 +3,27 @@
 #
 #   test-idp.iyasec.io  CNAME  mock-sts-<env>-….elb.us-west-2.amazonaws.com
 #
-# The certificate is ACM's, DNS-validated in the same zone, and it is
-# presented by the NLB's 443 listener (nlb.tf), which terminates TLS and opens
-# a new TLS connection to the node — the node's own leaf, under the cluster's
-# Root, is then seen only by the load balancer, which does not verify it.
+# The certificate is ACM's, DNS-validated in the same zone, and **the NODE
+# presents it** — the load balancer passes TCP through untouched (nlb.tf) and
+# `cert-init` exports the certificate into the task before the node starts
+# (deploy/aws/cert-init/).
 #
-# WHAT TERMINATING COSTS: a client certificate presented on 443 ends at the
-# load balancer (an NLB cannot pass one through a TLS listener), so
-# `GET /tls/sign-in` and RFC 8705 mutual TLS on the main port see no
-# certificate. The test environments keep passthrough by leaving the name
-# empty, and `sts_global_logout`'s certificate sign-in needs it.
+# IT WAS THE LOAD BALANCER'S UNTIL 2026-09-17, and that was the mistake this
+# reverses. A TLS listener on an NLB terminates, and **an NLB cannot pass a
+# client certificate through a TLS listener** — so `GET /tls/sign-in` and RFC
+# 8705 mutual TLS on the main port saw none, which is most of what this
+# service exists to exercise. Passthrough is what the test environments always
+# used; the only thing that made this deployment different was wanting a
+# PUBLICLY TRUSTED certificate on the main port, and serving it from the node
+# gives it that without giving up the client's.
+#
+# SO THE CERTIFICATE IS REQUESTED AS EXPORTABLE (`options { export }`), and
+# that is not a flag that can be turned on afterwards: an existing certificate
+# has to be replaced by one requested this way. It is billed per certificate,
+# unlike an ACM certificate used only by an integrated service, and it is the
+# only way AWS releases a public certificate's PRIVATE KEY — which is what a
+# node needs in order to present it. The key is never in Terraform state: the
+# export happens in the task, per start (cert-init/export.sh).
 #
 # A CNAME and not an alias: that is what was asked for, and the name is not a
 # zone apex, which is the one place a CNAME cannot go.
@@ -33,6 +44,19 @@ resource "aws_acm_certificate" "public" {
   validation_method = "DNS"
   key_algorithm     = "EC_prime256v1"
   tags              = { Name = var.public_hostname }
+
+  # THE WHOLE POINT: without this ACM will not release the private key, and a
+  # certificate whose key cannot leave ACM can only ever be presented by an
+  # integrated AWS service — which is the arrangement this replaces. ACM
+  # CANNOT change it on an existing certificate ("Export option for
+  # certificates cannot be updated"), and the provider plans it as an
+  # in-place update rather than a replacement, so a certificate made without
+  # it needs `-replace='aws_acm_certificate.public[0]'` once — which is how
+  # testidp's was moved over on 2026-09-17 (`create_before_destroy` below
+  # keeps the old one serving until the new one has validated).
+  options {
+    export = "ENABLED"
+  }
 
   lifecycle {
     create_before_destroy = true

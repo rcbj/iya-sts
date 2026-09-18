@@ -28,9 +28,14 @@
 # defect: `sts_xacml_remote_pep` (a PEP container beside the runner that the
 # cluster nudges) and `sts_gnap_core` (the service posts back to a listener on
 # the runner) — nothing behind NAT can be dialled. The load balancer publishes
-# 389 and 8082 as well as 443 (environment/locals.tf), so the certificate
-# sign-in, the LDAP bulk load and the CRL addresses in certificates all work
-# from here. The job list is computed from tests/vendored/MANIFEST.js minus
+# 389, 636 and the plain-HTTP CRL/OCSP port as well as 443
+# (environment/locals.tf), so the certificate sign-in, the LDAP bulk load and
+# the CRL addresses in certificates all work from here. That last port is 8082
+# in `dev` and `ci` and 80 in `testidp`, and nothing here needs to know which:
+# a job follows the address written in the certificate. NO JOB DIALS 636 yet —
+# it is published because a directory should be reachable over TLS, and a job
+# that wants it needs an `STS_LDAPS_URL` beside the two LDAP variables in
+# environment/runner.tf. The job list is computed from tests/vendored/MANIFEST.js minus
 # the two, so a job added there runs here without this file being edited.
 # (It published 9443 as well until 2026-09-16, for the service's mutual-TLS
 # listener; that listener was deleted and a certificate sign-in is

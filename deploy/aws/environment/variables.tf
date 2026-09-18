@@ -224,10 +224,37 @@ variable "public_zone_name" {
   default     = ""
 }
 
-variable "tls_policy" {
-  description = "The NLB security policy on the 443 listener when public_hostname is set."
+# `tls_policy` was here until 2026-09-17, for the NLB's TLS listener. There is
+# no TLS listener any more — the node presents the public certificate and the
+# load balancer passes TCP through (nlb.tf) — so the protocol floor and the
+# cipher list are the SERVICE's `tls.minVersion` and `tls.ciphers`, which
+# apply to every socket this process owns.
+
+variable "cert_init_image_tag" {
+  description = <<-EOT
+    The cert-init image tag; empty derives `cert-<image_tag>`, as schema-init
+    and the runner do. It is used ONLY where `public_hostname` is set, so
+    `dev` and `ci` never pull it and it need not exist for them.
+  EOT
   type        = string
-  default     = "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
+  default     = ""
+}
+
+variable "pki_listener_port" {
+  description = <<-EOT
+    The load balancer's FRONT-END port for the plain-HTTP CRL, OCSP and
+    caIssuers listener; the container is always on `pki.httpPort` (8082)
+    behind it. 8082 (the default) keeps the test arrangement — the same number
+    on both sides — and `testidp` sets 80, which is where a relying party
+    expects to find an http:// address it read out of a certificate.
+
+    IT IS THE FRONT-END PORT THAT GOES INSIDE EVERY CERTIFICATE, because that
+    is the side a relying party reaches: `ecs.tf` builds
+    `PKI_DISTRIBUTION_BASE_URL` from this, and a node cannot see the mapping
+    from inside its container. Changing it re-issues nothing already signed.
+  EOT
+  type        = number
+  default     = 8082
 }
 
 variable "workers_request_count" {

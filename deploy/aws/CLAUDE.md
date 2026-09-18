@@ -8,9 +8,10 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the permissions boundary, the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 8082), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 389, 636, and the plain-HTTP CRL/OCSP port — 8082, or 80 in `testidp`), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
+| `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
 | `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `suite`, `ecr-password` — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
@@ -75,13 +76,60 @@ every registration was refused `STS-REG-0020`, which `sts_userinfo_protected`
 reported as an unencrypted UserInfo response.
 `STS_SUITE_KEEP_REALMS=1` skips the reset.
 
-**Three published ports.** 443 → 8081, and 389
-(the directory) and 8082 (the plain-HTTP CRL/OCSP listener) on the same numbers
-inside and out, because the service writes those numbers into what it
-publishes: `PKI_DISTRIBUTION_BASE_URL` and `PKI_DISTRIBUTION_LDAP_HOST` name the
-NLB, so a certificate's CRL address is followable. Every node listener reads the
-PROXY v2 header (`common/proxy_protocol.ts`). ECS allows five target groups per
-service; this uses three.
+**Four published ports.** 443 → 8081; 389 (the directory in the clear) and
+**636 (the same directory behind TLS, since 2026-09-17)** on the same numbers
+inside and out; and the plain-HTTP CRL/OCSP listener, **8082 inside and
+`var.pki_listener_port` outside** — 8082 in `dev` and `ci`, 80 in `testidp`.
+The service writes the OUTSIDE number into what it publishes:
+`PKI_DISTRIBUTION_BASE_URL` is built from `published_ports.pki.listener` and
+`PKI_DISTRIBUTION_LDAP_HOST` names the NLB, so a certificate's CRL address is
+followable from outside. Every node listener reads the PROXY v2 header
+(`common/proxy_protocol.ts`) — **LDAPS installs it on the `tls.Server` BEFORE
+TLS**, which is what lets an NLB target group with `proxy_protocol_v2` sit in
+front of a TLS listener at all. ECS allows five target groups per service; this
+uses four.
+
+**636 PRESENTS WHATEVER 443 DOES, AND NO TERRAFORM MAKES THAT SO.**
+`ldap/ldap_server.js` builds its LDAPS listener from
+`tlsServer.serverCertificate()` — the one record every socket in the process
+shares (`tls/CLAUDE.md`) — so with the exported ACM certificate in the task an
+LDAPS client dialling `test-idp.iyasec.io:636` gets a publicly trusted
+certificate for that name, with no second certificate to issue, rotate or
+trust. Measured on a real handshake: both ports present the same SHA-256.
+**No suite job dials 636 yet** — it is published because a directory ought to
+be reachable over TLS, and a job that wants it needs an `STS_LDAPS_URL` beside
+the two LDAP variables in `environment/runner.tf`.
+
+**Adding it re-deploys `dev` and `ci` once.** Every listener, target group,
+security-group rule pair and container port mapping iterates
+`published_ports`, so a new row is a new task-definition revision and three
+services replaced on the next apply of any environment. That is the one place
+this change is not free, and it was made knowingly: the alternative was a
+fourth knob on a map that has so far been one shared list.
+
+**AND IT MAKES LDAPS LOAD-BEARING.** ECS calls a task healthy only when it
+passes the health check of EVERY target group it is registered in, so a node
+whose 636 did not bind now fails to reach steady state and fails the apply,
+where before it would have started with `GET /admin/ldap/service` reporting the
+failure and nothing else noticing. The listener is recorded-not-thrown inside
+the service on purpose (`ldap/CLAUDE.md`), and publishing the port is what
+turns that recorded failure into a deployment that stops. The two ways it can
+fail are the two 389 already had — not root, or the port taken — plus one of
+its own: no server certificate at startup (`STS-LDAP-0029`), which cannot
+happen while `global.https` is on.
+
+**THE TWO SIDES OF THE PKI PORT NEED NOT MATCH, and since 2026-09-17 they do
+not** (`var.pki_listener_port`). They were one number because that is the
+arrangement that needs no thought, not because anything required it — the
+mapping was already stated, in the `PKI_DISTRIBUTION_*` variables `ecs.tf`
+builds from the map. What made it worth stating: **an `http://` address read
+out of a certificate is expected on port 80**, and every CRL, OCSP and
+caIssuers address `testidp` signs now reads `http://test-idp.iyasec.io/pki/…`
+with no port at all. `locals.tf`'s `pki_public_url` leaves a default port OUT
+of the URL, because `http://host:80` and `http://host` are one address to RFC
+3986 and two strings to anything that compares one, and a certificate
+extension cannot be edited after it is signed. **It changes nothing already
+issued**: a certificate carries the address it was signed with.
 
 **IT WAS FOUR UNTIL 2026-09-16**, the fourth being 9443, the service's
 mutual-TLS listener, which `sts_global_logout`'s certificate sign-in reached.
@@ -93,12 +141,42 @@ group, a security-group rule pair, a port mapping and the runner's
 container's own `PEP_HTTPS_PORT=9443` is a different port in a different
 container and is untouched.**
 
-**TLS passes through the NLB.** TCP 443 → 8081 with PROXY protocol v2, client
-IP preservation off, cross-zone on. Each node presents its own leaf chaining to
-the cluster's one Root; `STS_TLS_HOSTNAMES` starts with the NLB's DNS name and
+**TLS passes through the NLB — in EVERY environment, named or not.** TCP 443 →
+8081 with PROXY protocol v2, client IP preservation off, cross-zone on. Without
+a public name each node presents its own leaf chaining to the cluster's one
+Root; `STS_TLS_HOSTNAMES` starts with the NLB's DNS name and
 `STS_PUBLIC_BASE_URL` is `https://<nlb>`. Cross-zone matters to the suite:
 without it `sts_cluster_alternation` sees only the node in the AZ its NLB
 address is in.
+
+**AND THE PUBLIC CERTIFICATE IS THE NODE'S TOO, since 2026-09-17.** For one
+day (2026-09-16) a `public_hostname` made the 443 listener terminate TLS on an
+ACM certificate, and that was a mistake with one consequence: **an NLB cannot
+pass a client certificate through a TLS listener**, so `GET /tls/sign-in` and
+RFC 8705 mutual TLS saw none on the one deployment a real client would be
+pointed at. The listener is TCP again and the certificate moved DOWN to the
+node:
+
+* the certificate is requested **exportable** (`options { export = "ENABLED" }`
+  in `dns.tf`), which is the only way AWS releases a public certificate's
+  private key, is billed per certificate, and **cannot be turned on afterwards**
+  — an existing certificate has to be replaced by one requested that way;
+* `cert-init` exports it in the task, on every start, and writes the leaf-first
+  chain and the unencrypted key into an ephemeral volume both containers mount.
+  The passphrase ACM insists on is generated per run inside that container and
+  never leaves it; **the key is in no Terraform state, no secret and no log**,
+  which is the whole reason this is a container and not a resource;
+* the node reads them through `tls.certificateFile` / `tls.keyFile` — which the
+  service has always supported and which it deliberately leaves alone rather
+  than re-issuing under its own Root (`tls/CLAUDE.md`, *The certificate can be
+  one somebody else issued*). **No service code changed for any of this.**
+
+The cost: `acm:ExportCertificate` in the task role *and* in the foundation's
+workload boundary (below), an image to build, and a renewed certificate
+reaching the node only at the next task start — the certificate is read when
+the listeners bind. The node fails to start if the export fails, which is
+deliberate: a node serving a self-signed certificate under a public name is the
+one error this arrangement exists to prevent, and it would look healthy.
 
 **Development mode by default.** The suite drives development mode (most jobs
 sign people in with no password, which product mode refuses by design). Keys
@@ -117,6 +195,34 @@ database password never borrows the key's location (the arrangement that file
 refuses). Recovery window zero, so the next environment of the same name can
 reuse the names.
 
+**THE BOOTSTRAP ADMINISTRATOR'S PASSWORD IS A FIFTH, IN PRODUCT MODE
+(2026-09-17)** — `mock-sts/<environment>/bootstrap-admin-password`. It is the
+only way into a fresh deployment and the one an operator actually goes looking
+for, and until this it existed only as a log line: the service generates a
+password and announces it ONCE (`common/CLAUDE.md`, `credentials.ts`), so the
+log was sensitive and the credential was unrecoverable as soon as that line
+rolled off — and on three nodes it was in whichever stream won the bootstrap
+claim. Terraform generates it instead, stores it, and ECS injects it as
+`STS_ADMIN_BOOTSTRAP_PASSWORD`; the service takes it in place of generating
+one and **prints it nowhere**. Read it whenever:
+
+```bash
+aws secretsmanager get-secret-value --region us-west-2 \
+  --secret-id mock-sts/testidp/bootstrap-admin-password \
+  --query SecretString --output text
+```
+
+Three things follow. **It must satisfy the password policy** — a supplied
+password is held to it where a generated one is not — so `random_password`
+names four minimums rather than `special = false` like the three beside it; a
+refusal is `STS-AUTHN-0205` and a service nobody can sign in to. **It is
+injected, not written into the task definition**, which anybody with
+`ecs:DescribeTaskDefinition` can read. And **it is product mode only**, because
+the bootstrap is: `dev` and `ci` are development, where every password is
+accepted, so they get the four secrets and the task definition they always had.
+The workload boundary already covers it — it reads every secret under
+`mock-sts/<environment>/`.
+
 **Backups are deleted with the environment by default**
 (`delete_automated_backups = true`): retention is 14 days while it runs, and a
 backup kept after a one-hour test environment is storage billed for an
@@ -133,20 +239,26 @@ plan against its state showed two new empty outputs and nothing else.
 `environment/envs/testidp.tfvars` holds what differs:
 
 * **`public_hostname = test-idp.iyasec.io`** in the public `iyasec.io` zone.
-  `dns.tf` requests an ACM certificate for it (DNS-validated in that zone) and
-  writes the CNAME to the NLB. The 443 listener becomes **TLS on that
-  certificate**, and its target group TLS: the NLB ends the client's TLS and
-  opens its own to the node, whose leaf it does not verify. PROXY v2 still
-  precedes the node-side handshake. **The cost is the client certificate**: an
-  NLB cannot pass one through a TLS listener, so `GET /tls/sign-in` and RFC
-  8705 on 443 see none. The tests need passthrough, which is why an empty name
-  keeps it. `STS_PUBLIC_BASE_URL`, the first `STS_TLS_HOSTNAMES` entry and the
-  CRL/OCSP addresses use the public name.
+  `dns.tf` requests an **exportable** ACM certificate for it (DNS-validated in
+  that zone) and writes the CNAME to the NLB. **The NODES present it**, on
+  their own 8081, through `tls.certificateFile` — the load balancer passes TCP
+  through here exactly as it does for `dev` and `ci`, so a client certificate
+  reaches the service and `GET /tls/sign-in` and RFC 8705 work under a
+  publicly trusted name. `cert-init` is what puts the certificate in the task
+  (*TLS passes through the NLB*, above). `STS_PUBLIC_BASE_URL`, the first
+  `STS_TLS_HOSTNAMES` entry and the CRL/OCSP addresses use the public name.
+* **`pki_listener_port = 80`** (2026-09-17): the plain-HTTP CRL/OCSP/caIssuers
+  listener is published on 80 rather than 8082, so what a relying party reads
+  out of a certificate is `http://test-idp.iyasec.io/pki/…` — the port an
+  http:// address is expected on. The container is still 8082, and `dev` and
+  `ci` keep 8082 on both sides. See *Four published ports* above.
 * **Product mode with the dispatcher**: `tests/tools/modes.sh`'s `dispatch`
   row (three request workers, one surface worker, `*`, read-your-write) with
   `sts_mode = "product"`, from four `workers_*` variables. The bootstrap
-  administrator's password is logged once, by the node that wins the
-  bootstrap claim (`common/credentials.js`).
+  administrator's password is in Secrets Manager at
+  `mock-sts/testidp/bootstrap-admin-password` and is printed nowhere (*Four
+  secrets*, above); it was a log line in whichever node won the bootstrap
+  claim until 2026-09-17.
 * 2 vCPU / 8 GB nodes (five processes each), no suite runner,
   `10.52.0.0/16`. Backups are deleted on destroy, because the environment is
   built and torn down many times over the coming weeks.
@@ -168,6 +280,16 @@ plan against its state showed two new empty outputs and nothing else.
   `gh workflow run testidp-deploy.yml --ref develop -f allowed_ip="$(curl -fsS https://checkip.amazonaws.com)"`.
   Re-running with a new address replaces the list, which is how a changed
   address is let back in.
+
+**`acm:ExportCertificate` IS IN THE WORKLOAD BOUNDARY, WHICH AN ADMINISTRATOR
+APPLIES.** A boundary is a ceiling, so the task role's own statement (scoped to
+the one certificate ARN) is inert until `foundation/` has been re-applied with
+it. Until then `cert-init` fails with an AccessDenied naming the action and the
+node does not start — which is the failure, not a silent one. The boundary's
+statement names every certificate in the account and region, because a
+long-lived stack cannot name a certificate an environment has not created yet;
+the effective permission is the intersection, so a container reaches exactly
+one.
 
 The deployer gained ACM (created and changed only with `Project = STS`) and
 Route53 (`foundation/variables.tf`'s `public_dns`: listed zones, and only the
@@ -232,6 +354,7 @@ terraform -chdir=deploy/aws/foundation apply          # once, administrator
 docker build -t <repo>:<tag> --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
   --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem .
 docker build -t <repo>:schema-<tag> -f deploy/aws/schema-init/Dockerfile .
+docker build -t <repo>:cert-<tag> -f deploy/aws/cert-init/Dockerfile .   # only with a public name
 docker build -t mock-sts-tests -f tests/Dockerfile .
 docker build -t <repo>:runner-<tag> --build-arg TESTS_IMAGE=mock-sts-tests \
   -f deploy/aws/runner/Dockerfile deploy/aws/runner
