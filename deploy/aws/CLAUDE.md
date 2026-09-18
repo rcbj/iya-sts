@@ -235,6 +235,18 @@ accepted, so they get the four secrets and the task definition they always had.
 The workload boundary already covers it — it reads every secret under
 `mock-sts/<environment>/`.
 
+**AND THE KDC'S TWO, IN PRODUCT MODE (2026-09-18)** —
+`mock-sts/<environment>/krb5-krbtgt-password` and `…/krb5-service-password`,
+injected as `KRB5_KRBTGT_PASSWORD` and `KRB5_SERVICE_PASSWORD`. **A product
+KDC builds neither `krbtgt/<realm>` nor the `krb5.servicePrincipal` account
+while its password is the default the settings table publishes**
+(`kerberos/CLAUDE.md`: a krbtgt from `krbtgt-mock-password` is a golden
+ticket), so until these existed testidp answered every `kinit` with *Server
+not found in Kerberos database* — the TGT's own principal — and issued no
+ticket to anybody. Nobody types them, so they are forty letters and digits
+like the database passwords. Rotating either (tainting the `random_password`)
+invalidates every ticket issued under it and every keytab of the service.
+
 **Backups are deleted with the environment by default**
 (`delete_automated_backups = true`): retention is 14 days while it runs, and a
 backup kept after a one-hour test environment is storage billed for an

@@ -119,9 +119,11 @@ data "aws_iam_policy_document" "execution" {
     ]
   }
 
-  # THE FOURTH, IN PRODUCT MODE (2026-09-17): the bootstrap administrator's
-  # password, injected into mock-sts so that the only way into a fresh
-  # deployment is in Secrets Manager rather than in a log (secrets.tf).
+  # THE PRODUCT-MODE THREE (2026-09-17, the KDC's two 2026-09-18): the
+  # bootstrap administrator's password, injected into mock-sts so that the
+  # only way into a fresh deployment is in Secrets Manager rather than in a
+  # log, and the krbtgt and service account passwords without which a product
+  # KDC issues nothing (secrets.tf).
   #
   # A statement of its own rather than a fourth ARN in the one above, so that
   # the policy `dev` and `ci` render is the policy they rendered before —
@@ -130,9 +132,13 @@ data "aws_iam_policy_document" "execution" {
   dynamic "statement" {
     for_each = local.bootstrap_secret ? [1] : []
     content {
-      sid       = "InjectTheBootstrapAdministratorPassword"
-      actions   = ["secretsmanager:GetSecretValue"]
-      resources = [aws_secretsmanager_secret.main["bootstrap-admin-password"].arn]
+      sid     = "InjectTheProductModeSecrets"
+      actions = ["secretsmanager:GetSecretValue"]
+      resources = [
+        aws_secretsmanager_secret.main["bootstrap-admin-password"].arn,
+        aws_secretsmanager_secret.main["krb5-krbtgt-password"].arn,
+        aws_secretsmanager_secret.main["krb5-service-password"].arn,
+      ]
     }
   }
   statement {
