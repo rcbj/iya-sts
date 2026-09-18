@@ -352,6 +352,51 @@ async function run(t) {
             'caller by default', codeOf(dev11));
 
     // -----------------------------------------------------------------------
+    // A RELYING PARTY WITH TWO NAMES, which is the ordinary case for anything
+    // that is not this service's own mock service provider and was refused
+    // outright until 2026-09-18.
+    //
+    // `relyingPartyFor()` takes the audience from the `providerId` PARAMETER
+    // in preference to the `{rp}` path segment, so a caller that does what
+    // this service's own error message tells it to — *"Send providerId, or
+    // use /saml11/sso/{rp}"* — and does BOTH is minted an artifact whose
+    // `rpId` is its entity ID while its responder is reached at the segment.
+    // Every one of those artifacts was refused STS-SAML-0078, and nothing
+    // here caught it because every fixture above sets `rpId` alone: with no
+    // `scopedId` the comparison is the one it always was, which is exactly
+    // why those cases kept passing through the defect.
+    //
+    // So the artifact records BOTH names and the segment has to match one.
+    // Asserted in both directions, because an exemption that only ever says
+    // yes is not a check: the segment it was minted at resolves it, and a
+    // THIRD party's responder is still refused.
+    // -----------------------------------------------------------------------
+    const heldTwoNames = function (marker) {
+      log.debug("Entering heldTwoNames().");
+      const one = held11(marker);
+      // What `deliver()` stashes: the audience from providerId, and the path
+      // segment the browser actually arrived on.
+      one.rpId = 'https://sp.example.com/saml/sp';
+      one.scopedId = rp;
+      log.debug("Leaving heldTwoNames().");
+      return one;
+    };
+    artifacts11.restore(realms.DEFAULT_ID, 'ART11-D', heldTwoNames('_s4'));
+    const twoNames = await resolve11(soap(request11('ART11-D', '_q7')),
+                                     saml2sso.slugOf(rp));
+    t.check(twoNames.success && /_s4/.test(twoNames.body),
+            'SAML 1.1: an artifact whose audience is a providerId resolves ' +
+            'at the responder of the path segment it was minted on',
+            codeOf(twoNames) + ' ' + twoNames.body.slice(0, 120));
+    artifacts11.restore(realms.DEFAULT_ID, 'ART11-E', heldTwoNames('_s5'));
+    const twoNamesElsewhere = await resolve11(
+      soap(request11('ART11-E', '_q8')), saml2sso.slugOf(rpOther));
+    t.check(!twoNamesElsewhere.success &&
+            codeOf(twoNamesElsewhere) === 'STS-SAML-0078',
+            'SAML 1.1: and at a THIRD party\'s responder it is still ' +
+            'refused, STS-SAML-0078', codeOf(twoNamesElsewhere));
+
+    // -----------------------------------------------------------------------
     t.log.info('C. HTTP-POST-SimpleSign');
     // -----------------------------------------------------------------------
     const ssp = newParty('simplesign', 'saml2-service-provider',
