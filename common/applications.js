@@ -3403,6 +3403,34 @@ function declarationAttributes() {
     // that exists on one of them exists on all three.
     note(family.secretAttribute, 'secret', family);
   });
+  // THE CORS ORIGINS (2026-09-18) — the one declaration that belongs to NO
+  // family, and so the one row this walk cannot reach through PROTOCOLS.
+  //
+  // `appCorsOrigin` configures CORS on EVERY endpoint this service publishes:
+  // `common/cors.js` asks it for a request that names this application as its
+  // client, whatever the family, and asks every application's list for one
+  // that names nobody (discovery, a JWKS, a DID document, every preflight).
+  // The schema row says so by carrying no `families`, and familyRefusal() lets
+  // it through on an entry declared for nothing at all.
+  //
+  // IT WAS ON NO FORM UNTIL THIS ROW. `createApplication()` accepted it and
+  // the management API took it — both read `fields` whole — but the create
+  // form draws a section PER ROLE out of this list, and an attribute that was
+  // not in the list was a field nobody could type into from the console. A
+  // row here puts it in all three readers at once, which is the reason this
+  // is a table rather than a form.
+  //
+  // `families: []` and `everyFamily: true`, rather than every family listed:
+  // an empty list is what makes the form's section UNCONDITIONAL (a section
+  // carries the union of its rows' families, and none means no `pf` class, so
+  // it is shown whatever is ticked), and `everyFamily` is what lets a reader
+  // tell "applies to all" from "applies to none" without inferring it.
+  const cors = ATTRIBUTE_BY_NAME.appCorsOrigin;
+  if (cors) {
+    rows.push({ attribute: 'appCorsOrigin', role: 'cors', kind: cors.kind,
+                editable: cors.editable, sensitive: !!cors.sensitive,
+                what: cors.what, families: [], everyFamily: true });
+  }
   log.debug("Leaving declarationAttributes(). " + rows.length + " " +
       "attribute(s) for " +
             PROTOCOLS.length + " family/families.");

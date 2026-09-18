@@ -14499,16 +14499,52 @@ class AdminApi {
                      'so an answer is honoured for one request and forgotten ' +
                      'and the screen is drawn every ' +
                      'time. That is deliberate: an ' +
-                     'agreement that cannot be remembered is one nobody gave.',
+                     'agreement that cannot be remembered is one nobody ' +
+                     'gave.\n\n**PAGED, BOTH HALVES, SINCE 2026-09-18.** ' +
+                     'Each grows without a bound — a recorded consent is ' +
+                     'one row per (person, application, scope) — so the ' +
+                     'reply is ONE PAGE of `globals` and one of `users`, ' +
+                     'each answered by `globalsPaging` and `usersPaging` ' +
+                     '(`page`, `pages`, `perPage`, `firstRow`, `lastRow`, ' +
+                     '`total`) and moved by `globalsPage` and `usersPage`; ' +
+                     '`per` sizes both. `counts` still carries the totals. ' +
+                     '`q` narrows `users` over the person, the application ' +
+                     'and the scope, and `matched` is how many it matched. ' +
+                     'A caller that wants every row walks each half until ' +
+                     'its `page` equals its `pages`. This is the page ' +
+                     '`/admin/consent` draws, from the same function.',
         mirrors: 'GET /admin/consent',
-        responseDescription: 'Every scope consented for everybody on an ' +
-                             'application, every answer a person has given, ' +
-                             'and whether the screen is being drawn at all.',
+        parameters: [
+          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+            description: 'Substring of the person, the application or the ' +
+                         'scope, case-insensitive. Narrows `users` only.' }
+        ].concat(self.detailPagingParameters([
+          { name: 'globals',
+            description: 'The global overrides, configuration on ' +
+                         'application entries.' },
+          { name: 'users',
+            description: 'The recorded consents, one per (person, ' +
+                         'application, scope), after `q`.' }
+        ]), self.pagingParameters().filter(function (one) {
+          // `per` only: this reply is two lists, so a bare `page` would say
+          // nothing about which of them it meant.
+          return one.name === 'per';
+        })),
+        responseDescription: 'One page of the scopes consented for ' +
+                             'everybody on an application, one page of the ' +
+                             'answers people have given, the paging of ' +
+                             'each, and whether the screen is being drawn ' +
+                             'at all.',
         responseSchema: { type: 'object',
-                          description: 'The consent register, both halves.' },
+                          description: 'The consent register, one page of ' +
+                                       'each half: `globals`, `users`, ' +
+                                       '`globalsPaging`, `usersPaging`, ' +
+                                       '`counts`, `matched`, `query`, ' +
+                                       '`required`, `storable`, `attribute` ' +
+                                       'and `globalAttribute`.' },
         handler: function (req, res) {
           log.debug("Entering the management API consent endpoint.");
-          self.sendJson(res, 200, adminViews.consentView());
+          self.sendJson(res, 200, adminViews.consentPageView(req.query).json);
           log.debug("Leaving the management API consent endpoint.");
         } },
 

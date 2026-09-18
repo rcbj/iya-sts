@@ -181,6 +181,13 @@ function run(t) {
   // does not have. **A test that leaves process-wide state behind is a test
   // whose failure lands on somebody else's file.**
   const beforeDirectory = applications.directoryInstalled();
+  // AND THE CONSENT REGISTER'S OWN SLOT, for the same reason (2026-09-18).
+  // This file ends by installing a stub whose writes answer `noEntry` and
+  // whose reads come back empty — and `setDirectory(null)` is REFUSED rather
+  // than clearing it — so without this every later file in the run recorded
+  // no consent and listed none, with no error anywhere.
+  // `tests/consent_paging.js` was the file that noticed.
+  const beforeConsentDirectory = consent.directoryInstalled();
 
   // `readApplication` as well as `allApplications`, because this feature reads
   // ONE entry by identifier — `applications.get(clientId)` — where
@@ -467,9 +474,17 @@ function run(t) {
           'and the very next request asks again, which is what "not written ' +
           'down" has to mean if it means anything');
 
-  // CLEAN UP THE PROCESS-WIDE STATE — see the top of this function. Both slots:
-  // the consent store this file installed is `consent.setDirectory(null)`
-  // above, and this is the registry's.
+  // CLEAN UP THE PROCESS-WIDE STATE — see the top of this function. BOTH
+  // SLOTS, each put back to WHAT WAS THERE. This comment used to say the
+  // consent store was removed by the `setDirectory(null)` above; it was not —
+  // that call is refused, which is the very thing it asserts — so the stub
+  // installed after it stayed for the rest of the run.
+  if (beforeConsentDirectory) {
+    consent.setDirectory(beforeConsentDirectory);
+  }
+  t.check(consent.directoryInstalled() === beforeConsentDirectory ||
+          !beforeConsentDirectory,
+          'the consent register\'s slot is back to what this file found');
   applications.setDirectory(beforeDirectory);
   log.debug("Leaving run().");
 }

@@ -533,6 +533,16 @@ function attach(theDriver) {
   }
   log.info('cluster: request worker ' + process.pid + ' attached to node ' +
            nodeId + ' (' + resolved.mode + ').');
+  // READ THE MEMBERSHIP NOW, NOT ON THE FIRST PAGE THAT ASKS (2026-09-18).
+  // A worker has no heartbeat, so the only thing that ever read the member
+  // list in one was `snapshot()`, on demand — and a synchronous page cannot
+  // wait for the read it starts, so the FIRST `/admin/cluster` a worker drew
+  // had no members on it, and so did `GET /admin-api/cluster`. On testidp,
+  // with a surface worker behind `/admin` and requests spread over workers,
+  // that was a page saying a healthy three-node cluster had no membership.
+  // Not awaited: `refreshState()` keeps what it had on a failure and logs it,
+  // and attaching must not wait on a query that only feeds a report.
+  refreshState();
   log.debug("Leaving attach().");
   return Promise.resolve({ mode: resolved.mode, nodeId: nodeId,
                            worker: true });

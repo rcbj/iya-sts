@@ -262,6 +262,27 @@ class Consent {
     return true;
   }
 
+  // WHAT IS IN THE SLOT, so that a test which stubs it can put back WHAT WAS
+  // THERE (2026-09-18) — `applications.directoryInstalled()`'s reason, one
+  // module along. `tests/run.js` runs every file in one process, and
+  // `tests/consent.js` ended by installing a stub whose writes answer
+  // `noEntry` and whose reads come back empty: its closing comment said
+  // `setDirectory(null)` had removed it, but this function REFUSES anything
+  // short of the four hooks and keeps what it had. So every later file that
+  // recorded a consent recorded nothing, with no error anywhere —
+  // `tests/consent_paging.js` was the first to notice. A test cannot re-run
+  // `ldap_server.js`'s fill (a cached module does not re-execute), so the only
+  // honest restore is this.
+  //
+  // Nothing in the SERVICE calls it: the slot is filled once, at the
+  // directory's require time, and no code path replaces it.
+  directoryInstalled(): ConsentDirectory | null {
+    const { log } = this.deps;
+    log.debug("Entering Consent.directoryInstalled().");
+    log.debug("Leaving Consent.directoryInstalled().");
+    return this.directory || null;
+  }
+
   // Is the store reachable at all? Read by the console and by the screen, which
   // both say so rather than letting a person press a button whose effect will
   // not survive the redirect.
@@ -898,6 +919,7 @@ export = {
   USER_ATTRIBUTE: USER_ATTRIBUTE,
   GLOBAL_ATTRIBUTE: GLOBAL_ATTRIBUTE,
   setDirectory: slot.forward('setDirectory'),
+  directoryInstalled: slot.forward('directoryInstalled'),
   storable: slot.forward('storable'),
   required: slot.forward('required'),
   consentValueOf: slot.forward('consentValueOf'),

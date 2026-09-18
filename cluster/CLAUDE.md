@@ -154,7 +154,15 @@ Three things the page decides rather than reads:
   has been running.
 
 The section is drawn in `off` mode too, saying there is no membership to list:
-a section that disappears reads as a page that has not loaded. `GET
+a section that disappears reads as a page that has not loaded. **And a
+clustered process with no snapshot yet says THAT, not the same sentence**
+(2026-09-18): the first version said *cluster.mode resolved to off* for both,
+and on testidp — where `/admin` is served by a request worker and a worker's
+first draw started the read it could not wait for — it told somebody looking at
+a healthy three-node active-active cluster that it was not clustered.
+`attach()` now starts the read when a worker attaches, so a first draw
+normally has one; the page still says *has not read the member list yet* for
+the gap, which is the true sentence. `GET
 /admin-api/cluster` answers the same rows under `status.nodes[]`, `info`
 included (rule 7).
 

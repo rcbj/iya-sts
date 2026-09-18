@@ -285,14 +285,53 @@ function askedOn(page) {
   }).sort();
 }
 
+// THE WHOLE REGISTER, BOTH HALVES, WALKED PAGE BY PAGE (2026-09-18).
+//
+// `GET /admin-api/consent` answers ONE PAGE of each half since that day —
+// both grow without a bound — and this job runs in a service the rest of the
+// suite has been signing people in to, so the rows it wrote are on whatever
+// page they happen to sort onto. Reading page one would pass alone and fail in
+// the suite, which is the `/portal/applications` failure recorded in
+// tests/CLAUDE.md (*assert against the whole list, not against page one*).
+//
+// A page past the end is CLAMPED to the last one rather than refused, so a
+// half's rows are taken only while its page is within its `pages`.
+async function wholeRegister() {
+  log.debug("Entering wholeRegister().");
+  const out = { globals: [], users: [] };
+  for (let page = 1; ; page++) {
+    const r = await get("/consent?per=300&globalsPage=" + page +
+                        "&usersPage=" + page);
+    assert.strictEqual(r.status, 200,
+      "GET /admin-api/consent should answer the register, got " + r.status);
+    const globals = r.body.globalsPaging || {};
+    const users = r.body.usersPaging || {};
+    assert.ok(globals.pages >= 1 && users.pages >= 1,
+      "the register should say how many pages each half has; got " +
+      JSON.stringify({ globals: globals, users: users }));
+    if (page <= globals.pages) {
+      out.globals = out.globals.concat(r.body.globals || []);
+    }
+    if (page <= users.pages) {
+      out.users = out.users.concat(r.body.users || []);
+    }
+    if (page >= globals.pages && page >= users.pages) {
+      assert.strictEqual(out.globals.length, globals.total,
+        "every override was read across the pages");
+      assert.strictEqual(out.users.length, users.total,
+        "every recorded consent was read across the pages");
+      log.debug("Leaving wholeRegister(). " + page + " page(s).");
+      return out;
+    }
+  }
+}
+
 // Every consent recorded for one person, off /admin-api/consent.
 async function recordedFor(username) {
   log.debug("Entering recordedFor().");
-  const r = await get("/consent");
-  assert.strictEqual(r.status, 200,
-    "GET /admin-api/consent should answer the register, got " + r.status);
+  const register = await wholeRegister();
   log.debug("Leaving recordedFor().");
-  return (r.body.users || []).filter(function (one) {
+  return register.users.filter(function (one) {
     return one.username === username;
   });
 }
@@ -638,8 +677,8 @@ async function theGlobalOverrideWorks() {
            { client: CLIENT, scope: "openid" },
            "consented openid for everybody on this client");
 
-  const register = await get("/consent");
-  const overrides = (register.body.globals || []).filter(function (one) {
+  const register = await wholeRegister();
+  const overrides = register.globals.filter(function (one) {
     return one.client === CLIENT;
   });
   assert.deepStrictEqual(overrides.map(function (one) { return one.scope; })
@@ -766,8 +805,8 @@ async function aRecordedAnswerCanBeTakenBack(first) {
 async function restore() {
   log.debug("Entering restore().");
   log.info("=== Restoring: removing this run's global consents ===");
-  const register = await get("/consent");
-  const mine = (register.body.globals || []).filter(function (one) {
+  const register = await wholeRegister();
+  const mine = register.globals.filter(function (one) {
     return one.client === CLIENT || one.client === OTHER_CLIENT;
   });
   for (const one of mine) {
@@ -775,8 +814,8 @@ async function restore() {
              { client: one.client, scope: one.scope },
              "removed the override on " + one.client + " for " + one.scope);
   }
-  const after = await get("/consent");
-  const left = (after.body.globals || []).filter(function (one) {
+  const after = await wholeRegister();
+  const left = after.globals.filter(function (one) {
     return one.client === CLIENT || one.client === OTHER_CLIENT;
   });
   assert.strictEqual(left.length, 0,

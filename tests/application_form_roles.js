@@ -8,7 +8,9 @@
 //
 // `applications.declarationAttributes()` walks the PROTOCOLS table and gives
 // every family attribute a ROLE — identifier, redirect, logout, secret,
-// delivery, events. Three readers take that one list: `createApplication()`'s
+// delivery, events — and adds `cors` (2026-09-18), the one row that belongs to
+// every family (`appCorsOrigin`). Three readers take that one list:
+// `createApplication()`'s
 // accepted fields, `GET /admin-api/applications/new`, and the console form at
 // `/admin/applications/new`. The first two take every row whatever its role;
 // the form draws a section PER ROLE, by name, in `admin-ui/admin.ts`.
