@@ -271,6 +271,21 @@ plan against its state showed two new empty outputs and nothing else.
   `mock-sts/testidp/bootstrap-admin-password` and is printed nowhere (*Four
   secrets*, above); it was a log line in whichever node won the bootstrap
   claim until 2026-09-17.
+* **iyasec.io names throughout (2026-09-18)**, through `extra_environment`:
+  `LDAP_BASE_DN=dc=iyasec,dc=io`, `KRB5_REALM=IYASEC.IO` (so the Kerberos
+  domain, the auto-created service domains and the PAC's domain name are
+  `iyasec.io`), `KRB5_SERVICE_PRINCIPAL=HTTP/test-idp.iyasec.io` and
+  `STS_SPIFFE_TRUST_DOMAIN=iyasec.io`. **None of the four can move under a
+  store that already holds the old names**: the directory lives under its
+  base DN, a Kerberos key is salted with its realm, and every certificate the
+  persisted CA signed names the directory copy of its CRL by DN. So the apply
+  that first carried them REPLACED THE DATABASE and kept everything else —
+  the NLB, the certificate, the DNS record and the secrets, so the bootstrap
+  password in Secrets Manager is still the one that signs in. It was done with
+  every service scaled to 0 first, because a replaced RDS instance keeps its
+  identifier and so its endpoint, and a node still running under the old
+  names would have flushed its in-memory directory into the new database.
+  Changing any of the four again costs the same.
 * 2 vCPU / 8 GB nodes (five processes each), no suite runner,
   `10.52.0.0/16`. Backups are deleted on destroy, because the environment is
   built and torn down many times over the coming weeks.

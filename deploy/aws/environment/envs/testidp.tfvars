@@ -48,6 +48,23 @@ pki_listener_port = 80
 # (2026-09-18). TCP only — see the variable. `dev` and `ci` do not publish it.
 publish_kerberos = true
 
+# The service's own names under iyasec.io rather than the example domains the
+# settings default to (2026-09-18): the directory's base DN, the Kerberos realm
+# (whose lower-cased form is the domain the auto-created service principals and
+# the PAC's domain name come from), the acceptor's service principal on the
+# public host name, and the SPIFFE trust domain. `dev` and `ci` keep the
+# defaults the suite is written against. None of the four can be changed under
+# a store that already holds the old names — the directory, the Kerberos keys
+# (salted with the realm) and the certificate authority (whose certificates
+# name the directory copy of each CRL by DN) were all written under them — so
+# the first apply carrying them REPLACED THE DATABASE (deploy/aws/CLAUDE.md).
+extra_environment = {
+  LDAP_BASE_DN            = "dc=iyasec,dc=io"
+  KRB5_REALM              = "IYASEC.IO"
+  KRB5_SERVICE_PRINCIPAL  = "HTTP/test-idp.iyasec.io"
+  STS_SPIFFE_TRUST_DOMAIN = "iyasec.io"
+}
+
 sts_mode                = "product"
 workers_request_count   = 3
 workers_surface_count   = 1
