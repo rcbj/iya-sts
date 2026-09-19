@@ -1266,6 +1266,16 @@ every later realm unable to use roles at all. A repository entry named by
 `xacml.issuancePolicy` overrides it, so an administrator who wants to see and
 edit the document still can.
 
+**ONE COPY EVERYWHERE, OVERRIDDEN PER REALM — rcbj's decision (2026-09-19).**
+Asked whether the two service policies (`role-issuance`, and `access-control`
+over the console, `/admin-api` and the portal) should instead be SEEDED as a
+stored copy into every realm's `ou=policies`, the answer was no: one built-in
+document, identical in every realm, and a realm that wants something else
+writes an override into its OWN `ou=policies`, which reaches that realm and no
+other. `tests/xacml_service_own.js` section 5 holds both directions — a
+realm's override does not reach the default realm, the default realm's does
+not reach the realm, and deleting either brings the same built-in back.
+
 ### The two ways it can fail get OPPOSITE answers
 
 This is the part to read before changing anything in that file.

@@ -1609,15 +1609,41 @@ where it went. Do not "fix" that one to match: refusing it would leave
 `realms.enabled` unsettable from inside any realm, which is every request in a
 process where realms are switched on.
 
+### A realm has a DNS DOMAIN, and it is the root of every NAME the realm invents (2026-09-18)
+
+A realm carries `domain` beside `id`, `name` and `description` — `iyasec.io`,
+`dev.iyasec.io` — and it is the base of the names the realm makes up: its
+directory tree (RFC 2247, `dc=iyasec,dc=io`; `ldap/CLAUDE.md`), its Kerberos
+realm and SPIFFE trust domain, its entity-ID URNs, and the
+address `realms.inventedMailOf()` gives a development-mode person. **Never an
+ADDRESS**: the issuer, `did:web`, `webauthn.rpId` and the TLS names still come
+from the request's host. rcbj's three decisions: **nesting allowed**
+(a separate tree, not a branch), **URN entity IDs** (`urn:<domain>:idp`, not
+`https://`), and **fixed at creation** (`update()` refuses a change,
+`STS-CORE-0101`; the same value again is accepted). No two realms may share
+one (`STS-CORE-0100`, the default realm's `global.domain` included); a malformed
+one is `STS-CORE-0099`, and a `global.domain` that is not a domain stops the
+service in `ldap_server.js`. **Omitted, it is `<id>.<global.domain>`**, which
+maps to the `dc=<id>` beneath the default realm's base every realm had before —
+so a caller that creates a realm by id alone, which every test suite does, gets
+the tree it always got. `realms.baseDnOf()` is the one place a realm becomes a
+DN; `pki_revocation.js`'s distribution points, the console and the directory all
+ask it. It is persisted with the realm row (postgres schema version 6's
+`sts_realms.domain`, added by `ADD COLUMN IF NOT EXISTS` in the driver and in
+`postgres/schema.sql`). `tests/realm_domain.js` holds it.
+
 ### A new realm is born with its own names for the things that are NAMES
 
-Six settings here are identifiers rather than behaviour — the SAML 2.0 entityID,
-the SAML 1.1 providerID, the WS-Federation entityID, the WS-Trust issuer, the
-SAML assertion issuer and the OpenID4VP verifier client id — and each defaults to
-a fixed string. Two realms carrying one of those strings is not a configuration
-choice: it is two identity providers claiming one entityID, which a service
-provider is entitled to refuse. So `create()` seeds each with the realm id
-appended.
+Several settings here are identifiers rather than behaviour — the SAML 2.0
+entityID, the SAML 1.1 providerID, the WS-Federation entityID, the WS-Trust
+issuer, the SAML assertion issuer, the SPIFFE trust domain, the Kerberos realm
+and the OpenID4VP verifier client id — and each defaults
+to a fixed string. Two realms carrying one of those strings is not a
+configuration choice: it is two identity providers claiming one entityID, which
+a service provider is entitled to refuse. So `create()` seeds each — from the
+realm's DOMAIN since 2026-09-18 (`NAMED_BY_REALM`'s `from()`), the id appended
+before that and still for the OpenID4VP client id, which is not a name in a
+domain.
 
 They are **ORDINARY SETTINGS ON THE REALM**, listed as such on `/admin/realms`,
 which is the whole reason this is done at creation rather than inside the six
@@ -1643,7 +1669,8 @@ reader derives from four directory files. The short version:
   the audit log.
 * **THE DIRECTORY IS SEPARATED TOO — A STORE PER REALM BEHIND ONE SOCKET — AND
   THIS BULLET SAID THE OPPOSITE UNTIL 2026-08-25.** Each realm's directory is
-  its own `realms.map()` partition, named by `dc=<id>` beneath `ldap.baseDn`,
+  its own `realms.map()` partition, rooted at the RFC 2247 mapping of the
+  realm's DNS domain (since 2026-09-18 — `dc=<id>` beneath `ldap.baseDn` before),
   with its own `ou=users`, `ou=groups`, `ou=applications`, `ou=federations` and
   SPIFFE containers — so OAuth client registrations, SAML service provider
   entries and the SPIFFE registry are a realm's own. The realm is in the DN
@@ -1719,7 +1746,8 @@ reader derives from four directory files. The short version:
   Root, which no realm owns … a realm still gets no trust domain, no bundle
   endpoint of its own in any meaningful sense, and no socket.* Every clause was
   true and the last one is what changed. A realm now gets a TRUST DOMAIN of its
-  own — `<realm>.<the service's>`, seeded when the realm is created — and, when
+  own — its DNS domain since 2026-09-18 (`<realm>.<the service's>` before),
+  seeded when the realm is created — and, when
   its `spiffe.enabled` is turned on, a Workload API and a SPIRE Server API of its
   own on an ADDRESS of its own. **The discriminator is the endpoint address
   because gRPC's path is the METHOD name**, fixed by the Workload API
@@ -1859,8 +1887,8 @@ deleted on 2026-09-16); **material derived at startup** (the TLS certificate is
 issued for `tls.hostnames`/`tls.ips` at boot, and the DEFAULT realm's Kerberos principal
 database and every long-term key in it comes from the realm, the SIDs and the passwords at
 require time — another trust realm's is built when its Kerberos is turned on, which is why
-those ten rows are `realmRuntime`); and **the directory tree**, which `ldap.baseDn` is the
-root of. Marking a
+those ten rows are `realmRuntime`); and **the directory tree**, which `global.domain` is the
+root of (it was `ldap.baseDn` until 2026-09-18). Marking a
 setting runtime when the thing derived from it is not rebuilt is worse than marking
 it restart-only, because the two then disagree silently.
 
@@ -2056,7 +2084,7 @@ overridden at all — `checkOverride()` refuses every other by name — and a ru
 setting is BY DEFINITION one that is read per call rather than captured at
 require time; that is what the column means and what `restartReason` documents
 the absence of. So nothing in a saved file can reach `global.https`,
-`oauth2.rfc9700`, `ldap.port` or `ldap.baseDn`, and **a saved file cannot change
+`oauth2.rfc9700`, `ldap.port` or `global.domain`, and **a saved file cannot change
 the scheme this service answers on**. Every value is re-checked on the way back
 in rather than trusted: the file was written by this service, but possibly by an
 older version of it, and a setting may have been renamed, retyped, had its enum
@@ -2179,7 +2207,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    under it, and one dependency into it is inverted.** `admin_stats.js` answers
    "how much"; this answers "what, when, and to whom", as a list of discrete
    events. It requires `helpers.js`, `config.js`, `realms.js`, the error-code
-   table and the replication fan-in and NOTHING ELSE in this repository, and
+   table, the replication fan-in and `client_address.js` (a leaf `helpers.js`
+   already loads) and NOTHING ELSE in this repository, and
    that has to stay true: it is called from `app.js`'s call log,
    from `admin_stats.js`'s `recordAuthentication()`, from `authn.js`'s session
    store and from every LDAP handler, which between them are most of the
@@ -2222,6 +2251,26 @@ with `Cannot find module` naming a file the operator never mentioned.
    deliberately NOT `sessionOf()`: that function deletes an expired session as
    it finds it, and an observer that quietly ended sessions while reporting on
    them would be changing the thing it describes.
+
+   **EVERY ROW CARRIES THE CLIENT'S ADDRESS (2026-09-18), which reverses what
+   this file decided when it was written** — a row named the CHANNEL and never
+   the address, because a mock behind a compose bridge reports the bridge.
+   `client_address.js` (trusted proxy ranges, the right-most untrusted hop) and
+   the PROXY protocol answered that on 2026-09-14. **The address is AMBIENT,
+   not a parameter**: `audit.withSource()` runs work inside an
+   AsyncLocalStorage source, and a row written beneath it takes the source's
+   address — because the rows that matter most (`recordAuthentication()`, the
+   session store, consent) are written by code that was never handed a
+   request, and threading one through two hundred calls is two hundred chances
+   to forget. Four entry points enter a source: `app.js`'s ambient-request
+   middleware (the request, resolved lazily), `ldap_server.js`'s registration
+   wrapper around every operation handler (the peer, on the socket and in a
+   request worker's connection stub), the KDC's TCP and UDP receive paths, and
+   the SPIRE Server API's three call wrappers (`SpiffeGrpc.fromCaller()`). An
+   `address` on the event wins; a row written outside any source — a timer,
+   an expiry, a background delivery, a seed — has none, which is true.
+   **A new socket owner that authenticates anybody owes a source**, or its
+   rows say nobody sent them. `tests/audit_client_address.js` holds it.
 
    **Three properties are load-bearing and each is easy to undo.** `audit()`
    CANNOT THROW — it is wrapped, and a caller must never guard it, because an

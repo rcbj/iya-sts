@@ -444,17 +444,43 @@ from `listen()`* is the rule this is an instance of.
 ## A DIRECTORY PER TRUST REALM, BEHIND ONE SOCKET
 
 Since 2026-08-25 the directory is **per realm** — and since later the same day
-it is a **STORE per realm**, not a subtree of one store. The DN layout is
-unchanged and is what a client sees:
+it is a **STORE per realm**, not a subtree of one store. **Since 2026-09-18 each
+realm's tree is rooted at its own DNS DOMAIN** (`common/realms.js`), the RFC
+2247 mapping of it, so a realm is a naming context of its own rather than a
+branch of the default realm's:
 
 ```
-dc=example,dc=com                    the DEFAULT realm      (ROOT_DN, ldap.baseDn)
+dc=example,dc=com                    the DEFAULT realm      (ROOT_DN, global.domain)
   ou=users, ou=groups, ou=applications, ou=federations, ou=spiffe
-dc=acme,dc=example,dc=com            the realm `acme`
-  ou=users, ou=groups, ou=applications, ou=federations, ou=spiffe
+dc=acme,dc=example,dc=com            the realm `acme`, created with no domain
+dc=iyasec,dc=io                      a realm whose domain is iyasec.io
+dc=dev,dc=iyasec,dc=io               a realm whose domain is dev.iyasec.io
 ```
 
-`ROOT_DN` is what the **socket** serves and never changes. `baseDn()` is what the
+A realm created with no domain is `<id>.<global.domain>`, which is exactly the
+`dc=<id>` beneath the default realm's base every realm had before. **A domain
+inside another realm's is allowed** (rcbj's decision, Active Directory's child
+domain): `realmFor()` gives a DN to the realm with the DEEPEST base containing
+it, and each realm's entries are in its own store, so a subtree search from
+`dc=iyasec,dc=io` cannot return `dc=dev,dc=iyasec,dc=io`'s entries. The root
+DSE publishes every realm's base, and a DN in none of them is refused by
+`inNamingContext()`, which replaced `isUnder(dn, ROOT_DN)` in every handler.
+`tests/realm_domain.js` holds all of it.
+
+**AND FOR A DAY EVERY LDAP OPERATION ON A REALM'S DN WENT TO THE DEFAULT REALM
+(2026-09-17 to 2026-09-18).** #74 added a second `function inRealmOf(id, fn)`
+near the foot of `ldap_server.js` for the cache descriptors; a function
+declaration is hoisted, so it replaced the socket's `inRealmOf(dn, fn)` for the
+whole file, looked every DN up as a realm id, found none and ran the handler in
+the default realm — a search, bind, add or modify naming another realm's tree
+was answered `noSuchObject` from the wrong store. Nothing failed:
+`crl_directory_publication.js` publishes with the realm already ambient, and no
+other file searched a realm's DN in development mode. It is `inRealmById()` now.
+**Two top-level functions of one name in this 16,000-line file are silent**,
+which is worth a `grep -o '^function [A-Za-z0-9_]*' | sort | uniq -d` before
+adding one.
+
+`ROOT_DN` is the DEFAULT realm's base and never changes. `baseDn()` is what the
 **ambient realm** owns, and the container accessors — `usersDn()`,
 `groupsDn()`, `applicationsDn()`, `federationsDn()`, `spiffeEntriesDn()`,
 `spiffeAgentsDn()`, and the ones added for later containers — are built from
@@ -477,12 +503,12 @@ realm would isolate as well and would cost the thing the feature is for: a port
 is bound when the process starts, so realms would stop being creatable at
 runtime.
 
-**THE BASE IS DERIVED FROM THE REALM ID AND IS NOT A SETTING.** `ldap.baseDn` is
-restart-only *because the tree is built under it at startup* — the "material
-derived at startup" kind that `common/CLAUDE.md` names as the case that must
-never get the `realmRuntime` marker. So a realm cannot carry `ldap.baseDn`, and
-its base is computed instead. That is the rule being right rather than something
-worked around: a configurable base would let two realms name one subtree.
+**THE BASE IS DERIVED FROM THE REALM'S DOMAIN AND IS NOT A SETTING.** It was
+derived from the realm ID beneath a restart-only `ldap.baseDn` until 2026-09-18,
+when `global.domain` replaced that setting and every realm got a domain of its
+own, fixed at creation and unique among realms (`realms.baseDnOf()`, the one
+place a realm becomes a DN). A base configurable apart from the domain would be
+a second answer to one question, and would let two realms name one tree.
 
 **THE SUBTREE IS BUILT WHEN THE REALM IS.** Every other per-realm store in this
 service is built lazily by `realms.keyed()`, which works because every one of
@@ -853,7 +879,7 @@ fifteen the safe choice rather than the lazy one. It is the same bargain the
 group index makes, taken one step further.
 
 The `usersDn()` it was built against is kept and compared as well, which the
-group index does not do. That container moves when `ldap.baseDn` changes and **a
+group index does not do. That container moves when `global.domain` changes and **a
 settings change bumps no directory version at all** — so without it, changing the
 base would leave an index describing a container nothing is in any more.
 

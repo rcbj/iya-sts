@@ -311,7 +311,9 @@ async function test() {
            "the people ===");
   for (const one of [[REALM, "EST"], [REALM_B, "EST B"], [REALM_P,
                                                           "EST product"]]) {
-    await ok(api + "/realms/create", { id: one[0], name: one[1] },
+    await ok(api + "/realms/create", { id: one[0],
+                                       domain: one[0] + ".example.net",
+                                       name: one[1] },
              "created the trust realm " + one[0]);
   }
   await ok(api + "/realms/set", { id: REALM_P, key: "global.mode",

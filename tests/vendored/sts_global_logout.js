@@ -786,9 +786,12 @@ async function x509(username) {
 async function ldapBind(username) {
   log.debug("Entering ldapBind().");
   const apiBase = base + "/admin-api";
+  // The default realm's tree is the RFC 2247 mapping of `global.domain`
+  // since that setting replaced `ldap.baseDn` (2026-09-18).
+  const domain = String(await facts.setting(apiBase, "global.domain") ||
+                        "example.com");
   const baseDn = process.env.STS_LDAP_BASE_DN ||
-                 String(await facts.setting(apiBase, "ldap.baseDn") ||
-                        "dc=example,dc=com");
+                 "dc=" + domain.split(".").join(",dc=");
   const secure = await facts.isProduct(apiBase);
   log.debug("Leaving ldapBind().");
   return ldapBindTo(username, baseDn, secure);

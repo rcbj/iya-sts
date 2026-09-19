@@ -258,7 +258,9 @@ async function auditRows(apiBase, action, target) {
 async function setUp() {
   log.debug("Entering setUp().");
   log.info("=== a throwaway realm " + REALM + " with short tokens ===");
-  await ok(api + "/realms/create", { id: REALM, name: REALM },
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: REALM },
            "created the realm");
   for (const client of ["sts-user-portal", "sts-admin-console"]) {
     for (const attribute of ["oauthAccessTokenTtlS", "oauthIdTokenTtlS"]) {

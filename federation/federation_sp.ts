@@ -255,7 +255,8 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // would have let one realm's flood evict another realm's in-flight sign-ins,
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
-const contexts = realms.map({ persist: 'federation_sp.contexts' });
+const contexts = realms.map({ persist: 'federation_sp.contexts',
+                              retain: 'age' });
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML

@@ -375,9 +375,10 @@ class ProtocolEndpoints {
       ldap: function (host) {
         log.debug("Entering the ldap socket builder.");
         const directory = self.loaded('../ldap/ldap_server');
-        // The realm's own subtree, `dc=<id>` beneath `ldap.baseDn` — what a
-        // client of this realm searches under on the one shared socket.
-        const dn = directory ? directory.baseDn() : config.value('ldap.baseDn');
+        // The realm's own tree, rooted at its domain — what a client of this
+        // realm searches under on the one shared socket.
+        const dn = directory ? directory.baseDn()
+                             : realms.baseDnOf(realms.current());
         const rows = [];
         if (config.value('ldap.plainListener')) {
           rows.push({ name: 'LDAP', methods: [],

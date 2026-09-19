@@ -61,12 +61,13 @@ const accounts = realms.map({ persist: 'acme.accounts' });
 // bound to one account may not be bound to a second (section 7.3.5).
 const accountKeys = realms.map({ persist: 'acme.accountKeys' });
 const orders = realms.map({ persist: 'acme.orders' });
-const authorizations = realms.map({ persist: 'acme.authorizations' });
+const authorizations = realms.map({ persist: 'acme.authorizations',
+                                    retain: 'age' });
 const certificates = realms.map({ persist: 'acme.certificates' });
 // RFC 9773 certID -> certificate id.
 const renewals = realms.map({ persist: 'acme.renewalInfo' });
 // The random part of every Replay-Nonce already presented, with its expiry.
-const usedNonces = realms.map({ persist: 'acme.usedNonces' });
+const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age' });
 
 // A realm holding this many spent nonces refuses to remember more by dropping
 // the ones that have expired first; a nonce is only useful until it expires, so

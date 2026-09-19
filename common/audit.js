@@ -20,9 +20,10 @@
 // `GET /admin-api/audit` from it; this file holds the events and none of the
 // HTML.
 //
-// **It requires helpers.js, config.js, realms.js, the error-code table and the
-// replication fan-in, and NOTHING ELSE in this repository — none of them
-// requires it back — and that is load-bearing rather than tidy.** It is called
+// **It requires helpers.js, config.js, realms.js, the error-code table, the
+// replication fan-in and client_address.js (which helpers.js already loads),
+// and NOTHING ELSE in this repository — none of them requires it back — and
+// that is load-bearing rather than tidy.** It is called
 // from app.js's call log, from admin_stats.js's recordAuthentication(), from
 // authn.js's session store and from every LDAP handler — which is most of the
 // service. Anything
@@ -88,6 +89,11 @@ const replication = require('../persistence/persistence_replication');
 // the service. See common/error_codes.js for why a code is recorded here and
 // never sent to the client whose request produced it.
 const errorCodes = require('./error_codes');
+// WHO A REQUEST CAME FROM (2026-09-18). A LEAF (rule 3) that `helpers.js`
+// already requires, so it adds nothing to what this file loads — and nothing
+// to the parent project's Kerberos COPY closure, which reaches this file.
+const clientAddress = require('./client_address');
+const { AsyncLocalStorage } = require('async_hooks');
 
 // ---------------------------------------------------------------------------
 // The cap, read WHERE IT IS USED rather than captured at require time.
@@ -842,6 +848,88 @@ let dropped = 0;
 // ---------------------------------------------------------------------------
 let actorResolver = null;
 
+// ---------------------------------------------------------------------------
+// WHERE THE ACT CAME FROM: THE CLIENT'S ADDRESS ON EVERY ROW (2026-09-18).
+//
+// **This reverses a decision this file made when it was written**, which was
+// that a row carries the CHANNEL and never the address, because "a mock
+// behind a compose bridge reports the bridge". That reason stopped being true
+// on 2026-09-14: `common/client_address.js` resolves the client through the
+// proxies a deployment names (`global.trustedProxies`, the right-most
+// untrusted `X-Forwarded-For` hop), a request worker is told the address its
+// front process resolved, and `common/proxy_protocol.ts` puts a load
+// balancer's PROXY header on the socket. What is left of the old caveat is
+// true of every log anywhere: behind a NAT, or on a laptop's compose bridge
+// with no proxy named, the address is the nearest hop that did not say who it
+// forwarded for. An authentication, an attempted sign-in, a consent and a
+// sign-out with nobody's address on them were the rows an operator most
+// needed it on.
+//
+// **IT IS AMBIENT, like the realm, and not a parameter.** Two hundred audit
+// calls across forty files are made deep inside handlers that were never
+// handed a request — `admin_stats.recordAuthentication()`, the session store,
+// the consent register — and threading one through each would be two hundred
+// chances to forget. So an entry point enters a SOURCE for the work it runs:
+//
+//   * `common/app.js`, for every HTTP request, with the request itself — the
+//     address is resolved from it only when a row is actually written;
+//   * the directory, around every LDAP operation handler, with the socket's
+//     peer (a request worker gets it on the connection stub);
+//   * the KDC, around each message on TCP 88 and UDP 88, with the peer.
+//
+// A caller that knows better passes `address` on the event and wins. A row
+// written outside any source — a timer, an expiry, a background delivery, a
+// seed at start-up — has no address, which is the truth: nobody sent it.
+// ---------------------------------------------------------------------------
+const sources = new AsyncLocalStorage();
+
+// Run `fn` with `source` ambient: `{ req }` for an HTTP request, or
+// `{ address }` for a raw socket. Returns what `fn` returns.
+function withSource(source, fn) {
+  log.debug("Entering withSource().");
+  log.debug("Leaving withSource().");
+  return sources.run(Object.assign({}, source || {}), fn);
+}
+
+// An address as a row holds it: `::ffff:` taken off an IPv4 client on a
+// dual-stack socket, and `client_address.js`'s 'unknown' held as '' — a row
+// with no address says nothing, which is what 'unknown' means.
+function addressText(raw) {
+  log.debug("Entering addressText().");
+  const text = clientAddress.normalise(raw);
+  log.debug("Leaving addressText().");
+  return text === 'unknown' ? '' : text;
+}
+
+// The address of the source this row is being written inside, or ''.
+// EXPORTED as `currentAddress()` (2026-09-19) for the one other record that
+// lists acts per person — `admin_stats.js`'s authentication events, drawn on
+// /admin/users — so the two answer from ONE source and cannot disagree about
+// where a sign-in came from.
+// Resolved once per source and kept on it, so a request that writes three
+// rows asks `client_address.js` once.
+function ambientAddress() {
+  log.debug("Entering ambientAddress().");
+  const source = sources.getStore();
+  if (!source) {
+    log.debug("Leaving ambientAddress(). No source.");
+    return '';
+  }
+  if (source.resolved === undefined) {
+    try {
+      source.resolved = addressText(source.req
+        ? clientAddress.clientAddressOf(source.req) : source.address);
+    } catch (e) {
+      log.debug("Caught in ambientAddress(): " + ((e && e.message) || e));
+      // An address that could not be worked out is a row without one, never
+      // a request that failed — see the header's third rule.
+      source.resolved = '';
+    }
+  }
+  log.debug("Leaving ambientAddress().");
+  return source.resolved;
+}
+
 function setActorResolver(fn) {
   log.debug("Entering setActorResolver().");
   actorResolver = fn;
@@ -988,11 +1076,16 @@ function record(event) {
     // read from, and forcing them into an enum would mean a lookup table that
     // silently drops the seventeenth.
     protocol: trimmed(info.protocol || '', 60),
-    // Where it came from: 'http', 'ldap', 'ldaps', 'internal'. Not the client's
-    // IP address — see the note on the console page. A mock behind a compose
-    // bridge reports the bridge, which is a fact about docker and not about
-    // whoever made the call.
+    // How it came in: 'http', 'ldap', 'ldaps', 'kerberos', 'grpc', 'tls',
+    // 'console', 'internal', 'none' (an expiry), or '' where the recording
+    // site named none. mgmt-api/admin_api_spec.ts enumerates them; a new
+    // value needs a row there.
     channel: trimmed(info.channel || '', 40),
+    // AND FROM WHOM (2026-09-18): the client's IP address, as the caller gave
+    // it or as the ambient source says — see withSource() above. '' for
+    // something nobody sent.
+    address: trimmed(info.address ? addressText(info.address)
+      : ambientAddress(), 64),
     summary: trimmed((errorCode ? errorCodes.tag(errorCode) : '') +
                      (info.summary || ''), MAX_SUMMARY_LENGTH),
     detail: detailOf(info.detail)
@@ -1031,6 +1124,7 @@ function logFailure(row) {
   log.debug("Entering logFailure().");
   const line = row.summary + (row.target ? ' (' + row.target + ')' : '') +
                (row.actor ? ' actor=' + row.actor : '') +
+               (row.address ? ' from=' + row.address : '') +
                ' action=' + row.action + ' outcome=' + row.outcome;
   if (row.outcome === 'error') {
     // error-code: none — the line IS the failure's record and leads with its code
@@ -1247,6 +1341,10 @@ function recordHttp(req, res, detail) {
     actor: actor,
     target: path,
     channel: 'http',
+    // Named from the request rather than left to the ambient source: a
+    // response that bypassed `res.end()` is recorded on `finish`, which may
+    // run outside the request's asynchronous context.
+    address: clientAddress.clientAddressOf(req),
     // The route PATTERN express matched, which is what admin_stats.js keys its
     // call table on — carried here too so that a row on this page and a row on
     // /admin/metrics can be lined up without guessing.
@@ -1298,8 +1396,8 @@ function queryText(query) {
 // written once rather than at each of the six handlers.
 //
 // The containers are passed in rather than derived: this module knows nothing
-// about the base DN and must not, since `ldap.baseDn` is a setting and the
-// caller already has it resolved.
+// about the base DN and must not, since a realm's base is derived from its
+// domain and the caller already has it resolved.
 // ---------------------------------------------------------------------------
 function objectKindOf(dn, containers) {
   log.debug("Entering objectKindOf().");
@@ -1343,6 +1441,7 @@ function recordDirectory(event) {
     target: info.target || '',
     protocol: info.protocol || 'LDAP',
     channel: info.channel || 'ldap',
+    address: info.address || '',
     summary: info.summary || '',
     errorCode: info.errorCode || '',
     detail: info.detail
@@ -1506,6 +1605,8 @@ module.exports = {
   directoryActionFor: directoryActionFor,
   objectKindOf: objectKindOf,
   setActorResolver: setActorResolver,
+  withSource: withSource,
+  currentAddress: ambientAddress,
   list: list,
   summary: summary
 };

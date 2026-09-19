@@ -55,8 +55,25 @@ Two conditions, both required:
   flush — right for a directory somebody types into, wrong for a session table
   and an audit ring that change on every request.
 
-`persistence.minted` turns it off; `persistence.mintedRetention` (7 days) is how
-long a row is kept.
+`persistence.minted` turns it off.
+
+**Rows are kept until the thing they hold ends.** A session is removed when it
+signs out or expires, a grant when it is revoked, a nonce once it is used or
+past its lifetime. Nothing is deleted just because it has not been written for
+a while, so configuration, accounts, the audit log and the statistics survive
+any number of restarts. The one exception is short-lived rows (nonces, codes,
+flows in progress) left behind by a process that stopped before it cleaned
+them up: those are removed at the next start once they are older than
+`persistence.mintedRetention` (7 days).
+
+**A restarted node carries on where it left off.** Each node writes its own
+share of the audit log and the statistics. When a container restarts under the
+same node name (`cluster.nodeName`, or `STS_CLUSTER_NODE_NAME`), it takes that
+share back and keeps adding to it. If the previous container is somehow still
+running, the new one waits up to 35 seconds for it to go away and otherwise
+starts a fresh share; nothing is lost either way, because every node's pages
+read every share. Set a node name if your platform gives each container a
+random host name.
 
 ### Every minted row is encrypted
 

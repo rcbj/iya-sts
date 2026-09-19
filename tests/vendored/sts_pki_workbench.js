@@ -1085,7 +1085,7 @@ async function test() {
   log.info("Driving the PKI pane at " + base + " in realm " + REALM + ".");
 
   const made = await postJson(base + "/admin-api/realms/create",
-    { id: REALM, name: "PKI pane test" });
+    { id: REALM, domain: REALM + ".example.net", name: "PKI pane test" });
   assert.ok(made.status === 200 && made.body && made.body.ok !== false,
     "the realm could not be created: " + made.status + " " +
     made.text.slice(0, 300));

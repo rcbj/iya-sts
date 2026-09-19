@@ -62,6 +62,8 @@ var config = {
     //
     // STS_HTTPS still wins over this file, so `STS_HTTPS=false` is the way back
     // to a plain port without editing anything.
+    // The default realm's DNS domain: its directory is dc=example,dc=com.
+    domain: "example.com", // restart to apply
     https: true,
 
     // Believe X-Forwarded-Proto and X-Forwarded-Host. OFF: with nothing in
@@ -280,7 +282,6 @@ var config = {
   ldap: {
     port: 389,                   // restart to apply
     tlsPort: 636,                // restart to apply
-    baseDn: "dc=example,dc=com", // restart to apply
     // ON. It was `false` in all three env files, which is what an
     // appconfig value does: it beats the default, and the default is
     // what every document here describes. So a person signed in through

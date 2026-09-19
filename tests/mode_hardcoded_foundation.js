@@ -55,6 +55,7 @@ function run(t) {
   const config = require('../common/config');
   const mode = require('../common/mode');
   const helpers = require('../common/helpers');
+  const realms = require('../common/realms');
 
   // --- 1. the predicates -------------------------------------------------
   const predicates = ['seedsDemoData', 'inventsClaimValues',
@@ -100,8 +101,9 @@ function run(t) {
     t.equal(dev.sub, product.sub, 'development gives the same subject — ' +
             'the mode decides invented claims, not who somebody is');
     t.equal(dev.family_name, 'Mock', 'development keeps the persona surname');
-    t.equal(dev.email, 'alice@sts.example',
-            'development keeps the persona address');
+    t.equal(dev.email, 'alice@' + realms.domainOf(realms.DEFAULT_ID),
+            'development keeps the persona address, in the realm\'s domain ' +
+            '(it was @sts.example until 2026-09-18)');
     t.equal(dev.email_verified, true,
             'development keeps email_verified exactly as it always was');
     t.equal(dev.name, 'alice (mock)', 'development keeps the persona name');

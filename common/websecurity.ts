@@ -208,6 +208,7 @@ interface LimitAnswer {
 // allowance whenever they wanted one, which is the opposite of what the
 // limiter is for.
 const buckets = realms.sharedMap({ persist: 'security.rateLimitBuckets',
+                                   retain: 'age',
                                    scope: 'shared' });
 const MAX_BUCKETS = 20000;
 

@@ -286,7 +286,7 @@ outside it:
    strips the prefix. **Nothing may be registered above it.** — `common/CLAUDE.md`
 2. **A store becomes per realm at its DECLARATION and nowhere else**;
    `tests/realm_isolation.js` is the guard. — `common/CLAUDE.md`
-3. **The embedded directory is per realm too**, `dc=<id>` beneath `ldap.baseDn`. — `ldap/CLAUDE.md`
+3. **The embedded directory is per realm too**, a tree of its own rooted at the realm's DNS domain (fixed at creation; the default realm's is `global.domain`). — `ldap/CLAUDE.md`, `common/CLAUDE.md`
 4. **A realm has administrators of its own, CONFINED to it** (2026-09-14, #32; it
    read *deliberately NOT separated* until then). The console asks the roster of
    the realm a person signed in through; the default realm's is the service

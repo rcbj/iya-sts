@@ -598,7 +598,9 @@ async function ensurePerson(who) {
 async function setUp() {
   log.debug("Entering setUp().");
   log.info("=== 0. a throwaway realm " + REALM + " ===");
-  await ok(api + "/realms/create", { id: REALM, name: "RFC 9470 " + STAMP },
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "RFC 9470 " + STAMP },
            "created the realm");
   await ensurePerson(ALICE);
   await ensurePerson(BOB);

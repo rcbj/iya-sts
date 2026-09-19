@@ -208,7 +208,7 @@ let connections: LdapClusterConnections | null = null;
 
 // node id -> { node, name, at, rows: [...] }
 const connectionsByNode = realms.sharedMap({
-  persist: 'ldap.clusterConnections' });
+  persist: 'ldap.clusterConnections', retain: 'age' });
 
 // identity key -> { key, at, node, nonce }
 const signOuts = realms.sharedMap({

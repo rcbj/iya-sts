@@ -113,9 +113,11 @@ interface GnapStoreDeps {
 }
 
 const grants = realms.map({ persist: 'gnap.grants' });
-const continuations = realms.map({ persist: 'gnap.continuations' });
-const interactions = realms.map({ persist: 'gnap.interactions' });
-const userCodes = realms.map({ persist: 'gnap.userCodes' });
+const continuations = realms.map({ persist: 'gnap.continuations',
+                                   retain: 'age' });
+const interactions = realms.map({ persist: 'gnap.interactions',
+                                  retain: 'age' });
+const userCodes = realms.map({ persist: 'gnap.userCodes', retain: 'age' });
 const tokens = realms.map({ persist: 'gnap.tokens' });
 const tokenValues = realms.map({ persist: 'gnap.tokenValues' });
 const manageValues = realms.map({ persist: 'gnap.manageValues' });
@@ -128,7 +130,7 @@ const resources = realms.map({ persist: 'gnap.resources' });
 // reasonably short time period"). Persisted for the reason the DPoP replay
 // cache is: across request workers a proof refused by one and accepted by
 // another is the replay the cache exists to stop.
-const replay = realms.map({ persist: 'gnap.replay' });
+const replay = realms.map({ persist: 'gnap.replay', retain: 'age' });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is already a digest
 // of the signature; `until` is in seconds.

@@ -49,7 +49,9 @@ pki_listener_port = 80
 publish_kerberos = true
 
 # The service's own names under iyasec.io rather than the example domains the
-# settings default to (2026-09-18): the directory's base DN, the Kerberos realm
+# settings default to (2026-09-18): the default realm's DNS domain (which roots
+# the directory at dc=iyasec,dc=io — it was LDAP_BASE_DN until global.domain
+# replaced that setting the same day), the Kerberos realm
 # (whose lower-cased form is the domain the auto-created service principals and
 # the PAC's domain name come from), the acceptor's service principal on the
 # public host name, and the SPIFFE trust domain. `dev` and `ci` keep the
@@ -59,7 +61,7 @@ publish_kerberos = true
 # name the directory copy of each CRL by DN) were all written under them — so
 # the first apply carrying them REPLACED THE DATABASE (deploy/aws/CLAUDE.md).
 extra_environment = {
-  LDAP_BASE_DN            = "dc=iyasec,dc=io"
+  STS_DOMAIN              = "iyasec.io"
   KRB5_REALM              = "IYASEC.IO"
   KRB5_SERVICE_PRINCIPAL  = "HTTP/test-idp.iyasec.io"
   STS_SPIFFE_TRUST_DOMAIN = "iyasec.io"

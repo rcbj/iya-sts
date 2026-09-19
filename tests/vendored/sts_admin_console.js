@@ -223,6 +223,10 @@ const CONSOLE_USER = "console-test-" + names.runStamp();
 // The throwaway realm, and the console prefix that reaches it.
 const REALM = ("console-" + names.runStamp()).toLowerCase()
     .replace(/[^a-z0-9-]/g, "").slice(0, 40);
+// Its DNS domain, typed into the create form's Domain field (2026-09-18) so
+// that the form's handling of it is asserted, and so that every value below
+// that is built from the realm's domain is built from one the test chose.
+const REALM_DOMAIN = REALM + ".example.net";
 
 // ---------------------------------------------------------------------------
 // WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT
@@ -1142,7 +1146,10 @@ async function formIndexPosting(driver, actionValue) {
     const wanted = arguments[0];
     const forms = Array.from(document.forms);
     for (let i = 0; i < forms.length; i += 1) {
-      const control = forms[i].elements['action'];
+      // The HIDDEN field, not elements['action']: a form with a submit button
+      // named action as well (2026-09-19, /admin/applications/new's Generate
+      // Secret) makes that a RadioNodeList whose value is empty.
+      const control = forms[i].querySelector('input[type=hidden][name=action]');
       const value = control && control.value;
       if (value === wanted) { return i; }
       if ((forms[i].getAttribute('action') || '').indexOf('action=' + wanted) >= 0) {
@@ -2261,6 +2268,7 @@ async function theRealmIsCreatedOnTheForm(driver) {
   await fillAndPress(driver, form, {
     id: REALM,
     name: "Console UI test realm",
+    domain: REALM_DOMAIN,
     description: "Created by tests/sts_admin_console.js; LEFT IN PLACE on " +
                  "purpose, so that a failed run can be read afterwards."
   });
@@ -2289,6 +2297,10 @@ async function theRealmIsCreatedOnTheForm(driver) {
       "and it should carry the NAME the form was given, not just the id. A " +
       "create that reads the id and drops every other field answers with the " +
       "same notice. It carries " + JSON.stringify(found.name));
+    assert.strictEqual(found.domain, REALM_DOMAIN,
+      "and the DOMAIN the form was given, which roots the realm's directory " +
+      "and every name seeded on it; it carries " +
+      JSON.stringify(found.domain));
   });
 
   // And the console under its prefix is reachable with the DEFAULT realm's
@@ -3110,6 +3122,12 @@ async function theTokensPageRevokesWhatItDraws(driver) {
   log.debug("Leaving theTokensPageRevokesWhatItDraws().");
 }
 
+// WHICH CLIENT EACH MINTED ACCESS TOKEN WAS ISSUED TO, so introspection can
+// authenticate as it: product mode answers RFC 7662 JSON only to an
+// authenticated caller, and to the token's own client (RFC 9701 section 5's
+// intended-for rule), so an anonymous introspection is a 401 there.
+const mintedFor = new Map();
+
 async function mintTokens(username, client) {
   log.debug("Entering mintTokens(). username=" + username);
   await ensurePerson(realm("/admin-api"), username);
@@ -3140,6 +3158,7 @@ async function mintTokens(username, client) {
                 refresh: reply.body.refresh_token,
                 jti: claimOf(reply.body.access_token, "jti"),
                 sub: claimOf(reply.body.access_token, "sub") };
+  mintedFor.set(out.access, client);
   log.debug("Leaving mintTokens(). jti=" + out.jti);
   return out;
 }
@@ -3174,7 +3193,11 @@ async function introspectActive(token) {
   const reply = await common.httpJson(realm("/oauth2/introspect"), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "token=" + encodeURIComponent(token)
+    body: "token=" + encodeURIComponent(token) +
+          (mintedFor.has(token)
+            ? "&client_id=" + encodeURIComponent(mintedFor.get(token)) +
+              "&client_secret=" + encodeURIComponent(CONSOLE_CLIENT_SECRET)
+            : "")
   });
   assert.strictEqual(reply.status, 200,
     "introspection should answer 200 whatever it thinks of the token.");
@@ -3245,7 +3268,7 @@ function writeForms(stamp) {
     // **THE TRUST DOMAIN IS THE REALM'S, AND HARDCODING `example.org` HERE
     // STOPPED WORKING ON 2026-09-12.** Every row in this table runs in the
     // THROWAWAY REALM, and a realm is created with a trust domain of its own
-    // now — `<realm>.example.org` — so a registration entry naming the
+    // now — its DOMAIN since 2026-09-18 — so a registration entry naming the
     // service's own domain is refused by the handler with a message that says
     // exactly that. The refusal is correct: an authority that signed an SVID
     // in somebody else's trust domain would be issuing a credential nothing
@@ -3257,10 +3280,10 @@ function writeForms(stamp) {
     // the domain off the page would make that assertion vacuous in the one
     // case it exists to catch.
     { path: "/admin/spiffe/entries", button: "Create",
-      values: { spiffeId: "spiffe://" + REALM + ".example.org/console/" +
+      values: { spiffeId: "spiffe://" + REALM_DOMAIN + "/console/" +
                           stamp.slice(0, 8),
-                parentId: "spiffe://" + REALM +
-                          ".example.org/spire/agent/console",
+                parentId: "spiffe://" + REALM_DOMAIN +
+                          "/spire/agent/console",
                 selectors: "unix:uid:1000" },
       expect: { text: "console/" + stamp.slice(0, 8) } },
     // NEW ON 2026-09-06, WITH THE CONTROL IT PRESSES. /admin/groups was a READ
@@ -4338,7 +4361,8 @@ async function formIndexPosting(driver, action) {
     const wanted = arguments[0];
     const forms = Array.from(document.forms);
     for (let i = 0; i < forms.length; i++) {
-      const control = forms[i].elements['action'];
+      // The hidden field — see the other formIndexPosting() above.
+      const control = forms[i].querySelector('input[type=hidden][name=action]');
       if (!control) { continue; }
       const value = control.value !== undefined ? control.value : '';
       if (String(value) === wanted) { return i; }

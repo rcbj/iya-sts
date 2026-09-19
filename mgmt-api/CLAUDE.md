@@ -1418,6 +1418,22 @@ in the same change as the page (rule 7):
 `GET /admin-api/applications?application=` grew `credentials`, and no GET was
 added: the page is the application drill-down, which already had its operation.
 
+**`POST /admin-api/applications/generate-secret` (2026-09-18)** is the
+*Generate Secret* button beside `oauthClientSecret` on
+`/admin/applications/new` (rule 7). It names no application and WRITES
+NOTHING: it hands back `applications.mintClientSecret()` — the one definition
+of a client secret, which `regenerate-secret` and `POST /oauth2/register` now
+share — and the value becomes a credential only when `create` carries it. The
+create then records `client_secret_basic` unless it names another method, and
+the token endpoint takes the secret by a Basic header or a `client_secret`
+form parameter alike under that method (`oauth-oidc/client_auth.js`), which is
+why the single-valued `oauthTokenEndpointAuthMethod` was not made a list. The
+console's button is a submit with a `formaction`, not a script: the form goes
+to `POST /admin/applications/new`, which draws the page again with every box
+as it was posted and the secret in its box. An off-screen default submit at the
+top of the form keeps Enter creating the application rather than pressing the
+first submit in tree order, which would otherwise be this one.
+
 ## `issue-tls-client-certificate` AND `revoke-tls-client-certificate` (2026-09-13)
 
 The Mutual TLS subsection of an application's Credentials section, in the same

@@ -80,7 +80,8 @@ Three kinds are restart-only and it is worth knowing which:
   `tls.hostnames` / `tls.ips` at boot; the Kerberos principal database and every
   long-term key in it come from the realm, the SIDs and the passwords at require
   time.
-- **The directory tree**, which `ldap.baseDn` is the root of.
+- **The directory tree**, which `global.domain` is the root of (the default
+  realm's; every other realm's is its own domain, fixed when it is created).
 
 Everything else is live. That is why so much of the code reads a setting through
 a function call rather than a module-level `const` — a `const` captured at

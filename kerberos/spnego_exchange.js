@@ -315,7 +315,7 @@ function maxPending() {
 // so a negotiation begun under one realm's prefix could be continued under
 // another's — one shared row under one key, whichever realm asked. A realm's
 // pending negotiations are now its own.
-const pending = realms.map({ persist: 'spnego.pending' });
+const pending = realms.map({ persist: 'spnego.pending', retain: 'age' });
 const PENDING_COOKIE = 'sts_spnego_negotiation';
 
 function whoIs(req) {

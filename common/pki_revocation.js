@@ -618,7 +618,6 @@ function directoryBaseFor(scopeId) {
   // No directory in this process. The DN is still built, because it appears in
   // a URL inside a certificate and that URL has to be stable whether or not
   // this particular process happens to hold a directory.
-  const base = config.value('ldap.baseDn');
   const id = String(scopeId);
   // **THE DEFAULT REALM HAS TWO SPELLINGS AND BOTH ARE ITS BASE.** A caller
   // may pass `''` or the id `realmIdOf()` resolves it to, `default`, and until
@@ -630,10 +629,15 @@ function directoryBaseFor(scopeId) {
   if (id === pki.SERVICE_SCOPE || id === pki.PROCESS_SCOPE || !id ||
       id === realms.DEFAULT_ID) {
     log.debug("Leaving directoryBaseFor().");
-    return base;
+    return realms.baseDnOf(realms.DEFAULT_ID);
   }
+  // The realm's own tree, from its domain — the answer `ldap_server.js`'s
+  // `baseDnFor()` gives, since both ask `realms.baseDnOf()`. A realm this
+  // process has not heard of yet answers the base it would have without a
+  // domain of its own, which is what every realm had before domains existed.
   log.debug("Leaving directoryBaseFor().");
-  return 'dc=' + id + ',' + base;
+  return realms.baseDnOf(id) ||
+    realms.baseDnOfDomain(id + '.' + realms.domainOf(realms.DEFAULT_ID));
 }
 
 module.exports = {

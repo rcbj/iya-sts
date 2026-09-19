@@ -38,12 +38,13 @@ server is one trust domain, and several trust domains are several endpoints.
 
 Six things follow, and each is where to look:
 
-1. **THE TRUST DOMAIN IS SEEDED WHEN THE REALM IS CREATED**, as
-   `<realm>.<the process's>` — `acme.example.org` — by the same mechanism that
-   gives a realm its own entityID: `realms.js`'s `NAMED_BY_REALM`, where it is
-   the seventh row and the first that PREFIXES rather than suffixes, because a
-   DNS-shaped name nests the other way round. A realm may name its own outright
-   instead. `spiffe.trustDomain` is `realmRuntime` in config.js — restart-only
+1. **THE TRUST DOMAIN IS SEEDED WHEN THE REALM IS CREATED**, as the realm's
+   own DNS DOMAIN since 2026-09-18 — `iyasec.io`, or `acme.example.com` for a
+   realm created without one — by the same mechanism that gives a realm its own
+   entityID: `realms.js`'s `NAMED_BY_REALM`. It was `<realm>.<the process's>`
+   (`acme.example.org`) until the realm had a domain to use; the domain is
+   unique among realms, which is the property the trust domain needs. A realm
+   may name its own outright instead. `spiffe.trustDomain` is `realmRuntime` in config.js — restart-only
    for the process, settable on a realm — and the argument for the marker's
    second holder is at the head of the SPIFFE group there.
 2. **IT IS FIXED WHEN THAT REALM'S AUTHORITIES ARE BUILT.** `spiffe_ca.ts`

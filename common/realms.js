@@ -75,6 +75,7 @@
 
 const { AsyncLocalStorage } = require('async_hooks');
 const bunyan = require('bunyan');
+const url = require('url');
 // config.js is required in the ORDINARY direction and it is safe: that module
 // requires only bunyan and two leaves (config_file.js, error_codes.js), so it
 // cannot reach back here. The
@@ -124,6 +125,152 @@ const DEFAULT_REALM = {
   createdAt: null,
   overrides: {}
 };
+
+// THE DEFAULT REALM'S DOMAIN IS `global.domain`, READ WHEN ASKED. A getter
+// rather than a copy, because this object is built before the appconfig file
+// is certain to have been read by every reader, and because a restart-only
+// setting read twice gives one answer. Enumerable, so a copy of the record —
+// the API's listing — carries it like any other realm's.
+Object.defineProperty(DEFAULT_REALM, 'domain', {
+  enumerable: true,
+  get: function () {
+    return normalizeDomain(config.value('global.domain'));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A REALM'S DOMAIN (2026-09-18), AND WHAT IT IS THE BASE OF.
+//
+// Every realm carries a DNS domain — `iyasec.io`, `dev.iyasec.io`,
+// `craptastic.net` — and it is the root of every NAME the realm invents: its
+// directory tree (RFC 2247: `dc=iyasec,dc=io`), its Kerberos realm, its
+// SPIFFE trust domain, the URNs its identity providers call themselves, and
+// the mail address a development-mode person is given. It is NOT the root of
+// any ADDRESS: where the realm is reached — `oauth2.issuer`, `did:web`,
+// `webauthn.rpId`, the TLS listener's names — is the host a request arrived
+// on, and a domain an operator typed says nothing about which hosts this
+// process answers at. That is the one rule that decides what follows the
+// domain, and it is rcbj's.
+//
+// **FIXED WHEN THE REALM IS CREATED**, like the id and for a sharper reason:
+// the domain is inside every DN in the realm's directory, every SPIFFE ID its
+// authority minted and every principal name its KDC salted a key with, so
+// changing it would be a rename of everything the realm holds. Delete and
+// create again instead; `update()` refuses (STS-CORE-0100's neighbour, 0101).
+//
+// **UNIQUE, AND NESTING IS ALLOWED.** Two realms with one domain would be two
+// directories claiming one naming context. `dev.iyasec.io` beside `iyasec.io`
+// is a different case and a deliberate one — Active Directory's child domain —
+// and it works because each realm's directory is a STORE of its own: the LDAP
+// socket routes a DN to the realm with the deepest base containing it, so a
+// subtree search from `dc=iyasec,dc=io` is answered from that realm's store
+// and cannot see an entry of `dc=dev,dc=iyasec,dc=io`.
+//
+// **OMITTED, IT IS `<id>.<the default realm's domain>`**, which is exactly the
+// base DN every realm had before domains existed (`dc=acme,dc=example,dc=com`)
+// — so a caller that creates a realm by id alone gets the tree it always got.
+// ---------------------------------------------------------------------------
+const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+// Lower-case, no trailing dot, and an internationalised name in its ASCII
+// (A-label) form, which is the only form a DN, a principal name or a SPIFFE ID
+// can carry. `domainToASCII()` answers '' for something that is not a domain,
+// and that empty string is what validateDomain() then refuses.
+function normalizeDomain(raw) {
+  log.debug("Entering normalizeDomain().");
+  const text = String(raw == null ? '' : raw).trim().replace(/\.$/, '');
+  if (!text) {
+    log.debug("Leaving normalizeDomain(). Empty.");
+    return '';
+  }
+  // Only a name with a non-ASCII character needs converting; the conversion
+  // also lower-cases, which is the other half of normalising.
+  const ascii = /[^\x00-\x7f]/.test(text) ? url.domainToASCII(text) : text;
+  log.debug("Leaving normalizeDomain().");
+  return String(ascii || text).toLowerCase();
+}
+
+function validateDomain(domain, id) {
+  log.debug("Entering validateDomain(). " + domain);
+  const errors = [];
+  const labels = String(domain || '').split('.');
+  const shaped = !!domain && domain.length <= 253 && labels.length >= 2 &&
+    labels.every(function (label) {
+      return DOMAIN_LABEL.test(label);
+    }) &&
+    !/^[0-9]+$/.test(labels[labels.length - 1]);
+  if (!shaped) {
+    errors.push('A realm\'s domain is a DNS name of at least two labels — ' +
+                'iyasec.io, dev.iyasec.io — each letters, digits and ' +
+                'hyphens of at most 63 characters, with a top-level label ' +
+                'that is not all digits. "' + String(domain || '') +
+                '" is not.');
+    firstCode(errors, 'STS-CORE-0099');
+    log.debug("Leaving validateDomain(). Not a domain.");
+    return errors;
+  }
+  const holders = [DEFAULT_REALM].concat(Array.from(realms.values()))
+    .filter(function (realm) {
+      return realm.id !== id && realm.domain === domain;
+    });
+  if (holders.length) {
+    errors.push('The domain "' + domain + '" is already the "' +
+                holders[0].id + '" realm\'s' +
+                (holders[0].id === DEFAULT_ID ? ' (global.domain)' : '') +
+                '. Two realms with one domain would be two directories ' +
+                'claiming one naming context. A domain INSIDE another ' +
+                'realm\'s — dev.' + domain + ' — is allowed.');
+    firstCode(errors, 'STS-CORE-0100');
+  }
+  log.debug("Leaving validateDomain().");
+  return errors;
+}
+
+// The domain of a realm, by record or by id. The default realm's is
+// `global.domain`; an unknown id answers ''.
+function domainOf(realmOrId) {
+  log.debug("Entering domainOf().");
+  const realm = typeof realmOrId === 'string' || !realmOrId
+    ? (!realmOrId || realmOrId === DEFAULT_ID ? DEFAULT_REALM
+                                              : realms.get(realmOrId))
+    : realmOrId;
+  log.debug("Leaving domainOf().");
+  return realm ? String(realm.domain || '') : '';
+}
+
+// THE ADDRESS A DEVELOPMENT-MODE PERSON IS INVENTED, in the AMBIENT realm's
+// domain: `alice@iyasec.io`. One function because four modules invent one and
+// a fifth MATCHES them (`ssf/ssf_receivers.ts`), and an invention and its
+// matcher reading two domains is a receiver that never recognises anybody.
+// It was `@sts.example` in two of them and `@example.com` in three until
+// 2026-09-18. A name that is already an address is returned as it is.
+function inventedMailOf(name) {
+  log.debug("Entering inventedMailOf().");
+  const text = String(name == null ? '' : name);
+  log.debug("Leaving inventedMailOf().");
+  return text.indexOf('@') > 0 ? text : text + '@' + domainOf(current());
+}
+
+// RFC 2247 section 2: one `dc=` RDN per label, in the domain's own order.
+function baseDnOfDomain(domain) {
+  log.debug("Entering baseDnOfDomain().");
+  log.debug("Leaving baseDnOfDomain().");
+  return String(domain || '').split('.').filter(Boolean)
+    .map(function (label) {
+      return 'dc=' + label;
+    }).join(',');
+}
+
+// The base DN of a realm's directory: the one place a realm becomes a DN.
+// `ldap/ldap_server.js`'s `realmBaseDn()` answers through this, and so does
+// every reader that has no directory in its process (`pki_revocation.js`'s
+// distribution points above all, whose DN is inside a certificate and must be
+// the same whether or not this process holds the tree).
+function baseDnOf(realmOrId) {
+  log.debug("Entering baseDnOf().");
+  log.debug("Leaving baseDnOf().");
+  return baseDnOfDomain(domainOf(realmOrId));
+}
 
 // id -> realm record. Insertion-ordered, which is the order the console lists
 // them in; the default realm is prepended by list() rather than held here.
@@ -501,7 +648,8 @@ function validateId(id) {
 // it is two identity providers claiming one entityID, which is precisely the
 // thing a service provider is entitled to refuse.
 //
-// So a realm is created with each of them suffixed with its id. THE OAUTH
+// So a realm is created with each of them made distinct — suffixed with its id
+// until 2026-09-18, built from its DOMAIN since (below). THE OAUTH
 // ISSUER IS DELIBERATELY NOT IN THIS LIST: `oauth2.issuer` defaults to empty,
 // which means "name the base URL this request arrived on", and the base URL
 // already carries the realm prefix — so it is realm-distinct without help, and
@@ -517,40 +665,72 @@ function validateId(id) {
 // mock. What a derivation buried in a getter would give instead is six values
 // that cannot be seen and cannot be changed.
 //
-// `krb5.realm` IS NOT HERE, and since 2026-09-15 that is a decision rather than
-// a limit. Until then it could not be: the principal database was built from it
-// once, when the process started, which is why Kerberos was `none` in
-// realmSupport(). A realm now builds a principal database of its own when its
-// Kerberos is turned on, so `krb5.realm` is `realmRuntime` — and rcbj chose
-// that the operator NAMES a realm's Kerberos realm rather than this inventing
-// `ACME.EXAMPLE.COM`. See SEEDED_FOR_REALM below, which turns it off.
+// ~~`krb5.realm` IS NOT HERE~~ — IT IS SINCE 2026-09-18. It was left out on
+// 2026-09-15 because rcbj chose that the operator NAMES a realm's Kerberos
+// realm rather than this inventing `ACME.EXAMPLE.COM`; the realm's DOMAIN is
+// now exactly that naming, done once, so the upper-cased domain is seeded (see
+// its row below). Kerberos is still created OFF — SEEDED_FOR_REALM below.
 // ---------------------------------------------------------------------------
+// **SINCE 2026-09-18 THEY ARE BUILT FROM THE REALM'S DOMAIN**, not from the
+// process's value with the id stuck on. The rule the list exists for is
+// unchanged — two realms may not share an identifier — and a unique domain
+// now carries it: `urn:iyasec.io:idp` and `urn:dev.iyasec.io:idp` are
+// distinct because the domains are. rcbj chose URNs over `https://` URLs,
+// because an entityID built from a domain would otherwise read as an ADDRESS
+// the service may not answer at (see the domain's note above). The three that
+// shared `urn:wstrust:mock:sts` by default share `urn:<domain>:sts`, so the
+// relationship between them is kept. `oid4vp.clientId` is a client id rather
+// than a name in a domain, and keeps the id suffix it always had.
+//
+// `from(domain, id, base)` answers the seeded value; `base` is the process's
+// own value, read outside any realm.
 const NAMED_BY_REALM = [
-  { key: 'saml2.entityId', join: ':' },
-  { key: 'saml11.providerId', join: ':' },
-  { key: 'wsfed.entityId', join: ':' },
-  { key: 'wstrust.issuer', join: ':' },
-  { key: 'saml.issuer', join: ':' },
-  { key: 'oid4vp.clientId', join: '-' },
+  { key: 'saml2.entityId', from: function (domain) {
+    return 'urn:' + domain + ':idp';
+  } },
+  { key: 'saml11.providerId', from: function (domain) {
+    return 'urn:' + domain + ':idp:saml11';
+  } },
+  { key: 'wsfed.entityId', from: function (domain) {
+    return 'urn:' + domain + ':sts';
+  } },
+  { key: 'wstrust.issuer', from: function (domain) {
+    return 'urn:' + domain + ':sts';
+  } },
+  { key: 'saml.issuer', from: function (domain) {
+    return 'urn:' + domain + ':sts';
+  } },
+  { key: 'oid4vp.clientId', from: function (domain, id, base) {
+    return base ? String(base) + '-' + id : '';
+  } },
   // ---------------------------------------------------------------------
-  // **THE SEVENTH IS THE SPIFFE TRUST DOMAIN (2026-09-12), AND IT IS THE
-  // FIRST ONE THAT GOES IN FRONT.**
-  //
-  // It belongs on this list for the list's own reason and not by analogy: a
+  // **THE SPIFFE TRUST DOMAIN (2026-09-12) IS THE REALM'S DOMAIN ITSELF**
+  // since 2026-09-18. It belongs on this list for the list's own reason: a
   // trust domain is the authority part of every SPIFFE ID an issuing
   // authority mints, so two realms sharing one are two authorities claiming
-  // one name — and an SVID from either is then ambiguous in exactly the way
-  // two identity providers sharing an entityID are. `spiffe://example.org/w`
-  // issued by the default realm and by `acme` would be one identifier over
-  // two key sets.
-  //
-  // `prefix` is what this row adds to the shape. The six above SUFFIX
-  // (`urn:…:acme`), because what they name is an entity and a longer name is
-  // still a name. A trust domain is a DNS-shaped label whose structure runs
-  // the other way — `acme.example.org` is beneath `example.org` and
-  // `example.org.acme` is beneath nothing — and rcbj's instruction was a
-  // COMMON ROOT with a unique issuer under it, which is that word for word.
-  { key: 'spiffe.trustDomain', join: '.', prefix: true }
+  // one name. Until the domain existed it was `<id>.<the process's trust
+  // domain>` — rcbj's COMMON ROOT with a unique issuer under it — and the
+  // realm's domain is now that unique name, chosen rather than composed.
+  { key: 'spiffe.trustDomain', from: function (domain) {
+    return domain;
+  } },
+  // ---------------------------------------------------------------------
+  // **AND THE KERBEROS REALM, UPPER-CASED (2026-09-18).** Until then the
+  // operator had to name it before a realm's Kerberos could be turned on
+  // (STS-KRB-0123), because nothing here could choose a name that was the
+  // operator's rather than an invention. The domain IS the operator's choice
+  // — `IYASEC.IO` is what RFC 4120 section 6.1's convention makes of
+  // `iyasec.io` — so it is seeded, and still refused if another realm or
+  // krb5.trustedRealm already answers to it (kerberosOverrideProblem()).
+  // Clearing it on the realm brings the 0123 refusal back.
+  { key: 'krb5.realm', from: function (domain) {
+    return domain.toUpperCase();
+  } }
+  // NOT `krb5.servicePrincipal`: its host is where the service is REACHED,
+  // which is an address, and `krb5_principals.js`'s `servicePrincipalFor()`
+  // already derives `HTTP/web.<the realm's Kerberos domain>` — the domain,
+  // lower-cased — wherever the process's value is the shipped default, and
+  // leaves a value an operator set alone (kerberos/CLAUDE.md).
 ];
 
 // ---------------------------------------------------------------------------
@@ -615,10 +795,11 @@ const NAMED_BY_REALM = [
 // realm's Kerberos is a KDC of its own on the shared port 88, routed on the
 // realm name in each request, and what it issues is a ticket another service
 // will believe — so it is not the automatic consequence of creating a realm
-// either. Unlike SPIFFE's trust domain the realm NAME is not seeded: rcbj's
-// decision was that the operator names it, and turning Kerberos on is refused
-// until the realm carries a `krb5.realm` of its own that no other realm has.
-// See `kerberosOverrideProblem()` below.
+// either. The realm NAME is seeded from the domain since 2026-09-18 (it was
+// left for the operator to name until then), and turning Kerberos on is still
+// refused while the realm carries no `krb5.realm` of its own that no other
+// realm has — which now takes clearing the seeded one. See
+// `kerberosOverrideProblem()` below.
 // ---------------------------------------------------------------------------
 const SEEDED_FOR_REALM = [
   { key: 'krb5.enabled', value: function () {
@@ -682,21 +863,19 @@ function socketPathFor(key, id) {
   return base.slice(0, cut) + '/' + id + base.slice(cut);
 }
 
-function seededNames(id) {
-  log.debug("Entering seededNames(). id=" + id);
+function seededNames(id, domain) {
+  log.debug("Entering seededNames(). id=" + id + " domain=" + domain);
   const out = {};
   NAMED_BY_REALM.forEach(function (row) {
     // Read OUTSIDE any realm — this runs from a request that arrived in some
-    // other realm, and what is wanted is the process's name rather than that
-    // realm's, or a realm created from inside `acme` would be called
-    // `…:acme:beta`.
+    // other realm, and what is wanted is the process's value rather than that
+    // realm's, or a realm created from inside `acme` would be named after it.
     const base = run(DEFAULT_REALM, function () {
       return config.value(row.key);
     });
-    if (base) {
-      out[row.key] = row.prefix
-        ? id + row.join + String(base)
-        : String(base) + row.join + id;
+    const value = row.from(domain, id, base);
+    if (value) {
+      out[row.key] = value;
     }
   });
   SEEDED_FOR_REALM.forEach(function (row) {
@@ -721,6 +900,16 @@ function create(spec) {
     return errorCodes.mark({ ok: false, errors: errors },
                            errorCodes.codeOf(errors));
   }
+  // The domain: the caller's, or `<id>.<the default realm's>`, which is the
+  // tree every realm had before domains existed. See the domain's note above.
+  const asked = normalizeDomain((spec || {}).domain);
+  const domain = asked || normalizeDomain(id + '.' + DEFAULT_REALM.domain);
+  const domainErrors = validateDomain(domain, id);
+  if (domainErrors.length) {
+    log.debug("Leaving create(). Refused for its domain.");
+    return errorCodes.mark({ ok: false, errors: domainErrors },
+                           errorCodes.codeOf(domainErrors));
+  }
   const overrideErrors = checkOverrides((spec || {}).overrides);
   if (overrideErrors.length) {
     log.debug("Leaving create(). Refused for its overrides.");
@@ -730,8 +919,8 @@ function create(spec) {
   // Not for a realm the store or another process hands back — see
   // kerberosOverrideProblem() for why a restore is never refused for this.
   if (!(spec && spec.restored)) {
-    const kerberos = refusedForKerberos(id, Object.assign(seededNames(id),
-      (spec || {}).overrides || {}), {});
+    const kerberos = refusedForKerberos(id, Object.assign(
+      seededNames(id, domain), (spec || {}).overrides || {}), {});
     if (kerberos) {
       log.debug("Leaving create(). Refused for its Kerberos settings.");
       return kerberos;
@@ -741,11 +930,13 @@ function create(spec) {
     id: id,
     name: String((spec || {}).name || id).trim() || id,
     description: String((spec || {}).description || '').trim(),
+    domain: domain,
     builtin: false,
     createdAt: Date.now(),
     // The seeded names first, so that anything the caller asked for wins over
     // them. A management API call that names its own entityID means it.
-    overrides: Object.assign(seededNames(id), (spec || {}).overrides || {})
+    overrides: Object.assign(seededNames(id, domain),
+                             (spec || {}).overrides || {})
   };
   realms.set(id, realm);
   // A realm removed and defined again takes rows again. See acceptsRows().
@@ -778,6 +969,20 @@ function update(id, changes) {
                            'STS-CORE-0013');
   }
   const spec = changes || {};
+  // FIXED AT CREATION — see the domain's note above. The same value again is
+  // not a change, which is what lets a replicated update carry the whole row.
+  if (spec.domain !== undefined && spec.domain !== null &&
+      String(spec.domain) !== '' &&
+      normalizeDomain(spec.domain) !== realm.domain) {
+    log.debug("Leaving update(). The domain is fixed.");
+    return errorCodes.mark({ ok: false,
+                             errors: ['The "' + realm.id + '" realm\'s ' +
+        'domain is ' + realm.domain + ' and is fixed when the realm is ' +
+        'created: it is in every DN in its directory, every SPIFFE ID its ' +
+        'authority issued and every key its KDC holds. Remove the realm and ' +
+        'create it again under the new domain.'] },
+                           'STS-CORE-0101');
+  }
   if (spec.overrides !== undefined) {
     const overrideErrors = checkOverrides(spec.overrides);
     if (overrideErrors.length) {
@@ -1345,6 +1550,22 @@ function setPersistObserver(fn) {
 // restart later.
 const declaredHandles = [];
 
+// The retention a declaration asked for; see `retain` in declareHandle().
+function retainOf(options, handle) {
+  log.debug("Entering retainOf().");
+  const asked = options.retain === undefined ? 'keep' : options.retain;
+  if (asked !== 'keep' && asked !== 'age') {
+    log.error(errorCodes.tag('STS-CORE-0098') + 'realms: the handle "' +
+              handle + '" declares retain "' + String(asked) + '", which is ' +
+              'neither "keep" nor "age". It is KEPT: a retention policy ' +
+              'that fails should keep data rather than lose it.');
+    log.debug("Leaving retainOf(). Unknown; kept.");
+    return 'keep';
+  }
+  log.debug("Leaving retainOf().");
+  return asked;
+}
+
 function declareHandle(options, shape, accessors) {
   log.debug("Entering declareHandle().");
   if (!options || !options.persist) {
@@ -1425,6 +1646,31 @@ function declareHandle(options, shape, accessors) {
     // rides that commit. `persistence_minted.js`'s `note()` keeps the count.
     // ---------------------------------------------------------------------
     observation: options.observation === true,
+    // ---------------------------------------------------------------------
+    // HOW LONG A ROW IS KEPT IN THE STORE (2026-09-18). Until that day every
+    // persisted row older than `persistence.mintedRetention` (seven days) was
+    // deleted on the next start of ANY node, whatever it held — so a named
+    // authorization server, an ACME account, a status-list entry or a
+    // revocation made more than a week ago and not written since was gone
+    // from the database the next time a container restarted, and from every
+    // other node at its own next restart. Now:
+    //
+    //   'keep'  The default. A row stays until the store deletes it, which it
+    //           does when the thing it holds ends — a session signs out, a
+    //           grant is revoked, a record expires under the store's own
+    //           rules. Configuration, long-lived records and the
+    //           `merge: 'own'` accumulators are all this.
+    //   'age'   A row is SHORT-LIVED BY NATURE — a nonce, a code, a pending
+    //           flow, an in-flight transaction — and a row older than
+    //           `persistence.mintedRetention` is left behind only by a
+    //           process that stopped before it swept it. Those are dropped at
+    //           the next start. Every lifetime such a row can have is far
+    //           shorter than the retention.
+    //
+    // Unknown words are refused loudly and read as 'keep', because the safe
+    // failure of a retention policy is to keep data, not to lose it.
+    // ---------------------------------------------------------------------
+    retain: retainOf(options, handle),
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
@@ -2773,9 +3019,15 @@ function realmSupport() {
       cards: ['LDAP'],
       note: 'A DIRECTORY PER REALM behind one socket — a separate store, not ' +
             'a subtree of a shared one, since 2026-08-25. The DN layout is ' +
-            'what a client sees: the default realm is ldap.baseDn itself ' +
-            '(dc=example,dc=com) and every other realm is dc=<id> beneath ' +
-            'it. So ou=users, ou=groups, ou=applications, ou=federations and ' +
+            'what a client sees: EACH REALM IS A TREE OF ITS OWN, rooted at ' +
+            'the RFC 2247 mapping of the realm\'s DOMAIN (since ' +
+            '2026-09-18) — the default realm at global.domain\'s ' +
+            '(dc=example,dc=com), a realm whose domain is iyasec.io at ' +
+            'dc=iyasec,dc=io, and one created without a domain at ' +
+            '<id>.<global.domain>, which is the dc=<id> beneath the default ' +
+            'realm\'s base that every realm had before. A domain inside ' +
+            'another realm\'s is allowed and is a separate naming context. ' +
+            'So ou=users, ou=groups, ou=applications, ou=federations and ' +
             'the two SPIFFE containers exist once per realm and share ' +
             'nothing — this row read `none` and said every realm saw the ' +
             'same people until 2026-08-25. The realm is in the DN and not in ' +
@@ -2865,9 +3117,9 @@ function realmSupport() {
             'is the METHOD — `/SpiffeWorkloadAPI/FetchX509SVID` is fixed by ' +
             'that specification and the SPIRE APIs by theirs — so a realm ' +
             'segment in it would be a method no conforming client calls. A ' +
-            'realm is created with `spiffe.trustDomain` of ' +
-            '`<realm>.<the process\'s>` (the common root with a unique ' +
-            'issuer under it) and with SPIFFE OFF; turning it on builds that ' +
+            'realm is created with `spiffe.trustDomain` set to its DOMAIN ' +
+            '(since 2026-09-18; it was `<realm>.<the process\'s>` before ' +
+            'realms had one) and with SPIFFE OFF; turning it on builds that ' +
             'realm\'s authorities and binds a Workload API and a SPIRE ' +
             'Server API of its own, on Unix socket paths seeded when the ' +
             'realm was made — and on TCP only once somebody gives it an ' +
@@ -2918,6 +3170,12 @@ module.exports = {
   setOverride: setOverride,
   clearOverride: clearOverride,
   validateId: validateId,
+  validateDomain: validateDomain,
+  normalizeDomain: normalizeDomain,
+  domainOf: domainOf,
+  inventedMailOf: inventedMailOf,
+  baseDnOf: baseDnOf,
+  baseDnOfDomain: baseDnOfDomain,
   reserve: reserve,
   reserved: reserved,
   pathSegment: pathSegment,

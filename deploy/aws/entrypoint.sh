@@ -247,6 +247,21 @@ case "${TF_ACTION}" in
         die "DESTROY FAILED TWICE — '${TF_ENV}' may still be running and billing. Re-run the destroy."
     fi
     ;;
+  # ADOPT A RESOURCE THAT EXISTS AND THE STATE DOES NOT RECORD (2026-09-19):
+  # an apply interrupted after AWS created something (an RDS instance takes
+  # minutes, and an expired session is enough) leaves it running and billing
+  # while the next apply fails with "already exists". Importing it is the
+  # non-destructive repair. TF_IMPORT_ADDRESS is the resource address,
+  # TF_IMPORT_ID the provider's identifier (an RDS instance's is its name).
+  #   TF_IMPORT_ADDRESS=aws_db_instance.primary \
+  #   TF_IMPORT_ID=mock-sts-testidp-primary IMAGE_TAG=<tag> \
+  #   deploy/aws/terraform-local.sh testidp import
+  import)
+    [ -n "${TF_IMPORT_ADDRESS:-}" ] && [ -n "${TF_IMPORT_ID:-}" ] || \
+      die "import needs TF_IMPORT_ADDRESS and TF_IMPORT_ID."
+    tf import -input=false -no-color "${VAR_FILE_ARGS[@]}" \
+      "${TF_IMPORT_ADDRESS}" "${TF_IMPORT_ID}"
+    ;;
   output)   terraform output -no-color ;;
   # The outputs as JSON on stdout and nothing else there, for a script
   # (run-suite.sh) to read.
@@ -257,7 +272,7 @@ case "${TF_ACTION}" in
     cd /workspace
     exec deploy/aws/run-suite-in-aws.sh "${TF_ENV}"
     ;;
-  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | output | output-json | suite | ecr-password)." ;;
+  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | import | output | output-json | suite | ecr-password)." ;;
 esac
 
 say "${TF_ACTION} complete."

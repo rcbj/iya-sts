@@ -199,12 +199,13 @@ verdict for each; a new undeclared store owes a row here.
 | `credentials.js` `pendingTotp`, `pendingBackupCodes`, `pendingKeys` | **Persisted** — flow state (`common/CLAUDE.md`, *Enrolment is two steps*). |
 | `vc_issuer.js` `lastCredentialRequests` | **Persisted** as `vc_issuer.lastCredentialRequest` — a wallet's read-back (`oid4vc/CLAUDE.md`). |
 | a session's `saml2ServiceProviders`, `saml11RelyingParties`, `wsfedRealms`, `oidcClients` | Not a store: in-place edits of a persisted row, now told to it (`authn/CLAUDE.md`, `noteSessionChanged()`). |
-| `scim_auth.js` `digestCounts`, `hobaSeen` | Fine — this process's fast refusal; the claim decides (`scim/CLAUDE.md`). |
+| `scim_auth.js` `digestCounts`, `hobaSeen` | **Persisted since 2026-09-18** (`scim.digestCounts`, `scim.hobaSeen`, `retain: 'age'`) so the fast refusal survives a restart; the claim still decides between live processes. A count row is an array, not a Set. |
 | `request_object.js` `requestUriCache`, `oauth2.js` `signedMetadataCache`, `applications.js` `ssfAllowedCache` | Fine — caches of something re-derivable. |
 | `ldap_server.js` `entries` | Persisted another way — the directory's diff, above. |
 | `ldap_server.js` `usernameIndexes`, `subtreeClocks`, `groupIndexes`, `uuidIndexes`; `federation.js` `releaseIndexes` | Fine — derived from the directory and rebuilt from it. |
 | `helpers.js` `stsKeysFor` | Persisted another way — `keystore.js`. |
-| `ssf_streams.ts` `deadCounts`, `tally`; `ssf_dead_letter_report.ts` `sweepNotes` | Fine — this process's estimate and its own sweep report; the letters themselves are persisted. |
+| `ssf_streams.ts` `deadCounts`, `tally` | Fine — an estimate rebuilt at every sweep, and the count behind the sweep's one log line; the letters themselves are persisted. |
+| `ssf_dead_letter_report.ts` `sweepNotes` | **Persisted since 2026-09-18** as `ssf_dead_letter_report.sweeps`, `merge: 'own'`, and the page fans every process's in — it was the dead-letter page's sweep history, emptied by every restart. |
 
 `memory` is still the default. A run that says nothing about persistence behaves
 exactly as every run before this existed — which is the whole compatibility
@@ -462,7 +463,7 @@ overridden at all — `checkOverride()` refuses every other by name — and a
 runtime setting is BY DEFINITION one that is read per call rather than captured
 at require time. So there is nothing in a saved override file that any module
 could already have read and cached, and `global.https`, `oauth2.rfc9700`,
-`ldap.port` and `ldap.baseDn` are exactly what the environment and the appconfig
+`ldap.port` and `global.domain` are exactly what the environment and the appconfig
 file said. **A saved file cannot change the scheme this service answers on.**
 
 Every saved value is re-checked rather than trusted: the file was written by
@@ -965,13 +966,66 @@ the list merge, the session rank).
   and afterwards a user created on one node was seen on the other 20 of 20 and
   no node logged `STS-STORE-0057`. So a stopped worker's row is removed by the
   node rule in a cluster, and by the reader lifetime outside one.
-* **What is NOT trimmed**: `sts_minted`'s `merge: 'own'` rows written by
-  origins that no longer exist — every restart is a new origin, so a dead
-  origin's counters and audit ring stay until `persistence.mintedRetention`
-  removes them, and a console fan-in keeps counting them until then. Nor
-  `sts_cluster_nodes` rows, which `joinCluster()` sweeps.
+* **What is NOT trimmed**: `sts_minted`'s `merge: 'own'` rows. Since
+  2026-09-18 a restarted process takes its origin back (below), so a restart
+  no longer leaves one behind; an origin whose node never returns (a scale-in)
+  keeps its rows, which every fan-in goes on reading — they are the history
+  that node wrote, and `retain` keeps them. Nor `sts_cluster_nodes` rows,
+  which `joinCluster()` sweeps.
 * The capability `ops.change-log-retention` is provided by
   `persistence_replication.js`, not `persistence.js` as the row first named.
+
+## WHAT A RESTART MUST NOT LOSE (2026-09-18)
+
+A redeploy of the testidp cluster showed `/admin/users` with one authenticated
+row of 423. Tracing it found four ways a restart lost data, and each is fixed
+where it was:
+
+* **RETENTION WAS BY AGE FOR EVERY STORE.** `persistence_minted.restore()`
+  dropped, and `purgeMinted()` DELETED, every row whose `written_at` was older
+  than `persistence.mintedRetention` (seven days) — and a row is rewritten
+  only when it changes. So a named authorization server, a custom claim set,
+  an ACME account, a status-list entry, a revocation or a runtime Kerberos
+  principal made more than a week ago and not touched since left the
+  database at the next start of ANY node, and every other node at its own.
+  Now a store declares `retain` at `realms.map()` (`common/realms.js`):
+  `'keep'`, the default, is never dropped by age; `'age'` is the short-lived
+  stores — nonces, codes, pending flows, in-flight transactions — whose rows
+  are left behind only by a process that stopped before sweeping them, and
+  whose every lifetime is far below the retention. `purgeMinted(cutoff,
+  handles)` deletes only those handles; without the list it is the
+  ephemeral-key clear, where nothing in the table can be opened anyway. An
+  unknown word is `STS-CORE-0098` and read as `'keep'`: a retention policy
+  that fails must keep data. Forty-three stores are `'age'`.
+* **A RESTARTED PROCESS WAS A NEW ORIGIN.** The origin was `pid-<uuid>` per
+  start, so what a container's previous life wrote to a `merge: 'own'` store
+  became another origin's contribution, read only by fan-in readers — and
+  then deleted by the rule above. Now `persistence.js`'s
+  `adoptStableOrigin()` names the origin `n:<cluster.nodeName()>:<slot>`
+  (`front`, or `protocol-N` / `surfaces-N` from `STS_REQUEST_WORKER_SLOT`,
+  which `request_pool.js` hands each worker) and the postgres driver's
+  `adoptOrigin()` takes it through a claim in `sts_cluster_claims` (scope
+  `persistence.origin`, 30 s, renewed every 10 s, released at a clean stop).
+  A live holder is waited out for 35 s — a crashed one's claim lapses in
+  that time — and after that the process keeps a random origin
+  (`STS-STORE-0060`), which is safe because the fan-in reads it. **Every
+  transaction checks the claim** (`checkOriginFence()`, under `FOR SHARE`,
+  before the cluster fence), so a process paused past its claim finds its
+  writes refused rather than overwriting its successor's rows; outside a
+  cluster it exits (`STS-STORE-0061`), inside one the cluster's fail-stop
+  does. The membership node id is still random per start: a node whose
+  membership lapsed must not come back as itself. A platform that gives each
+  container a random host name needs `cluster.nodeName` set for any of this
+  to apply.
+* **TWO ACCUMULATORS WERE NEVER FANNED IN** — `admin_stats.scimCounts`
+  (`scimCountsAll()`, a deep merge) and `ssf_streams.received`
+  (`listReceived()`). The users register had the same defect and was fixed in
+  its own change (`tests/user_register_fan_in.js`).
+* **THREE STORES WERE NEVER PERSISTED** — see the table above.
+
+`tests/persistence_origin.js` holds B, C and D against a fake `pg` whose
+claims table two drivers share; `tests/minted_persistence.js` section 6 holds
+retention both ways. Ten mutants across the two, all caught.
 
 ## Adding a driver
 

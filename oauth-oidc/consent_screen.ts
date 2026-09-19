@@ -160,7 +160,8 @@ const CONSENT_TTL_MS = 10 * 60 * 1000;
 // directory — which is the exact failure `common/CLAUDE.md` describes for the
 // stores that were left shared, and the reason `realms.map()` exists.
 // ---------------------------------------------------------------------------
-const pending = realms.map({ persist: 'consent_screen.pending' });
+const pending = realms.map({ persist: 'consent_screen.pending',
+                             retain: 'age' });
 
 // The few rules the sign-in screen's stylesheet has no use for. Appended rather
 // than merged into CARD_CSS, so that a change here cannot alter the sign-in

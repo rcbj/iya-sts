@@ -339,7 +339,9 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== 0. three realms, their CAs, people and an application ===");
   for (const realm of [REALM, REALM_B]) {
-    await ok(api + "/realms/create", { id: realm, name: "ACME " + realm },
+    await ok(api + "/realms/create", { id: realm,
+                                       domain: realm + ".example.net",
+                                       name: "ACME " + realm },
              "created the trust realm " + realm);
     await ok(realmApi(realm) + "/pki/build", { organisation: "ACME Job" },
              "built a certificate authority in " + realm);
@@ -802,7 +804,9 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 10. product mode ===");
-  await ok(api + "/realms/create", { id: REALM_P, name: "ACME product",
+  await ok(api + "/realms/create", { id: REALM_P,
+                                     domain: REALM_P + ".example.net",
+                                     name: "ACME product",
                                      overrides: { "global.mode": "product" } },
            "created a product-mode realm");
   const clientP = new C.AcmeClient(base + "/realm/" + REALM_P +

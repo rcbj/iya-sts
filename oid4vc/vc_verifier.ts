@@ -295,7 +295,8 @@ const VP_DCQL_ID = vpConfig.DCQL_ID;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
+const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions',
+                                    retain: 'age' });
 
 // id -> state, so a Request Object fetched by reference can find its
 // transaction. PER TRUST REALM. `realms.map()` is a Map that holds a separate
@@ -304,7 +305,8 @@ const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
 // realm, and in a service with no realms defined, there is exactly one
 // partition and this behaves as the plain Map it replaced. See
 // common/realms.js.
-const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests' });
+const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests',
+                                retain: 'age' });
 
 // ---------------------------------------------------------------------------
 // DESCRIBED TO `/admin/caches` (rule 3ap, #38's follow-ups). A transaction is

@@ -1607,6 +1607,10 @@ class AdminViews {
       id: realm.id,
       name: realm.name,
       description: realm.description,
+      // The realm's DNS domain and the directory tree it roots (2026-09-18).
+      // Fixed when the realm was created; `common/realms.js` argues it.
+      domain: realms.domainOf(realm),
+      baseDn: realms.baseDnOf(realm),
       builtin: !!realm.builtin,
       pathPrefix: prefix,
       baseUrl: base,
@@ -2579,6 +2583,11 @@ class AdminViews {
     // `STS-OAUTH` cannot match inside `STS-XOAUTH-…` if such a subsystem is
     // ever added — the codes are a hierarchy and the match reads them as one.
     const wantedCode = String(query.code || '').trim().toUpperCase();
+    // The client's address (2026-09-18), or the FRONT of one: `10.0.` is a
+    // range an operator can name without CIDR, and a whole address is one
+    // client. A prefix for `code`'s reason — `10.0.0.1` must not match
+    // inside `110.0.0.12`.
+    const wantedAddress = String(query.address || '').trim().toLowerCase();
     const all = auditLog.list();
     const needle = wantedText.toLowerCase();
     const actorNeedle = wantedActor.toLowerCase();
@@ -2587,6 +2596,10 @@ class AdminViews {
       if (wantedAction && row.action !== wantedAction) return false;
       if (wantedOutcome && row.outcome !== wantedOutcome) return false;
       if (wantedCode && String(row.errorCode || '').indexOf(wantedCode) !== 0) {
+        return false;
+      }
+      if (wantedAddress && String(row.address || '').toLowerCase()
+                             .indexOf(wantedAddress) !== 0) {
         return false;
       }
       // Substring rather than equality, and case-insensitively, because the
@@ -2617,6 +2630,7 @@ class AdminViews {
       wantedCategory: wantedCategory, wantedAction: wantedAction,
       wantedOutcome: wantedOutcome, wantedActor: wantedActor,
       wantedText: wantedText, wantedCode: wantedCode,
+      wantedAddress: wantedAddress,
       all: all, filtered: filtered, paging: paging, shown: shown,
       summary: summary,
       json: {
@@ -2637,7 +2651,8 @@ class AdminViews {
         filter: { category: wantedCategory || null, action: wantedAction ||
                                                             null,
                   outcome: wantedOutcome || null, actor: wantedActor || null,
-                  q: wantedText || null, code: wantedCode || null },
+                  q: wantedText || null, code: wantedCode || null,
+                  address: wantedAddress || null },
         // The clamped values, not what was asked for: `?page=999` on a two-page
         // list reports page 2, which is the page whose rows are in the reply.
         page: paging.page, pages: paging.pages, perPage: paging.perPage,
@@ -3972,12 +3987,12 @@ class AdminViews {
   // with no name: it answers about the DIRECTORY rather than about a person,
   // which is what a note above an empty form has to do.
   newUserContainer() {
-    const { log, config } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering AdminViews.newUserContainer().");
     if (!directoryReader) {
       log.debug("Leaving AdminViews.newUserContainer(). No directory is " +
                 "loaded.");
-      return 'ou=users,' + config.value('ldap.baseDn');
+      return 'ou=users,' + realms.baseDnOf(realms.current());
     }
     const info = directoryReader('');
     log.debug("Leaving AdminViews.newUserContainer(). " + info.usersDn);
@@ -5991,7 +6006,9 @@ class AdminViews {
       row.factors = self.mergeFactors(row.factors, holder);
     });
 
-    const rows = Array.from(byKey.values());
+    const rows = Array.from(byKey.values()).filter(function (row) {
+      return !self.isApplicationRow(row);
+    });
     rows.sort(function (a, b) {
       return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 :
              1;
@@ -6002,6 +6019,56 @@ class AdminViews {
     return { rows: rows, store: holders.store, scanned: holders.scanned,
              capped: holders.capped, limit: holders.limit,
              registryCap: stats.MAX_USERS };
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN APPLICATION IS NOT A PERSON, AND THIS LIST IS A LIST OF PEOPLE
+  // (2026-09-19).
+  //
+  // `stats.userRows()` is every IDENTITY this service has seen, and a
+  // client_credentials client is one: it authenticated, it holds tokens, it
+  // has a row. So the population above carried every such client, drawn with
+  // `client` in a Kind column and counted in a "clients, not people" tile.
+  // The 2026-09-19 fan-in fix (`everyUserRecord()`) made that FLAG right
+  // across a cluster; it did not stop the row being on a page whose question
+  // is who the PEOPLE are, and on testidp the "Management API operations
+  // test" realm listed `app-stsapi-client-…` among its users. The rule is now
+  // the directory's own: a person is somebody under `ou=users`, and an
+  // application under `ou=applications` is never on this page.
+  //
+  // THREE TESTS, because each catches rows the others miss:
+  //   * `isClient` — the register or a client_credentials token said so;
+  //   * a `urn:sts:client:` subject among the row's forms — RFC 9700 mode's
+  //     namespace for a client acting as itself (oauth2.ts);
+  //   * the key is an application REGISTERED in this realm and the row has no
+  //     person entry — which catches an application that reached the register
+  //     by a door that sets no flag (an artifact's subject, a delegation).
+  // The third one asks `inDirectory` first so a person who shares a name with
+  // an application stays listed: the person entry is the stronger claim.
+  // The rows are still on `stats.userRows()` for every page that is about
+  // IDENTITIES rather than people — the delegation map, the token holders.
+  // ---------------------------------------------------------------------------
+  isApplicationRow(row) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.isApplicationRow().");
+    if (row.isClient) {
+      log.debug("Leaving AdminViews.isApplicationRow(). Flagged a client.");
+      return true;
+    }
+    const clientForm = (row.forms || []).some(function (one) {
+      return /^urn:sts:client:/.test(String((one && one.form) || one));
+    });
+    if (clientForm) {
+      log.debug("Leaving AdminViews.isApplicationRow(). A client subject.");
+      return true;
+    }
+    if (!row.inDirectory && applications.get(row.key)) {
+      log.debug("Leaving AdminViews.isApplicationRow(). A registered " +
+                "application.");
+      return true;
+    }
+    log.debug("Leaving AdminViews.isApplicationRow(). A person.");
+    return false;
   }
 
   // TWO SPELLINGS THAT FOLD INTO ONE ROW HOLD THE UNION OF WHAT EACH HELD.

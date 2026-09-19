@@ -361,7 +361,8 @@ const RP_PATH = BASE_PATH + '/rp';
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows' });
+const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows',
+                                  retain: 'age' });
 
 // Artifact -> the ASSERTION it stands for (decision 3), and the context needed
 // to build a Response around it later. Resolving one deletes it, so this map is
@@ -371,7 +372,8 @@ const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows' });
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const artifacts = realms.map({ persist: 'saml11_sso.artifacts' });
+const artifacts = realms.map({ persist: 'saml11_sso.artifacts',
+                               retain: 'age' });
 // How much longer than an artifact's own remaining lifetime its cluster claim
 // lives: two nodes' clocks may disagree about when it expired (#46). See
 // respond().

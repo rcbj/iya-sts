@@ -401,7 +401,9 @@ function harness(options) {
 
   self.createRealm = async function (name) {
     log.debug("Entering createRealm().");
-    await self.ok(api + "/realms/create", { id: REALM, name: name },
+    await self.ok(api + "/realms/create", { id: REALM,
+                                            domain: REALM + ".example.net",
+                                            name: name },
                   "created " +
         "the realm");
     log.debug("Leaving createRealm().");

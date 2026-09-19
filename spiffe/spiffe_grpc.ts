@@ -603,6 +603,50 @@ class SpiffeGrpc {
                       'off.' };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE CALLER'S ADDRESS ON EVERY AUDIT ROW A CALL WRITES (2026-09-18).
+  //
+  // An authenticated SPIRE Server API call writes its `authentication` row
+  // through `admin_stats.js`, which is handed no call — so each of the three
+  // wrappers below runs its handler inside an audit SOURCE naming the peer,
+  // and `common/audit.js` puts it on every row written beneath (see its
+  // `withSource()`). grpc-js spells the peer `ipv4:10.0.0.5:51234`,
+  // `ipv6:[::1]:51234` or `unix:…`; the address is what is left without the
+  // scheme, the brackets and the EPHEMERAL port — the same reason
+  // `SpiffeAuth.peerSelectorValue()` drops it. A Unix socket has no address,
+  // and its rows say so by carrying none.
+  // ---------------------------------------------------------------------------
+  callerAddressOf(call) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.callerAddressOf().");
+    let peer = '';
+    try {
+      peer = call && typeof call.getPeer === 'function' ?
+             String(call.getPeer()) : '';
+    } catch (e) {
+      // A call whose peer cannot be read — `SpiffeAuth.transportOf()` meets
+      // the same case — is a row without an address, never a failed call.
+      log.debug("Caught in SpiffeGrpc.callerAddressOf(): " +
+                ((e && e.message) || e));
+    }
+    const found = /^ipv[46]:\[?([^\]]+?)\]?:\d+$/.exec(peer);
+    log.debug("Leaving SpiffeGrpc.callerAddressOf().");
+    return found ? found[1] : '';
+  }
+
+  fromCaller(handler) {
+    const { log, audit } = this.deps;
+    const self = this;
+    log.debug("Entering SpiffeGrpc.fromCaller().");
+    log.debug("Leaving SpiffeGrpc.fromCaller().");
+    return function (call, callback?) {
+      return audit.withSource({ address: self.callerAddressOf(call) },
+                              function () {
+        return handler(call, callback);
+      });
+    };
+  }
+
   prepareCall(call, surface, method) {
     const { log, auth, errorCodes, audit } = this.deps;
     log.debug('Entering SpiffeGrpc.prepareCall(). surface=' + surface +
@@ -931,7 +975,7 @@ class SpiffeGrpc {
     // actually exist.
     this.registerWorkerMethod(surface, method, handler);
     log.debug("Leaving SpiffeGrpc.unary().");
-    return function (call, callback) {
+    return this.fromCaller(function (call, callback) {
       log.debug('Entering the ' + method + ' handler.');
       const prepared = self.prepareCall(call, surface, method);
       if (prepared.refusal) {
@@ -974,7 +1018,7 @@ class SpiffeGrpc {
           callback(status);
           log.debug('Leaving the ' + method + ' handler. ' + status.details);
         });
-    };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1096,7 +1140,7 @@ class SpiffeGrpc {
     const self = this;
     log.debug("Entering SpiffeGrpc.serverStream().");
     log.debug("Leaving SpiffeGrpc.serverStream().");
-    return function (call) {
+    return this.fromCaller(function (call) {
       log.debug('Entering the ' + method + ' stream handler.');
       const prepared = self.prepareCall(call, surface, method);
       if (prepared.refusal) {
@@ -1156,7 +1200,7 @@ class SpiffeGrpc {
           log.debug('Leaving the ' + method + ' stream handler. ' +
                     status.details);
         });
-    };
+    });
   }
 
   // A bidirectional stream. Only `AttestAgent` and `SyncAuthorizedEntries` are
@@ -1169,7 +1213,7 @@ class SpiffeGrpc {
     const self = this;
     log.debug("Entering SpiffeGrpc.bidiStream().");
     log.debug("Leaving SpiffeGrpc.bidiStream().");
-    return function (call) {
+    return this.fromCaller(function (call) {
       log.debug('Entering the ' + method + ' bidi handler.');
       const prepared = self.prepareCall(call, surface, method);
       if (prepared.refusal) {
@@ -1204,7 +1248,7 @@ class SpiffeGrpc {
         log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
                   err.message);
       });
-    };
+    });
   }
 
   prepareSocketPath(socketPath, privateSocket) {

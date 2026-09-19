@@ -50,6 +50,7 @@ var config = {
   global: {
     host: "0.0.0.0",              // HTTP bind address; restart to apply
     port: 8081,                   // HTTP port; restart to apply
+    domain: "example.com",        // Domain; restart to apply
     trustProxy: false,            // Trust forwarded headers
     trustedProxies: "",           // Trusted proxy addresses
     proxyProtocol: "off",         // PROXY protocol on the TCP listeners; restart to apply
@@ -671,7 +672,6 @@ var config = {
   ldap: {
     port: 389,                                                                                                                                  // LDAP port; restart to apply
     tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
-    baseDn: "dc=example,dc=com",                                                                                                                // Base DN; restart to apply
     autocreateUsers: true,                                                                                                                      // Auto-create users
     maxEntries: 2000,                                                                                                                           // Maximum entries
     sizeLimit: 500,                                                                                                                             // Search size limit

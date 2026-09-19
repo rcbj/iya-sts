@@ -130,7 +130,7 @@ else
 fi
 
 TF_VARS=()
-if [ "${TF_STACK}" = "environment" ] && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ]; };
+if [ "${TF_STACK}" = "environment" ] && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ] || [ "${TF_ACTION}" = "import" ]; };
 then
   [ -n "${IMAGE_TAG:-}" ] || { echo "ERROR: ${TF_ACTION} needs IMAGE_TAG." >&2; exit 1; }
   if [ -z "${ALLOWED_CIDR:-}" ];
@@ -204,6 +204,8 @@ trap relay INT TERM
   -e TF_STACK="${TF_STACK}" \
   -e TF_ENV="${TF_ENV}" \
   -e TF_ACTION="${TF_ACTION}" \
+  -e TF_IMPORT_ADDRESS="${TF_IMPORT_ADDRESS:-}" \
+  -e TF_IMPORT_ID="${TF_IMPORT_ID:-}" \
   "${TF_VARS[@]}" \
   "${REPORT_ARGS[@]}" \
   "${IMAGE_NAME}" &

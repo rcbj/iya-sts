@@ -1464,15 +1464,19 @@ function restore() {
     const staleHandles = new Set();
 
     (rows || []).forEach(function (row) {
-      if (cutoff && Number(row.writtenAt || 0) &&
-          Number(row.writtenAt) < cutoff) {
-        droppedStale++;
-        return;
-      }
       const store = realms.handleFor(row.handle);
       if (!store) {
         droppedUnknown++;
         staleHandles.add(row.handle);
+        return;
+      }
+      // ONLY A SHORT-LIVED STORE'S ROW IS DROPPED BY AGE (2026-09-18; see
+      // `retain` in common/realms.js). Every other row is kept however old it
+      // is: a configuration, an account or an accumulator not written for a
+      // week is not stale, it is simply unchanged.
+      if (cutoff && store.retain === 'age' && Number(row.writtenAt || 0) &&
+          Number(row.writtenAt) < cutoff) {
+        droppedStale++;
         return;
       }
       const text = keystore.open(row.body, 'minted-rows');
@@ -1566,7 +1570,16 @@ function restore() {
     // for ever, and the next start would read them all again to skip them
     // again. Best-effort: a purge that fails is logged and the service starts.
     if (cutoff && droppedStale && typeof driver.purgeMinted === 'function') {
-      return driver.purgeMinted(cutoff).then(function (removed) {
+      // By age, and ONLY in the short-lived stores — the same rule the loop
+      // above applied, said to the database. A purge naming no handle list
+      // would delete every old row of every store, which is the defect this
+      // replaced.
+      const ageHandles = realms.handles().filter(function (one) {
+        return one.retain === 'age';
+      }).map(function (one) {
+        return one.handle;
+      });
+      return driver.purgeMinted(cutoff, ageHandles).then(function (removed) {
         log.info('persistence: ' + removed + ' stale minted row(s) removed ' +
                  'from the store.');
         return { restored: restored };

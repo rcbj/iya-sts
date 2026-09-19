@@ -422,7 +422,9 @@ async function createTheRealm() {
   log.debug("Entering createTheRealm().");
   log.info("=== A throwaway trust realm ===");
   const r = await postJson(base + "/admin-api/realms/create",
-                           { id: REALM, name: "roles under test" });
+                           { id: REALM,
+                             domain: REALM + ".example.net",
+                             name: "roles under test" });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "creating the realm " + REALM + " should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));

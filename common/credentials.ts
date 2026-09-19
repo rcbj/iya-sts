@@ -217,7 +217,8 @@ interface CredentialsDeps {
 // edited in place — `beginTotpEnrolment()` sets a whole new record — so it
 // owes no `touch()`. And it carries no `tombstone`: it is keyed by a NAME,
 // which a person legitimately writes again every time they start over.
-const pendingTotp = realms.map({ persist: 'credentials.pendingTotp' });
+const pendingTotp = realms.map({ persist: 'credentials.pendingTotp',
+                                 retain: 'age' });
 
 // THE PENDING SETS. `realms.map()` for the reason every store in this service
 // is: a set begun in one realm must not be confirmable in another, and the
@@ -232,7 +233,7 @@ const pendingTotp = realms.map({ persist: 'credentials.pendingTotp' });
 // they have to be, the page shows them — and sealed in the ROW, which is gone
 // when the set is confirmed, discarded, replaced or swept.
 const pendingBackupCodes = realms.map({
-  persist: 'credentials.pendingBackupCodes' });
+  persist: 'credentials.pendingBackupCodes', retain: 'age' });
 
 // The attribute is the same one `addKey()` writes; this register holds only
 // what has been ASKED FOR and not yet proved. Per realm, like every other
@@ -243,7 +244,8 @@ const pendingBackupCodes = realms.map({
 // (`sts_portal_backup_keys`) because another node minted it. A challenge is
 // not a credential, so the row leaks nothing, and it is sealed anyway like
 // every minted row.
-const pendingKeys = realms.map({ persist: 'credentials.pendingKeys' });
+const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
+                                 retain: 'age' });
 
 class Credentials {
   constructor(private readonly deps: CredentialsDeps) {

@@ -156,7 +156,7 @@ function maxReplayEntries() {
 // already refused became replayable again for as long as the clock skew
 // window allows. A mock is allowed to be permissive about passwords and is
 // not allowed to be accidentally permissive about replay.
-const replayCache = realms.map({ persist: 'krb5.replayCache' });
+const replayCache = realms.map({ persist: 'krb5.replayCache', retain: 'age' });
 
 // How much longer than the replay window an Authenticator's cluster claim
 // lives: two nodes' clocks may disagree about when the window ends (#46).

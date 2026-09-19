@@ -1105,7 +1105,9 @@ async function test() {
 
   // The realm the issued key pairs are made in. Made BEFORE the index is read,
   // so its authorities are in it.
-  await ok(api + "/realms/create", { id: REALM, name: "PKI distribution " +
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "PKI distribution " +
                                      "points" }, "created the trust realm");
   await ok(realmApi + "/pki/build", { organisation: "Distribution Points",
                                       country: "US" },

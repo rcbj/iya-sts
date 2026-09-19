@@ -202,7 +202,7 @@ interface VcIssuerDeps {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces' });
+const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age' });
 
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
 // its exported name.
@@ -341,7 +341,7 @@ const VCI_REQUEST_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
 const LAST_REQUEST_KEY = 'last';
 
 const lastCredentialRequestStore = realms.map({
-  persist: 'vc_issuer.lastCredentialRequest' });
+  persist: 'vc_issuer.lastCredentialRequest', retain: 'age' });
 
 // The three events the Notification Endpoint accepts (OID4VCI section 11).
 const NOTIFICATION_EVENTS = ['credential_accepted', 'credential_failure',

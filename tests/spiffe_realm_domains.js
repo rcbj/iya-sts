@@ -149,10 +149,15 @@ async function run(t) {
     log.debug("Leaving run().");
     return;
   }
-  t.equal(realmA.overrides['spiffe.trustDomain'], REALM_A + '.' + root,
-          'a realm is CREATED with <realm>.<the process\'s trust domain> — ' +
-          'the common root with a unique issuer under it, which is the ' +
-          'arrangement rcbj asked for and the reason this sits beside the ' +
+  // THE REALM'S DOMAIN IS ITS TRUST DOMAIN since 2026-09-18; it was
+  // `<realm>.<the process's trust domain>` until then. Created with no domain
+  // of its own, the realm's is `<realm>.<global.domain>`.
+  const domainA = realms.domainOf(REALM_A);
+  t.equal(domainA, REALM_A + '.' + realms.domainOf(realms.DEFAULT_ID),
+          'a realm created without a domain is given <realm>.<global.domain>');
+  t.equal(realmA.overrides['spiffe.trustDomain'], domainA,
+          'a realm is CREATED with its DOMAIN as its trust domain — unique ' +
+          'because the domain is, which is the reason this sits beside the ' +
           'entityID and the providerID in realms.js rather than in a getter');
   t.equal(realmA.overrides['spiffe.enabled'], false,
           'AND WITH SPIFFE OFF, because turning it on BINDS SOCKETS: a realm ' +
@@ -165,7 +170,7 @@ async function run(t) {
           'on a stale socket, take it away from the realm that had it',
           String(realmA.overrides['spiffe.workloadSocket']));
 
-  t.equal(ca.trustDomain(REALM_A), REALM_A + '.' + root,
+  t.equal(ca.trustDomain(REALM_A), domainA,
           'the CA answers with the realm\'s own domain — it read a module ' +
           'constant captured at require time until 2026-09-12, which is the ' +
           'whole of why SPIFFE was `none` in realms.realmSupport()');
@@ -194,7 +199,7 @@ async function run(t) {
   t.log.info('=== fixed at build, and the drift ===');
   await ca.ready(REALM_A);
   const built = ca.state(REALM_A);
-  t.equal(built.trustDomain, REALM_A + '.' + root,
+  t.equal(built.trustDomain, domainA,
           'the realm\'s authorities are built under its own domain');
   t.equal(built.trustDomainDrift, null,
           'and nothing has drifted yet');
@@ -206,17 +211,17 @@ async function run(t) {
           'the process, because the process builds its authorities at ' +
           'startup, and a realm builds its own when it is turned on',
           (moved.errors || []).join(' '));
-  t.equal(ca.trustDomain(REALM_A), REALM_A + '.' + root,
+  t.equal(ca.trustDomain(REALM_A), domainA,
           'but the BUILT name goes on being used, because every certificate ' +
           'this realm has issued names it — changing it underneath would be ' +
           'the silent disagreement config.js exists to prevent');
   const drift = ca.state(REALM_A).trustDomainDrift;
   t.check(!!drift && drift.configured === 'moved.example.test' &&
-          drift.built === REALM_A + '.' + root,
+          drift.built === domainA,
           'AND THE DISAGREEMENT IS PUBLISHED rather than hidden — a page ' +
           'showing one of the two would be the same defect wearing a report',
           JSON.stringify(drift));
-  realms.setOverride(REALM_A, 'spiffe.trustDomain', REALM_A + '.' + root);
+  realms.setOverride(REALM_A, 'spiffe.trustDomain', domainA);
 
   // -------------------------------------------------------------------------
   // 3. AN SVID NAMES THE REALM'S OWN TRUST DOMAIN, AND THE OTHER REALM'S

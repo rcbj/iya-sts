@@ -3365,7 +3365,7 @@ function userFor(username) {
     user.name = name + ' (mock)';
     user.given_name = name;
     user.family_name = 'Mock';
-    user.email = name + '@sts.example';
+    user.email = realms.inventedMailOf(name);
     user.email_verified = true;
   }
   log.debug("Leaving userFor(). sub=" + user.sub);

@@ -1357,8 +1357,72 @@ function recordScim(detail) {
 // page with no evidence that anything ever called it is a page about a
 // hypothesis. `/admin/scim/monitor` is about the TRAFFIC. Neither can disagree
 // with the other, because there is one set of numbers underneath both.
+// ---------------------------------------------------------------------------
+// EVERY PROCESS'S SCIM COUNTS, NOT ONLY THIS ONE'S (2026-09-18).
+//
+// `scimCounts` is `merge: 'own'`: each process writes its own tally, and what
+// another process counted — another node, a request worker, or this node
+// before a restart that could not take its old origin back — reaches this one
+// as a CONTRIBUTION (persistence_replication.js). The other accumulators were
+// fanned in where they are reported; this one was not, so after a redeploy the
+// SCIM pages started again from zero while the counts sat in the store.
+//
+// ONE DEEP MERGE, because the object is one shape: numbers add — except the
+// three that are extremes (`firstAt` the earliest non-zero, `lastAt` and
+// `maxMs` the largest) — a flag is true if any process's is, nested tables
+// merge the same way at every level, and `recent` keeps the newest
+// SCIM_RECENT across all of them. Nothing in the result is written back.
+// ---------------------------------------------------------------------------
+function mergeScimValue(key, mine, theirs) {
+  log.debug("Entering mergeScimValue().");
+  let out;
+  if (typeof mine === 'number' && typeof theirs === 'number') {
+    if (key === 'firstAt') {
+      out = !mine ? theirs : (!theirs ? mine : Math.min(mine, theirs));
+    } else if (key === 'lastAt' || key === 'maxMs') {
+      out = Math.max(mine, theirs);
+    } else {
+      out = mine + theirs;
+    }
+  } else if (typeof mine === 'boolean' || typeof theirs === 'boolean') {
+    out = !!mine || !!theirs;
+  } else if (Array.isArray(mine) || Array.isArray(theirs)) {
+    out = [].concat(mine || [], theirs || []);
+  } else if (mine && typeof mine === 'object' && theirs &&
+             typeof theirs === 'object') {
+    out = Object.assign({}, mine);
+    Object.keys(theirs).forEach(function (k) {
+      out[k] = Object.prototype.hasOwnProperty.call(out, k)
+        ? mergeScimValue(k, out[k], theirs[k]) : theirs[k];
+    });
+  } else {
+    out = mine === undefined || mine === null ? theirs : mine;
+  }
+  log.debug("Leaving mergeScimValue().");
+  return out;
+}
+
+function scimCountsAll() {
+  log.debug("Entering scimCountsAll().");
+  let merged = JSON.parse(JSON.stringify(scimCounts));
+  replication.remoteRows('admin_stats.scimCounts', undefined, '')
+    .forEach(function (theirs) {
+      if (theirs && typeof theirs === 'object') {
+        merged = mergeScimValue('', merged, theirs);
+      }
+    });
+  merged.recent = (merged.recent || []).slice().sort(function (a, b) {
+    return (Number(b && b.at) || 0) - (Number(a && a.at) || 0);
+  }).slice(0, SCIM_RECENT);
+  log.debug("Leaving scimCountsAll().");
+  return merged;
+}
+
 function scimSnapshot() {
   log.debug("Entering scimSnapshot().");
+  // Every process's counts (see scimCountsAll()), under the name the rest of
+  // this function reads.
+  const scimCounts = scimCountsAll();
   const operations = SCIM_OPERATIONS.map(function (row) {
     return { operation: row.operation, label: row.label, method: row.method,
              what: row.what,
@@ -1409,6 +1473,9 @@ function scimSnapshot() {
 // ---------------------------------------------------------------------------
 function scimMonitorSnapshot() {
   log.debug("Entering scimMonitorSnapshot().");
+  // Every process's counts (see scimCountsAll()), under the name the rest of
+  // this function reads.
+  const scimCounts = scimCountsAll();
   const detail = scimCounts.detail;
 
   // Every operation this server implements, with the ones nothing has called
@@ -2156,9 +2223,15 @@ function recordAuthentication(detail) {
   record.authentications++;
   record.firstAt = record.firstAt || now;
   record.lastAt = now;
+  // WHERE IT CAME FROM (2026-09-19): the caller's `address` where it named
+  // one, and otherwise the audit log's ambient source — the same answer the
+  // `authentication` row below gets, from one place. '' for an act nobody
+  // sent over a socket.
+  const address = info.address ? String(info.address) :
+    audit.currentAddress();
   record.events.push({
     at: now, protocol: protocol, method: method, presented: identity.form,
-    realm: identity.realm || '', sub: subject,
+    realm: identity.realm || '', sub: subject, address: address,
     client_id: info.client_id || '',
     amr: (info.amr || []).join(', '), acr: info.acr || '',
     sessionId: info.sessionId || '', note: info.note || ''
@@ -2187,6 +2260,7 @@ function recordAuthentication(detail) {
     actorForm: identity.form,
     protocol: protocol,
     channel: 'internal',
+    address: address,
     target: info.sessionId || '',
     summary: identity.key + ' authenticated through ' + protocol + ' (' +
              method + ')',

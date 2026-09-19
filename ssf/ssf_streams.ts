@@ -78,6 +78,7 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
+import replication = require('../persistence/persistence_replication');
 import subjects = require('./ssf_subjects');
 import events = require('./ssf_events');
 
@@ -1838,14 +1839,34 @@ class SsfStreams {
     return entry;
   }
 
+  // EVERY PROCESS'S, NOT ONLY THIS ONE'S (2026-09-18). `received` is
+  // `merge: 'own'`, so what another node or request worker received — or this
+  // node before a restart that could not take its old origin back — reaches
+  // this process as a contribution, and a list of this process's alone showed
+  // a push that landed on the other node as never having arrived. Oldest
+  // first, as the list always was, and bounded by the same setting.
   listReceived() {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.listReceived().");
-    const out = received.slice();
+    let all: any[] = received.slice();
+    replication.remoteRows('ssf_streams.received', undefined, '')
+      .forEach(function (theirs: unknown): void {
+        if (Array.isArray(theirs)) {
+          all = all.concat(theirs);
+        }
+      });
+    all.sort(function (a: any, b: any): number {
+      return String((a && a.at) || '').localeCompare(String((b && b.at) || ''));
+    });
+    const max = this.limit('ssf.maxReceivedEvents', 200);
+    const out = all.length > max ? all.slice(all.length - max) : all;
     log.debug("Leaving SsfStreams.listReceived(). " + out.length + '.');
     return out;
   }
 
+  // THIS PROCESS'S list only: another process's contribution is its row in
+  // the store, and it clears its own when asked there. A clear answered by one
+  // node of several therefore leaves what the others received on the page.
   clearReceived() {
     const { log } = this.deps;
     log.debug("Entering SsfStreams.clearReceived().");

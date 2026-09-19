@@ -608,7 +608,11 @@ The capability row `scim.challenge-state` is provided by `scim_auth.ts`.
   on. The Digest row is `{ at }` only: the nonce COUNTS were a `Set` on the row,
   which JSON drops and a replicated row would lose to last writer wins. They are
   a per-process `digestCounts` map (the fast refusal) and `hobaSeen` stays
-  per-process for the same reason.
+  per-process for the same reason. **Both are persisted since 2026-09-18**
+  (`scim.digestCounts` as an array per nonce, `scim.hobaSeen`, each
+  `retain: 'age'`) so a restarted process keeps its fast refusal; each row is
+  still this process's copy, last writer wins, and the claim below is what
+  decides between live processes.
 * **A nonce count (qop=auth) and a HOBA (kid, challenge, nonce) are SPENT
   through `cluster/cluster_claims.js`** before the credential is accepted —
   `authenticateSpent()`, which `scim.ts`'s gate calls. The claim runs after the

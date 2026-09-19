@@ -95,8 +95,8 @@
 //     afterwards would leave the derived thing untouched and the two
 //     disagreeing — which is worse than refusing, because it reads as having
 //     worked.
-//   * THE DIRECTORY TREE. `ldap.baseDn` is the root every entry was built
-//     under.
+//   * THE DIRECTORY TREE. `global.domain` is the root every entry of the
+//     default realm was built under (it was `ldap.baseDn` until 2026-09-18).
 //
 // A row that is restart-only still appears everywhere a runtime one does, with
 // its effective value and its reason. Hiding them would answer "what is this
@@ -652,6 +652,29 @@ const SETTINGS = [
                  'certificate from /tls/server-certificate — with ' +
                  'verification off the first time, since with this on there ' +
                  'is no plain port left to fetch it from.' },
+
+  // ---------------------------------------------------------------------
+  // THE DEFAULT REALM'S DOMAIN (2026-09-18), which replaced `ldap.baseDn`.
+  // Every trust realm carries a DNS domain that is the root of the NAMES it
+  // invents — its directory tree above all (RFC 2247: `iyasec.io` is
+  // `dc=iyasec,dc=io`) — and this is the default realm's, which it cannot be
+  // given any other way because that realm is not created. Restart-only for
+  // the reason `ldap.baseDn` was: the default realm's tree is built under it
+  // at startup. `common/realms.js` argues the domain; it is refused at startup
+  // (`STS-CORE-0099`) if it is not a domain of two labels or more.
+  { key: 'global.domain', group: 'Global', label: 'Domain',
+    env: 'STS_DOMAIN', type: 'string', dflt: 'example.com', runtime: false,
+    restartReason: 'the default realm\'s directory tree is built under it at ' +
+                   'startup',
+    description: 'The DNS domain of the DEFAULT trust realm — iyasec.io, ' +
+                 'dev.iyasec.io, example.com. Its directory is rooted at ' +
+                 'the RFC 2247 mapping of it (example.com is ' +
+                 'dc=example,dc=com), and a realm created without a domain ' +
+                 'of its own is given <id>.<this value>. It names what the ' +
+                 'realm INVENTS and never where it is reached: the issuer, ' +
+                 'did:web and the WebAuthn RP ID still come from the host a ' +
+                 'request arrived on. Every other realm\'s domain is set when ' +
+                 'it is created, on /admin/realms, and is fixed from then on.' },
 
   // ---------------------------------------------------------------------
   // WHETHER A FORWARDED HEADER IS BELIEVABLE, which is the server's half of
@@ -7736,13 +7759,6 @@ const SETTINGS = [
                  'is up and 636 is not" is an ordinary outcome and each ' +
                  'reports itself separately.' },
 
-  { key: 'ldap.baseDn', group: 'LDAP', label: 'Base DN',
-    env: 'LDAP_BASE_DN', type: 'string', dflt: 'dc=example,dc=com',
-    runtime: false,
-    restartReason: 'the directory tree is built under it at startup',
-    description: 'The root of the embedded directory. ou=users and ou=groups ' +
-                 'hang off it.' },
-
   // ON, and the description below is what it actually does. It used to be off
   // with a description about BINDS — "a bind as a name with no entry creates
   // one" — and that behaviour does not exist and never did: the bind handler
@@ -9602,17 +9618,14 @@ const SETTINGS = [
                  'spiffe://example.org/… by default. LOWER-CASE, and only ' +
                  'letters, digits, dots, dashes and underscores — an ' +
                  'upper-case trust domain is not a valid SPIFFE ID and is ' +
-                 'not another spelling of the lower-case one either. **IT IS ' +
-                 'ALSO THE COMMON ROOT EVERY OTHER REALM\'S IS BUILT FROM**: ' +
-                 'a realm created here is given `<realm>.<this value>` as ' +
-                 'its own — acme.example.org — the way it is given an ' +
-                 'entityID of its own, because two realms sharing a trust ' +
-                 'domain are two issuing authorities claiming one name and ' +
-                 'every SVID either mints is then ambiguous. Set it on a ' +
-                 'realm to name that realm\'s domain outright; a realm does ' +
-                 'not have to sit under this root, and a realm deliberately ' +
-                 'sharing another\'s is a thing worth being able to build on ' +
-                 'a mock.' },
+                 'not another spelling of the lower-case one either. A realm ' +
+                 'created here is given ITS DOMAIN as its trust domain — ' +
+                 'iyasec.io — the way it is given an entityID of its own, ' +
+                 'because two realms sharing a trust domain are two issuing ' +
+                 'authorities claiming one name and every SVID either mints ' +
+                 'is then ambiguous. Set it on a realm to name that realm\'s ' +
+                 'trust domain outright; a realm deliberately sharing ' +
+                 'another\'s is a thing worth being able to build on a mock.' },
 
   { key: 'spiffe.x509KeyType', group: 'SPIFFE', label: 'X.509 authority key',
     env: 'STS_SPIFFE_X509_KEY_TYPE', type: 'enum',
@@ -10397,15 +10410,18 @@ const SETTINGS = [
     label: 'Minted state retention (ms)',
     env: 'STS_PERSISTENCE_MINTED_RETENTION', type: 'int',
     dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
-    description: 'How long a persisted session, token, code, artifact or ' +
-                 'audit row is kept. A row older than this is neither ' +
-                 'restored nor left behind — it is deleted on the start that ' +
-                 'skipped it. Seven days by default, which is longer than ' +
-                 'every lifetime this service issues and short enough that a ' +
-                 'long-running store does not read a month of dead sessions ' +
-                 'on the way up. 0 keeps everything for ever, which is a ' +
-                 'supported answer for a deployment whose audit log is the ' +
-                 'point and which prunes the table itself.' },
+    description: 'How long a row of a SHORT-LIVED persisted store — a ' +
+                 'nonce, a code, a pending flow, an in-flight transaction ' +
+                 '(`retain: \'age\'`) — is kept. Such a row older than this ' +
+                 'was left behind by a process that stopped before sweeping ' +
+                 'it; it is neither restored nor kept, and is deleted on the ' +
+                 'start that skipped it. Every other persisted store — ' +
+                 'configuration, accounts, sessions, tokens, the audit log ' +
+                 'and the counters — is KEPT until the store itself deletes ' +
+                 'a row, however old it is (2026-09-18: until then this ' +
+                 'deleted every row of every store not written for this ' +
+                 'long). Also how long a deletion tombstone is kept. Seven ' +
+                 'days by default; 0 keeps everything.' },
 
   // -------------------------------------------------------------------------
   // SEVERAL PROCESSES AGAINST ONE STORE. Until 2026-09-06 this service said,
@@ -11248,7 +11264,7 @@ function persistableOverrides() {
 //   could already have read and cached.
 //
 // The corollary is the one worth stating: `global.https`, `oauth2.rfc9700`,
-// `ldap.port`, `ldap.baseDn` and every other restart-only setting are exactly
+// `ldap.port`, `global.domain` and every other restart-only setting are exactly
 // what the environment and the appconfig file said, and no persisted value can
 // reach them. A saved file cannot change the scheme this service answers on.
 //

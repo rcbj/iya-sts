@@ -7967,6 +7967,29 @@ function updateApplication(identifier, change) {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT A CLIENT SECRET LOOKS LIKE, decided once (2026-09-18).
+//
+// `oauth2.registeredSecretBytes` random bytes, base64url — the way `POST
+// /oauth2/register` mints one. It was a line inside regenerateClientSecret()
+// until /admin/applications/new grew a *Generate Secret* button, which needs
+// a secret for an application that does not exist yet; two copies of that
+// line would be two definitions of a client secret, which is what the header
+// below says this module exists to prevent. It writes nothing: the caller
+// decides where the value goes.
+// ---------------------------------------------------------------------------
+function clientSecretBytes() {
+  log.debug("Entering clientSecretBytes().");
+  log.debug("Leaving clientSecretBytes().");
+  return Number(config.value('oauth2.registeredSecretBytes')) || 24;
+}
+
+function mintClientSecret() {
+  log.debug("Entering mintClientSecret().");
+  log.debug("Leaving mintClientSecret().");
+  return randomId(clientSecretBytes());
+}
+
+// ---------------------------------------------------------------------------
 // A NEW CLIENT SECRET, MINTED HERE (2026-09-13).
 //
 // The console's Set could always write `oauthClientSecret`, but only with a
@@ -8022,8 +8045,8 @@ function regenerateClientSecret(identifier, options) {
                            'STS-REG-0061');
   }
   const record = loaded.record;
-  const bytes = Number(config.value('oauth2.registeredSecretBytes')) || 24;
-  const secret = randomId(bytes);
+  const bytes = clientSecretBytes();
+  const secret = mintClientSecret();
   const replaced = !!record.fields.oauthClientSecret;
   setField(record, 'oauthClientSecret', secret);
   if (record.fields.appRegistrationJson) {
@@ -10047,6 +10070,7 @@ module.exports = {
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
   regenerateClientSecret: regenerateClientSecret,
+  mintClientSecret: mintClientSecret,
   KEY_SOURCES: KEY_SOURCES,
   KEY_SOURCE_ATTRIBUTES: KEY_SOURCE_ATTRIBUTES,
   KEY_PAIR_ATTRIBUTES: KEY_PAIR_ATTRIBUTES,

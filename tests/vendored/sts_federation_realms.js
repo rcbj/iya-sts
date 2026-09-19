@@ -643,7 +643,7 @@ function attackerCredential() {
 async function ensureRealm(id) {
   log.debug("Entering ensureRealm(). " + id);
   const made = await api(null, "POST", "/realms/create",
-                         { id: id, name: id });
+                         { id: id, domain: id + ".example.net", name: id });
   must(made.status === 200 ||
        /already/i.test(JSON.stringify(made.body || made.text)),
        "creating the realm " + id + " answered " + made.status + " " +

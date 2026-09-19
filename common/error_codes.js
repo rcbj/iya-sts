@@ -700,6 +700,24 @@ const CODES = [
       'once a minute per store; each refusal is counted on /admin/caches). ' +
       'The request is refused under its own protocol\'s code.',
     spec: 'none — logged; the refusal carries the protocol\'s own code' },
+  { code: 'STS-CORE-0098',
+    summary: 'A persisted store declared a retention policy other than ' +
+      '"keep" or "age". It is treated as "keep", so its rows are never ' +
+      'dropped by age.',
+    spec: 'none — logged at require time' },
+  { code: 'STS-CORE-0099',
+    summary: 'A trust realm\'s domain was not a DNS name of at least two ' +
+      'labels (letters, digits and hyphens, each at most 63 characters, a ' +
+      'top-level label that is not all digits).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0100',
+    summary: 'A trust realm was given a domain another realm — the default ' +
+      'realm\'s global.domain included — already has.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0101',
+    summary: 'An update tried to change a trust realm\'s domain, which is ' +
+      'fixed when the realm is created.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -1144,6 +1162,23 @@ const CODES = [
     summary: 'Trimming the change log below every reader\'s position failed; ' +
       'it is retried on the next interval.',
     spec: '' },
+  { code: 'STS-STORE-0060',
+    summary: 'A process did not take the stable persistence origin for its ' +
+      'node name and slot — a live process still held it after the wait, or ' +
+      'it has no stable name — and writes under a random origin, so its ' +
+      'per-process rows (audit, counters) are read by others as a ' +
+      'contribution.',
+    spec: 'none — logged at startup' },
+  { code: 'STS-STORE-0061',
+    summary: 'A process lost the claim on its persistence origin while ' +
+      'running — another process took it — and exits rather than go on ' +
+      'refusing every write.',
+    spec: 'none — logged, then the process exits' },
+  { code: 'STS-STORE-0062',
+    summary: 'The claim on this process\'s persistence origin could not be ' +
+      'renewed because the store did not answer. Not fatal: the claim ' +
+      'outlives a short outage and every write checks it.',
+    spec: 'none — logged' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -1810,7 +1845,7 @@ const CODES = [
     spec: '' },
   { code: 'STS-PKI-0061',
     summary: 'The directory could not say where a scope lives; the CRL DN ' +
-      'falls back to one built from ldap.baseDn.',
+      'falls back to one built from the realm\'s domain.',
     spec: '' },
   { code: 'STS-PKI-0062',
     summary: 'The Web Crypto engine pkijs needs could not be installed; CRLs ' +

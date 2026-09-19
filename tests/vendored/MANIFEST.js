@@ -221,7 +221,11 @@ const JOBS = [
   // the other when the surface stops refusing.
   { file: 'sts_admin_api_auth.js',       browser: false, local: true },
   { file: 'sts_admin_api_operations.js', browser: false, local: true },
-  { file: 'sts_admin_console.js',        browser: true,  local: true },
+  // AN HOUR (2026-09-19): it walks every console page in a real browser, and
+  // against a three-node cluster across the internet (run-suite.sh testidp)
+  // that took longer than the 20-minute default, killed while still passing.
+  { file: 'sts_admin_console.js',        browser: true,  local: true,
+    timeoutMs: 3600000 },
   // A TRUST REALM'S OWN ADMINISTRATORS (2026-09-14, #32): the realm chooser,
   // a realm administrator confined to their realm in the console and through
   // a realm's own management API token, and the service administrator over

@@ -233,11 +233,15 @@ function codeFrom(location) {
 async function setUp() {
   log.debug("Entering setUp().");
   log.info("=== 0. two realms, the clients, a person ===");
-  await ok(api + "/realms/create", { id: REALM, name: "OAuth 2.1 mode",
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "OAuth 2.1 mode",
     overrides: { "oauth2.oauth21": true, "oauth2.consentRequired": false,
                  "security.rateLimitPerIdentity": 3 } },
     "created the OAuth 2.1 realm");
-  await ok(api + "/realms/create", { id: BCP_REALM, name: "RFC 9700 mode",
+  await ok(api + "/realms/create", { id: BCP_REALM,
+                                     domain: BCP_REALM + ".example.net",
+                                     name: "RFC 9700 mode",
     overrides: { "oauth2.rfc9700": true, "oauth2.consentRequired": false } },
     "created the RFC 9700 realm beside it");
   const clients = [

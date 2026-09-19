@@ -247,6 +247,7 @@ docker run --rm --network host \
   -e STS_TEST_FRESH_CONNECTIONS=1 \
   -e STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
   -e STS_PUBLIC_BASE_URL="${URL}" \
+  -e STS_TEST_SERVICE_URL="${URL}" \
   -e STS_LDAP_URL="ldap://${NLB_DNS}:${LDAP_PORT}" \
   -e STS_LDAP_PORT="${LDAP_PORT}" \
   "${TESTS_IMAGE}" bash -c '

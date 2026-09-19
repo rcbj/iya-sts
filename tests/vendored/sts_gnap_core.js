@@ -103,7 +103,9 @@ async function test() {
   // 0. A REALM, TWO PEOPLE, AND NO WAITING.
   // =========================================================================
   log.info("=== 0. the realm ===");
-  await ok(api + "/realms/create", { id: REALM, name: "GNAP core" },
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "GNAP core" },
            "created " +
       "the realm");
   await setting("gnap.continueWaitS", 0);

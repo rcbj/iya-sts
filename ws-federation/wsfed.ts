@@ -281,7 +281,7 @@ const RP_PATH = '/wsfed/rp';
 // minted by the one in `acme` being recognised by the one in the default realm
 // would make the check this map exists for — did my own value come back? —
 // answer yes across a boundary the rest of the profile does not cross.
-const rpContexts = realms.map({ persist: 'wsfed.rpContexts' });
+const rpContexts = realms.map({ persist: 'wsfed.rpContexts', retain: 'age' });
 
 // Written with no regular expressions and nothing to escape, for the reason
 // oauth2.js's ceremony script records: a backslash in a script that passes

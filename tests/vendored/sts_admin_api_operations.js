@@ -152,6 +152,10 @@ base = String(base).replace(/\/+$/, "");
 // digits and hyphens — so the run stamp is lower-cased rather than used raw.
 const REALM = ("adminapi-" + names.runStamp()).toLowerCase()
     .replace(/[^a-z0-9-]/g, "").slice(0, 40);
+// Its DNS domain, named explicitly so that the create's `domain` is asserted
+// on the way in (2026-09-18) — under example.net, so that it can collide with
+// no realm a default-domain run created.
+const REALM_DOMAIN = REALM + ".example.net";
 
 // Where the operations under test are reached. `api` is the throwaway realm's
 // door and is what almost everything uses; `rootApi` is the default realm's,
@@ -414,6 +418,7 @@ async function theRealmRegistryWorks() {
     name: "Management API operations test",
     description: "Created by tests/sts_admin_api_operations.js; LEFT IN " +
                  "PLACE on purpose, so a failed run can be read afterwards.",
+    domain: REALM_DOMAIN,
     overrides: { "saml2.entityId": "urn:test:" + REALM + ":idp" }
   }, "created the throwaway realm", true);
   assert.strictEqual(created.realm, REALM,
@@ -424,6 +429,33 @@ async function theRealmRegistryWorks() {
                  "created.");
   assert.strictEqual(row.name, "Management API operations test",
     "the create's `name` should be on the row; it says " + row.name);
+
+  // THE REALM'S DOMAIN (2026-09-18): on the row, rooting the realm's own
+  // directory tree, and the base of the names seeded from it — except where
+  // the create's own overrides named one, which is the saml2.entityId above.
+  assert.strictEqual(row.domain, REALM_DOMAIN,
+    "the create's `domain` should be on the row; it says " + row.domain);
+  assert.strictEqual(row.baseDn, "dc=" + REALM_DOMAIN.split(".").join(",dc="),
+    "and the realm's directory should be rooted at the RFC 2247 mapping of " +
+    "it; the row says " + row.baseDn);
+  assert.strictEqual(realmSetting(row, "spiffe.trustDomain"), REALM_DOMAIN,
+    "the realm's SPIFFE trust domain should be seeded from its domain.");
+  assert.strictEqual(realmSetting(row, "krb5.realm"),
+    REALM_DOMAIN.toUpperCase(),
+    "and its Kerberos realm should be the domain in capitals.");
+  assert.strictEqual(realmSetting(row, "saml11.providerId"),
+    "urn:" + REALM_DOMAIN + ":idp:saml11",
+    "and an entity id the create did not name should be a URN built from it.");
+  await refused("/realms/update", { id: REALM, domain: "moved." +
+                                    REALM_DOMAIN },
+    /fixed when the realm is created/, "a change of the realm's domain");
+  await ok("/realms/update", { id: REALM, domain: REALM_DOMAIN },
+    "accepted the realm's own domain again, which changes nothing", true);
+  await refused("/realms/create", { id: REALM + "-twin",
+                                    domain: REALM_DOMAIN },
+    /is already the/, "a second realm with the same domain");
+  await refused("/realms/create", { id: REALM + "-bad", domain: "localhost" },
+    /at least two labels/, "a domain of one label");
   assert.strictEqual(realmSetting(row, "saml2.entityId"),
     "urn:test:" + REALM + ":idp",
     "THE `overrides` FIELD OF createRealm MUST REACH THE REALM. It is " +
@@ -912,7 +944,15 @@ function getTrusting(path, anchorPem) {
   return new Promise(function (resolve, reject) {
     const req = require("https").get({
       host: target.hostname, port: target.port || 443,
-      path: target.pathname + target.search, ca: anchorPem,
+      path: target.pathname + target.search,
+      // THE ANCHOR THE SERVICE SERVES, BESIDE THE PLATFORM'S PUBLIC ROOTS
+      // (2026-09-19). Locally the listener is certified by the service's own
+      // Root, which no public root signs, so this proves exactly what it did.
+      // A deployment serving an operator-supplied certificate
+      // (`tls.certificateFile` — testidp's ACM one) is not re-certified by
+      // build-root, and trusting ONLY what it serves dropped the public root
+      // that chain ends at: "unable to get issuer certificate".
+      ca: require("tls").rootCertificates.concat([anchorPem]),
       agent: false,
       headers: process.env.STS_ADMIN_API_TOKEN
         ? { Authorization: "Bearer " + process.env.STS_ADMIN_API_TOKEN } : {}
@@ -1062,11 +1102,11 @@ async function theApplicationsRegistryRoundTrips() {
     "GET /applications/new should publish the kinds and the protocol " +
     "families a create is validated against; it published " +
     kinds.length + " and " + families.length + ".");
-  // The service's own base DN, asked rather than assumed: a deployment names
-  // its directory (testidp's is dc=iyasec,dc=io).
-  const baseDn = String(await facts.setting(rootApi, "ldap.baseDn"));
+  // The realm's own base DN, read off its registry row: a realm's directory is
+  // rooted at its domain (2026-09-18).
+  const baseDn = String((await realmRow()).baseDn);
   assert.strictEqual(form.body.container,
-    "ou=applications,dc=" + REALM + "," + baseDn,
+    "ou=applications," + baseDn,
     "and it should name THIS realm's container, since that is where a create " +
     "made through this prefix lands; it named " + form.body.container);
 
@@ -3386,6 +3426,12 @@ async function ensureTokenParties(username, client, root) {
   log.debug("Leaving ensureTokenParties().");
 }
 
+// WHICH CLIENT EACH MINTED ACCESS TOKEN WAS ISSUED TO, so introspection can
+// authenticate as it: product mode answers RFC 7662 JSON only to an
+// authenticated caller, and to the token's own client (RFC 9701 section 5's
+// intended-for rule), so an anonymous introspection is a 401 there.
+const mintedFor = new Map();
+
 async function mintTokens(username, client) {
   log.debug("Entering mintTokens(). username=" + username);
   await ensureTokenParties(username, client, false);
@@ -3415,6 +3461,7 @@ async function mintTokens(username, client) {
     idJti: claimOf(reply.body.id_token, "jti"),
     sub: claimOf(reply.body.access_token, "sub")
   };
+  mintedFor.set(out.access, client);
   log.debug("Leaving mintTokens(). jti=" + out.jti);
   return out;
 }
@@ -3492,7 +3539,11 @@ async function introspectActive(token) {
                                       "/oauth2/introspect", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "token=" + encodeURIComponent(token)
+    body: "token=" + encodeURIComponent(token) +
+          (mintedFor.has(token)
+            ? "&client_id=" + encodeURIComponent(mintedFor.get(token)) +
+              "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET)
+            : "")
   });
   assert.strictEqual(reply.status, 200,
     "introspection should answer 200 whatever it thinks of the token; it " +
@@ -3999,10 +4050,28 @@ async function theKerberosPrincipalsRoundTrip() {
       { spn: "HTTP/nobody-" + REALM + ".example.com" },
       /holds no stored Kerberos key/,
       "a drop for an SPN with no stored key", true);
-    // A PERSON: nobody on a development stack holds keys, so there is nothing
-    // to drop, and that is a refusal naming why.
+    // A PERSON OF THIS JOB'S OWN (2026-09-19) — it used the seeded `alice`,
+    // and product mode seeds nobody. Created with a password, which in
+    // product mode DERIVES their Kerberos keys and in development derives
+    // nothing; so a clear comes FIRST, and after it the drop is refused in
+    // both modes for the same reason: nothing is stored to drop from.
+    const keyPerson = names.usernameFor("stsapi-krb5person");
+    await ok("/users/create", {
+      username: keyPerson, invent: false,
+      attributes: { cn: "Kerberos " + keyPerson, givenName: "Kerberos",
+                    sn: keyPerson, displayName: "Kerberos " + keyPerson,
+                    mail: keyPerson + "@admin-api-operations.test" },
+      credential: "password", password: MINT_PASSWORD
+    }, "created " + keyPerson + " to hold (or not hold) Kerberos keys", true);
+    const product = await facts.isProduct(rootApi);
+    const firstClear = await ok("/kerberos/principals/clear-person-keys",
+      { username: keyPerson }, "cleared the new person's keys", true);
+    assert.strictEqual(firstClear.cleared, product,
+      "a person just given a password holds derived Kerberos keys in " +
+      "PRODUCT mode and none in development, so the first clear should " +
+      "answer cleared: " + product + ": " + JSON.stringify(firstClear));
     await refused("/kerberos/principals/drop-previous-person-keys",
-      { username: "alice" }, /holds no stored Kerberos key/,
+      { username: keyPerson }, /holds no stored Kerberos key/,
       "a drop for a person with no stored keys", true);
 
     const removed = await ok("/kerberos/principals/delete-service",
@@ -4016,18 +4085,18 @@ async function theKerberosPrincipalsRoundTrip() {
         one) { return one.spn !== spn; }),
       "READ BACK AFTER THE DELETE, the principal must be gone from the list");
 
-    // A PERSON: nobody on a development stack holds keys, so the clear answers
-    // `cleared: false` rather than a refusal — which is what lets a script
-    // clear on every run — and a name nobody holds is refused.
+    // A PERSON WITH NOTHING STORED: the clear answers `cleared: false`
+    // rather than a refusal — which is what lets a script clear on every run
+    // — and a name nobody holds is refused.
     await refused("/kerberos/principals/clear-person-keys",
       { username: "nobody-" + REALM }, /nobody called/,
       "a clear for somebody not in the directory", true);
     const cleared = await ok("/kerberos/principals/clear-person-keys",
-      { username: "alice" }, "answered a clear for a person with no keys",
+      { username: keyPerson }, "answered a clear for a person with no keys",
       true);
     assert.strictEqual(cleared.cleared, false,
-      "alice holds no Kerberos keys on a development stack: " +
-      JSON.stringify(cleared));
+      keyPerson + "'s keys were cleared above, so a second clear finds " +
+      "nothing: " + JSON.stringify(cleared));
     await kerberosPrincipalsHeld(true);
   } finally {
     if (created) {

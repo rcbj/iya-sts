@@ -1126,5 +1126,8 @@ module.exports = {
   snapshot: snapshot,
   forkEnvironment: forkEnvironment,
   nodeId: currentNodeId,
+  // The node's stable name (`cluster.nodeName`, or the host name), which a
+  // restarted process's persistence origin is derived from (2026-09-18).
+  nodeName: nodeName,
   reset: reset
 };

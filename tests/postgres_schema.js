@@ -134,6 +134,26 @@ function checkTheDdlAgrees(t, sql) {
             'the driver carries the script\'s ' + statement.slice(0, 60) + '…',
             statement);
   });
+
+  // A COLUMN ADDED TO A TABLE THAT ALREADY EXISTED (2026-09-18) is an
+  // `ALTER … ADD COLUMN IF NOT EXISTS` in both, since `CREATE TABLE IF NOT
+  // EXISTS` reaches only a new database — the driver's and the script's have
+  // to be the same statement, or re-running the script leaves an old database
+  // a column short of what the driver reads.
+  const alters = statementsIn(sql).filter(function (statement) {
+    return /^ALTER TABLE/i.test(statement);
+  });
+  const columns = (driver.SCHEMA_COLUMNS || []).map(function (one) {
+    return normalize(one.statement);
+  });
+  t.equal(alters.length, columns.length,
+          'postgres/schema.sql adds as many columns as the driver (' +
+          columns.length + ')');
+  columns.forEach(function (statement) {
+    t.check(alters.indexOf(statement) >= 0,
+            'postgres/schema.sql carries the driver\'s ' + statement,
+            JSON.stringify(alters));
+  });
   log.debug("Leaving checkTheDdlAgrees().");
 }
 

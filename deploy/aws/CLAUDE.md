@@ -286,7 +286,9 @@ plan against its state showed two new empty outputs and nothing else.
   secrets*, above); it was a log line in whichever node won the bootstrap
   claim until 2026-09-17.
 * **iyasec.io names throughout (2026-09-18)**, through `extra_environment`:
-  `LDAP_BASE_DN=dc=iyasec,dc=io`, `KRB5_REALM=IYASEC.IO` (so the Kerberos
+  `STS_DOMAIN=iyasec.io` (it was `LDAP_BASE_DN=dc=iyasec,dc=io` until
+  `global.domain` replaced that setting later the same day — the same tree,
+  `dc=iyasec,dc=io`, so nothing stored moved), `KRB5_REALM=IYASEC.IO` (so the Kerberos
   domain, the auto-created service domains and the PAC's domain name are
   `iyasec.io`), `KRB5_SERVICE_PRINCIPAL=HTTP/test-idp.iyasec.io` and
   `STS_SPIFFE_TRUST_DOMAIN=iyasec.io`. **None of the four can move under a

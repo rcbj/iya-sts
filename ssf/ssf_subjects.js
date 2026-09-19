@@ -55,6 +55,7 @@ const { log, subjectForName } = require('../common/helpers');
 // whose entry carries none. A leaf requiring only config, so this file stays a
 // library that can join no cycle.
 const mode = require('../common/mode');
+const realms = require('../common/realms');
 
 // ---------------------------------------------------------------------------
 // THE EIGHT FORMATS OF RFC 9493 SECTION 3, EACH WITH ITS CLOSED MEMBER SET.
@@ -558,7 +559,7 @@ function realOrInventedMail(name, facts) {
     return name;
   }
   log.debug("Leaving realOrInventedMail().");
-  return mode.inventsClaimValues() ? name + '@example.com' : '';
+  return mode.inventsClaimValues() ? realms.inventedMailOf(name) : '';
 }
 
 function subjectForUser(userid, format, issuer, facts) {

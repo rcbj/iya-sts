@@ -98,10 +98,13 @@ function fakeDriver(origin) {
       log.debug("Leaving readMinted().");
       return Promise.resolve(rows.get(id(handle, realm, key)) || null);
     },
-    purgeMinted: function (before) {
+    purgeMinted: function (before, handles) {
       log.debug("Entering purgeMinted().");
       let gone = 0;
       rows.forEach(function (row, k) {
+        if (Array.isArray(handles) && handles.indexOf(row.handle) < 0) {
+          return;
+        }
         if (Number(row.writtenAt || 0) < before) {
           rows.delete(k);
           gone++;
@@ -467,22 +470,53 @@ async function body(t, dir) {
   minted.setDriver(driver, 'postgres');
 
   // -------------------------------------------------------------------------
-  // 6. RETENTION. A month-old store must not restore a month of dead sessions.
+  // 6. RETENTION, PER STORE (2026-09-18). A SHORT-LIVED store's month-old row
+  //    is not restored and is deleted; every other store's is kept however
+  //    old it is. Until that day every old row of every store went — a
+  //    configuration or an account not written for a week included.
   // -------------------------------------------------------------------------
   t.log.info('=== retention ===');
+  const shortLived = realms.map({ persist: 'test.short', retain: 'age' });
+  shortLived.set('nonce-1', { at: 1 });
+  await minted.flush();
+  // What the STORE holds for the kept store — what a restore can put back.
+  let sessionRows = 0;
+  driver.rows.forEach(function (row) {
+    if (row.handle === 'test.sessions') {
+      sessionRows++;
+    }
+  });
+  t.check(sessionRows > 0 && shortLived.size === 1,
+          'the fixture holds a kept store\'s rows and a short-lived one\'s');
   driver.rows.forEach(function (row) {
     row.writtenAt = Date.now() - (30 * 24 * 60 * 60 * 1000);
   });
   sessions.clear();
+  shortLived.clear();
+  const before = driver.rows.size;
   config.setOverride('persistence.mintedRetention', 7 * 24 * 60 * 60 * 1000);
   await minted.restore();
-  t.equal(sessions.size, 0,
-          'a row older than persistence.mintedRetention is not restored');
-  t.equal(driver.rows.size, 0,
-          'AND IT IS DELETED RATHER THAN SKIPPED. Skipping alone would leave ' +
-          'every row this service has ever written in the table for ever, ' +
-          'and every start would read them all again in order to skip them ' +
-          'again');
+  t.equal(shortLived.size, 0,
+          'a SHORT-LIVED store\'s row older than persistence.mintedRetention ' +
+          'is not restored');
+  t.equal(sessions.size, sessionRows,
+          'and a KEPT store\'s row is restored however old it is — unchanged ' +
+          'is not stale');
+  let shortRows = 0;
+  driver.rows.forEach(function (row) {
+    if (row.handle === 'test.short') {
+      shortRows++;
+    }
+  });
+  t.check(shortRows === 0 && driver.rows.size === before - 1,
+          'AND THE SHORT-LIVED ROW IS DELETED RATHER THAN SKIPPED, while ' +
+          'every other old row stays in the store',
+          JSON.stringify([before, driver.rows.size, shortRows]));
+  // An unknown retention word is refused and read as keep.
+  const odd = realms.map({ persist: 'test.odd-retain', retain: 'forever' });
+  t.equal(realms.handleFor('test.odd-retain').retain, 'keep',
+          'a retention word that is neither keep nor age is read as keep');
+  t.check(odd.size === 0, 'and the store is otherwise ordinary');
 
   // -------------------------------------------------------------------------
   // 7. DEVELOPMENT MODE WRITES NOTHING, which is the property every other

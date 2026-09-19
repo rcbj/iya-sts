@@ -279,7 +279,9 @@ async function test() {
   // 0. THE REALM, THE CERTIFICATE AUTHORITY, AND TWO APPLICATIONS.
   // -------------------------------------------------------------------------
   log.info("=== 0. a realm, a CA, and two applications ===");
-  await ok(api + "/realms/create", { id: REALM, name: "JWT bearer grant" },
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "JWT bearer grant" },
            "created the trust realm");
 
   const built = await ok(realmApi + "/pki/build",

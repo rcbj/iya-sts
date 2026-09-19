@@ -208,7 +208,7 @@ const IAT_SKEW_SECONDS = 300;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const seenJtis = realms.map({ persist: 'dpop.seenJtis' });
+const seenJtis = realms.map({ persist: 'dpop.seenJtis', retain: 'age' });
 
 // ---------------------------------------------------------------------------
 // THE REPLAY CHECK ACROSS NODES (2026-09-14, #46).
@@ -294,7 +294,8 @@ const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const issuedNonces = realms.map({ persist: 'dpop.issuedNonces' });
+const issuedNonces = realms.map({ persist: 'dpop.issuedNonces',
+                                  retain: 'age' });
 // The default of `oauth2.dpopNonceTtlS`, kept under its old name for the same
 // reason IAT_SKEW_SECONDS is.
 const NONCE_TTL_SECONDS = 300;

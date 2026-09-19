@@ -550,7 +550,7 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // TOMBSTONED (2026-09-14, #46): a redeemed or expired code's delete leaves a
 // tombstone in the store, so a node holding an older copy of the row cannot
 // write it back. `persistence/persistence_minted.js` carries the mechanism.
-const authzCodes = realms.map({ persist: 'oauth2.authzCodes',
+const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
                                 tombstone: true });
 
 // ---------------------------------------------------------------------------
@@ -591,7 +591,8 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes',
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // code -> the token set it was redeemed for
-const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes' });
+const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes',
+                                   retain: 'age' });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is an authorization
 // code and the value holds the tokens it produced, so a row is the code's

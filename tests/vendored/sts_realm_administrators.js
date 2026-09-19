@@ -140,7 +140,7 @@ async function apiAs(token, method, path, payload) {
 async function ensureRealm(id, name) {
   log.debug("Entering ensureRealm(). " + id);
   const made = await api("POST", "/admin-api/realms/create",
-                         { id: id, name: name });
+                         { id: id, domain: id + ".example.net", name: name });
   assert.ok(made.status === 200 ||
             /already/i.test(JSON.stringify(made.body || made.text)),
     "creating the realm " + id + " answered " + made.status + " " +
@@ -470,7 +470,9 @@ async function aRealmTokenStaysInItsRealm() {
                        "it answered " + persistence.status);
   });
   const createRealm = await apiAs(token, "POST", R + "/admin-api/realms/create",
-    { id: "rt-" + STAMP, name: "Should not exist" });
+    { id: "rt-" + STAMP,
+      domain: ("rt-" + STAMP) + ".example.net",
+      name: "Should not exist" });
   check("creating a realm is refused 403", function () {
     assert.strictEqual(createRealm.status, 403,
                        "it answered " + createRealm.status);

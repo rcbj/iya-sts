@@ -258,7 +258,9 @@ async function test() {
   // 0. THE REALM, THE CERTIFICATE AUTHORITY, AND THE APPLICATIONS.
   // -------------------------------------------------------------------------
   log.info("=== 0. a realm, a CA, and two applications ===");
-  await ok(api + "/realms/create", { id: REALM, name: "SAML bearer grant" },
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "SAML bearer grant" },
            "created the trust realm");
   const built = await ok(realmApi + "/pki/build",
                          { organisation: "SAML Assertion Test", country: "US" },

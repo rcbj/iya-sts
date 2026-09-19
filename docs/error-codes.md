@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2789** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2796** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -51,9 +51,9 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 51
+* [Service core (`STS-CORE`)](#sts-core) — 55
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 59
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 62
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 173
@@ -188,6 +188,10 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0095` | A registered cache threw while listing its entries for /admin/caches, so the page shows it with no rows (#74). | none — logged; the page says the cache could not be listed |
 | `STS-CORE-0096` | A registered cache reports no bound: its maxEntries() answered no finite number. Every cache and replay store has one since 2026-09-18, so this is a regression in its owner; /admin/caches shows it as a problem on the row. | none — logged; the page marks the row |
 | `STS-CORE-0097` | A bounded store that decides a replay was full of LIVE entries and refused a new one rather than forget one (logged at most once a minute per store; each refusal is counted on /admin/caches). The request is refused under its own protocol's code. | none — logged; the refusal carries the protocol's own code |
+| `STS-CORE-0098` | A persisted store declared a retention policy other than "keep" or "age". It is treated as "keep", so its rows are never dropped by age. | none — logged at require time |
+| `STS-CORE-0099` | A trust realm's domain was not a DNS name of at least two labels (letters, digits and hyphens, each at most 63 characters, a top-level label that is not all digits). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-WORKER
 
@@ -306,6 +310,9 @@ Raised from: persistence/.
 | `STS-STORE-0057` | A process found its place among the change log's readers removed since it last reported: it had been declared gone, so changes it had not applied may have been trimmed. It should be restarted. | — |
 | `STS-STORE-0058` | A process could not report its position in the change log; the log is not trimmed past where it last said it was, and the report is retried after the next pull. | — |
 | `STS-STORE-0059` | Trimming the change log below every reader's position failed; it is retried on the next interval. | — |
+| `STS-STORE-0060` | A process did not take the stable persistence origin for its node name and slot — a live process still held it after the wait, or it has no stable name — and writes under a random origin, so its per-process rows (audit, counters) are read by others as a contribution. | none — logged at startup |
+| `STS-STORE-0061` | A process lost the claim on its persistence origin while running — another process took it — and exits rather than go on refusing every write. | none — logged, then the process exits |
+| `STS-STORE-0062` | The claim on this process's persistence origin could not be renewed because the store did not answer. Not fatal: the claim outlives a short outage and every write checks it. | none — logged |
 
 ## STS-CLUSTER
 
@@ -482,7 +489,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0058` | A hold was to be released on a serial that is not on the authority's revocation list. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0059` | A release was asked for on a certificate revoked for a permanent reason (only certificateHold can be released). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0060` | The directory hook for publishing CRLs was offered without both publishCrl() and baseDnFor(), and was refused whole. | — |
-| `STS-PKI-0061` | The directory could not say where a scope lives; the CRL DN falls back to one built from ldap.baseDn. | — |
+| `STS-PKI-0061` | The directory could not say where a scope lives; the CRL DN falls back to one built from the realm's domain. | — |
 | `STS-PKI-0062` | The Web Crypto engine pkijs needs could not be installed; CRLs and OCSP responses cannot be signed. | — |
 | `STS-PKI-0063` | A certificate revocation list could not be signed with its authority's key. | HTTP 500 text at /pki/crl; console refusal |
 | `STS-PKI-0064` | A certificate revocation list could not be published into the directory (write-behind after a revocation, or at startup). | — |

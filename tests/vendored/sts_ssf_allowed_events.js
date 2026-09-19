@@ -202,7 +202,9 @@ async function test() {
   log.info("Driving ssfAllowedEvents at " + realmBase);
 
   log.info("=== 0. the realm and three applications ===");
-  await ok(base + "/admin-api/realms/create", { id: REALM, name: "SSF " +
+  await ok(base + "/admin-api/realms/create", { id: REALM,
+                                                domain: REALM + ".example.net",
+                                                name: "SSF " +
       "allowed events" }, "created " +
       "the realm");
   const refusedCreate = await call("POST", realmApi + "/applications/create",

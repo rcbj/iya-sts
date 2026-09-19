@@ -2710,7 +2710,9 @@ async function createTheRealm() {
   //
   // A fresh stack — which is what both launchers give it — never meets this.
   const r = await postJson(base + "/admin-api/realms/create", {
-    id: REALM, name: "Remote PEP end-to-end realm",
+    id: REALM,
+    domain: REALM + ".example.net",
+    name: "Remote PEP end-to-end realm",
     description: "Created by tests/vendored/sts_xacml_remote_pep.js; LEFT " +
                  "IN PLACE on purpose, so a failed run can be read afterwards."
   });

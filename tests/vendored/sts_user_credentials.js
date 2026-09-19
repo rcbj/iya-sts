@@ -254,7 +254,9 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 0. a realm, a certificate authority, two people ===");
-  await ok(api + "/realms/create", { id: REALM, name: "User credentials" },
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "User credentials" },
            "created the trust realm");
   await ok(realmApi + "/pki/build", { organisation: "Usercreds",
                                       country: "US" },

@@ -5340,12 +5340,38 @@ const SCHEMAS = {
                                'silently drops the seventeenth.' },
       channel: {
         type: 'string',
-        enum: ['http', 'ldap', 'ldaps', 'internal'],
-        description: 'Which socket it arrived on, or `internal` for ' +
-                     'something this service did on its own — the directory ' +
-                     'entry it seeds for somebody who authenticated ' +
-                     'elsewhere. NOT the client\'s address, which on a mock ' +
-                     'behind a compose bridge would be a fact about docker.'
+        // Every value a recording site writes (2026-09-19): the list said
+        // four while rows carried nine, a source search of `channel: '`
+        // being how the rest were found. A new value needs a row here.
+        enum: ['http', 'ldap', 'ldaps', 'kerberos', 'grpc', 'tls',
+               'console', 'internal', 'none', ''],
+        description: 'How it arrived. `http` the main port; `ldap` and ' +
+                     '`ldaps` the directory\'s sockets; `kerberos` the ' +
+                     'KDC\'s TCP and UDP 88; `grpc` the SPIFFE Workload API ' +
+                     'and SPIRE Server API; `tls` a client certificate ' +
+                     'presented to this service; `console` an act taken on ' +
+                     'the admin console or `/admin-api` and recorded as ' +
+                     'that act rather than as the HTTP call. `internal` is ' +
+                     'something this service did on its own — the ' +
+                     'directory entry it seeds for somebody who ' +
+                     'authenticated elsewhere — `none` a session that ' +
+                     'EXPIRED, which nothing sent, and empty a row whose ' +
+                     'recording site named no channel. The client\'s ' +
+                     'address is `address`.'
+      },
+      address: {
+        type: 'string',
+        description: 'The client\'s IP address (2026-09-18): whoever sent ' +
+                     'the HTTP request, LDAP operation, Kerberos message or ' +
+                     'SPIRE Server API call this row came out of — an ' +
+                     'authentication, a refused sign-in, a consent, a ' +
+                     'sign-out. Resolved through `global.trustProxy` and ' +
+                     '`global.trustedProxies` (the right-most ' +
+                     '`X-Forwarded-For` hop that is not a named proxy) or a ' +
+                     'PROXY protocol header; behind a proxy with neither ' +
+                     'set, it is the proxy. Empty for something this ' +
+                     'service did on its own, or that arrived over a Unix ' +
+                     'socket.'
       },
       summary: { type: 'string',
                  description: 'One sentence, the same one the console shows.' },

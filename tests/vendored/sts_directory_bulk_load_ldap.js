@@ -400,7 +400,7 @@ function dnOf(entry) {
 //
 // Read from `/admin-api/groups`, which reports `baseDn`, `usersDn` and
 // `groupsDn` for the realm it is asked in. Read rather than assembled from
-// `ldap.baseDn`, because the DNs this job writes into have to be the ones this
+// `global.domain`, because the DNs this job writes into have to be the ones this
 // service is actually serving — a realm prefix, a changed base, a container
 // renamed, and an assembled DN would be refused by the add handler's parent
 // check with a message about a missing container rather than about a wrong
@@ -416,7 +416,7 @@ async function containers() {
   check("the service names its own containers", function () {
     assert.ok(info.usersDn && info.groupsDn,
       "GET /admin-api/groups did not report usersDn and groupsDn. This job " +
-      "writes DNs beneath them and will not assemble one from ldap.baseDn: " +
+      "writes DNs beneath them and will not assemble one from global.domain: " +
       "an assembled DN that is wrong is refused by the add handler's parent " +
       "check, which reports a missing container rather than a bad guess.");
   });
