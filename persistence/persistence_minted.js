@@ -132,6 +132,7 @@ const replication = require('./persistence_replication');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. NOT audit.js, which requires persistence_replication.js.
 const errorCodes = require('../common/error_codes');
+const cacheRegistry = require('../common/cache_registry');
 // The table of what active-active mode depends on (#46). A LEAF: bunyan and
 // config. `sessions.no-resurrection` is provided below, at require time.
 const capabilities = require('../cluster/cluster_capabilities');
@@ -283,6 +284,37 @@ let inFlightTakenAt = 0;
 // ---------------------------------------------------------------------------
 let observedGeneration = 0;
 const observational = new Map();
+
+// Described to `/admin/caches` (rule 3ap, 2026-09-18) — it was one of the
+// single-value memos that page listed as held and not reported. One flag per
+// store handle, and the handles are the persisted stores this build DECLARES
+// (`realms.handles()`), so it cannot grow at runtime. A hit is a write whose
+// store's declaration was already read.
+const observationalCount = cacheRegistry.register({
+  name: 'persistence.observational-stores',
+  title: 'Observation-store declarations',
+  description: 'Whether each persisted store was declared an observation ' +
+    '(a tally the read barrier does not wait for), read once per store ' +
+    'handle because the check is on the path of every store write.',
+  owner: 'persistence/persistence_minted.js',
+  scope: 'process',
+  maxEntries: function () {
+    return Math.max(1, realms.handles().length);
+  },
+  bound: 'Structural: one flag per persisted store this build declares.',
+  lifetime: function () {
+    return 'For the life of the process: a declaration cannot change ' +
+      'while it runs.';
+  },
+  entries: function () {
+    const out = [];
+    observational.forEach(function (flag, handle) {
+      out.push({ key: String(handle) + (flag ? ' — an observation' : ''),
+                 validUntil: null, basis: 'no expiry' });
+    });
+    return out;
+  }
+});
 // ---------------------------------------------------------------------------
 // A MINTED WRITE ASKS FOR A FLUSH (2026-09-14, #46 follow-up). THE JOURNAL
 // RECORDED THE KEY AND NOTHING EVER ASKED FOR IT TO BE WRITTEN.
@@ -558,8 +590,11 @@ function note(handle, realmId, key) {
   keys.add(key === null || key === undefined ? '' : String(key));
   generation += 1;
   if (!observational.has(handle)) {
+    observationalCount.miss();
     const declared = realms.handleFor(handle);
     observational.set(handle, !!(declared && declared.observation));
+  } else {
+    observationalCount.hit();
   }
   if (observational.get(handle)) {
     observedGeneration += 1;
@@ -1429,15 +1464,19 @@ function restore() {
     const staleHandles = new Set();
 
     (rows || []).forEach(function (row) {
-      if (cutoff && Number(row.writtenAt || 0) &&
-          Number(row.writtenAt) < cutoff) {
-        droppedStale++;
-        return;
-      }
       const store = realms.handleFor(row.handle);
       if (!store) {
         droppedUnknown++;
         staleHandles.add(row.handle);
+        return;
+      }
+      // ONLY A SHORT-LIVED STORE'S ROW IS DROPPED BY AGE (2026-09-18; see
+      // `retain` in common/realms.js). Every other row is kept however old it
+      // is: a configuration, an account or an accumulator not written for a
+      // week is not stale, it is simply unchanged.
+      if (cutoff && store.retain === 'age' && Number(row.writtenAt || 0) &&
+          Number(row.writtenAt) < cutoff) {
+        droppedStale++;
         return;
       }
       const text = keystore.open(row.body, 'minted-rows');
@@ -1531,7 +1570,16 @@ function restore() {
     // for ever, and the next start would read them all again to skip them
     // again. Best-effort: a purge that fails is logged and the service starts.
     if (cutoff && droppedStale && typeof driver.purgeMinted === 'function') {
-      return driver.purgeMinted(cutoff).then(function (removed) {
+      // By age, and ONLY in the short-lived stores — the same rule the loop
+      // above applied, said to the database. A purge naming no handle list
+      // would delete every old row of every store, which is the defect this
+      // replaced.
+      const ageHandles = realms.handles().filter(function (one) {
+        return one.retain === 'age';
+      }).map(function (one) {
+        return one.handle;
+      });
+      return driver.purgeMinted(cutoff, ageHandles).then(function (removed) {
         log.info('persistence: ' + removed + ' stale minted row(s) removed ' +
                  'from the store.');
         return { restored: restored };

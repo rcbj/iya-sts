@@ -86,7 +86,8 @@ const CONSOLE_USER = "sts-metadata-test";
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
   const cookie = await consoleSignIn.signInToTheConsole(issuerBase,
-                                                        CONSOLE_USER, log);
+                                                        CONSOLE_USER, log,
+                                                        { grant: "read" });
   log.debug("Leaving signInToTheConsole(). " +
             (cookie ? "Holding a session." : "The gate is off."));
   return cookie;

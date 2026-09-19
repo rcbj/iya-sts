@@ -61,12 +61,13 @@ const accounts = realms.map({ persist: 'acme.accounts' });
 // bound to one account may not be bound to a second (section 7.3.5).
 const accountKeys = realms.map({ persist: 'acme.accountKeys' });
 const orders = realms.map({ persist: 'acme.orders' });
-const authorizations = realms.map({ persist: 'acme.authorizations' });
+const authorizations = realms.map({ persist: 'acme.authorizations',
+                                    retain: 'age' });
 const certificates = realms.map({ persist: 'acme.certificates' });
 // RFC 9773 certID -> certificate id.
 const renewals = realms.map({ persist: 'acme.renewalInfo' });
 // The random part of every Replay-Nonce already presented, with its expiry.
-const usedNonces = realms.map({ persist: 'acme.usedNonces' });
+const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age' });
 
 // A realm holding this many spent nonces refuses to remember more by dropping
 // the ones that have expired first; a nonce is only useful until it expires, so
@@ -88,6 +89,9 @@ const usedNoncesCount = cacheRegistry.register({
   maxEntries: function (): number {
     return MAX_USED_NONCES;
   },
+  bound: 'Enforced: ' + MAX_USED_NONCES + ' spent nonces per realm. Expired ' +
+    'ones are cleared at the bound; a history still full REFUSES the next ' +
+    'spend (answered badNonce) rather than forget a live one.',
   lifetime: function (): string {
     return 'Until the nonce expires; expired ones are cleared when the ' +
       'limit is reached.';
@@ -384,17 +388,23 @@ class AcmeStore {
       return false;
     }
     usedNoncesCount.miss();
-    if (usedNonces.size >= MAX_USED_NONCES) {
-      const nowS = Math.floor(this.nowMs() / 1000);
-      const expired = [];
-      usedNonces.forEach(function (value, key) {
-        if (Number(value) <= nowS) {
-          expired.push(key);
-        }
-      });
-      expired.forEach(function (key) {
-        usedNonces.delete(key);
-      });
+    // THE BOUND (MAX_USED_NONCES). The expired go first, as they always did;
+    // what changed on 2026-09-18 is a store still full of LIVE spends, which
+    // took the new one anyway and grew past its bound. It decides a replay,
+    // so it refuses rather than forgets: the spend answers false, the request
+    // is answered badNonce and the client fetches a fresh nonce and retries,
+    // which RFC 8555 section 6.5 has it do. The registry logs the real reason
+    // (STS-CORE-0097) at most once a minute.
+    const nowS = Math.floor(this.nowMs() / 1000);
+    const room = cacheRegistry.makeRoom(usedNonces, MAX_USED_NONCES, {
+      policy: 'refuse', counter: usedNoncesCount, name: 'acme.nonces',
+      expired: function (value: unknown): boolean {
+        return Number(value) <= nowS;
+      }
+    });
+    if (!room.ok) {
+      log.debug("Leaving AcmeStore.spendNonce(). The history is full.");
+      return false;
     }
     usedNonces.set(id, Number(expiresS));
     log.debug("Leaving AcmeStore.spendNonce(). Spent.");

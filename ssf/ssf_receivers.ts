@@ -1112,13 +1112,13 @@ class SsfReceivers {
       return true;
     }
     // The address this service INVENTS for somebody whose entry carries none —
-    // `<name>@example.com`, in `subjectForUser()` and in `risc.ts`'s
-    // `defaultEmailFor()`. It is a fact about those two functions rather than
+    // `<name>@<the realm's domain>`, from `realms.inventedMailOf()`, which
+    // `subjectForUser()` and `risc.ts`'s `defaultEmailFor()` both call. It is a fact about those two functions rather than
     // about the person, which is why it is matched here and not added to the
     // list above as though it were an identifier they hold.
     //
     // **ONLY WHERE THOSE FUNCTIONS INVENT ONE (2026-09-12).** In product mode
-    // they do not, so an `@example.com` address on an event did not come from
+    // they do not, so such an address on an event did not come from
     // this service — and matching it to a person who never held it would be the
     // disclosure this function's header says to fail closed on.
     if (!mode.inventsClaimValues()) {
@@ -1128,7 +1128,7 @@ class SsfReceivers {
       return false;
     }
     const invented = names.map((one) => {
-      return one.indexOf('@') > 0 ? one : one + '@example.com';
+      return this.deps.realms.inventedMailOf(one);
     });
     const hit = invented.indexOf(text) >= 0;
     log.debug("Leaving SsfReceivers.namesPerson(). Invented address: " + hit);

@@ -221,7 +221,11 @@ const JOBS = [
   // the other when the surface stops refusing.
   { file: 'sts_admin_api_auth.js',       browser: false, local: true },
   { file: 'sts_admin_api_operations.js', browser: false, local: true },
-  { file: 'sts_admin_console.js',        browser: true,  local: true },
+  // AN HOUR (2026-09-19): it walks every console page in a real browser, and
+  // against a three-node cluster across the internet (run-suite.sh testidp)
+  // that took longer than the 20-minute default, killed while still passing.
+  { file: 'sts_admin_console.js',        browser: true,  local: true,
+    timeoutMs: 3600000 },
   // A TRUST REALM'S OWN ADMINISTRATORS (2026-09-14, #32): the realm chooser,
   // a realm administrator confined to their realm in the console and through
   // a realm's own management API token, and the service administrator over
@@ -514,6 +518,16 @@ const JOBS = [
   { file: 'sts_xacml_endpoints.js',      browser: false, local: true },
   { file: 'sts_xacml_remote_pep.js',     browser: false, local: true,
     docker: true },
+  // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
+  // (2026-09-18): every one of these families was covered in process and by
+  // nothing driven over the network, so a stack behind a load balancer said
+  // nothing about them. Each drives its protocol against the address the
+  // service is reached at, in both modes.
+  { file: 'sts_ldaps.js',                browser: false, local: true },
+  { file: 'sts_kerberos_spnego.js',      browser: false, local: true },
+  { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
+  { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
+  { file: 'sts_federation_realms.js',    browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
@@ -593,6 +607,11 @@ const HELPERS = [
   'expectation.js',
   'jwt_vc_json_common.js',
   'module_paths.js',
+  // Required by jwt_vc_json_common.js since the parent's 2026-09-17 copy;
+  // missing here from 5ecc178 until 2026-09-18, which failed every job that
+  // loads that helper with MODULE_NOT_FOUND — exactly what the note above
+  // says a missing helper looks like.
+  'page_load.js',
   'random_username.js',
   'sts_applications.js',
   'wait_for.js',
@@ -613,6 +632,11 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // A Kerberos client over raw TCP 88 and MS-KKDCP — AS, TGS, the GSS-wrapped
+  // AP-REQ and SPNEGO — for `sts_kerberos_spnego.js` (2026-09-18). It reuses
+  // the service's codec for the encodings and works out key usages and
+  // checksums itself, so the exchange is not the KDC agreeing with itself.
+  'krb5_wire.js',
   // What the three sts_directory_bulk_load_*.js jobs share, which is
   // everything except the door.
   'bulk_load.js',
@@ -642,7 +666,14 @@ const LOCAL_HELPERS = [
   // SCEP's independent client (RFC 8894): node-forge for the PKCS#10, the
   // self-signed signer and the envelope, forge.asn1 and node's crypto for the
   // SignedData and the CertRep. Nothing from scep/ or cert_enrollment.js.
-  'scep_client.js'
+  'scep_client.js',
+  // A registered OAuth client and a PKCE pair, for the jobs that start an
+  // authorization request: product mode refuses an unknown client_id and a
+  // public client without PKCE (2026-09-18).
+  'oauth_fixtures.js',
+  // What the service under test IS — its mode, its Kerberos realm, its base DN
+  // — read from /admin-api/config rather than assumed (2026-09-18).
+  'service_facts.js'
 ];
 
 // ---------------------------------------------------------------------------

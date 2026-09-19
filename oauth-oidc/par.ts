@@ -128,7 +128,8 @@ const REFERENCE_BYTES = 32;
 const DEFAULT_AUTHORIZATION_SERVER = 'default';
 
 // request_uri -> the pushed request. See the header for the shape.
-const pushedRequests = realms.map({ persist: 'oauth2.pushedRequests' });
+const pushedRequests = realms.map({ persist: 'oauth2.pushedRequests',
+                                    retain: 'age' });
 
 class PushedRequests {
   static readonly REQUEST_URI_PREFIX = REQUEST_URI_PREFIX;

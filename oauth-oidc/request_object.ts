@@ -261,6 +261,8 @@ const requestUriCount = cacheRegistry.register({
   maxEntries: function (): number {
     return MAX_CACHED_REQUEST_URIS;
   },
+  bound: 'Enforced: ' + MAX_CACHED_REQUEST_URIS + ' fetched request objects ' +
+    'per realm, the oldest dropped and fetched again when next used.',
   lifetime: function (): string {
     const seconds = Number(config.value('oauth2.requestUriCacheS')) || 0;
     return seconds > 0

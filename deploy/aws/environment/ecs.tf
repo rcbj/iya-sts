@@ -211,6 +211,10 @@ resource "aws_ecs_task_definition" "node" {
         # on the entry.
         local.bootstrap_secret ? [
           { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = aws_secretsmanager_secret.main["bootstrap-admin-password"].arn },
+          # And the KDC's two (secrets.tf, 2026-09-18): without them a product
+          # KDC builds no krbtgt and no service account, and issues nothing.
+          { name = "KRB5_KRBTGT_PASSWORD", valueFrom = aws_secretsmanager_secret.main["krb5-krbtgt-password"].arn },
+          { name = "KRB5_SERVICE_PASSWORD", valueFrom = aws_secretsmanager_secret.main["krb5-service-password"].arn },
         ] : [],
       )
       # The main port is HTTPS on a certificate the cluster issues itself, so

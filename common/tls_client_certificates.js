@@ -629,6 +629,8 @@ const memoCount = cacheRegistry.register({
   maxEntries: function () {
     return MEMO_ENTRIES;
   },
+  bound: 'Enforced: 256 answers; when full the whole memo is emptied and ' +
+    'rebuilt as it is used.',
   lifetime: function () {
     return 'No expiry: a replaced Issuing CA changes the key. When full the ' +
       'whole memo is emptied at once.';

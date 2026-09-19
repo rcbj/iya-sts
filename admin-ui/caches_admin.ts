@@ -19,12 +19,22 @@
 // **THE REGISTRY IS THE KNOWLEDGE AND THIS FILE IS ONLY THE DRAWING.** Which
 // caches exist is said by the modules that own them, beside their
 // declarations; nothing here names one, so a cache added tomorrow appears
-// here the day it registers and a cache removed goes with it. What is
-// deliberately NOT registered — four single-value memos, and the two things
-// `docs/caches.md` names that are not held in this process's memory — is the
-// one list this file keeps (`NOT_LISTED`), for `encryption_admin.ts`'s
-// reason: the interesting question about a page like this is often *is X on
-// it*, and a page that lists only the yeses answers it by silence.
+// here the day it registers and a cache removed goes with it. What is NOT
+// registered — the three things `docs/caches.md` or this page could be read
+// as naming that this process does not hold between requests — is the one
+// list this file keeps (`NOT_LISTED`), for `encryption_admin.ts`'s reason:
+// the interesting question about a page like this is often *is X on it*, and
+// a page that lists only the yeses answers it by silence. It listed four
+// single-value memos as well until 2026-09-18; each is a registered cache of
+// one row now, and the version stamp is described from THIS file (below),
+// because `common/version.js` runs in the remote PEP container against a
+// thirty-line shim and may require nothing of this service.
+//
+// **EVERY ROW HAS A BOUND** (2026-09-18, `cache_registry.js`'s header): the
+// Max size column never says *unbounded*, says "per realm" for a per-realm
+// store (whose Current size counts every realm) beside its fullest realm, and
+// the bound's kind — enforced or structural — is under it with how many
+// entries were dropped or refused at it.
 //
 // **KEYS, NEVER VALUES, AND NO CONTROL.** A row is what the registry lets it
 // be (`cache_registry.js`'s header): a realm, a key, a deadline. Several of
@@ -40,7 +50,13 @@
 //
 // **THE FIGURES ARE THE ANSWERING PROCESS'S** — with request workers or a
 // cluster, each process has caches of its own and the page says which pid
-// drew it.
+// drew it. **AND THE OTHER NODES' TOO** (2026-09-18), as far as the one
+// channel between nodes carries them: each front process puts a compact
+// snapshot of its stores on its membership row (`cluster/cluster.js`,
+// refreshed every thirty seconds), and this page draws every snapshot it can
+// see that is not its own process's — the other nodes, and this node's front
+// process when a request worker is answering. Sizes and counters only: rows
+// cannot cross, so a drill-down is always this process's.
 //
 // **An unknown `cache` is not a 404**: the console's drill-down convention is
 // a 200 page saying there is no such record, marked `STS-ADMIN-0021`.
@@ -59,6 +75,8 @@ import helpers = require('../common/helpers');
 import cacheRegistry = require('../common/cache_registry');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
+import version = require('../common/version');
+import cluster = require('../cluster/cluster');
 
 type Req = any;
 type Res = any;
@@ -66,10 +84,11 @@ type Json = any;
 
 const PAGE = '/admin/caches';
 
-// What is deliberately NOT registered: two things `docs/caches.md` names
-// that this process does not hold in memory, and four single-value memos,
-// each one value, where a row apiece would be noise. Named here so their
-// absence is a decision a reader can see.
+// What is NOT registered: three things this page or `docs/caches.md` could
+// be read as naming that this process does not hold between requests. Named
+// here so their absence is a decision a reader can see. (The four
+// single-value memos that were on this list until 2026-09-18 are registered
+// caches now.)
 const NOT_LISTED = [
   { what: 'SAML service provider metadata',
     where: 'saml/sp_metadata.ts',
@@ -78,21 +97,45 @@ const NOT_LISTED = [
   { what: 'A remote PEP\'s policy',
     where: 'xacml-pep/',
     why: 'held by the remote PEP container, not by this process' },
-  { what: 'The trusted-proxy address list',
-    where: 'common/client_address.js',
-    why: 'one parsed copy of global.trustedProxies, re-parsed when the ' +
-         'setting text changes' },
-  { what: 'The version stamp',
-    where: 'common/version.js',
-    why: 'read once from version.json; it cannot change while the process ' +
-         'runs' },
   { what: 'A secret-store login',
     where: 'common/secrets.js',
-    why: 'one promise, kept for the length of one report' },
-  { what: 'Whether a minted store is observational',
-    where: 'persistence/persistence_minted.js',
-    why: 'one flag per store handle' }
+    why: 'a local of one /admin/secrets report, so a store is logged into ' +
+         'once per report; it is gone when the report is drawn, and ' +
+         'nothing holds it between requests' }
 ];
+
+// THE VERSION STAMP, described from here (2026-09-18). `common/version.js`
+// keeps the record it read from version.json for the life of the process —
+// a cache of one row — and cannot register it itself: that file runs in the
+// remote PEP container against a thirty-line shim and may require nothing of
+// this service (`xacml-pep/CLAUDE.md`). Its lookups are therefore not counted.
+cacheRegistry.register({
+  name: 'version.stamp',
+  title: 'Version stamp',
+  description: 'The build record (M.N.O, the commit, the build instant) ' +
+    'read from version.json once, which every surface that draws a version ' +
+    'reads.',
+  owner: 'common/version.js',
+  scope: 'process',
+  counted: false,
+  notCountedWhy: 'common/version.js also runs in the remote PEP container ' +
+    'and may not require the registry',
+  maxEntries: function (): number {
+    return 1;
+  },
+  bound: 'Structural: one record.',
+  lifetime: function (): string {
+    return 'For the life of the process: the build cannot change while it ' +
+      'runs.';
+  },
+  entries: function (): unknown[] {
+    const v: any = version.load();
+    return v && v.version
+      ? [{ key: String(v.version) + (v.stamped ? ' (stamped)' : ' (computed)'),
+           validUntil: null, basis: 'no expiry' }]
+      : [];
+  }
+});
 
 interface CachesAdminDeps {
   log: typeof helpers.log;
@@ -100,6 +143,7 @@ interface CachesAdminDeps {
   adminViews: typeof adminViews;
   cacheRegistry: typeof cacheRegistry;
   errorCodes: typeof errorCodes;
+  cluster: typeof cluster;
   now: () => number;
 }
 
@@ -120,6 +164,7 @@ class CachesAdmin {
       adminViews: adminViews,
       cacheRegistry: cacheRegistry,
       errorCodes: errorCodes,
+      cluster: cluster,
       now: Date.now
     };
   }
@@ -222,7 +267,8 @@ class CachesAdmin {
             return n + c.expired;
           }, 0)
         },
-        notListed: NOT_LISTED
+        notListed: NOT_LISTED,
+        otherProcesses: self.otherProcesses(at)
       });
       log.debug("Leaving CachesAdmin.cachesJson(). " + caches.length +
                 " cache(s).");
@@ -247,6 +293,63 @@ class CachesAdmin {
     });
     log.debug("Leaving CachesAdmin.cachesJson(). " + wanted + ", " +
               detail.rows.length + " entr(ies).");
+    return out;
+  }
+
+  // THE OTHER PROCESSES' FIGURES (2026-09-18): every cache snapshot on a
+  // live membership row that is not this process's own — the other nodes,
+  // and this node's front process when a request worker draws the page.
+  // Read from `cluster.snapshot()`, which is at most a heartbeat old, and the
+  // snapshot itself is at most thirty seconds older; each says when it was
+  // taken. Empty without a cluster.
+  otherProcesses(at: number): Json[] {
+    const { log, cluster, cacheRegistry } = this.deps;
+    log.debug("Entering CachesAdmin.otherProcesses().");
+    let snap: Json = null;
+    try {
+      snap = cluster.snapshot();
+    } catch (e) {
+      log.debug("Caught in CachesAdmin.otherProcesses(): " +
+                ((e && e.message) || e));
+      snap = null;
+    }
+    const state = snap && snap.state;
+    const selfId = String(cluster.nodeId() || '');
+    const out: Json[] = [];
+    ((state && state.nodes) || []).forEach(function (node: Json): void {
+      const info = (node && node.info) || {};
+      const report = info.caches;
+      if (!report || !Array.isArray(report.caches) || node.leftAt ||
+          (report.pid === process.pid && node.nodeId === selfId)) {
+        return;
+      }
+      const caches = report.caches.map(function (row: unknown): Json {
+        return cacheRegistry.unpackSnapshotRow(row);
+      });
+      out.push({
+        nodeId: String(node.nodeId || ''),
+        name: String(node.name || ''),
+        host: String(info.host || ''),
+        pid: report.pid,
+        thisNode: node.nodeId === selfId,
+        takenAt: new Date(Number(report.at) || 0).toISOString(),
+        ageSeconds: Math.max(0, Math.round((at - Number(report.at)) / 1000)),
+        caches: caches,
+        totals: {
+          entries: caches.reduce(function (n: number, c: Json): number {
+            return n + c.size;
+          }, 0),
+          evictions: caches.reduce(function (n: number, c: Json): number {
+            return n + c.evictions;
+          }, 0),
+          refusals: caches.reduce(function (n: number, c: Json): number {
+            return n + c.refusals;
+          }, 0)
+        }
+      });
+    });
+    log.debug("Leaving CachesAdmin.otherProcesses(). " + out.length +
+              " other process(es).");
     return out;
   }
 
@@ -281,11 +384,40 @@ class CachesAdmin {
       ? '—' : (Math.round(c.hitRatio * 1000) / 10) + '%';
   }
 
+  // The bound as a number and, for a per-realm store, "per realm". A store
+  // reporting none is a regression (`STS-CORE-0096`) and says so.
   private boundText(c: Json): string {
     const { log } = this.deps;
     log.debug("Entering CachesAdmin.boundText().");
+    if (c.maxEntries === null) {
+      log.debug("Leaving CachesAdmin.boundText(). None reported.");
+      return 'none reported';
+    }
     log.debug("Leaving CachesAdmin.boundText().");
-    return c.maxEntries === null ? 'unbounded' : String(c.maxEntries);
+    return String(c.maxEntries) + (c.scope === 'realm' ? ' per realm' : '');
+  }
+
+  // Under the bound: the fullest realm for a per-realm store, and what was
+  // dropped or refused at it.
+  private boundDetail(c: Json): string {
+    const { log, admin } = this.deps;
+    log.debug("Entering CachesAdmin.boundDetail().");
+    const parts: string[] = [];
+    if (c.scope === 'realm') {
+      parts.push('fullest realm: ' + c.largestRealm);
+    }
+    if (c.evictions) {
+      parts.push(c.evictions + ' dropped at the bound');
+    }
+    if (c.refusals) {
+      parts.push(c.refusals + ' refused at the bound');
+    }
+    if (c.atBound) {
+      parts.push('AT THE BOUND');
+    }
+    log.debug("Leaving CachesAdmin.boundDetail().");
+    return parts.length
+      ? '<br><small>' + admin.esc(parts.join('; ')) + '</small>' : '';
   }
 
   private settingsText(c: Json): string {
@@ -311,6 +443,7 @@ class CachesAdmin {
         '</code></td>' +
         '<td>' + admin.esc(c.description) +
         '<br><small>' + admin.esc(c.lifetime) + '</small>' +
+        (c.bound ? '<br><small>' + admin.esc(c.bound) + '</small>' : '') +
         (c.problem ? admin.warn('Its entries could not be listed: ' +
                                 admin.esc(c.problem)) : '') + '</td>' +
         '<td>' + admin.esc((c.scope === 'realm' ? 'per realm' : 'process') +
@@ -318,7 +451,8 @@ class CachesAdmin {
         '<td class="num">' + c.size + '</td>' +
         '<td class="num">' + c.valid + '</td>' +
         '<td class="num">' + c.expired + '</td>' +
-        '<td class="num">' + admin.esc(self.boundText(c)) + '</td>' +
+        '<td class="num">' + admin.esc(self.boundText(c)) +
+        self.boundDetail(c) + '</td>' +
         '<td class="num">' + admin.esc(self.ratioText(c)) +
         (c.counted ? '<br><small>' + c.hits + ' hit(s), ' + c.misses +
                      ' miss(es)</small>' : '') + '</td>' +
@@ -358,10 +492,19 @@ class CachesAdmin {
       'from something that has since changed, and are still held because ' +
       'nothing has looked them up or pushed them out yet. The <strong>hit ' +
       'ratio</strong> is lookups answered from the cache over all lookups, ' +
-      'since this process started. Every figure is this process\'s own ' +
-      '(pid ' + admin.esc(json.pid) + '): a request worker or another ' +
-      'cluster node holds caches of its own. Keys are shown and values ' +
-      'never are.</p>', 'What this page is');
+      'since this process started. Every figure in the two tables is ' +
+      'this process\'s own (pid ' + admin.esc(json.pid) + '): a request ' +
+      'worker or another cluster node holds caches of its own, and what ' +
+      'the other nodes report is in its own section below. Keys are shown ' +
+      'and values never are.</p>' +
+      '<p><strong>Every store has a bound.</strong> For a store kept per ' +
+      'trust realm it is per realm: Current size counts every realm, and ' +
+      'the fullest realm is the figure to compare with it. A bound is ' +
+      'either <em>enforced</em> &mdash; the store drops its oldest entry, ' +
+      'or, for a replay history, refuses the new one rather than forget a ' +
+      'live one &mdash; or <em>structural</em>, where the store cannot ' +
+      'outgrow something else that is bounded, such as one key set per ' +
+      'realm. Each row says which.</p>', 'What this page is');
     const caches = json.caches.filter(function (c: Json): boolean {
       return c.kind !== 'replay';
     });
@@ -378,7 +521,8 @@ class CachesAdmin {
                  'which. A store that refuses when full says so in its ' +
                  'lifetime.', 'What a hit means here') +
       self.tableOf(replays);
-    const skipped = '<h3>Held in memory and not listed</h3>' +
+    const others = self.otherProcessesHtml(json.otherProcesses);
+    const skipped = '<h3>Not held by this process, and not listed</h3>' +
       '<table class="grid"><thead><tr><th>What</th><th>Where</th>' +
       '<th>Why it is not a row above</th></tr></thead><tbody>' +
       json.notListed.map(function (n: Json): string {
@@ -387,7 +531,67 @@ class CachesAdmin {
           '</td></tr>';
       }).join('') + '</tbody></table>';
     log.debug("Leaving CachesAdmin.listHtml().");
-    return tiles + what + table + skipped;
+    return tiles + what + table + others + skipped;
+  }
+
+  // The other processes' figures: one folded table per process, sizes and
+  // counters only, titled from THIS process's registry (every node of one
+  // build registers the same stores; a name this build does not know is
+  // shown as the name).
+  private otherProcessesHtml(list: Json[]): string {
+    const { log, admin, cacheRegistry, now } = this.deps;
+    const self = this;
+    log.debug("Entering CachesAdmin.otherProcessesHtml().");
+    if (!list || !list.length) {
+      log.debug("Leaving CachesAdmin.otherProcessesHtml(). None.");
+      return '<h3>Other cluster nodes</h3>' +
+        admin.note('No other process\'s figures are visible: this service ' +
+                   'is not clustered, or no other node has published a ' +
+                   'report yet (a node publishes its first about five ' +
+                   'seconds after it joins).', 'Nothing to show');
+    }
+    const titles: Json = {};
+    const scopes: Json = {};
+    cacheRegistry.report(now()).forEach(function (c: Json): void {
+      titles[c.name] = c.title;
+      scopes[c.name] = c.scope;
+    });
+    const sections = list.map(function (p: Json): string {
+      const rows = p.caches.map(function (c: Json): string {
+        const lookups = (c.hits || 0) + (c.misses || 0);
+        const ratio = c.hits === null ? 'not counted'
+          : (lookups ? (Math.round(c.hits / lookups * 1000) / 10) + '%' :
+             '—');
+        const shown = Object.assign({
+          scope: scopes[c.name],
+          atBound: c.maxEntries !== null && c.largestRealm >= c.maxEntries
+        }, c);
+        return '<tr><td>' + admin.esc(titles[c.name] || c.name) +
+          '<br><code>' + admin.esc(c.name) + '</code></td>' +
+          '<td class="num">' + c.size + '</td>' +
+          '<td class="num">' + c.valid + '</td>' +
+          '<td class="num">' + admin.esc(self.boundText(shown)) +
+          self.boundDetail(shown) + '</td>' +
+          '<td class="num">' + admin.esc(ratio) + '</td></tr>';
+      }).join('');
+      const label = (p.thisNode ? 'This node\'s front process' : 'Node ' +
+                     (p.name || p.nodeId)) + ' — ' + (p.host || '?') +
+        ', pid ' + p.pid + ', ' + p.totals.entries + ' entries, as of ' +
+        p.ageSeconds + ' s ago';
+      return '<details><summary>' + admin.esc(label) + '</summary>' +
+        '<table class="grid"><thead><tr><th>Name</th><th>Current size</th>' +
+        '<th>Valid</th><th>Max size</th><th>Hit ratio</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></details>';
+    }).join('');
+    log.debug("Leaving CachesAdmin.otherProcessesHtml(). " + list.length +
+              " process(es).");
+    return '<h3>Other cluster nodes</h3>' +
+      admin.note('Each node\'s front process publishes the sizes and ' +
+                 'counters of its caches on its cluster membership row ' +
+                 'every thirty seconds; this is the last each one ' +
+                 'published. Rows are not published, so a drill-down is ' +
+                 'always this process\'s own.', 'Where these come from') +
+      sections;
   }
 
   private detailHtml(json: Json, query: Json): string {
@@ -405,6 +609,8 @@ class CachesAdmin {
       admin.tile(String(c.valid), 'valid') +
       admin.tile(String(c.expired), 'expired') +
       admin.tile(this.boundText(c), 'max size') +
+      (c.scope === 'realm'
+        ? admin.tile(String(c.largestRealm), 'fullest realm') : '') +
       admin.tile(this.ratioText(c), 'hit ratio') +
       '</div>';
     const about = '<table class="grid"><tbody>' +
@@ -413,6 +619,11 @@ class CachesAdmin {
       '</td></tr>' +
       '<tr><th>How an entry ends</th><td>' + admin.esc(c.lifetime) +
       '</td></tr>' +
+      '<tr><th>Bound</th><td>' + admin.esc(c.bound || '') +
+      (c.evictions || c.refusals
+        ? ' ' + admin.esc(c.evictions + ' dropped and ' + c.refusals +
+                          ' refused at it since this process started.')
+        : '') + '</td></tr>' +
       '<tr><th>Scope</th><td>' +
       admin.esc(c.scope === 'realm' ? 'One per trust realm' :
                 'One for the process') + '</td></tr>' +
@@ -424,8 +635,8 @@ class CachesAdmin {
         ? c.hits + ' hit(s), ' + c.misses + ' miss(es) since pid ' +
           admin.esc(json.pid) + ' started. A hit is ' +
           admin.esc(c.hitMeaning) + '.'
-        : 'Not counted: the lookup is in a file this repository does not ' +
-          'edit.') + '</td></tr>' +
+        : 'Not counted: ' + admin.esc(c.notCountedWhy) + '.') +
+      '</td></tr>' +
       '<tr><th>Owner</th><td><code>' + admin.esc(c.owner) + '</code></td></tr>' +
       '<tr><th>Settings</th><td>' + this.settingsText(c) + '</td></tr>' +
       '</tbody></table>' +

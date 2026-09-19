@@ -1964,11 +1964,12 @@ const SCHEMAS = {
       shown: { type: 'integer', description: 'How many are on this page.' },
       registered: {
         type: 'integer',
-        description: 'How many went through POST /oauth2/register. The rest ' +
-                     'are client_ids and realms that simply turned up, which ' +
-                     'RFC 9700 mode treats as PUBLIC and judges against the ' +
-                     'oauth2.redirectUris setting rather than against a ' +
-                     'registration.'
+        description: 'How many were registered on purpose — by an ' +
+                     'administrator, through POST /oauth2/register, or ' +
+                     'seeded at startup (each row\'s `registeredBy`). The ' +
+                     'rest are client_ids and realms that simply turned up. ' +
+                     'Only an RFC 7591 registration sets a row\'s ' +
+                     '`registered`, which is what RFC 9700 mode turns on.'
       },
       filter: openObject('What was asked for; null where nothing was.', {}),
       container: {
@@ -2014,13 +2015,18 @@ const SCHEMAS = {
           'authenticated": a create takes a kind too, so a hand-made entry ' +
           'can be recorded in a family it has never connected in, and ' +
           '`authentications` is the figure that answers that), ' +
+          '`declaredKinds` (the kinds `allowedProtocols` amounts to, kept ' +
+          'apart from `kinds`, which is what was recorded), ' +
           '`returnAddressesObserved` (the return addresses a ' +
           'DEVELOPMENT-mode request put on this entry and nobody has ' +
           'confirmed, each `{attribute, value, held, trusted}` — `trusted` ' +
           'is whether THIS realm\'s mode believes it, which product never ' +
           'does; confirm or discard one with POST ' +
           '/admin-api/applications/confirm-address or /discard-address), ' +
-          '`registered`, `firstSeen`, `lastSeen`, `authentications`, ' +
+          '`registered` (RFC 7591\'s flag), `registeredBy` ' +
+          '(`administrator`, `rfc7591`, `startup`, or empty for an ' +
+          'application that merely turned up), `firstSeen`, `lastSeen`, ' +
+          '`authentications`, ' +
           '`sessions`, `users`, `descriptions`, `origin`, `createdAt` and ' +
           '`modifiedAt` (the ENTRY\'s own, which an ldapmodify moves and ' +
           'firstSeen/lastSeen do not), `operational` (which of the ' +
@@ -5334,12 +5340,38 @@ const SCHEMAS = {
                                'silently drops the seventeenth.' },
       channel: {
         type: 'string',
-        enum: ['http', 'ldap', 'ldaps', 'internal'],
-        description: 'Which socket it arrived on, or `internal` for ' +
-                     'something this service did on its own — the directory ' +
-                     'entry it seeds for somebody who authenticated ' +
-                     'elsewhere. NOT the client\'s address, which on a mock ' +
-                     'behind a compose bridge would be a fact about docker.'
+        // Every value a recording site writes (2026-09-19): the list said
+        // four while rows carried nine, a source search of `channel: '`
+        // being how the rest were found. A new value needs a row here.
+        enum: ['http', 'ldap', 'ldaps', 'kerberos', 'grpc', 'tls',
+               'console', 'internal', 'none', ''],
+        description: 'How it arrived. `http` the main port; `ldap` and ' +
+                     '`ldaps` the directory\'s sockets; `kerberos` the ' +
+                     'KDC\'s TCP and UDP 88; `grpc` the SPIFFE Workload API ' +
+                     'and SPIRE Server API; `tls` a client certificate ' +
+                     'presented to this service; `console` an act taken on ' +
+                     'the admin console or `/admin-api` and recorded as ' +
+                     'that act rather than as the HTTP call. `internal` is ' +
+                     'something this service did on its own — the ' +
+                     'directory entry it seeds for somebody who ' +
+                     'authenticated elsewhere — `none` a session that ' +
+                     'EXPIRED, which nothing sent, and empty a row whose ' +
+                     'recording site named no channel. The client\'s ' +
+                     'address is `address`.'
+      },
+      address: {
+        type: 'string',
+        description: 'The client\'s IP address (2026-09-18): whoever sent ' +
+                     'the HTTP request, LDAP operation, Kerberos message or ' +
+                     'SPIRE Server API call this row came out of — an ' +
+                     'authentication, a refused sign-in, a consent, a ' +
+                     'sign-out. Resolved through `global.trustProxy` and ' +
+                     '`global.trustedProxies` (the right-most ' +
+                     '`X-Forwarded-For` hop that is not a named proxy) or a ' +
+                     'PROXY protocol header; behind a proxy with neither ' +
+                     'set, it is the proxy. Empty for something this ' +
+                     'service did on its own, or that arrived over a Unix ' +
+                     'socket.'
       },
       summary: { type: 'string',
                  description: 'One sentence, the same one the console shows.' },

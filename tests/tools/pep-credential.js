@@ -180,17 +180,53 @@ function say(opts, line) {
 // fetching that anchor first over an unverified connection, which is the same
 // trust decision one step further away.
 // ---------------------------------------------------------------------------
+// **THE GATED DOOR FIRST (2026-09-18).** `POST /tls/trust` needs no credential,
+// so product mode refuses it — and a product-mode deployment is exactly where a
+// test's anchor has to go through `POST /admin-api/tls/trust/add` instead,
+// which is gated by the management API's access token and persisted in
+// ou=trustAnchors, so every node of a cluster applies it. That door is tried
+// first whenever a token can reach it (a job's preload attaches one to any
+// /admin-api request; a launcher passes STS_ADMIN_API_TOKEN), and **it VERIFIES
+// the connection**, because it carries a bearer token and the argument above
+// is about a request with no secret in it. `/tls/trust` — unverified, as
+// argued — is the fallback, for a development stack reached before anything
+// trusts its certificate.
 function postAnchor(url, pem) {
   log.debug("Entering postAnchor().");
+  const base = String(url || '').replace(/\/+$/, '');
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  const gated = send(base + '/admin-api/tls/trust/add', 'application/json',
+    JSON.stringify({ certificates: pem }),
+    token ? { Authorization: 'Bearer ' + token } : {}, true);
   log.debug("Leaving postAnchor().");
+  return gated.then(function (answer) {
+    if (answer.ok) {
+      return answer;
+    }
+    return send(base + '/tls/trust', 'text/plain', pem, {}, false)
+      .then(function (open) {
+        if (!open.ok) {
+          open.why = 'POST /admin-api/tls/trust/add answered ' +
+            (answer.status || answer.why) + ' and POST /tls/trust answered ' +
+            (open.status || open.why) + ' ' + String(open.body || '')
+              .slice(0, 200);
+        }
+        return open;
+      });
+  });
+}
+
+function send(where, type, body, extraHeaders, verify) {
+  log.debug("Entering send().");
+  log.debug("Leaving send().");
   return new Promise(function (resolve) {
     let target;
     try {
-      target = new URL(url.replace(/\/+$/, '') + '/tls/trust');
+      target = new URL(where);
     } catch (error) {
-      log.debug("Caught in a callback in postAnchor(): " +
+      log.debug("Caught in a callback in send(): " +
                 ((error && error.message) || error));
-      resolve({ ok: false, why: '--url is not a URL: ' + url });
+      resolve({ ok: false, why: '--url is not a URL: ' + where });
       return;
     }
     const insecure = target.protocol === 'http:';
@@ -200,10 +236,11 @@ function postAnchor(url, pem) {
       hostname: target.hostname,
       port: target.port || (insecure ? 80 : 443),
       path: target.pathname,
-      headers: { 'Content-Type': 'text/plain',
-                 'Content-Length': Buffer.byteLength(pem) },
+      headers: Object.assign({ 'Content-Type': type,
+                               'Content-Length': Buffer.byteLength(body) },
+                             extraHeaders || {}),
       timeout: 15000,
-      rejectUnauthorized: false
+      rejectUnauthorized: !!verify
     }, function (response) {
       let text = '';
       response.on('data', function (chunk) { text += chunk; });
@@ -216,9 +253,11 @@ function postAnchor(url, pem) {
       request.destroy(new Error('the mock did not answer within 15s'));
     });
     request.on('error', function (error) {
+      log.debug("Caught in a callback in send(): " +
+                ((error && error.message) || error));
       resolve({ ok: false, why: error.message });
     });
-    request.end(pem);
+    request.end(body);
   });
 }
 

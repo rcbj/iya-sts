@@ -163,6 +163,10 @@ async function theSettingRules(t) {
   t.check(plain.ok, 'a realm with no Kerberos settings is created',
           (plain.errors || []).join(' '));
   if (plain.ok) {
+    t.equal(plain.realm.overrides['krb5.realm'],
+            realms.domainOf('krr-off').toUpperCase(),
+            'its Kerberos realm is SEEDED from its domain, in capitals ' +
+            '(2026-09-18) — the operator named it by naming the domain');
     t.equal(String(plain.realm.overrides['krb5.enabled']), 'false',
             'and it is created with krb5.enabled OFF, seeded on the realm — ' +
             'a realm does not get a KDC merely by existing');
@@ -176,8 +180,11 @@ async function theSettingRules(t) {
   }
 
   // 2. TURNING IT ON WITHOUT A NAME OF ITS OWN IS REFUSED (STS-KRB-0123).
+  //    The name is seeded from the domain since 2026-09-18, so "without a
+  //    name" is a create that clears the seeded one.
   const noName = realms.create({ id: 'krr-noname', name: 'krr-noname',
-                                 overrides: { 'krb5.enabled': 'true' } });
+                                 overrides: { 'krb5.enabled': 'true',
+                                              'krb5.realm': '' } });
   t.check(!noName.ok, 'Kerberos cannot be turned on for a realm with no ' +
           'krb5.realm of its own — it would inherit the service\'s name and ' +
           'be a second realm answering to it');
@@ -486,9 +493,14 @@ async function theRealmWithNoKdc(t) {
                 JSON.stringify({ ok: result && result.ok,
                                  code: errorCodes.codeOf(result) }));
       });
-      t.equal(principals.REALM, '',
-              'and the realm has no Kerberos realm name at all, which is ' +
-              'what those acts would have built a principal from');
+      // It HAS a name since 2026-09-18 — the domain in capitals, seeded
+      // with Kerberos off — so what the refusals rest on is that its KDC is
+      // off, not that it is nameless.
+      t.equal(principals.REALM, realms.domainOf('krr-nokdc').toUpperCase(),
+              'the realm carries the Kerberos realm name seeded from its ' +
+              'domain');
+      t.equal(principals.enabledIn('krr-nokdc'), false,
+              'and its KDC is off, which is what those acts are refused for');
     });
   } finally {
     realms.remove('krr-nokdc');

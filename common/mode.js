@@ -446,6 +446,21 @@ function opensIntrospection() {
   return !isProduct();
 }
 
+// Does an OpenID4VCI endpoint — the credential, deferred credential and
+// notification endpoints — accept an access token this realm CANNOT VERIFY
+// (2026-09-18)? OID4VCI lets the authorization server be somebody else, so
+// development reads such a token's claims unverified and issues what it can,
+// which is what lets a wallet under test point at this issuer with a token from
+// anywhere. Product refuses it (`invalid_token`), and refuses a token this
+// realm revoked: a credential is a signed statement about somebody, and
+// signing one for whoever can reach the port — with nothing verified about who
+// asked — is issuing to strangers.
+function acceptsUnverifiedIssuerTokens() {
+  log.debug("Entering acceptsUnverifiedIssuerTokens().");
+  log.debug("Leaving acceptsUnverifiedIssuerTokens().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -659,6 +674,18 @@ const REQUIREMENTS = [
              'WS-Trust requires a credential, and accepts an assertion only ' +
              'when this realm signed it and it is inside its Conditions.',
     where: 'common/credentials.ts, ws-trust/wstrust.ts, oauth-oidc/oauth2.ts' },
+  { id: 'credential-issuer-tokens',
+    what: 'An OpenID4VCI endpoint accepts only an access token this realm ' +
+          'can verify',
+    development: 'The credential, deferred credential and notification ' +
+                 'endpoints accept any access token and read its claims ' +
+                 'unverified — OpenID4VCI lets the authorization server be ' +
+                 'somebody else — so a wallet can be pointed at this issuer ' +
+                 'with a token from anywhere.',
+    product: 'A token that does not verify against this realm\'s signing ' +
+             'key, or that this realm revoked, is refused invalid_token ' +
+             '(HTTP 401) before anything is issued.',
+    where: 'oid4vc/vc_issuer.ts, oauth-oidc/dpop.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -1234,6 +1261,7 @@ module.exports = {
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
+  acceptsUnverifiedIssuerTokens: acceptsUnverifiedIssuerTokens,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,

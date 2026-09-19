@@ -31,6 +31,8 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const fixtures = require("./oauth_fixtures.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -231,11 +233,15 @@ function codeFrom(location) {
 async function setUp() {
   log.debug("Entering setUp().");
   log.info("=== 0. two realms, the clients, a person ===");
-  await ok(api + "/realms/create", { id: REALM, name: "OAuth 2.1 mode",
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "OAuth 2.1 mode",
     overrides: { "oauth2.oauth21": true, "oauth2.consentRequired": false,
                  "security.rateLimitPerIdentity": 3 } },
     "created the OAuth 2.1 realm");
-  await ok(api + "/realms/create", { id: BCP_REALM, name: "RFC 9700 mode",
+  await ok(api + "/realms/create", { id: BCP_REALM,
+                                     domain: BCP_REALM + ".example.net",
+                                     name: "RFC 9700 mode",
     overrides: { "oauth2.rfc9700": true, "oauth2.consentRequired": false } },
     "created the RFC 9700 realm beside it");
   const clients = [
@@ -608,8 +614,20 @@ async function theUnnamedClient() {
           assert.ok(unnamed.raw.indexOf("STS-OAUTH-") < 0,
                     unnamed.raw.slice(0, 300));
         });
-  const outside = await token("", { grant_type: "refresh_token",
-    refresh_token: "not-a-refresh-token" });
+  // A PRODUCT-mode default realm also refuses a grant naming no client, so
+  // there the control names a public client of its own: the one request that
+  // realm answers by looking at the token.
+  const outsideFields = { grant_type: "refresh_token",
+    refresh_token: "not-a-refresh-token" };
+  if (await facts.isProduct(base + "/admin-api")) {
+    const control = "oauth21-control-" + usernameFor("c");
+    await fixtures.publicClient(base + "/admin-api", control,
+                                ["https://example.test/oauth21-control"],
+                                { oauthGrantType: ["authorization_code",
+                                                   "refresh_token"] });
+    outsideFields.client_id = control;
+  }
+  const outside = await token("", outsideFields);
   check("while the default realm refuses the same request for the TOKEN " +
         "instead — invalid_grant, which is the control on the check above",
         function () {
@@ -656,9 +674,28 @@ async function theSecretLimit() {
 async function registration() {
   log.debug("Entering registration().");
   log.info("=== 7. registration mirrors the endpoints ===");
+  // A PRODUCT-mode realm keeps registration closed to anybody without a
+  // trusted software statement, so both registrations carry one this realm
+  // signs for a publisher registered through the management API — the door
+  // that is open in every mode. What is refused below is the metadata.
+  const json = { "Content-Type": "application/json" };
+  const publisher = "oauth21-publisher";
+  await send(base + PREFIX + "/admin-api/applications/create", {
+    method: "POST", headers: json,
+    body: JSON.stringify({ identifier: publisher, name: publisher,
+                           protocols: ["oauth2"],
+                           fields: { oauthClientId: publisher } }) });
+  const issued = await send(base + PREFIX +
+      "/admin-api/applications/issue-software-statement", {
+    method: "POST", headers: json,
+    body: JSON.stringify({ application: publisher, metadata: "{}" }) });
+  const statement = issued.body && issued.body.softwareStatement;
+  assert.ok(statement, "the realm would not issue a software statement: " +
+            issued.raw.slice(0, 300));
   const saml = await send(base + PREFIX + "/oauth2/register", { method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ redirect_uris: [REDIRECT],
+    body: JSON.stringify({ software_statement: statement,
+                           redirect_uris: [REDIRECT],
                            token_endpoint_auth_method: "saml2_bearer" }) });
   check("a registration asking for saml2_bearer client authentication is " +
         "refused", function () {
@@ -667,7 +704,8 @@ async function registration() {
         });
   const publicCc = await send(base + PREFIX + "/oauth2/register", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ grant_types: ["client_credentials"],
+    body: JSON.stringify({ software_statement: statement,
+                           grant_types: ["client_credentials"],
                            token_endpoint_auth_method: "none" }) });
   check("and one asking for client_credentials as a public client",
         function () {

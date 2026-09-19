@@ -53,6 +53,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const fixtures = require("./oauth_fixtures.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -348,12 +349,20 @@ function hidden(html, name) {
 // where a pending record exists. `/authn/login` cannot be reached directly —
 // it draws a form for a PENDING RECORD and answers 400 to a request naming
 // none, which `sts_portal_sessions.js` asserts of every page in this service.
+//
+// THE CLIENT IS REGISTERED AND THE REQUEST CARRIES PKCE (2026-09-18): product
+// mode answers an unknown client_id with 400 before any sign-in screen.
+// oauth_fixtures.js argues it.
 async function reachTheSignInScreen(b) {
   log.debug("Entering reachTheSignInScreen().");
+  await fixtures.publicClient(api, "wa-probe", ["http://localhost:9999/cb"]);
+  const challenge = fixtures.pkce();
   const started = await b.go("GET",
     "/oauth2/authorize?" + form({
       client_id: "wa-probe", redirect_uri: "http://localhost:9999/cb",
-      response_type: "code", scope: "openid"
+      response_type: "code", scope: "openid",
+      code_challenge: challenge.challenge,
+      code_challenge_method: challenge.method
     }));
   assert.ok(/\/authn\/login\?authn=/.test(started.location),
     "the authorization endpoint did not send us to the sign-in screen: " +

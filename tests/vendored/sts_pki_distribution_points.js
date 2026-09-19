@@ -1105,7 +1105,9 @@ async function test() {
 
   // The realm the issued key pairs are made in. Made BEFORE the index is read,
   // so its authorities are in it.
-  await ok(api + "/realms/create", { id: REALM, name: "PKI distribution " +
+  await ok(api + "/realms/create", { id: REALM,
+                                     domain: REALM + ".example.net",
+                                     name: "PKI distribution " +
                                      "points" }, "created the trust realm");
   await ok(realmApi + "/pki/build", { organisation: "Distribution Points",
                                       country: "US" },
@@ -1219,11 +1221,17 @@ async function test() {
   // one door to the certificates that name the Root's and an Intermediate's
   // lists.
   const caFetchFailures = [];
+  // THIS SERVICE'S OWN AUTHORITIES, by fingerprint (2026-09-18) — what "a
+  // certificate this service issued" means below. See `foreign`.
+  const ourAuthorities = new Set();
   for (const one of index.authorities) {
     const r = await anonymous(one.caIssuers);
     if (r.status === 200) {
-      remember(r.bytes, "the caIssuers address of " + one.scope + "/" +
-                        one.ca);
+      const held = remember(r.bytes, "the caIssuers address of " +
+                                     one.scope + "/" + one.ca);
+      if (held) {
+        ourAuthorities.add(held.fingerprint);
+      }
     } else {
       caFetchFailures.push(one.caIssuers + " answered " + r.status +
                            (r.error ? " (" + r.error + ")" : ""));
@@ -1272,10 +1280,35 @@ async function test() {
   const issued = all.filter(function (parts) {
     return !isSelfSigned(parts);
   });
+  // A CERTIFICATE SOMEBODY ELSE ISSUED IS NOT HELD TO THESE RULES
+  // (2026-09-18). A deployment may serve a certificate of its own on the main
+  // port (`tls.certificateFile` — testidp serves its public ACM certificate),
+  // and `/tls/server-certificate` publishes that chain, which names Amazon's
+  // lists and not this service's. What is checked is every certificate whose
+  // chain ends at one of THIS service's authorities; the rest are listed.
+  function rootOf(parts) {
+    log.debug("Entering rootOf().");
+    let current = parts;
+    for (let hops = 0; hops < 10 && current; hops++) {
+      if (ourAuthorities.has(current.fingerprint) || isSelfSigned(current)) {
+        log.debug("Leaving rootOf().");
+        return current;
+      }
+      current = issuerOf(current);
+    }
+    log.debug("Leaving rootOf(). No root found.");
+    return null;
+  }
+  const foreign = [];
   const orphans = [];
   const pointerProblems = [];
   const byAddress = { crl: new Map(), ocsp: new Map(), caIssuers: new Map() };
   issued.forEach(function (parts) {
+    const root = rootOf(parts);
+    if (root && !ourAuthorities.has(root.fingerprint)) {
+      foreign.push(whereOf(parts));
+      return;
+    }
     const issuer = issuerOf(parts);
     if (!issuer) {
       orphans.push(whereOf(parts));
@@ -1329,6 +1362,11 @@ async function test() {
       byAddress.caIssuers.get(url).subjects.push(parts);
     });
   });
+  if (foreign.length) {
+    log.info("[issued] " + foreign.length + " certificate(s) chain to an " +
+             "authority that is not this service's and are not held to its " +
+             "rules: " + foreign.join("; "));
+  }
   check("every certificate collected chains to an authority this job also " +
         "collected (" + issued.length + " issued certificate(s))", function () {
           noFailures(orphans, "certificate(s) with no authority found");

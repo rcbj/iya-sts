@@ -1774,7 +1774,9 @@ async function createTheRealm() {
   const r = await fetchJson(base + "/admin-api/realms/create", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      id: REALM, name: "XACML endpoint test realm",
+      id: REALM,
+      domain: REALM + ".example.net",
+      name: "XACML endpoint test realm",
       description: "Created by tests/vendored/sts_xacml_endpoints.js; LEFT " +
                    "IN PLACE on purpose, so that a failed run can be read " +
                    "afterwards. Remove it by hand when you are done with it."

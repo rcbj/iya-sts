@@ -160,8 +160,10 @@ with nothing pending answers `STS-VC-0053`.
 **Only a holder-bound SD-JWT VC this realm issued, and only as the directory
 entry it was issued for.** The obvious reading — the credential's `sub` is
 `urn:uuid:<entryUUID>`, so sign in whoever that names — is wrong, and the
-reason is in `vc_issuer.ts`: the credential endpoint accepts access tokens it
-did not issue and reads their claims unverified. A token anybody wrote,
+reason is in `vc_issuer.ts`: in development mode the credential endpoint
+accepts access tokens it did not issue and reads their claims unverified
+(product mode refuses one it cannot verify, and a revoked one, since
+2026-09-18 — `presentedIssuerToken()`). A token anybody wrote,
 carrying alice's subject, gets a credential signed by this realm, naming
 alice, bound to the writer's key. `tests/oid4vp_sign_in.js` 6e–6g issue exactly
 that credential and present it.
@@ -171,9 +173,9 @@ session's access tokens revoked, and a token inside its `exp` still verifies.
 Until this date `signInSubjectOf()` counted it, so whoever still held a
 signed-out person's token could mint a credential and sign that person back in
 at `/authn/wallet` — a sign-out undone by the token it was meant to cut off.
-The credential is still ISSUED on a disowned token, as it always was (the
-credential endpoint has never consulted revocation, and refusing there is a
-separate decision); it no longer gets the register row.
+In development mode the credential is still ISSUED on a disowned token (the
+credential endpoint consults revocation only in product mode, since
+2026-09-18); it no longer gets the register row.
 `tests/oid4vp_sign_in.js` 6g-ii–6g-iv, and the same test without the check
 signs the person in.
 

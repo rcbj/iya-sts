@@ -1350,6 +1350,8 @@ const substitutedCount = cacheRegistry.register({
   maxEntries: function (): number {
     return SUBSTITUTED_CACHE_MAX;
   },
+  bound: 'Enforced: 400 files, the oldest dropped and read again when next ' +
+    'served.',
   lifetime: function (): string {
     return 'Until the file changes on disk (a new modification time is a ' +
       'new entry); the oldest goes first when full.';

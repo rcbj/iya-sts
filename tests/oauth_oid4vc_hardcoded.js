@@ -405,6 +405,82 @@ function childMain() {
          r.status);
 
     // ======================================================================
+    // 6g-6m. THE OpenID4VCI ENDPOINTS ACCEPT ONLY A TOKEN THIS REALM CAN
+    // VERIFY, IN PRODUCT MODE (2026-09-18). A made-up bearer string and a JWT
+    // signed by somebody else's key were issued a credential by a
+    // product-mode service. What is asserted is the refusal at all three
+    // endpoints, that a token this realm DID issue still reaches the request
+    // (it is then refused for the missing proof, a 400, which is the control),
+    // that a token this realm revoked is refused, and that development still
+    // accepts anything.
+    // ======================================================================
+    const issuerCall = function (where, token, json) {
+      return request(port, 'POST', where, { json: json || {},
+        headers: { authorization: 'Bearer ' + token } });
+    };
+    const IDENTITY = { credential_configuration_id: 'IdentityCredential' };
+    const foreign = (function () {
+      const key = require('crypto').generateKeyPairSync('rsa',
+                                                         { modulusLength: 2048 });
+      const head = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'at+jwt' }))
+        .toString('base64url');
+      const body = Buffer.from(JSON.stringify({ sub: 'hc-alice',
+        iss: 'http://127.0.0.1:' + port, aud: 'http://127.0.0.1:' + port,
+        exp: Math.floor(Date.now() / 1000) + 600, jti: 'hc-foreign' }))
+        .toString('base64url');
+      const sig = require('crypto').sign('sha256',
+        Buffer.from(head + '.' + body), key.privateKey).toString('base64url');
+      return head + '.' + body + '.' + sig;
+    })();
+    r = await issuerCall('/oid4vci/credential', 'made-up-token', IDENTITY);
+    note(r.status !== 401,
+         '6g. development: a made-up bearer still reaches the credential ' +
+         'request', r.status + ' ' + r.text.slice(0, 160));
+
+    config.setOverride('global.mode', 'product');
+    for (const where of ['/oid4vci/credential', '/oid4vci/deferred_credential',
+                         '/oid4vci/notification']) {
+      r = await issuerCall(where, 'made-up-token', IDENTITY);
+      note(r.status === 401 && r.json && r.json.error === 'invalid_token' &&
+           /invalid_token/.test(String(r.headers['www-authenticate'] || '')),
+           '6h. PRODUCT: ' + where + ' refuses a made-up bearer invalid_token',
+           r.status + ' ' + r.text.slice(0, 160));
+    }
+    r = await issuerCall('/oid4vci/credential', foreign, IDENTITY);
+    note(r.status === 401 && r.json && r.json.error === 'invalid_token',
+         '6i. PRODUCT: and a JWT signed by a key that is not this realm\'s',
+         r.status + ' ' + r.text.slice(0, 160));
+
+    built = offers.buildCredentialOffer(fakeReq, ['IdentityCredential'],
+                                        'cross-device');
+    const minted = await request(port, 'POST', '/oauth2/token', {
+      form: Object.assign({
+        grant_type: 'urn:ietf:params:oauth:grant-type:pre-authorized_code',
+        'pre-authorized_code': built.preAuthorizedCode,
+        tx_code: built.txCode }, client) });
+    const realToken = minted.json && minted.json.access_token;
+    note(!!realToken, '6j. PRODUCT: this realm issues a token for the offer',
+         minted.status + ' ' + minted.text.slice(0, 160));
+    r = await issuerCall('/oid4vci/credential', realToken, IDENTITY);
+    note(r.status === 400 && r.json && r.json.error !== 'invalid_token',
+         '6k. PRODUCT: a token this realm issued reaches the request (refused ' +
+         'for the missing proof — the control)',
+         r.status + ' ' + r.text.slice(0, 160));
+    const revoked = await request(port, 'POST', '/oauth2/revoke', {
+      form: Object.assign({ token: realToken }, client) });
+    r = await issuerCall('/oid4vci/credential', realToken, IDENTITY);
+    note(revoked.status === 200 && r.status === 401 && r.json &&
+         r.json.error === 'invalid_token' &&
+         /revoked/.test(String(r.json.error_description)),
+         '6l. PRODUCT: a token this realm REVOKED is refused',
+         revoked.status + ' / ' + r.status + ' ' + r.text.slice(0, 160));
+    config.clearOverride('global.mode');
+    r = await issuerCall('/oid4vci/credential', foreign, IDENTITY);
+    note(r.status !== 401,
+         '6m. development: a foreign JWT still reaches the request',
+         r.status + ' ' + r.text.slice(0, 160));
+
+    // ======================================================================
     // 7. did:web FOLLOWS THE REALM
     // ======================================================================
     const plain = await request(port, 'GET', '/.well-known/did.json');

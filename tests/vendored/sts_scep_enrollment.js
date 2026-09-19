@@ -374,9 +374,13 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 0. two realms, two certificate authorities, people ===");
-  await ok(rootApi + "/realms/create", { id: REALM, name: "SCEP A" },
+  await ok(rootApi + "/realms/create", { id: REALM,
+                                         domain: REALM + ".example.net",
+                                         name: "SCEP A" },
            "created realm A");
-  await ok(rootApi + "/realms/create", { id: REALM_B, name: "SCEP B" },
+  await ok(rootApi + "/realms/create", { id: REALM_B,
+                                         domain: REALM_B + ".example.net",
+                                         name: "SCEP B" },
            "created realm B");
   await ok(rootApi + "/realms/set", { id: REALM_B, key: "global.mode",
                                       value: "product" },

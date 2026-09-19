@@ -5933,17 +5933,30 @@ Five decisions:
   realm's partition of every per-realm store, next to the process-wide ones.
 * **NO CONTROL.** Each owner has a test-only reset. An operator's lever is the
   setting that bounds the store, and the page names those settings.
-* **`NOT_LISTED` is the one list this file keeps.** It holds:
-  - two things `docs/caches.md` names that this process does not hold in
-    memory: SP metadata on the application entry, and a remote PEP's policy;
-  - four single-value memos.
-
+* **`NOT_LISTED` is the one list this file keeps.** It holds the three
+  things this process does not hold between requests: SP metadata on the
+  application entry, a remote PEP's policy, and a secret-store login (a
+  local of one report). The four single-value memos it also listed until
+  2026-09-18 are registered caches now — the version stamp described from
+  this file, since `common/version.js` may require nothing of this service.
   The page draws the list, for `encryption_admin.ts`'s reason: without it, the
   page would answer "is X on it" by silence.
+* **EVERY ROW HAS A BOUND (2026-09-18).** Max size is a number, "per realm"
+  for a per-realm store with its fullest realm beside it, never *unbounded*;
+  under it the bound's kind (the descriptor's `bound` sentence) and what was
+  dropped or refused at it. A row at its bound is marked. `common/CLAUDE.md`
+  3ap argues the two kinds.
+* **THE OTHER NODES ARE A SECTION OF THEIR OWN (2026-09-18)**: one folded
+  `<details>` table per process whose snapshot `cluster.snapshot()` holds and
+  which is not this process — the other nodes, and this node's front process
+  when a request worker draws the page. Sizes and counters only; the titles
+  come from this process's registry. It reads a snapshot at most a heartbeat
+  old of a report at most thirty seconds old, and says how old.
 
 `GET /admin-api/caches` (with `cache`, `page`, `per`) answers the same
-`cachesJson()` minus the drawing's `paging` (rule 7).
-`tests/cache_registry.js` covers the registry, the owners and the page.
+`cachesJson()` minus the drawing's `paging` (rule 7), `otherProcesses`
+included. `tests/cache_registry.js` covers the registry, the owners, the
+bounds, the other nodes and the page.
 
 ---
 

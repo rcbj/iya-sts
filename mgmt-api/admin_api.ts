@@ -1850,11 +1850,26 @@ class AdminApi {
                      '`realm`), `size` (entries held now), `valid`, ' +
                      '`expired` (past their deadline, or built from ' +
                      'something that has since changed, and not evicted ' +
-                     'yet), `maxEntries` (null when unbounded), ' +
+                     'yet), `maxEntries` (the bound — PER REALM for a ' +
+                     '`realm` scope; every store has one since ' +
+                     '2026-09-18, and null means its owner regressed, ' +
+                     'shown in `problem` as STS-CORE-0096), ' +
+                     '`largestRealm` (the fullest realm\'s rows, the ' +
+                     'figure to compare with a per-realm bound), `bound` ' +
+                     '(whether the bound is enforced or structural, in a ' +
+                     'sentence), `atBound`, `evictions` and `refusals` ' +
+                     '(entries dropped or inserts refused at the bound), ' +
                      '`lifetime`, `settings`, `hits`, `misses` and ' +
-                     '`hitRatio` (null before any lookup) — plus `totals` ' +
-                     'and `notListed`, the in-memory values deliberately ' +
-                     'not registered.\n\nWith `cache`: that cache\'s ' +
+                     '`hitRatio` (null before any lookup) — plus `totals`, ' +
+                     '`notListed` (what this process does not hold between ' +
+                     'requests) and `otherProcesses`: each other cluster ' +
+                     'node\'s last published snapshot (and this node\'s ' +
+                     'front process when a request worker answers), with ' +
+                     '`nodeId`, `name`, `host`, `pid`, `takenAt`, ' +
+                     '`ageSeconds`, `totals` and per store `name`, ' +
+                     '`size`, `largestRealm`, `valid`, `maxEntries`, ' +
+                     '`hits`, `misses`, `evictions` and `refusals`; empty ' +
+                     'without a cluster.\n\nWith `cache`: that cache\'s ' +
                      '`summary` and a page of its `entries`, soonest ' +
                      'deadline first, each with `realm`, `key`, `valid`, ' +
                      '`validUntil`, `remainingSeconds`, `basis` and ' +
@@ -1863,8 +1878,9 @@ class AdminApi {
                      '200 with `found: false` and the names that exist.' +
                      '\n\nKEYS ONLY: no cached value is in the reply, ' +
                      'including for the caches that hold key material. ' +
-                     'THE FIGURES ARE THE ANSWERING PROCESS\'S (`pid`); a ' +
-                     'request worker or a cluster node holds its own. A ' +
+                     'THE FIGURES ARE THE ANSWERING PROCESS\'S (`pid`), ' +
+                     'apart from `otherProcesses`, which carries sizes and ' +
+                     'counters only and never rows. A ' +
                      'service operation: a realm\'s own administrator is ' +
                      'refused it.',
         mirrors: 'GET /admin/caches',
@@ -1877,7 +1893,8 @@ class AdminApi {
         responseDescription: 'The list, or one cache.',
         responseSchema: { type: 'object',
           description: 'Always `generatedAt` and `pid`; then either ' +
-                       '`caches`, `totals` and `notListed`, or `cache`, ' +
+                       '`caches`, `totals`, `notListed` and ' +
+                       '`otherProcesses`, or `cache`, ' +
                        '`found` and — when found — `summary`, `entries` ' +
                        'and `entriesPaging`.' },
         handler: function (req, res) {
@@ -5021,7 +5038,7 @@ class AdminApi {
                      'process with no realms defined behaves exactly as it ' +
                      'did before this feature existed, which is a property ' +
                      'of one predicate rather than a claim.\n\nEach row ' +
-                     'carries the realm\'s `pathPrefix`, its `baseUrl`, the ' +
+                     'carries the realm\'s `domain` and `baseDn`, its `pathPrefix`, its `baseUrl`, the ' +
                      '`kid` of its signing key — two realms showing one kid ' +
                      'would be two names for one authorization server — the ' +
                      'settings it sets, and the four discovery documents a ' +
@@ -5094,17 +5111,28 @@ class AdminApi {
                          'at most 31 characters. It may not be `default`, ' +
                          'and it may not be the first segment of a path this ' +
                          'service already serves — `GET /admin-api/realms` ' +
-                         'lists those in `reserved`.\n\nSIX SETTINGS ARE ' +
-                         'SEEDED ON A NEW REALM and they are the six that ' +
-                         'are NAMES rather than behaviour: the SAML 2.0 ' +
-                         'entityID, the SAML 1.1 providerID, the ' +
-                         'WS-Federation entityID, the WS-Trust issuer, the ' +
-                         'SAML assertion issuer and the OpenID4VP verifier ' +
-                         'client id. Each is the process\'s value with the ' +
-                         'realm id appended, because two realms carrying one ' +
-                         'entityID is not a configuration choice — it is two ' +
-                         'identity providers claiming one name, which a ' +
-                         'service provider is entitled to refuse. They are ' +
+                         'lists those in `reserved`.\n\nThe `domain` is ' +
+                         'the realm\'s DNS domain — `iyasec.io` — and it is ' +
+                         'FIXED from here on. Its directory is a tree of its ' +
+                         'own at the RFC 2247 mapping of it ' +
+                         '(`dc=iyasec,dc=io`), no two realms may share one, ' +
+                         'and one inside another realm\'s is allowed and is ' +
+                         'a separate tree. Omitted, it is ' +
+                         '`<id>.<global.domain>`.\n\nEIGHT SETTINGS ARE ' +
+                         'SEEDED ON A NEW REALM FROM ITS DOMAIN and they are ' +
+                         'the ones that are NAMES rather than behaviour: the ' +
+                         'SAML 2.0 entityID (`urn:<domain>:idp`), the SAML ' +
+                         '1.1 providerID (`urn:<domain>:idp:saml11`), the ' +
+                         'WS-Federation entityID, the WS-Trust issuer and the ' +
+                         'SAML assertion issuer (`urn:<domain>:sts`), the ' +
+                         'SPIFFE trust domain (the domain), the Kerberos ' +
+                         'realm (the domain in capitals), and the OpenID4VP ' +
+                         'verifier client id ' +
+                         '(the process\'s with the id appended). Two realms ' +
+                         'carrying one entityID is not a configuration ' +
+                         'choice — it is two identity providers claiming one ' +
+                         'name, which a service provider is entitled to ' +
+                         'refuse. They are ' +
                          'ORDINARY settings on the realm: pass `overrides` ' +
                          'to choose your own, or unset them afterwards to go ' +
                          'back to sharing the process\'s name, which is a ' +
@@ -5123,11 +5151,16 @@ class AdminApi {
                         description: 'What a person calls it. Free text; ' +
                                      'defaults to the id.' },
                 description: { type: 'string' },
+                domain: { type: 'string',
+                          description: 'The realm\'s DNS domain, at least ' +
+                                       'two labels. Fixed once the realm ' +
+                                       'exists; defaults to ' +
+                                       '`<id>.<global.domain>`.' },
                 overrides: { type: 'object',
                              description: 'Settings to set on the realm, ' +
                                           'named by the dot paths GET ' +
                                           '/admin-api/config lists. They win ' +
-                                          'over the six seeded names. ' +
+                                          'over the seeded names. ' +
                                           '`realms.enabled` and ' +
                                           '`realms.pathSegment` are refused: ' +
                                           'a realm that could switch realms ' +
@@ -5138,6 +5171,7 @@ class AdminApi {
               },
               required: ['id'],
               examples: [{ id: 'acme', name: 'Acme Corporation',
+                           domain: 'acme.example.com',
                            overrides: { 'saml2.entityId': 'urn:acme:idp' } }],
               additionalProperties: false
             },
@@ -5150,12 +5184,17 @@ class AdminApi {
                          'and remove this one if that is what is wanted — ' +
                          'and note that the new one gets ' +
                          'a new signing key, which is the ' +
-                         'honest consequence of it being a different realm.',
+                         'honest consequence of it being a different realm. ' +
+                         'The `domain` is fixed for the same kind of reason: ' +
+                         'a `domain` other than the realm\'s own is refused ' +
+                         '(STS-CORE-0101), and the same value again is ' +
+                         'accepted and changes nothing.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: { id: { type: 'string' }, name: { type: 'string' },
-                            description: { type: 'string' } },
+                            description: { type: 'string' },
+                            domain: { type: 'string' } },
               required: ['id'],
               examples: [{ id: 'acme', name: 'Acme Corporation (staging)' }],
               additionalProperties: false
@@ -7956,6 +7995,31 @@ class AdminApi {
             responseDescription: 'The new secret in `clientSecret`, whether ' +
                                  'one was replaced, and the application as ' +
                                  'it now stands.' },
+
+          // /admin/applications/new's *Generate Secret* button (2026-09-18).
+          { action: 'generate-secret',
+            operationId: 'generateClientSecret',
+            summary: 'Mint a client secret for an application about to be ' +
+                     'created, writing nothing',
+            description: 'Mints a secret exactly as `regenerate-secret` and ' +
+                         '`POST /oauth2/register` do — ' +
+                         '`oauth2.registeredSecretBytes` random bytes, ' +
+                         'base64url — and hands it back. **IT NAMES NO ' +
+                         'APPLICATION AND WRITES NOTHING**: pass the value ' +
+                         'to `create` in `fields.oauthClientSecret` and it ' +
+                         'becomes that application\'s credential, with ' +
+                         '`oauthTokenEndpointAuthMethod` written as ' +
+                         '`client_secret_basic` unless `create` names ' +
+                         'another. The token endpoint accepts the secret by ' +
+                         'an `Authorization: Basic` header or a ' +
+                         '`client_secret` form parameter for that method.',
+            requestBody: {
+              type: 'object',
+              properties: {},
+              examples: [{}],
+              additionalProperties: false
+            },
+            responseDescription: 'The secret in `clientSecret`.' },
 
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
@@ -13283,7 +13347,14 @@ class AdminApi {
                          'that subsystem. docs/error-codes.md lists them. ' +
                          'Every refused or failed request ' +
                          'carries a code; no code is ' +
-                         'ever sent to the client that made the request.' }
+                         'ever sent to the client that made the request.' },
+          { name: 'address', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The FRONT of the client\'s IP address, ' +
+                         'case-insensitive: a whole address is one client ' +
+                         'and `10.0.` every client in that range. A prefix ' +
+                         'rather than a substring, so `10.0.0.1` cannot ' +
+                         'match inside `110.0.0.12`.' }
         ].concat(this.pagingParameters()),
         responseDescription: 'The matching events, with the paging that ' +
                              'found them and the vocabulary the filters take.',

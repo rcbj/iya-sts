@@ -127,7 +127,8 @@ defines the session.
 ## The directory and the key material, over their stores
 
 **The embedded LDAP directory** holds people, groups, applications and roles. It
-has one subtree per trust realm (`dc=<id>` beneath `ldap.baseDn`). LDAP on
+has one tree per trust realm, rooted at the realm's DNS domain (`iyasec.io` is
+`dc=iyasec,dc=io`; the default realm's is `global.domain`). LDAP on
 389/636, SCIM and the admin console are three views of the same store. It is
 written to the **persistence store**: `memory`, `ldif` or `postgres`.
 [Persistence](persistence.md) covers what survives a restart in each.

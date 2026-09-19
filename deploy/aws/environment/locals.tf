@@ -94,13 +94,24 @@ locals {
   # asks every connection for a client certificate and requires none. Removing
   # the row is the whole change: `nlb.tf`, `security.tf`, `ecs.tf` and
   # `outputs.tf` all iterate this map.
-  # FOUR target groups per ECS service since 2026-09-17; the limit is five.
-  published_ports = {
+  # FOUR target groups per ECS service since 2026-09-17 (five with the KDC);
+  # the limit is five.
+  #
+  # **AND THE KDC WHERE `var.publish_kerberos` SAYS SO (2026-09-18)** — TCP 88
+  # on both sides, `testidp` only. It is a row like the others and costs what
+  # they do (a listener, a target group, two security-group rules, a port
+  # mapping), which is why it is merged in rather than written as a resource of
+  # its own: every file that iterates this map takes it with no edit. Merged
+  # CONDITIONALLY so `dev` and `ci` render the four rows they always did. With
+  # it, a service has five target groups, which is ECS's limit.
+  published_ports = merge({
     https = { listener = 443, container = 8081 }
     ldap  = { listener = 389, container = 389 }
     ldaps = { listener = 636, container = 636 }
     pki   = { listener = var.pki_listener_port, container = 8082 }
-  }
+    }, var.publish_kerberos ? {
+    kerberos = { listener = 88, container = 88 }
+  } : {})
 }
 
 data "aws_availability_zones" "available" {

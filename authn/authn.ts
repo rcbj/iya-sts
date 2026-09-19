@@ -364,7 +364,7 @@ const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // authn id -> { returnTo, details, ... }
-const pending = realms.map({ persist: 'authn.pending' });
+const pending = realms.map({ persist: 'authn.pending', retain: 'age' });
 
 // WebAuthn, IN EITHER OF ITS TWO ROLES. The verifier is ./webauthn — written
 // from the specification and sharing no code with the debugger's own decoder,
@@ -452,14 +452,14 @@ import totp = require('../common/totp');
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pendingMfa = realms.map({ persist: 'authn.pendingMfa' });
+const pendingMfa = realms.map({ persist: 'authn.pendingMfa', retain: 'age' });
 // change id -> { authn, username, secondFactor, expires }. A password that must
 // be changed before the sign-in it opened goes any further (2026-09-13). A
 // store of its own rather than a `factor` on the one above: that register is
 // "a sign-in waiting for a SECOND FACTOR", and a new password is not one — the
 // person has presented one factor and is being asked to replace it.
 const pendingPasswordChange = realms.map({
-  persist: 'authn.pendingPasswordChange' });
+  persist: 'authn.pendingPasswordChange', retain: 'age' });
 // How long a second-factor step waits. `authn.mfaStepTtlS` since 2026-09-12;
 // this is its default.
 const MFA_TTL_MS = 5 * 60 * 1000;

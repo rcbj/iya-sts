@@ -95,8 +95,8 @@
 //     afterwards would leave the derived thing untouched and the two
 //     disagreeing — which is worse than refusing, because it reads as having
 //     worked.
-//   * THE DIRECTORY TREE. `ldap.baseDn` is the root every entry was built
-//     under.
+//   * THE DIRECTORY TREE. `global.domain` is the root every entry of the
+//     default realm was built under (it was `ldap.baseDn` until 2026-09-18).
 //
 // A row that is restart-only still appears everywhere a runtime one does, with
 // its effective value and its reason. Hiding them would answer "what is this
@@ -654,6 +654,29 @@ const SETTINGS = [
                  'is no plain port left to fetch it from.' },
 
   // ---------------------------------------------------------------------
+  // THE DEFAULT REALM'S DOMAIN (2026-09-18), which replaced `ldap.baseDn`.
+  // Every trust realm carries a DNS domain that is the root of the NAMES it
+  // invents — its directory tree above all (RFC 2247: `iyasec.io` is
+  // `dc=iyasec,dc=io`) — and this is the default realm's, which it cannot be
+  // given any other way because that realm is not created. Restart-only for
+  // the reason `ldap.baseDn` was: the default realm's tree is built under it
+  // at startup. `common/realms.js` argues the domain; it is refused at startup
+  // (`STS-CORE-0099`) if it is not a domain of two labels or more.
+  { key: 'global.domain', group: 'Global', label: 'Domain',
+    env: 'STS_DOMAIN', type: 'string', dflt: 'example.com', runtime: false,
+    restartReason: 'the default realm\'s directory tree is built under it at ' +
+                   'startup',
+    description: 'The DNS domain of the DEFAULT trust realm — iyasec.io, ' +
+                 'dev.iyasec.io, example.com. Its directory is rooted at ' +
+                 'the RFC 2247 mapping of it (example.com is ' +
+                 'dc=example,dc=com), and a realm created without a domain ' +
+                 'of its own is given <id>.<this value>. It names what the ' +
+                 'realm INVENTS and never where it is reached: the issuer, ' +
+                 'did:web and the WebAuthn RP ID still come from the host a ' +
+                 'request arrived on. Every other realm\'s domain is set when ' +
+                 'it is created, on /admin/realms, and is fixed from then on.' },
+
+  // ---------------------------------------------------------------------
   // WHETHER A FORWARDED HEADER IS BELIEVABLE, which is the server's half of
   // RFC 9700 section 2.6's reverse-proxy paragraph.
   //
@@ -943,6 +966,15 @@ const SETTINGS = [
     description: 'How far a key proof\'s created time may be from now, ' +
                  'either way (sections 7.3.1, 7.3.3 and 7.3.4). Nonces and ' +
                  'JWS proofs are remembered for twice this.' },
+  { key: 'gnap.replayCacheSize', group: 'GNAP',
+    label: 'Signature replay history size (per realm)',
+    path: 'gnap.replayCacheSize', env: 'STS_GNAP_REPLAY_CACHE_SIZE',
+    type: 'int', dflt: 100000, min: 100, max: 10000000, runtime: true,
+    description: 'How many live signed GNAP requests (JWS proofs and HTTP ' +
+                 'message signature nonces) a trust realm remembers, each ' +
+                 'for twice gnap.signatureMaxAgeS. **A FULL HISTORY REFUSES ' +
+                 'THE NEXT REQUEST (STS-GNAP-0718) RATHER THAN FORGETTING A ' +
+                 'LIVE ONE**, since a forgotten signature can be replayed.' },
   { key: 'gnap.interactionStartModes', group: 'GNAP', label: 'Interaction ' +
       'start modes',
     path: 'gnap.interactionStartModes', env: 'STS_GNAP_INTERACTION_START_MODES',
@@ -3411,6 +3443,34 @@ const SETTINGS = [
                  'was handed out. Only read while oauth2.dpopNonceRequired ' +
                  'is on.' },
 
+  // THE TWO DPoP STORES' BOUNDS (2026-09-18). Both were pruned by time only,
+  // so a high enough rate inside the window grew them without limit. They
+  // are bounded in opposite ways, and the difference is the argument: the
+  // proof-ID history decides a REPLAY, so a full one refuses the next proof
+  // rather than forget a live one (the used-assertion history's rule); the
+  // nonces are values this service HANDED OUT, so a full store drops the
+  // oldest and that client is simply asked again with a fresh nonce.
+  { key: 'oauth2.dpopReplayCacheSize', group: 'OAuth 2.0 / OIDC',
+    label: 'DPoP proof replay history size (per realm)',
+    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true,
+    description: 'How many live DPoP proof IDs (jti) a trust realm ' +
+                 'remembers, each for twice oauth2.dpopIatSkewS. **A FULL ' +
+                 'HISTORY REFUSES THE NEXT PROOF (STS-OAUTH-0554) RATHER ' +
+                 'THAN FORGETTING A LIVE ONE**, since a forgotten jti is a ' +
+                 'proof that can be replayed. Expired IDs are dropped first. ' +
+                 'Raise it for a realm that sees more than this many ' +
+                 'DPoP-bound requests in the replay window.' },
+
+  { key: 'oauth2.dpopNonceCacheSize', group: 'OAuth 2.0 / OIDC',
+    label: 'DPoP server nonces held (per realm)',
+    env: 'STS_OAUTH2_DPOP_NONCE_CACHE_SIZE', type: 'int', dflt: 10000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'How many server-issued DPoP nonces a trust realm holds. ' +
+                 'Past it the OLDEST is dropped: a client presenting it is ' +
+                 'answered use_dpop_nonce with a fresh one, which RFC 9449 ' +
+                 'section 8 already requires it to handle.' },
+
   // -------------------------------------------------------------------------
   // SENDER CONSTRAINTS AND REFRESH TOKEN ROTATION (#34, 2026-09-15).
   //
@@ -3656,6 +3716,18 @@ const SETTINGS = [
                  'measured from — a PKCE challenge or nonce is remembered ' +
                  'for twice this — so the two cannot drift apart. A code ' +
                  'already issued keeps the expiry it was minted with.' },
+
+  { key: 'oauth2.redeemedCodeCacheSize', group: 'OAuth 2.0 / OIDC',
+    label: 'Redeemed authorization codes remembered (per realm)',
+    env: 'STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE', type: 'int', dflt: 10000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'How many redeemed authorization codes a trust realm ' +
+                 'remembers, so that a repeat of the SAME token request is ' +
+                 'answered with the tokens it already got and a different ' +
+                 'one is refused naming what differs. Past it the OLDEST is ' +
+                 'forgotten, which costs only that courtesy: the code itself ' +
+                 'was removed when it was redeemed, so a replay of a ' +
+                 'forgotten one is still refused as an unknown code.' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
@@ -6876,6 +6948,16 @@ const SETTINGS = [
     max: 86400, runtime: true,
     description: 'How long a c_nonce from the Nonce Endpoint may be quoted ' +
                  'in a proof; `c_nonce_expires_in` says the same number.' },
+  { key: 'oid4vci.cNonceCacheSize', group: 'OID4VCI',
+    label: 'c_nonce values held (per realm)',
+    env: 'OID4VCI_C_NONCE_CACHE_SIZE', type: 'int', dflt: 10000, min: 10,
+    max: 1000000, runtime: true,
+    description: 'How many c_nonce values from the Nonce Endpoint a trust ' +
+                 'realm holds. Past it the OLDEST is dropped: a proof ' +
+                 'quoting it is answered invalid_nonce, and the wallet ' +
+                 'fetches a new one, as OpenID4VCI section 7 has it do for ' +
+                 'an expired nonce.' },
+
 
   { key: 'oid4vci.issuerDisplayName', group: 'OID4VCI',
     label: 'Issuer display name',
@@ -7007,6 +7089,28 @@ const SETTINGS = [
     min: 60, max: 86400, runtime: true,
     description: 'How long a presentation request — its nonce, state and ' +
                  'Request Object — may wait for a wallet\'s response.' },
+  { key: 'oid4vp.maxTransactions', group: 'OID4VP',
+    label: 'Presentation requests waiting (per realm)',
+    env: 'OID4VP_MAX_TRANSACTIONS', type: 'int', dflt: 5000, min: 10,
+    max: 1000000, runtime: true,
+    description: 'How many presentation requests — the bar door\'s and ' +
+                 'wallet sign-ins — a trust realm keeps waiting for a ' +
+                 'wallet. Past it the OLDEST is dropped, the ' +
+                 'federation.maxContexts rule: refusing instead would let ' +
+                 'anybody who can reach the request endpoint stop it working ' +
+                 'for everybody, where dropping loses one abandoned request.' },
+
+  { key: 'oid4vp.signInRegisterMaxEntries', group: 'OID4VP',
+    label: 'Wallet sign-in register size (per realm)',
+    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true,
+    description: 'How many rows the wallet sign-in register keeps per trust ' +
+                 'realm — one per credential issued for a person on a ' +
+                 'verified access token (per holder key for ldp_vc). Past it ' +
+                 'the row ISSUED FIRST is dropped. That fails CLOSED: a ' +
+                 'credential with no row signs nobody in, which is also what ' +
+                 'a disowned row does.' },
+
 
   { key: 'oid4vp.walletPresentationPath', group: 'OID4VP',
     label: 'Wallet presentation page',
@@ -7654,13 +7758,6 @@ const SETTINGS = [
                  'module generated. It binds independently of 389, so "389 ' +
                  'is up and 636 is not" is an ordinary outcome and each ' +
                  'reports itself separately.' },
-
-  { key: 'ldap.baseDn', group: 'LDAP', label: 'Base DN',
-    env: 'LDAP_BASE_DN', type: 'string', dflt: 'dc=example,dc=com',
-    runtime: false,
-    restartReason: 'the directory tree is built under it at startup',
-    description: 'The root of the embedded directory. ou=users and ou=groups ' +
-                 'hang off it.' },
 
   // ON, and the description below is what it actually does. It used to be off
   // with a description about BINDS — "a bind as a name with no entry creates
@@ -9521,17 +9618,14 @@ const SETTINGS = [
                  'spiffe://example.org/… by default. LOWER-CASE, and only ' +
                  'letters, digits, dots, dashes and underscores — an ' +
                  'upper-case trust domain is not a valid SPIFFE ID and is ' +
-                 'not another spelling of the lower-case one either. **IT IS ' +
-                 'ALSO THE COMMON ROOT EVERY OTHER REALM\'S IS BUILT FROM**: ' +
-                 'a realm created here is given `<realm>.<this value>` as ' +
-                 'its own — acme.example.org — the way it is given an ' +
-                 'entityID of its own, because two realms sharing a trust ' +
-                 'domain are two issuing authorities claiming one name and ' +
-                 'every SVID either mints is then ambiguous. Set it on a ' +
-                 'realm to name that realm\'s domain outright; a realm does ' +
-                 'not have to sit under this root, and a realm deliberately ' +
-                 'sharing another\'s is a thing worth being able to build on ' +
-                 'a mock.' },
+                 'not another spelling of the lower-case one either. A realm ' +
+                 'created here is given ITS DOMAIN as its trust domain — ' +
+                 'iyasec.io — the way it is given an entityID of its own, ' +
+                 'because two realms sharing a trust domain are two issuing ' +
+                 'authorities claiming one name and every SVID either mints ' +
+                 'is then ambiguous. Set it on a realm to name that realm\'s ' +
+                 'trust domain outright; a realm deliberately sharing ' +
+                 'another\'s is a thing worth being able to build on a mock.' },
 
   { key: 'spiffe.x509KeyType', group: 'SPIFFE', label: 'X.509 authority key',
     env: 'STS_SPIFFE_X509_KEY_TYPE', type: 'enum',
@@ -10316,15 +10410,18 @@ const SETTINGS = [
     label: 'Minted state retention (ms)',
     env: 'STS_PERSISTENCE_MINTED_RETENTION', type: 'int',
     dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
-    description: 'How long a persisted session, token, code, artifact or ' +
-                 'audit row is kept. A row older than this is neither ' +
-                 'restored nor left behind — it is deleted on the start that ' +
-                 'skipped it. Seven days by default, which is longer than ' +
-                 'every lifetime this service issues and short enough that a ' +
-                 'long-running store does not read a month of dead sessions ' +
-                 'on the way up. 0 keeps everything for ever, which is a ' +
-                 'supported answer for a deployment whose audit log is the ' +
-                 'point and which prunes the table itself.' },
+    description: 'How long a row of a SHORT-LIVED persisted store — a ' +
+                 'nonce, a code, a pending flow, an in-flight transaction ' +
+                 '(`retain: \'age\'`) — is kept. Such a row older than this ' +
+                 'was left behind by a process that stopped before sweeping ' +
+                 'it; it is neither restored nor kept, and is deleted on the ' +
+                 'start that skipped it. Every other persisted store — ' +
+                 'configuration, accounts, sessions, tokens, the audit log ' +
+                 'and the counters — is KEPT until the store itself deletes ' +
+                 'a row, however old it is (2026-09-18: until then this ' +
+                 'deleted every row of every store not written for this ' +
+                 'long). Also how long a deletion tombstone is kept. Seven ' +
+                 'days by default; 0 keeps everything.' },
 
   // -------------------------------------------------------------------------
   // SEVERAL PROCESSES AGAINST ONE STORE. Until 2026-09-06 this service said,
@@ -11167,7 +11264,7 @@ function persistableOverrides() {
 //   could already have read and cached.
 //
 // The corollary is the one worth stating: `global.https`, `oauth2.rfc9700`,
-// `ldap.port`, `ldap.baseDn` and every other restart-only setting are exactly
+// `ldap.port`, `global.domain` and every other restart-only setting are exactly
 // what the environment and the appconfig file said, and no persisted value can
 // reach them. A saved file cannot change the scheme this service answers on.
 //

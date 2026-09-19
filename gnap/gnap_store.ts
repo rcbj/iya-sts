@@ -67,6 +67,7 @@ import clusterClaims = require('../cluster/cluster_claims');
 import capabilities = require('../cluster/cluster_capabilities');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
+import config = require('../common/config');
 
 // The parts of a `realms.map()` store this module uses. Rows are JSON
 // (header), so `any`.
@@ -107,12 +108,16 @@ interface GnapStoreDeps {
   };
   errorCodes: { tag(code: string): string };
   stores: GnapStores;
+  // The replay history's bound, `gnap.replayCacheSize` (2026-09-18).
+  replayBound: () => number;
 }
 
 const grants = realms.map({ persist: 'gnap.grants' });
-const continuations = realms.map({ persist: 'gnap.continuations' });
-const interactions = realms.map({ persist: 'gnap.interactions' });
-const userCodes = realms.map({ persist: 'gnap.userCodes' });
+const continuations = realms.map({ persist: 'gnap.continuations',
+                                   retain: 'age' });
+const interactions = realms.map({ persist: 'gnap.interactions',
+                                  retain: 'age' });
+const userCodes = realms.map({ persist: 'gnap.userCodes', retain: 'age' });
 const tokens = realms.map({ persist: 'gnap.tokens' });
 const tokenValues = realms.map({ persist: 'gnap.tokenValues' });
 const manageValues = realms.map({ persist: 'gnap.manageValues' });
@@ -125,7 +130,7 @@ const resources = realms.map({ persist: 'gnap.resources' });
 // reasonably short time period"). Persisted for the reason the DPoP replay
 // cache is: across request workers a proof refused by one and accepted by
 // another is the replay the cache exists to stop.
-const replay = realms.map({ persist: 'gnap.replay' });
+const replay = realms.map({ persist: 'gnap.replay', retain: 'age' });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is already a digest
 // of the signature; `until` is in seconds.
@@ -140,13 +145,15 @@ const replayCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a signature already seen, so the request was refused',
-  settings: ['gnap.signatureMaxAgeS'],
-  maxEntries: function (): null {
-    return null;
+  settings: ['gnap.signatureMaxAgeS', 'gnap.replayCacheSize'],
+  maxEntries: function (): number {
+    return Number(config.value('gnap.replayCacheSize'));
   },
+  bound: 'Enforced: gnap.replayCacheSize live signatures per realm. A full ' +
+    'history REFUSES the next signed request (STS-GNAP-0718) rather than ' +
+    'forget a live one, which would reopen its replay.',
   lifetime: function (): string {
-    return 'Twice gnap.signatureMaxAgeS after it was seen. No size limit: ' +
-      'pruned by time only.';
+    return 'Twice gnap.signatureMaxAgeS after it was seen.';
   },
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, replay,
@@ -617,24 +624,49 @@ class GnapStore {
   // -------------------------------------------------------------------------
   // REPLAY. `remember(key, lifetimeS)` answers true the first time and false
   // for a repeat within the window, which is the whole contract a verifier
-  // needs.
+  // needs. `rememberOutcome()` is the same with the third answer a BOUNDED
+  // history has (2026-09-18): 'full' — the history holds gnap.replayCacheSize
+  // live signatures and refuses rather than forget one. A verifier that asks
+  // `remember()` still refuses a full history, as a replay; the two in
+  // `gnap_proof.ts` ask for the outcome so the refusal is named for what it
+  // is (STS-GNAP-0718).
   // -------------------------------------------------------------------------
   remember(key: unknown, lifetimeS?: unknown): boolean {
-    const { log, nowSec } = this.deps;
-    const { replay } = this.deps.stores;
+    const { log } = this.deps;
     log.debug("Entering GnapStore.remember().");
+    log.debug("Leaving GnapStore.remember().");
+    return this.rememberOutcome(key, lifetimeS) === 'new';
+  }
+
+  rememberOutcome(key: unknown, lifetimeS?: unknown): 'new' | 'seen' | 'full' {
+    const { log, nowSec, replayBound } = this.deps;
+    const { replay } = this.deps.stores;
+    log.debug("Entering GnapStore.rememberOutcome().");
     const now = nowSec();
     const hashed = this.digest(key);
     const seen = replay.get(hashed);
     if (seen && seen.until > now) {
       replayCount.hit();
-      log.debug("Leaving GnapStore.remember().");
-      return false;
+      log.debug("Leaving GnapStore.rememberOutcome(). Seen.");
+      return 'seen';
     }
     replayCount.miss();
+    if (!seen) {
+      const room = cacheRegistry.makeRoom(replay, replayBound(), {
+        policy: 'refuse', counter: replayCount, name: 'gnap.signatures',
+        setting: 'gnap.replayCacheSize',
+        expired: function (row: any): boolean {
+          return !row || row.until <= now;
+        }
+      });
+      if (!room.ok) {
+        log.debug("Leaving GnapStore.rememberOutcome(). Full.");
+        return 'full';
+      }
+    }
     replay.set(hashed, { until: now + Math.max(1, Number(lifetimeS) || 1) });
-    log.debug("Leaving GnapStore.remember().");
-    return true;
+    log.debug("Leaving GnapStore.rememberOutcome(). New.");
+    return 'new';
   }
 
   // -------------------------------------------------------------------------
@@ -761,6 +793,9 @@ class GnapStore {
       nowSec: helpers.nowSec,
       clusterClaims: clusterClaims,
       errorCodes: errorCodes,
+      replayBound: function (): number {
+        return Number(config.value('gnap.replayCacheSize'));
+      },
       stores: {
         grants: grants,
         continuations: continuations,
@@ -844,5 +879,6 @@ export = {
   listResources: slot.forward('listResources'),
   deleteResource: slot.forward('deleteResource'),
   remember: slot.forward('remember'),
+  rememberOutcome: slot.forward('rememberOutcome'),
   prune: slot.forward('prune')
 };

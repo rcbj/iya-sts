@@ -195,6 +195,32 @@ class SsfAuth {
   static readonly SCHEMES = SCHEMES;
   static readonly REFUSED_PASSWORD = REFUSED_PASSWORD;
 
+  // ---------------------------------------------------------------------------
+  // WHO AN ACCESS TOKEN IS, AS A STREAM OWNER (2026-09-18).
+  //
+  // The principal was `sub`, which for a client_credentials token is the bare
+  // client_id in development and `urn:sts:client:<client_id>` in RFC 9700
+  // mode — which product mode implies (oauth2.ts, the client_credentials
+  // grant). A stream's owner is matched against application identifiers, so
+  // in product mode `ssfAllowedEvents` named nobody's owner and a restricted
+  // application was agreed every event it asked for: found by
+  // sts_ssf_allowed_events.js run against a product-mode deployment, and
+  // invisible to every development-mode run. A CLIENT's token is its
+  // client_id in both modes now; a person's `sub` is untouched.
+  // ---------------------------------------------------------------------------
+  static principalOfClaims(claims: any): string {
+    helpers.log.debug('Entering SsfAuth.principalOfClaims().');
+    const sub = String((claims && claims.sub) || '');
+    const clientId = String((claims && claims.client_id) || '');
+    if (clientId &&
+        (sub === clientId || sub === 'urn:sts:client:' + clientId)) {
+      helpers.log.debug('Leaving SsfAuth.principalOfClaims(). The client.');
+      return clientId;
+    }
+    helpers.log.debug('Leaving SsfAuth.principalOfClaims().');
+    return sub || clientId;
+  }
+
   constructor(private readonly deps: SsfAuthDeps) {
     deps.helpers.log.debug("Entering SsfAuth.constructor().");
     deps.helpers.log.debug("Leaving SsfAuth.constructor().");
@@ -399,7 +425,7 @@ class SsfAuth {
     log.debug("Leaving SsfAuth.attemptOAuth(). Accepted.");
     return { ok: true, status: 200, scheme: presented.scheme === 'dpop'
       ? 'dpop' : 'bearer',
-      principal: String(claims.sub || claims.client_id || ''),
+      principal: SsfAuth.principalOfClaims(claims),
       scopes: scopes, err: '', description: '', headers: {} };
   }
 
@@ -809,6 +835,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   SCHEMES: SsfAuth.SCHEMES,
   REFUSED_PASSWORD: SsfAuth.REFUSED_PASSWORD,
+  principalOfClaims: SsfAuth.principalOfClaims,
   authRequired: slot.forward('authRequired'),
   scopeRead: slot.forward('scopeRead'),
   scopeWrite: slot.forward('scopeWrite'),

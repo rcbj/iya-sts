@@ -490,7 +490,8 @@ async function theConsoleWithdraws(held) {
     assert.ok(anonymous.status === 302 || anonymous.status === 303,
       "status " + anonymous.status);
   });
-  const cookie = await consoleSignIn.signInToTheConsole(base, OPERATOR, log);
+  const cookie = await consoleSignIn.signInToTheConsole(base, OPERATOR, log,
+                                                        { grant: "write" });
   const withSession = { headers: cookie ? { cookie: cookie } : {} };
   const who = "client_id=" + encodeURIComponent(CLIENT_A);
   const page = await send(base + PAGE + "?" + who, withSession);

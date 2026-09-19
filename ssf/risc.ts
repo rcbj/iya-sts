@@ -462,7 +462,7 @@ class RiscRegister {
     log.debug("Entering RiscRegister.defaultEmailFor().");
     const name = String(row.accountId || row.sub || 'unknown');
     const out = name.indexOf('@') > 0 ? name
-      : (mode.inventsClaimValues() ? name + '@example.com' : '');
+      : (mode.inventsClaimValues() ? realms.inventedMailOf(name) : '');
     log.debug("Leaving RiscRegister.defaultEmailFor(). " + out);
     return out;
   }

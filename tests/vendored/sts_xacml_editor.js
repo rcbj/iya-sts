@@ -1557,7 +1557,7 @@ async function theBrowserConsoleIsClean(driver) {
 async function createTheRealm() {
   log.debug("Entering createTheRealm().");
   const r = await apiPost("/admin-api/realms/create", {
-    id: REALM, name: "XACML editor test realm",
+    id: REALM, domain: REALM + ".example.net", name: "XACML editor test realm",
     description: "Created by tests/vendored/sts_xacml_editor.js; LEFT IN " +
                  "PLACE on purpose, so that a failed run can be read " +
                  "afterwards. Remove it by hand when you are done with it."

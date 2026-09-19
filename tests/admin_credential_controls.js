@@ -456,6 +456,66 @@ function childMain() {
       config.clearOverride('totp.enabled');
       config.clearOverride('webauthn.enabled');
       config.clearOverride('authn.mfaRequired');
+
+      // ====================================================================
+      // 8. ENROLMENT IN PRODUCT MODE (2026-09-18)
+      // ====================================================================
+      // Both enrolments asked the wrong "does this person exist": TOTP asked
+      // `hasEntry()`, which is always false, so product refused every
+      // authenticator app; security keys asked a key-store read that is true
+      // for anybody, so product enrolled keys for nobody. Found by the
+      // protocol suite against a product-mode deployment.
+      ldapServer.createUser('ctl-erin', {});
+      config.setOverride('global.mode', 'product');
+      try {
+        const erinTotp = credentials.beginTotpEnrolment('ctl-erin', {});
+        note(erinTotp.ok, '8a. product mode enrols an authenticator app ' +
+             'for somebody who exists', JSON.stringify(erinTotp.errors));
+        const ghost = 'ctl-nobody-' + Date.now();
+        const ghostTotp = credentials.beginTotpEnrolment(ghost, {});
+        note(!ghostTotp.ok &&
+             errorCodes.codeOf(ghostTotp) === 'STS-AUTHN-0024',
+             '8b. and refuses one for a name nobody created',
+             JSON.stringify(ghostTotp));
+        const erinKey = credentials.beginKeyEnrolment('ctl-erin',
+                                                      { role: 'mfa' });
+        note(erinKey.ok, '8c. it begins a security key enrolment for ' +
+             'somebody who exists', JSON.stringify(erinKey.errors));
+        const ghostKey = credentials.beginKeyEnrolment(ghost, { role: 'mfa' });
+        note(!ghostKey.ok &&
+             errorCodes.codeOf(ghostKey) === 'STS-AUTHN-0024',
+             '8d. and refuses one for a name nobody created',
+             JSON.stringify(ghostKey));
+
+        // A CLIENTLESS RFC 7523 GRANT REACHES THE ASSERTION CHECK (2026-09-18).
+        // Product mode's client check refused it as an unknown client —
+        // `invalid_client`, 401 — before the assertion was looked at, though
+        // RFC 7521 section 4.1 makes client authentication optional there.
+        // An assertion from an issuer nobody declared must be refused FOR
+        // THAT: `invalid_grant`, 400.
+        const nodeCrypto = require('crypto');
+        const pair = nodeCrypto.generateKeyPairSync('rsa',
+                                                    { modulusLength: 2048 });
+        const b64 = function (o) {
+          return Buffer.from(JSON.stringify(o)).toString('base64url');
+        };
+        const now = Math.floor(Date.now() / 1000);
+        const input = b64({ alg: 'RS256', typ: 'JWT' }) + '.' +
+          b64({ iss: 'undeclared-' + now, sub: 'ctl-erin',
+                aud: 'http://127.0.0.1:' + port + '/oauth2/token',
+                iat: now, exp: now + 120, jti: 'j-' + now });
+        const jwt = input + '.' + nodeCrypto.sign('sha256',
+          Buffer.from(input), pair.privateKey).toString('base64url');
+        const grant = await request(port, 'POST', '/oauth2/token',
+          { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            assertion: jwt });
+        note(grant.status === 400 && /invalid_grant/.test(grant.text),
+             '8e. a clientless assertion grant is judged on its assertion ' +
+             '(invalid_grant), not refused as an unknown client',
+             grant.status + ' ' + grant.text.slice(0, 200));
+      } finally {
+        config.clearOverride('global.mode');
+      }
       server.close();
     });
 

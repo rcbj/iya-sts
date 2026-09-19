@@ -210,6 +210,9 @@ const historyCount = cacheRegistry.register({
   maxEntries: function () {
     return capOf();
   },
+  bound: 'Enforced: oauth2.assertionReplayCacheSize per realm. A full ' +
+    'history REFUSES the next assertion rather than forget a live one, ' +
+    'which would reopen its replay.',
   lifetime: function () {
     return 'Until the assertion itself expires. Refuses new assertions ' +
       'when full rather than forgetting one. On a database store the rows ' +

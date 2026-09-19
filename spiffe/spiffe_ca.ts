@@ -207,9 +207,11 @@ class SpiffeCa {
         'and every bundle served.',
       owner: 'spiffe/spiffe_ca.ts',
       scope: 'realm',
-      maxEntries: function (): null {
-        return null;
+      maxEntries: function (): number {
+        return 1;
       },
+      bound: 'Structural: one unpacked authority list per realm, replaced ' +
+        'when the stored list changes.',
       lifetime: function (): string {
         return 'Until the realm\'s authorities are rotated or restored, ' +
           'which replaces the stored list the entry was unpacked from.';

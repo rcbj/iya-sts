@@ -123,10 +123,25 @@ function jar() {
 // The management API is reached with whatever credential the run's preload
 // attaches (`tests/tools/attach-admin-token.js`); nothing here mints one.
 // ---------------------------------------------------------------------------
+// THE PASSWORD IS RANDOM PER PROCESS, AND STABLE WITHIN IT (2026-09-18).
+// It was derived from the name — `Console-signin-<user>-Passw0rd!` — which is
+// harmless on a stack torn down after the run and a published credential on
+// a deployment that outlives it: testidp, where a signed-in console account may
+// hold a console role (see `grant` below). Stable within the process because a
+// job signs the same account in twice (admin_api.js asks for it again), and a
+// new random one per process means an account a previous run left behind has
+// a password nobody holds.
+const consolePasswords = {};
+
 function consolePasswordFor(user) {
   log.debug("Entering consolePasswordFor().");
+  const name = String(user);
+  if (!consolePasswords[name]) {
+    consolePasswords[name] = "Console-signin-" +
+      require("crypto").randomBytes(12).toString("base64url") + "-Aa1!";
+  }
   log.debug("Leaving consolePasswordFor().");
-  return "Console-signin-" + String(user) + "-Passw0rd!";
+  return consolePasswords[name];
 }
 
 async function ensureConsoleAccount(base, user, say) {
@@ -168,14 +183,13 @@ async function ensureConsoleAccount(base, user, say) {
     const set = await apiPost("/users/set-password",
                               { user: user, password: password });
     if (!(set.status === 200 && set.body && set.body.ok)) {
-      // NOT A FAILURE. The password this helper derives for a name never
-      // changes, so an account an earlier job or run created already holds it
-      // — and a password policy with a HISTORY refuses setting the same one
-      // again. The sign-in below says soon enough if the password is wrong.
+      // NOT A FAILURE HERE, though the sign-in below will be one: the
+      // password is new to this process, so a refusal is a policy this helper
+      // does not satisfy, and the sign-in names it. The same process asking
+      // twice is the one ordinary refusal — the history holds the same value.
       say("[console] " + user + " already exists and setting its password " +
           "again answered " + set.status + " " +
-          JSON.stringify(set.body).slice(0, 200) + "; signing in with the " +
-          "password this helper always gives it.");
+          JSON.stringify(set.body).slice(0, 200) + ".");
     }
     log.debug("Leaving ensureConsoleAccount().");
     return password;
@@ -190,8 +204,17 @@ async function ensureConsoleAccount(base, user, say) {
 // optional and is used only to say which of the two states the gate was in.
 // Answers the Cookie header to send on console reads, or null when the gate is
 // off.
-async function signInToTheConsole(base, user, log) {
+//
+// `options.grant` — "read" or "write" — GIVES the account that console role
+// first (2026-09-18). A development stack with an empty roster admits anybody;
+// a deployment with an administrator — testidp, any product install past its
+// bootstrap — admits only a holder, and a job that reads console pages answers
+// 403 for want of a role rather than for anything it tests. Opt-in, because
+// sts_realm_administrators.js grants and confines roles itself. "write" grants
+// both. The role goes to an account whose password only this process holds.
+async function signInToTheConsole(base, user, log, options) {
   const say = (log && log.info) ? log.info.bind(log) : function () {};
+  const opts = options || {};
   const cookies = jar();
 
   // Two kinds of address, and they resolve differently. A path THIS FILE
@@ -256,6 +279,19 @@ async function signInToTheConsole(base, user, log) {
     "sign in FOR and refuses the POST.");
 
   const password = await ensureConsoleAccount(base, user, say);
+  if (opts.grant === "read" || opts.grant === "write") {
+    const roles = opts.grant === "write" ? ["read", "write"] : ["read"];
+    for (const role of roles) {
+      const r = await fetch(base + "/admin-api/rbac/grant", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user, role: role })
+      });
+      assert.ok(r.status === 200, "granting Admin " + role + " to " + user +
+        " through POST /admin-api/rbac/grant answered " + r.status + " " +
+        (await r.text()).slice(0, 200));
+    }
+    say("[console] " + user + " holds Admin " + roles.join(" and ") + ".");
+  }
   const screen = await follow(where);
   const screenHtml = await screen.text();
   const csrf =

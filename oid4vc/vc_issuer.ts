@@ -75,6 +75,7 @@ import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('../oauth-oidc/dpop');
+import mode = require('../common/mode');
 // The error codes (common/error_codes.js). A LEAF that requires nothing; a code
 // is marked on the response object and never put in an error_description.
 import errorCodes = require('../common/error_codes');
@@ -154,6 +155,7 @@ interface VcIssuerDeps {
   config: typeof config;
   bbs2023: typeof bbs2023;
   dpop: typeof dpop;
+  mode: typeof mode;
   errorCodes: typeof errorCodes;
   stats: typeof stats;
   vciAuthorizationServer: typeof vcConfigs.vciAuthorizationServer;
@@ -200,7 +202,7 @@ interface VcIssuerDeps {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces' });
+const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age' });
 
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
 // its exported name.
@@ -218,10 +220,12 @@ const vciNoncesCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a nonce this issuer handed out, so the proof was checked',
-  settings: ['oid4vci.cNonceTtlS'],
-  maxEntries: function (): null {
-    return null;
+  settings: ['oid4vci.cNonceTtlS', 'oid4vci.cNonceCacheSize'],
+  maxEntries: function (): number {
+    return Number(config.value('oid4vci.cNonceCacheSize'));
   },
+  bound: 'Enforced: oid4vci.cNonceCacheSize per realm; the oldest nonce is ' +
+    'dropped, and a proof quoting it is answered invalid_nonce.',
   lifetime: function (): string {
     return 'oid4vci.cNonceTtlS after it was issued, or when it is used.';
   },
@@ -337,7 +341,7 @@ const VCI_REQUEST_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
 const LAST_REQUEST_KEY = 'last';
 
 const lastCredentialRequestStore = realms.map({
-  persist: 'vc_issuer.lastCredentialRequest' });
+  persist: 'vc_issuer.lastCredentialRequest', retain: 'age' });
 
 // The three events the Notification Endpoint accepts (OID4VCI section 11).
 const NOTIFICATION_EVENTS = ['credential_accepted', 'credential_failure',
@@ -380,6 +384,7 @@ class VcIssuer {
       config: config,
       bbs2023: bbs2023,
       dpop: dpop,
+      mode: mode,
       errorCodes: errorCodes,
       stats: stats,
       vciAuthorizationServer: vcConfigs.vciAuthorizationServer,
@@ -1627,6 +1632,42 @@ class VcIssuer {
     log.debug("Leaving VcIssuer.rememberIssued().");
   }
 
+  // THE ACCESS TOKEN AN OpenID4VCI ENDPOINT ACCEPTS (2026-09-18), asked by
+  // the credential, deferred credential and notification endpoints alike.
+  // `dpop.presentedAccessToken()` is the Bearer/DPoP check every protected
+  // endpoint shares; what this adds is the one decision that differs by mode
+  // (`mode.acceptsUnverifiedIssuerTokens()`). Development reads a token this
+  // realm cannot verify unverified, because OID4VCI lets the authorization
+  // server be somebody else. Product refuses it — through that function's own
+  // `requireVerified` refusal, so there is one wording and one code for "not a
+  // token this service can verify" — and refuses a token this realm REVOKED,
+  // which is what UserInfo does with one and what a global sign-out means.
+  // Answers the presented token, or null having answered the request itself.
+  private presentedIssuerToken(req, res, where) {
+    const { dpop, mode, stats, errorCodes, vciError, log } = this.deps;
+    log.debug("Entering VcIssuer.presentedIssuerToken(). where=" + where);
+    const strict = !mode.acceptsUnverifiedIssuerTokens();
+    const presented = dpop.presentedAccessToken(req, res, where,
+                                                { requireVerified: strict });
+    if (!presented) {
+      log.debug("Leaving VcIssuer.presentedIssuerToken(). Refused.");
+      return null;
+    }
+    const claims = presented.claims || {};
+    if (strict && claims.jti && stats.isRevoked(claims.jti)) {
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+      errorCodes.mark(res, 'STS-VC-0086');
+      vciError(res, 401, 'invalid_token',
+        'This access token was revoked by this service, and ' + where +
+        ' issues nothing on a revoked token.');
+      log.debug("Leaving VcIssuer.presentedIssuerToken(). Revoked.");
+      return null;
+    }
+    log.debug("Leaving VcIssuer.presentedIssuerToken(). verified=" +
+              presented.verified);
+    return presented;
+  }
+
   // The claims the credential asserts.
   //
   // WHICH claims those are is configuration now (vc_claims.ts, set on
@@ -1681,8 +1722,10 @@ class VcIssuer {
     // /admin/users to assume otherwise. (tls_server.js drew the same line for a
     // verified client certificate until 2026-09-05, when a verified certificate
     // became a sign-on — `GET /tls/sign-in` since 2026-09-16; nothing here
-    // did.) Nobody authenticated here; an access token was presented and this
-    // issuer does not verify tokens it did not issue.
+    // did.) Nobody authenticated here; an access token was presented. In
+    // development mode it may be one this realm cannot verify, and is read
+    // unverified; product mode refuses one before this is reached
+    // (`presentedIssuerToken()`, 2026-09-18).
     //
     // HERE rather than at the two endpoints, because this function is the
     // single point that decides who a credential is about: it is called once
@@ -2245,14 +2288,20 @@ class VcIssuer {
       log.debug("Entering the OID4VCI nonce endpoint.");
       const nonce = b64u(crypto.randomBytes(24));
       const now = Date.now();
-      vciNonces.set(nonce, now + this.cNonceTtlMs());
-      // Opportunistic sweep, so a long-running mock does not grow without
-      // bound.
+      // The expired go first, then the bound (oid4vci.cNonceCacheSize): a
+      // c_nonce is a value this issuer handed out, so at the bound the
+      // oldest goes and a wallet quoting it is told invalid_nonce and asks
+      // again — what OpenID4VCI has it do for an expired one.
       vciNonces.forEach((expires, key) => {
         if (expires < now) {
           vciNonces.delete(key);
         }
       });
+      cacheRegistry.makeRoom(vciNonces,
+                             Number(this.deps.config.value(
+                               'oid4vci.cNonceCacheSize')),
+                             { counter: vciNoncesCount });
+      vciNonces.set(nonce, now + this.cNonceTtlMs());
       res.set('Cache-Control', 'no-store');
       // The one thing OID4VCI says about DPoP by name: "The Credential Issuer
       // MAY provide a DPoP nonce in an HTTP header as defined in Section 8.2 of
@@ -2306,7 +2355,7 @@ class VcIssuer {
 
     app.post('/oid4vci/credential', async (req, res) => {
       log.debug("Entering the OID4VCI credential endpoint.");
-      const presented = dpop.presentedAccessToken(req, res,
+      const presented = this.presentedIssuerToken(req, res,
                                                   'the credential endpoint');
       if (!presented) {
         return;
@@ -2611,7 +2660,7 @@ class VcIssuer {
     // this issuer never made or has already handed over.
     app.post('/oid4vci/deferred_credential', async (req, res) => {
       log.debug("Entering the OID4VCI deferred credential endpoint.");
-      if (!dpop.presentedAccessToken(req, res,
+      if (!this.presentedIssuerToken(req, res,
                                      'the deferred credential endpoint')) {
         return;
       }
@@ -2708,7 +2757,7 @@ class VcIssuer {
     // the three the spec defines.
     app.post('/oid4vci/notification', (req, res) => {
       log.debug("Entering the OID4VCI notification endpoint.");
-      if (!dpop.presentedAccessToken(req, res, 'the notification endpoint')) {
+      if (!this.presentedIssuerToken(req, res, 'the notification endpoint')) {
         return;
       }
 

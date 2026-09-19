@@ -318,6 +318,8 @@ const matchedCount = cacheRegistry.register({
   owner: 'common/jose_certificate_header.js',
   scope: 'process',
   maxEntries: memoLimit,
+  bound: 'Enforced: 512 answers, the oldest dropped and worked out again ' +
+    'when next asked for.',
   lifetime: memoLifetime,
   entries: function () {
     return memoRows(matched);
@@ -386,6 +388,8 @@ const chainsCount = cacheRegistry.register({
   owner: 'common/jose_certificate_header.js',
   scope: 'process',
   maxEntries: memoLimit,
+  bound: 'Enforced: 512 answers, the oldest dropped and worked out again ' +
+    'when next asked for.',
   lifetime: memoLifetime,
   entries: function () {
     return memoRows(chains);

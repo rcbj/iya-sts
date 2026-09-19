@@ -376,7 +376,7 @@ const JWKS_PATH = '/oauth2/jwks';
 // handle and every fact about the request stays on this side. The `returnTo`
 // in particular must never ride in a parameter, because a return address a
 // caller can write is an open redirect operated by whoever can forge a state.
-const flows = realms.map({ persist: 'oidc_rp.flows' });
+const flows = realms.map({ persist: 'oidc_rp.flows', retain: 'age' });
 // In flight at once, per realm rather than per process, for the reason
 // `federation_sp.ts` gives about a shared cap: one realm's flood would
 // otherwise evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since

@@ -375,17 +375,18 @@ const LDAP_PORT = config.value('ldap.port');
 const LDAPS_PORT = config.value('ldap.tlsPort');
 
 // ---------------------------------------------------------------------------
-// THE NAMING CONTEXT, AND THE SUBTREE EACH TRUST REALM OWNS INSIDE IT.
+// THE NAMING CONTEXTS, ONE PER TRUST REALM.
 //
-// `ROOT_DN` is what the SOCKET serves — `ldap.baseDn`, one naming context, one
-// tree, published in the root DSE and answered for on 389 and 636. Everything
-// below it is ours; anything outside it is LDAP_NO_SUCH_OBJECT, which is what a
-// real server does for a base DN it holds no data for.
+// Each realm's directory is a tree of its own, rooted at the RFC 2247 mapping
+// of the realm's DNS domain, and the socket serves every one of them on 389
+// and 636 and publishes each in the root DSE. A DN in none of them is
+// LDAP_NO_SUCH_OBJECT, which is what a real server does for a base DN it holds
+// no data for. `ROOT_DN` is the DEFAULT realm's — `global.domain`'s — and
+// `baseDn()` is what the AMBIENT realm owns:
 //
-// `baseDn()` is what the AMBIENT REALM owns, and it is a SUBTREE of that:
-//
-//     the default realm    dc=example,dc=com                 (ROOT_DN itself)
-//     the realm `acme`     dc=acme,dc=example,dc=com
+//     the default realm            dc=example,dc=com      (ROOT_DN itself)
+//     a realm with no domain given dc=acme,dc=example,dc=com
+//     a realm for iyasec.io        dc=iyasec,dc=io
 //
 // so `ou=users`, `ou=groups`, `ou=applications`, `ou=federations` and the two
 // SPIFFE containers exist once per realm and share nothing. A person created
@@ -413,40 +414,77 @@ const LDAPS_PORT = config.value('ldap.tlsPort');
 // just as well and it costs the thing this feature is for: a port is bound when
 // the process starts, so realms would have stopped being creatable at runtime.
 //
-// **WHY THE REALM'S BASE IS DERIVED AND NOT CONFIGURED.** `ldap.baseDn` is
-// restart-only because *the tree is built under it at startup* — the
-// "material derived at startup" kind, which `common/CLAUDE.md` names as the
-// case that must never be given the `realmRuntime` marker. So a realm cannot
-// carry `ldap.baseDn`, and its base is computed from its id instead. That is
-// not a limitation working around a rule; it is the rule being right. Two
-// realms are told apart by their ids everywhere else in this service, and a
-// configurable base would let two of them name one subtree.
+// **WHY THE REALM'S BASE IS DERIVED FROM ITS DOMAIN AND NOT CONFIGURED.** A
+// realm carries a DNS domain (`common/realms.js`, 2026-09-18), fixed when it is
+// created and unique among realms, and its base is the RFC 2247 mapping of it:
+// `iyasec.io` is `dc=iyasec,dc=io`. Until that day every realm was
+// `dc=<id>` beneath one `ldap.baseDn`; now EACH REALM IS A TREE OF ITS OWN, a
+// separate naming context the root DSE publishes, and the default realm's is
+// `global.domain`'s. A realm created without a domain is `<id>.<global.domain>`,
+// which maps to exactly the `dc=<id>,<root>` it always had. A base DN that
+// could be configured separately from the domain would be a second answer to
+// one question, and the first time they disagreed an entry would be written
+// into a tree nobody searches.
 //
-// The RDN attribute type is taken from the root's own first RDN so the tree
-// stays homogeneous: a `dc=example,dc=com` root gives `dc=acme,…`, and an
-// `o=example` root gives `o=acme,…` rather than a dc grafted onto an o.
+// **A DOMAIN INSIDE ANOTHER REALM'S IS ALLOWED** — `dev.iyasec.io` beside
+// `iyasec.io`, Active Directory's child domain. The two bases nest by NAME and
+// share nothing else: `realmFor()` gives a DN to the realm with the DEEPEST
+// base containing it, and each realm's entries are in its own store, so a
+// subtree search from `dc=iyasec,dc=io` is answered from that realm's store and
+// can never return `dc=dev,dc=iyasec,dc=io`'s entries.
 // ---------------------------------------------------------------------------
-const ROOT_DN = config.value('ldap.baseDn');
-
-// `dc` for the ordinary root, whatever the root uses otherwise. Computed once:
-// ROOT_DN cannot change while the process runs.
-const REALM_RDN_TYPE = (function () {
-  const first = String(ROOT_DN).split(',')[0];
-  const type = first.indexOf('=') > 0 ? first.split('=')[0].trim() : 'dc';
-  return type || 'dc';
+// The DEFAULT realm's base: `global.domain`'s tree. Restart-only, so computed
+// once — and a value that is not a domain stops the service here, because a
+// directory rooted at a DN built from it would be a directory nobody could
+// name.
+const ROOT_DN = (function () {
+  const domain = realms.domainOf(realms.DEFAULT_ID);
+  const problems = realms.validateDomain(domain, realms.DEFAULT_ID);
+  if (problems.length) {
+    log.error(errorCodes.tag('STS-CORE-0099') + 'ldap: global.domain ' +
+              'cannot root the default realm\'s directory. ' +
+              problems.join(' '));
+    process.exit(1);
+  }
+  return realms.baseDnOfDomain(domain);
 })();
 
-// The base DN of a NAMED realm. Exported and used by the purge, by the
-// default-realm pinning the admin console needs, and by every page that lists
-// what a realm owns.
+// The base DN of a realm. Exported and used by the purge, by the default-realm
+// pinning the admin console needs, and by every page that lists what a realm
+// owns. An id the registry no longer holds — the purge runs after the row is
+// gone — answers the base a realm of that id WITHOUT a domain would have had,
+// which is what the log line about it needs and nothing else reads.
 function realmBaseDn(id) {
   log.debug("Entering realmBaseDn().");
   if (!id || id === realms.DEFAULT_ID) {
     log.debug("Leaving realmBaseDn().");
     return ROOT_DN;
   }
+  const base = realms.baseDnOf(id);
   log.debug("Leaving realmBaseDn().");
-  return REALM_RDN_TYPE + '=' + id + ',' + ROOT_DN;
+  return base || realms.baseDnOfDomain(id + '.' +
+                                       realms.domainOf(realms.DEFAULT_ID));
+}
+
+// WHETHER A DN IS IN ANY NAMING CONTEXT THIS SOCKET SERVES — the question
+// every handler asks before it touches a store. It was `isUnder(dn, ROOT_DN)`
+// while every realm hung beneath one root; now a realm's tree may be rooted
+// anywhere (`dc=craptastic,dc=net`), so it is every realm's base in turn.
+function inNamingContext(dn) {
+  log.debug("Entering inNamingContext().");
+  if (isUnder(dn, ROOT_DN)) {
+    log.debug("Leaving inNamingContext(). The default realm's.");
+    return true;
+  }
+  if (!realms.active()) {
+    log.debug("Leaving inNamingContext(). No realms.");
+    return false;
+  }
+  const found = realms.list().some(function (realm) {
+    return isUnder(dn, realmBaseDn(realm.id));
+  });
+  log.debug("Leaving inNamingContext(). " + found);
+  return found;
 }
 
 
@@ -934,15 +972,16 @@ function totalEntries() {
 function realmFor(dn) {
   log.debug("Entering realmFor().");
   let best = realms.DEFAULT_REALM;
-  let bestLength = ROOT_DN.length;
+  let bestLength = isUnder(dn, ROOT_DN) ? ROOT_DN.length : -1;
   if (!realms.active()) {
     log.debug("Leaving realmFor().");
     return best;
   }
   realms.list().forEach(function (realm) {
     const candidate = realmBaseDn(realm.id);
-    // Longer is deeper, and length is a fair proxy here because every one of
-    // these bases is built by the same function from the same root.
+    // Longer is deeper among the bases that CONTAIN the DN: two bases that
+    // both contain it are one inside the other (`dc=dev,dc=iyasec,dc=io` in
+    // `dc=iyasec,dc=io`), so the longer is the nested realm's.
     if (isUnder(dn, candidate) && candidate.length > bestLength) {
       best = realm;
       bestLength = candidate.length;
@@ -1407,6 +1446,14 @@ function subtreeVersion(containerDn) {
   return named > clock.everywhere ? named : clock.everywhere;
 }
 
+// The container listings kept per realm. The containers asked for are a
+// handful of fixed ones (applications, policies, roles, password policies),
+// so this is met only if something starts listing arbitrary containers; the
+// oldest listing then goes and is walked again when next asked for.
+const MAX_SUBTREE_LISTINGS = 64;
+// (Declared here, beside the listings, because `entriesUnder()` runs while
+// this file is still loading.)
+
 // Every entry strictly under `containerDn`, kept until something is written
 // there. The rows are the LIVE stored objects, exactly as eachEntryInRealm()
 // hands them out — so an attribute changed in place is visible through a cached
@@ -1430,6 +1477,10 @@ function entriesUnder(containerDn) {
       rows.push(stored);
     }
   });
+  if (!clock.listings.has(key)) {
+    cacheRegistry.makeRoom(clock.listings, MAX_SUBTREE_LISTINGS,
+                           { counter: listingCount });
+  }
   clock.listings.set(key, { version: version, rows: rows });
   log.debug('Leaving entriesUnder(). ' + rows.length + ' row(s), walked.');
   return rows;
@@ -2945,7 +2996,7 @@ function seed() {
         displayName: person.cn,
         title: person.title,
         employeeType: person.employeeType,
-        mail: person.uid + '@sts.example',
+        mail: realms.inventedMailOf(person.uid),
         description: 'Seeded, not authenticated.'
       }, { origin: 'seed' });
     });
@@ -3126,7 +3177,7 @@ function seed() {
 
 // The default realm's subtree, at require time, exactly as before realms
 // existed: `realms.currentId()` is the default outside any request, so
-// `baseDn()` is ROOT_DN and every DN seed() writes is the one it always wrote.
+// `baseDn()` is ROOT_DN, `global.domain`'s tree.
 seed();
 
 // ---------------------------------------------------------------------------
@@ -4970,7 +5021,9 @@ function recordSpiffeCredentialStatus(detail) {
 // ---------------------------------------------------------------------------
 function autoCreateUser(detail) {
   log.debug('Entering autoCreateUser(). key=' + (detail && detail.key));
-  if (!autocreateUsers()) {
+  // A FEDERATED sign-in goes on even when this service creates nobody: see
+  // the block after the lookup below.
+  if (!autocreateUsers() && !(detail && detail.federation)) {
     log.debug('Leaving autoCreateUser(). LDAP_AUTOCREATE_USERS is off.');
     return null;
   }
@@ -5037,6 +5090,34 @@ function autoCreateUser(detail) {
   // different people (see didPlan()'s linked branch).
   const personaName = plan.personaKey || name;
   const existing = getEntry(dn);
+  // ---------------------------------------------------------------------
+  // WHEN THIS SERVICE CREATES NOBODY — product mode, or `ldap.autocreateUsers`
+  // off — A FEDERATED SIGN-IN STILL WRITES ONTO A PROVISIONED ENTRY
+  // (2026-09-18). The early return above used to cover this case too, so in
+  // product mode a person provisioned ahead of time and signed in through a
+  // partner never recorded `federationRelationship` and never had the
+  // partner's attributes refreshed — while `fedUpdateUserAttributes`' schema
+  // row says the relationship "is recorded either way" and federation/CLAUDE.md
+  // promises the refresh. `tests/vendored/sts_federation_realms.js` found it
+  // against a product-mode deployment. Only `applyFederatedAttributes()` runs
+  // here: the description notes, the invented credential attributes and the
+  // factor flags the branch further down writes belong to a service that
+  // creates entries, and a missing entry is still left missing for
+  // `authn.startSession()` to refuse.
+  // ---------------------------------------------------------------------
+  if (!autocreateUsers()) {
+    if (existing &&
+        applyFederatedAttributes(existing, info, { created: false })) {
+      existing.attributes.modifytimestamp = [generalizedTime()];
+      log.debug('Leaving autoCreateUser(). Creation is off; the provisioned ' +
+                'entry records the federated sign-in.');
+      return existing;
+    }
+    log.debug('Leaving autoCreateUser(). Creation is off' +
+              (existing ? '; the entry already said all of it.'
+                        : ' and nobody was provisioned at ' + dn + '.'));
+    return existing || null;
+  }
   // AND THE PER-RELATIONSHIP SWITCH, which is the one place a federated sign-in
   // is treated differently from every other kind here. `ldap.autocreateUsers`
   // above is the service-wide answer; `fedAutocreateUsers` is one partner's,
@@ -5165,7 +5246,7 @@ function autoCreateUser(detail) {
   // branch above. What a foreign identity provider asserted about somebody
   // beats what this service invented for them.
   applyFederatedAttributes(created, info, { created: true });
-  log.info('ldap: created ' + dn + ' because ' + name + ' ' + note + '.');
+  log.debug('ldap: created ' + dn + ' because ' + name + ' ' + note + '.');
   // A user created by the SERVICE rather than by a client, and the audit row
   // says so through `channel: 'internal'` — no LDAP client asked for this. It
   // is the one directory row with no connection behind it, which is why it does
@@ -5529,7 +5610,7 @@ function createUser(name, options) {
   // `recordAuthentication()` reaches `autoCreateUser()` and then here.
   // ---------------------------------------------------------------------
   stats.noteKnownIdentity(wanted, 'created');
-  log.info('ldap: created ' + created.dn + ' because somebody asked for it.');
+  log.debug('ldap: created ' + created.dn + ' because somebody asked for it.');
   audit.recordDirectory({
     action: 'user.create',
     actor: String(opts.actor || ''),
@@ -5658,8 +5739,8 @@ function applyVcAttributes(stored, key) {
   touchDirectory(stored.dn);
   noteUsernameIndexRefresh(stored, usernameIndexWasCurrent);
   noteGroupIndexPut(stored, groupIndexWasCurrent);
-  log.info('ldap: ' + stored.dn + ' gained ' + added.join(', ') +
-           ' so that an issued credential has something to assert.');
+  log.debug('ldap: ' + stored.dn + ' gained ' + added.join(', ') +
+            ' so that an issued credential has something to assert.');
   log.debug('Leaving applyVcAttributes(). ' + added.length + ' attribute(s) ' +
       'added.');
   return true;
@@ -8956,13 +9037,14 @@ populateVcAttributes();
 // The server, and its handlers.
 //
 // Every handler is registered against '' — the ROOT DSE and everything else —
-// and each decides for itself whether the DN it was given is inside ROOT_DN. A
+// and each decides for itself whether the DN it was given is in a naming
+// context this socket serves (`inNamingContext()`). A
 // client that binds before it knows the base DN reads the root DSE first, and a
 // server that had no handler for it answers LDAP_UNAVAILABLE, which reads as
 // the server being down.
 //
 // Registering at '' rather than at the base is also what lets one socket serve
-// every trust realm: a realm's subtree is `dc=<id>,` + ROOT_DN, and the
+// every trust realm: a realm's tree is rooted at its own domain, and the
 // handlers reach it because they were never scoped to a base in the first
 // place.
 // ---------------------------------------------------------------------------
@@ -8992,7 +9074,8 @@ populateVcAttributes();
 // worth more than a TypeError out of a constructor, which is the same trade
 // every listen path here makes.
 // ---------------------------------------------------------------------------
-const plainServer = ldap.createServer({ log: log });
+const plainServer = ldap.createServer({ log: log,
+                                       routeAnonymousBinds: true });
 
 // The TLS protocol policy, asked of the module that states it. An older copy of
 // `tls_server.js` without the function gets node's defaults, which is what
@@ -9033,6 +9116,7 @@ if (serverCertificate && serverCertificate.certPem &&
   // node's defaults behind their back.
   secureServer = ldap.createServer(Object.assign({
     log: log,
+    routeAnonymousBinds: true,
     certificate: serverCertificate.certPem,
     key: serverCertificate.privateKeyPem
   }, tlsProtocolOptions()));
@@ -9045,6 +9129,41 @@ if (serverCertificate && serverCertificate.certPem &&
 }
 
 const servers = secureServer ? [plainServer, secureServer] : [plainServer];
+
+// ---------------------------------------------------------------------------
+// AN ANONYMOUS BIND REACHES THE BIND HANDLER (2026-09-18).
+//
+// node-ldapjs's Server answered a bind with an empty name AND empty
+// credentials ITSELF — `_getHandlerChain()` returned a no-op before any route
+// was consulted — so the bind handler below never saw one, and product mode's
+// refusal of an anonymous bind (48, inappropriateAuthentication,
+// STS-LDAP-0070) never happened: the bind answered success and only the read
+// after it was refused. `tests/vendored/sts_ldaps.js` found it against a
+// product-mode deployment; nothing in process could, because
+// `performOperation()` enters the handler directly.
+//
+// The fix is in the `rcbj/node-ldapjs` fork: `routeAnonymousBinds: true`, set
+// on both servers above, routes that bind to the handler registered on the ''
+// route like any other bind. A node-ldapjs without the option ignores it and
+// keeps the old behaviour, so the option is ASKED of each server after it is
+// built, and a server that did not take it is said out loud (STS-LDAP-0098)
+// rather than discovered by the next deployment's test run.
+// ---------------------------------------------------------------------------
+function anonymousBindsRouted(ldapServer) {
+  log.debug("Entering anonymousBindsRouted().");
+  const routed = !!(ldapServer && ldapServer._routeAnonymousBinds === true);
+  if (!routed) {
+    log.warn(errorCodes.tag('STS-LDAP-0098') + 'ldap: this node-ldapjs does ' +
+             'not support routeAnonymousBinds, so an anonymous bind is ' +
+             'answered by the library and never reaches the bind handler; ' +
+             'product mode cannot refuse it (reads on that connection are ' +
+             'still refused). Update the node-ldapjs submodule.');
+  }
+  log.debug("Leaving anonymousBindsRouted(). " + routed);
+  return routed;
+}
+
+servers.forEach(anonymousBindsRouted);
 
 // The eight operations and unbind. Written out rather than read off ldapjs's
 // prototype, because that would fan out `listen`, `close` and `address` too —
@@ -9077,8 +9196,8 @@ const OPERATIONS = ['bind', 'unbind', 'add', 'del', 'modify', 'modifyDN',
 // unwrapped rather than wrapped with a default, so that a reader wondering
 // whether it was forgotten finds the answer here.
 //
-// A DN outside the naming context resolves to the default realm and is then
-// refused by the handler's own `isUnder(dn, ROOT_DN)` check, exactly as before.
+// A DN in no realm's naming context resolves to the default realm and is then
+// refused by the handler's own `inNamingContext()` check.
 // ---------------------------------------------------------------------------
 const REALMLESS_OPERATIONS = ['unbind'];
 
@@ -9145,10 +9264,44 @@ function claimingTheAdd(handler) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE CLIENT'S ADDRESS ON EVERY AUDIT ROW AN OPERATION WRITES (2026-09-18).
+//
+// A bind's `authentication` row is written by `admin_stats.js` and a
+// session's by `authn/`, neither of which is handed the LDAP request — so the
+// operation runs inside an audit SOURCE naming the connection's peer, which
+// `common/audit.js` puts on every row written beneath it. See that file's
+// `withSource()`. The peer is the socket's, which `common/proxy_protocol.ts`
+// has already set to the PROXY header's client where a balancer sends one.
+//
+// It is the INNERMOST wrapper, so it is inside what `LOCAL_HANDLERS` holds
+// and a request worker runs it too, reading the address off the connection
+// stub `operationContext()` builds. The wrappers outside it write their rows
+// through `ldapRefusal()`, which names the address itself.
+// ---------------------------------------------------------------------------
+function fromClientAddress(handler) {
+  log.debug("Entering fromClientAddress().");
+  log.debug("Leaving fromClientAddress().");
+  return function (req, res, next) {
+    return audit.withSource({ address: peerAddressOf(req) }, function () {
+      return handler(req, res, next);
+    });
+  };
+}
+
+// The connection's peer, or '' — an LDAP request always has a connection, but
+// a stub built in a test may not.
+function peerAddressOf(req) {
+  log.debug("Entering peerAddressOf().");
+  log.debug("Leaving peerAddressOf().");
+  return String((req && req.connection && req.connection.remoteAddress) || '');
+}
+
 const server = {};
 OPERATIONS.forEach(function (operation) {
   server[operation] = function () {
     const args = Array.prototype.slice.call(arguments);
+    args[args.length - 1] = fromClientAddress(args[args.length - 1]);
     if (REALMLESS_OPERATIONS.indexOf(operation) < 0) {
       // The handler is the LAST argument — ldapjs takes (dn, [middleware…],
       // handler) — and only it is wrapped, so a route registered with
@@ -9688,6 +9841,7 @@ function auditLdap(req, fields) {
   const boundDn = boundDnOf(req);
   audit.recordDirectory(Object.assign({
     channel: ldapChannelOf(req),
+    address: peerAddressOf(req),
     protocol: ldapChannelOf(req) === 'ldaps' ? 'LDAPS' : 'LDAP',
     actor: boundDn ? consoleKeyFor(boundDn, getEntry(boundDn)) : '',
     actorForm: boundDn
@@ -9710,6 +9864,7 @@ function ldapRefusal(req, code, summary, err, target, outcome) {
   const channel = req ? ldapChannelOf(req) : 'ldap';
   audit.failure(code || errorCodes.codeOf(err), {
     channel: channel,
+    address: peerAddressOf(req),
     protocol: channel === 'ldaps' ? 'LDAPS' : 'LDAP',
     actor: boundDn ? consoleKeyFor(boundDn, getEntry(boundDn)) : '',
     actorForm: boundDn,
@@ -10742,14 +10897,15 @@ server.add('', function (req, res, next) {
     log.debug('Leaving the LDAP add handler. An operational attribute.');
     return next(addOperationalRefusal);
   }
-  // ROOT_DN, not baseDn(): THIS IS THE SOCKET, and the socket has no realm. An
+  // Every realm's context, not baseDn(): THIS IS THE SOCKET, and the socket
+  // has no realm. An
   // LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
   // ambient realm at all, so asking whether its DN is under the DEFAULT realm's
   // base would refuse every realm's subtree — which is the one thing putting
   // the realm in the DN exists to make possible. The naming context this server
   // holds is the whole tree; which realm a DN belongs to is decided by where it
   // sits in that tree, and nothing here has to know.
-  if (!isUnder(dn, ROOT_DN)) {
+  if (!inNamingContext(dn)) {
     log.debug('Leaving the LDAP add handler. Outside the naming context.');
     return next(ldapRefusal(req, 'STS-LDAP-0003', 'an add of ' + dn +
       ' named a DN outside this directory\'s naming context',
@@ -10871,8 +11027,8 @@ server.add('', function (req, res, next) {
     noteAccountChange('created', addedEntry.dn, {},
                       attributeSnapshot(addedEntry));
   }
-  log.info('ldap: added ' + dn + ' with ' + Object.keys(attributes).length +
-           ' attribute(s).');
+  log.debug('ldap: added ' + dn + ' with ' + Object.keys(attributes).length +
+            ' attribute(s).');
   // What KIND of thing was created is decided by PLACEMENT and not by the
   // objectClass the client sent, and that is not a shortcut. This directory is
   // schemaless: a client can add a `groupOfNames` under ou=users or an entry
@@ -11196,13 +11352,14 @@ server.modifyDN('', function (req, res, next) {
       ' named ' + target + ', which already exists',
       new ldap.EntryAlreadyExistsError(target), dn));
   }
-  // ROOT_DN, not baseDn(): THIS IS THE SOCKET, and the socket has no realm of
+  // Every realm's context, not baseDn(): THIS IS THE SOCKET, and the socket
+  // has no realm of
   // its own. An LDAP client operating on `dc=acme,dc=example,dc=com` arrives
   // with nothing ambient, so asking whether its DN is under the DEFAULT realm's
   // base would refuse every realm's subtree — the one thing putting the realm
   // in the DN exists to make possible. Which realm a DN belongs to is decided
   // by where it sits, and `realmFor()` did that before this handler ran.
-  if (!isUnder(target, ROOT_DN)) {
+  if (!inNamingContext(target)) {
     log.debug('Leaving the LDAP modifyDN handler. Outside the naming context.');
     return next(ldapRefusal(req, 'STS-LDAP-0003', 'a rename of ' + dn +
       ' named a DN outside this directory\'s naming context',
@@ -11425,10 +11582,10 @@ server.search('', function (req, res, next) {
       'the root DSE was refused; only a base search reads it',
       new ldap.NoSuchObjectError(''), '(root DSE)'));
   }
-  // ROOT_DN, and this is the line that makes `ldapsearch -b
-  // "dc=acme,dc=example,dc=com"` work: a realm's subtree is INSIDE the naming
-  // context, so a search based there is in-context and is answered from the one
-  // tree. Comparing against the ambient realm's base instead would have made
+  // Every realm's context, and this is the line that makes `ldapsearch -b
+  // "dc=iyasec,dc=io"` work: a realm's tree is a naming context of its own, so
+  // a search based there is in-context and is answered from that realm's
+  // store. Comparing against the ambient realm's base instead would have made
   // every realm unreachable from 389 and 636, which is the whole reason the
   // realm is in the DN rather than in a partitioned store.
   // A BIND BEFORE A READ, in product mode, and asked before anything about
@@ -11438,7 +11595,7 @@ server.search('', function (req, res, next) {
     log.debug('Leaving the LDAP search handler. Not bound.');
     return next(readRefusal);
   }
-  if (!isUnder(base, ROOT_DN)) {
+  if (!inNamingContext(base)) {
     log.debug('Leaving the LDAP search handler. Outside the naming context.');
     return next(ldapRefusal(req, 'STS-LDAP-0003', 'a search based at ' + base +
       ' named a DN outside this directory\'s naming context',
@@ -14187,8 +14344,8 @@ function createGroup(displayName, options) {
                  : 'The entry at ' + dn + ' could not be written (' +
                    written.reason + ').'] });
   }
-  log.info('ldap: created the group ' + written.dn + ' with ' + members.length +
-           ' member(s) because somebody asked for it.');
+  log.debug('ldap: created the group ' + written.dn + ' with ' +
+            members.length + ' member(s) because somebody asked for it.');
   audit.recordDirectory({
     action: 'group.create',
     actor: String(opts.actor || ''),
@@ -15655,8 +15812,8 @@ function listen() {
       boundPort = address ? address.port : LDAP_PORT;
       listening = true;
       listenError = '';
-      // ROOT_DN: what this SOCKET serves. A realm's subtree is under it and is
-      // reported per realm on GET /admin/ldap/service, which does have a realm.
+      // ROOT_DN: the default realm's tree. Every other realm's is a naming
+      // context of its own, reported per realm on GET /admin/ldap/service.
       log.info('ldap: listening on TCP ' + boundPort + ' with base DN ' +
                ROOT_DN + '; ' + totalEntries() +
                ' entry/entries across ' + realms.count() + ' trust realm(s), ' +
@@ -15803,16 +15960,24 @@ function close() {
 // per container. Whether a row is current is asked inside its own realm,
 // because the container DNs and the subtree clocks are ambient.
 // ---------------------------------------------------------------------------
-function inRealmOf(id, fn) {
-  log.debug("Entering inRealmOf().");
+// **NAMED `inRealmById` AND NOT `inRealmOf`, AND THE NAME IS THE FIX
+// (2026-09-18).** It was a second `function inRealmOf(id, fn)` in this file
+// from 2026-09-17 (#74) — and a function declaration is hoisted, so the later
+// one REPLACED the socket's `inRealmOf(dn, fn)` near the top. Every LDAP
+// operation then looked its DN up as a realm ID, found nothing, and ran in the
+// DEFAULT realm: a search, bind, add or modify naming another realm's tree
+// answered from the default realm's store (`noSuchObject` for entries that
+// plainly exist). `tests/realm_domain.js` is what found it.
+function inRealmById(id, fn) {
+  log.debug("Entering inRealmById().");
   let answer = false;
   try {
     answer = realms.run(realms.get(id), fn);
   } catch (e) {
-    log.debug("Caught in inRealmOf(): " + ((e && e.message) || e));
+    log.debug("Caught in inRealmById(): " + ((e && e.message) || e));
     answer = false;
   }
-  log.debug("Leaving inRealmOf().");
+  log.debug("Leaving inRealmById().");
   return answer;
 }
 
@@ -15823,11 +15988,23 @@ function indexLifetime() {
     'in; the next lookup then rebuilds it. One index per realm.';
 }
 
-function unbounded() {
-  log.debug("Entering unbounded().");
-  log.debug("Leaving unbounded().");
-  return null;
+// ONE INDEX PER REALM, which is the whole of each index's bound (2026-09-18):
+// what an index holds is one entry per name, group or UUID in a directory
+// `ldap.maxEntries` caps, so it cannot outgrow the directory it indexes.
+function oneIndexPerRealm() {
+  log.debug("Entering oneIndexPerRealm().");
+  log.debug("Leaving oneIndexPerRealm().");
+  return 1;
 }
+
+function indexBound() {
+  log.debug("Entering indexBound().");
+  log.debug("Leaving indexBound().");
+  return 'Structural: one index per realm, holding at most one entry per ' +
+    'directory entry — and the directory is capped by ldap.maxEntries (' +
+    maxEntries() + ').';
+}
+
 
 function describeDirectoryCaches() {
   log.debug("Entering describeDirectoryCaches().");
@@ -15838,7 +16015,9 @@ function describeDirectoryCaches() {
       'entry under ou=users, so a sign-in does not walk the directory.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
     lifetime: indexLifetime,
     entries: function () {
       const out = [];
@@ -15851,7 +16030,7 @@ function describeDirectoryCaches() {
           key: cache.index.size + ' name(s), built ' + cache.builds +
             ' time(s)',
           validUntil: null,
-          valid: inRealmOf(id, function () {
+          valid: inRealmById(id, function () {
             return cache.version === directoryVersion &&
               cache.usersDn === normalizeDn(usersDn());
           }),
@@ -15868,7 +16047,9 @@ function describeDirectoryCaches() {
       'groups claim and every role check do not walk ou=groups.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
     lifetime: indexLifetime,
     entries: function () {
       const out = [];
@@ -15881,7 +16062,7 @@ function describeDirectoryCaches() {
           key: cache.index.byDn.size + ' group(s), built ' + cache.builds +
             ' time(s)',
           validUntil: null,
-          valid: inRealmOf(id, function () {
+          valid: inRealmById(id, function () {
             return cache.version === directoryVersion &&
               cache.size === entries.size;
           }),
@@ -15898,7 +16079,9 @@ function describeDirectoryCaches() {
       'is how a subject identifier and a SCIM id find a person.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
     lifetime: function () {
       return 'Until the directory changes and a lookup misses; a hit on a ' +
         'current entry does not wait for a rebuild. One index per realm.';
@@ -15925,7 +16108,11 @@ function describeDirectoryCaches() {
       'written under it.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: function () {
+      return MAX_SUBTREE_LISTINGS;
+    },
+    bound: 'Enforced: ' + MAX_SUBTREE_LISTINGS + ' container listings per ' +
+      'realm, the oldest dropped and walked again when next asked for.',
     lifetime: function () {
       return 'Until an entry under the container is added, removed or ' +
         'written without naming where; one entry per container listed.';
@@ -15938,7 +16125,7 @@ function describeDirectoryCaches() {
             realm: id,
             key: container + ' (' + held.rows.length + ' entries)',
             validUntil: null,
-            valid: inRealmOf(id, function () {
+            valid: inRealmById(id, function () {
               return held.version === subtreeVersion(container);
             }),
             basis: 'subtree version'

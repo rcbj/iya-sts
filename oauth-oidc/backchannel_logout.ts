@@ -302,6 +302,9 @@ const plannedCount = cacheRegistry.register({
   maxEntries: function (): number {
     return Number(config.value('oauth2.backchannelLogoutMaxRows'));
   },
+  bound: 'Enforced: oauth2.backchannelLogoutMaxRows per realm, the oldest ' +
+    'FINISHED delivery dropped first; a pending one is never dropped to ' +
+    'make room.',
   lifetime: function (): string {
     return 'Until oauth2.backchannelLogoutRetentionS after it was queued ' +
       '(finished or not), the oldest finished first past ' +

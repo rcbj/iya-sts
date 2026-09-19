@@ -140,7 +140,7 @@ async function apiAs(token, method, path, payload) {
 async function ensureRealm(id, name) {
   log.debug("Entering ensureRealm(). " + id);
   const made = await api("POST", "/admin-api/realms/create",
-                         { id: id, name: name });
+                         { id: id, domain: id + ".example.net", name: name });
   assert.ok(made.status === 200 ||
             /already/i.test(JSON.stringify(made.body || made.text)),
     "creating the realm " + id + " answered " + made.status + " " +
@@ -470,7 +470,9 @@ async function aRealmTokenStaysInItsRealm() {
                        "it answered " + persistence.status);
   });
   const createRealm = await apiAs(token, "POST", R + "/admin-api/realms/create",
-    { id: "rt-" + STAMP, name: "Should not exist" });
+    { id: "rt-" + STAMP,
+      domain: ("rt-" + STAMP) + ".example.net",
+      name: "Should not exist" });
   check("creating a realm is refused 403", function () {
     assert.strictEqual(createRealm.status, 403,
                        "it answered " + createRealm.status);
@@ -503,7 +505,13 @@ async function aRealmTokenStaysInItsRealm() {
 
   const rogueId = "ra-rogue-" + STAMP;
   const made = await api("POST", R + "/admin-api/applications/create",
-    { identifier: rogueId, name: "Another client", protocols: ["oauth2"] });
+    { identifier: rogueId, name: "Another client", protocols: ["oauth2"],
+      // CONFIDENTIAL, said at the create (2026-09-18). A create declaring
+      // OAuth with no credential is recorded PUBLIC (`none`), and the secret
+      // regenerated below does not change the method — so in product mode
+      // the client_credentials request was refused as a public client's
+      // before the gate this section is about was ever asked.
+      fields: { oauthTokenEndpointAuthMethod: "client_secret_basic" } });
   assert.ok(made.status === 200, "precondition: creating " + rogueId +
             " answered " + made.status + " " + made.text.slice(0, 200));
   const rogueSecret = await api("POST", R +

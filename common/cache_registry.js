@@ -30,13 +30,34 @@
 // declaration:
 //
 //   * `register(descriptor)` — a name, a title, a description, the owning
-//     file, a scope (`process` or `realm`), a `maxEntries()` (a number, or
-//     `null` for unbounded), a `lifetime()` sentence, and an `entries()` that
-//     answers the rows held NOW, each `{ realm, key, validUntil, valid,
-//     basis }`. The functions are called when the page is drawn and never
-//     before, so a descriptor costs nothing on a request.
-//   * `counter(name)` — `{ hit(), miss() }`, called at the ONE place each
-//     cache is looked up. Two integers per cache, process-wide, cumulative
+//     file, a scope (`process` or `realm`), a `maxEntries()`, a `lifetime()`
+//     sentence, and an `entries()` that answers the rows held NOW, each
+//     `{ realm, key, validUntil, valid, basis }`. The functions are called
+//     when the page is drawn and never before, so a descriptor costs nothing
+//     on a request.
+//   * `maxEntries()` IS A FINITE NUMBER, ALWAYS (2026-09-18). It was allowed
+//     to answer `null` for "unbounded", and twenty-four stores did — so the
+//     page said *unbounded* two dozen times about a service meant to run for
+//     months. Every store has a bound now, of one of two kinds, and the
+//     descriptor's `bound` member says which in a sentence:
+//       - ENFORCED: the owner makes room before it inserts, through
+//         `makeRoom()` below, and either drops the oldest entry or refuses
+//         the insert — which one is the owner's call and is argued there
+//         (a store that decides a REPLAY refuses, because forgetting a live
+//         entry reopens the replay; a store of things this service handed
+//         out, or could rebuild, drops the oldest).
+//       - STRUCTURAL: the store cannot outgrow something else that is
+//         bounded — one key set per realm, one index per realm over a
+//         directory `ldap.maxEntries` caps, one row per setting that names a
+//         file. Nothing is evicted because nothing can grow.
+//     A descriptor answering anything but a finite number is shown with the
+//     problem `STS-CORE-0096`, and `tests/cache_registry.js` fails on it.
+//   * FOR A `realm` SCOPE THE BOUND IS PER REALM. `size` counts every
+//     realm's rows; `largestRealm` is the one partition to compare with the
+//     bound, and the page draws both.
+//   * `counter(name)` — `{ hit(), miss(), evicted(n), refused() }`, called
+//     at the ONE place each cache is looked up (and, for the last two, by
+//     `makeRoom()`). Two integers per cache, process-wide, cumulative
 //     since the process started. A store whose lookup is in a file this
 //     repository may not edit (the parent project's Kerberos modules)
 //     registers with `counted: false`, and the page says "not counted" rather
@@ -59,7 +80,9 @@
 // **THE FIGURES ARE THE ANSWERING PROCESS'S.** A request worker and a cluster
 // node each hold caches of their own; nothing here is coordinated, because a
 // cache is exactly the thing a store is not (root CLAUDE.md, *One front
-// process*). The page says so.
+// process*). The page says so. What crosses to another node is `snapshot()`
+// below — sizes and counters, never a row — which `cluster/cluster.js` puts
+// on the node's membership row (2026-09-18).
 // ===========================================================================
 
 const nodeCrypto = require('crypto');
@@ -76,13 +99,16 @@ const KINDS = ['cache', 'replay'];
 /** @type {Map<string, any>} */
 const descriptors = new Map();
 
-/** @type {Map<string, {hits: number, misses: number}>} */
+/**
+ * @type {Map<string, {hits: number, misses: number, evictions: number,
+ *   refusals: number}>}
+ */
 const counts = new Map();
 
 function countsFor(name) {
   log.debug("Entering countsFor().");
   if (!counts.has(name)) {
-    counts.set(name, { hits: 0, misses: 0 });
+    counts.set(name, { hits: 0, misses: 0, evictions: 0, refusals: 0 });
   }
   log.debug("Leaving countsFor().");
   return counts.get(name);
@@ -133,8 +159,92 @@ function counter(name) {
     },
     miss: function () {
       c.misses += 1;
+    },
+    evicted: function (n) {
+      c.evictions += Math.max(0, Number(n) || 0);
+    },
+    refused: function () {
+      c.refusals += 1;
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// MAKING ROOM BEFORE AN INSERT (2026-09-18) — the one way an owner enforces
+// its bound, so every enforced bound on the page behaves the same way.
+//
+// Called before a NEW key is set (an update of a key already held needs no
+// room). `store` is a Map, or a `realms.map()` (whose methods act on the
+// ambient realm's partition, which is what a per-realm bound means), and
+// `max` the bound. In order:
+//
+//   1. `options.expired(value, key)`, when given, drops what is already past
+//      its deadline. Owners that already prune on the same path pass nothing.
+//   2. Below the bound: room, nothing else happens.
+//   3. At the bound, `options.policy`:
+//        * 'evict-oldest' (the default) — the entry INSERTED first goes (a
+//          Map iterates in insertion order), repeatedly, until there is room.
+//          Returns `{ ok: true, evicted: n }`.
+//        * 'refuse' — nothing is dropped and `{ ok: false }` is returned; the
+//          owner refuses the request in its own protocol's words.
+//
+// `options.counter`, the object `register()` returned, has the eviction or
+// the refusal added to the figures the page draws. A refusal is also LOGGED,
+// once per store per minute at most — a full replay store refusing traffic is
+// a state an operator has to hear about, and a line per refused request is
+// the flood `no per-event failure logs` forbids.
+// ---------------------------------------------------------------------------
+/** @type {Map<string, number>} */
+const lastRefusalLog = new Map();
+
+// Hot path: called before every insert into a bounded store, so no
+// Entering/Leaving pair — it would add two log lines per cached write.
+function makeRoom(store, max, options) {
+  const o = options || {};
+  const limit = Number(max);
+  if (typeof o.expired === 'function' && store.size >= limit) {
+    const stale = [];
+    store.forEach(function (value, key) {
+      if (o.expired(value, key)) {
+        stale.push(key);
+      }
+    });
+    stale.forEach(function (key) {
+      store.delete(key);
+    });
+  }
+  if (!(isFinite(limit) && limit > 0) || store.size < limit) {
+    return { ok: true, evicted: 0 };
+  }
+  if (o.policy === 'refuse') {
+    if (o.counter && typeof o.counter.refused === 'function') {
+      o.counter.refused();
+    }
+    const name = String(o.name || 'a bounded store');
+    const now = Date.now();
+    if (!(now - (lastRefusalLog.get(name) || 0) < 60000)) {
+      lastRefusalLog.set(name, now);
+      log.warn(errorCodes.tag('STS-CORE-0097') + 'Cache ' + name + ' is ' +
+               'full (' + store.size + ' of ' + limit + ' live entries) and ' +
+               'refuses new ones rather than forgetting a live one. ' +
+               (o.setting ? 'Raise ' + o.setting + ' if this load is ' +
+                'legitimate. ' : '') + 'Logged at most once a minute.');
+    }
+    return { ok: false, evicted: 0 };
+  }
+  let evicted = 0;
+  while (store.size >= limit) {
+    const first = store.keys().next();
+    if (first.done) {
+      break;
+    }
+    store.delete(first.value);
+    evicted += 1;
+  }
+  if (evicted && o.counter && typeof o.counter.evicted === 'function') {
+    o.counter.evicted(evicted);
+  }
+  return { ok: true, evicted: evicted };
 }
 
 function names() {
@@ -210,6 +320,22 @@ function textOf(f) {
   return String(v || '');
 }
 
+// The rows of the fullest realm, for a per-realm bound (see the header).
+function largestRealmOf(rows) {
+  log.debug("Entering largestRealmOf().");
+  const per = new Map();
+  rows.forEach(function (r) {
+    const id = r.realm === null ? '' : r.realm;
+    per.set(id, (per.get(id) || 0) + 1);
+  });
+  let most = 0;
+  per.forEach(function (n) {
+    most = Math.max(most, n);
+  });
+  log.debug("Leaving largestRealmOf().");
+  return most;
+}
+
 function summaryOf(d, held) {
   log.debug("Entering summaryOf().");
   const c = countsFor(d.name);
@@ -217,6 +343,19 @@ function summaryOf(d, held) {
   const valid = held.rows.filter(function (r) {
     return r.valid;
   }).length;
+  const max = numberOrNull(d.maxEntries);
+  let problem = held.problem;
+  if (max === null) {
+    // Every store has a bound (see the header). One that reports none is a
+    // regression, shown on its row rather than drawn as "unbounded".
+    log.error(errorCodes.tag('STS-CORE-0096') + 'Cache ' + d.name +
+              ' reports no bound: its maxEntries() answered no finite ' +
+              'number.');
+    problem = (problem ? problem + ' ' : '') + 'It reports no bound ' +
+      '(STS-CORE-0096).';
+  }
+  const largest = d.scope === 'realm' ? largestRealmOf(held.rows)
+    : held.rows.length;
   const out = {
     name: d.name,
     title: d.title,
@@ -226,18 +365,27 @@ function summaryOf(d, held) {
     kind: d.kind || 'cache',
     persisted: !!d.persisted,
     size: held.rows.length,
+    largestRealm: largest,
     valid: valid,
     expired: held.rows.length - valid,
-    maxEntries: numberOrNull(d.maxEntries),
+    maxEntries: max,
+    bound: typeof d.bound === 'function' ? textOf(d.bound)
+      : String(d.bound || ''),
+    atBound: max !== null && largest >= max,
     lifetime: textOf(d.lifetime),
     settings: Array.isArray(d.settings) ? d.settings.slice() : [],
     counted: d.counted !== false,
+    notCountedWhy: d.counted === false
+      ? String(d.notCountedWhy || 'the lookup is in a file this ' +
+               'repository does not edit') : '',
     hitMeaning: String(d.hitMeaning ||
                        'a lookup answered from the cache'),
     hits: d.counted === false ? null : c.hits,
     misses: d.counted === false ? null : c.misses,
     hitRatio: d.counted === false || !lookups ? null : c.hits / lookups,
-    problem: held.problem
+    evictions: c.evictions,
+    refusals: c.refusals,
+    problem: problem
   };
   log.debug("Leaving summaryOf().");
   return out;
@@ -253,6 +401,38 @@ function report(now) {
   });
   log.debug("Leaving report().");
   return out;
+}
+
+// THE COMPACT FORM ANOTHER CLUSTER NODE READS (2026-09-18). `cluster.js`
+// puts it in this node's membership row, which is the only channel between
+// nodes (`cluster/CLAUDE.md`), so it is small on purpose: per store the name,
+// the size, the fullest realm, the valid count, the bound and the four
+// counters — about sixty bytes a store and nothing that grows with the store.
+// Titles, descriptions and rows stay here; the page takes those from its own
+// registry, which lists the same stores on every node of one build.
+function snapshot(now) {
+  log.debug("Entering snapshot().");
+  const at = typeof now === 'number' ? now : Date.now();
+  const out = report(at).map(function (c) {
+    return [c.name, c.size, c.largestRealm, c.valid, c.maxEntries,
+            c.hits, c.misses, c.evictions, c.refusals];
+  });
+  log.debug("Leaving snapshot().");
+  return { at: at, pid: process.pid, caches: out };
+}
+
+// The reverse of `snapshot()`'s rows, for the page.
+function unpackSnapshotRow(row) {
+  log.debug("Entering unpackSnapshotRow().");
+  const r = Array.isArray(row) ? row : [];
+  const num = function (v) {
+    return typeof v === 'number' && isFinite(v) ? v : null;
+  };
+  log.debug("Leaving unpackSnapshotRow().");
+  return { name: String(r[0] || ''), size: num(r[1]) || 0,
+           largestRealm: num(r[2]) || 0, valid: num(r[3]) || 0,
+           maxEntries: num(r[4]), hits: num(r[5]), misses: num(r[6]),
+           evictions: num(r[7]) || 0, refusals: num(r[8]) || 0 };
 }
 
 // One cache: its summary and every row it holds now, oldest deadline first
@@ -294,6 +474,8 @@ function resetCounts() {
   counts.forEach(function (c) {
     c.hits = 0;
     c.misses = 0;
+    c.evictions = 0;
+    c.refusals = 0;
   });
   log.debug("Leaving resetCounts().");
 }
@@ -360,6 +542,9 @@ function realmMapRows(realmsModule, store, rowOf) {
 
 module.exports = {
   register: register,
+  makeRoom: makeRoom,
+  snapshot: snapshot,
+  unpackSnapshotRow: unpackSnapshotRow,
   digestKey: digestKey,
   realmMapRows: realmMapRows,
   realmRows: realmRows,

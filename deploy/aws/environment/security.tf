@@ -8,8 +8,9 @@
 # `pki` is the plain-HTTP CRL/OCSP front-end port — 8082 in the test
 # environments and 80 in `testidp` (locals.tf, `var.pki_listener_port`) —
 # and the node behind it is on 8082 either way. 636 (LDAPS) joined the list
-# on 2026-09-17. Every rule below iterates `published_ports`, so neither side
-# is written here.
+# on 2026-09-17, and TCP 88 (the KDC) in `testidp` on 2026-09-18
+# (`var.publish_kerberos`; no UDP). Every rule below iterates
+# `published_ports`, so neither side is written here.
 #                                                                   │
 #   runner ◀──────────── any TCP (GNAP push, the PEP's notify) ─────┘
 #

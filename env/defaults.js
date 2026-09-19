@@ -50,6 +50,7 @@ var config = {
   global: {
     host: "0.0.0.0",              // HTTP bind address; restart to apply
     port: 8081,                   // HTTP port; restart to apply
+    domain: "example.com",        // Domain; restart to apply
     trustProxy: false,            // Trust forwarded headers
     trustedProxies: "",           // Trusted proxy addresses
     proxyProtocol: "off",         // PROXY protocol on the TCP listeners; restart to apply
@@ -77,6 +78,7 @@ var config = {
     continueWaitS: 5,                                                      // Continuation wait (seconds)
     maxPolls: 60,                                                          // Polls allowed before too_many_attempts
     signatureMaxAgeS: 300,                                                 // Key proof freshness (seconds)
+    replayCacheSize: 100000,                                               // Signature replay history size (per realm)
     interactionStartModes: "redirect,app,user_code,user_code_uri",         // Interaction start modes
     finishMethods: "redirect,push",                                        // Interaction finish methods
     keyProofs: "httpsig,mtls,jwsd,jws",                                    // Key proofing methods
@@ -273,6 +275,8 @@ var config = {
     dpopNonceRequired: false,                    // Require a DPoP server nonce
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
     dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
+    dpopReplayCacheSize: 100000,                 // DPoP proof replay history size (per realm)
+    dpopNonceCacheSize: 10000,                   // DPoP server nonces held (per realm)
     refreshTokenRotation: false,                 // Rotate refresh tokens
     refreshTokenRequireDpop: false,              // Require DPoP on refresh tokens
     refreshTokenRequireMtls: false,              // Require mutual TLS on refresh tokens
@@ -288,6 +292,7 @@ var config = {
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
     registeredSecretBytes: 24,                   // Dynamically registered secret random bytes
     authorizationCodeTtlS: 300,                  // Authorization code lifetime (s)
+    redeemedCodeCacheSize: 10000,                // Redeemed authorization codes remembered (per realm)
     maxPendingTransactions: 500,                 // RFC 9700: remembered transactions (per realm)
     maxRefreshTokenFamilies: 2000,               // RFC 9700: remembered refresh tokens (per realm)
     signedMetadataAlgorithm: "RS256",            // Algorithm signed_metadata is signed with
@@ -589,6 +594,7 @@ var config = {
     signedMetadataCertificateHeader: "x5u",                // Issuer signed_metadata certificate header
     proofIatWindowS: 600,                                  // Proof of possession iat window (s)
     cNonceTtlS: 300,                                       // c_nonce lifetime (s)
+    cNonceCacheSize: 10000,                                // c_nonce values held (per realm)
     issuerDisplayName: "IdP Tools Mock Credential Issuer", // Issuer display name
     domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
     generatedDidCredentialLifetimeS: 3600,                 // /did/generate credential lifetime (s)
@@ -607,6 +613,8 @@ var config = {
     kbMaxAgeS: 600,                                    // Key Binding max age (s)
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
+    maxTransactions: 5000,                             // Presentation requests waiting (per realm)
+    signInRegisterMaxEntries: 100000,                  // Wallet sign-in register size (per realm)
     walletPresentationPath: "/vc-presentation-1.html", // Wallet presentation page
     allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
     trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
@@ -664,7 +672,6 @@ var config = {
   ldap: {
     port: 389,                                                                                                                                  // LDAP port; restart to apply
     tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
-    baseDn: "dc=example,dc=com",                                                                                                                // Base DN; restart to apply
     autocreateUsers: true,                                                                                                                      // Auto-create users
     maxEntries: 2000,                                                                                                                           // Maximum entries
     sizeLimit: 500,                                                                                                                             // Search size limit

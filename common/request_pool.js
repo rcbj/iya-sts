@@ -912,6 +912,8 @@ const affinityCount = cacheRegistry.register({
   maxEntries: function () {
     return AFFINITY_MAX * POOLS.length;
   },
+  bound: 'Enforced: 5000 per pool, the oldest dropped; a dropped pin is ' +
+    'simply routed afresh.',
   lifetime: function () {
     return 'No expiry: forgotten when its worker exits; the oldest goes ' +
       'first when a pool holds ' + AFFINITY_MAX + '. Front process only.';
@@ -2132,7 +2134,11 @@ function maxSocketsPerWorker() {
   return (n > 0) ? n : 64;
 }
 
-function fork(pool) {
+// `slot` is the worker's position in its pool, handed to it as
+// STS_REQUEST_WORKER_SLOT so that its persistence origin is the same one the
+// worker in that position had before a restart (2026-09-18, `adoptOrigin()` in
+// persistence/persistence_postgres.js).
+function fork(pool, slot) {
   log.debug('Entering fork(). pool=' + (pool || PROTOCOL_POOL));
   const which = pool === SURFACE_POOL ? SURFACE_POOL : PROTOCOL_POOL;
   // `s` for a surface worker's socket, so that a directory listing — and the
@@ -2179,8 +2185,12 @@ function fork(pool) {
     // Connect back channel in `common/oidc_rp.ts`, which names the worker that
     // should redeem a code and has to know whether that can be itself — see
     // PROTOCOL_WORKER_HEADER.
-    env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1',
-                                          STS_REQUEST_WORKER_POOL: which })
+    env: Object.assign({}, process.env, {
+      STS_REQUEST_WORKER: '1',
+      STS_REQUEST_WORKER_POOL: which,
+      STS_REQUEST_WORKER_SLOT: typeof slot === 'number'
+        ? which + '-' + slot : ''
+    })
   });
   const entry = { child: child, pid: child.pid, pool: which, socket: socket,
                   ready: false,
@@ -3172,7 +3182,7 @@ function start() {
   const forks = [];
   POOLS.forEach(function (pool) {
     for (let i = 0; i < wantedByPool[pool]; i++) {
-      forks.push(fork(pool).settled);
+      forks.push(fork(pool, i).settled);
     }
   });
   starting = Promise.all(forks).then(function (settled) {

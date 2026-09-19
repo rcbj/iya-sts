@@ -16,6 +16,19 @@
 #   bootstrap-admin-password the BOOTSTRAP ADMINISTRATOR'S PASSWORD — the only
 #                            way into a fresh deployment, and the one an
 #                            operator actually goes looking for
+#   krb5-krbtgt-password     (2026-09-18) the default realm's krbtgt password,
+#                            as KRB5_KRBTGT_PASSWORD
+#   krb5-service-password    (2026-09-18) the acceptor's service account
+#                            password, as KRB5_SERVICE_PASSWORD
+#
+# **WITHOUT THE LAST TWO A PRODUCT KDC ISSUES NO TICKET AT ALL.** Product mode
+# refuses to build `krbtgt/<realm>` or the `krb5.servicePrincipal` account
+# while their passwords are the defaults the settings table publishes
+# (`krbtgt-mock-password` is a golden ticket handed out in the README;
+# kerberos/CLAUDE.md) — so testidp answered every `kinit` with "Server not
+# found in Kerberos database" until these existed. Nobody types them: they
+# only derive keys, so they are long and alphanumeric like the database
+# passwords. Rotating one invalidates every ticket issued under it.
 #
 # **THE POINT OF THE FIFTH IS THAT IT IS NOT IN A LOG.** The service generates
 # a bootstrap password and announces it ONCE (`common/credentials.ts`), which
@@ -91,6 +104,19 @@ resource "random_password" "bootstrap_admin" {
   override_special = "!#%*+-=?@^_~"
 }
 
+# The KDC's two long-term secrets (the header). Nobody types them.
+resource "random_password" "krb5_krbtgt" {
+  count   = local.bootstrap_secret ? 1 : 0
+  length  = 40
+  special = false
+}
+
+resource "random_password" "krb5_service" {
+  count   = local.bootstrap_secret ? 1 : 0
+  length  = 40
+  special = false
+}
+
 locals {
   # PRODUCT MODE ONLY — see the header. `dev` and `ci` are development, and a
   # new secret and a new environment variable there would be a new task
@@ -104,6 +130,8 @@ locals {
     admin-api-client-secret = random_password.admin_api_client_secret.result
     }, local.bootstrap_secret ? {
     bootstrap-admin-password = random_password.bootstrap_admin[0].result
+    krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
+    krb5-service-password    = random_password.krb5_service[0].result
   } : {})
 }
 

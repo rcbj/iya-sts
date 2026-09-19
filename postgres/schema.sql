@@ -148,7 +148,13 @@ CREATE TABLE IF NOT EXISTS sts_realms (
   name        text,
   description text,
   created_at  bigint,
-  overrides   jsonb NOT NULL DEFAULT '{}'::jsonb);
+  overrides   jsonb NOT NULL DEFAULT '{}'::jsonb,
+  domain      text);
+
+-- A realm's DNS domain (2026-09-18, schema version 6). Added separately as
+-- well, because `CREATE TABLE IF NOT EXISTS` leaves a table built by an older
+-- version of this file without it; running this file again adds it.
+ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text;
 
 CREATE TABLE IF NOT EXISTS sts_appconfig (
   key   text PRIMARY KEY,
@@ -362,7 +368,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (5) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (6) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

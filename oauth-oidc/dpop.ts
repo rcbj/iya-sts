@@ -208,7 +208,7 @@ const IAT_SKEW_SECONDS = 300;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const seenJtis = realms.map({ persist: 'dpop.seenJtis' });
+const seenJtis = realms.map({ persist: 'dpop.seenJtis', retain: 'age' });
 
 // ---------------------------------------------------------------------------
 // THE REPLAY CHECK ACROSS NODES (2026-09-14, #46).
@@ -294,7 +294,8 @@ const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const issuedNonces = realms.map({ persist: 'dpop.issuedNonces' });
+const issuedNonces = realms.map({ persist: 'dpop.issuedNonces',
+                                  retain: 'age' });
 // The default of `oauth2.dpopNonceTtlS`, kept under its old name for the same
 // reason IAT_SKEW_SECONDS is.
 const NONCE_TTL_SECONDS = 300;
@@ -319,14 +320,17 @@ const seenJtisCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a proof already used, so the request was refused',
-  settings: ['oauth2.dpopIatSkewS'],
-  maxEntries: function (): null {
-    return null;
+  settings: ['oauth2.dpopIatSkewS', 'oauth2.dpopReplayCacheSize'],
+  maxEntries: function (): number {
+    return Number(config.value('oauth2.dpopReplayCacheSize'));
   },
+  bound: 'Enforced: oauth2.dpopReplayCacheSize live IDs per realm. A full ' +
+    'history REFUSES the next proof (STS-OAUTH-0554) rather than forget a ' +
+    'live one, which would reopen its replay.',
   lifetime: function (): string {
     return 'Twice oauth2.dpopIatSkewS (' +
       2 * secondsSetting('oauth2.dpopIatSkewS', IAT_SKEW_SECONDS) +
-      ' s) after the proof was seen. No size limit: pruned by time only.';
+      ' s) after the proof was seen.';
   },
   entries: function (): unknown[] {
     const windowS = 2 * secondsSetting('oauth2.dpopIatSkewS',
@@ -349,10 +353,12 @@ const issuedNoncesCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a nonce found current, so the proof was accepted',
-  settings: ['oauth2.dpopNonceTtlS'],
-  maxEntries: function (): null {
-    return null;
+  settings: ['oauth2.dpopNonceTtlS', 'oauth2.dpopNonceCacheSize'],
+  maxEntries: function (): number {
+    return Number(config.value('oauth2.dpopNonceCacheSize'));
   },
+  bound: 'Enforced: oauth2.dpopNonceCacheSize per realm; the oldest nonce ' +
+    'is dropped, and a client presenting it is handed a fresh one.',
   lifetime: function (): string {
     return 'oauth2.dpopNonceTtlS (' +
       secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS) +
@@ -543,10 +549,16 @@ class Dpop {
   }
 
   issueNonce(): string {
-    const { log, randomId, nowSec } = this.deps;
+    const { log, randomId, nowSec, config } = this.deps;
     log.debug('Entering Dpop.issueNonce().');
     this.pruneNonces();
     const nonce = randomId(16);
+    // The bound (oauth2.dpopNonceCacheSize): a nonce is a value this service
+    // handed out, so at the bound the oldest goes and its holder is simply
+    // asked again — RFC 9449 section 8's use_dpop_nonce.
+    cacheRegistry.makeRoom(issuedNonces,
+                           Number(config.value('oauth2.dpopNonceCacheSize')),
+                           { counter: issuedNoncesCount });
     issuedNonces.set(nonce, nowSec());
     log.debug('Leaving Dpop.issueNonce().');
     return nonce;
@@ -710,7 +722,8 @@ class Dpop {
   // of the two it is serving.
   // -------------------------------------------------------------------------
   verifyProof(rawHeader: unknown, opts?: Json): Json {
-    const { log, jsonFromB64u, stsCrypto, trustProxy, nowSec } = this.deps;
+    const { log, jsonFromB64u, stsCrypto, trustProxy, nowSec,
+            config } = this.deps;
     log.debug('Entering Dpop.verifyProof(). htm=' + (opts && opts.htm) +
               ', htu=' + (opts && opts.htu));
     const options = opts || {};
@@ -988,6 +1001,22 @@ class Dpop {
                   ').');
     }
 
+    // The bound (oauth2.dpopReplayCacheSize), asked LAST so every other
+    // refusal keeps its own code. This history decides a replay, so a full
+    // one refuses rather than forget a live jti — `pruneJtis()` above has
+    // already dropped the expired ones.
+    const room = cacheRegistry.makeRoom(
+      seenJtis, Number(config.value('oauth2.dpopReplayCacheSize')),
+      { policy: 'refuse', counter: seenJtisCount, name: 'dpop.proof-ids',
+        setting: 'oauth2.dpopReplayCacheSize' });
+    if (!room.ok) {
+      log.debug("Leaving Dpop.verifyProof(). The replay history is full.");
+      return fail('STS-OAUTH-0554',
+                  'This server cannot remember another DPoP proof right ' +
+                  'now: its replay history for this realm is full of live ' +
+                  'proofs, and forgetting one would let it be replayed. ' +
+                  'Retry shortly with a fresh proof.');
+    }
     seenJtis.set(String(claims.jti), nowSec());
     if (reserved) {
       reserved.kept = true;
@@ -1234,7 +1263,9 @@ class Dpop {
     // ONLY FOR A VERIFIED TOKEN, for the reason given about cnf below: the
     // header, issuer and audience of a token signed by somebody else are
     // strings this service has no configuration to check them against, and
-    // the OID4VCI credential endpoints accept such tokens by design.
+    // the OID4VCI endpoints accept such tokens in DEVELOPMENT mode (product
+    // refuses one through `requireVerified` —
+    // `mode.acceptsUnverifiedIssuerTokens()`, 2026-09-18).
     if (verified) {
       const profileProblem = jwtAccessToken.resourceServerRefusal(accessToken,
         claims, baseUrlOf(req), { audience: opts.audience || null });
@@ -1304,8 +1335,9 @@ class Dpop {
     // be READ without trusting the signature, and a token carrying none
     // cannot satisfy a requirement that it be constrained — so unlike the two
     // checks above, this one does not step aside for a token this service
-    // cannot verify. The OpenID4VCI endpoints accept such tokens by design,
-    // and while one of these settings is on they accept constrained ones only.
+    // cannot verify. The OpenID4VCI endpoints accept such tokens in
+    // development mode, and while one of these settings is on they accept
+    // constrained ones only.
     const required: Json = senderConstraints.accessTokenRefusal({
       where: where || 'this resource',
       boundJkt: boundTo,

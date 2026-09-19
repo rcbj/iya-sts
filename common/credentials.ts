@@ -217,7 +217,8 @@ interface CredentialsDeps {
 // edited in place — `beginTotpEnrolment()` sets a whole new record — so it
 // owes no `touch()`. And it carries no `tombstone`: it is keyed by a NAME,
 // which a person legitimately writes again every time they start over.
-const pendingTotp = realms.map({ persist: 'credentials.pendingTotp' });
+const pendingTotp = realms.map({ persist: 'credentials.pendingTotp',
+                                 retain: 'age' });
 
 // THE PENDING SETS. `realms.map()` for the reason every store in this service
 // is: a set begun in one realm must not be confirmable in another, and the
@@ -232,7 +233,7 @@ const pendingTotp = realms.map({ persist: 'credentials.pendingTotp' });
 // they have to be, the page shows them — and sealed in the ROW, which is gone
 // when the set is confirmed, discarded, replaced or swept.
 const pendingBackupCodes = realms.map({
-  persist: 'credentials.pendingBackupCodes' });
+  persist: 'credentials.pendingBackupCodes', retain: 'age' });
 
 // The attribute is the same one `addKey()` writes; this register holds only
 // what has been ASKED FOR and not yet proved. Per realm, like every other
@@ -243,7 +244,8 @@ const pendingBackupCodes = realms.map({
 // (`sts_portal_backup_keys`) because another node minted it. A challenge is
 // not a credential, so the row leaks nothing, and it is sealed anyway like
 // every minted row.
-const pendingKeys = realms.map({ persist: 'credentials.pendingKeys' });
+const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
+                                 retain: 'age' });
 
 class Credentials {
   constructor(private readonly deps: CredentialsDeps) {
@@ -2163,7 +2165,12 @@ class Credentials {
       return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name ' +
                                    'to enrol an authenticator for.'] });
     }
-    if (!mode.autoCreates() && !this.hasEntry(name)) {
+    // `entryExists()` AND NOT `hasEntry()` (2026-09-18). That one answers
+    // false always — it is the bootstrap's, so the bootstrap always attempts
+    // its create — and here it refused EVERY enrolment in product mode, for
+    // people who plainly exist: found by the portal jobs run against a
+    // product-mode deployment, which no development-mode run could reach.
+    if (!mode.autoCreates() && !this.entryExists(name)) {
       log.info('credentials: product mode, so an authenticator was NOT ' +
                'enrolled for "' + name + '" — there is no entry for them.');
       log.debug("Leaving Credentials.beginTotpEnrolment().");
@@ -4119,7 +4126,10 @@ class Credentials {
     }
     // PRODUCT MODE REFUSES TO ENROL FOR SOMEBODY WHO DOES NOT EXIST, which is
     // `addKey()`'s own refusal made early — see the header.
-    if (!mode.autoCreates() && !this.hasAnyEntry(name)) {
+    // `entryExists()` for the same reason (2026-09-18): the check this used,
+    // `hasAnyEntry()` (removed), read the key store, which answers an array
+    // for a name nobody created, so this refusal never refused.
+    if (!mode.autoCreates() && !this.entryExists(name)) {
       log.debug("Leaving Credentials.beginKeyEnrolment().");
       return coded('STS-AUTHN-0024', { ok: false, errors: ['This service is ' +
                                    'in product mode, where a security key ' +
@@ -4160,33 +4170,6 @@ class Credentials {
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
              role: role, exclude: record.exclude.slice(),
              expiresAt: new Date(record.expires).toISOString() };
-  }
-
-  // Is there an entry at all? `hasEntry()` above answers false always and says
-  // so — it is the bootstrap's, and `readPassword()` cannot tell an absent
-  // entry from one with no password. This asks the question the key store can
-  // answer: `readWebauthn()` returns an array for an entry and throws or
-  // answers nothing for a name that is not there.
-  private hasAnyEntry(username) {
-    const { log } = this.deps;
-    const directory = this.directory;
-    log.debug("Entering Credentials.hasAnyEntry().");
-    if (!directory || typeof directory.readWebauthn !== 'function') {
-      log.debug("Leaving Credentials.hasAnyEntry().");
-      return false;
-    }
-    try {
-      log.debug("Leaving Credentials.hasAnyEntry().");
-      return Array.isArray(
-        directory.readWebauthn(String(username || '').trim()));
-    } catch (e) {
-      log.debug("Caught in Credentials.hasAnyEntry(): " +
-                ((e && e.message) || e));
-      log.debug("Leaving Credentials.hasAnyEntry().");
-      // Not there, or the store refused. Either way this is not somebody a key
-      // may be enrolled for in product mode.
-      return false;
-    }
   }
 
   pendingKeyEnrolmentFor(username) {

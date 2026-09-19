@@ -278,15 +278,29 @@ app.use(enterRealm);
 // alternative is a request threaded through a dozen signers to build one URL.
 // It is BELOW the realm middleware, which nothing may be registered above.
 // ---------------------------------------------------------------------------
+//
+// AND THE AUDIT LOG'S SOURCE (2026-09-18), entered in the same place and for
+// the same reason: every row an HTTP request causes — an authentication, a
+// refused sign-in, a consent, a sign-out — carries the client's address,
+// though almost none of the code that writes one was handed the request.
+// `common/audit.js` resolves the address from it only when a row is written.
 app.use(function (req, res, next) {
   log.debug("Entering the ambient-request middleware.");
   log.debug("Leaving the ambient-request middleware.");
-  return certificateHeader.enterRequest(req, next);
+  return certificateHeader.enterRequest(req, function () {
+    return audit.withSource({ req: req }, next);
+  });
 });
 
 // The rewrite itself. A function rather than an inline regex so that the ONE
 // pattern that decides what a link is has one home and one test: `="/` and not
 // `="//`, which is a protocol-relative URL to another host.
+//
+// `formaction` IS A LINK TOO (2026-09-18). `\baction` never matched it — the
+// `m` before it is a word character, so there is no boundary — and a button
+// carrying one posted to the DEFAULT realm from inside any other: the export
+// on /admin/pki, the reset on /admin/config, and Generate Secret on
+// /admin/applications/new, which is where it was noticed.
 function withRealmLinks(html, prefix) {
   log.debug("Entering withRealmLinks().");
   if (!prefix) {
@@ -294,7 +308,8 @@ function withRealmLinks(html, prefix) {
     return html;
   }
   log.debug("Leaving withRealmLinks().");
-  return html.replace(/\b(href|action|src)="\/(?!\/)/g, '$1="' + prefix + '/');
+  return html.replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
+                      '$1="' + prefix + '/');
 }
 
 // WHICH REALM IDS ARE ALREADY SPOKEN FOR — the first path segment of every

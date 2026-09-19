@@ -128,6 +128,12 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const fixtures = require("./oauth_fixtures.js");
+const facts = require("./service_facts.js");
+// PRODUCT mode implies RFC 9700 mode, which ENFORCES client authentication
+// where development only observes it, and allows a public client no
+// client_credentials grant. Two sections read it (set in test()).
+let PRODUCT = false;
 
 var appconfig;
 let appconfigProblem = null;
@@ -337,12 +343,23 @@ function browser() {
 
 const REDIRECT_URI = "https://example.test/builtin-callback";
 
+// PKCE ON EVERY REQUEST (2026-09-18). The clients below are public — they
+// hold no secret — and a product-mode service holds a public client to PKCE
+// with S256 and a challenge it has not seen before, so each authorization
+// request carries a fresh pair and the code it produces is redeemed with the
+// verifier of the MOST RECENT request for that client, which is the order this
+// file always asks in.
+const latestVerifier = {};
+
 function authorizeUrl(clientId, state) {
   log.debug("Entering authorizeUrl().");
+  const pair = fixtures.pkce();
+  latestVerifier[clientId] = pair.verifier;
   log.debug("Leaving authorizeUrl().");
   return "/realm/" + REALM + "/oauth2/authorize?" + form({
     response_type: "code", client_id: clientId, redirect_uri: REDIRECT_URI,
-    scope: "openid", state: state || ("builtin-" + REALM)
+    scope: "openid", state: state || ("builtin-" + REALM),
+    code_challenge: pair.challenge, code_challenge_method: pair.method
   });
 }
 
@@ -463,7 +480,8 @@ function redeem(code, clientId) {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form({ grant_type: "authorization_code", code: code,
-                 redirect_uri: REDIRECT_URI, client_id: clientId })
+                 redirect_uri: REDIRECT_URI, client_id: clientId,
+                 code_verifier: latestVerifier[clientId] || "" })
   });
 }
 
@@ -496,7 +514,7 @@ async function createTheRealm() {
   log.debug("Entering createTheRealm().");
   log.info("=== A throwaway trust realm ===");
   const r = await postJson(base + "/admin-api/realms/create",
-                           { id: REALM,
+                           { id: REALM, domain: REALM + ".example.net",
                              name: "the built-in roles under test" });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "creating the realm " + REALM + " should have worked; it answered " +
@@ -933,7 +951,16 @@ async function allApplications() {
   });
 
   const pub = await clientCredentials(PUBLIC_CLIENT, null);
-  check("and so does a PUBLIC one", function () {
+  if (PRODUCT) {
+    // No grant lets a public client act AS ITSELF in product mode, so this
+    // positive is unreachable there; what is asserted is the rule that makes
+    // it so, which is decided before any role is asked.
+    check("in PRODUCT mode a PUBLIC client is refused client_credentials " +
+          "before any role is asked", function () {
+      assert.strictEqual(pub.body && pub.body.error, "unauthorized_client",
+        "it answered " + pub.status + " " + String(pub.text).slice(0, 300));
+    });
+  } else check("and so does a PUBLIC one", function () {
     assert.strictEqual(pub.status, 200,
       "ALL_APPLICATIONS is about being an application, not about having " +
       "proved anything — a public client holds it too. It answered " +
@@ -987,7 +1014,12 @@ async function theApplicationAuthenticationSplit() {
            "ALL_UNAUTHENTICATED_APPLICATIONS ===");
 
   const mode = await get(realmUrl("/oauth2/rfc9700"));
-  check("RFC 9700 mode is OFF, which is what makes this section worth having",
+  if (PRODUCT) check("RFC 9700 mode is ON, as product mode implies — so " +
+                     "client authentication is ENFORCED here", function () {
+    assert.ok(mode.body && mode.body.enabled === true,
+      "/oauth2/rfc9700 said " + JSON.stringify(mode.body && mode.body.enabled));
+  });
+  else check("RFC 9700 mode is OFF, which is what makes this section worth having",
         function () {
     assert.ok(mode.body && mode.body.enabled === false,
       "this section asserts that client authentication is OBSERVED without " +
@@ -1034,6 +1066,14 @@ async function theApplicationAuthenticationSplit() {
       "client's authentication at all. It answered " + withoutSecret.status +
       " " + String(withoutSecret.text).slice(0, 300));
   });
+  if (PRODUCT) {
+    check("in PRODUCT mode it is refused as a CLIENT, before any role",
+          function () {
+      assert.strictEqual(withoutSecret.body && withoutSecret.body.error,
+        "invalid_client", "it answered error=" +
+        JSON.stringify(withoutSecret.body && withoutSecret.body.error));
+    });
+  } else {
   check("with access_denied rather than a client-authentication error",
         function () {
     assert.strictEqual(withoutSecret.body && withoutSecret.body.error,
@@ -1057,6 +1097,7 @@ async function theApplicationAuthenticationSplit() {
       "roles split on. It said " +
       JSON.stringify(withoutSecret.body.error_description));
   });
+  }
 
   // A WRONG SECRET IS NOT AN AUTHENTICATED CLIENT. The permissive failure this
   // guards against is an observation that reports "a credential was sent"
@@ -1070,7 +1111,14 @@ async function theApplicationAuthenticationSplit() {
 
   // POSITIVE: the public client, which holds the unauthenticated role.
   const publicClient = await clientCredentials(PUBLIC_CLIENT, null);
-  check("a PUBLIC client holds ALL_UNAUTHENTICATED_APPLICATIONS", function () {
+  if (PRODUCT) {
+    check("in PRODUCT mode a PUBLIC client is refused client_credentials, so " +
+          "ALL_UNAUTHENTICATED_APPLICATIONS is never reached", function () {
+      assert.strictEqual(publicClient.body && publicClient.body.error,
+        "unauthorized_client", "it answered " + publicClient.status + " " +
+        String(publicClient.text).slice(0, 300));
+    });
+  } else check("a PUBLIC client holds ALL_UNAUTHENTICATED_APPLICATIONS", function () {
     assert.strictEqual(publicClient.status, 200,
       "a public client proves nothing and that is correct rather than a " +
       "failure, so it holds this role; it answered " + publicClient.status +
@@ -1168,6 +1216,9 @@ async function test() {
     "GET /admin-api/status answered " + status.status + " at " + base +
     ". This job needs the mock and nothing else.");
 
+  PRODUCT = await facts.isProduct(base + "/admin-api");
+  log.info("The service is in " + (PRODUCT ? "PRODUCT" : "development") +
+           " mode.");
   await createTheRealm();
   try {
     await buildTheWorld();

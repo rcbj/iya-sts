@@ -148,6 +148,13 @@ interface Store {
   forEach(fn: (value: any, key: string) => void): void;
 }
 
+// The transaction store is BOUNDED (oid4vp.maxTransactions), so it is asked
+// its size and its oldest key as well.
+interface BoundedStore extends Store {
+  readonly size: number;
+  keys(): Iterator<string>;
+}
+
 interface VcVerifierDeps {
   log: typeof helpers.log;
   logArtifact: typeof helpers.logArtifact;
@@ -179,7 +186,7 @@ interface VcVerifierDeps {
   stats: typeof stats;
   vpConfig: typeof vpConfig;
   stsCrypto: typeof stsCrypto;
-  vpTransactions: Store;
+  vpTransactions: BoundedStore;
   vpRequests: Store;
 }
 
@@ -288,7 +295,8 @@ const VP_DCQL_ID = vpConfig.DCQL_ID;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
+const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions',
+                                    retain: 'age' });
 
 // id -> state, so a Request Object fetched by reference can find its
 // transaction. PER TRUST REALM. `realms.map()` is a Map that holds a separate
@@ -297,7 +305,8 @@ const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
 // realm, and in a service with no realms defined, there is exactly one
 // partition and this behaves as the plain Map it replaced. See
 // common/realms.js.
-const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests' });
+const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests',
+                                retain: 'age' });
 
 // ---------------------------------------------------------------------------
 // DESCRIBED TO `/admin/caches` (rule 3ap, #38's follow-ups). A transaction is
@@ -319,10 +328,14 @@ const vpTransactionsCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a wallet\'s answer found the request it was made for',
-  settings: ['oid4vp.presentationRequestTtlS', 'oid4vp.signInTtlS'],
-  maxEntries: function (): null {
-    return null;
+  settings: ['oid4vp.presentationRequestTtlS', 'oid4vp.signInTtlS',
+             'oid4vp.maxTransactions'],
+  maxEntries: function (): number {
+    return Number(config.value('oid4vp.maxTransactions'));
   },
+  bound: 'Enforced: oid4vp.maxTransactions per realm; the oldest waiting ' +
+    'request is dropped (federation.maxContexts\'s rule), because refusing ' +
+    'would let anybody stop the request endpoint for everybody.',
   lifetime: function (): string {
     return 'oid4vp.presentationRequestTtlS, or oid4vp.signInTtlS for a ' +
       'sign-in; swept when the next request is built.';
@@ -680,6 +693,36 @@ class VcVerifier {
     return config.value('oid4vp.kbMaxAgeS');
   }
 
+  // THE BOUND (oid4vp.maxTransactions, 2026-09-18), asked before a NEW
+  // request is kept. At the bound the OLDEST waiting request goes, with its
+  // request object — federation.maxContexts's rule, and for its reason: the
+  // alternative is an endpoint anybody can reach that stops working for
+  // everybody once it has been hit enough times, where this loses one
+  // request somebody most likely abandoned, which fails and says so.
+  private makeRoomForTransaction() {
+    const { log, vpTransactions, vpRequests, config } = this.deps;
+    log.debug("Entering VcVerifier.makeRoomForTransaction().");
+    const max = Number(config.value('oid4vp.maxTransactions'));
+    let evicted = 0;
+    while (max > 0 && vpTransactions.size >= max) {
+      const first = vpTransactions.keys().next();
+      if (first.done) {
+        break;
+      }
+      const record = vpTransactions.get(first.value);
+      if (record && record.id) {
+        vpRequests.delete(record.id);
+      }
+      vpTransactions.delete(first.value);
+      evicted += 1;
+    }
+    if (evicted) {
+      vpTransactionsCount.evicted(evicted);
+    }
+    log.debug("Leaving VcVerifier.makeRoomForTransaction(). " + evicted +
+              " dropped.");
+  }
+
   private sweepVpTransactions() {
     const { log, vpTransactions, vpRequests } = this.deps;
     log.debug("Entering VcVerifier.sweepVpTransactions().");
@@ -838,9 +881,15 @@ class VcVerifier {
         exp: nowSec() + Math.floor(ttlMs / 1000)
       }, request);
       // `oid4vp.requestObjectCertificateHeader` decides the `x5c` / `x5u`.
+      // `typ` goes in the PROTECTED HEADER (RFC 9101 section 10.8, explicit
+      // typing), where a strict wallet looks for it; until 2026-09-18 it was
+      // only a payload claim and the header said "JWT", which
+      // `tests/vendored/sts_oid4vp_wallet.js` found. The claim is kept: it is
+      // what the token registry labels this JWT by on /admin/tokens.
       record.requestObject = signJwt(
         Object.assign({ typ: 'oauth-authz-req+jwt' }, payload), null,
-        { certificateHeader: 'vp-request-object' });
+        { certificateHeader: 'vp-request-object',
+          header: { typ: 'oauth-authz-req+jwt' } });
       logArtifact('OID4VP Request Object', 'after signing',
                   record.requestObject);
       vpRequests.set(id, state);
@@ -849,8 +898,9 @@ class VcVerifier {
       record.signIn.dcApi = this.dcApiRequest(record, String(
         signIn.dcApiOrigin), String(signIn.dcApiResponseMode || ''));
     }
-    vpTransactions.set(state, record);
     this.sweepVpTransactions();
+    this.makeRoomForTransaction();
+    vpTransactions.set(state, record);
     log.debug("Leaving VcVerifier.buildVpRequest(). state=" + state + ", " +
               "nonce=" + nonce);
     return record;
@@ -957,9 +1007,12 @@ class VcVerifier {
     };
     logArtifact('OID4VP Request Object (Digital Credentials API)', 'as built',
                 payload);
+    // `typ` in the protected header too (RFC 9101 section 10.8) — see
+    // buildVpRequest().
     const requestObject = signJwt(
       Object.assign({ typ: 'oauth-authz-req+jwt' }, payload), null,
-      { certificateHeader: 'vp-request-object' });
+      { certificateHeader: 'vp-request-object',
+        header: { typ: 'oauth-authz-req+jwt' } });
     log.debug("Leaving VcVerifier.dcApiRequest(). " + responseMode + ".");
     return { origin: origin, protocol: DC_API_PROTOCOL,
              responseMode: responseMode, request: requestObject,

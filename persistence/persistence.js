@@ -334,9 +334,15 @@ const shadowCount = cacheRegistry.register({
     'changed.',
   owner: 'persistence/persistence.js',
   scope: 'realm',
+  settings: ['ldap.maxEntries'],
+  // STRUCTURAL (2026-09-18): one row per directory entry written, plus the
+  // realm's own record, so it cannot outgrow the directory — which
+  // `ldap.maxEntries` caps for the whole process.
   maxEntries: function () {
-    return null;
+    return Number(config.value('ldap.maxEntries')) + 1;
   },
+  bound: 'Structural: one row per directory entry written and one for the ' +
+    'realm record, so at most ldap.maxEntries + 1 in a realm.',
   lifetime: function () {
     return 'No expiry: refreshed at each flush, one entry per directory ' +
       'entry and realm written. Empty in memory mode.';
@@ -898,6 +904,9 @@ function realmRows() {
       id: realm.id,
       name: realm.name,
       description: realm.description,
+      // Fixed at creation, so it is written with the row and never compared
+      // as a change (realmChangeOf() has nothing to say about it).
+      domain: realm.domain,
       createdAt: realm.createdAt,
       overrides: realm.overrides || {}
     };
@@ -1526,6 +1535,110 @@ function start() {
 
 // The half of `start()` that runs once the connection string is final. Split
 // out above; `resolvedUrl` is what postgres dials and is ignored by ldif.
+// ---------------------------------------------------------------------------
+// A RESTARTED PROCESS IS THE SAME ORIGIN AS BEFORE (2026-09-18).
+//
+// The origin names what a process wrote, and a `merge: 'own'` store — the
+// audit ring, the counters, the users register — keeps each origin's rows
+// apart. It was random per start, so a container restarted under the same
+// node name became a new origin and everything its previous life wrote turned
+// into somebody else's contribution: invisible to any reader that does not
+// fan in, and, until the same change made retention per store, deleted a week
+// later. Now the origin is the node's stable name and the process's slot —
+// `front`, or a request worker's pool and position — adopted through a claim
+// so that two live processes can never share one (the driver argues it).
+//
+// The claim lives ORIGIN_TTL_MS and is renewed every ORIGIN_RENEW_MS. A
+// predecessor that stopped cleanly released it, so a restart takes it at
+// once; one that crashed is waited out for up to ORIGIN_WAIT_MS, which is
+// longer than the claim can outlive it. A process that loses the claim while
+// running stops: every transaction checks the claim, so one that stayed up
+// would refuse every write from then on.
+// ---------------------------------------------------------------------------
+const ORIGIN_TTL_MS = 30 * 1000;
+const ORIGIN_RENEW_MS = 10 * 1000;
+const ORIGIN_WAIT_MS = ORIGIN_TTL_MS + 5 * 1000;
+let originTimer = null;
+let originAdoption = null;
+
+function originSlot() {
+  log.debug("Entering originSlot().");
+  if (process.env.STS_REQUEST_WORKER) {
+    log.debug("Leaving originSlot(). A worker.");
+    return String(process.env.STS_REQUEST_WORKER_SLOT || '');
+  }
+  log.debug("Leaving originSlot(). The front process.");
+  return 'front';
+}
+
+function originLost(err) {
+  log.debug("Entering originLost().");
+  log.error(errorCodes.tag('STS-STORE-0061') + 'persistence: this process ' +
+            'lost its origin (' + ((err && err.message) || err) + '). ' +
+            'Another process now holds it and writes under it, so this one ' +
+            'stops rather than go on refusing every write.');
+  log.debug("Leaving originLost().");
+  process.exit(1);
+}
+
+function adoptStableOrigin() {
+  log.debug("Entering adoptStableOrigin().");
+  if (!driver || typeof driver.adoptOrigin !== 'function') {
+    log.debug("Leaving adoptStableOrigin(). The store has no origins.");
+    return Promise.resolve();
+  }
+  const slot = originSlot();
+  const name = slot ? String(cluster.nodeName() || '') + ':' + slot : '';
+  if (typeof driver.setOriginLost === 'function') {
+    driver.setOriginLost(originLost);
+  }
+  log.debug("Leaving adoptStableOrigin().");
+  return driver.adoptOrigin({ name: name, ttlMs: ORIGIN_TTL_MS,
+                              waitMs: ORIGIN_WAIT_MS }).then(function (a) {
+    originAdoption = a;
+    if (!a.adopted) {
+      log.warn(errorCodes.tag('STS-STORE-0060') + 'persistence: this ' +
+               'process did not take the stable origin for "' + name +
+               '" (' + a.why + ') and writes under ' + a.origin + '. What ' +
+               'it writes to the per-process stores (audit, counters) is ' +
+               'kept, and read by the other processes as a contribution.');
+      return;
+    }
+    log.info('persistence: this process writes as origin ' + a.origin +
+             (a.waitedMs > 1000 ? ', after waiting ' +
+              Math.round(a.waitedMs / 1000) + ' s for the previous ' +
+              'holder\'s claim to lapse' : '') + '; what that origin wrote ' +
+             'before a restart is restored as this process\'s own.');
+    originTimer = setInterval(function () {
+      driver.renewOrigin(ORIGIN_TTL_MS).then(function (still) {
+        if (!still) {
+          originLost(new Error('the claim on ' + a.origin + ' could not ' +
+                               'be renewed'));
+        }
+      }, function (err) {
+        // The store being unreachable is not losing the origin: the claim
+        // outlives a short outage, and every write checks it anyway.
+        log.warn(errorCodes.tag('STS-STORE-0062') + 'persistence: the ' +
+                 'claim on origin ' + a.origin + ' could not be renewed ' +
+                 'just now: ' + ((err && err.message) || err));
+      });
+    }, ORIGIN_RENEW_MS);
+    if (originTimer.unref) {
+      originTimer.unref();
+    }
+  });
+}
+
+// What `status()` reports about this process's origin.
+function originStatus() {
+  log.debug("Entering originStatus().");
+  log.debug("Leaving originStatus().");
+  return originAdoption
+    ? { origin: originAdoption.origin, adopted: !!originAdoption.adopted,
+        why: originAdoption.why || '' }
+    : null;
+}
+
 function openStore(chosen, resolvedUrl) {
   log.debug('Entering openStore(). mode=' + chosen);
   try {
@@ -1560,6 +1673,10 @@ function openStore(chosen, resolvedUrl) {
   restoring = true;
   log.debug("Leaving openStore().");
   return driver.open().then(function () {
+    // THIS PROCESS'S ORIGIN, BEFORE ANYTHING READS IT (2026-09-18) — see
+    // adoptStableOrigin() below.
+    return adoptStableOrigin();
+  }).then(function () {
     // ---------------------------------------------------------------------
     // THE CLUSTER GATE, BEFORE ANYTHING IS ARMED OR RESTORED (2026-09-14, #46).
     //
@@ -1863,6 +1980,9 @@ function restoreRealms(rows, replicated) {
       id: row.id,
       name: row.name,
       description: row.description,
+      // A row written before realms had a domain has none, and create() then
+      // gives it `<id>.<global.domain>` — the tree it always had.
+      domain: row.domain,
       overrides: row.overrides || {},
       // Told so, for the watchers that must not treat a realm another process
       // made — or the last run made — as one made here. `pki.js` is why.
@@ -2018,6 +2138,20 @@ function stop() {
     // made under its membership — and before the pool closes, since leaving
     // is a statement. A standby that never held the lease leaves the same way.
     return cluster.leave();
+  }).then(function () {
+    // THE ORIGIN GIVEN BACK, after the last write made under it, so the
+    // process that replaces this one takes it at once rather than waiting
+    // for the claim to lapse.
+    if (originTimer) {
+      clearInterval(originTimer);
+      originTimer = null;
+    }
+    return typeof driver.releaseOrigin === 'function'
+      ? driver.releaseOrigin().catch(function (err) {
+        log.debug("Caught in stop(): " + ((err && err.message) || err));
+        return false;
+      })
+      : false;
   }).then(function () {
     stopped = true;
     return driver.close();
@@ -2423,6 +2557,9 @@ function status() {
     // AND WHAT IT SHARES WITH OTHER PROCESSES. One report from the module that
     // does the work, for the same reason as the line above.
     replication: replication.status(),
+    // This process's persistence origin, and whether it is the stable one
+    // its node name and slot give it (2026-09-18, adoptStableOrigin()).
+    origin: originStatus(),
     note: (replication.status().coordinating
             ? 'Processes against this store COORDINATE: every change is ' +
               'written to a monotonic log inside the transaction that made ' +

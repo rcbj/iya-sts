@@ -66,6 +66,7 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
+import replication = require('../persistence/persistence_replication');
 import events = require('./ssf_events');
 import streams = require('./ssf_streams');
 import transport = require('./ssf_http');
@@ -166,13 +167,50 @@ const MAX_BUCKETS = 60;
 // `sweepDeadLetters()` returned plus the two facts only it knows (how many
 // streams were dead and how many were probed). The most recent twenty are
 // kept, and running totals since the process started.
+//
+// **PERSISTED SINCE 2026-09-18**, `merge: 'own'` like the other accumulators:
+// each process keeps its own sweeps and the page fans in every process's
+// (`allSweepNotes()`), so neither a restart nor the sweep having run on
+// another node empties the history. A `realms.obj()` row is journalled when a
+// TOP-LEVEL field is assigned, and a sweep edits nested ones, so noteSweep()
+// assigns `recent` back when it is done.
 // ---------------------------------------------------------------------------
 const SWEEPS_KEPT = 20;
 
-const sweepNotes = realms.keyed(function () {
+const sweepNotes = realms.obj(function () {
   return { recent: [], since: { sweeps: 0, letters: 0, expired: 0,
     orphaned: 0, trimmed: 0, probes: 0 }, firstAt: '' };
-});
+}, { persist: 'ssf_dead_letter_report.sweeps', merge: 'own' });
+
+// Every process's sweeps: the newest SWEEPS_KEPT across all of them, the
+// running totals added, and the earliest first sweep.
+function allSweepNotes(): any {
+  helpers.log.debug("Entering allSweepNotes().");
+  const own: any = sweepNotes;
+  const out = { recent: (own.recent || []).slice(),
+                since: Object.assign({}, own.since),
+                firstAt: String(own.firstAt || '') };
+  replication.remoteRows('ssf_dead_letter_report.sweeps', undefined, '')
+    .forEach(function (theirs: any): void {
+      if (!theirs || typeof theirs !== 'object') {
+        return;
+      }
+      out.recent = out.recent.concat(theirs.recent || []);
+      Object.keys(theirs.since || {}).forEach(function (k: string): void {
+        out.since[k] = (Number(out.since[k]) || 0) +
+          (Number(theirs.since[k]) || 0);
+      });
+      if (theirs.firstAt && (!out.firstAt || theirs.firstAt < out.firstAt)) {
+        out.firstAt = String(theirs.firstAt);
+      }
+    });
+  out.recent.sort(function (a: any, b: any): number {
+    return String((b && b.at) || '').localeCompare(String((a && a.at) || ''));
+  });
+  out.recent = out.recent.slice(0, SWEEPS_KEPT);
+  helpers.log.debug("Leaving allSweepNotes().");
+  return out;
+}
 
 class DeadLetterReport {
   static readonly CAUSES = CAUSES;
@@ -336,7 +374,7 @@ class DeadLetterReport {
     log.debug("Entering DeadLetterReport.noteSweep(). " + realms.currentId());
     const s = summary || {};
     const x = extra || {};
-    const notes = sweepNotes();
+    const notes: any = sweepNotes;
     const row = {
       at: new Date(Number(x.nowMs) || Date.now()).toISOString(),
       held: Number(s.held) || 0,
@@ -363,6 +401,9 @@ class DeadLetterReport {
     if (!notes.firstAt) {
       notes.firstAt = row.at;
     }
+    // A top-level assignment, which is what journals the row (see the
+    // declaration): every edit above was to a nested field.
+    notes.recent = notes.recent;
     log.debug("Leaving DeadLetterReport.noteSweep(). " + notes.since.sweeps +
               ' sweep(s).');
     return row;
@@ -541,7 +582,7 @@ class DeadLetterReport {
     const oldestMs = held.length
       ? Number(held[held.length - 1].deadAtMs) || 0 : 0;
     const newestMs = held.length ? Number(held[0].deadAtMs) || 0 : 0;
-    const notes = sweepNotes();
+    const notes = allSweepNotes();
 
     const out = {
       realm: realms.currentId(),

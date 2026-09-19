@@ -509,6 +509,8 @@ const signedMetadataCount = cacheRegistry.register({
     return Number(config.value('oauth2.maxSignedMetadataEntries')) ||
       MAX_SIGNED_METADATA;
   },
+  bound: 'Enforced: oauth2.maxSignedMetadataEntries per realm, the oldest ' +
+    'dropped and signed again when next asked for.',
   lifetime: function (): string {
     return 'oauth2.signedMetadataCacheS (' +
       config.value('oauth2.signedMetadataCacheS') + ' s) after signing, ' +
@@ -548,7 +550,7 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // TOMBSTONED (2026-09-14, #46): a redeemed or expired code's delete leaves a
 // tombstone in the store, so a node holding an older copy of the row cannot
 // write it back. `persistence/persistence_minted.js` carries the mechanism.
-const authzCodes = realms.map({ persist: 'oauth2.authzCodes',
+const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
                                 tombstone: true });
 
 // ---------------------------------------------------------------------------
@@ -589,7 +591,8 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes',
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // code -> the token set it was redeemed for
-const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes' });
+const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes',
+                                   retain: 'age' });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is an authorization
 // code and the value holds the tokens it produced, so a row is the code's
@@ -605,13 +608,15 @@ const redeemedCodesCount = cacheRegistry.register({
   kind: 'replay',
   persisted: true,
   hitMeaning: 'a code already redeemed, presented again',
-  settings: ['oauth2.authorizationCodeTtlS'],
-  maxEntries: function (): null {
-    return null;
+  settings: ['oauth2.authorizationCodeTtlS', 'oauth2.redeemedCodeCacheSize'],
+  maxEntries: function (): number {
+    return Number(config.value('oauth2.redeemedCodeCacheSize'));
   },
+  bound: 'Enforced: oauth2.redeemedCodeCacheSize per realm; the oldest ' +
+    'redemption is forgotten. The code itself went at redemption, so a ' +
+    'repeat of a forgotten one is still refused, as an unknown code.',
   lifetime: function (): string {
-    return 'One code lifetime after the code would have expired. No size ' +
-      'limit.';
+    return 'One code lifetime after the code would have expired.';
   },
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, redeemedCodes,
@@ -7453,6 +7458,16 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.rememberRedemption().");
     self.forgetStaleRedemptions();
+    // The bound (oauth2.redeemedCodeCacheSize). What this remembers is a
+    // courtesy — the same request answered with the same tokens — and not the
+    // refusal, which the code's own removal at redemption already makes, so
+    // at the bound the OLDEST goes rather than the redemption being refused.
+    if (!redeemedCodes.has(code)) {
+      cacheRegistry.makeRoom(redeemedCodes,
+                             Number(self.deps.config.value(
+                               'oauth2.redeemedCodeCacheSize')),
+                             { counter: redeemedCodesCount });
+    }
     redeemedCodes.set(code, {
       when: Date.now(),
       // The code's OWN expiry, not a fresh one: the replay window is the rest
@@ -8523,7 +8538,21 @@ class OAuth2Server {
     // client that failed to authenticate — not `unauthorized_client`, which is
     // about the GRANT a client may use and would send an author looking at
     // their grant type.
+    //
+    // **AN ASSERTION GRANT THAT NAMES NO CLIENT IS NOT A CLIENT TO REFUSE**
+    // (2026-09-18). RFC 7521 section 4.1 makes client authentication optional
+    // there — the signed assertion is the credential, verified against an
+    // issuer somebody declared — and #34's block below is written for exactly
+    // that request ("they may arrive with no client at all"). This check ran
+    // first and read "no client_id" as "an unknown client that must
+    // authenticate", so product mode refused every clientless RFC 7523 and
+    // RFC 7522 grant: found by sts_jwt_bearer_grant.js run against a
+    // product-mode deployment. A grant that NAMES a client is still judged
+    // here, known or not.
+    const clientlessAssertion = !client.client_id &&
+      oauth21.ASSERTION_GRANTS.indexOf(grant) >= 0;
     if (mode.requiresConfidentialClientAuthentication() &&
+        !clientlessAssertion &&
         bcp.declaredPublic(registeredClient) === false &&
         !clientObservation.authenticated) {
       log.info('oauth2: product mode refused the token request from "' +
@@ -9472,8 +9501,16 @@ class OAuth2Server {
         presented: client.client_id || 'unknown-client',
         protocol: 'OAuth 2.0', method: 'client_credentials', isClient: true,
         sub: client.client_id || 'unknown-client', client_id: client.client_id,
+        // WHAT WAS CHECKED is the observation above, not an assumption: the
+        // note said "no secret was checked" in every mode, which product mode
+        // (RFC 9700) made false for every confidential client.
         note: 'A client authenticating as itself. No human and no browser is ' +
-              'behind this token, and no secret was checked.'
+              'behind this token, and ' +
+              (clientObservation.authenticated
+                ? 'its credential (' +
+                  (clientObservation.method || 'client authentication') +
+                  ') was verified.'
+                : 'no client credential was verified.')
       });
       // ---------------------------------------------------------------------
       // RFC 9700 section 4.13 — A CLIENT IS NOT A RESOURCE OWNER, and the token

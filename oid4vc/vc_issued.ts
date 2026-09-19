@@ -93,6 +93,7 @@ import realms = require('../common/realms');
 import stsCrypto = require('../common/crypto');
 import stats = require('../common/admin_stats');
 import cacheRegistry = require('../common/cache_registry');
+import config = require('../common/config');
 import InstanceSlot = require('../common/instance_slot');
 // THE STATUS LISTS, whose entry for a credential is one of the three ways it
 // is disowned. A library that requires nothing in this directory but its
@@ -105,6 +106,7 @@ interface Store {
   set(key: string, value: any): unknown;
   delete(key: string): boolean;
   forEach(fn: (value: any, key: string) => void): void;
+  keys(): Iterator<string>;
   readonly size: number;
 }
 
@@ -131,6 +133,8 @@ interface VcIssuedDeps {
   statusOf: (key: string) => number;
   setStatus: (key: string, value: number, via: string) => boolean;
   store: Store;
+  // The register's bound, `oid4vp.signInRegisterMaxEntries` (2026-09-18).
+  maxRows: () => number;
 }
 
 // The formats a row may describe: every format this issuer issues.
@@ -162,10 +166,14 @@ const issuedCount = cacheRegistry.register({
   persisted: true,
   hitMeaning: 'a presented credential this realm recorded as one that may ' +
     'sign its person in',
-  settings: ['oid4vci.credentialLifetimeS'],
-  maxEntries: function (): null {
-    return null;
+  settings: ['oid4vci.credentialLifetimeS',
+             'oid4vp.signInRegisterMaxEntries'],
+  maxEntries: function (): number {
+    return Number(config.value('oid4vp.signInRegisterMaxEntries'));
   },
+  bound: 'Enforced: oid4vp.signInRegisterMaxEntries per realm; the row ' +
+    'issued first is dropped. That fails CLOSED — a credential with no row ' +
+    'signs nobody in.',
   lifetime: function (): string {
     return 'until the last credential on the row expires; a disowned row ' +
       'is kept until then too, so that it goes on refusing.';
@@ -204,7 +212,10 @@ class VcIssued {
       artifactRevokedByKey: stats.artifactRevokedByKey,
       statusOf: vcStatus.statusOf,
       setStatus: vcStatus.setStatus,
-      store: issued
+      store: issued,
+      maxRows: function (): number {
+        return Number(config.value('oid4vp.signInRegisterMaxEntries'));
+      }
     };
   }
 
@@ -347,6 +358,14 @@ class VcIssued {
     const expiresAt = credentials.reduce(function (latest, c) {
       return !c.expiresAt || !latest ? 0 : Math.max(latest, c.expiresAt);
     }, one.expiresAt || 0);
+    // THE BOUND (oid4vp.signInRegisterMaxEntries), for a NEW row. The row
+    // issued first goes, which fails CLOSED: a credential with no row signs
+    // nobody in — exactly what disowning one does — so no bound here can
+    // let a credential in that should not be.
+    if (!before && !store.get(key)) {
+      cacheRegistry.makeRoom(store, this.deps.maxRows(),
+                             { counter: issuedCount });
+    }
     // THROUGH THE STORE, whole, so the journal carries the row.
     store.set(key, {
       key: key,

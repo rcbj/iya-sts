@@ -135,7 +135,7 @@ is written down in
 | **OpenID4VP 1.0** | a Verifier with DCQL that **actually verifies** what it is sent, check by check — and, since 2026-09-17, a **way to sign in**: "Sign in with a wallet" on the sign-in screen asks for an SD-JWT VC this realm issued, and a presentation whose Key Binding JWT verifies against the credential's key starts a session for the directory entry it was issued for (see *Signing in with a wallet*) |
 | **W3C DID Core 1.0** | its own `did:web` document, and the DIF Well Known DID Configuration that links it to its origin |
 | **TLS / mutual TLS (RFC 8446)** | **the main port asks every connection for a client certificate and requires none**, so presenting one is the client's decision and mutual TLS happens where every other protocol answers. `GET /tls/sign-in` signs the holder of a verified one in — revocation first, then the identity gate, then an application's certificate refused because it is an RFC 8705 client credential — and RFC 8705 binds a token to whatever was presented. The client truststore starts **empty** and is filled at runtime through `POST /tls/trust`, because the CA it has to verify is usually generated in a *browser* minutes before the connection and exists nowhere a file could hold it. `GET /tls` describes all of it. **This was two HTTPS listeners of its own until 2026-09-16** — 8443 asking for a certificate, 9443 requiring one — whose content was what the server saw of the connection; both were deleted, that report has no successor here, and nothing refuses a certificate at the handshake any more |
-| **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain PER TRUST REALM (2026-09-12 — a realm is created with `<realm>.<the service's>` and with SPIFFE off; turning it on binds a Workload API and a SPIRE Server API of its own, on an address of its own, because gRPC's path is the method name and the endpoint is the only thing a client can name a tenant with), in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.trustLocalSocket`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
+| **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain PER TRUST REALM (2026-09-12 — a realm is created with its DNS domain as its trust domain and with SPIFFE off; turning it on binds a Workload API and a SPIRE Server API of its own, on an address of its own, because gRPC's path is the method name and the endpoint is the only thing a client can name a tenant with), in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.trustLocalSocket`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
 | **LDAP v3 (RFC 4511)** | an embedded **directory on two raw sockets — TCP 389 in the clear and TCP 636 over TLS (LDAPS)**, one set of handlers and one store behind both: simple bind, unbind, add, delete, modify, modifyDN, compare and search with RFC 4515 filters and all three scopes, a root DSE, and result codes 0, 2, 4, 11, 16, 32, 49, 66 and 68 all reachable. Built on the [`ldapjs`](https://github.com/rcbj/node-ldapjs) submodule and used unmodified. It is **schemaless on purpose** and says so, it enforces the four structural rules whose absence would teach a client something false — plus one of its own, that an add under `ou=users` whose username is already there is `LDAP_ENTRY_ALREADY_EXISTS` (68), because one person is one entry however they got in — and it deliberately does not do referential integrity. `GET /admin/ldap/service` describes it and `GET /admin/ldap/directory` lists every entry. **`LDAP_AUTOCREATE_USERS`, on by default, grows an entry under `ou=users` for anybody who authenticates through any of the other twelve families** — and `ou=applications` grows one for the CLIENT, relying party, service provider or Kerberos service on the other side of that authentication, which is a **registry rather than a record**: the RFC 7591 registrations live there, nothing caches them, and an `ldapmodify` of `oauthRedirectUri` changes which redirect URI RFC 9700 mode accepts — one hook on the single funnel they all already pass |
 | **Certificate enrollment: ACME (RFC 8555), EST (RFC 7030), SCEP (RFC 8894)** | three ways for a client, a device or a person to get a **certificate from this realm's own certificate authority** — each protocol has an Issuing CA of its own under the realm's Intermediate. **Who a certificate is for is one rule for all three**: yourself, or — for a holder of Admin Write — any person or application in the realm, and every certificate names that directory entry (`urn:sts:person:` / `urn:sts:application:`) and is kept on it. ACME at `/enroll/acme/directory` binds an account to an entry with an **External Account Binding** key; EST at `/.well-known/est` takes a directory password, a client secret or a certificate this realm issued, and can generate the key (`/serverkeygen`, the only path that keeps a private key, sealed, on the entry); SCEP at `/enroll/scep` takes a **single-use challenge password** issued for one entry and one profile. The nine leaf profiles of `/admin/pki` are issued; Root, Intermediate and Issuing CA, OCSP Responder and Kerberos KDC are refused. A DNS name or address is issued only when it is registered on the entry — nothing is ever dialled to prove control. A person makes their own EAB key and challenge on `/portal/certificates`. See [docs/acme.md](docs/acme.md), [docs/est.md](docs/est.md) and [docs/scep.md](docs/scep.md) |
 | **GNAP (RFC 9635, RFC 9767)** | an **authorization server for the Grant Negotiation and Authorization Protocol**, per trust realm, at `/gnap`: grant requests with every access, subject, client and user member; all four interaction start modes (redirect, app, user code, user code URI) and both finish methods (redirect, push) with the interaction hash; continuation, modification and revocation; token rotation and **client key rotation**; all four key proofing methods — **RFC 9421 HTTP message signatures** with RFC 9530 Content-Digest, mutual TLS, detached and attached JWS; and the **five token formats RFC 9767 registers** — signed JWT, encrypted JWT, macaroon, biscuit and ZCAP-LD. The RS half is there too: discovery at `/.well-known/gnap-as-rs`, introspection, resource set registration and token derivation. Every request body is held to a JSON Schema, a GNAP client is an application entry with its shared keys sealed at rest, and a revoked grant or token is a CAEP `session-revoked` to a stream a GNAP web application owns — which hears only about people who approved it. See [docs/gnap.md](docs/gnap.md) |
@@ -379,7 +379,7 @@ places its value could go:
 ```
 config: FATAL — 2 setting(s) have no value in the appconfig layer and no environment variable:
 
-  ldap.baseDn         LDAP_BASE_DN
+  global.domain       STS_DOMAIN
   spiffe.trustDomain  STS_SPIFFE_TRUST_DOMAIN
 
 Each must be set in ./env/local.js, in ./env/defaults.js (the default appconfig
@@ -710,10 +710,12 @@ Four things about these settings do not fit in a cell and have cost real time:
   construction — so 389 and 636 fail independently and `GET /admin/ldap/service` reports each
   separately. There is no StartTLS to turn on instead: it is an extended
   operation, ldapjs implements none, and this repository does not patch that
-  submodule. And `LDAP_BASE_DN` is the only naming context there is —
-  `ou=users`, `ou=groups`, `ou=applications` and `ou=spiffe` are derived from it
-  rather than configured, because two variables that could disagree with it
-  would put entries in a tree nobody is searching.
+  submodule. And each trust realm's naming context is DERIVED from its DNS
+  domain — the default realm's from `STS_DOMAIN` (`global.domain`), `example.com`
+  being `dc=example,dc=com` — with `ou=users`, `ou=groups`, `ou=applications`
+  and `ou=spiffe` derived beneath it rather than configured, because two
+  variables that could disagree with it would put entries in a tree nobody is
+  searching.
 * **`STS_TLS_PORT` and `STS_MTLS_PORT` WERE two ports rather than one port and a
   flag, and both are gone since 2026-09-16.** 8443 *asked* for a client
   certificate and never refused one; 9443 *required* one, so that "does this
@@ -747,6 +749,7 @@ are refused at both ends.
 | `global.host` | `STS_HOST` | `0.0.0.0` | **restart** — the listener is bound when the process starts | The address the HTTP listener binds. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines this service to the machine it runs on. |
 | `global.port` | `STS_PORT` | `8081` | **restart** — the listener is bound when the process starts | The port everything HTTP here answers on: the protocol endpoints, the console and this API. The two TLS listeners are separate and are under TLS below. **Several nodes against one store must all use the same value**: the console's and portal's own Shared Signals receivers are seeded at `<loopback>:<global.port>` and every node pushes to that address on its own loopback (`ssf/CLAUDE.md`, *Several nodes*). |
 | `global.https` *(derived)* | `STS_HTTPS` | `false`, but **`true` in every appconfig file shipped here** — see *Running it* | **restart** — the listener is bound when the process starts, and its scheme is decided there | Serve the main port over HTTPS, with the SAME certificate and key the LDAPS 636 listener and the embedded debugger's use — one self-signed pair generated per start, so a caller trusts this service once rather than three times. It is also what lets the main port ask for a client certificate, which is where mutual TLS happens since the 8443 and 9443 listeners were deleted on 2026-09-16. |
+| `global.domain` | `STS_DOMAIN` | `example.com` | **restart** — the default realm's directory tree is built under it at startup | The DNS domain of the DEFAULT trust realm. Its directory is rooted at the RFC 2247 mapping of it (`example.com` is `dc=example,dc=com`), and a realm created without a domain of its own is given `<id>.<this value>`. It names what the realm invents, never where it is reached. Replaced `ldap.baseDn` on 2026-09-18. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe X-Forwarded-Proto and X-Forwarded-Host — which is what a TLS-terminating reverse proxy sets to say what the CLIENT used. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDR ranges this deployment's own proxies connect from. Read for forwarded headers only with `global.trustProxy` on, and for a PROXY protocol header whenever `global.proxyProtocol` is `v2` — where empty trusts nobody and the service does not start. **Empty keeps the old rule** — forwarded headers believed from any caller, the rate limiter taking the left-most `X-Forwarded-For` entry. Set, they are believed only from a peer in a range and the client is the right-most hop outside them, so a caller reaching a node directly cannot choose its own rate-limit address or this service's URL. `common/CLAUDE.md`, *Several nodes*, also says why mutual TLS needs L4 passthrough. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | **restart** — installed on each listener when it binds | `v2` reads a HAProxy PROXY protocol version 2 header at the front of every connection to the main port, 389, 636, the KDC's TCP 88 (not UDP), the debugger and 8082 — it covered 8443 and 9443 until those listeners were deleted on 2026-09-16 — **before TLS**, so the client's address reaches the rate limiter, LDAP and the request workers while TLS and mutual TLS still terminate on the node. A connection from `global.trustedProxies` must carry a valid header (a `LOCAL` one — a health check — keeps the balancer's address); any other address is closed, except this host's own, which is served plain. Version 1 is refused; the SPIFFE gRPC listeners are not covered. See *Behind an L4 load balancer* above. |
@@ -1272,7 +1275,6 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 |---|---|---|---|---|
 | `ldap.port` | `LDAP_PORT` | `389` | **restart** — the socket is bound when the process starts | The plain LDAP listener. 389 is privileged, so a host run that is not root fails to bind it — recorded rather than thrown, and reported by GET /admin/ldap/service. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | **restart** — the socket is bound when the process starts | The LDAPS listener, which serves the certificate the TLS module generated. It binds independently of 389, so "389 is up and 636 is not" is an ordinary outcome and each reports itself separately. |
-| `ldap.baseDn` | `LDAP_BASE_DN` | `dc=example,dc=com` | **restart** — the directory tree is built under it at startup | The root of the embedded directory. ou=users and ou=groups hang off it. |
 | `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | When on, an entry appears at uid=<name>,ou=users,<base> the first time anybody authenticates to this service through ANY protocol. On by default: a directory that fills up as you use the other protocols is the thing this one is here to show. |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow. A ceiling rather than a target: entries appear for anybody who authenticates through any protocol here. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side size limit for a search, which is what produces LDAP_SIZE_LIMIT_EXCEEDED. |
@@ -1762,20 +1764,25 @@ Separated, completely, by the path:
   artifacts, the custom claim and credential claim selections, the verifier's
   request, the **statistics** and the **audit log** (whose sequence numbers are
   per realm, so one realm's rows are contiguous).
-* the six settings that are **NAMES** — the SAML 2.0 entityID, the SAML 1.1
-  providerID, the WS-Federation entityID, the WS-Trust issuer, the SAML
-  assertion issuer and the OpenID4VP verifier client id. A new realm is created
-  with each of them suffixed with its id, because two realms carrying one
-  entityID is two identity providers claiming one name. They are ordinary
+* the settings that are **NAMES** — built from the realm's DNS domain since
+  2026-09-18: the SAML 2.0 entityID (`urn:<domain>:idp`), the SAML 1.1
+  providerID, the WS-Federation entityID, the WS-Trust issuer and the SAML
+  assertion issuer (`urn:<domain>:sts`), the SPIFFE trust domain (the domain),
+  and the Kerberos realm (the domain in capitals) — and the OpenID4VP verifier
+  client id, suffixed with the realm id. Two realms carrying
+  one entityID is two identity providers claiming one name, and the domain is
+  unique and fixed when the realm is created. They are ordinary
   settings on the realm: change them, or unset them to go back to sharing the
   process's name.
 
-**Separated — the embedded directory, as a subtree.** Since 2026-08-25 each
-realm owns a subtree of the one naming context:
+**Separated — the embedded directory, a tree per realm.** Since 2026-08-25
+each realm has a directory of its own, and since 2026-09-18 each is rooted at
+the realm's own DNS domain — a naming context of its own on the one socket:
 
 ```
-dc=example,dc=com                 the DEFAULT realm  (ldap.baseDn itself)
-dc=acme,dc=example,dc=com         the realm `acme`
+dc=example,dc=com                 the DEFAULT realm  (global.domain)
+dc=acme,dc=example,dc=com         the realm `acme`, created with no domain
+dc=iyasec,dc=io                   a realm whose domain is iyasec.io
 ```
 
 with its own `ou=users`, `ou=groups`, `ou=applications`, `ou=federations` and
@@ -6707,8 +6714,9 @@ made to the Verifier at `/oid4vp/verifier` still starts no session and issues no
 it is *recorded*, which is a narrower claim and must not be merged with the other. (A
 presentation made to `/authn/wallet` is a sign-on, of the directory entry the credential was
 issued for rather than of its DID — see *Signing in with a wallet*.) A credential
-request records that an access token was presented, not that anybody authenticated; this
-service does not verify tokens it did not issue. And `/did/generate` records an identity
+request records that an access token was presented, not that anybody authenticated; in
+development mode this service does not verify one it did not issue there, and product mode
+refuses one it cannot verify. And `/did/generate` records an identity
 this service *created*, with nothing presented at all. The one DID deliberately left out
 is the `did:web` that endpoint returns for `?method=web`: that is this service's OWN
 identity, already published at `/.well-known/did.json`, and an entry for it would file

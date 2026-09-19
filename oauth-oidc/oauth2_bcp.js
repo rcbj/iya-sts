@@ -1835,7 +1835,8 @@ function maxTransactions() {
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // 'pkce:x' / 'nonce:x' -> record
-const transactions = realms.map({ persist: 'oauth2_bcp.transactions' });
+const transactions = realms.map({ persist: 'oauth2_bcp.transactions',
+                                  retain: 'age' });
 
 function forgetStaleTransactions() {
   log.debug("Entering forgetStaleTransactions().");

@@ -280,10 +280,30 @@ void mtls;
 // `cluster_claims.js` before a credential is accepted (`spendPresented()`),
 // which is what decides a replay presented at two nodes at once.
 // ---------------------------------------------------------------------------
-const digestNonces = realms.map({ persist: 'scim.digestNonces' });
-// nonce -> Set of nonce-counts this process has accepted. Not persisted: see
-// above. Per realm for `digestNonces`'s reason.
-const digestCounts = realms.map();
+const digestNonces = realms.map({ persist: 'scim.digestNonces',
+                                  retain: 'age' });
+// nonce -> the nonce-counts this process has accepted. Per realm for
+// `digestNonces`'s reason. It was not persisted (see above) until
+// 2026-09-18 — below.
+//
+// BOUNDED TWICE (2026-09-18). The ROWS are held to scim.maxDigestNonces like
+// the nonces — a nonce another process issued arrives here with no row in
+// `digestNonces` to be evicted with, so without its own bound this map
+// outgrew the one it shadows. And each SET is held to MAX_COUNTS_PER_NONCE:
+// a client increments nc on every request under one nonce, so a busy one
+// grew a set a string at a time for the nonce's whole life. At that many the
+// nonce is forgotten, and the client's next request is answered stale=true
+// with a fresh nonce, which RFC 7616 section 3.3 has it handle.
+//
+// **AND PERSISTED SINCE 2026-09-18**, as `scim.digestCounts`, so that a
+// restarted process still refuses a count it accepted before the restart
+// without a round trip; the claim remains what decides between two live
+// processes. A row is an ARRAY of counts — a Set does not survive JSON — and
+// it is written back whole through the store on every accepted count, which
+// is what journals it.
+const digestCounts = realms.map({ persist: 'scim.digestCounts',
+                                  retain: 'age' });
+const MAX_COUNTS_PER_NONCE = 1024;
 
 // The challenges this server has issued, and the (kid, challenge, nonce)
 // triples it has already seen. Both bounded: a challenge is something anybody
@@ -314,9 +334,12 @@ const digestCounts = realms.map();
 // issue time and nothing else. **THE SEEN SET IS NOT**: it is this process's
 // fast refusal, and a signature presented at two nodes at once is decided by
 // the claim `spendPresented()` makes, which is atomic where a replicated Set
-// is last writer wins.
-const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges' });
-const hobaSeen = realms.map();
+// is last writer wins. **It is persisted since 2026-09-18** all the same
+// (`scim.hobaSeen`), so a restarted process's fast refusal survives the
+// restart; the claim is still what decides between two live processes.
+const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges',
+                                    retain: 'age' });
+const hobaSeen = realms.map({ persist: 'scim.hobaSeen', retain: 'age' });
 
 // ---------------------------------------------------------------------------
 // THE FOUR STORES ABOVE, DESCRIBED TO `/admin/caches` (#74, rule 3ap). Every
@@ -343,6 +366,8 @@ const digestNoncesCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return scimSeconds('scim.maxDigestNonces') || null;
   },
+  bound: 'Enforced: scim.maxDigestNonces per realm, the oldest dropped; a ' +
+    'client using it is answered stale=true with a fresh one.',
   lifetime: function (): string {
     return 'scim.digestNonceSeconds (' +
       scimSeconds('scim.digestNonceSeconds') + ' s) after it was issued, ' +
@@ -367,24 +392,31 @@ const digestCountsCount = cacheRegistry.register({
   scope: 'realm',
   kind: 'replay',
   hitMeaning: 'a nonce count already used, so the request was refused',
-  maxEntries: function (): null {
-    return null;
+  settings: ['scim.maxDigestNonces'],
+  maxEntries: function (): number {
+    return Number(config.value('scim.maxDigestNonces'));
   },
+  bound: 'Enforced: scim.maxDigestNonces nonces per realm, the oldest ' +
+    'dropped (the nonce is then stale, and the client is handed a new ' +
+    'one); and ' + MAX_COUNTS_PER_NONCE + ' counts per nonce, after which ' +
+    'the nonce is retired the same way.',
   lifetime: function (): string {
-    return 'Forgotten with its nonce. Not persisted: the claim a spend ' +
-      'makes is what decides a replay across nodes.';
+    return 'Forgotten with its nonce. Persisted, so a restarted ' +
+      'process still refuses a count it accepted; the claim a spend ' +
+      'makes is what decides a replay across live nodes.';
   },
   entries: function (): unknown[] {
     const ttl = scimSeconds('scim.digestNonceSeconds') * 1000;
     const out: unknown[] = [];
     realms.list().forEach(function (r: { id: string }): void {
       const nonces = digestNonces.realmMap(r.id);
-      digestCounts.realmMap(r.id).forEach(function (counts: Set<string>,
+      digestCounts.realmMap(r.id).forEach(function (counts: unknown,
                                                     nonce: string): void {
         const record = nonces.get(nonce);
         out.push({ realm: r.id,
                    key: cacheRegistry.digestKey(nonce) + ' — ' +
-                     counts.size + ' count(s)',
+                     (Array.isArray(counts) ? counts.length : 0) +
+                     ' count(s)',
                    validUntil: record ? Number(record.at) + ttl : null,
                    valid: !!record,
                    basis: record ? 'time' : 'its nonce' });
@@ -408,6 +440,8 @@ const hobaChallengesCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return scimSeconds('scim.maxHobaChallenges') || null;
   },
+  bound: 'Enforced: scim.maxHobaChallenges per realm, the oldest dropped; a ' +
+    'client using it is sent a fresh challenge.',
   lifetime: function (): string {
     return 'scim.hobaMaxAgeSeconds (' +
       scimSeconds('scim.hobaMaxAgeSeconds') + ' s) after it was issued, ' +
@@ -436,6 +470,8 @@ const hobaSeenCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return scimSeconds('scim.maxHobaSeen') || null;
   },
+  bound: 'Enforced: scim.maxHobaSeen per realm, the oldest dropped with the ' +
+    'challenge it was made for, so it cannot be replayed against a live one.',
   lifetime: function (): string {
     return 'Until its challenge expires; past the limit, the oldest go ' +
       'with their challenge.';
@@ -1375,21 +1411,38 @@ class ScimAuth {
 
   // The Set of counts for a nonce, made on first use — a nonce another process
   // issued arrives with none.
+  // The counts accepted under a nonce, as a Set to ask. The stored row is an
+  // array (see the declaration), so this is a copy: a count is added through
+  // addCount(), which writes the row back and so journals it.
   private countsOf(nonce) {
     const { log, digestCounts } = this.deps;
     log.debug("Entering ScimAuth.countsOf().");
-    let counts = digestCounts.get(nonce);
-    if (counts) {
+    const stored = digestCounts.get(nonce);
+    if (stored) {
       digestCountsCount.hit();
     } else {
       digestCountsCount.miss();
     }
-    if (!counts) {
-      counts = new Set();
-      digestCounts.set(nonce, counts);
-    }
     log.debug("Leaving ScimAuth.countsOf().");
-    return counts;
+    return new Set(Array.isArray(stored) ? stored.map(String) : []);
+  }
+
+  // One accepted count recorded; answers how many the nonce now has.
+  private addCount(nonce, nc) {
+    const { log, digestCounts } = this.deps;
+    log.debug("Entering ScimAuth.addCount().");
+    const stored = digestCounts.get(nonce);
+    const list = Array.isArray(stored) ? stored.map(String) : [];
+    if (!stored) {
+      cacheRegistry.makeRoom(digestCounts, this.maxDigestNonces(),
+                             { counter: digestCountsCount });
+    }
+    if (list.indexOf(String(nc)) < 0) {
+      list.push(String(nc));
+    }
+    digestCounts.set(nonce, list);
+    log.debug("Leaving ScimAuth.addCount(). " + list.length + " count(s).");
+    return list.length;
   }
 
   private forgetDigestNonce(nonce) {
@@ -1654,7 +1707,13 @@ class ScimAuth {
           : ' (scim.digestPassword). It is not repeated here.')));
     }
     if (qop === 'auth') {
-      this.countsOf(String(params.nonce)).add(String(params.nc));
+      const held = this.addCount(String(params.nonce), String(params.nc));
+      if (held >= MAX_COUNTS_PER_NONCE) {
+        // The per-nonce bound (see the declaration): this credential is
+        // accepted, and the nonce is retired so the next one is stale.
+        this.forgetDigestNonce(String(params.nonce));
+        digestCountsCount.evicted(1);
+      }
     }
 
     // RFC 7616 section 3.5, the Authentication-Info response header. It is what

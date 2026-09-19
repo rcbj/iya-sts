@@ -126,6 +126,10 @@ const fetched = new Map<string, any>();
 // signed for a list, re-signed when the bytes change or it is half-way to its
 // ttl. PER PROCESS.
 const signedTokens = new Map<string, any>();
+// A few documents per realm (one per kind of list), so the bound is only ever
+// met by a process serving a great many realms; the oldest then goes and is
+// signed again when it is next asked for (2026-09-18).
+const MAX_SIGNED_TOKENS = 1024;
 
 const entriesCount = cacheRegistry.register({
   name: 'oid4vci.status-entries',
@@ -141,6 +145,9 @@ const entriesCount = cacheRegistry.register({
   maxEntries: function (): number {
     return LIST_SIZE;
   },
+  bound: 'Enforced: the status list holds ' + LIST_SIZE + ' indexes per ' +
+    'realm; a list with no free index REFUSES to issue the credential ' +
+    '(STS-VC-0075) rather than reuse a live one.',
   lifetime: function (): string {
     return 'as long as the credential it describes; its index is free ' +
       'again after that.';
@@ -170,6 +177,8 @@ const fetchedCount = cacheRegistry.register({
   maxEntries: function (): number {
     return MAX_FETCHED;
   },
+  bound: 'Enforced: ' + MAX_FETCHED + ' fetched lists for the process, the ' +
+    'oldest dropped and fetched again when next needed.',
   lifetime: function (): string {
     return 'the list\'s own ttl (and never past its exp), at most ' +
       'oid4vp.statusListMaxCacheS; a failed fetch 30 seconds.';
@@ -196,9 +205,11 @@ const signedCount = cacheRegistry.register({
   persisted: false,
   hitMeaning: 'a list was served without signing it again',
   settings: ['oid4vci.statusListTtlS'],
-  maxEntries: function (): null {
-    return null;
+  maxEntries: function (): number {
+    return MAX_SIGNED_TOKENS;
   },
+  bound: 'Enforced: ' + MAX_SIGNED_TOKENS + ' signed documents for the ' +
+    'process, the oldest dropped and signed again when next asked for.',
   lifetime: function (): string {
     return 'until the list changes, or half of oid4vci.statusListTtlS.';
   },
@@ -565,6 +576,10 @@ class VcStatus {
   private remember(slot: any, token: any): void {
     const { log, now } = this.deps;
     log.debug("Entering VcStatus.remember().");
+    if (!signedTokens.has(slot.key)) {
+      cacheRegistry.makeRoom(signedTokens, MAX_SIGNED_TOKENS,
+                             { counter: signedCount });
+    }
     signedTokens.set(slot.key, { digest: slot.digest, token: token,
                                  signedAt: now(),
                                  ttlMs: this.ttlSeconds() * 1000 });

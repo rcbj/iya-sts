@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2783** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2796** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -51,9 +51,9 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 49
+* [Service core (`STS-CORE`)](#sts-core) — 55
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 59
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 62
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 173
@@ -62,19 +62,19 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 184
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 433
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 434
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 74
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 71
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 85
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 273
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 170
@@ -186,6 +186,12 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0093` | The service or its in-process suite was started from a tree whose TypeScript sources are not compiled, which only an image build does (#50). | none — the process exits before listening |
 | `STS-CORE-0094` | A module registered a cache with the cache registry and left out a member every descriptor must have (#74). | none — the module fails to load |
 | `STS-CORE-0095` | A registered cache threw while listing its entries for /admin/caches, so the page shows it with no rows (#74). | none — logged; the page says the cache could not be listed |
+| `STS-CORE-0096` | A registered cache reports no bound: its maxEntries() answered no finite number. Every cache and replay store has one since 2026-09-18, so this is a regression in its owner; /admin/caches shows it as a problem on the row. | none — logged; the page marks the row |
+| `STS-CORE-0097` | A bounded store that decides a replay was full of LIVE entries and refused a new one rather than forget one (logged at most once a minute per store; each refusal is counted on /admin/caches). The request is refused under its own protocol's code. | none — logged; the refusal carries the protocol's own code |
+| `STS-CORE-0098` | A persisted store declared a retention policy other than "keep" or "age". It is treated as "keep", so its rows are never dropped by age. | none — logged at require time |
+| `STS-CORE-0099` | A trust realm's domain was not a DNS name of at least two labels (letters, digits and hyphens, each at most 63 characters, a top-level label that is not all digits). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-WORKER
 
@@ -304,6 +310,9 @@ Raised from: persistence/.
 | `STS-STORE-0057` | A process found its place among the change log's readers removed since it last reported: it had been declared gone, so changes it had not applied may have been trimmed. It should be restarted. | — |
 | `STS-STORE-0058` | A process could not report its position in the change log; the log is not trimmed past where it last said it was, and the report is retried after the next pull. | — |
 | `STS-STORE-0059` | Trimming the change log below every reader's position failed; it is retried on the next interval. | — |
+| `STS-STORE-0060` | A process did not take the stable persistence origin for its node name and slot — a live process still held it after the wait, or it has no stable name — and writes under a random origin, so its per-process rows (audit, counters) are read by others as a contribution. | none — logged at startup |
+| `STS-STORE-0061` | A process lost the claim on its persistence origin while running — another process took it — and exits rather than go on refusing every write. | none — logged, then the process exits |
+| `STS-STORE-0062` | The claim on this process's persistence origin could not be renewed because the store did not answer. Not fatal: the claim outlives a short outage and every write checks it. | none — logged |
 
 ## STS-CLUSTER
 
@@ -480,7 +489,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0058` | A hold was to be released on a serial that is not on the authority's revocation list. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0059` | A release was asked for on a certificate revoked for a permanent reason (only certificateHold can be released). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0060` | The directory hook for publishing CRLs was offered without both publishCrl() and baseDnFor(), and was refused whole. | — |
-| `STS-PKI-0061` | The directory could not say where a scope lives; the CRL DN falls back to one built from ldap.baseDn. | — |
+| `STS-PKI-0061` | The directory could not say where a scope lives; the CRL DN falls back to one built from the realm's domain. | — |
 | `STS-PKI-0062` | The Web Crypto engine pkijs needs could not be installed; CRLs and OCSP responses cannot be signed. | — |
 | `STS-PKI-0063` | A certificate revocation list could not be signed with its authority's key. | HTTP 500 text at /pki/crl; console refusal |
 | `STS-PKI-0064` | A certificate revocation list could not be published into the directory (write-behind after a revocation, or at startup). | — |
@@ -1411,7 +1420,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0504` | A resource server here challenged an access token whose auth_time is older than the max_age the resource requires, or absent (RFC 9470 section 3). | insufficient_user_authentication (HTTP 401, WWW-Authenticate challenge with max_age) |
 | `STS-OAUTH-0505` | The step-up stand-in resource was asked for an application this realm has no entry for. | invalid_request (HTTP 404) |
 | `STS-OAUTH-0506` | An access token presented at the step-up stand-in resource does not name that application in its aud (RFC 9068 section 4 step 4). | invalid_token (HTTP 401, WWW-Authenticate challenge) |
-| `STS-OAUTH-0507` | An access token presented at the step-up stand-in resource did not verify against this realm's signing key. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
+| `STS-OAUTH-0507` | An access token presented where only a token this realm can verify is accepted — the step-up stand-in resource, or an OpenID4VCI endpoint in product mode — did not verify against this realm's signing key. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0508` | A configured step-up requirement (oauth2.stepUpAcrValues, or an application's oauthStepUpAcrValues or oauthStepUpMaxAge written by hand) holds a value that cannot be one, and it was ignored. | none — logged only |
 | `STS-OAUTH-0509` | An authorization request's acr_values carries a value that cannot be an acr value (a double quote, a backslash or a control character). | invalid_request (redirected error) |
 | `STS-OAUTH-0510` | A password or assertion grant was refused because the directory holds no entry for the person, so there is no subject to issue a token about. | invalid_grant (HTTP 400) |
@@ -1458,6 +1467,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0551` | A token request — any grant carrying a person, a refresh token included — was refused because the account is disabled. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0552` | A PUBLIC client (token_endpoint_auth_method="none") asked for the client credentials grant in product mode. RFC 6749 section 4.4 defines that grant for a client that HAS credentials and OAuth 2.1 section 4.2 limits it to confidential clients; a public client using it would mint a token for anybody who knows the client_id. | unauthorized_client (HTTP 400) |
 | `STS-OAUTH-0553` | A client whose application entry declares NO token_endpoint_auth_method presented no credential. Product mode reads the omission as RFC 7591 section 2's default, client_secret_basic, and refuses it at the token endpoint and at PAR; development records it as an unauthenticated client and answers. Setting oauthTokenEndpointAuthMethod to "none" makes it a public client. An application created from the console or /admin-api has been given a method since 2026-09-18, so this is an entry made before that or by another door. | invalid_client (HTTP 401) in product mode; none in development |
+| `STS-OAUTH-0554` | A DPoP proof was refused because the realm's proof-ID replay history held oauth2.dpopReplayCacheSize LIVE entries: forgetting one would let that proof be replayed, so the new proof is refused instead until entries age out (twice oauth2.dpopIatSkewS). | invalid_dpop_proof (HTTP 400 / 401) |
 
 ## STS-SAML
 
@@ -1898,6 +1908,7 @@ Raised from: ldap/.
 | `STS-LDAP-0095` | This node's bound directory connections could not be read for, or committed to, the cluster connection table; other nodes list what it published last (a sign-out still reaches them by identity). | none — logged |
 | `STS-LDAP-0096` | Another node signed an identity out and this node could not close the directory connections bound as it; they may still be open. | none — logged |
 | `STS-LDAP-0097` | An account lock (pwdAccountLockedTime) changed through a directory write and handing the change to account_state.ts failed, so what the person held may not have been ended. | none — logged; the write stands and every door refuses the person |
+| `STS-LDAP-0098` | The node-ldapjs in use does not support the routeAnonymousBinds server option, so an anonymous bind is answered by the library and never reaches the bind handler; product mode cannot refuse it (reads on that connection are still refused). | none — logged at startup |
 
 ## STS-SCIM
 
@@ -2201,6 +2212,7 @@ Raised from: oid4vc/.
 | `STS-VC-0083` | A Digital Credentials API answer arrived for a sign-in that was not offered through the Digital Credentials API. | HTTP 400 page at /authn/wallet/dc-api |
 | `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 page at /authn/wallet/wait |
 | `STS-VC-0085` | A certificate in oid4vci.keyAttestationTrustedCertificates could not be read and was ignored. | — |
+| `STS-VC-0086` | An access token this realm revoked was presented at an OpenID4VCI endpoint (credential, deferred credential or notification) in product mode. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 
 ## STS-SSF
 
@@ -2582,6 +2594,7 @@ Raised from: gnap/.
 | `STS-GNAP-0715` | A key proof (an HTTP message signature nonce or a JWS) this process had not seen was already accepted by another process against the same store (the cluster claim, #46). | invalid_client, invalid_resource_server or invalid_token (HTTP 401) |
 | `STS-GNAP-0716` | The cluster claim store could not be asked about a GNAP single-use value, so the request was refused rather than accepted unproven. | the refusal of the value it guarded |
 | `STS-GNAP-0717` | A resource owner's decision on a GNAP grant was refused because a decision on the same interaction had already been recorded, by another request or another node against the same store (the cluster claim, #46). | RFC 9635 section 4 (an interaction is answered once) |
+| `STS-GNAP-0718` | A signed GNAP request was refused because the realm's signature replay history held gnap.replayCacheSize LIVE entries: forgetting one would let that signature be replayed, so the request is refused instead until entries age out. | RFC 9635 section 7.3 (invalid_request) |
 
 ## STS-XACML
 

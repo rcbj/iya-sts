@@ -350,9 +350,47 @@ async function rowFor(id) {
 // session (`sts_session`, the identity provider's) and the surface's own
 // (`sts_admin` or `sts_portal`, established from the ID Token). The
 // jar in `browser()` keys cookies by name, so it holds both.
+// THE CONSOLE'S ROSTER IS IN FORCE WHEREVER SOMEBODY ADMINISTERS THE SERVICE
+// (2026-09-18). A development-mode stack with an empty roster admits anybody
+// to /admin; a deployment with an administrator — testidp, and any product
+// install past its bootstrap — admits only a holder of Admin Read. So a
+// person this job signs in to the console is GRANTED it, and every grant is
+// taken back when the job ends, pass or fail: a real deployment must not
+// collect test accounts holding a console role.
+const granted = [];
+
+async function grantConsoleRead(who) {
+  log.debug("Entering grantConsoleRead(). who=" + who);
+  if (granted.indexOf(who) >= 0) {
+    log.debug("Leaving grantConsoleRead(). Already granted.");
+    return;
+  }
+  const r = await post("/rbac/grant", { username: who, role: "read" });
+  assert.ok(r.status === 200,
+    "POST /admin-api/rbac/grant should give " + who + " Admin Read; it " +
+    "answered " + r.status + " " + String(r.raw).slice(0, 300));
+  granted.push(who);
+  log.debug("Leaving grantConsoleRead().");
+}
+
+async function revokeConsoleGrants() {
+  log.debug("Entering revokeConsoleGrants().");
+  for (const who of granted) {
+    const r = await post("/rbac/revoke", { username: who, role: "read" });
+    if (r.status !== 200) {
+      log.warn("could not take Admin Read back from " + who + ": " +
+               r.status + " " + String(r.raw).slice(0, 200));
+    }
+  }
+  log.debug("Leaving revokeConsoleGrants().");
+}
+
 async function signInAt(door, who) {
   log.debug("Entering signInAt(). door=" + door);
   await ensurePerson(who);
+  if (/^\/admin(\/|\?|$)/.test(door)) {
+    await grantConsoleRead(who);
+  }
   const b = browser(who);
   let r = await b.go("GET", door);
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
@@ -1509,7 +1547,8 @@ program
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+test().then(revokeConsoleGrants, async function (e) {
   log.error(e.stack || e.message);
+  await revokeConsoleGrants();
   process.exit(1);
 });

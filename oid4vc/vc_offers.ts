@@ -136,7 +136,8 @@ const VCI_FORMATS = Array.from(new Set(
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // id -> { offer, issuerState, expires }
-const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers' });
+const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
+                                      retain: 'age' });
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -144,7 +145,8 @@ const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers' });
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // issuer_state -> { configurationIds, expires }
-const issuerStates = realms.map({ persist: 'vc_offers.issuerStates' });
+const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
+                                  retain: 'age' });
 
 // Pre-authorized codes (OID4VCI Appendix H.2 / H.3): the End-User authorized
 // the issuance out of band, so there is no authorization request at all — the
@@ -159,7 +161,7 @@ const issuerStates = realms.map({ persist: 'vc_offers.issuerStates' });
 // common/realms.js.
 // code -> { configurationIds, txCode, user, deferred, expires }
 const preAuthorizedCodes =
-    realms.map({ persist: 'vc_offers.preAuthorizedCodes' });
+    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age' });
 
 // Deferred issuance transactions (OID4VCI section 9): the credential endpoint
 // answered 202 with one of these instead of a credential.
@@ -170,7 +172,7 @@ const preAuthorizedCodes =
 // this behaves as the plain Map it replaced. See common/realms.js.
 // transaction_id -> { claims, holderJwk, readyAt, expires }
 const deferredTransactions =
-    realms.map({ persist: 'vc_offers.deferredTransactions' });
+    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age' });
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.
@@ -194,7 +196,7 @@ const deferredTransactions =
 // `oauth-oidc/oauth2.ts` adds and `vc_issuer.ts` asks and spends, and neither
 // has any reason to learn that the store underneath changed.
 const deferredAccessTokenStore =
-    realms.map({ persist: 'vc_offers.deferredAccessTokens' });
+    realms.map({ persist: 'vc_offers.deferredAccessTokens', retain: 'age' });
 
 // `oid4vci.offerTtlS` since 2026-09-12. The constant is the default and keeps
 // its name because `vc_issuer.ts` imports it; `offerTtlMs()` is the live value

@@ -398,7 +398,8 @@ const FIELD_PREFIX = 'field.';
 // ../mgmt-api/CLAUDE.md, which is the rule that sentence serves.
 const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'confirm-address', 'discard-address',
-                             'regenerate-secret', 'issue-software-statement',
+                             'regenerate-secret', 'generate-secret',
+                             'issue-software-statement',
                              'issue-tls-client-certificate',
                              'revoke-tls-client-certificate',
                              'revoke-registration', 'refresh-metadata',
@@ -2804,6 +2805,27 @@ class AdminActions {
     }
 
     // ---------------------------------------------------------------------
+    // A CLIENT SECRET FOR AN APPLICATION NOT YET CREATED (2026-09-18), the
+    // *Generate Secret* button on /admin/applications/new. It names no
+    // application and WRITES NOTHING: it hands back a value minted by
+    // `applications.mintClientSecret()` — the one definition of a client
+    // secret, which `regenerate-secret` above and `POST /oauth2/register`
+    // share — and the value becomes a credential only when a `create`
+    // carries it in `oauthClientSecret`. That create then writes
+    // `client_secret_basic` as the method, as it does for a typed secret;
+    // the token endpoint takes the secret by a Basic header or a form
+    // parameter either way (`oauth-oidc/client_auth.js`). It cannot fail, so
+    // it has no error code.
+    if (action === 'generate-secret') {
+      const secret = applications.mintClientSecret();
+      log.debug("Leaving AdminActions.applicationsAction(). generate-secret.");
+      return { ok: true, changed: false, clientSecret: secret,
+               message: 'A client secret was generated. Nothing was ' +
+                        'written: it becomes this application\'s credential ' +
+                        'when the application is created with it.' };
+    }
+
+    // ---------------------------------------------------------------------
     // A SOFTWARE STATEMENT, SIGNED AS THIS REALM (RFC 7591 section 2.3,
     // 2026-09-13), from the Software statements section of the application's
     // own page. `software_statement.issue()` decides everything about it —
@@ -4036,6 +4058,10 @@ class AdminActions {
       return ' The directory could not be populated: ' +
              (sweep.errors || []).join(' ');
     }
+    if (sweep.skipped) {
+      log.debug("Leaving AdminActions.sweepText(). The sweep did not run.");
+      return ' No directory entry was populated: ' + sweep.skipped + '.';
+    }
     log.debug("Leaving AdminActions.sweepText().");
     return ' Swept ' + sweep.examined + ' directory entry/entries; ' +
            sweep.changed +
@@ -4294,8 +4320,11 @@ class AdminActions {
       // It is `undefined` rather than `{}` when nobody sent one, because
       // `create()` distinguishes them: an empty object is still merged over the
       // seeded names — harmlessly, but the intent is "the caller sent nothing".
+      // `domain` (2026-09-18): the realm's DNS domain, fixed from here on.
+      // Empty is `<id>.<global.domain>`; realms.js decides and refuses.
       const result = realms.create({ id: id.toLowerCase(), name: body.name,
                                      description: body.description,
+                                     domain: body.domain,
                                      overrides: body.overrides });
       if (!result.ok) {
         log.debug("Leaving AdminActions.realmsAction(). create refused.");
@@ -4355,9 +4384,12 @@ class AdminActions {
     }
 
     if (action === 'update') {
+      // `domain` is passed so that a caller asking to CHANGE it is told it is
+      // fixed (STS-CORE-0101) rather than having the field silently ignored.
       const result = realms.update(id,
                                    { name: body.name,
-                                     description: body.description });
+                                     description: body.description,
+                                     domain: body.domain });
       if (!result.ok) {
         log.debug("Leaving AdminActions.realmsAction(). update refused.");
         return this.refusedBy('STS-ADMIN-0562', result);

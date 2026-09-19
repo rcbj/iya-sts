@@ -2911,53 +2911,61 @@ function startTcp(port) {
       // unhandled 'error' on a socket takes the whole process down.
       log.debug('krb5: TCP socket error: ' + err.message);
     });
+    // EVERY AUDIT ROW THIS CONNECTION CAUSES NAMES ITS CLIENT (2026-09-18):
+    // the AS-REQ's `authentication` row is written by `admin_stats.js`, which
+    // is handed no socket, so each chunk is handled inside an audit source
+    // naming the peer (`common/audit.js`, `withSource()`). No require is
+    // added — `audit` was already one — so the parent project's COPY closure
+    // does not move.
     socket.on('data', function (chunk) {
-      buffer = Buffer.concat([buffer, chunk]);
-      if (buffer.length > maxRequestBytes()) {
-        log.warn('krb5: a TCP client at ' + peer + ' sent more than ' +
-                 maxRequestBytes() +
-                 ' bytes (krb5.maxRequestBytes); closing');
-        audit.failure('STS-KRB-0049', {
-          protocol: 'Kerberos', channel: 'kerberos',
-          target: 'KDC TCP ' + port,
-          summary: 'a TCP request to the KDC exceeded krb5.maxRequestBytes ' +
-                   'and the connection was closed',
-          outcome: 'refused'
+      audit.withSource({ address: socket.remoteAddress || '' }, function () {
+        buffer = Buffer.concat([buffer, chunk]);
+        if (buffer.length > maxRequestBytes()) {
+          log.warn('krb5: a TCP client at ' + peer + ' sent more than ' +
+                   maxRequestBytes() +
+                   ' bytes (krb5.maxRequestBytes); closing');
+          audit.failure('STS-KRB-0049', {
+            protocol: 'Kerberos', channel: 'kerberos',
+            target: 'KDC TCP ' + port,
+            summary: 'a TCP request to the KDC exceeded krb5.maxRequestBytes ' +
+                     'and the connection was closed',
+            outcome: 'refused'
+          });
+          socket.destroy();
+          return;
+        }
+        if (buffer.length < 4) return;
+        const declared = buffer.readUInt32BE(0);
+        if (declared & 0x80000000) {
+          log.warn('krb5: a TCP client at ' + peer + ' sent a length prefix ' +
+                   'with the reserved top bit set; closing');
+          audit.failure('STS-KRB-0050', {
+            protocol: 'Kerberos', channel: 'kerberos',
+            target: 'KDC TCP ' + port,
+            summary: 'a TCP request to the KDC carried a length prefix with ' +
+                     'the reserved top bit set and the connection was closed',
+            outcome: 'refused'
+          });
+          socket.destroy();
+          return;
+        }
+        if (buffer.length < 4 + declared) return;
+        const message = buffer.subarray(4, 4 + declared);
+        buffer = buffer.subarray(4 + declared);
+        handleMessage(message).then(function (reply) {
+          const framed = Buffer.alloc(4 + reply.length);
+          framed.writeUInt32BE(reply.length, 0);
+          Buffer.from(reply).copy(framed, 4);
+          socket.write(framed);
+          recordRawRefusal(reply, 'TCP');
+        }).catch(function (e) {
+          // handleMessage catches its own errors; this is the last resort, and
+          // it must still answer rather than leave the client waiting.
+          log.error(errorCodes.tag('STS-KRB-0051') +
+                    'krb5: failed to build a reply: ' +
+                    (e.stack || e.message));
+          socket.destroy();
         });
-        socket.destroy();
-        return;
-      }
-      if (buffer.length < 4) return;
-      const declared = buffer.readUInt32BE(0);
-      if (declared & 0x80000000) {
-        log.warn('krb5: a TCP client at ' + peer + ' sent a length prefix ' +
-                 'with the reserved top bit set; closing');
-        audit.failure('STS-KRB-0050', {
-          protocol: 'Kerberos', channel: 'kerberos',
-          target: 'KDC TCP ' + port,
-          summary: 'a TCP request to the KDC carried a length prefix with ' +
-                   'the reserved top bit set and the connection was closed',
-          outcome: 'refused'
-        });
-        socket.destroy();
-        return;
-      }
-      if (buffer.length < 4 + declared) return;
-      const message = buffer.subarray(4, 4 + declared);
-      buffer = buffer.subarray(4 + declared);
-      handleMessage(message).then(function (reply) {
-        const framed = Buffer.alloc(4 + reply.length);
-        framed.writeUInt32BE(reply.length, 0);
-        Buffer.from(reply).copy(framed, 4);
-        socket.write(framed);
-        recordRawRefusal(reply, 'TCP');
-      }).catch(function (e) {
-        // handleMessage catches its own errors; this is the last resort, and it
-        // must still answer rather than leave the client waiting.
-        log.error(errorCodes.tag('STS-KRB-0051') + 'krb5: failed to build a ' +
-                                                   'reply: ' +
-                  (e.stack || e.message));
-        socket.destroy();
       });
     });
   });
@@ -2992,27 +3000,31 @@ function startUdp(port) {
               'krb5: the UDP listener on port ' + port +
               ' failed: ' + err.message);
   });
+  // The datagram's sender on every audit row it causes — see startTcp().
   socket.on('message', function (message, rinfo) {
-    handleMessage(message).then(function (reply) {
-      // A real KDC answers KRB_ERR_RESPONSE_TOO_BIG when its reply will not fit
-      // in a datagram, and a client then retries over TCP. Reproducing that is
-      // worth more than sending an oversized datagram, because the retry is the
-      // behaviour a client has to get right.
-      if (reply.length > udpMaxReplyBytes()) {
-        log.info('krb5: the reply is ' + reply.length + ' bytes, too big for ' +
-                 'UDP; answering KRB_ERR_RESPONSE_TOO_BIG so the client ' +
-                 'retries over TCP');
-        const tooBig = errorReply(52, { errorCode: 'STS-KRB-0054',
-          eText: 'the reply is ' + reply.length + ' bytes; retry over TCP' });
-        recordRawRefusal(tooBig, 'UDP');
-        return socket.send(Buffer.from(tooBig), rinfo.port, rinfo.address);
-      }
-      socket.send(Buffer.from(reply), rinfo.port, rinfo.address);
-      recordRawRefusal(reply, 'UDP');
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-KRB-0051') + 'krb5: failed to build a ' +
-                                                 'UDP reply: ' +
-                (e.stack || e.message));
+    audit.withSource({ address: rinfo.address }, function () {
+      handleMessage(message).then(function (reply) {
+        // A real KDC answers KRB_ERR_RESPONSE_TOO_BIG when its reply will not
+        // fit in a datagram, and a client then retries over TCP. Reproducing
+        // that is worth more than sending an oversized datagram, because the
+        // retry is the behaviour a client has to get right.
+        if (reply.length > udpMaxReplyBytes()) {
+          log.info('krb5: the reply is ' + reply.length +
+                   ' bytes, too big for UDP; answering ' +
+                   'KRB_ERR_RESPONSE_TOO_BIG so the client ' +
+                   'retries over TCP');
+          const tooBig = errorReply(52, { errorCode: 'STS-KRB-0054',
+            eText: 'the reply is ' + reply.length + ' bytes; retry over TCP' });
+          recordRawRefusal(tooBig, 'UDP');
+          return socket.send(Buffer.from(tooBig), rinfo.port, rinfo.address);
+        }
+        socket.send(Buffer.from(reply), rinfo.port, rinfo.address);
+        recordRawRefusal(reply, 'UDP');
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-KRB-0051') + 'krb5: failed to build a ' +
+                                                   'UDP reply: ' +
+                  (e.stack || e.message));
+      });
     });
   });
   socket.bind(port, listenHost(), function () {

@@ -325,8 +325,7 @@ async function run(t) {
               listing.errorName === 'InsufficientAccessRightsError',
               'and so is a one-level search of the ou=crl container',
               JSON.stringify({ ok: listing.ok, errorName: listing.errorName }));
-      const people = search('ou=users,dc=' + REALM + ',' +
-                            config.value('ldap.baseDn'), 0, []);
+      const people = search('ou=users,' + realms.baseDnOf(REALM), 0, []);
       t.check(people.ok === false &&
               people.errorName === 'InsufficientAccessRightsError',
               'and a base search of anything that is not a CRL entry is ' +

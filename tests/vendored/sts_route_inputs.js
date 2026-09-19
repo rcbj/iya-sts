@@ -384,6 +384,14 @@ async function test() {
   const failures = [];
   let probes = 0;
 
+  // THE PROBES, A FEW AT A TIME (2026-09-18). They ran one after another,
+  // which is three thousand round trips: a few minutes against a container on
+  // this machine and past the twenty-minute watchdog against a deployment
+  // across the internet, where every probe is a new TLS connection. A small
+  // fixed number in flight keeps the job's meaning — every route is asked
+  // every question, and a 5xx or a timeout is still the one finding — and
+  // STS_ROUTE_INPUTS_CONCURRENCY changes the number (1 is the old behaviour).
+  const work = [];
   for (const route of routes) {
     const target = fill(route.path);
     for (const entry of CASES) {
@@ -395,17 +403,35 @@ async function test() {
       const url = query
         ? target + (target.indexOf("?") >= 0 ? "&" : "?") + query
         : target;
-      const answer = await request(route.method, url,
-                                   body ? body.data : null,
-                                   body ? body.type : null);
-      probes = probes + 1;
-      if (answer.status >= 500 || answer.status === -1) {
-        failures.push(route.method + " " + route.path + " <- " + label +
-                      " => " + (answer.status === -1 ? "TIMED OUT"
-                                                     : answer.status));
-      }
+      work.push({ route: route, label: label, url: url, body: body });
     }
   }
+  const concurrency = Math.max(1, Number(
+    process.env.STS_ROUTE_INPUTS_CONCURRENCY || 8));
+  let next = 0;
+  const probeWorker = async function () {
+    log.debug("Entering probeWorker().");
+    while (next < work.length) {
+      const one = work[next];
+      next = next + 1;
+      const answer = await request(one.route.method, one.url,
+                                   one.body ? one.body.data : null,
+                                   one.body ? one.body.type : null);
+      probes = probes + 1;
+      if (answer.status >= 500 || answer.status === -1) {
+        failures.push(one.route.method + " " + one.route.path + " <- " +
+                      one.label + " => " +
+                      (answer.status === -1 ? "TIMED OUT" : answer.status));
+      }
+    }
+    log.debug("Leaving probeWorker().");
+  };
+  const workers = [];
+  for (let i = 0; i < concurrency; i++) {
+    workers.push(probeWorker());
+  }
+  await Promise.all(workers);
+  log.info("[probe] " + probes + " probe(s), " + concurrency + " at a time.");
 
   assert.ok(probes >= MINIMUM_PROBES,
     "only " + probes + " probes ran, and the floor is " + MINIMUM_PROBES +

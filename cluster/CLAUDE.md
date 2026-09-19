@@ -138,6 +138,18 @@ node can see. The worker count is a LAZY require of `common/request_pool`,
 from inside the store's own gate, and a require at the top of the file would
 pull the keystore in there, which is the thing `gate()` exists to run before.
 
+**AND THE NODE'S CACHE FIGURES (2026-09-18)**, as `info.caches`: the compact
+`cache_registry.snapshot()` — per store the name, size, fullest realm, valid
+count, bound and four counters, about sixty bytes a store — so another node's
+`/admin/caches` can show them with no request crossing between nodes. It
+breaks the "nothing in it is computed" rule in the only way that keeps it: the
+snapshot is taken on a timer of its OWN (`CACHE_REPORT_MS`, thirty seconds,
+first five seconds after the join), because it walks every store's rows, and
+`nodeInfo()` attaches the last one taken. So the beat stays a lookup, and a
+report that cannot be taken costs the other nodes this node's figures and
+never a heartbeat. `cache_registry.js` requires only `config` and
+`error_codes`, so it is a plain require at the top of this file.
+
 Three things the page decides rather than reads:
 
 * **Live and gone are separated**, and the gone fold under a `<details>`. A row

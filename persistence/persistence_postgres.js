@@ -134,8 +134,12 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // something to look at other than the shape of the tables — but leaving it at 1
 // over a different schema would make the one thing it is for useless. 4 SINCE
 // 2026-09-13, for `sts_used_assertions`. 5 SINCE 2026-09-14, for the four
-// `sts_cluster_*` tables (#46) — see their block below.
-const SCHEMA_VERSION = 5;
+// `sts_cluster_*` tables (#46) — see their block below. 6 SINCE 2026-09-18,
+// for `sts_realms.domain` — a realm's DNS domain, fixed at creation — which is
+// the first COLUMN this schema has added to a table that already existed, and
+// so the first that `CREATE TABLE IF NOT EXISTS` cannot add: see
+// SCHEMA_COLUMNS below.
+const SCHEMA_VERSION = 6;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -233,7 +237,8 @@ const SCHEMA_OBJECTS = [
   '  name        text,' +
   '  description text,' +
   '  created_at  bigint,' +
-  '  overrides   jsonb NOT NULL DEFAULT \'{}\'::jsonb)' },
+  '  overrides   jsonb NOT NULL DEFAULT \'{}\'::jsonb,' +
+  '  domain      text)' },
   { name: 'sts_appconfig', statement:
   'CREATE TABLE IF NOT EXISTS sts_appconfig (' +
   '  key   text PRIMARY KEY,' +
@@ -501,6 +506,19 @@ const SCHEMA_OBJECTS = [
   'CREATE TABLE IF NOT EXISTS sts_schema (' +
   '  version int PRIMARY KEY,' +
   '  applied_at timestamptz NOT NULL DEFAULT now())' }
+];
+
+// COLUMNS ADDED TO A TABLE THAT MAY ALREADY EXIST (2026-09-18). A table in
+// SCHEMA_OBJECTS is created whole when it is missing, and `CREATE TABLE IF NOT
+// EXISTS` does nothing to one that is there — so a column added later reaches
+// a new database and never an old one. Each row here is probed by name in
+// `information_schema.columns`, which needs no privilege beyond seeing the
+// table, and added where it is missing. The least-privileged role cannot
+// ALTER, and is refused with STS-STORE-0029's sentence naming
+// `postgres/schema.sql`, which carries the same `ADD COLUMN IF NOT EXISTS`.
+const SCHEMA_COLUMNS = [
+  { table: 'sts_realms', column: 'domain', statement:
+  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -825,6 +843,9 @@ const METRIC_PROBES = [
          'ORDER BY extname' }
 ];
 
+// The claim scope a stable origin is held under (`adoptOrigin()`).
+const ORIGIN_SCOPE = 'persistence.origin';
+
 function create(options) {
   const url = options.url;
   const log = options.log;
@@ -1016,7 +1037,14 @@ function create(options) {
   // `changesSince()`'s callers skip "their own" rows, so each would drop the
   // other's writes for ever, and `merge: 'own'` counters would overwrite each
   // other under one key. A UUID makes it unreachable rather than unlikely.
-  const processId = String(process.pid) + '-' + nodeCrypto.randomUUID();
+  //
+  // **A PROCESS THAT RESTARTS UNDER A STABLE NAME TAKES ITS ORIGIN BACK
+  // (2026-09-18)** — see `adoptOrigin()` below. The random value here is what
+  // a process uses when it has no stable name, or when the name is still held
+  // by a live process, which is exactly the case the paragraph above guards.
+  let processId = String(process.pid) + '-' + nodeCrypto.randomUUID();
+  // The claim this process holds on a stable origin, or null.
+  let originClaim = null;
 
   // ---------------------------------------------------------------------
   // THE FENCE (2026-09-14, #46), installed by `cluster/cluster.js`.
@@ -1034,6 +1062,9 @@ function create(options) {
   // ---------------------------------------------------------------------
   let fence = null;
   let onFenced = null;
+  // What to do when the ORIGIN fence fails outside a cluster (a cluster's
+  // `onFenced` decides it inside one). Installed by persistence.js.
+  let onOriginLost = null;
 
   // `reason` is `node` (the membership is gone — fatal for every process of
   // the node) or `lease` (one role was lost — fatal only to the write that
@@ -1049,17 +1080,56 @@ function create(options) {
     return err;
   }
 
+  // ---------------------------------------------------------------------
+  // THE ORIGIN FENCE (2026-09-18). A process that ADOPTED a stable origin
+  // holds a claim on it (`adoptOrigin()`), and every transaction checks the
+  // claim is still its own — under a SHARE lock held to COMMIT, so a
+  // successor cannot take the origin between the check and the write. That
+  // is what makes a shared origin safe: a process paused past its claim's
+  // lifetime wakes to find its writes refused, rather than overwriting the
+  // rows its successor has taken over.
+  // ---------------------------------------------------------------------
+  function checkOriginFence(client) {
+    log.debug("Entering checkOriginFence().");
+    if (!originClaim) {
+      log.debug("Leaving checkOriginFence(). No claim.");
+      return Promise.resolve();
+    }
+    const held = originClaim;
+    log.debug("Leaving checkOriginFence().");
+    return client.query(
+      'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = \'\' ' +
+      'AND key = $2 AND reservation = $3 AND expires_at > ' + DB_NOW +
+      ' FOR SHARE', [ORIGIN_SCOPE, held.key, held.reservation]
+    ).then(function (r) {
+      if (!r.rowCount) {
+        throw fenced('origin', 'this process no longer holds its origin ' +
+                     held.key + ' (the claim lapsed or another process ' +
+                     'took it), so it may not write.');
+      }
+      return null;
+    });
+  }
+
   function checkFence(client) {
     log.debug("Entering checkFence().");
+    log.debug("Leaving checkFence().");
+    return checkOriginFence(client).then(function () {
+      return checkClusterFence(client);
+    });
+  }
+
+  function checkClusterFence(client) {
+    log.debug("Entering checkClusterFence().");
     const wanted = fence ? fence() : null;
     if (!wanted || !wanted.nodeId) {
-      log.debug("Leaving checkFence(). No fence.");
+      log.debug("Leaving checkClusterFence(). No fence.");
       return Promise.resolve();
     }
     const leases = (wanted.leases || []).filter(function (one) {
       return one && one.name;
     });
-    log.debug("Leaving checkFence(). The node and " + leases.length +
+    log.debug("Leaving checkClusterFence(). The node and " + leases.length +
               " lease(s).");
     // THE MEMBERSHIP FIRST, unlocked: a node row is only ever renewed by its
     // own heartbeat, so there is no takeover of it to race.
@@ -1288,6 +1358,11 @@ function create(options) {
           log.debug('Leaving withTransaction(). Rolled back.');
           if (err && err.fenced && typeof onFenced === 'function') {
             onFenced(err);
+          } else if (err && err.fenced && err.reason === 'origin' &&
+                     typeof onOriginLost === 'function') {
+            // No cluster to decide, and a process that has lost its origin
+            // must not go on trying to write under it (`adoptOrigin()`).
+            onOriginLost(err);
           }
           throw err;
         });
@@ -1343,6 +1418,35 @@ function create(options) {
             });
           });
           return chain;
+        }).then(function () {
+          // The columns, after the tables they belong to exist.
+          return client.query(
+            'SELECT table_name, column_name FROM information_schema.columns ' +
+            'WHERE table_schema = current_schema() AND ' +
+            '(table_name, column_name) IN (' +
+            SCHEMA_COLUMNS.map(function (one, index) {
+              return '($' + (2 * index + 1) + ', $' + (2 * index + 2) + ')';
+            }).join(', ') + ')',
+            [].concat.apply([], SCHEMA_COLUMNS.map(function (one) {
+              return [one.table, one.column];
+            }))).then(function (result) {
+            const present = new Set(result.rows.map(function (row) {
+              return row.table_name + '.' + row.column_name;
+            }));
+            let chain = Promise.resolve();
+            SCHEMA_COLUMNS.forEach(function (one) {
+              const name = one.table + '.' + one.column;
+              if (present.has(name)) {
+                return;
+              }
+              chain = chain.then(function () {
+                return client.query(one.statement).then(function () {
+                  created.push(name);
+                });
+              });
+            });
+            return chain;
+          });
         }).then(function () {
           // DML, and the one statement here that runs on every open. The
           // script writes this row too; `ON CONFLICT DO NOTHING` is what
@@ -1611,7 +1715,8 @@ function create(options) {
       log.debug('Entering the postgres driver loadRealms().');
       log.debug("Leaving loadRealms().");
       return pool.query(
-        'SELECT id, name, description, created_at, overrides FROM sts_realms ' +
+        'SELECT id, name, description, created_at, overrides, domain ' +
+        'FROM sts_realms ' +
         'ORDER BY created_at NULLS FIRST, id'
       ).then(function (result) {
         if (!result.rows.length) {
@@ -1624,6 +1729,7 @@ function create(options) {
             id: row.id,
             name: row.name,
             description: row.description,
+            domain: row.domain || '',
             // bigint comes back as a STRING from node-postgres, because a
             // 64-bit integer does not fit a JS number. It is an epoch
             // millisecond count, which does, so it is converted here rather
@@ -1974,8 +2080,10 @@ function create(options) {
           chain = chain.then(function () {
             return client.query(
               'INSERT INTO sts_realms (id, name, description, created_at, ' +
-              'overrides) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT ' +
-              '(id) DO UPDATE SET ' +
+              'overrides, domain) VALUES ($1, $2, $3, $4, $5::jsonb, $11) ' +
+              'ON CONFLICT (id) DO UPDATE SET ' +
+              // FIXED AT CREATION, so the first value written stays.
+              '  domain = COALESCE(sts_realms.domain, EXCLUDED.domain), ' +
               '  name = CASE WHEN $6 THEN EXCLUDED.name ' +
               '              ELSE sts_realms.name END, ' +
               '  description = CASE WHEN $7 THEN EXCLUDED.description ' +
@@ -1988,7 +2096,8 @@ function create(options) {
               [row.id, row.name, row.description, row.createdAt,
                JSON.stringify(row.overrides || {}), !!one.name,
                !!one.description, (one.cleared || []).map(String),
-               JSON.stringify(one.set || {}), !!one.whole]);
+               JSON.stringify(one.set || {}), !!one.whole,
+               row.domain || null]);
           });
         });
         return chain.then(function () {
@@ -2437,6 +2546,110 @@ function create(options) {
       log.debug("Entering origin().");
       log.debug("Leaving origin().");
       return processId;
+    },
+
+    // -----------------------------------------------------------------
+    // A STABLE ORIGIN FOR A PROCESS THAT RESTARTS UNDER THE SAME NAME
+    // (2026-09-18).
+    //
+    // A process's origin was random per start, so a container restarted
+    // under the same node name was a NEW origin: everything its previous
+    // life wrote to a `merge: 'own'` store (its audit ring, its counters,
+    // its share of the users register) became another process's
+    // contribution, visible only to readers that fan in and left behind for
+    // good. Now a process with a stable `name` (node name and slot) takes
+    // the origin `n:<name>` — the one its previous life wrote under — and
+    // restores those rows as its own.
+    //
+    // **ONLY WHILE NOBODY ELSE HOLDS IT.** Two live processes sharing an
+    // origin would each skip the other's writes for ever (the paragraph
+    // above `processId`), so the origin is taken through a claim in
+    // `sts_cluster_claims` that lives `ttlMs` and is renewed. A claim still
+    // live is waited out for up to `waitMs` — a crashed predecessor's lapses
+    // in that time — and if it is still held after that, this process
+    // keeps its random origin and says so. Every transaction then checks the
+    // claim (`checkOriginFence()`).
+    //
+    // Must be called after `open()` and before anything reads `origin()`.
+    // -----------------------------------------------------------------
+    adoptOrigin: function (opts) {
+      log.debug("Entering the postgres driver adoptOrigin().");
+      const o = opts || {};
+      const name = String(o.name || '').trim();
+      if (!name) {
+        log.debug("Leaving adoptOrigin(). No stable name.");
+        return Promise.resolve({ adopted: false, origin: processId,
+                                 why: 'no stable name' });
+      }
+      const key = 'n:' + name;
+      const ttlMs = Math.max(1000, Number(o.ttlMs) || 30000);
+      const waitMs = Math.max(0, Number(o.waitMs) || 0);
+      const pollMs = Math.max(100, Number(o.pollMs) || 2000);
+      const reservation = nodeCrypto.randomUUID();
+      const started = Date.now();
+      const self = this;
+      function attempt() {
+        return self.claimOnce(ORIGIN_SCOPE, '', key, {
+          ttlMs: ttlMs, reservation: reservation
+        }).then(function (answer) {
+          if (answer.claimed) {
+            processId = key;
+            originClaim = { key: key, reservation: reservation };
+            return { adopted: true, origin: key,
+                     waitedMs: Date.now() - started };
+          }
+          if (Date.now() - started + pollMs > waitMs) {
+            return { adopted: false, origin: processId,
+                     why: 'held by a live process (' +
+                       ((answer.existing && answer.existing.origin) || '?') +
+                       ')' };
+          }
+          return new Promise(function (resolve) {
+            setTimeout(resolve, pollMs);
+          }).then(attempt);
+        });
+      }
+      log.debug("Leaving the postgres driver adoptOrigin().");
+      return attempt();
+    },
+
+    // The claim renewed; false when it is no longer this process's.
+    renewOrigin: function (ttlMs) {
+      log.debug("Entering the postgres driver renewOrigin().");
+      if (!originClaim) {
+        log.debug("Leaving renewOrigin(). No claim.");
+        return Promise.resolve(true);
+      }
+      const held = originClaim;
+      log.debug("Leaving the postgres driver renewOrigin().");
+      return pool.query(
+        'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
+        'WHERE scope = $1 AND realm = \'\' AND key = $2 AND ' +
+        'reservation = $3 AND expires_at > ' + DB_NOW,
+        [ORIGIN_SCOPE, held.key, held.reservation,
+         Math.max(1000, Number(ttlMs) || 30000)]
+      ).then(function (r) {
+        return !!r.rowCount;
+      });
+    },
+
+    setOriginLost: function (fn) {
+      log.debug("Entering setOriginLost().");
+      onOriginLost = typeof fn === 'function' ? fn : null;
+      log.debug("Leaving setOriginLost().");
+    },
+
+    // Given back at a clean stop, so a restart takes it at once.
+    releaseOrigin: function () {
+      log.debug("Entering the postgres driver releaseOrigin().");
+      if (!originClaim) {
+        log.debug("Leaving releaseOrigin(). No claim.");
+        return Promise.resolve(false);
+      }
+      const held = originClaim;
+      originClaim = null;
+      log.debug("Leaving the postgres driver releaseOrigin().");
+      return this.releaseClaim(ORIGIN_SCOPE, '', held.key, held.reservation);
     },
 
     // The high-water mark at startup. A process that has just RESTORED the
@@ -3529,13 +3742,22 @@ function create(options) {
       });
     },
 
-    purgeMinted: function (beforeMs) {
+    // `handles`, when given, limits the delete to those stores — the
+    // short-lived ones (`retain: 'age'`, 2026-09-18). Without it every row
+    // older than `beforeMs` goes, which is right only for the ephemeral-key
+    // clear, where nothing in the table can be opened anyway.
+    purgeMinted: function (beforeMs, handles) {
       log.debug('Entering the postgres driver purgeMinted(). before=' +
                 beforeMs);
       log.debug("Leaving purgeMinted().");
+      if (Array.isArray(handles) && !handles.length) {
+        return Promise.resolve(0);
+      }
+      const limited = Array.isArray(handles);
       return pool.query(
-        'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)',
-        [Number(beforeMs)]
+        'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)' +
+        (limited ? ' AND handle = ANY($2::text[])' : ''),
+        limited ? [Number(beforeMs), handles.map(String)] : [Number(beforeMs)]
       ).then(function (r) {
         log.debug('Leaving the postgres driver purgeMinted(). ' +
                   (r.rowCount || 0) + ' row(s).');
@@ -3572,5 +3794,6 @@ module.exports = {
   CHANNEL: CHANNEL,
   SCHEMA: SCHEMA,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
+  SCHEMA_COLUMNS: SCHEMA_COLUMNS,
   SCHEMA_VERSION: SCHEMA_VERSION
 };

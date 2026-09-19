@@ -1327,7 +1327,7 @@ const ASSERTED_SELECTOR_KEY = 'x-sts-workload-selector';
 // changes is whose cap it counts against and which realm a restore puts it in.
 // -------------------------------------------------------------------------
 const recordedConnections =
-    realms.map({ persist: 'spiffe.recordedConnections' });
+    realms.map({ persist: 'spiffe.recordedConnections', retain: 'age' });
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();

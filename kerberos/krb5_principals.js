@@ -1147,6 +1147,11 @@ const principals = realms.map({ persist: 'krb5.principals',
 // walked; a directory person's principal is built per request and its keys
 // go with it.
 // ---------------------------------------------------------------------------
+// The bound on principals holding keys at once; see noteKeyed() below.
+const MAX_KEYED_PRINCIPALS = 4096;
+/** @type {Map<object, true>} */
+const keyedPrincipals = new Map();
+
 const derivedKeyCount = cacheRegistry.register({
   name: 'krb5.long-term-keys',
   title: 'Kerberos long-term keys',
@@ -1155,12 +1160,19 @@ const derivedKeyCount = cacheRegistry.register({
     'per encryption type and held for every ticket after it.',
   owner: 'kerberos/krb5_principals.js',
   scope: 'realm',
+  // One row per principal and encryption type, and at most
+  // MAX_KEYED_PRINCIPALS principals hold keys at once (see noteKeyed()).
   maxEntries: function () {
-    return null;
+    return MAX_KEYED_PRINCIPALS * Object.keys(kcrypto.ETYPES).length;
   },
+  bound: 'Enforced: at most ' + MAX_KEYED_PRINCIPALS + ' principals hold ' +
+    'keys at once, one row per encryption type; the least recently used ' +
+    'has its keys cleared, and derives or reads them again at its next ' +
+    'ticket.',
   lifetime: function () {
-    return 'No expiry: dropped with the principal, or when its record is ' +
-      'replaced (a password change or a restore), and never persisted.';
+    return 'No expiry: dropped with the principal, when its record is ' +
+      'replaced (a password change or a restore), or when it is the least ' +
+      'recently used past the bound; never persisted.';
   },
   entries: function () {
     return cacheRegistry.realmRows(
@@ -2130,6 +2142,9 @@ cacheRegistry.register({
   maxEntries: function () {
     return Number(config.value('krb5.replayCacheMaxEntries')) || null;
   },
+  bound: 'Enforced: krb5.replayCacheMaxEntries per realm. A full cache ' +
+    'REFUSES the next authenticator rather than forget a live one, which ' +
+    'would reopen its replay.',
   lifetime: function () {
     return 'Twice krb5.clockSkew (' +
       2 * Number(config.value('krb5.clockSkew')) + ' s) after it was ' +
@@ -2151,6 +2166,39 @@ cacheRegistry.register({
       });
   }
 });
+
+// ---------------------------------------------------------------------------
+// THE BOUND ON HELD KEYS (2026-09-18). Keys hang off the principal they
+// belong to, so what is bounded is HOW MANY PRINCIPALS HOLD KEYS AT ONCE,
+// least recently used first. Past MAX_KEYED_PRINCIPALS the one used longest
+// ago has its keys cleared — not the principal, which is a record — and the
+// next ticket for it gets them back the way the first one did: derived again
+// with string-to-key, or read again from the directory entry or keytab that
+// holds them (`longTermKey()` and `directoryUser()`, the only two places keys
+// are attached to a principal this database holds). Process-wide, keyed by
+// the principal OBJECT, so two realms' principals of one name are two rows.
+// ---------------------------------------------------------------------------
+// MAX_KEYED_PRINCIPALS and `keyedPrincipals` are declared above the cache's
+// registration, which reads the first while this file loads.
+
+// Hot path: called on every long-term key lookup, so no Entering/Leaving pair
+// — it would put two log lines on every ticket.
+function noteKeyed(principal) {
+  keyedPrincipals.delete(principal);
+  let evicted = 0;
+  while (keyedPrincipals.size >= MAX_KEYED_PRINCIPALS) {
+    const oldest = keyedPrincipals.keys().next().value;
+    keyedPrincipals.delete(oldest);
+    if (oldest && oldest.keys instanceof Map) {
+      evicted += oldest.keys.size;
+      oldest.keys.clear();
+    }
+  }
+  keyedPrincipals.set(principal, true);
+  if (evicted) {
+    derivedKeyCount.evicted(evicted);
+  }
+}
 
 function withKeyCache(principal) {
   log.debug("Entering withKeyCache().");
@@ -2377,6 +2425,7 @@ function directoryUser(name) {
   }
   withKeyCache(record);
   record.keys = new Map(answer.keys);
+  noteKeyed(record);
   attachRetained(record, answer);
   log.debug('Leaving directoryUser(). kvno ' + record.kvno + '.');
   return { principal: record, refusal: null };
@@ -2693,7 +2742,7 @@ function findOrCreateUserInDatabase(nameComponents, realm) {
       extraSids: ['S-1-18-1', 'S-1-5-11']
     }
   });
-  log.info('krb5: created ' + keyOf(created) + ' on demand — RID ' +
+  log.debug('krb5: created ' + keyOf(created) + ' on demand — RID ' +
     created.pac.rid +
     ', salt ' + JSON.stringify(created.salt) + ', the shared user password');
   log.debug('Leaving findOrCreateUser(). created.');
@@ -2783,7 +2832,7 @@ function findOrCreateService(nameComponents, realm) {
       userAccountControl: UAC.WORKSTATION_TRUST_ACCOUNT
     }
   });
-  log.info('krb5: created the service ' + keyOf(created) +
+  log.debug('krb5: created the service ' + keyOf(created) +
     ' on demand — salt ' +
     JSON.stringify(created.salt) + ', the shared auto-service password. This ' +
     'process is also the acceptor, so the ticket it seals is one it can open.');
@@ -2802,6 +2851,7 @@ async function longTermKey(principal, etype) {
   withKeyCache(principal);
   if (principal.keys.has(etype)) {
     derivedKeyCount.hit();
+    noteKeyed(principal);
     log.debug("Leaving longTermKey().");
     return principal.keys.get(etype);
   }
@@ -2823,6 +2873,7 @@ async function longTermKey(principal, etype) {
   const key = await profile.stringToKey(principal.password,
                                         prim.utf8(principal.salt), null);
   principal.keys.set(etype, key);
+  noteKeyed(principal);
   log.debug('krb5: derived the ' + profile.name + ' key for ' +
             keyOf(principal) +
             ' with salt ' + JSON.stringify(principal.salt));

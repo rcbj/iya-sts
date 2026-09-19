@@ -4840,6 +4840,11 @@ class AdminConsole {
       'background:#fbfbfd;border:1px ' +
       'dashed #d5d5dd;border-radius:8px;padding:10px 12px;margin:.6em ' +
       '0}' +
+      // The off-screen default button of /admin/applications/new — see the
+      // form there. Off-screen rather than `display:none`, which some
+      // browsers skip when choosing the button Enter presses.
+      '.default-submit{position:absolute;left:-10000px;width:1px;height:1px;' +
+      'overflow:hidden}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's RFC 9728 IMPORT (2026-09-13): a checkbox that
       // shows the three ways to give a document, and a pane of three TABS over
@@ -7336,6 +7341,26 @@ class AdminConsole {
     return parts.join('<br>');
   }
 
+  // WHERE THE ACT CAME FROM (2026-09-18): the client's address, linked to
+  // every row from it. A dash where nobody sent it — a timer, an expiry, a
+  // background delivery, a seed at start-up — or where it came over a Unix
+  // socket, which has no address; the tooltip says which that can be.
+  auditAddressCell(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.auditAddressCell().");
+    if (!row.address) {
+      log.debug("Leaving AdminConsole.auditAddressCell(). None.");
+      return '<span class="state-none" title="No client address: this was ' +
+        'done by the service on its own (a timer, an expiry, a background ' +
+        'delivery, start-up), arrived over a Unix socket, or was recorded ' +
+        'before rows carried an address.">—</span>';
+    }
+    log.debug("Leaving AdminConsole.auditAddressCell().");
+    return '<a href="/admin/audit?address=' +
+           encodeURIComponent(row.address) + '"><code>' +
+           this.esc(row.address) + '</code></a>';
+  }
+
   auditRow(row, known) {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.auditRow().");
@@ -7351,6 +7376,7 @@ class AdminConsole {
                          this.esc(row.errorCode) + '</code></a>' : '') +
                              '</td>' +
       '<td class="who">' + this.auditActorCell(row, known) + '</td>' +
+      '<td class="who">' + this.auditAddressCell(row) + '</td>' +
       '<td class="who">' +
       (row.target ? '<code>' + this.esc(row.target) + '</code>'
                                        : '<span class="state-none">—</span>') +
@@ -11198,6 +11224,16 @@ class AdminConsole {
         '<td>' + self.esc(event.protocol) + '</td>' +
         '<td>' + self.esc(event.method) + '</td>' +
         '<td>' + self.esc(event.presented) + '</td>' +
+        // Where it came from (2026-09-19), linked to every audit row from
+        // that address. A dash for an event recorded before events carried
+        // one, or for an act that came over no socket.
+        '<td>' + (event.address
+          ? '<a href="/admin/audit?address=' +
+            encodeURIComponent(event.address) + '"><code>' +
+            self.esc(event.address) + '</code></a>'
+          : '<span class="state-none" title="No client address: recorded ' +
+            'before authentication events carried one, or not sent over a ' +
+            'socket.">—</span>') + '</td>' +
         '<td>' + self.esc(event.amr || '—') + '</td>' +
         '<td>' + self.esc(event.acr || '—') + '</td>' +
         '<td>' + self.esc(event.client_id || '—') + '</td>' +
@@ -11207,9 +11243,9 @@ class AdminConsole {
     log.debug("Leaving AdminConsole.authenticationTable().");
     return '<table><tr><th>When</th><th>Protocol</th><th>Method</th><th>' +
       'Presented ' +
-      'as</th><th>amr</th><th>acr</th><th>Client</th><th>Session</th><th>' +
-      'Note</th></tr>' +
-      (rows || '<tr><td colspan="9">No authentication was recorded for this ' +
+      'as</th><th>From</th><th>amr</th><th>acr</th><th>Client</th>' +
+      '<th>Session</th><th>Note</th></tr>' +
+      (rows || '<tr><td colspan="10">No authentication was recorded for this ' +
                'identity. See above: they are known here only as the subject ' +
                'of something that was issued.</td></tr>') +
       '</table>' +
@@ -12534,7 +12570,7 @@ class AdminConsole {
       // be a second answer to who they are.
       return '<tr><td><a href="' + self.esc(href) + '">' +
              self.shortened(row.name, 40) +
-        '</a></td><td>' + (row.isClient ? 'client' : 'user') + '</td><td>' +
+        '</a></td><td>' +
         self.sourceCell(row) + '</td><td ' +
         'class="' + (row.authenticated ? 'state-valid' : 'state-none') + '">' +
           (row.authenticated ? row.authentications + '&times;' :
@@ -12581,12 +12617,9 @@ class AdminConsole {
     // question nobody asked.
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
-        this.tile(all.length, 'people and identities') +
+        this.tile(all.length, 'people') +
         this.tile(authenticatedHere, 'authenticated here') +
         this.tile(all.length - authenticatedHere, 'never signed in here') +
-        this.tile(all.filter(function (row) { return row.isClient; }).length,
-                  'clients, ' +
-            'not people') +
         this.tile(Object.keys(liveByUser).length, 'with an active session') +
         this.tile(factorCounts.withSecond, 'hold a second factor') +
         this.tile(factorCounts.passwordOnly, 'password only') +
@@ -12745,7 +12778,7 @@ class AdminConsole {
         'up, which is what this button used to do without asking.') +
         this.note('Puts an entry in the embedded LDAP directory at ' +
         // THE REALM'S OWN CONTAINER, ASKED FOR RATHER THAN BUILT HERE. This
-        // read `ou=users,` + config.value('ldap.baseDn') until 2026-08-25,
+        // read `ou=users,` + the one base DN setting until 2026-08-25,
         // which is the NAMING CONTEXT and is the default realm's container
         // only: under /realm/acme the page named a DN in a different realm than
         // the one the button writes to, and named it on the very control whose
@@ -12763,7 +12796,7 @@ class AdminConsole {
         'this service has SEEN, and this is what the directory HOLDS.') +
       '</form>' +
       nav.head +
-      '<table><tr><th>User</th><th>Kind</th><th>Known ' +
+      '<table><tr><th>User</th><th>Known ' +
       'from</th><th>Authenticated</th><th>Can sign in with</th><th>Second ' +
       'factor</th><th>Protocols</th><th>Realms</th><th ' +
       'class="num">Sessions</th><th class="num">Tokens</th><th ' +
@@ -12771,7 +12804,7 @@ class AdminConsole {
       'class="num">Revoked</th><th class="num">Artifacts</th><th>First ' +
       'seen</th><th>Last activity</th><th></th></tr>' +
       (rows ||
-       '<tr><td colspan="17">Nobody matches. Nothing has authenticated ' +
+       '<tr><td colspan="16">Nobody matches. Nothing has authenticated ' +
                'here yet unless a filter above is hiding ' +
                'it.</td></tr>') + '</table>' +
       nav.foot +
@@ -14130,6 +14163,77 @@ class AdminConsole {
     }).join('<br>');
   }
 
+  // AN APPLICATION'S KINDS, RECORDED AND DECLARED TOGETHER (2026-09-18). The
+  // Kind column read `row.kinds` alone, which a create does not write — so an
+  // application declared on /admin/applications/new for OAuth 2.0 and SAML
+  // 2.0 showed "unstated" beside that declaration. It is known; the entry just
+  // keeps the two apart (see `declaredKinds` in applications.js's view()).
+  applicationKindCells(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.applicationKindCells().");
+    const kinds = (row.kinds || []).slice(0);
+    (row.declaredKinds || []).forEach(function (kind) {
+      if (kinds.indexOf(kind) < 0) {
+        kinds.push(kind);
+      }
+    });
+    log.debug("Leaving AdminConsole.applicationKindCells().");
+    return this.kindCells(kinds);
+  }
+
+  // THE PROTOCOLS CELL: WHAT IT IS FOR FIRST, THEN WHAT HAS HAPPENED
+  // (2026-09-18). It used to lead with the observed list, so a new
+  // application read "none recorded" and then "declared: oauth2, oidc, …" —
+  // two lines that looked like they disagreed. A declared application now
+  // shows its families by name, with what has been seen (or that nothing has
+  // yet) under them; one that was never declared shows what was seen.
+  applicationProtocolCell(row) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationProtocolCell().");
+    const declared = (row.allowedProtocols || []).map(function (id) {
+      const known = (applications.PROTOCOLS || []).filter(function (p) {
+        return p.id === id;
+      })[0];
+      return known ? known.label : id;
+    });
+    const seen = row.protocols || [];
+    if (!declared.length) {
+      log.debug("Leaving AdminConsole.applicationProtocolCell(). Observed " +
+                "only.");
+      return seen.length ? this.esc(seen.join(', '))
+                         : '<span class="state-none">none</span>';
+    }
+    log.debug("Leaving AdminConsole.applicationProtocolCell().");
+    return this.esc(declared.join(', ')) +
+      '<div class="sub">' + (seen.length
+        ? 'seen: ' + self.esc(seen.join(', '))
+        : 'not used yet') + '</div>';
+  }
+
+  // REGISTERED MEANS SOMEBODY PUT IT HERE ON PURPOSE (2026-09-18) — an
+  // administrator, RFC 7591, or this service's own seeding — as against an
+  // identifier that merely turned up. It read `row.registered`, which is RFC
+  // 7591's flag, and so said "no" about an application just created on
+  // /admin/applications/new. The flag itself is unchanged: it is what RFC
+  // 9700 mode and RFC 7592 turn on (see appRegisteredBy's schema row).
+  applicationRegisteredCell(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.applicationRegisteredCell().");
+    const by = String(row.registeredBy || (row.registered ? 'rfc7591' : ''));
+    if (!by) {
+      log.debug("Leaving AdminConsole.applicationRegisteredCell(). No.");
+      return '<span class="state-none">no</span>';
+    }
+    const how = by === 'administrator' ? 'by an administrator'
+      : by === 'rfc7591' ? 'RFC 7591'
+      : by === 'startup' ? 'at startup'
+      : by;
+    log.debug("Leaving AdminConsole.applicationRegisteredCell(). " + by);
+    return '<span class="state-valid">yes</span><div class="sub">' +
+           this.esc(how) + '</div>';
+  }
+
   // WHERE A FINISHED APPLICATION ACTION LANDS. Extracted from the route on
   // 2026-08-27 when `refresh-metadata` became asynchronous and needed the same
   // answer from a callback — two copies of this would be two opinions about
@@ -14422,7 +14526,7 @@ class AdminConsole {
             ' &mdash; the identifier is too long for a readable RDN, so the ' +
             '<code>cn</code> is a digest of it') + '</div>' : '') +
         '</td><td>' + self.esc(row.name) + '</td>' +
-        '<td>' + self.kindCells(row.kinds) + '</td>' +
+        '<td>' + self.applicationKindCells(row) + '</td>' +
         // BOTH PROTOCOL LISTS IN ONE CELL, and the declared half is labelled
         // rather than run in with the other. An application created by hand has
         // no observed protocols at all — it has never connected — so this cell
@@ -14431,20 +14535,9 @@ class AdminConsole {
         // The two are not the same claim, so they are not the same line: the
         // labels are what HAPPENED and the ids under them are what was
         // DECLARED.
-        '<td>' + (row.protocols.length
-          ? self.esc(row.protocols.join(', '))
-          : '<span class="state-none">none recorded</span>') +
-        ((row.allowedProtocols || []).length
-          // codeList() rather than a join with the markup in it, for the reason
-          // that function was written: escaping the joined string escapes the
-          // tags too, and the cell then shows them.
-          ? '<div class="sub">declared: ' +
-            self.codeList(row.allowedProtocols) +
-            '</div>'
-          : '') + '</td>' +
-        '<td>' + (row.registered
-          ? '<span class="state-valid">yes</span>'
-          : '<span class="state-none">no</span>') + '</td>' +
+        // DECLARED FIRST since 2026-09-18 — applicationProtocolCell() says why.
+        '<td>' + self.applicationProtocolCell(row) + '</td>' +
+        '<td>' + self.applicationRegisteredCell(row) + '</td>' +
         '<td class="num">' + row.authentications + '</td>' +
         '<td class="num">' + row.sessions + '</td>' +
         '<td class="num">' + row.users + '</td>' +
@@ -14459,7 +14552,8 @@ class AdminConsole {
         // options renumber themselves on every Filter is one nobody can use to
         // find out where the rows went.
         const n = all.filter(function (row) {
-          return row.kinds.indexOf(one.kind) >= 0;
+          return row.kinds.indexOf(one.kind) >= 0 ||
+                 (row.declaredKinds || []).indexOf(one.kind) >= 0;
         }).length;
         return '<option value="' + self.esc(one.kind) + '"' +
                (one.kind === wantedKind ? ' selected' : '') + '>' +
@@ -14470,7 +14564,7 @@ class AdminConsole {
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
       this.tile(all.length, 'Applications') +
-      this.tile(registeredCount, 'Registered (RFC 7591)') +
+      this.tile(registeredCount, 'Registered') +
       this.tile(all.reduce(function (n, r) { return n + r.authentications; },
                            0),
                 'Authentications') +
@@ -15791,7 +15885,8 @@ class AdminConsole {
       this.tile(row.authentications, 'Authentications') +
       this.tile(row.sessions, 'Sessions') +
       this.tile(row.users, 'Users') +
-      this.tile(row.registered ? 'yes' : 'no', 'Registered') +
+      this.tile(row.registered || row.registeredBy ? 'yes' : 'no',
+                'Registered') +
       '</div>' +
       '<table><tr><th>Thing</th><th>Value</th></tr>' +
       // FIRST, because it is the thing this page could not previously answer:
@@ -15810,8 +15905,11 @@ class AdminConsole {
         : '<span class="state-none">no directory is loaded in this process, ' +
           'so there is no entry and no registry</span>') + '</td></tr>' +
       '<tr><td>Name</td><td>' + this.esc(row.name) + '</td></tr>' +
-      '<tr><td>Kind</td><td>' + this.kindCells(row.kinds) + '</td></tr>' +
-      '<tr><td>Protocols</td><td>' + this.esc(row.protocols.join(', ')) +
+      '<tr><td>Kind</td><td>' + this.applicationKindCells(row) +
+      '</td></tr>' +
+      '<tr><td>Protocols</td><td>' + this.applicationProtocolCell(row) +
+      '</td></tr>' +
+      '<tr><td>Registered</td><td>' + this.applicationRegisteredCell(row) +
       '</td></tr><tr><td>First ' +
       'seen</td><td><code>' + this.esc(row.firstSeen) +
       '</code></td></tr><tr><td>Last ' +
@@ -16188,10 +16286,14 @@ class AdminConsole {
     return 'pf ' + list.map(function (id) { return 'pf-' + id; }).join(' ');
   }
 
-  declarationFieldRow(row) {
+  declarationFieldRow(row, draft?) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.declarationFieldRow().");
+    // WHAT WAS POSTED, drawn back — `newApplicationPage()`'s `draft`, present
+    // only when this page is redrawn from a round trip of its own form.
+    const posted = draft ? draft['field.' + row.attribute] : undefined;
+    const value = posted == null ? '' : String(posted);
     // A row that belongs to EVERY family (`appCorsOrigin`, 2026-09-18) has an
     // empty `families` on purpose — that is what keeps its section
     // unconditional — so the cell says what the emptiness means rather than
@@ -16211,11 +16313,33 @@ class AdminConsole {
       ? '<textarea id="field-' + this.esc(row.attribute) + '" name="field.' +
         this.esc(row.attribute) +
         '"' + hint + ' rows="3" cols="42" placeholder="one per line; leave ' +
-                     'empty for none"></textarea>'
+                     'empty for none">' + this.esc(value) + '</textarea>'
       : '<input type="text" id="field-' + this.esc(row.attribute) +
         '" name="field.' +
         this.esc(row.attribute) + '"' + hint +
-        ' size="42" placeholder="optional">';
+        ' size="42" placeholder="optional" value="' + this.esc(value) + '">';
+    // GENERATE SECRET (2026-09-18), beside `oauthClientSecret` and no other
+    // field — the `secret` role also holds GNAP's `gnapSymmetricKey`, which
+    // is a key and not a client secret. A SUBMIT BUTTON AND NOT A SCRIPT:
+    // `script-src 'none'` holds on this page, and the test for an exception
+    // is that the page cannot work without one, which a round trip answers.
+    // Its `formaction` sends the whole form to `/admin/applications/new`
+    // with `action=generate-secret` — the button's pair comes after the
+    // hidden `action=create` in the body and `parseBody()` keeps the last —
+    // and that page is drawn again with every box as it was and a new
+    // secret in this one. `formnovalidate`, because the Identifier is
+    // `required` and a person may want the secret before they have named
+    // the application.
+    const generate = row.attribute === 'oauthClientSecret'
+      ? ' <button type="submit" class="secondary" name="action" ' +
+        'value="generate-secret" formaction="/admin/applications/new" ' +
+        'formnovalidate' +
+        this.tip('Mint a client secret the way POST /oauth2/register does ' +
+                 'and put it in this box. Nothing is written until the ' +
+                 'application is created. Everything else you have typed ' +
+                 'on this page is kept.') +
+        '>Generate Secret</button>'
+      : '';
     const shape = row.kind === 'multi'
       ? '<span class="note">a list &mdash; one value per line</span>'
       : '<span class="state-none">one value only &mdash; an RFC 8705 check ' +
@@ -16231,7 +16355,7 @@ class AdminConsole {
       '><code>' +
       this.esc(row.attribute) + '</code></label></td>' +
       '<td>' + families + '</td>' +
-      '<td>' + control + '<br>' + shape + '</td>' +
+      '<td>' + control + generate + '<br>' + shape + '</td>' +
       '<td class="why">' + this.note(this.esc(row.what)) + '</td></tr>';
   }
 
@@ -16340,10 +16464,14 @@ class AdminConsole {
   // A `select` for a bool rather than a checkbox, for `configRow()`'s reason —
   // an unticked checkbox posts NOTHING, which here cannot be told from "leave
   // it alone". The empty option is what makes "inherit" expressible.
-  samlOverrideFieldRow(row) {
+  samlOverrideFieldRow(row, draft?) {
     const { log, configSettingFor, config } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.samlOverrideFieldRow().");
+    // What was posted, on a redraw of this page's own form — see
+    // declarationFieldRow().
+    const posted = draft ? draft['field.' + row.attribute] : undefined;
+    const value = posted == null ? '' : String(posted);
     const setting = configSettingFor(row.setting);
     if (!setting) {
       log.debug("Leaving AdminConsole.samlOverrideFieldRow().");
@@ -16371,13 +16499,14 @@ class AdminConsole {
         hint + '><option ' +
         'value="">' + this.esc(inherits) + '</option>' +
         choices.map(function (option) {
-          return '<option value="' + self.esc(option) + '">' +
+          return '<option value="' + self.esc(option) + '"' +
+                 (option === value ? ' selected' : '') + '>' +
                  self.esc(option) +
                  '</option>';
         }).join('') + '</select>'
       : '<input type="' + (described.type === 'int' ? 'number' : 'text') + '"' +
         ' id="' + this.esc(id) + '" name="field.' + this.esc(row.attribute) +
-        '"' + hint +
+        '"' + hint + ' value="' + this.esc(value) + '"' +
         (typeof described.min === 'number' ? ' min="' + described.min + '"' :
          '') +
         (typeof described.max === 'number' ? ' max="' + described.max + '"' :
@@ -16395,22 +16524,26 @@ class AdminConsole {
       '</td></tr>';
   }
 
-  samlKeySourceSection() {
+  samlKeySourceSection(draft?) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.samlKeySourceSection().");
     const rows = SAML_KEY_SOURCE_FIELDS.map(function (row) {
       const id = 'field-' + row.attribute;
       const hint = self.tip(row.what);
+      // What was posted, on a redraw — see declarationFieldRow().
+      const posted = draft ? draft['field.' + row.attribute] : undefined;
+      const value = posted == null ? '' : String(posted);
       const control = row.multi
         ? '<textarea id="' + self.esc(id) + '" name="field.' +
           self.esc(row.attribute) +
           '"' + hint +
           ' rows="4" cols="42" placeholder="paste the document, or leave it ' +
-          'to Refresh"></textarea>'
+          'to Refresh">' + self.esc(value) + '</textarea>'
         : '<input type="text" id="' + self.esc(id) + '" name="field.' +
           self.esc(row.attribute) + '"' +
-          hint + ' size="42" placeholder="optional">';
+          hint + ' size="42" placeholder="optional" value="' +
+          self.esc(value) + '">';
       return '<tr><td><label for="' + self.esc(id) + '"' + hint + '><code>' +
         self.esc(row.attribute) + '</code></label></td>' +
         '<td>' + self.esc(row.label) + '</td><td>' + control + '</td>' +
@@ -16434,7 +16567,7 @@ class AdminConsole {
       rows + '</table></div>';
   }
 
-  samlOverrideFieldsSection() {
+  samlOverrideFieldsSection(draft?) {
     const { log, applications } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.samlOverrideFieldsSection().");
@@ -16456,7 +16589,9 @@ class AdminConsole {
         '<h3>' + self.esc(group.heading) + '</h3>' + self.note(group.intro) +
         '<table><tr><th>Attribute</th><th>Overrides</th><th>Value</th>' +
         '<th>What it is</th></tr>' +
-        mine.map(self.samlOverrideFieldRow.bind(self)).join('') +
+        mine.map(function (row) {
+          return self.samlOverrideFieldRow(row, draft);
+        }).join('') +
         '</table></div>';
     }).join('');
 
@@ -16477,7 +16612,9 @@ class AdminConsole {
         'to.') +
         '<table><tr><th>Attribute</th><th>Overrides</th><th>Value</th>' +
         '<th>What it is</th></tr>' +
-        leftovers.map(this.samlOverrideFieldRow.bind(this)).join('') +
+        leftovers.map(function (row) {
+          return self.samlOverrideFieldRow(row, draft);
+        }).join('') +
         '</table>'
       : '';
 
@@ -16513,7 +16650,7 @@ class AdminConsole {
       'force. Tick OAuth 2.0 or OpenID Connect and it is accepted. An ' +
       '<code>ldapmodify</code> reaches the attribute either way, as it ' +
       'reaches every attribute here.') +
-      sections + extra + this.samlKeySourceSection();
+      sections + extra + this.samlKeySourceSection(draft);
   }
 
   // The tables, one per ROLE (`identifier`, `redirect`, `logout`, `secret`,
@@ -16525,8 +16662,9 @@ class AdminConsole {
   // pane draws `oauthClientId` — because two fields with one name in one form
   // post the name twice and `parseBody()` keeps whichever came LAST, which
   // would be the empty box below the one the reader filled in.
-  declarationFieldsSection(role, heading, intro, omit?) {
+  declarationFieldsSection(role, heading, intro, omit?, draft?) {
     const { log, applications } = this.deps;
+    const self = this;
     log.debug("Entering AdminConsole.declarationFieldsSection(). role=" + role);
     const skip = omit || [];
     const rows = applications.declarationAttributes().filter(function (one) {
@@ -16558,7 +16696,9 @@ class AdminConsole {
       '<h2>' + heading + '</h2>' + intro +
       '<table><tr><th>Attribute</th><th>Families it serves</th><th>Value</th>' +
       '<th>What it is</th></tr>' +
-      rows.map(this.declarationFieldRow.bind(this)).join('') +
+      rows.map(function (row) {
+        return self.declarationFieldRow(row, draft);
+      }).join('') +
       '</table></div>';
   }
 
@@ -16963,6 +17103,14 @@ class AdminConsole {
     log.debug("Entering AdminConsole.newApplicationPage().");
     const given = state || {};
     const loaded = given.loaded || null;
+    // THE FORM AS IT WAS POSTED, on a redraw from one of this page's own
+    // round trips — a refused create, or Generate Secret — so that no box
+    // comes back empty. Absent on a plain GET.
+    const draft = given.draft || null;
+    const drafted = function (name) {
+      const value = draft ? draft[name] : undefined;
+      return value == null ? '' : String(value);
+    };
     // WHAT THIS PAGE SHOWS IS WHAT /admin-api ANSWERS (2026-09-12). These four
     // facts used to be computed here and again, in the same shape, in the json
     // half at the bottom of this function; they come off ONE call now, so the
@@ -16996,7 +17144,8 @@ class AdminConsole {
       '<h2>What it is called</h2><div class="formrow"><label ' +
       'for="identifier">Identifier</label><input type="text" id="identifier" ' +
       'name="identifier" size="42" required placeholder="client_id, wtrealm, ' +
-      'AppliesTo, entityID or SPN"></div>' +
+      'AppliesTo, entityID or SPN" value="' + this.esc(drafted('identifier')) +
+      '"></div>' +
       this.note('THE KEY, exactly as the protocol will present it. At most ' +
       '512 characters, and no line break: an entry whose <code>cn</code> ' +
       'would be longer than 64 characters is filed under <code>app-&lt;12 ' +
@@ -17004,7 +17153,8 @@ class AdminConsole {
       'attribute to search on either way.') +
       '<div class="formrow"><label for="newname">Name</label><input ' +
       'type="text" id="newname" name="name" size="24" ' +
-      'placeholder="optional"></div>' +
+      'placeholder="optional" value="' + this.esc(drafted('name')) +
+      '"></div>' +
       this.note('The name is what pages call it; with none given the ' +
       'identifier is the name, because inventing a friendly name for an ' +
       'opaque id would be inventing a fact.') +
@@ -17032,6 +17182,8 @@ class AdminConsole {
           }).join('') + '</ul></div>'
         : '') +
       (loaded ? '<div class="ok">' + this.esc(loaded.message) + '</div>' : '') +
+      (given.notice ? '<div class="ok">' + this.esc(given.notice) + '</div>' :
+       '') +
       '<div class="tiles">' +
       this.tile(held, 'In the registry') +
       this.tile(applications.PROTOCOLS.length, 'Protocol families') +
@@ -17063,6 +17215,14 @@ class AdminConsole {
       (loaded ? '/admin/applications/new' : '/admin/applications') +
       '" class="newapp">' +
       '<input type="hidden" name="action" value="create">' +
+      // THE DEFAULT BUTTON. Enter in a text box submits with the FIRST submit
+      // button in the form, and since 2026-09-18 that would otherwise be
+      // Generate Secret, halfway down — so a person who pressed Enter in the
+      // Identifier would get a secret instead of an application. This one is
+      // first, creates, and is off-screen and out of the tab order; the
+      // visible Create button at the foot does the same thing.
+      '<button type="submit" class="default-submit" tabindex="-1" ' +
+      'aria-hidden="true">Create the application</button>' +
       (loaded
         ? '<h2>The protected resource metadata that was loaded</h2>' +
           this.resourceMetadataPane(loaded, given.draft, given.tab) +
@@ -17092,7 +17252,7 @@ class AdminConsole {
       // first sentence false.
       this.declarationFieldsSection('cors',
                                     'Which web origins may call it (CORS)',
-                                    NEW_APPLICATION_CORS_INTRO) +
+                                    NEW_APPLICATION_CORS_INTRO, [], draft) +
 
       // THE PROMPT THAT STANDS IN FOR THE HIDDEN FIELDS. It is inside the form
       // so the `:has()` rule that hides it can reach it, and it is always in
@@ -17112,19 +17272,22 @@ class AdminConsole {
       this.declarationFieldsSection('identifier',
                                     'What each protocol will call it',
                                     NEW_APPLICATION_IDENTIFIERS_INTRO,
-                                    loaded ? RESOURCE_METADATA_OWNED : []) +
+                                    loaded ? RESOURCE_METADATA_OWNED : [],
+                                    draft) +
       this.declarationFieldsSection('redirect', 'Where responses go back to',
-                                    NEW_APPLICATION_REDIRECTS_INTRO) +
+                                    NEW_APPLICATION_REDIRECTS_INTRO, [],
+                                    draft) +
       this.declarationFieldsSection('logout', 'Where a sign-out goes',
-                                    NEW_APPLICATION_LOGOUT_INTRO) +
+                                    NEW_APPLICATION_LOGOUT_INTRO, [], draft) +
       this.declarationFieldsSection('secret', 'The client secret',
-                                    NEW_APPLICATION_SECRET_INTRO) +
+                                    NEW_APPLICATION_SECRET_INTRO, [], draft) +
       this.declarationFieldsSection('delivery', 'Where events are pushed',
-                                    NEW_APPLICATION_DELIVERY_INTRO) +
+                                    NEW_APPLICATION_DELIVERY_INTRO, [],
+                                    draft) +
       this.declarationFieldsSection('events', 'Which Shared Signals events ' +
                                               'it may receive',
-                                    NEW_APPLICATION_EVENTS_INTRO) +
-      this.samlOverrideFieldsSection() +
+                                    NEW_APPLICATION_EVENTS_INTRO, [], draft) +
+      this.samlOverrideFieldsSection(draft) +
 
       '<div class="formrow"><button type="submit">Create the ' +
       'application</button>' +
@@ -20227,6 +20390,7 @@ class AdminConsole {
         '</code></a>' +
         (row.builtin ? ' <span class="why">built in</span>' : '') +
         '</td><td>' + self.esc(row.name) + '</td>' +
+        '<td><code>' + self.esc(row.domain) + '</code></td>' +
         '<td><code>' + self.esc(row.pathPrefix || '/') + '</code></td>' +
         '<td><code>' + self.esc(row.kid) + '</code></td>' +
         '<td class="num">' + row.settings.length + '</td></tr>';
@@ -20280,8 +20444,8 @@ class AdminConsole {
             'of this console, and <code>GET /realms</code> starts reporting ' +
             '<code>active: true</code>.')) +
 
-      '<h2>The realms</h2><table><tr><th>Id</th><th>Name</th><th>Path ' +
-      'prefix</th><th>Signing key</th><th ' +
+      '<h2>The realms</h2><table><tr><th>Id</th><th>Name</th>' +
+      '<th>Domain</th><th>Path prefix</th><th>Signing key</th><th ' +
       'class="num">Settings</th></tr>' + rows + '</table>' +
       this.pageNavPair('/admin/realms', pageParamsOf(req.query), pg).head +
       this.perPageForm('/admin/realms', 'per', req.query.per, pg.perPage, '',
@@ -20299,20 +20463,37 @@ class AdminConsole {
       ' — whatever <code>realms.pathSegment</code> is set to, precisely so ' +
       'that clearing that setting cannot turn an existing realm into a ' +
       'shadow over the console or the authorization server.') +
+      this.note('<strong>The domain</strong> — <code>iyasec.io</code>, ' +
+      '<code>dev.iyasec.io</code> — is the root of every NAME the realm ' +
+      'invents: its directory is a tree of its own at the RFC 2247 mapping ' +
+      'of it (<code>iyasec.io</code> is <code>dc=iyasec,dc=io</code>), its ' +
+      'Kerberos realm is the domain in capitals, its SPIFFE trust domain is ' +
+      'the domain, and its identity providers call themselves ' +
+      '<code>urn:&lt;domain&gt;:idp</code>. It is not where the realm is ' +
+      'REACHED — the issuer and every URL still come from the host a request ' +
+      'arrived on. No two realms may share one; one inside another\'s is ' +
+      'allowed and is a separate tree. <strong>It is fixed once the realm is ' +
+      'created.</strong> Left empty it is <code>&lt;id&gt;.' +
+      this.esc(realms.domainOf(realms.DEFAULT_ID)) + '</code>.') +
       '<form method="post" action="/admin/realms">' + carryBack +
       '<input type="hidden" name="action" value="create"><div ' +
       'class="formrow"><label for="rid">Id</label><input type="text" ' +
       'id="rid" name="id" size="16" placeholder="acme" required><label ' +
       'for="rname">Name</label><input type="text" id="rname" name="name" ' +
       'size="22" placeholder="Acme Corporation"><label ' +
+      'for="rdomain">Domain</label><input type="text" id="rdomain" ' +
+      'name="domain" size="22" placeholder="iyasec.io" ' +
+      'autocapitalize="off" spellcheck="false"><label ' +
       'for="rdesc">Description</label><input type="text" id="rdesc" ' +
       'name="description" size="40"><button type="submit">Define ' +
       'it</button></div></form><h2>What is separated, and what is ' +
       'shared</h2><p class="lead">A realm separates what this service ISSUES ' +
       'and everything it is holding while it issues it — keys, sessions, ' +
-      'codes, tokens, offers, artifacts, statistics and the audit log. It ' +
-      'does not separate the embedded directory, and four families answer on ' +
-      'sockets with no path in them at all. This table is the whole list, ' +
+      'codes, tokens, offers, artifacts, statistics and the audit log — and ' +
+      'since each realm has a directory of its own, the people, groups, ' +
+      'applications and policies in it. The families on sockets with no ' +
+      'path in them are told apart some other way, and a few things belong ' +
+      'to the process and are shared. This table is the whole list, ' +
       'and <code>GET /realms</code> answers the same thing to a client that ' +
       'cannot read a console.</p>' +
       this.realmSupportTable() +
@@ -20387,6 +20568,17 @@ class AdminConsole {
           'on the left moves to this one; until then a settings form writes ' +
           'to the realm you are in, not to this one.')) +
 
+      '<h2>Its domain</h2>' +
+      this.note('<code>' + this.esc(json.domain) + '</code>' +
+      (realm.builtin ? ', from <code>global.domain</code>' : '') +
+      ', fixed ' + (realm.builtin ? 'until a restart with another value'
+                                  : 'since the realm was created') +
+      '. Its directory is the tree at <code>' + this.esc(json.baseDn) +
+      '</code>, a naming context of its own on the shared LDAP socket, and ' +
+      'the names it invents — Kerberos realm, SPIFFE trust domain, entity ' +
+      'IDs, the address a development-mode person is given — are built from ' +
+      'it; the ones seeded when it was created are among its settings ' +
+      'below.') +
       '<h2>Where it answers</h2>' +
       this.note('Path prefix <code>' +
                 this.esc(json.pathPrefix || '(none — this is ' +
@@ -27515,6 +27707,7 @@ class AdminConsole {
                              outcome: view.wantedOutcome,
                              actor: view.wantedActor,
                              q: view.wantedText, code: view.wantedCode,
+                             address: view.wantedAddress,
                              per: req.query.per ? paging.perPage : '' };
       const nav = self.pageNavPair('/admin/audit', filterParams, paging);
 
@@ -27570,7 +27763,8 @@ class AdminConsole {
 
       const filtering = view.wantedCategory || view.wantedAction ||
                         view.wantedOutcome ||
-                        view.wantedActor || view.wantedText || view.wantedCode;
+                        view.wantedActor || view.wantedText ||
+                        view.wantedCode || view.wantedAddress;
 
       const inner = self.messagesOf(req) +
         '<div class="tiles">' +
@@ -27650,6 +27844,10 @@ class AdminConsole {
           '<label for="code">Error code</label>' +
           '<input type="text" id="code" name="code" size="16" value="' +
             self.esc(view.wantedCode) + '" placeholder="STS-OAUTH">' +
+          '<label for="address">From</label>' +
+          '<input type="text" id="address" name="address" size="16" ' +
+            'value="' + self.esc(view.wantedAddress) +
+            '" placeholder="10.0.0.">' +
           '<button class="secondary">Filter</button>' +
           (filtering ? ' <a href="/admin/audit">clear</a>' : '') +
         '</div></form>' +
@@ -27668,9 +27866,9 @@ class AdminConsole {
         'codes</a> says what each one means.') +
         nav.head +
         '<table><tr><th class="num">#</th><th>When</th><th>Category</th><th>' +
-        'Action</th><th>Outcome</th><th>Actor</th><th>Target</th><th>What ' +
-        'happened</th><th>Detail</th></tr>' +
-        (rows || '<tr><td colspan="9">Nothing matches.</td></tr>') +
+        'Action</th><th>Outcome</th><th>Actor</th><th>From</th>' +
+        '<th>Target</th><th>What happened</th><th>Detail</th></tr>' +
+        (rows || '<tr><td colspan="10">Nothing matches.</td></tr>') +
         '</table>' +
         nav.foot +
 
@@ -27716,17 +27914,24 @@ class AdminConsole {
                  self.note(self.esc(entry.what)) + '</li>';
         }).join('') + '</ul>' +
 
-        self.note('<strong>What is deliberately not on a row: the client\'s ' +
-        'address.</strong> On a mock this service is reached over a compose ' +
-        'bridge, through a published port, or from the same machine, so what ' +
-        'it would record is the bridge — a fact about docker rather than ' +
-        'about whoever made the call. A column that was right on a laptop ' +
-        'and quietly wrong everywhere else is worse than no column. What a ' +
-        'row does say is the CHANNEL it arrived on — <code>http</code>, ' +
-        '<code>ldap</code>, <code>ldaps</code>, or <code>internal</code> for ' +
-        'the things this service did on its own — which is the part that is ' +
-        'actually knowable and is what somebody turning on LDAPS wants to ' +
-        'check.') +
+        self.note('<strong>Every row says where it came from</strong> ' +
+        '(since 2026-09-18): <em>From</em> is the client\'s IP address for ' +
+        'whatever the request, LDAP operation, Kerberos message or SPIRE ' +
+        'Server API call caused — an authentication, a refused sign-in, a ' +
+        'consent, a sign-out — and is empty for what this service did on its ' +
+        'own. It is the address <code>global.trustProxy</code> and ' +
+        '<code>global.trustedProxies</code> resolve: the right-most ' +
+        '<code>X-Forwarded-For</code> hop that is not a proxy you named, or ' +
+        'the client in a PROXY protocol header. <strong>With neither set ' +
+        'behind a proxy, it is the proxy</strong> — on a laptop, the compose ' +
+        'bridge — because that is the nearest hop that did not say who it ' +
+        'forwarded for. The CHANNEL is still under the target: ' +
+        '<code>http</code>, <code>ldap</code>, <code>ldaps</code>, ' +
+        '<code>kerberos</code>, <code>grpc</code>, <code>tls</code>, ' +
+        '<code>console</code> (an act on this console or ' +
+        '<code>/admin-api</code>), <code>internal</code> (something this ' +
+        'service did on its own), or <code>none</code> (a session that ' +
+        'expired).') +
 
         self.note('<strong>It is in memory and dies with the ' +
         'process</strong>, like the counters, the sessions and the signing ' +
@@ -31052,6 +31257,44 @@ class AdminConsole {
 
       const protocols = self.listField(req, body, 'protocol').concat(
           self.listField(req, body, 'protocols'));
+      // GENERATE SECRET (2026-09-18): the whole create form, posted here by
+      // the button's `formaction`, drawn again with a new secret in
+      // `oauthClientSecret` and every other box as it was. The secret comes
+      // from the same `generate-secret` action `/admin-api` answers, and
+      // nothing is written. With an RFC 9728 document loaded, the pane is
+      // read again from the ORIGINAL document, as a refused create's is. A
+      // JSON caller falls through and gets the action's reply.
+      if (action === 'generate-secret' && !wantsJson) {
+        const minted = applicationsAction(body, protocols, context);
+        const draft = Object.assign({}, body, {
+          'field.oauthClientSecret': minted.clientSecret
+        });
+        let loaded = null;
+        if (body.metadata) {
+          const again = resourceMetadata.analyse(String(body.metadata), {
+            source: String(body.metadataSource || 'pasted'),
+            url: String(body['field.oauthResourceMetadataUrl'] || ''),
+            filename: String(body.metadataFilename || '')
+          }, context);
+          loaded = again.ok ? again : null;
+        }
+        self.newApplicationRedraw(req, res, {
+          loaded: loaded, draft: draft, protocols: protocols,
+          tab: loaded ? 'fields' : undefined,
+          notice: 'A client secret was generated and is in the ' +
+                  'oauthClientSecret box below. Nothing has been written: ' +
+                  'it becomes this application\'s credential when you ' +
+                  'create it. With OAuth 2.0 or OpenID Connect ticked, the ' +
+                  'create records client_secret_basic as its token endpoint ' +
+                  'authentication method, and the token endpoint accepts ' +
+                  'the secret either in an Authorization: Basic header ' +
+                  '(client_secret_basic) or as a client_secret form ' +
+                  'parameter (client_secret_post).'
+        });
+        log.debug("Leaving the admin new-application action endpoint. " +
+                  "A secret was generated.");
+        return;
+      }
       if (action === 'create' && body.metadata) {
         // The document the third tab left, into the attribute the create
         // writes.
@@ -38512,7 +38755,12 @@ WIRE_STEPS.push(function (instance: AdminConsole): void {
     instance.note('The <code>client_secret</code> for the two OAuth ' +
     'families. Leave it empty and the entry simply has none, which is what a ' +
     'public client is; a client registering through <code>POST ' +
-    '/oauth2/register</code> is minted one instead.') +
+    '/oauth2/register</code> is minted one instead. <em>Generate ' +
+    'Secret</em> mints one the same way and puts it in the box, keeping ' +
+    'everything else on this page as you left it; with a secret, the create ' +
+    'records <code>client_secret_basic</code>, and the token endpoint takes ' +
+    'the secret by an <code>Authorization: Basic</code> header or a ' +
+    '<code>client_secret</code> form parameter alike.') +
     instance.warn('<strong>IT IS STORED IN THE CLEAR, IN A DIRECTORY ' +
     'WHERE EVERY BIND SUCCEEDS.</strong> That is deliberate and it is the ' +
     'same decision <code>GET /krb5/principals</code> makes about the ' +

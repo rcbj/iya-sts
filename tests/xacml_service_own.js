@@ -191,6 +191,90 @@ function run(t) {
   t.equal(issuance4.builtIn && issuance4.ok, true,
           'and deleting the override brings the built-in document back, ' +
           'which is the way out of the disabled state');
+
+  // -----------------------------------------------------------------------
+  // 5. AN OVERRIDE BELONGS TO ITS REALM (2026-09-19). The built-in documents
+  //    are ONE copy, identical in every realm — code, not a seed — and a
+  //    realm may override either in its own `ou=policies`. rcbj's rule: the
+  //    override must reach that realm and no other, in both directions. The
+  //    realm is a real one (created and removed here), for pki_hierarchy.js's
+  //    lesson: `realms.run()` with a record nobody created carries nothing.
+  // -----------------------------------------------------------------------
+  t.log.info('=== an override is its realm\'s, and the built-in is ' +
+             'everybody else\'s ===');
+  const realms = require('../common/realms');
+  const id = 'xacml-own-' + Date.now().toString(36);
+  const made = realms.create({ id: id, name: id,
+                               description: 'Created by ' + __filename });
+  t.check(made.ok, 'a trust realm to override in',
+          (made.errors || []).join(' '));
+  if (made.ok) {
+    try {
+      const inRealm = function (fn) {
+        log.debug("Entering inRealm().");
+        log.debug("Leaving inRealm().");
+        return realms.run(made.realm, fn);
+      };
+      const bothIn = function () {
+        log.debug("Entering bothIn().");
+        log.debug("Leaving bothIn().");
+        return { issuance: rolePep.issuancePolicyState(),
+                 access: accessPep.accessPolicyState() };
+      };
+      const fresh = inRealm(bothIn);
+      t.check(fresh.issuance.builtIn && fresh.issuance.ok &&
+              fresh.access.builtIn && fresh.access.ok,
+              '5a. a NEW realm decides with the built-in documents from its ' +
+              'first request — one copy, available everywhere, with nothing ' +
+              'seeded', JSON.stringify(fresh));
+
+      inRealm(function () {
+        write('role-issuance', 'role-issuance');
+        write('access-control', 'access-control');
+        store.write('role-issuance', doc('role-issuance'),
+                    { enabled: false });
+        store.write('access-control', doc('access-control'),
+                    { enabled: false });
+      });
+      const overridden = inRealm(bothIn);
+      t.check(overridden.issuance.entry && !overridden.issuance.ok &&
+              overridden.access.entry && !overridden.access.ok,
+              '5b. the realm\'s own (disabled) overrides decide THERE',
+              JSON.stringify(overridden));
+      const outside = bothIn();
+      t.check(!outside.issuance.entry && outside.issuance.builtIn &&
+              outside.issuance.ok && !outside.access.entry &&
+              outside.access.builtIn && outside.access.ok,
+              '5c. and the DEFAULT realm still decides with the built-in ' +
+              'documents: another realm\'s override does not reach it',
+              JSON.stringify(outside));
+
+      write('access-control', 'access-control');
+      store.write('access-control', doc('access-control'),
+                  { enabled: false });
+      const afterDefault = inRealm(bothIn);
+      t.check(!accessPep.accessPolicyState().ok &&
+              afterDefault.access.enabled === false &&
+              inRealm(function () {
+                return store.read('access-control').enabled;
+              }) === false,
+              '5d. the reverse: the default realm\'s own disabled override ' +
+              'is ITS, and the realm\'s document is still the realm\'s',
+              JSON.stringify(afterDefault.access));
+      store.remove('access-control');
+      inRealm(function () {
+        store.remove('role-issuance');
+        store.remove('access-control');
+      });
+      const back = inRealm(bothIn);
+      t.check(back.access.builtIn && back.access.ok &&
+              accessPep.accessPolicyState().builtIn,
+              '5e. and deleting each realm\'s override brings the SAME ' +
+              'built-in document back in both');
+    } finally {
+      realms.remove(id);
+    }
+  }
   log.debug("Leaving run().");
 }
 

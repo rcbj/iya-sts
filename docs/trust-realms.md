@@ -33,7 +33,7 @@ identity provider beside a production-shaped one on the same laptop.
 ```bash
 curl -k -X POST https://localhost:8081/admin-api/realms/create \
      -H 'content-type: application/json' \
-     -d '{"id":"acme","name":"Acme Corporation"}'
+     -d '{"id":"acme","name":"Acme Corporation","domain":"acme.example.com"}'
 ```
 
 Or on **`/admin/realms`** in the console, which is also where a realm's settings,
@@ -48,6 +48,42 @@ with a letter or a digit, at most 31 characters. It may not be `default`, and it
 may not be the first segment of a path this service already serves —
 `GET /admin-api/realms` lists those in `reserved`, read off the live router, so
 the list cannot go stale.
+
+### Its domain
+
+A realm has a DNS **domain** — `iyasec.io`, `dev.iyasec.io`, `craptastic.net` —
+set when it is created and **fixed from then on**. It is the root of every
+*name* the realm makes up:
+
+| What | From the domain `iyasec.io` |
+|---|---|
+| Its directory tree (RFC 2247) | `dc=iyasec,dc=io` |
+| Its Kerberos realm | `IYASEC.IO` |
+| Its Kerberos service principal (derived by the KDC, not seeded) | `HTTP/web.iyasec.io` |
+| Its SPIFFE trust domain | `iyasec.io` |
+| The SAML 2.0 entityID / SAML 1.1 providerID | `urn:iyasec.io:idp` / `urn:iyasec.io:idp:saml11` |
+| The WS-Federation entityID, WS-Trust and SAML assertion issuer | `urn:iyasec.io:sts` |
+| The address a development-mode person is given | `alice@iyasec.io` |
+
+It is **not** where the realm is reached. The OAuth issuer, `did:web`, the
+WebAuthn RP ID and every URL still come from the host a request arrived on,
+because a domain you typed says nothing about which hosts this service answers
+at.
+
+- **Leave it empty** and the realm gets `<id>.<global.domain>` —
+  `acme.example.com` — whose tree `dc=acme,dc=example,dc=com` is the one every
+  realm had before realms had domains.
+- **No two realms may share a domain**, and the default realm's is
+  `global.domain`.
+- **A domain inside another realm's is allowed**: `dev.iyasec.io` beside
+  `iyasec.io` is a separate tree, and a search from `dc=iyasec,dc=io` does not
+  see `dc=dev,dc=iyasec,dc=io`'s entries.
+- **To change it, remove the realm and create it again.** The domain is inside
+  every DN in the realm's directory, every SPIFFE ID it issued and every key its
+  KDC holds, so an update that names a different one is refused.
+
+The names in the table are ordinary settings on the realm, visible on its page
+and changeable like any other; pass `overrides` on the create to choose your own.
 
 ## Finding one
 
@@ -97,15 +133,17 @@ before you build a test on it.
 | **Everything in flight** | Authorization codes, access and refresh tokens, refresh families, DPoP replay and nonce state, the RFC 7523 / RFC 7522 used-assertion history, named authorization servers, credential offers, pre-authorized codes, deferred transactions and the access tokens that mark a deferred issuance, issuance nonces, presentation transactions, SAML 2.0 and 1.1 request state and artifacts, SCIM Digest nonces and HOBA challenges, and the SPIRE Server API connections an X509-SVID was recorded for (a gRPC connection belongs to the realm whose listener accepted it). |
 | **What goes into a token** | The custom claim selections, the SAML attribute selections, the credential claims, the verifier's request. |
 | **The statistics and the audit log** | Including the audit sequence numbers, so one realm's rows are contiguous. |
-| **The six settings that are NAMES** | The SAML 2.0 entityID, the SAML 1.1 providerID, the WS-Federation entityID, the WS-Trust issuer, the SAML assertion issuer and the OpenID4VP verifier client id. A new realm is created with each suffixed with its id, because two realms carrying one entityID is two identity providers claiming one name. They are ordinary settings — change them, or unset them to go back to sharing the process's name. |
+| **The settings that are NAMES** | The SAML 2.0 entityID, the SAML 1.1 providerID, the WS-Federation entityID, the WS-Trust issuer, the SAML assertion issuer, the SPIFFE trust domain and the Kerberos realm — built from the realm's domain (*Its domain*, above) — and the OpenID4VP verifier client id, suffixed with its id. Two realms carrying one entityID is two identity providers claiming one name. They are ordinary settings — change them, or unset them to go back to sharing the process's name. |
 
 ### Separated — the embedded directory, one per realm
 
-Each realm has a directory of its own behind the one socket, named by its base:
+Each realm has a directory of its own behind the one socket, rooted at its
+domain — a naming context of its own, published in the root DSE:
 
 ```
-dc=example,dc=com                 the DEFAULT realm  (ldap.baseDn itself)
-dc=acme,dc=example,dc=com         the realm `acme`
+dc=example,dc=com                 the DEFAULT realm  (global.domain)
+dc=acme,dc=example,dc=com         the realm `acme`, created with no domain
+dc=iyasec,dc=io                   a realm whose domain is iyasec.io
 ```
 
 with its own `ou=users`, `ou=groups`, `ou=applications`, `ou=federations` and
@@ -117,8 +155,8 @@ SPIFFE containers under each. So:
 - the **SPIFFE registry** is per realm, and **so is the X.509 signing authority
   since 2026-09-11** — each realm has a SPIFFE Issuing CA of its own on
   [`/admin/pki`](pki.md) — and **so is the trust domain itself since
-  2026-09-12**: a realm is created with `spiffe.trustDomain` of
-  `<realm>.<the service's>`, so `acme` issues `spiffe://acme.example.org/…`.
+  2026-09-12**: a realm is created with its domain as its
+  `spiffe.trustDomain`, so `acme` issues `spiffe://acme.example.com/…`.
   See *SPIFFE* below, which is no longer on the not-separated list;
 - and a realm is reachable over LDAP: `ldapsearch -b "dc=acme,dc=example,dc=com"`.
 
@@ -198,8 +236,7 @@ of four sockets, answering in the default realm. It is separated now, and the
 discriminator is neither a path nor a name but the **endpoint address**.
 
 A realm is created with SPIFFE **off** and with a trust domain of its own —
-`acme.example.org` under the service's `example.org`, a common root with a
-unique issuer beneath it — and with Unix socket paths of its own. Turning
+its domain, `acme.example.com` — and with Unix socket paths of its own. Turning
 `spiffe.enabled` on for that realm builds its authorities and binds a **Workload
 API and a SPIRE Server API of its own** on its Unix sockets. Nothing restarts:
 writing the setting is what binds the sockets.
@@ -245,17 +282,18 @@ protocol has always carried, because Kerberos has realms of its own.
 **Port 88 is still one socket.** An AS-REQ or TGS-REQ names the realm it is
 for, and the KDC answers it out of that trust realm's principal database.
 
-**A realm is created with Kerberos off, and you name it yourself.** Nothing is
-seeded: `krb5.enabled` is seeded `false`, and there is no default name, because
-two realms answering to one name is a request nothing can route. So:
+**A realm is created with Kerberos off, and named by its domain.**
+`krb5.enabled` is seeded `false` and `krb5.realm` is the domain in capitals —
+`ACME.EXAMPLE.COM` for `acme.example.com` — because two realms answering to one
+name is a request nothing can route, and a unique domain is a unique name. So
+turning it on is one setting:
 
 ```bash
-# Give the realm a Kerberos realm of its own, then turn it on.
-curl -X POST .../admin-api/realms/set \
-  -d '{"realm":"acme","key":"krb5.realm","value":"ACME.EXAMPLE.COM"}'
 curl -X POST .../admin-api/realms/set \
   -d '{"realm":"acme","key":"krb5.enabled","value":"true"}'
 ```
+
+Set `krb5.realm` on the realm first to answer to a different name.
 
 Turning it on builds that realm's principal database from **its own settings**:
 its own `krbtgt`, its own service account, its own fixture accounts in

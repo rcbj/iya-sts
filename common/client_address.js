@@ -57,6 +57,7 @@
 const net = require('net');
 const bunyan = require('bunyan');
 const config = require('./config');
+const cacheRegistry = require('./cache_registry');
 
 const log = bunyan.createLogger({ name: 'sts-client-address' });
 config.registerLogger(log);
@@ -67,6 +68,39 @@ const IS_REQUEST_WORKER = !!process.env.STS_REQUEST_WORKER;
 // runtime, and a BlockList per request would be a parse per request.
 let cachedText = null;
 let cached = null;
+
+// Described to `/admin/caches` (rule 3ap, 2026-09-18). It was one of the four
+// single-value memos that page listed as held and not reported; a memo is a
+// cache of one row, and the page now says so rather than naming it in a
+// table of exceptions. A hit is a request that found the parsed ranges
+// current; a miss re-parsed the setting.
+const rangesCount = cacheRegistry.register({
+  name: 'global.trusted-proxies',
+  title: 'Trusted proxy ranges',
+  description: 'global.trustedProxies, parsed into a BlockList, so a ' +
+    'request does not re-parse the setting to decide whose forwarded ' +
+    'address to believe.',
+  owner: 'common/client_address.js',
+  scope: 'process',
+  settings: ['global.trustedProxies'],
+  maxEntries: function () {
+    return 1;
+  },
+  bound: 'Structural: one parsed copy of the setting.',
+  lifetime: function () {
+    return 'Until the text of global.trustedProxies changes.';
+  },
+  entries: function () {
+    if (!cached) {
+      return [];
+    }
+    return [{ key: cached.count + ' range(s) of ' + cached.configured +
+                ' configured',
+              validUntil: null,
+              valid: cachedText === rangesText().join(','),
+              basis: 'setting text' }];
+  }
+});
 
 // `::ffff:10.0.0.1` is an IPv4 client on a dual-stack socket, and a range
 // written `10.0.0.0/8` must match it.
@@ -101,9 +135,11 @@ function ranges() {
   const entries = rangesText();
   const text = entries.join(',');
   if (text === cachedText && cached) {
+    rangesCount.hit();
     log.debug("Leaving ranges(). Cached.");
     return cached;
   }
+  rangesCount.miss();
   const list = new net.BlockList();
   let count = 0;
   entries.forEach(function (entry) {

@@ -25,6 +25,8 @@
 #     goes inside every certificate this service signs
 #     (`PKI_DISTRIBUTION_BASE_URL`, ecs.tf), so `http://test-idp.iyasec.io/pki/
 #     …` is what a client follows
+#   * the KDC published on TCP 88 (publish_kerberos), so a Kerberos client
+#     can reach it directly as well as over MS-KKDCP at /KdcProxy on 443
 #   * product mode with the request dispatcher — the `dispatch` row of
 #     tests/tools/modes.sh with STS_MODE=product. THE BOOTSTRAP
 #     ADMINISTRATOR'S PASSWORD IS IN SECRETS MANAGER (2026-09-17), at
@@ -41,6 +43,29 @@ public_zone_name = "iyasec.io"
 # The front-end port for the plain-HTTP CRL/OCSP/caIssuers listener. The
 # container stays on 8082; `dev` and `ci` keep 8082 on both sides.
 pki_listener_port = 80
+
+# The KDC on TCP 88, through the load balancer like every other port
+# (2026-09-18). TCP only — see the variable. `dev` and `ci` do not publish it.
+publish_kerberos = true
+
+# The service's own names under iyasec.io rather than the example domains the
+# settings default to (2026-09-18): the default realm's DNS domain (which roots
+# the directory at dc=iyasec,dc=io — it was LDAP_BASE_DN until global.domain
+# replaced that setting the same day), the Kerberos realm
+# (whose lower-cased form is the domain the auto-created service principals and
+# the PAC's domain name come from), the acceptor's service principal on the
+# public host name, and the SPIFFE trust domain. `dev` and `ci` keep the
+# defaults the suite is written against. None of the four can be changed under
+# a store that already holds the old names — the directory, the Kerberos keys
+# (salted with the realm) and the certificate authority (whose certificates
+# name the directory copy of each CRL by DN) were all written under them — so
+# the first apply carrying them REPLACED THE DATABASE (deploy/aws/CLAUDE.md).
+extra_environment = {
+  STS_DOMAIN              = "iyasec.io"
+  KRB5_REALM              = "IYASEC.IO"
+  KRB5_SERVICE_PRINCIPAL  = "HTTP/test-idp.iyasec.io"
+  STS_SPIFFE_TRUST_DOMAIN = "iyasec.io"
+}
 
 sts_mode                = "product"
 workers_request_count   = 3
