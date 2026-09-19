@@ -1051,7 +1051,8 @@ so must `admin-ui/admin.ts`.
    ENCRYPTED (section 6 names it as one privacy measure; optional); `roles` and
    `entitlements` (section 2.2.3.1) are not emitted, and the groups claim takes
    its name from `groups.claimName`, `groups` by default; a foreign token at the
-   OID4VCI credential endpoints is still accepted unverified, by design; and the
+   OID4VCI credential endpoints is still accepted unverified in development
+   mode (product refuses it since 2026-09-18); and the
    introspection and token-exchange readers of a token this service issued do
    not ask section 4, which is a resource server's list.
    `tests/rfc9068_access_tokens.js` holds the library, the plan and the
@@ -2026,9 +2027,15 @@ pages that relax `script-src`. The argument for it is made in `oauth2.ts`, above
   by this one. Product mode (`global.mode`) is a different axis from RFC 9700
   mode and does check it — at the sign-in screen and, since 2026-09-12, at the
   password grant; see the sweep section at the end of this file.
-* **It does not verify access tokens it did not issue — except at UserInfo.**
-  OID4VCI lets the authorization server be somebody else, so at the three
-  credential endpoints a foreign token is accepted as-is. The consequence for DPoP
+* **It verifies every token presented to it but one: a foreign access token
+  at the three OpenID4VCI endpoints, in DEVELOPMENT mode** (this bullet read
+  *except at UserInfo* until 2026-09-18, which undersold it — UserInfo,
+  `/admin-api`, SCIM, Shared Signals, the step-up resource, introspection, token
+  exchange and the RFC 7523 / 7522 doors all verify). OID4VCI lets the
+  authorization server be somebody else, so in development a foreign token at
+  those endpoints is accepted as-is; **product mode refuses it, and a revoked
+  one** (`mode.acceptsUnverifiedIssuerTokens()`, `vc_issuer.ts`'s
+  `presentedIssuerToken()`). The consequence for DPoP
   is stated in `presentedAccessToken()` (in `dpop.ts`, shared by all four
   protected endpoints): for such a token, `cnf.jkt` is a claim anyone could have
   written, and the binding is real only for tokens this service issued.

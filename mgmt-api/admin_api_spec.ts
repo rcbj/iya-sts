@@ -1964,11 +1964,12 @@ const SCHEMAS = {
       shown: { type: 'integer', description: 'How many are on this page.' },
       registered: {
         type: 'integer',
-        description: 'How many went through POST /oauth2/register. The rest ' +
-                     'are client_ids and realms that simply turned up, which ' +
-                     'RFC 9700 mode treats as PUBLIC and judges against the ' +
-                     'oauth2.redirectUris setting rather than against a ' +
-                     'registration.'
+        description: 'How many were registered on purpose — by an ' +
+                     'administrator, through POST /oauth2/register, or ' +
+                     'seeded at startup (each row\'s `registeredBy`). The ' +
+                     'rest are client_ids and realms that simply turned up. ' +
+                     'Only an RFC 7591 registration sets a row\'s ' +
+                     '`registered`, which is what RFC 9700 mode turns on.'
       },
       filter: openObject('What was asked for; null where nothing was.', {}),
       container: {
@@ -2014,13 +2015,18 @@ const SCHEMAS = {
           'authenticated": a create takes a kind too, so a hand-made entry ' +
           'can be recorded in a family it has never connected in, and ' +
           '`authentications` is the figure that answers that), ' +
+          '`declaredKinds` (the kinds `allowedProtocols` amounts to, kept ' +
+          'apart from `kinds`, which is what was recorded), ' +
           '`returnAddressesObserved` (the return addresses a ' +
           'DEVELOPMENT-mode request put on this entry and nobody has ' +
           'confirmed, each `{attribute, value, held, trusted}` — `trusted` ' +
           'is whether THIS realm\'s mode believes it, which product never ' +
           'does; confirm or discard one with POST ' +
           '/admin-api/applications/confirm-address or /discard-address), ' +
-          '`registered`, `firstSeen`, `lastSeen`, `authentications`, ' +
+          '`registered` (RFC 7591\'s flag), `registeredBy` ' +
+          '(`administrator`, `rfc7591`, `startup`, or empty for an ' +
+          'application that merely turned up), `firstSeen`, `lastSeen`, ' +
+          '`authentications`, ' +
           '`sessions`, `users`, `descriptions`, `origin`, `createdAt` and ' +
           '`modifiedAt` (the ENTRY\'s own, which an ldapmodify moves and ' +
           'firstSeen/lastSeen do not), `operational` (which of the ' +

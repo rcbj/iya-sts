@@ -14130,6 +14130,77 @@ class AdminConsole {
     }).join('<br>');
   }
 
+  // AN APPLICATION'S KINDS, RECORDED AND DECLARED TOGETHER (2026-09-18). The
+  // Kind column read `row.kinds` alone, which a create does not write — so an
+  // application declared on /admin/applications/new for OAuth 2.0 and SAML
+  // 2.0 showed "unstated" beside that declaration. It is known; the entry just
+  // keeps the two apart (see `declaredKinds` in applications.js's view()).
+  applicationKindCells(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.applicationKindCells().");
+    const kinds = (row.kinds || []).slice(0);
+    (row.declaredKinds || []).forEach(function (kind) {
+      if (kinds.indexOf(kind) < 0) {
+        kinds.push(kind);
+      }
+    });
+    log.debug("Leaving AdminConsole.applicationKindCells().");
+    return this.kindCells(kinds);
+  }
+
+  // THE PROTOCOLS CELL: WHAT IT IS FOR FIRST, THEN WHAT HAS HAPPENED
+  // (2026-09-18). It used to lead with the observed list, so a new
+  // application read "none recorded" and then "declared: oauth2, oidc, …" —
+  // two lines that looked like they disagreed. A declared application now
+  // shows its families by name, with what has been seen (or that nothing has
+  // yet) under them; one that was never declared shows what was seen.
+  applicationProtocolCell(row) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.applicationProtocolCell().");
+    const declared = (row.allowedProtocols || []).map(function (id) {
+      const known = (applications.PROTOCOLS || []).filter(function (p) {
+        return p.id === id;
+      })[0];
+      return known ? known.label : id;
+    });
+    const seen = row.protocols || [];
+    if (!declared.length) {
+      log.debug("Leaving AdminConsole.applicationProtocolCell(). Observed " +
+                "only.");
+      return seen.length ? this.esc(seen.join(', '))
+                         : '<span class="state-none">none</span>';
+    }
+    log.debug("Leaving AdminConsole.applicationProtocolCell().");
+    return this.esc(declared.join(', ')) +
+      '<div class="sub">' + (seen.length
+        ? 'seen: ' + self.esc(seen.join(', '))
+        : 'not used yet') + '</div>';
+  }
+
+  // REGISTERED MEANS SOMEBODY PUT IT HERE ON PURPOSE (2026-09-18) — an
+  // administrator, RFC 7591, or this service's own seeding — as against an
+  // identifier that merely turned up. It read `row.registered`, which is RFC
+  // 7591's flag, and so said "no" about an application just created on
+  // /admin/applications/new. The flag itself is unchanged: it is what RFC
+  // 9700 mode and RFC 7592 turn on (see appRegisteredBy's schema row).
+  applicationRegisteredCell(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminConsole.applicationRegisteredCell().");
+    const by = String(row.registeredBy || (row.registered ? 'rfc7591' : ''));
+    if (!by) {
+      log.debug("Leaving AdminConsole.applicationRegisteredCell(). No.");
+      return '<span class="state-none">no</span>';
+    }
+    const how = by === 'administrator' ? 'by an administrator'
+      : by === 'rfc7591' ? 'RFC 7591'
+      : by === 'startup' ? 'at startup'
+      : by;
+    log.debug("Leaving AdminConsole.applicationRegisteredCell(). " + by);
+    return '<span class="state-valid">yes</span><div class="sub">' +
+           this.esc(how) + '</div>';
+  }
+
   // WHERE A FINISHED APPLICATION ACTION LANDS. Extracted from the route on
   // 2026-08-27 when `refresh-metadata` became asynchronous and needed the same
   // answer from a callback — two copies of this would be two opinions about
@@ -14422,7 +14493,7 @@ class AdminConsole {
             ' &mdash; the identifier is too long for a readable RDN, so the ' +
             '<code>cn</code> is a digest of it') + '</div>' : '') +
         '</td><td>' + self.esc(row.name) + '</td>' +
-        '<td>' + self.kindCells(row.kinds) + '</td>' +
+        '<td>' + self.applicationKindCells(row) + '</td>' +
         // BOTH PROTOCOL LISTS IN ONE CELL, and the declared half is labelled
         // rather than run in with the other. An application created by hand has
         // no observed protocols at all — it has never connected — so this cell
@@ -14431,20 +14502,9 @@ class AdminConsole {
         // The two are not the same claim, so they are not the same line: the
         // labels are what HAPPENED and the ids under them are what was
         // DECLARED.
-        '<td>' + (row.protocols.length
-          ? self.esc(row.protocols.join(', '))
-          : '<span class="state-none">none recorded</span>') +
-        ((row.allowedProtocols || []).length
-          // codeList() rather than a join with the markup in it, for the reason
-          // that function was written: escaping the joined string escapes the
-          // tags too, and the cell then shows them.
-          ? '<div class="sub">declared: ' +
-            self.codeList(row.allowedProtocols) +
-            '</div>'
-          : '') + '</td>' +
-        '<td>' + (row.registered
-          ? '<span class="state-valid">yes</span>'
-          : '<span class="state-none">no</span>') + '</td>' +
+        // DECLARED FIRST since 2026-09-18 — applicationProtocolCell() says why.
+        '<td>' + self.applicationProtocolCell(row) + '</td>' +
+        '<td>' + self.applicationRegisteredCell(row) + '</td>' +
         '<td class="num">' + row.authentications + '</td>' +
         '<td class="num">' + row.sessions + '</td>' +
         '<td class="num">' + row.users + '</td>' +
@@ -14459,7 +14519,8 @@ class AdminConsole {
         // options renumber themselves on every Filter is one nobody can use to
         // find out where the rows went.
         const n = all.filter(function (row) {
-          return row.kinds.indexOf(one.kind) >= 0;
+          return row.kinds.indexOf(one.kind) >= 0 ||
+                 (row.declaredKinds || []).indexOf(one.kind) >= 0;
         }).length;
         return '<option value="' + self.esc(one.kind) + '"' +
                (one.kind === wantedKind ? ' selected' : '') + '>' +
@@ -14470,7 +14531,7 @@ class AdminConsole {
     const inner = this.messagesOf(req) +
       '<div class="tiles">' +
       this.tile(all.length, 'Applications') +
-      this.tile(registeredCount, 'Registered (RFC 7591)') +
+      this.tile(registeredCount, 'Registered') +
       this.tile(all.reduce(function (n, r) { return n + r.authentications; },
                            0),
                 'Authentications') +
@@ -15791,7 +15852,8 @@ class AdminConsole {
       this.tile(row.authentications, 'Authentications') +
       this.tile(row.sessions, 'Sessions') +
       this.tile(row.users, 'Users') +
-      this.tile(row.registered ? 'yes' : 'no', 'Registered') +
+      this.tile(row.registered || row.registeredBy ? 'yes' : 'no',
+                'Registered') +
       '</div>' +
       '<table><tr><th>Thing</th><th>Value</th></tr>' +
       // FIRST, because it is the thing this page could not previously answer:
@@ -15810,8 +15872,11 @@ class AdminConsole {
         : '<span class="state-none">no directory is loaded in this process, ' +
           'so there is no entry and no registry</span>') + '</td></tr>' +
       '<tr><td>Name</td><td>' + this.esc(row.name) + '</td></tr>' +
-      '<tr><td>Kind</td><td>' + this.kindCells(row.kinds) + '</td></tr>' +
-      '<tr><td>Protocols</td><td>' + this.esc(row.protocols.join(', ')) +
+      '<tr><td>Kind</td><td>' + this.applicationKindCells(row) +
+      '</td></tr>' +
+      '<tr><td>Protocols</td><td>' + this.applicationProtocolCell(row) +
+      '</td></tr>' +
+      '<tr><td>Registered</td><td>' + this.applicationRegisteredCell(row) +
       '</td></tr><tr><td>First ' +
       'seen</td><td><code>' + this.esc(row.firstSeen) +
       '</code></td></tr><tr><td>Last ' +
@@ -20310,9 +20375,11 @@ class AdminConsole {
       'it</button></div></form><h2>What is separated, and what is ' +
       'shared</h2><p class="lead">A realm separates what this service ISSUES ' +
       'and everything it is holding while it issues it — keys, sessions, ' +
-      'codes, tokens, offers, artifacts, statistics and the audit log. It ' +
-      'does not separate the embedded directory, and four families answer on ' +
-      'sockets with no path in them at all. This table is the whole list, ' +
+      'codes, tokens, offers, artifacts, statistics and the audit log — and ' +
+      'since each realm has a directory of its own, the people, groups, ' +
+      'applications and policies in it. The families on sockets with no ' +
+      'path in them are told apart some other way, and a few things belong ' +
+      'to the process and are shared. This table is the whole list, ' +
       'and <code>GET /realms</code> answers the same thing to a client that ' +
       'cannot read a console.</p>' +
       this.realmSupportTable() +

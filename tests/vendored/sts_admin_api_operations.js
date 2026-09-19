@@ -118,6 +118,11 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
+const facts = require("./service_facts.js");
+const registry = require("./sts_applications.js");
+// The redirect URI the token-minting client registers: tokens come from the
+// authorization code flow (a product-mode service has no password grant).
+const MINT_REDIRECT_URI = "https://admin-api-operations.example.test/cb";
 
 var appconfig;
 let appconfigProblem = null;
@@ -1057,8 +1062,11 @@ async function theApplicationsRegistryRoundTrips() {
     "GET /applications/new should publish the kinds and the protocol " +
     "families a create is validated against; it published " +
     kinds.length + " and " + families.length + ".");
+  // The service's own base DN, asked rather than assumed: a deployment names
+  // its directory (testidp's is dc=iyasec,dc=io).
+  const baseDn = String(await facts.setting(rootApi, "ldap.baseDn"));
   assert.strictEqual(form.body.container,
-    "ou=applications,dc=" + REALM + ",dc=example,dc=com",
+    "ou=applications,dc=" + REALM + "," + baseDn,
     "and it should name THIS realm's container, since that is where a create " +
     "made through this prefix lands; it named " + form.body.container);
 
@@ -1444,6 +1452,46 @@ async function theObservedReturnAddressesAreDecided() {
     log.debug("Leaving until().");
   }
 
+  // --- ON A PRODUCT-MODE SERVICE (2026-09-18) -----------------------------
+  // The sightings below need this realm in development mode, and on a
+  // product-mode deployment that would mean switching a realm's mode for a
+  // test — loosening a check this job may not loosen. Development's recorded
+  // address cannot exist there, so what is asserted is what product does
+  // instead: an address nobody registered is refused, and both operations
+  // refuse an address that carries no development mark.
+  if (await facts.isProduct(rootApi)) {
+    // The relying party is REGISTERED first, with TWO as its assertion
+    // consumer — as a product-mode deployment requires of anybody it answers.
+    await ok("/applications/create", { identifier: rpId, name: rpId,
+      protocols: ["saml11"],
+      fields: { samlEntityId: [rpId], samlAssertionConsumerService: [TWO] } },
+      "registered the relying party with one assertion consumer");
+    const registered = await sight(TWO);
+    assert.ok(registered.status < 400,
+      "the REGISTERED shire should be accepted in product mode (a redirect " +
+      "to the sign-in screen); it answered " + registered.status + " " +
+      registered.text.slice(0, 200));
+    const refusedShire = await sight(ONE);
+    assert.strictEqual(refusedShire.status, 400,
+      "a product-mode service must refuse a shire nobody registered; it " +
+      "answered " + refusedShire.status);
+    await refused("/applications/confirm-address",
+      { application: rpId, attribute: "samlAssertionConsumerService",
+        value: ONE },
+      /not marked as observed/i,
+      "confirming an address product mode never recorded");
+    await refused("/applications/discard-address",
+      { application: rpId, attribute: "samlAssertionConsumerService",
+        value: ONE },
+      /not marked as observed/i,
+      "discarding an address product mode never recorded");
+    log.info("[return addresses] OK — PRODUCT: the registered shire is " +
+             "accepted, an unregistered one refused, and confirm/discard " +
+             "refuse an address with no development mark.");
+    log.debug("Leaving theObservedReturnAddressesAreDecided(). Product.");
+    return;
+  }
+
   // --- the sightings, in DEVELOPMENT --------------------------------------
   for (const shire of [ONE, TWO]) {
     const seen = await sight(shire);
@@ -1740,14 +1788,16 @@ async function aClaimSetBelongsToItsRealm() {
   const elsewhereUser = names.usernameFor("stsapi-elsewhere");
   const elsewhereClient = "claim-realm-elsewhere-" + REALM;
   await ensureTokenParties(elsewhereUser, elsewhereClient, true);
+  const elsewhereGranted = await registry.authorizationCode(base, {
+    clientId: elsewhereClient, redirectUri: MINT_REDIRECT_URI,
+    username: elsewhereUser, password: MINT_PASSWORD, scope: "openid" });
   const elsewhere = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=password&username=" + encodeURIComponent(elsewhereUser) +
-        "&password=" + encodeURIComponent(MINT_PASSWORD) +
-        "&client_id=" + encodeURIComponent(elsewhereClient) +
-        "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
-        "&scope=openid"
+    body: new URLSearchParams({ grant_type: "authorization_code",
+      code: elsewhereGranted.code, redirect_uri: MINT_REDIRECT_URI,
+      code_verifier: elsewhereGranted.verifier, client_id: elsewhereClient,
+      client_secret: MINT_CLIENT_SECRET }).toString()
   });
   assert.strictEqual(elsewhere.status, 200,
     "the default realm's token endpoint should still mint a token; it " +
@@ -2718,10 +2768,24 @@ async function theCredentialResourcesRoundTrip() {
     ((await get("/credential-claims")).body.selected || []).slice().sort(),
     "`populate` should sweep exactly the attributes GET /credential-claims " +
     "says are selected. It swept " + JSON.stringify(sweep.attributes));
-  assert.ok(Number(sweep.examined) > 0,
-    "and it should have examined at least one directory entry — this realm " +
-    "has people in it by now, and a sweep that examined none is one that " +
-    "found the wrong subtree. It examined " + sweep.examined);
+  // ON A PRODUCT-MODE SERVICE the sweep does not run at all: product invents
+  // no claim value (mode.inventsClaimValues()), so an entry carries what was
+  // provisioned onto it. The answer must SAY it was skipped and have touched
+  // nothing — "0 examined" with no reason is the wrong-subtree bug below.
+  if (await facts.isProduct(rootApi)) {
+    assert.ok(sweep.skipped && Number(sweep.examined) === 0 &&
+              Number(sweep.changed) === 0,
+      "in PRODUCT mode `populate` should report the sweep skipped, having " +
+      "examined and changed nothing; it answered " +
+      JSON.stringify(sweep).slice(0, 300));
+    log.info("[credential claims] OK — PRODUCT: populate skipped the sweep " +
+             "(" + sweep.skipped + ").");
+  } else {
+    assert.ok(Number(sweep.examined) > 0,
+      "and it should have examined at least one directory entry — this " +
+      "realm has people in it by now, and a sweep that examined none is " +
+      "one that found the wrong subtree. It examined " + sweep.examined);
+  }
 
   const request = await get("/verifier-request");
   const formats = (request.body.formats || []).map(function (f) {
@@ -3307,8 +3371,10 @@ async function ensureTokenParties(username, client, root) {
       identifier: client, name: client, protocols: ["oauth2", "oidc"],
       fields: { oauthClientId: [client], oauthClientSecret: MINT_CLIENT_SECRET,
                 oauthTokenEndpointAuthMethod: "client_secret_post",
-                oauthGrantType: ["password", "client_credentials",
-                                 "refresh_token"] }
+                oauthGrantType: ["authorization_code", "client_credentials",
+                                 "refresh_token"],
+                oauthRedirectUri: [MINT_REDIRECT_URI],
+                oauthResponseType: ["code"] }
     }, "registered " + client + " before it asks for a token", root);
     const back = await get("/applications?application=" +
                            encodeURIComponent(client), root);
@@ -3323,11 +3389,16 @@ async function ensureTokenParties(username, client, root) {
 async function mintTokens(username, client) {
   log.debug("Entering mintTokens(). username=" + username);
   await ensureTokenParties(username, client, false);
-  const body = "grant_type=password&username=" + encodeURIComponent(username) +
-      "&password=" + encodeURIComponent(MINT_PASSWORD) +
-      "&client_id=" + encodeURIComponent(client) +
-      "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
-      "&scope=openid";
+  // THE AUTHORIZATION CODE FLOW (2026-09-18): the person signs in with their
+  // password the way a browser would; the password grant this used is refused
+  // in product mode (RFC 9700 section 2.4).
+  const granted = await registry.authorizationCode(base + "/realm/" + REALM, {
+    clientId: client, redirectUri: MINT_REDIRECT_URI, username: username,
+    password: MINT_PASSWORD, scope: "openid" });
+  const body = new URLSearchParams({ grant_type: "authorization_code",
+    code: granted.code, redirect_uri: MINT_REDIRECT_URI,
+    code_verifier: granted.verifier, client_id: client,
+    client_secret: MINT_CLIENT_SECRET }).toString();
   const reply = await common.httpJson(base + "/realm/" + REALM +
                                       "/oauth2/token", {
     method: "POST",

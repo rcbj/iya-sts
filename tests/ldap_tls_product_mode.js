@@ -204,7 +204,8 @@ function productInventsNothingAndAuditsTruthfully(t) {
     '"/common/audit.js");const made = d.createUser("probe-person", { origin: ' +
     '"test" });const entry = ' +
     'd.entries.get("uid=probe-person,ou=users,dc=example,dc=com");const ' +
-    'swept = d.populateVcAttributes();const pw = ' +
+    'swept = d.populateVcAttributes();const through = require(R + ' +
+    '"/oid4vc/vc_claims").populateDirectory();const pw = ' +
     'credentials.setPassword("probe-person", "Correct-Horse-9-Battery");' +
     // OVER LDAPS: product mode refuses a bind carrying a password on the plain
     // listener with confidentialityRequired before reading it (2026-09-12,
@@ -215,7 +216,7 @@ function productInventsNothingAndAuditsTruthfully(t) {
     'audit.list().filter(function (e) { return e.action === ' +
     '"directory.bind"; })[0] || null;return { made: made && made.ok, ' +
     'attributes: entry ? Object.keys(entry.attributes).sort() : null, swept: ' +
-    'swept, pw: pw && pw.ok, pwErrors: pw && pw.errors, bind: bind.ok, row: ' +
+    'swept, through: through, pw: pw && pw.ok, pwErrors: pw && pw.errors, bind: bind.ok, row: ' +
     'row };');
   const r = run.report || {};
   t.check(r.made === true, 'a person can be created in a product directory',
@@ -230,6 +231,15 @@ function productInventsNothingAndAuditsTruthfully(t) {
           /product mode/.test(String(r.swept.skipped)),
           'and the credential-attribute sweep does not run, saying why',
           JSON.stringify(r.swept));
+  // The reason has to survive the layer the console and /admin-api read:
+  // vc_claims.populateDirectory() dropped it until 2026-09-19, so the
+  // Populate button answered "Swept 0 directory entry/entries" about a sweep
+  // that never started.
+  t.check(r.through && r.through.ok === true &&
+          /product mode/.test(String(r.through.skipped)),
+          'and vc_claims.populateDirectory() hands that reason on to the ' +
+          'console and the API',
+          JSON.stringify(r.through));
   t.check(r.pw === true && r.bind === true, 'a real password verifies over a ' +
                                             'bind',
           JSON.stringify({ pw: r.pw, errors: r.pwErrors, bind: r.bind }));

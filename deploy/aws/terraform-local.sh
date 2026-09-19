@@ -19,6 +19,10 @@
 #   deploy/aws/terraform-local.sh dev apply          # IMAGE_TAG=<tag> required
 #   deploy/aws/terraform-local.sh dev suite          # report in tests/report/aws-dev
 #   TF_STACK=foundation deploy/aws/terraform-local.sh dev apply # administrator
+#   TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
+#     deploy/aws/terraform-local.sh testidp apply  # a realm's SPIFFE ports
+#     (deploy/aws/CLAUDE.md, *A realm's SPIFFE ports*; `destroy` needs REALM
+#     only)
 #     (the env name is not used by `foundation`, but entrypoint.sh still
 #     checks its shape, so it must be a valid name and not `-`)
 #
@@ -37,7 +41,8 @@
 #
 # plan and apply need two more: IMAGE_TAG (the commit the images were pushed
 # under — deploy/aws/CLAUDE.md, *Running it by hand*, builds them) and
-# ALLOWED_CIDR, which defaults to this host's public address.
+# ALLOWED_CIDR, which defaults to this host's public address and may be a
+# comma-separated list (every address the load balancer should admit).
 #
 # TF_CLI_ARGS, TF_CLI_ARGS_plan, TF_CLI_ARGS_apply and TF_CLI_ARGS_destroy are
 # passed through — terraform reads them itself, so
@@ -82,7 +87,7 @@ chmod 600 "${CREDS_ENV_FILE}"
 trap 'rm -f "${CREDS_ENV_FILE}"' EXIT
 if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ];
 then
-  echo "==> Using the AWS credentials in this environment"
+  echo "==> Using the AWS credentials in this environment" >&2
   {
     echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}"
     echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}"
@@ -93,7 +98,7 @@ else
     echo "ERROR: no AWS_* credentials in the environment and no AWS CLI to resolve a session." >&2
     exit 1
   }
-  echo "==> Serving your AWS session to the container as it refreshes${AWS_PROFILE:+ (profile: ${AWS_PROFILE})}"
+  echo "==> Serving your AWS session to the container as it refreshes${AWS_PROFILE:+ (profile: ${AWS_PROFILE})}" >&2
   # Fail here, naming the fix, rather than inside the container naming a
   # credentials endpoint.
   if ! aws configure export-credentials --format process >/dev/null 2>&1;
@@ -134,8 +139,31 @@ then
     [ -n "${MY_IP}" ] || { echo "ERROR: could not resolve this host's public IP; set ALLOWED_CIDR." >&2; exit 1; }
     ALLOWED_CIDR="${MY_IP}/32"
   fi
-  echo "==> The load balancer will admit ${ALLOWED_CIDR}"
-  TF_VARS=(-e "TF_VAR_image_tag=${IMAGE_TAG}" -e "TF_VAR_allowed_cidrs=[\"${ALLOWED_CIDR}\"]")
+  # A comma-separated list admits several addresses; each becomes one entry of
+  # allowed_cidrs, and the list REPLACES what the load balancer admitted.
+  ALLOWED_JSON="$(printf '%s' "${ALLOWED_CIDR}" | tr -d '[:space:]' |
+    awk -F, '{ for (i = 1; i <= NF; i++) if ($i != "") printf "%s\"%s\"", (n++ ? "," : ""), $i }')"
+  echo "==> The load balancer will admit ${ALLOWED_CIDR}" >&2
+  TF_VARS=(-e "TF_VAR_image_tag=${IMAGE_TAG}" -e "TF_VAR_allowed_cidrs=[${ALLOWED_JSON}]")
+fi
+
+if [ "${TF_STACK}" = "spiffe-realm" ];
+then
+  [ -n "${REALM:-}" ] || { echo "ERROR: TF_STACK=spiffe-realm needs REALM (a realm id, or default)." >&2; exit 1; }
+  TF_VARS+=(-e "TF_REALM=${REALM}")
+  if [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ];
+  then
+    [ -n "${WORKLOAD_PORT:-}" ] && [ -n "${SERVER_PORT:-}" ] || {
+      echo "ERROR: ${TF_ACTION} needs WORKLOAD_PORT and SERVER_PORT, the realm's spiffe.workloadPort and spiffe.serverPort." >&2
+      exit 1
+    }
+    TF_VARS+=(-e "TF_VAR_workload_port=${WORKLOAD_PORT}" -e "TF_VAR_server_port=${SERVER_PORT}")
+  fi
+fi
+
+if [ "${TF_STACK}" = "suite-callbacks" ] && [ -n "${IMAGE_TAG:-}" ];
+then
+  TF_VARS+=(-e "TF_VAR_image_tag=${IMAGE_TAG}")
 fi
 
 for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy; do
@@ -155,7 +183,7 @@ then
   done
 fi
 
-echo "==> Building ${IMAGE_NAME}"
+echo "==> Building ${IMAGE_NAME}" >&2
 "${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/aws/Dockerfile" "${REPO_ROOT}" >/dev/null
 
 # Named, in the background, and waited for, so that an interrupt here can be
@@ -163,7 +191,7 @@ echo "==> Building ${IMAGE_NAME}"
 # and killing the client leaves the container running without this script's
 # credentials endpoint. `wait` returns early on a trapped signal, hence the
 # loop.
-CONTAINER_NAME="mock-sts-terraform-${TF_ENV}-$$"
+CONTAINER_NAME="mock-sts-terraform-${TF_ENV}${REALM:+-${REALM}}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" >/dev/null 2>&1 || true

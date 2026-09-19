@@ -1370,8 +1370,10 @@ const stsKeysCount = cacheRegistry.register({
   owner: 'common/helpers.js',
   scope: 'realm',
   maxEntries: function () {
-    return null;
+    return 1;
   },
+  bound: 'Structural: one key set per realm, dropped with the realm or ' +
+    'replaced when its keys are rotated or adopted.',
   lifetime: function () {
     return 'No expiry: dropped when the realm is removed, its keys are ' +
       'rotated, or another process\'s stored keys are adopted. One entry ' +
@@ -1418,8 +1420,10 @@ const pqKeysCount = cacheRegistry.register({
   owner: 'common/helpers.js',
   scope: 'realm',
   maxEntries: function () {
-    return null;
+    return 1;
   },
+  bound: 'Structural: one post-quantum set per realm, held with the ' +
+    'realm\'s key set.',
   lifetime: function () {
     return 'As for the realm\'s key set: no expiry, dropped when the realm ' +
       'is removed or its keys are replaced.';

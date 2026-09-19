@@ -49,6 +49,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const consoleSignIn = require("./console_signin.js");
 const common = require("./jwt_vc_json_common.js");
+const registry = require("./sts_applications.js");
 var appconfig = require(process.env.CONFIG_FILE);
 
 var bunyan = require("bunyan");
@@ -136,7 +137,8 @@ const CONDITIONAL = {
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
   const cookie = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER,
-                                                        log);
+                                                        log,
+                                                        { grant: "write" });
   log.debug("Leaving signInToTheConsole(). " +
             (cookie ? "Holding a session." : "The gate is off."));
   return cookie;
@@ -689,36 +691,47 @@ async function revokingHereReachesIntrospection() {
   // neither on anybody's behalf, and a job leaning on development's doing both
   // would be testing that. A second run against a kept stack finds the client
   // already registered, which is the same state and is accepted.
+  // THE TOKEN COMES FROM THE AUTHORIZATION CODE FLOW (2026-09-18): the
+  // password grant is refused in product mode (RFC 9700 section 2.4), so the
+  // console account signs in with its password the way a browser would, as a
+  // client registered here with its redirect URI and a secret.
   const clientSecret = "admin-api-test-client-secret";
-  const registered = await post("/applications/create", {
+  const redirectUri = "https://admin-api-test.example.test/cb";
+  await registry.provision(base, {
     identifier: CONSOLE_USER, name: "Management API test client",
     protocols: ["oauth2", "oidc"],
     fields: { oauthClientId: [CONSOLE_USER], oauthClientSecret: clientSecret,
-              oauthTokenEndpointAuthMethod: "client_secret_post" }
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthRedirectUri: [redirectUri],
+              oauthGrantType: ["authorization_code", "refresh_token"],
+              oauthResponseType: ["code"] },
+    why: "the client whose token this job revokes through the API"
   });
-  assert.ok((registered.status === 200 && registered.body &&
-             registered.body.ok) ||
-            /already/i.test(JSON.stringify(registered.body || {})),
-    "registering the client " + CONSOLE_USER + " answered " +
-    registered.status + " " + String(registered.raw).slice(0, 300));
+  const granted = await registry.authorizationCode(base, {
+    clientId: CONSOLE_USER, redirectUri: redirectUri, username: CONSOLE_USER,
+    password: consoleSignIn.consolePasswordFor(CONSOLE_USER),
+    scope: "openid" });
   const minted = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=password&username=" + encodeURIComponent(CONSOLE_USER) +
-          "&password=" +
-          encodeURIComponent(consoleSignIn.consolePasswordFor(CONSOLE_USER)) +
-          "&client_id=" + encodeURIComponent(CONSOLE_USER) +
-          "&client_secret=" + encodeURIComponent(clientSecret) +
-          "&scope=openid",
+    body: new URLSearchParams({ grant_type: "authorization_code",
+      code: granted.code, redirect_uri: redirectUri,
+      code_verifier: granted.verifier, client_id: CONSOLE_USER,
+      client_secret: clientSecret }).toString(),
   });
   assert.ok(minted.ok && minted.body.access_token,
-    "the password grant should mint a token to revoke; got " + minted.status);
+    "the authorization code should mint a token to revoke; got " +
+    minted.status + " " + String(minted.raw).slice(0, 300));
+  // Introspection presents the client's credential: a product-mode service
+  // answers RFC 7662 only for an authenticated caller.
+  const asClient = "&client_id=" + encodeURIComponent(CONSOLE_USER) +
+    "&client_secret=" + encodeURIComponent(clientSecret);
   const token = minted.body.access_token;
 
   const before = await common.httpJson(base + "/oauth2/introspect", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "token=" + encodeURIComponent(token),
+    body: "token=" + encodeURIComponent(token) + asClient,
   });
   assert.strictEqual(before.body.active, true,
     "the freshly minted token must introspect as ACTIVE first, or the " +
@@ -737,7 +750,7 @@ async function revokingHereReachesIntrospection() {
   const after = await common.httpJson(base + "/oauth2/introspect", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "token=" + encodeURIComponent(token),
+    body: "token=" + encodeURIComponent(token) + asClient,
   });
   assert.strictEqual(after.body.active, false,
     "a token revoked through /admin-api/tokens/revoke must introspect as " +

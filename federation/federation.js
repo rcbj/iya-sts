@@ -1573,8 +1573,10 @@ const releaseIndexCount = cacheRegistry.register({
   scope: 'realm',
   settings: ['federation.releaseIndexTtlMs'],
   maxEntries: function () {
-    return null;
+    return 1;
   },
+  bound: 'Structural: one index per realm, holding one entry per ' +
+    'application with a release list.',
   lifetime: function () {
     return 'federation.releaseIndexTtlMs (' + releaseIndexTtlMs() +
       ' ms) after it was built, or at once when a federation ' +

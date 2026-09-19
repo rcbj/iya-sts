@@ -6707,8 +6707,9 @@ made to the Verifier at `/oid4vp/verifier` still starts no session and issues no
 it is *recorded*, which is a narrower claim and must not be merged with the other. (A
 presentation made to `/authn/wallet` is a sign-on, of the directory entry the credential was
 issued for rather than of its DID — see *Signing in with a wallet*.) A credential
-request records that an access token was presented, not that anybody authenticated; this
-service does not verify tokens it did not issue. And `/did/generate` records an identity
+request records that an access token was presented, not that anybody authenticated; in
+development mode this service does not verify one it did not issue there, and product mode
+refuses one it cannot verify. And `/did/generate` records an identity
 this service *created*, with nothing presented at all. The one DID deliberately left out
 is the `did:web` that endpoint returns for `?method=web`: that is this service's OWN
 identity, already published at `/.well-known/did.json`, and an entry for it would file

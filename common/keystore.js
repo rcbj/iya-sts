@@ -199,8 +199,10 @@ const plaintextCount = cacheRegistry.register({
   scope: 'realm',
   settings: ['keys.plaintextRetention', 'keys.plaintextTtlS'],
   maxEntries: function () {
-    return null;
+    return 1;
   },
+  bound: 'Structural: one realm\'s key material per realm, whatever the ' +
+    'retention policy; the policy decides only how long it is held.',
   lifetime: function () {
     const policy = retention();
     if (policy === 'resident') {
@@ -1823,8 +1825,10 @@ const pkiHeldCount = cacheRegistry.register({
   owner: 'common/keystore.js',
   scope: 'realm',
   maxEntries: function () {
-    return null;
+    return 1;
   },
+  bound: 'Structural: one hierarchy per scope (the service Root, the ' +
+    'process branch, and one per realm), replaced rather than added to.',
   lifetime: function () {
     return 'No expiry: replaced when the hierarchy changes here or on ' +
       'another node, and dropped with its realm.';

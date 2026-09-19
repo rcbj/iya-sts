@@ -17,14 +17,20 @@
 # used as it is. MOCK_STS_DEPLOYER_ROLE_ARN forces a role.
 #
 # Config (env vars):
-#   TF_STACK     environment | foundation                        (environment)
+#   TF_STACK     environment | foundation | spiffe-realm
+#                | suite-callbacks                               (environment)
 #   TF_ENV       the environment's name, 2-12 [a-z0-9]           (dev)
+#   TF_REALM     spiffe-realm only: the realm id, or `default`
 #   TF_ACTION    init | validate | plan | apply | destroy | output
-#                | suite | ecr-password                          (plan)
+#                | output-json | suite | ecr-password                          (plan)
 #   AWS_REGION                                                   (us-west-2)
 #
 #   TF_VAR_image_tag      the service image tag (the commit), for plan/apply
 #   TF_VAR_allowed_cidrs  JSON list, e.g. ["203.0.113.4/32"], for plan/apply
+#   TF_VAR_workload_port, TF_VAR_server_port   spiffe-realm plan/apply: the
+#                         realm's two SPIFFE ports (deploy/aws/CLAUDE.md)
+#   TF_VAR_image_tag      suite-callbacks plan/apply: the run's image tag
+#                         (run-suite.sh pushes runner-<tag> and pep-<tag>)
 #   STS_SUITE_EXCLUDE, STS_SUITE_ONLY, STS_SUITE_KEEP_REALMS,
 #   STS_SUITE_JOB_TIMEOUT_MS   passed through by the `suite` action
 #
@@ -108,7 +114,25 @@ case "${TF_STACK}" in
     TF_DIR=/workspace/deploy/aws/foundation
     STATE_KEY="foundation/terraform.tfstate"
     ;;
-  *) die "unknown TF_STACK='${TF_STACK}' (environment | foundation)." ;;
+  spiffe-realm)
+    # ONE STATE PER (ENVIRONMENT, REALM), under `environment/` because that is
+    # the only prefix the deployer role may write state under. The realm id is
+    # the service's own grammar (common/realms.js), checked here because it
+    # goes into an S3 key before Terraform ever sees it.
+    [[ "${TF_REALM:-}" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || \
+      die "TF_STACK=spiffe-realm needs TF_REALM, a realm id (or 'default'); got '${TF_REALM:-}'."
+    TF_DIR=/workspace/deploy/aws/spiffe-realm
+    STATE_KEY="environment/${TF_ENV}/spiffe-realm/${TF_REALM}.tfstate"
+    export TF_VAR_environment="${TF_ENV}" TF_VAR_realm="${TF_REALM}"
+    ;;
+  suite-callbacks)
+    # The suite's callback task for one run (deploy/aws/suite-callbacks/),
+    # created and destroyed by run-suite.sh around each run.
+    TF_DIR=/workspace/deploy/aws/suite-callbacks
+    STATE_KEY="environment/${TF_ENV}/suite-callbacks.tfstate"
+    export TF_VAR_environment="${TF_ENV}"
+    ;;
+  *) die "unknown TF_STACK='${TF_STACK}' (environment | foundation | spiffe-realm | suite-callbacks)." ;;
 esac
 
 # The environment's two variables with no default. plan and apply need the
@@ -127,6 +151,36 @@ then
       : "${TF_VAR_image_tag:=unused}"
       : "${TF_VAR_allowed_cidrs:=[\"192.0.2.1/32\"]}"
       export TF_VAR_image_tag TF_VAR_allowed_cidrs
+      ;;
+  esac
+fi
+
+# The realm's two ports, the same way: real ones for plan and apply, and a
+# placeholder where the action only reads or destroys what state records.
+if [ "${TF_STACK}" = "suite-callbacks" ];
+then
+  case "${TF_ACTION}" in
+    plan|apply)
+      [ -n "${TF_VAR_image_tag:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_image_tag (the run's runner-/pep- image tag)."
+      ;;
+    *)
+      : "${TF_VAR_image_tag:=unused}"
+      export TF_VAR_image_tag
+      ;;
+  esac
+fi
+
+if [ "${TF_STACK}" = "spiffe-realm" ];
+then
+  case "${TF_ACTION}" in
+    plan|apply)
+      [ -n "${TF_VAR_workload_port:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_workload_port (the realm's spiffe.workloadPort)."
+      [ -n "${TF_VAR_server_port:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_server_port (the realm's spiffe.serverPort)."
+      ;;
+    *)
+      : "${TF_VAR_workload_port:=65001}"
+      : "${TF_VAR_server_port:=65002}"
+      export TF_VAR_workload_port TF_VAR_server_port
       ;;
   esac
 fi
@@ -167,7 +221,7 @@ tf() {
 }
 
 say "terraform init"
-if [ "${TF_STACK}" = "environment" ];
+if [ "${TF_STACK}" != "foundation" ];
 then
   terraform init -input=false -no-color \
     -backend-config="bucket=${bucket}" -backend-config="key=${STATE_KEY}" >&2
@@ -194,13 +248,16 @@ case "${TF_ACTION}" in
     fi
     ;;
   output)   terraform output -no-color ;;
+  # The outputs as JSON on stdout and nothing else there, for a script
+  # (run-suite.sh) to read.
+  output-json) terraform output -json ;;
   suite)
     [ "${TF_STACK}" = "environment" ] || die "the suite runs against an environment."
     export STS_SUITE_REPORT_DIR="${STS_SUITE_REPORT_DIR:-/workspace/report}"
     cd /workspace
     exec deploy/aws/run-suite-in-aws.sh "${TF_ENV}"
     ;;
-  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | output | suite | ecr-password)." ;;
+  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | output | output-json | suite | ecr-password)." ;;
 esac
 
 say "${TF_ACTION} complete."

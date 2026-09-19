@@ -2283,6 +2283,22 @@ caller refused for another reason:
 | a DN with an empty password | 53 `unwillingToPerform` (RFC 4513 §5.1.2) | `STS-LDAP-0072` |
 | a DN or address past its failed-bind limit | 53 `unwillingToPerform` | `STS-LDAP-0073` |
 
+**THE FIRST ROW DID NOT HAPPEN UNTIL 2026-09-18, AND NOTHING IN PROCESS COULD
+SEE IT.** node-ldapjs's Server answered a bind with an empty name AND empty
+credentials itself — `_getHandlerChain()` returned a no-op before any route was
+consulted — so the handler never saw one, and a product-mode anonymous bind
+answered SUCCESS (reads on that connection were still refused 50, so nothing
+leaked). `performOperation()` enters the handler directly, which is why
+`tests/directory_read_security.js` passed; `tests/vendored/sts_ldaps.js` found
+it over LDAPS against a product-mode deployment. **The fix is in the
+`rcbj/node-ldapjs` fork** — the first change this repository has made to it: a
+`routeAnonymousBinds` server option, off by default (upstream's behaviour),
+which routes that bind to the handlers registered for it. Both servers are
+created with it, and each is asked afterwards whether it took, so an older
+submodule is logged (`STS-LDAP-0098`) rather than silently accepting anonymous
+binds. `tests/ldap_anonymous_bind.js` holds the default as a control, the
+option's 48, and the two `createServer()` calls.
+
 **THE RATE LIMIT COUNTS FAILURES ONLY**, which is why `websecurity.blocked()`
 exists beside `attempt()`: a connection pool binds on every connection it opens,
 fifty at once from one address, and counting successes would lock an application

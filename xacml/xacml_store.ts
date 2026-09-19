@@ -222,9 +222,15 @@ let changeObserver: ((what: string) => void) | null = null;
 // invalidates it without anything having to remember to.
 const parsed = new Map();
 
-// Described to `/admin/caches` (#74, rule 3ap). Unbounded, and said so: the
-// entries are the policy documents that have ever been read in this process,
-// and a document that is edited leaves its old parse behind.
+// BOUNDED SINCE 2026-09-18, least recently used first. It was unbounded, and
+// said so: the entries were every policy document ever read in this process,
+// and an edited document left its old parse behind for good. A hit now moves
+// the entry to the back, so what goes at the bound is a parse nothing has
+// asked for longest — most often an edited policy's old text — and a parse
+// that is asked for again is simply done again.
+const MAX_PARSED_POLICIES = 1024;
+
+// Described to `/admin/caches` (#74, rule 3ap).
 const parsedCount = cacheRegistry.register({
   name: 'xacml.parsed-policies',
   title: 'Parsed XACML policies',
@@ -233,12 +239,14 @@ const parsedCount = cacheRegistry.register({
     'that text so a change through any door is a new entry.',
   owner: 'xacml/xacml_store.ts',
   scope: 'process',
-  maxEntries: function (): null {
-    return null;
+  maxEntries: function (): number {
+    return MAX_PARSED_POLICIES;
   },
+  bound: 'Enforced: ' + MAX_PARSED_POLICIES + ' parses, the least recently ' +
+    'used dropped; a dropped policy is parsed again when next asked for.',
   lifetime: function (): string {
-    return 'No expiry and no bound: keyed by content, so an edited policy ' +
-      'is a new entry and the old parse stays until the process restarts.';
+    return 'No expiry: keyed by content, so an edited policy is a new ' +
+      'entry and its old parse goes when it is the least recently used.';
   },
   entries: function (): unknown[] {
     const out: unknown[] = [];
@@ -473,12 +481,18 @@ class XacmlStore {
     const digest = sha256Hex(document);
     const cached = parsed.get(digest);
     if (cached) {
+      // To the back of the Map's order, which makes the bound below least
+      // recently USED rather than least recently parsed.
+      parsed.delete(digest);
+      parsed.set(digest, cached);
       parsedCount.hit();
       log.debug('Leaving XacmlStore.parseDocument(). Cached.');
       return cached;
     }
     parsedCount.miss();
     const policy = xml.parsePolicy(document);
+    cacheRegistry.makeRoom(parsed, MAX_PARSED_POLICIES,
+                           { counter: parsedCount });
     parsed.set(digest, policy);
     log.debug('Leaving XacmlStore.parseDocument(). Parsed and cached as ' +
               digest.slice(0, 12) + '.');

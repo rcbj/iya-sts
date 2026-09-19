@@ -325,12 +325,16 @@ async function test() {
     // address), and this job refuses a great many requests on purpose.
     await setIn(ra, "est.attemptsPerAddress", 100000);
   }
-  await ok(realmApi + "/users/create",
-           { username: PERSON, invent: false, credential: "none",
+  // A REAL PASSWORD, in both modes (2026-09-18). The person signed in with
+  // `any-password-development-mode`, which only development accepts; a
+  // product-mode target verifies it against userPassword, as section 15 does
+  // in its own realm.
+  const personCreated = await ok(realmApi + "/users/create",
+           { username: PERSON, invent: false, credential: "generate",
              attributes: { cn: "EST Alice", sn: PERSON, mail: MAIL } },
            "created the person");
-  await ok(realmApi + "/users/create",
-           { username: OTHER, invent: false, credential: "none",
+  const otherCreated = await ok(realmApi + "/users/create",
+           { username: OTHER, invent: false, credential: "generate",
              attributes: { cn: "EST Bob", sn: OTHER,
                            mail: OTHER + "@est.example.test" } },
            "created a second person");
@@ -344,7 +348,7 @@ async function test() {
   await ok(realmApi + "/est/add-host-name",
            { kind: "application", identifier: APP, hostName: HOST },
            "registered a host name on the application");
-  const basic = [PERSON, "any-password-development-mode"];
+  const basic = [PERSON, personCreated.password];
 
   // -------------------------------------------------------------------------
   log.info("=== 1. /cacerts, unauthenticated, and the chain it returns ===");
@@ -535,14 +539,14 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 6. an administrator, for somebody else ===");
-  await ok(api + "/users/create",
-           { username: ADMIN, invent: false, credential: "none",
+  const adminCreated = await ok(api + "/users/create",
+           { username: ADMIN, invent: false, credential: "generate",
              attributes: { cn: "EST Admin", sn: ADMIN } },
            "created the administrator in the DEFAULT realm");
   const plainForOther = await enroll(EST + "/tls-client/simpleenroll",
     (await csrFor("ec-p256", OTHER,
                   [{ kind: "uri", value: "urn:sts:person:" + OTHER }])).der,
-    { basic: [ADMIN, "anything"] });
+    { basic: [ADMIN, adminCreated.password] });
   check("BEFORE the roster grant, the same name is refused", function () {
     refused(plainForOther, 401, "an unknown name with no Admin Write");
   });
@@ -552,7 +556,7 @@ async function test() {
     const forOther = await enroll(EST + "/tls-client/simpleenroll",
       (await csrFor("ec-p256", OTHER,
                     [{ kind: "uri", value: "urn:sts:person:" + OTHER }])).der,
-      { basic: [ADMIN, "anything"] });
+      { basic: [ADMIN, adminCreated.password] });
     check("an administrator enrolls a certificate for ANOTHER person " +
           "named by URN", function () {
             const cert = issuedCertificate(forOther, "admin for other");
@@ -691,7 +695,8 @@ async function test() {
           assert.notStrictEqual(serialOf(cert), serialOf(renewedCert));
         });
   const noneToRenew = await enroll(EST + "/simplereenroll",
-    (await csrFor("ec-p256", OTHER, [])).der, { basic: [OTHER, "x"] });
+    (await csrFor("ec-p256", OTHER, [])).der,
+    { basic: [OTHER, otherCreated.password] });
   check("with Basic and nothing matching, the re-enrollment is refused 400",
         function () {
           refused(noneToRenew, 400, "nothing to renew", /renew/i);

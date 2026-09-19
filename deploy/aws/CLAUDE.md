@@ -9,6 +9,7 @@ Dockerfile removes this directory from the image.
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the permissions boundary, the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
 | `environment/` | per run | VPC, NLB (443, 389, 636, and the plain-HTTP CRL/OCSP port — 8082, or 80 in `testidp` — plus TCP 88 for the KDC in `testidp`), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
+| `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -17,7 +18,8 @@ Dockerfile removes this directory from the image.
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
 | `run-suite-in-aws.sh` | per run | starts the suite task in the VPC, waits, downloads the report — **every job** | CI, or a person |
 | `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
-| `run-suite.sh` | per run | runs the suite from the machine it is started on, less the two jobs the nodes must call back to | a person |
+| `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below) | a person |
+| `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the two callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
 | `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
 | `../../.github/workflows/testidp-deploy.yml`, `testidp-destroy.yml` | per deployment | build `testidp`'s two images and apply it, admitting only the address(es) given as `allowed_ip`; destroy it (typed confirmation) | GitHub Actions (dispatch only) |
 
@@ -335,6 +337,101 @@ Route53 (`foundation/variables.tf`'s `public_dns`: listed zones, and only the
 listed record names in them — the validation record is `_<random>.<name>`,
 hence the wildcard). Route53 requests carry us-east-1, so the region fence
 exempts `route53:*`.
+
+## Running the suite from this machine: `run-suite.sh` (2026-09-18)
+
+**rcbj's design, asked for against `testidp` and written for any environment:**
+the suite runs from a developer's machine and hits the load balancer's
+listeners, IN WHATEVER MODE THE ENVIRONMENT RUNS — `testidp` is product mode,
+and making the suite pass there is part of the standard suite, not a special
+case. Nothing about an environment is written into the script; it reads the
+environment's outputs through `terraform-local.sh … output-json`.
+
+```bash
+deploy/aws/run-suite.sh testidp       # this machine must be in allowed_cidrs
+```
+
+1. It builds the tests image from the WORKING TREE, and from it `runner-<tag>`
+   and `pep-<tag>` (the tag is HEAD plus a digest of what is not committed),
+   and pushes those two.
+2. It applies `suite-callbacks/` in the background, runs every other job in
+   the tests image on this machine's network into
+   `tests/report/aws-<env>/`, then runs the callback task once, downloads its
+   report and merges it in (`tests/tools/merge-report.js`, which redraws the
+   report with `run-report.js`'s own writers), and destroys the stack from an
+   EXIT trap.
+
+**THE TWO CALLBACK JOBS RUN IN AWS, AND WHY THAT IS THE WHOLE DESIGN.**
+`sts_xacml_remote_pep` needs a PEP container the PDP nudges, and writes that
+PEP's listener certificate into a directory the container reads — so the job
+runs in the same task as the PEP. `sts_gnap_core` opens a listener the service
+POSTs a GNAP push to. A machine behind NAT cannot be dialled, so both run in a
+task inside the VPC that exists for one run: a NAT gateway (~$0.05/h, a few
+minutes to create and destroy) and nothing that bills afterwards. It is
+`environment/runner.tf` re-homed in a stack of its own, reading everything the
+environment built by name; its subnet is the VPC's /24 number 21 so an
+environment with its own runner does not collide. **A destroy that fails is
+said loudly** — the NAT gateway bills until
+`TF_STACK=suite-callbacks deploy/aws/terraform-local.sh <env> destroy` runs.
+`STS_SUITE_CALLBACKS=0` skips that half.
+
+`run-suite-in-aws.sh` and `environment/runner.tf` are still what the
+`aws-cluster.yml` workflow uses for `dev` and `ci`.
+
+## A realm's SPIFFE ports: `spiffe-realm/` (2026-09-18)
+
+**Nothing published SPIFFE until this stack.** `published_ports` has no
+SPIFFE row, so even the default realm's 8092 and 8181 were reachable only
+inside the VPC. `spiffe-realm/` publishes ONE realm's two gRPC ports, the
+same number outside and inside, and is applied once per realm, after the
+realm exists and after `environment/`:
+
+```bash
+TF_STACK=spiffe-realm REALM=default WORKLOAD_PORT=8092 SERVER_PORT=8181 \
+  deploy/aws/terraform-local.sh testidp apply
+TF_STACK=spiffe-realm REALM=acme WORKLOAD_PORT=9092 SERVER_PORT=9181 \
+  deploy/aws/terraform-local.sh testidp apply
+TF_STACK=spiffe-realm REALM=acme deploy/aws/terraform-local.sh testidp destroy
+```
+
+**A REALM GETS PORTS OF ITS OWN HERE, NOT AN ADDRESS.** `spiffe/CLAUDE.md`
+tells realms apart by address and keeps 8092 / 8181; a Fargate task has one
+address, so every realm binds `0.0.0.0` on ports of its own, which the
+service allows (`claimedBy()` compares host and port). **Terraform does not
+configure the realm**: it must be given `spiffe.enabled` on and
+`spiffe.workloadPort` / `spiffe.serverPort` set to the SAME two numbers, in
+the console or through `/admin-api` — a realm is created with SPIFFE off and
+both ports 0 (`common/realms.js`). The `realm_settings` output repeats them.
+Until the realm has them, its target groups show every node unhealthy. The
+stack refuses a port the environment already uses (80, 88, 389, 443, 636,
+8081, 8082, the debugger's 8444) and, for any realm but `default`, 8092 and
+8181.
+
+**THE NODES ARE REGISTERED BY ADDRESS, AND A RESTARTED TASK FALLS OUT.** ECS
+keeps a target group's members current only for the target groups on a
+service's `load_balancer` blocks, and **ECS allows five per service — which
+`testidp` already uses** (https, ldap, ldaps, pki, kerberos). So this stack
+looks up the nodes' current private addresses (the in-use interfaces
+carrying `<prefix>-nodes`) and registers them itself. **Re-apply every
+realm's stack after any deploy or task restart**; until then the restarted
+node is missing from these ports, and its old address fails health checks.
+rcbj chose this over a Lambda following ECS task events, which the deployer
+role cannot create.
+
+**No PROXY protocol on these target groups**, unlike every other port:
+SPIFFE's gRPC listeners do not read the header, and a header in front of gRPC
+or TLS breaks the connection. The node sees the load balancer as the caller.
+**Who may connect is copied from the environment's 443 rules**, so these
+ports are exactly as open as the main port; a new `allowed_ip` on the
+environment reaches them at this stack's next apply. Target groups are named
+`<prefix>-sp-<port>`, since a realm id can be 31 characters.
+
+**DESTROY EVERY REALM'S STACK BEFORE THE ENVIRONMENT.** Its security-group
+rules cross-reference the environment's two groups, and a group that another
+group's rule still names cannot be deleted, so `environment` destroy (and
+`testidp-destroy.yml`) would stop on the security groups with this stack's
+rules still in place, while its target groups would outlive the load balancer.
+Nothing enforces the order.
 
 ## The deployer's permissions, and how to extend them
 

@@ -4870,7 +4870,10 @@ class AdminViews {
     const wantedKind = String(req.query.kind || '').trim();
     const needle = wantedText.toLowerCase();
     const filtered = all.filter(function (row) {
-      if (wantedKind && row.kinds.indexOf(wantedKind) < 0) {
+      // Recorded OR declared, the union the Kind column shows — a filter
+      // that dropped a row showing the kind asked for would be lying.
+      if (wantedKind && row.kinds.indexOf(wantedKind) < 0 &&
+          (row.declaredKinds || []).indexOf(wantedKind) < 0) {
         return false;
       }
       if (!needle) {
@@ -4886,8 +4889,12 @@ class AdminViews {
     const paging = paged.paging;
     const filterParams = { q: wantedText || '', kind: wantedKind || '',
                            per: req.query.per ? paging.perPage : '' };
+    // Every registration, not only RFC 7591's: the Registered column counts
+    // an application an administrator created, and so does this.
     const registeredCount =
-        all.filter(function (row) { return row.registered; }).length;
+        all.filter(function (row) {
+          return row.registered || !!row.registeredBy;
+        }).length;
     log.debug("Leaving AdminViews.applicationsListJson().");
     return {
       all: all, wantedText: wantedText, wantedKind: wantedKind, needle: needle,

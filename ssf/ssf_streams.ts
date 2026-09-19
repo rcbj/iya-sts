@@ -228,6 +228,8 @@ const deadCountsCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return Number(config.value('ssf.maxStreams')) || null;
   },
+  bound: 'Structural: one count per stream, and a realm holds at most ' +
+    'ssf.maxStreams streams.',
   lifetime: function (): string {
     return 'No expiry: recounted at each dead-letter sweep, one entry per ' +
       'stream.';

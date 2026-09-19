@@ -138,6 +138,8 @@ const definitionCount = cacheRegistry.register({
   maxEntries: function (): number {
     return MAX_CACHED_DEFINITIONS;
   },
+  bound: 'Enforced: 512 parsed definitions, the oldest dropped and parsed ' +
+    'again when next used.',
   lifetime: function (): string {
     return 'No expiry: keyed by the definition text, so an edited ' +
       'definition is a new entry. The oldest goes first when full.';

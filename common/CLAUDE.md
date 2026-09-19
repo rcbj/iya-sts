@@ -7210,7 +7210,12 @@ For the *Password and second factors* section of a person's console page.
   the recovery codes, and on a partial failure (`0163`) reports what it removed
   so the caller's signals describe what really happened.
 * **`entryExists()`** asks the directory's `personExists`, because `hasEntry()`
-  answers false by design and `hasAnyEntry()` is effectively always true.
+  answers false by design (the bootstrap's). **It is the ONLY "does this
+  person exist" check here since 2026-09-18**: `beginTotpEnrolment()` asked
+  `hasEntry()` and so refused every authenticator-app enrolment in product
+  mode, and `beginKeyEnrolment()` asked `hasAnyEntry()` (removed), which read
+  the key store and was true for anybody — both found by the protocol suite
+  run against a product-mode deployment.
 
 **Two settings**: `authn.mfaRequired` (group *Second-factor requirement*, drawn
 on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
@@ -7536,6 +7541,44 @@ Five decisions:
   incomplete one is refused whole when it registers (`STS-CORE-0094`), for
   rule 3e's reason.
 
+- **EVERY STORE HAS A BOUND (2026-09-18).** `maxEntries()` answered `null`
+  for twenty-four stores; it answers a finite number now, and a descriptor
+  that does not is shown with `STS-CORE-0096` and fails
+  `tests/cache_registry.js`. The descriptor's `bound` sentence says which of
+  two kinds it is:
+  - **enforced**: the owner calls `makeRoom()` before a NEW key, which drops
+    the expired first and then either drops the oldest or refuses. **A store
+    that decides a replay refuses** (used assertions, Kerberos authenticators,
+    DPoP proof IDs, GNAP signatures, spent ACME nonces), because forgetting a
+    live entry reopens the replay; a refusal is counted and logged as
+    `STS-CORE-0097` at most once a minute per store. Everything else drops
+    the oldest: a nonce this service handed out is asked for again, a parse or
+    a fetch is done again, and the wallet sign-in register fails closed.
+  - **structural**: the store cannot outgrow something that is already
+    bounded — one key set or index per realm, one row per directory entry
+    (`ldap.maxEntries`), one entry per setting that names a file.
+  - A `realm`-scoped bound is PER REALM; `largestRealm` is the figure it is
+    compared with.
+  - The seven new settings are the enforced bounds an operator may need to
+    raise: `oauth2.dpopReplayCacheSize`, `oauth2.dpopNonceCacheSize`,
+    `oauth2.redeemedCodeCacheSize`, `gnap.replayCacheSize`,
+    `oid4vci.cNonceCacheSize`, `oid4vp.maxTransactions` and
+    `oid4vp.signInRegisterMaxEntries`. A cache that only costs a rebuild keeps
+    a constant, as the 256s and 512s before it did.
+  - **The Kerberos long-term keys are bounded by PRINCIPALS**: at most 4,096
+    hold keys at once, least recently used first, and one whose keys were
+    cleared derives or reads them again at its next ticket.
+- **THE SINGLE-VALUE MEMOS ARE CACHES OF ONE ROW** (2026-09-18): the trusted
+  proxy ranges (`client_address.js`), the observation-store flags
+  (`persistence_minted.js`) and the version stamp — which `common/version.js`
+  cannot register, because the remote PEP container runs it against a shim,
+  so `admin-ui/caches_admin.ts` describes it. A secret-store login is not
+  held between requests and is not registered.
+
 The figures are the answering process's own. With request workers or a
 cluster, each process has its own caches, and nothing here is coordinated,
-because a cache is exactly what a store is not.
+because a cache is exactly what a store is not. **What crosses to another node
+is a SNAPSHOT** (`snapshot()`, 2026-09-18): each front process puts its stores'
+sizes and counters — never a row — on its cluster membership row, refreshed
+every thirty seconds on a timer of its own, and `/admin/caches` draws every
+snapshot that is not its own process's. `cluster/CLAUDE.md` has the channel.

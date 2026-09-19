@@ -4036,6 +4036,10 @@ class AdminActions {
       return ' The directory could not be populated: ' +
              (sweep.errors || []).join(' ');
     }
+    if (sweep.skipped) {
+      log.debug("Leaving AdminActions.sweepText(). The sweep did not run.");
+      return ' No directory entry was populated: ' + sweep.skipped + '.';
+    }
     log.debug("Leaving AdminActions.sweepText().");
     return ' Swept ' + sweep.examined + ' directory entry/entries; ' +
            sweep.changed +

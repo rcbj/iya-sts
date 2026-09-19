@@ -503,7 +503,13 @@ async function aRealmTokenStaysInItsRealm() {
 
   const rogueId = "ra-rogue-" + STAMP;
   const made = await api("POST", R + "/admin-api/applications/create",
-    { identifier: rogueId, name: "Another client", protocols: ["oauth2"] });
+    { identifier: rogueId, name: "Another client", protocols: ["oauth2"],
+      // CONFIDENTIAL, said at the create (2026-09-18). A create declaring
+      // OAuth with no credential is recorded PUBLIC (`none`), and the secret
+      // regenerated below does not change the method — so in product mode
+      // the client_credentials request was refused as a public client's
+      // before the gate this section is about was ever asked.
+      fields: { oauthTokenEndpointAuthMethod: "client_secret_basic" } });
   assert.ok(made.status === 200, "precondition: creating " + rogueId +
             " answered " + made.status + " " + made.text.slice(0, 200));
   const rogueSecret = await api("POST", R +

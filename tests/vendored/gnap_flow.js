@@ -41,6 +41,70 @@ function harness(options) {
                      "/gnap/rs/resource",
                  checks: 0 };
 
+  // THE REGISTRAR gnap_client.js asks before a key's first request
+  // (2026-09-18): the key goes onto an application entry, in the realm the
+  // request is addressed to, as `gnapKey` — which is how a request by value is
+  // matched to its entry. One entry per key, named after its thumbprint-free
+  // kid, created once.
+  // One spelling of a key object — a JSON string or an object — so a key the
+  // job registered and the key a client presents compare equal.
+  function canonicalKey(key) {
+    log.debug("Entering canonicalKey().");
+    let value = key;
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+      } catch (e) {
+        log.debug("Caught in canonicalKey(): " + ((e && e.message) || e));
+        // Not JSON: compared as the string it is.
+        log.debug("Leaving canonicalKey().");
+        return value;
+      }
+    }
+    const jwk = (value && value.jwk) || {};
+    log.debug("Leaving canonicalKey().");
+    return JSON.stringify([value && value.proof, jwk.kty, jwk.crv, jwk.x,
+                           jwk.y, jwk.n, jwk.e, value && value.cert]);
+  }
+
+  const registered = new Set();
+  // Keys a JOB registered itself, through /applications/create with a
+  // gnapKey (self.apiPost notes them): those entries carry the identifier,
+  // kind and finish URI the job asserts on, so the registrar must not file
+  // the same key a second time under another name.
+  const jobKeys = new Set();
+  self.noteJobKey = function (body) {
+    log.debug("Entering noteJobKey().");
+    const key = body && body.fields && body.fields.gnapKey;
+    if (key) {
+      jobKeys.add(canonicalKey(key));
+    }
+    log.debug("Leaving noteJobKey().");
+  };
+  gnap.setRegistrar(async function (client, url, keyObject) {
+    log.debug("Entering the GNAP registrar.");
+    if (jobKeys.has(canonicalKey(keyObject))) {
+      log.debug("Leaving the GNAP registrar. The job registered this key.");
+      return;
+    }
+    const m = /\/realm\/([^/]+)\//.exec(new URL(url).pathname);
+    const where = m ? base + "/realm/" + m[1] + "/admin-api" : api;
+    const kid = (client.key && client.key.kid) ||
+                nodeCrypto.randomBytes(6).toString("hex");
+    const identifier = "gnap-key-" + kid;
+    if (registered.has(where + " " + identifier)) {
+      log.debug("Leaving the GNAP registrar. Already registered.");
+      return;
+    }
+    await self.ok(where + "/applications/create", {
+      identifier: identifier, name: "GNAP job key " + kid,
+      protocols: ["gnap"],
+      fields: { gnapKey: JSON.stringify(keyObject), gnapFinishUri: FINISH }
+    }, "provisioned the GNAP key " + kid);
+    registered.add(where + " " + identifier);
+    log.debug("Leaving the GNAP registrar.");
+  });
+
   self.check = function (what, fn) {
     log.debug("Entering check().");
     fn();
@@ -51,6 +115,9 @@ function harness(options) {
 
   self.apiPost = async function (url, body) {
     log.debug("Entering apiPost().");
+    if (/\/applications\/create$/.test(url)) {
+      self.noteJobKey(body);
+    }
     const r = await fetch(url,
                           { method: "POST",
                                  headers:

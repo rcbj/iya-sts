@@ -1407,6 +1407,14 @@ function subtreeVersion(containerDn) {
   return named > clock.everywhere ? named : clock.everywhere;
 }
 
+// The container listings kept per realm. The containers asked for are a
+// handful of fixed ones (applications, policies, roles, password policies),
+// so this is met only if something starts listing arbitrary containers; the
+// oldest listing then goes and is walked again when next asked for.
+const MAX_SUBTREE_LISTINGS = 64;
+// (Declared here, beside the listings, because `entriesUnder()` runs while
+// this file is still loading.)
+
 // Every entry strictly under `containerDn`, kept until something is written
 // there. The rows are the LIVE stored objects, exactly as eachEntryInRealm()
 // hands them out — so an attribute changed in place is visible through a cached
@@ -1430,6 +1438,10 @@ function entriesUnder(containerDn) {
       rows.push(stored);
     }
   });
+  if (!clock.listings.has(key)) {
+    cacheRegistry.makeRoom(clock.listings, MAX_SUBTREE_LISTINGS,
+                           { counter: listingCount });
+  }
   clock.listings.set(key, { version: version, rows: rows });
   log.debug('Leaving entriesUnder(). ' + rows.length + ' row(s), walked.');
   return rows;
@@ -4970,7 +4982,9 @@ function recordSpiffeCredentialStatus(detail) {
 // ---------------------------------------------------------------------------
 function autoCreateUser(detail) {
   log.debug('Entering autoCreateUser(). key=' + (detail && detail.key));
-  if (!autocreateUsers()) {
+  // A FEDERATED sign-in goes on even when this service creates nobody: see
+  // the block after the lookup below.
+  if (!autocreateUsers() && !(detail && detail.federation)) {
     log.debug('Leaving autoCreateUser(). LDAP_AUTOCREATE_USERS is off.');
     return null;
   }
@@ -5037,6 +5051,34 @@ function autoCreateUser(detail) {
   // different people (see didPlan()'s linked branch).
   const personaName = plan.personaKey || name;
   const existing = getEntry(dn);
+  // ---------------------------------------------------------------------
+  // WHEN THIS SERVICE CREATES NOBODY — product mode, or `ldap.autocreateUsers`
+  // off — A FEDERATED SIGN-IN STILL WRITES ONTO A PROVISIONED ENTRY
+  // (2026-09-18). The early return above used to cover this case too, so in
+  // product mode a person provisioned ahead of time and signed in through a
+  // partner never recorded `federationRelationship` and never had the
+  // partner's attributes refreshed — while `fedUpdateUserAttributes`' schema
+  // row says the relationship "is recorded either way" and federation/CLAUDE.md
+  // promises the refresh. `tests/vendored/sts_federation_realms.js` found it
+  // against a product-mode deployment. Only `applyFederatedAttributes()` runs
+  // here: the description notes, the invented credential attributes and the
+  // factor flags the branch further down writes belong to a service that
+  // creates entries, and a missing entry is still left missing for
+  // `authn.startSession()` to refuse.
+  // ---------------------------------------------------------------------
+  if (!autocreateUsers()) {
+    if (existing &&
+        applyFederatedAttributes(existing, info, { created: false })) {
+      existing.attributes.modifytimestamp = [generalizedTime()];
+      log.debug('Leaving autoCreateUser(). Creation is off; the provisioned ' +
+                'entry records the federated sign-in.');
+      return existing;
+    }
+    log.debug('Leaving autoCreateUser(). Creation is off' +
+              (existing ? '; the entry already said all of it.'
+                        : ' and nobody was provisioned at ' + dn + '.'));
+    return existing || null;
+  }
   // AND THE PER-RELATIONSHIP SWITCH, which is the one place a federated sign-in
   // is treated differently from every other kind here. `ldap.autocreateUsers`
   // above is the service-wide answer; `fedAutocreateUsers` is one partner's,
@@ -5165,7 +5207,7 @@ function autoCreateUser(detail) {
   // branch above. What a foreign identity provider asserted about somebody
   // beats what this service invented for them.
   applyFederatedAttributes(created, info, { created: true });
-  log.info('ldap: created ' + dn + ' because ' + name + ' ' + note + '.');
+  log.debug('ldap: created ' + dn + ' because ' + name + ' ' + note + '.');
   // A user created by the SERVICE rather than by a client, and the audit row
   // says so through `channel: 'internal'` — no LDAP client asked for this. It
   // is the one directory row with no connection behind it, which is why it does
@@ -5529,7 +5571,7 @@ function createUser(name, options) {
   // `recordAuthentication()` reaches `autoCreateUser()` and then here.
   // ---------------------------------------------------------------------
   stats.noteKnownIdentity(wanted, 'created');
-  log.info('ldap: created ' + created.dn + ' because somebody asked for it.');
+  log.debug('ldap: created ' + created.dn + ' because somebody asked for it.');
   audit.recordDirectory({
     action: 'user.create',
     actor: String(opts.actor || ''),
@@ -5658,8 +5700,8 @@ function applyVcAttributes(stored, key) {
   touchDirectory(stored.dn);
   noteUsernameIndexRefresh(stored, usernameIndexWasCurrent);
   noteGroupIndexPut(stored, groupIndexWasCurrent);
-  log.info('ldap: ' + stored.dn + ' gained ' + added.join(', ') +
-           ' so that an issued credential has something to assert.');
+  log.debug('ldap: ' + stored.dn + ' gained ' + added.join(', ') +
+            ' so that an issued credential has something to assert.');
   log.debug('Leaving applyVcAttributes(). ' + added.length + ' attribute(s) ' +
       'added.');
   return true;
@@ -8992,7 +9034,8 @@ populateVcAttributes();
 // worth more than a TypeError out of a constructor, which is the same trade
 // every listen path here makes.
 // ---------------------------------------------------------------------------
-const plainServer = ldap.createServer({ log: log });
+const plainServer = ldap.createServer({ log: log,
+                                       routeAnonymousBinds: true });
 
 // The TLS protocol policy, asked of the module that states it. An older copy of
 // `tls_server.js` without the function gets node's defaults, which is what
@@ -9033,6 +9076,7 @@ if (serverCertificate && serverCertificate.certPem &&
   // node's defaults behind their back.
   secureServer = ldap.createServer(Object.assign({
     log: log,
+    routeAnonymousBinds: true,
     certificate: serverCertificate.certPem,
     key: serverCertificate.privateKeyPem
   }, tlsProtocolOptions()));
@@ -9045,6 +9089,41 @@ if (serverCertificate && serverCertificate.certPem &&
 }
 
 const servers = secureServer ? [plainServer, secureServer] : [plainServer];
+
+// ---------------------------------------------------------------------------
+// AN ANONYMOUS BIND REACHES THE BIND HANDLER (2026-09-18).
+//
+// node-ldapjs's Server answered a bind with an empty name AND empty
+// credentials ITSELF — `_getHandlerChain()` returned a no-op before any route
+// was consulted — so the bind handler below never saw one, and product mode's
+// refusal of an anonymous bind (48, inappropriateAuthentication,
+// STS-LDAP-0070) never happened: the bind answered success and only the read
+// after it was refused. `tests/vendored/sts_ldaps.js` found it against a
+// product-mode deployment; nothing in process could, because
+// `performOperation()` enters the handler directly.
+//
+// The fix is in the `rcbj/node-ldapjs` fork: `routeAnonymousBinds: true`, set
+// on both servers above, routes that bind to the handler registered on the ''
+// route like any other bind. A node-ldapjs without the option ignores it and
+// keeps the old behaviour, so the option is ASKED of each server after it is
+// built, and a server that did not take it is said out loud (STS-LDAP-0098)
+// rather than discovered by the next deployment's test run.
+// ---------------------------------------------------------------------------
+function anonymousBindsRouted(ldapServer) {
+  log.debug("Entering anonymousBindsRouted().");
+  const routed = !!(ldapServer && ldapServer._routeAnonymousBinds === true);
+  if (!routed) {
+    log.warn(errorCodes.tag('STS-LDAP-0098') + 'ldap: this node-ldapjs does ' +
+             'not support routeAnonymousBinds, so an anonymous bind is ' +
+             'answered by the library and never reaches the bind handler; ' +
+             'product mode cannot refuse it (reads on that connection are ' +
+             'still refused). Update the node-ldapjs submodule.');
+  }
+  log.debug("Leaving anonymousBindsRouted(). " + routed);
+  return routed;
+}
+
+servers.forEach(anonymousBindsRouted);
 
 // The eight operations and unbind. Written out rather than read off ldapjs's
 // prototype, because that would fan out `listen`, `close` and `address` too —
@@ -10871,8 +10950,8 @@ server.add('', function (req, res, next) {
     noteAccountChange('created', addedEntry.dn, {},
                       attributeSnapshot(addedEntry));
   }
-  log.info('ldap: added ' + dn + ' with ' + Object.keys(attributes).length +
-           ' attribute(s).');
+  log.debug('ldap: added ' + dn + ' with ' + Object.keys(attributes).length +
+            ' attribute(s).');
   // What KIND of thing was created is decided by PLACEMENT and not by the
   // objectClass the client sent, and that is not a shortcut. This directory is
   // schemaless: a client can add a `groupOfNames` under ou=users or an entry
@@ -14187,8 +14266,8 @@ function createGroup(displayName, options) {
                  : 'The entry at ' + dn + ' could not be written (' +
                    written.reason + ').'] });
   }
-  log.info('ldap: created the group ' + written.dn + ' with ' + members.length +
-           ' member(s) because somebody asked for it.');
+  log.debug('ldap: created the group ' + written.dn + ' with ' +
+            members.length + ' member(s) because somebody asked for it.');
   audit.recordDirectory({
     action: 'group.create',
     actor: String(opts.actor || ''),
@@ -15823,11 +15902,23 @@ function indexLifetime() {
     'in; the next lookup then rebuilds it. One index per realm.';
 }
 
-function unbounded() {
-  log.debug("Entering unbounded().");
-  log.debug("Leaving unbounded().");
-  return null;
+// ONE INDEX PER REALM, which is the whole of each index's bound (2026-09-18):
+// what an index holds is one entry per name, group or UUID in a directory
+// `ldap.maxEntries` caps, so it cannot outgrow the directory it indexes.
+function oneIndexPerRealm() {
+  log.debug("Entering oneIndexPerRealm().");
+  log.debug("Leaving oneIndexPerRealm().");
+  return 1;
 }
+
+function indexBound() {
+  log.debug("Entering indexBound().");
+  log.debug("Leaving indexBound().");
+  return 'Structural: one index per realm, holding at most one entry per ' +
+    'directory entry — and the directory is capped by ldap.maxEntries (' +
+    maxEntries() + ').';
+}
+
 
 function describeDirectoryCaches() {
   log.debug("Entering describeDirectoryCaches().");
@@ -15838,7 +15929,9 @@ function describeDirectoryCaches() {
       'entry under ou=users, so a sign-in does not walk the directory.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
     lifetime: indexLifetime,
     entries: function () {
       const out = [];
@@ -15868,7 +15961,9 @@ function describeDirectoryCaches() {
       'groups claim and every role check do not walk ou=groups.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
     lifetime: indexLifetime,
     entries: function () {
       const out = [];
@@ -15898,7 +15993,9 @@ function describeDirectoryCaches() {
       'is how a subject identifier and a SCIM id find a person.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: oneIndexPerRealm,
+    bound: indexBound,
+    settings: ['ldap.maxEntries'],
     lifetime: function () {
       return 'Until the directory changes and a lookup misses; a hit on a ' +
         'current entry does not wait for a rebuild. One index per realm.';
@@ -15925,7 +16022,11 @@ function describeDirectoryCaches() {
       'written under it.',
     owner: 'ldap/ldap_server.js',
     scope: 'realm',
-    maxEntries: unbounded,
+    maxEntries: function () {
+      return MAX_SUBTREE_LISTINGS;
+    },
+    bound: 'Enforced: ' + MAX_SUBTREE_LISTINGS + ' container listings per ' +
+      'realm, the oldest dropped and walked again when next asked for.',
     lifetime: function () {
       return 'Until an entry under the container is added, removed or ' +
         'written without naming where; one entry per container listed.';

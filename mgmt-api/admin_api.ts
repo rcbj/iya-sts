@@ -1850,11 +1850,26 @@ class AdminApi {
                      '`realm`), `size` (entries held now), `valid`, ' +
                      '`expired` (past their deadline, or built from ' +
                      'something that has since changed, and not evicted ' +
-                     'yet), `maxEntries` (null when unbounded), ' +
+                     'yet), `maxEntries` (the bound — PER REALM for a ' +
+                     '`realm` scope; every store has one since ' +
+                     '2026-09-18, and null means its owner regressed, ' +
+                     'shown in `problem` as STS-CORE-0096), ' +
+                     '`largestRealm` (the fullest realm\'s rows, the ' +
+                     'figure to compare with a per-realm bound), `bound` ' +
+                     '(whether the bound is enforced or structural, in a ' +
+                     'sentence), `atBound`, `evictions` and `refusals` ' +
+                     '(entries dropped or inserts refused at the bound), ' +
                      '`lifetime`, `settings`, `hits`, `misses` and ' +
-                     '`hitRatio` (null before any lookup) — plus `totals` ' +
-                     'and `notListed`, the in-memory values deliberately ' +
-                     'not registered.\n\nWith `cache`: that cache\'s ' +
+                     '`hitRatio` (null before any lookup) — plus `totals`, ' +
+                     '`notListed` (what this process does not hold between ' +
+                     'requests) and `otherProcesses`: each other cluster ' +
+                     'node\'s last published snapshot (and this node\'s ' +
+                     'front process when a request worker answers), with ' +
+                     '`nodeId`, `name`, `host`, `pid`, `takenAt`, ' +
+                     '`ageSeconds`, `totals` and per store `name`, ' +
+                     '`size`, `largestRealm`, `valid`, `maxEntries`, ' +
+                     '`hits`, `misses`, `evictions` and `refusals`; empty ' +
+                     'without a cluster.\n\nWith `cache`: that cache\'s ' +
                      '`summary` and a page of its `entries`, soonest ' +
                      'deadline first, each with `realm`, `key`, `valid`, ' +
                      '`validUntil`, `remainingSeconds`, `basis` and ' +
@@ -1863,8 +1878,9 @@ class AdminApi {
                      '200 with `found: false` and the names that exist.' +
                      '\n\nKEYS ONLY: no cached value is in the reply, ' +
                      'including for the caches that hold key material. ' +
-                     'THE FIGURES ARE THE ANSWERING PROCESS\'S (`pid`); a ' +
-                     'request worker or a cluster node holds its own. A ' +
+                     'THE FIGURES ARE THE ANSWERING PROCESS\'S (`pid`), ' +
+                     'apart from `otherProcesses`, which carries sizes and ' +
+                     'counters only and never rows. A ' +
                      'service operation: a realm\'s own administrator is ' +
                      'refused it.',
         mirrors: 'GET /admin/caches',
@@ -1877,7 +1893,8 @@ class AdminApi {
         responseDescription: 'The list, or one cache.',
         responseSchema: { type: 'object',
           description: 'Always `generatedAt` and `pid`; then either ' +
-                       '`caches`, `totals` and `notListed`, or `cache`, ' +
+                       '`caches`, `totals`, `notListed` and ' +
+                       '`otherProcesses`, or `cache`, ' +
                        '`found` and — when found — `summary`, `entries` ' +
                        'and `entriesPaging`.' },
         handler: function (req, res) {

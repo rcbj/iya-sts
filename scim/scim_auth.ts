@@ -283,7 +283,17 @@ void mtls;
 const digestNonces = realms.map({ persist: 'scim.digestNonces' });
 // nonce -> Set of nonce-counts this process has accepted. Not persisted: see
 // above. Per realm for `digestNonces`'s reason.
+//
+// BOUNDED TWICE (2026-09-18). The ROWS are held to scim.maxDigestNonces like
+// the nonces — a nonce another process issued arrives here with no row in
+// `digestNonces` to be evicted with, so without its own bound this map
+// outgrew the one it shadows. And each SET is held to MAX_COUNTS_PER_NONCE:
+// a client increments nc on every request under one nonce, so a busy one
+// grew a set a string at a time for the nonce's whole life. At that many the
+// nonce is forgotten, and the client's next request is answered stale=true
+// with a fresh nonce, which RFC 7616 section 3.3 has it handle.
 const digestCounts = realms.map();
+const MAX_COUNTS_PER_NONCE = 1024;
 
 // The challenges this server has issued, and the (kid, challenge, nonce)
 // triples it has already seen. Both bounded: a challenge is something anybody
@@ -343,6 +353,8 @@ const digestNoncesCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return scimSeconds('scim.maxDigestNonces') || null;
   },
+  bound: 'Enforced: scim.maxDigestNonces per realm, the oldest dropped; a ' +
+    'client using it is answered stale=true with a fresh one.',
   lifetime: function (): string {
     return 'scim.digestNonceSeconds (' +
       scimSeconds('scim.digestNonceSeconds') + ' s) after it was issued, ' +
@@ -367,9 +379,14 @@ const digestCountsCount = cacheRegistry.register({
   scope: 'realm',
   kind: 'replay',
   hitMeaning: 'a nonce count already used, so the request was refused',
-  maxEntries: function (): null {
-    return null;
+  settings: ['scim.maxDigestNonces'],
+  maxEntries: function (): number {
+    return Number(config.value('scim.maxDigestNonces'));
   },
+  bound: 'Enforced: scim.maxDigestNonces nonces per realm, the oldest ' +
+    'dropped (the nonce is then stale, and the client is handed a new ' +
+    'one); and ' + MAX_COUNTS_PER_NONCE + ' counts per nonce, after which ' +
+    'the nonce is retired the same way.',
   lifetime: function (): string {
     return 'Forgotten with its nonce. Not persisted: the claim a spend ' +
       'makes is what decides a replay across nodes.';
@@ -408,6 +425,8 @@ const hobaChallengesCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return scimSeconds('scim.maxHobaChallenges') || null;
   },
+  bound: 'Enforced: scim.maxHobaChallenges per realm, the oldest dropped; a ' +
+    'client using it is sent a fresh challenge.',
   lifetime: function (): string {
     return 'scim.hobaMaxAgeSeconds (' +
       scimSeconds('scim.hobaMaxAgeSeconds') + ' s) after it was issued, ' +
@@ -436,6 +455,8 @@ const hobaSeenCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return scimSeconds('scim.maxHobaSeen') || null;
   },
+  bound: 'Enforced: scim.maxHobaSeen per realm, the oldest dropped with the ' +
+    'challenge it was made for, so it cannot be replayed against a live one.',
   lifetime: function (): string {
     return 'Until its challenge expires; past the limit, the oldest go ' +
       'with their challenge.';
@@ -1386,6 +1407,8 @@ class ScimAuth {
     }
     if (!counts) {
       counts = new Set();
+      cacheRegistry.makeRoom(digestCounts, this.maxDigestNonces(),
+                             { counter: digestCountsCount });
       digestCounts.set(nonce, counts);
     }
     log.debug("Leaving ScimAuth.countsOf().");
@@ -1654,7 +1677,14 @@ class ScimAuth {
           : ' (scim.digestPassword). It is not repeated here.')));
     }
     if (qop === 'auth') {
-      this.countsOf(String(params.nonce)).add(String(params.nc));
+      const counts = this.countsOf(String(params.nonce));
+      counts.add(String(params.nc));
+      if (counts.size >= MAX_COUNTS_PER_NONCE) {
+        // The per-nonce bound (see the declaration): this credential is
+        // accepted, and the nonce is retired so the next one is stale.
+        this.forgetDigestNonce(String(params.nonce));
+        digestCountsCount.evicted(1);
+      }
     }
 
     // RFC 7616 section 3.5, the Authentication-Info response header. It is what

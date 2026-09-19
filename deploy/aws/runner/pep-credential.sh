@@ -41,6 +41,16 @@ do
   sleep 5
 done
 
+# A PRODUCT-MODE SERVICE ACCEPTS AN ANCHOR ONLY THROUGH /admin-api
+# (2026-09-18), so the credential step mints the management API's token when
+# the task hands it the client secret; pep-credential.js tries that door first.
+if [ -n "${STS_ADMIN_API_CLIENT_SECRET:-}" ];
+then
+  STS_ADMIN_API_TOKEN="$(node tests/tools/admin-api-token.js "${URL}")" || \
+    STS_ADMIN_API_TOKEN=""
+  export STS_ADMIN_API_TOKEN
+fi
+
 if node tests/tools/pep-credential.js --url="${URL}" --out="${OUT}" \
      --subject="${SUBJECT}";
 then

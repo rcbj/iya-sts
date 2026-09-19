@@ -55,10 +55,11 @@ if (appconfigProblem) {
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
+const PASSWORD = "gnap-signals-Passw0rd!-" + String(Date.now()).slice(-6);
 const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnapsig").replace(/[^a-z0-9-]/g, "").slice(0, 30),
-  password: "gnap-signals-Passw0rd!-" + String(Date.now()).slice(-6),
+  password: PASSWORD,
   log: log
 });
 const check = h.check;
@@ -68,8 +69,13 @@ const CAEP = "https://schemas.openid.net/secevent/caep/event-type/";
 const REVOKED = CAEP + "session-revoked";
 const CLAIMS = CAEP + "token-claims-change";
 const POLL = "urn:ietf:rfc:8936";
+// THE BASIC PRINCIPAL IS A REAL PERSON WITH A REAL PASSWORD (2026-09-18),
+// created in the realm below beside the other two. It was a name nobody
+// created with `any-password`, which only development mode accepts; product
+// mode verifies a Basic credential against the person's own userPassword.
+const PROBE = "gnap-signals-probe";
 const BASIC = "Basic " +
-              Buffer.from("gnap-signals-probe:any-password").toString("base64");
+              Buffer.from(PROBE + ":" + PASSWORD).toString("base64");
 
 let jwks = null;
 
@@ -190,6 +196,7 @@ async function test() {
   await h.setting("gnap.continueWaitS", 0);
   await h.ensurePerson(OWNER);
   await h.ensurePerson(STRANGER);
+  await h.ensurePerson(PROBE);
   // Their subjects, which a SET's `user.sub` carries (2026-09-14).
   SUBJECTS[OWNER] = await h.subjectOf(OWNER);
   SUBJECTS[STRANGER] = await h.subjectOf(STRANGER);

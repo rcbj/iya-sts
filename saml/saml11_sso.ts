@@ -401,6 +401,8 @@ const assertionsCount = cacheRegistry.register({
   maxEntries: function (): number | null {
     return Number(config.value('saml11.assertionCacheMax')) || null;
   },
+  bound: 'Enforced: saml11.assertionCacheMax per realm, the oldest dropped; ' +
+    'an artifact naming a dropped assertion is answered as unknown.',
   lifetime: function (): string {
     return 'No expiry: the oldest is dropped past ' +
       'saml11.assertionCacheMax.';

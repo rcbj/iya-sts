@@ -586,6 +586,23 @@ function protocolRow(id) {
 // for maps onto nothing rather than throwing: seen() warns about an unknown
 // kind and records it anyway, so a record can carry one, and this function is
 // not its validator.
+// The kinds an entry's DECLARED families would be recorded under, in table
+// order — each family's own `kind`, so ticking OAuth 2.0 alone does not make
+// the entry an OpenID Connect relying party. A family with no kind (LDAP,
+// SCIM and the rest) contributes nothing.
+function declaredKindsOf(fields) {
+  log.debug("Entering declaredKindsOf().");
+  const out = [];
+  valuesOf((fields || {}).appAllowedProtocol).forEach(function (id) {
+    const row = protocolRow(id);
+    if (row && row.kind && out.indexOf(row.kind) < 0) {
+      out.push(row.kind);
+    }
+  });
+  log.debug("Leaving declaredKindsOf(). " + out.length + " kind(s).");
+  return out;
+}
+
 function protocolIdsForKinds(kinds) {
   log.debug("Entering protocolIdsForKinds().");
   const out = [];
@@ -867,6 +884,20 @@ const SCHEMA = {
             'it holds none — which OAuth 2.1 mode refuses instead. An ' +
             'omitted token_endpoint_auth_method means client_secret_basic ' +
             'for a registered client and nothing for one made by hand.' },
+    // WHO PUT THIS APPLICATION HERE ON PURPOSE (2026-09-18). appRegistered
+    // above cannot answer it: it means RFC 7591 and is what RFC 9700 mode's
+    // rules and RFC 7592's endpoints turn on, so an application an operator
+    // created on /admin/applications/new stays FALSE there — and the list
+    // page, reading only that flag, said "Registered: no" about an entry
+    // somebody had just finished registering. This is the answer the page
+    // wanted, kept apart so that giving it changes no protocol's behaviour.
+    { name: 'appRegisteredBy', kind: 'single', from: 'this registry',
+      what: 'How this application was registered, when it was: ' +
+            '"administrator" (created on /admin/applications/new or through ' +
+            'the management API), "rfc7591" (POST /oauth2/register) or ' +
+            '"startup" (one of this service\'s own seeded clients). Absent ' +
+            'on an application that simply turned up. Written by this ' +
+            'registry and not editable; it grants and refuses nothing.' },
     { name: 'oauthClientId', kind: 'multi', from: 'OAuth 2.0 / OIDC / ' +
                                                   'OpenID4VCI',
       identifier: true,
@@ -3807,6 +3838,10 @@ function corsOriginsForClient(name, attributes) {
 const ssfAllowedCache = realms.keyed(function () {
   return { version: -1, answers: new Map() };
 });
+// The answers kept per realm (2026-09-18). One per principal a Shared Signals
+// event has been about, so it grew with the people; at the bound the oldest
+// answer goes and is looked up again when next needed.
+const MAX_SSF_ALLOWED_ANSWERS = 4096;
 
 // Described to `/admin/caches` (#74, rule 3ap). A realm's answers are current
 // while its ou=applications has not changed since they were kept; the
@@ -3820,8 +3855,10 @@ const ssfAllowedCount = cacheRegistry.register({
   owner: 'common/applications.js',
   scope: 'realm',
   maxEntries: function () {
-    return null;
+    return MAX_SSF_ALLOWED_ANSWERS;
   },
+  bound: 'Enforced: ' + MAX_SSF_ALLOWED_ANSWERS + ' answers per realm, the ' +
+    'oldest dropped and looked up again when next needed.',
   lifetime: function () {
     return 'Until anything under the realm\'s ou=applications changes; ' +
       'the next lookup then empties that realm\'s answers.';
@@ -3878,6 +3915,8 @@ function ssfAllowedEventsFor(principal) {
   }
   const found = findSsfOwner(backing, wanted);
   if (cache) {
+    cacheRegistry.makeRoom(cache.answers, MAX_SSF_ALLOWED_ANSWERS,
+                           { counter: ssfAllowedCount });
     cache.answers.set(wanted, found);
   }
   log.debug("Leaving ssfAllowedEventsFor().");
@@ -6258,9 +6297,9 @@ function seen(detail) {
   }
 
   if (!known) {
-    log.info('applications: first sight of "' + identifier + '"' +
-             kindPhrase + '. ' + count() +
-             ' application(s) in the directory.');
+    log.debug('applications: first sight of "' + identifier + '"' +
+              kindPhrase + '. ' + count() +
+              ' application(s) in the directory.');
   }
 
   // The audit row. `application.create` on first sight and
@@ -6490,6 +6529,11 @@ function register(clientId, registration, options) {
   const record = loaded.record;
   const now = Date.now();
   record.registered = true;
+  // Only when nobody registered it first: an administrator's entry that later
+  // registers through RFC 7591 was still put here by the administrator.
+  if (!record.fields.appRegisteredBy) {
+    setField(record, 'appRegisteredBy', 'rfc7591');
+  }
   record.firstAt = record.firstAt || now;
   record.lastAt = now;
   addTo(record.kinds, 'oauth2-client');
@@ -6574,6 +6618,9 @@ function forgetRegistration(clientId) {
   }
   const record = loaded.record;
   record.registered = false;
+  if (record.fields.appRegisteredBy === 'rfc7591') {
+    delete record.fields.appRegisteredBy;
+  }
   delete record.fields.appRegistrationJson;
   delete record.fields.appRegistrationAccessToken;
   delete record.fields.oauthClientSecret;
@@ -7168,6 +7215,9 @@ function createApplication(detail) {
   record.lastAt = now;
   if (info.name) record.name = String(info.name);
   if (kind) addTo(record.kinds, kind);
+  // Registered by an operator — see appRegisteredBy's row for why this is not
+  // appRegistered, which would make the entry an RFC 7591 client.
+  setField(record, 'appRegisteredBy', 'administrator');
   // The declaration goes on `appAllowedProtocol` and DELIBERATELY NOT on
   // `appKind` or `appProtocol`, even though every row of the PROTOCOLS table
   // names the kind its family would produce. Ticking SAML 2.0 is a statement
@@ -7219,14 +7269,14 @@ function createApplication(detail) {
   });
   if (declaredSaml.length && !valuesOf(record.fields.samlEntityId).length) {
     setField(record, 'samlEntityId', identifier);
-    log.info('applications: "' + identifier + '" is declared for ' +
-             declaredSaml.join(' and ') + ' and carried no entityID, so its ' +
-             'identifier is being used as one. Its per-service-provider ' +
-             'metadata is live from now — /admin/applications names the URL, ' +
-             'which carries a slug this module deliberately does not compute ' +
-             '(slugOf() belongs to saml/saml2_sso.ts, and requiring it here ' +
-             'would point this module at a protocol). Set samlEntityId ' +
-             'explicitly to use a different name.');
+    log.debug('applications: "' + identifier + '" is declared for ' +
+              declaredSaml.join(' and ') + ' and carried no entityID, so its ' +
+              'identifier is being used as one. Its per-service-provider ' +
+              'metadata is live from now — /admin/applications names the ' +
+              'URL, which carries a slug this module deliberately does not ' +
+              'compute (slugOf() belongs to saml/saml2_sso.ts, and requiring ' +
+              'it here would point this module at a protocol). Set ' +
+              'samlEntityId explicitly to use a different name.');
   }
   // ---------------------------------------------------------------------
   // AN APPLICATION DECLARED FOR OAUTH 2.0 OR OIDC GETS A CLIENT
@@ -7263,13 +7313,13 @@ function createApplication(detail) {
     const method = has('oauthClientSecret') ? 'client_secret_basic' :
       (has('oauthJwks') || has('oauthJwksUri')) ? 'private_key_jwt' : 'none';
     setField(record, 'oauthTokenEndpointAuthMethod', method);
-    log.info('applications: "' + identifier + '" is declared for ' +
-             declaredOauth.join(' and ') + ' and named no ' +
-             'token_endpoint_auth_method, so it is ' + method +
-             (method === 'none' ?
-              ' — a PUBLIC client, since the create carried no credential' :
-              ', from the credential the create carried') +
-             '. Set oauthTokenEndpointAuthMethod explicitly to change it.');
+    log.debug('applications: "' + identifier + '" is declared for ' +
+              declaredOauth.join(' and ') + ' and named no ' +
+              'token_endpoint_auth_method, so it is ' + method +
+              (method === 'none' ?
+               ' — a PUBLIC client, since the create carried no credential' :
+               ', from the credential the create carried') +
+              '. Set oauthTokenEndpointAuthMethod explicitly to change it.');
   }
   // WHERE IT CAME FROM, said on the entry itself. An application created here
   // has never authenticated anything and its counters are zero; without this
@@ -7297,10 +7347,10 @@ function createApplication(detail) {
               // is not something this caller gets to make an exception to.
               attributes: Object.keys(given.fields).join(', ') }
   });
-  log.info('applications: "' + identifier + '" was created by hand' +
-           (asked.protocols.length ?
-            ', declared for ' + asked.protocols.join(', ') : '') +
-           '. ' + count() + ' application(s) in the directory.');
+  log.debug('applications: "' + identifier + '" was created by hand' +
+            (asked.protocols.length ?
+             ', declared for ' + asked.protocols.join(', ') : '') +
+            '. ' + count() + ' application(s) in the directory.');
   log.debug("Leaving createApplication(). Created.");
   log.debug("Leaving createApplication().");
   return { ok: true, application: viewAfterWrite(identifier, record) };
@@ -8572,6 +8622,17 @@ function view(record, entry) {
     // the number that answers whether anything has actually happened.
     allowedProtocols: valuesOf(record.fields.appAllowedProtocol),
     recordedProtocols: protocolIdsForKinds(record.kinds),
+    // THE KINDS THE DECLARATION AMOUNTS TO (2026-09-18), beside `kinds` and
+    // not in it: `kinds` stays what was recorded, and GNAP's grants read it
+    // to decide things, so folding a declaration in would change behaviour
+    // rather than a page. The console shows the two together — an
+    // application declared for SAML 2.0 IS a service provider, and "Kind:
+    // unstated" beside that declaration read as the create having lost it.
+    declaredKinds: declaredKindsOf(record.fields),
+    // How it was registered, or '' for one that merely turned up. An RFC 7591
+    // registration from before the attribute existed still answers.
+    registeredBy: String(record.fields.appRegisteredBy ||
+                         (record.registered ? 'rfc7591' : '')),
     // THE RETURN ADDRESSES A DEVELOPMENT-MODE REQUEST PUT HERE AND NOBODY HAS
     // CONFIRMED (2026-09-12), lifted out of `fields` for the reason
     // `allowedProtocols` is: a caller should not have to parse
@@ -9772,6 +9833,7 @@ function seedInternalApplication(spec) {
   const record = loaded.record;
   const now = Date.now();
   record.registered = true;
+  setField(record, 'appRegisteredBy', 'startup');
   record.firstAt = now;
   record.lastAt = now;
   record.name = spec.name;

@@ -147,6 +147,8 @@ const urisCount = cacheRegistry.register({
   maxEntries: function () {
     return CACHE_LIMIT;
   },
+  bound: 'Enforced: 512 key IDs, the oldest dropped and derived again when ' +
+    'next asked for.',
   lifetime: function () {
     return 'No expiry: an internal kid is derived from the key, so its ' +
       'answer never changes. The oldest goes first when full.';

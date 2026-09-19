@@ -55,6 +55,9 @@ const { AsyncLocalStorage } = require('async_hooks');
 const config = require('../common/config');
 const errorCodes = require('../common/error_codes');
 const capabilities = require('./cluster_capabilities');
+// A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
+// nothing to what loads before the store's gate.
+const cacheRegistry = require('../common/cache_registry');
 
 const log = bunyan.createLogger({ name: 'sts-cluster' });
 config.registerLogger(log);
@@ -445,6 +448,7 @@ function join() {
              'node(s). Heartbeat every ' + heartbeatMs() + 'ms, lifetime ' +
              ttlMs() + 'ms by the database clock.');
     scheduleHeartbeat();
+    scheduleCacheReport(CACHE_REPORT_FIRST_MS);
   });
 }
 
@@ -512,7 +516,67 @@ function nodeInfo() {
            port: config.value('global.port'),
            uptimeMs: Math.round(process.uptime() * 1000),
            workers: requestWorkerCount(),
-           lastStallMs: lastStall ? lastStall.ms : 0 };
+           lastStallMs: lastStall ? lastStall.ms : 0,
+           caches: cacheReport };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THIS NODE'S CACHES HOLD, FOR THE OTHER NODES' /admin/caches
+// (2026-09-18). The membership row's `info` is the only channel between
+// nodes (above), so a node's cache figures ride on it: the compact
+// `cacheRegistry.snapshot()` — about sixty bytes a store and nothing that
+// grows with a store — which another node's Caches page reads out of
+// `snapshot()`'s member list. No request crosses between nodes to get it,
+// which is why it needed no new plumbing.
+//
+// IT IS COMPUTED ON A TIMER OF ITS OWN, NOT ON THE HEARTBEAT. A snapshot
+// walks every registered store's rows, and the heartbeat is what a node's
+// life depends on (the paragraph above `nodeInfo()`): so the heartbeat only
+// attaches the last one taken, and the walk happens every
+// CACHE_REPORT_MS, first shortly after joining. What another node shows is
+// therefore up to that old plus a heartbeat, and the page says how old.
+// ---------------------------------------------------------------------------
+const CACHE_REPORT_MS = 30000;
+const CACHE_REPORT_FIRST_MS = 5000;
+let cacheReport = null;
+let cacheReportTimer = null;
+
+function refreshCacheReport() {
+  log.debug("Entering refreshCacheReport().");
+  try {
+    cacheReport = cacheRegistry.snapshot();
+  } catch (e) {
+    // A report that cannot be taken costs the other nodes this node's cache
+    // figures, never a heartbeat; the last one taken stays.
+    log.debug("Caught in refreshCacheReport(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving refreshCacheReport().");
+}
+
+function scheduleCacheReport(delayMs) {
+  log.debug("Entering scheduleCacheReport().");
+  if (cacheReportTimer || stopping || role !== 'front') {
+    log.debug("Leaving scheduleCacheReport(). Not reporting.");
+    return;
+  }
+  cacheReportTimer = setTimeout(function () {
+    cacheReportTimer = null;
+    refreshCacheReport();
+    scheduleCacheReport(CACHE_REPORT_MS);
+  }, delayMs);
+  if (cacheReportTimer.unref) {
+    cacheReportTimer.unref();
+  }
+  log.debug("Leaving scheduleCacheReport().");
+}
+
+function stopCacheReport() {
+  log.debug("Entering stopCacheReport().");
+  if (cacheReportTimer) {
+    clearTimeout(cacheReportTimer);
+    cacheReportTimer = null;
+  }
+  log.debug("Leaving stopCacheReport().");
 }
 
 // A worker of this node: no row of its own and no heartbeat, the same fence.
@@ -877,6 +941,7 @@ function leave() {
     clearTimeout(heartbeatTimer);
     heartbeatTimer = null;
   }
+  stopCacheReport();
   log.debug("Leaving leave().");
   return driver.leaveCluster(nodeId).then(function () {
     log.info('cluster: node ' + nodeId + ' left; its leases were released.');
@@ -1007,6 +1072,8 @@ function reset(options) {
     clearTimeout(heartbeatTimer);
     heartbeatTimer = null;
   }
+  stopCacheReport();
+  cacheReport = null;
   driver = null;
   resolved = null;
   nodeId = '';

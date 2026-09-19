@@ -107,6 +107,11 @@ resource "aws_ecs_task_definition" "suite" {
         { name = "STS_SUITE_SERVICE_URL", value = local.public_base_url },
         { name = "XACML_PEP_SUBJECT", value = local.pep_subject },
       ]
+      # The anchor goes through /admin-api on a product-mode service, so this
+      # container mints the management API's token (pep-credential.sh).
+      secrets = [
+        { name = "STS_ADMIN_API_CLIENT_SECRET", valueFrom = aws_secretsmanager_secret.main["admin-api-client-secret"].arn },
+      ]
       logConfiguration = local.runner_container_log
     },
     {

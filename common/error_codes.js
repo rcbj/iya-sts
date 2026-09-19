@@ -688,6 +688,18 @@ const CODES = [
     summary: 'A registered cache threw while listing its entries for ' +
       '/admin/caches, so the page shows it with no rows (#74).',
     spec: 'none — logged; the page says the cache could not be listed' },
+  { code: 'STS-CORE-0096',
+    summary: 'A registered cache reports no bound: its maxEntries() ' +
+      'answered no finite number. Every cache and replay store has one ' +
+      'since 2026-09-18, so this is a regression in its owner; ' +
+      '/admin/caches shows it as a problem on the row.',
+    spec: 'none — logged; the page marks the row' },
+  { code: 'STS-CORE-0097',
+    summary: 'A bounded store that decides a replay was full of LIVE ' +
+      'entries and refused a new one rather than forget one (logged at most ' +
+      'once a minute per store; each refusal is counted on /admin/caches). ' +
+      'The request is refused under its own protocol\'s code.',
+    spec: 'none — logged; the refusal carries the protocol\'s own code' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -5431,8 +5443,10 @@ const CODES = [
       '4).',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0507',
-    summary: 'An access token presented at the step-up stand-in resource ' +
-      'did not verify against this realm\'s signing key.',
+    summary: 'An access token presented where only a token this realm can ' +
+      'verify is accepted — the step-up stand-in resource, or an ' +
+      'OpenID4VCI endpoint in product mode — did not verify against this ' +
+      'realm\'s signing key.',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0508',
     summary: 'A configured step-up requirement (oauth2.stepUpAcrValues, or ' +
@@ -5682,6 +5696,13 @@ const CODES = [
       'been given a method since 2026-09-18, so this is an entry made ' +
       'before that or by another door.',
     spec: 'invalid_client (HTTP 401) in product mode; none in development' },
+  { code: 'STS-OAUTH-0554',
+    summary: 'A DPoP proof was refused because the realm\'s proof-ID ' +
+      'replay history held oauth2.dpopReplayCacheSize LIVE entries: ' +
+      'forgetting one would let that proof be replayed, so the new proof ' +
+      'is refused instead until entries age out (twice ' +
+      'oauth2.dpopIatSkewS).',
+    spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -7368,6 +7389,12 @@ const CODES = [
       'so what the person held may not have been ended.',
     spec: 'none — logged; the write stands and every door refuses the ' +
       'person' },
+  { code: 'STS-LDAP-0098',
+    summary: 'The node-ldapjs in use does not support the ' +
+      'routeAnonymousBinds server option, so an anonymous bind is answered ' +
+      'by the library and never reaches the bind handler; product mode ' +
+      'cannot refuse it (reads on that connection are still refused).',
+    spec: 'none — logged at startup' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -8476,6 +8503,11 @@ const CODES = [
     summary: 'A certificate in oid4vci.keyAttestationTrustedCertificates ' +
       'could not be read and was ignored.',
     spec: '' },
+  { code: 'STS-VC-0086',
+    summary: 'An access token this realm revoked was presented at an ' +
+      'OpenID4VCI endpoint (credential, deferred credential or ' +
+      'notification) in product mode.',
+    spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   // ===== SSF ===============================================================
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
@@ -10086,6 +10118,12 @@ const CODES = [
       'another request or another node against the same store (the cluster ' +
       'claim, #46).',
     spec: 'RFC 9635 section 4 (an interaction is answered once)' },
+  { code: 'STS-GNAP-0718',
+    summary: 'A signed GNAP request was refused because the realm\'s ' +
+      'signature replay history held gnap.replayCacheSize LIVE entries: ' +
+      'forgetting one would let that signature be replayed, so the request ' +
+      'is refused instead until entries age out.',
+    spec: 'RFC 9635 section 7.3 (invalid_request)' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

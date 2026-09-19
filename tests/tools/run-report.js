@@ -2042,6 +2042,10 @@ if (require.main === module) {
 }
 
 module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
+                   // EXPORTED FOR tools/merge-report.js (2026-09-18), which
+                   // folds a second run's jobs into this one's report and
+                   // must draw it with the same writers rather than a copy.
+                   writeHtml: writeHtml, writeXml: writeXml, slug: slug,
                    // EXPORTED FOR tests/unit_job_environment.js AND FOR
                    // NOTHING ELSE. The list it returns is what a unit job
                    // must not inherit, and a test that computed it for

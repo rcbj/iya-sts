@@ -131,6 +131,8 @@ const affinityCount = cacheRegistry.register({
   maxEntries: function () {
     return AFFINITY_MAX;
   },
+  bound: 'Enforced: 1000 sessions, the oldest dropped; a dropped session is ' +
+    'simply routed afresh.',
   lifetime: function () {
     return 'No expiry: forgotten when its worker exits; the oldest goes ' +
       'first when full.';

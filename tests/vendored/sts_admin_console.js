@@ -185,6 +185,11 @@ const NetworkInspector = require("selenium-webdriver/bidi/networkInspector.js");
 const browserFlags = require("./browser_flags.js");
 const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
+const facts = require("./service_facts.js");
+const registry = require("./sts_applications.js");
+// The redirect URI the token-minting client registers: tokens come from the
+// authorization code flow (a product-mode service has no password grant).
+const CONSOLE_REDIRECT_URI = "https://admin-console-job.example.test/cb";
 
 var appconfig;
 let appconfigProblem = null;
@@ -240,7 +245,11 @@ const REALM = ("console-" + names.runStamp()).toLowerCase()
 // job's to set, so it is typed as-is — which development accepts and product
 // would not.
 // ---------------------------------------------------------------------------
-const CONSOLE_PASSWORD = "console-job-Passw0rd!-" + names.runStamp();
+// RANDOM, NOT DERIVED FROM THE RUN STAMP (2026-09-18): the account is granted
+// Admin Write below, and the user name carries the stamp, so a password built
+// from it would be readable off any page that lists the account.
+const CONSOLE_PASSWORD = "console-job-Passw0rd!-" + names.runStamp() + "-" +
+  require("crypto").randomBytes(9).toString("base64url");
 const CONSOLE_CLIENT_SECRET = "console-job-client-secret-" + names.runStamp();
 const GROUP_MEMBER_A = "console-member-a";
 const GROUP_MEMBER_B = "console-member-b";
@@ -295,7 +304,10 @@ async function ensureClient(client) {
   const r = await apiPostJson(realm("/admin-api/applications/create"), {
     identifier: client, name: client, protocols: ["oauth2", "oidc"],
     fields: { oauthClientId: [client], oauthClientSecret: CONSOLE_CLIENT_SECRET,
-              oauthTokenEndpointAuthMethod: "client_secret_post" }
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthGrantType: ["authorization_code", "refresh_token"],
+              oauthRedirectUri: [CONSOLE_REDIRECT_URI],
+              oauthResponseType: ["code"] }
   });
   assert.ok(r.status === 200 && r.body && r.body.ok,
     "registering " + client + " in " + REALM + " answered " + r.status + " " +
@@ -834,6 +846,50 @@ function outcomeOf(url, which) {
 // so the sign-in would hold in a mode that checks it. The assertion is that the
 // console opens afterwards.
 // ---------------------------------------------------------------------------
+// THE CONSOLE ACCOUNT HOLDS ADMIN READ AND WRITE (2026-09-18). A service whose
+// console roster names somebody — every product-mode deployment, once its
+// bootstrap administrator has signed in — draws a read-only console for an
+// account in neither group, so the writer is granted both through
+// POST /admin-api/rbac/grant before its first sign-in, and both are revoked
+// when the run ends (revokeTheWriter()), pass or fail.
+let writerGranted = false;
+
+async function grantTheWriter(username) {
+  log.debug("Entering grantTheWriter(). username=" + username);
+  if (username !== CONSOLE_USER || writerGranted) {
+    log.debug("Leaving grantTheWriter(). Nothing to grant.");
+    return;
+  }
+  for (const role of ["read", "write"]) {
+    const r = await apiPostJson(root("/admin-api") + "/rbac/grant",
+                                { username: username, role: role });
+    assert.strictEqual(r.status, 200, "granting Admin " + role + " to " +
+      username + " answered " + r.status + " " + String(r.raw).slice(0, 200));
+  }
+  writerGranted = true;
+  log.debug("Leaving grantTheWriter().");
+}
+
+async function revokeTheWriter() {
+  log.debug("Entering revokeTheWriter().");
+  if (!writerGranted) {
+    log.debug("Leaving revokeTheWriter(). Nothing was granted.");
+    return;
+  }
+  for (const role of ["write", "read"]) {
+    try {
+      await apiPostJson(root("/admin-api") + "/rbac/revoke",
+                        { username: CONSOLE_USER, role: role });
+    } catch (e) {
+      // A revocation that fails is reported, and must not replace the
+      // failure the run is already reporting.
+      log.warn("could not revoke Admin " + role + " from " + CONSOLE_USER +
+               ": " + ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving revokeTheWriter().");
+}
+
 async function signIn(driver, username) {
   log.debug("Entering signIn(). username=" + username);
   // THE JAR IS EMPTIED FIRST, ALWAYS. Signing in is also how this file SWITCHES
@@ -846,6 +902,7 @@ async function signIn(driver, username) {
   // The account exists, with CONSOLE_PASSWORD, before the screen is reached —
   // in the DEFAULT realm, where the console's session and its roster live.
   await ensurePerson(root("/admin-api"), username);
+  await grantTheWriter(username);
   await clearSession(driver);
   await go(driver, root("/admin?realm=default"));
   // `?realm=default`: a bare /admin draws the realm chooser once the service
@@ -1695,41 +1752,60 @@ async function theNewUserPageDescribesAPerson(driver) {
     });
   });
 
-  // ------------------------------------------------------------------
-  // FILL. Type ONE value, press it, and check what happened to the rest.
-  // ------------------------------------------------------------------
-  const filled = "ui-filled-" + names.runStamp();
-  const before = await apiJson("/realm/" + REALM +
-      "/admin-api/ldap/directory?q=" + encodeURIComponent(filled));
-  const createForm = await formIndexPosting(driver, "create");
-  assert.ok(createForm >= 0, "/admin/users/new should draw a create form.");
-  await fillAndPress(driver, createForm,
-      { username: filled, "field.mail": "typed@example.com" },
-      { buttonText: "Fill with example data", noTyping: true });
+  // FILL IS A DEVELOPMENT-MODE CONVENIENCE (2026-09-18): a product-mode
+  // service draws no Fill button and refuses a Fill posted anyway
+  // (STS-ADMIN-0016), because it invents no person. On one, the button's
+  // absence is what is asserted.
+  const productService = await facts.isProduct(root("/admin-api"));
+  if (productService) {
+    check("PRODUCT: the new-user form draws no Fill button", function () {
+      const named = [];
+      (page.forms || []).forEach(function (form) {
+        (form.controls || []).forEach(function (control) {
+          named.push(String(control.name || ""));
+        });
+      });
+      assert.ok(named.indexOf("fill") < 0,
+        "a product-mode service invents nobody, so /admin/users/new must " +
+        "not offer to; its controls were " + JSON.stringify(named));
+    });
+  } else {
+    // ------------------------------------------------------------------
+    // FILL. Type ONE value, press it, and check what happened to the rest.
+    // ------------------------------------------------------------------
+    const filled = "ui-filled-" + names.runStamp();
+    const before = await apiJson("/realm/" + REALM +
+        "/admin-api/ldap/directory?q=" + encodeURIComponent(filled));
+    const createForm = await formIndexPosting(driver, "create");
+    assert.ok(createForm >= 0, "/admin/users/new should draw a create form.");
+    await fillAndPress(driver, createForm,
+        { username: filled, "field.mail": "typed@example.com" },
+        { buttonText: "Fill with example data", noTyping: true });
 
-  const afterFill = await survey(driver);
-  check("Fill writes the invented person into the EMPTY boxes only",
-        function () {
-    const values = valuesOfBoxes(afterFill, "field.");
-    assert.strictEqual(values["field.mail"], "typed@example.com",
-      "the one value that was typed must survive the fill: an invention that " +
-      "overwrote it would discard work with nothing said. It now holds " +
-      JSON.stringify(values["field.mail"]));
-    assert.ok(values["field.givenName"],
-      "and a box that was EMPTY should now carry the invented person's " +
-      "value — that is the whole of what the button does. `field.givenName` " +
-      "holds " + JSON.stringify(values["field.givenName"]));
-  });
-  const stillNobody = await apiJson("/realm/" + REALM +
-      "/admin-api/ldap/directory?q=" + encodeURIComponent(filled));
-  check("and Fill creates nobody", function () {
-    assert.strictEqual(stillNobody.body.matched, before.body.matched,
-      "pressing Fill must not put anybody in the directory: it fills a FORM " +
-      "in for a person to edit, and a preview button that commits is the " +
-      "worst kind of control. The directory went from " +
-      before.body.matched + " matching entry/entries to " +
-      stillNobody.body.matched);
-  });
+    const afterFill = await survey(driver);
+    check("Fill writes the invented person into the EMPTY boxes only",
+          function () {
+      const values = valuesOfBoxes(afterFill, "field.");
+      assert.strictEqual(values["field.mail"], "typed@example.com",
+        "the one value that was typed must survive the fill: an invention that " +
+        "overwrote it would discard work with nothing said. It now holds " +
+        JSON.stringify(values["field.mail"]));
+      assert.ok(values["field.givenName"],
+        "and a box that was EMPTY should now carry the invented person's " +
+        "value — that is the whole of what the button does. `field.givenName` " +
+        "holds " + JSON.stringify(values["field.givenName"]));
+    });
+    const stillNobody = await apiJson("/realm/" + REALM +
+        "/admin-api/ldap/directory?q=" + encodeURIComponent(filled));
+    check("and Fill creates nobody", function () {
+      assert.strictEqual(stillNobody.body.matched, before.body.matched,
+        "pressing Fill must not put anybody in the directory: it fills a FORM " +
+        "in for a person to edit, and a preview button that commits is the " +
+        "worst kind of control. The directory went from " +
+        before.body.matched + " matching entry/entries to " +
+        stillNobody.body.matched);
+    });
+  }
 
   // ------------------------------------------------------------------
   // THE ONE THAT MATTERS: create with two boxes filled and the rest empty.
@@ -3038,14 +3114,19 @@ async function mintTokens(username, client) {
   log.debug("Entering mintTokens(). username=" + username);
   await ensurePerson(realm("/admin-api"), username);
   await ensureClient(client);
+  // THE AUTHORIZATION CODE FLOW (2026-09-18): the person signs in with their
+  // password the way a browser would; the password grant this used is refused
+  // in product mode (RFC 9700 section 2.4).
+  const granted = await registry.authorizationCode(realm(""), {
+    clientId: client, redirectUri: CONSOLE_REDIRECT_URI, username: username,
+    password: CONSOLE_PASSWORD, scope: "openid" });
   const reply = await common.httpJson(realm("/oauth2/token"), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=password&username=" + encodeURIComponent(username) +
-          "&password=" + encodeURIComponent(CONSOLE_PASSWORD) +
-          "&client_id=" + encodeURIComponent(client) +
-          "&client_secret=" + encodeURIComponent(CONSOLE_CLIENT_SECRET) +
-          "&scope=openid"
+    body: new URLSearchParams({ grant_type: "authorization_code",
+      code: granted.code, redirect_uri: CONSOLE_REDIRECT_URI,
+      code_verifier: granted.verifier, client_id: client,
+      client_secret: CONSOLE_CLIENT_SECRET }).toString()
   });
   assert.strictEqual(reply.status, 200,
     "the realm's token endpoint should mint a token for " + username +
@@ -6256,6 +6337,7 @@ async function test() {
     await keepAPicture(driver, "failure");
     throw e;
   } finally {
+    await revokeTheWriter();
     await driver.quit();
   }
   log.debug("Leaving test().");

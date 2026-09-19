@@ -328,6 +328,51 @@ function childMain() {
          '6a. and with REFRESH back ON the next sign-in overwrites it again',
          refreshed && JSON.stringify(attr(refreshed, 'mail')));
 
+    // =======================================================================
+    // 7. THIS SERVICE CREATES NOBODY — product mode's rule, and
+    //    `ldap.autocreateUsers` off — AND A PROVISIONED ENTRY STILL RECORDS
+    //    THE SIGN-IN (2026-09-18). `autoCreateUser()` returned before its
+    //    lookup whenever creation was off, so in product mode a
+    //    pre-provisioned person never recorded `federationRelationship` and
+    //    never took the partner's attributes. `tests/vendored/
+    //    sts_federation_realms.js` found it against a product-mode deployment.
+    // =======================================================================
+    // In the SERVICE PROVIDER's realm only (set while it is ambient): the
+    // identity provider is the default realm, which still creates the people
+    // who sign in to it.
+    await inSp(function () {
+      config.setOverride('ldap.autocreateUsers', 'false');
+    });
+    const off = await request('POST', '/realm/' + SP + '/scim/v2/Users', {
+      headers: scimAuth, json: {
+        schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+        userName: 'fp-nocreate', emails: [{ value: 'nocreate@scim.example',
+                                            primary: true }] } });
+    r = await federatedSignIn('fp-nocreate');
+    const recorded = await inSp(function () {
+      return entryOf('fp-nocreate');
+    });
+    note(off.status === 201 && r.status === 200 && recorded &&
+         attr(recorded, 'federationRelationship').indexOf(REL) >= 0,
+         '7a. CREATION OFF: a provisioned person signs in and the entry ' +
+         'records the relationship it came through',
+         r.status + ' ' + (recorded &&
+           JSON.stringify(attr(recorded, 'federationRelationship'))));
+    note(recorded && (attr(recorded, 'mail')[0] || '') !==
+         'nocreate@scim.example' && /@/.test(attr(recorded, 'mail')[0] || ''),
+         '7b. and, with refresh on, takes the partner\'s mail',
+         recorded && JSON.stringify(attr(recorded, 'mail')));
+    r = await federatedSignIn('fp-nocreate-nobody');
+    const nobody = await inSp(function () {
+      return entryOf('fp-nocreate-nobody');
+    });
+    note(r.status === 403 && !nobody,
+         '7c. while somebody nobody provisioned is still refused and ' +
+         'nothing is created', r.status + ' ' + !!nobody);
+    await inSp(function () {
+      config.clearOverride('ldap.autocreateUsers');
+    });
+
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

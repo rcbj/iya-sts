@@ -428,7 +428,15 @@ class GnapProof {
                           'the key proof\'s signature does not verify ' +
                           'against the presented key.');
     }
-    if (!store.remember('jws|' + parts[2], this.maxAgeS() * 2)) {
+    const once = store.rememberOutcome('jws|' + parts[2], this.maxAgeS() * 2);
+    if (once === 'full') {
+      log.debug("Leaving GnapProof.checkJwsLayer(). The history is full.");
+      return this.refusal('STS-GNAP-0718',
+                          'this server cannot remember another key proof ' +
+                          'right now: its replay history is full of live ' +
+                          'ones. Retry shortly.', 'invalid_request');
+    }
+    if (once !== 'new') {
       log.debug("Leaving GnapProof.checkJwsLayer(). Replay.");
       return this.refusal('STS-GNAP-0271',
                           'this key proof has already been used.');
@@ -580,9 +588,18 @@ class GnapProof {
                           result.why);
     }
     const chosen = result.verified[0];
-    if (chosen.params.nonce &&
-        !store.remember('httpsig|' + descriptor.identity + '|' +
-                        chosen.params.nonce, this.maxAgeS() * 2)) {
+    const once = chosen.params.nonce
+      ? store.rememberOutcome('httpsig|' + descriptor.identity + '|' +
+                              chosen.params.nonce, this.maxAgeS() * 2)
+      : 'new';
+    if (once === 'full') {
+      log.debug("Leaving GnapProof.verifyHttpsig(). The history is full.");
+      return this.refusal('STS-GNAP-0718',
+                          'this server cannot remember another signature ' +
+                          'nonce right now: its replay history is full of ' +
+                          'live ones. Retry shortly.', 'invalid_request');
+    }
+    if (once !== 'new') {
       log.debug("Leaving GnapProof.verifyHttpsig(). Nonce replay.");
       return this.refusal('STS-GNAP-0276',
                           'the signature nonce has already been used (RFC ' +

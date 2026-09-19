@@ -127,7 +127,7 @@ interface CatalogueRow {
 interface DirectoryHooks {
   attributesFor?(key: string): Record<string, unknown[]> | null;
   populate?(): { examined?: number; changed?: number; values?: number;
-                 attributes?: string[] } | null;
+                 attributes?: string[]; skipped?: string } | null;
 }
 
 interface VcClaimsDeps {
@@ -849,9 +849,13 @@ class VcClaims {
       const result = this.directory.populate() || {};
       log.debug("Leaving VcClaims.populateDirectory(). " +
                 (result.changed || 0) + " entry/entries changed.");
+      // `skipped` is the directory saying the sweep did not RUN (product mode
+      // invents no claim value) — carried through, or the page behind
+      // Populate reports "swept 0 entries" about a sweep that never started.
       return { ok: true, loaded: true, examined: result.examined || 0,
                changed: result.changed || 0, values: result.values || 0,
-               attributes: result.attributes || [] };
+               attributes: result.attributes || [],
+               skipped: result.skipped || undefined };
     } catch (e) {
       log.debug("Caught in VcClaims.populateDirectory(): " +
                 ((e && e.message) || e));

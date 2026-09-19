@@ -111,6 +111,7 @@ function main() {
   log.debug("Entering main().");
   const tokenFile = process.argv[2];
   if (!tokenFile) {
+    // error-code: none — a local launcher helper, not the service
     log.error('usage: host-credentials.js <token-file>');
     log.debug("Leaving main(). No token file.");
     process.exit(2);
@@ -118,6 +119,7 @@ function main() {
   const token = fs.readFileSync(tokenFile, 'utf8').trim();
   const server = http.createServer(function (req, res) {
     if (!sameToken(req.headers.authorization, token)) {
+      // error-code: none — answers terraform-local.sh's container, not a client
       res.writeHead(403);
       res.end();
       return;
@@ -131,8 +133,10 @@ function main() {
         Expiration: c.Expiration
       }));
     }, function (e) {
+      // error-code: none — a local launcher helper, not the service
       log.error('could not resolve the host session: ' +
                 ((e && e.message) || e));
+      // error-code: none — answers terraform-local.sh's container, not a client
       res.writeHead(500);
       res.end();
     });

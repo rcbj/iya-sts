@@ -850,8 +850,10 @@ function knownUser(username) {
     log.debug("Leaving knownUser().");
     return false;
   }
+  // Another node, or this one before a restart, may be the process that saw
+  // them — see everyUserRecord().
   log.debug("Leaving knownUser().");
-  return !!users.get(identity.key);
+  return !!users.get(identity.key) || everyUserRecord().has(identity.key);
 }
 
 function noteWebauthnEnrolled(username) {
@@ -1765,34 +1767,135 @@ function renameIdentity(from, to) {
     log.debug("Leaving renameIdentity(). Moved.");
     return true;
   }
-  ['forms', 'realms', 'protocols'].forEach(function (member) {
-    Object.keys(moved[member] || {}).forEach(function (name) {
-      const value = moved[member][name];
-      existing[member] = existing[member] || {};
-      existing[member][name] = typeof value === 'number'
-        ? (existing[member][name] || 0) + value
-        : (existing[member][name] || value);
-    });
-  });
-  existing.authentications = (existing.authentications || 0) +
-                             (moved.authentications || 0);
-  existing.firstAt = Math.min(existing.firstAt || Infinity,
-                              moved.firstAt || Infinity);
-  if (existing.firstAt === Infinity) {
-    existing.firstAt = 0;
-  }
-  existing.lastAt = Math.max(existing.lastAt || 0, moved.lastAt || 0);
-  existing.events = (moved.events || []).concat(existing.events || [])
-    .sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
-  existing.eventsForgotten = (existing.eventsForgotten || 0) +
-                             (moved.eventsForgotten || 0);
-  while (existing.events.length > MAX_EVENTS_PER_USER) {
-    existing.events.shift();
-    existing.eventsForgotten++;
-  }
+  foldUserRecord(existing, moved);
   users.set(newKey, existing);
   log.debug("Leaving renameIdentity(). Merged.");
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// ONE RECORD FOLDED INTO ANOTHER — a rename's two rows, and the fan-in below.
+//
+// Counts are SUMMED, first and last seen are the earliest and latest, the
+// events are merged in time order and trimmed to MAX_EVENTS_PER_USER, and
+// `isClient` is true if either side says so. A protocol family is folded
+// member by member: until 2026-09-19 a rename kept the survivor's family
+// object whole and dropped the moved side's count for any family both held.
+//
+// `knownBy` survives only when BOTH sides carry it: a record without it got
+// here by authenticating, and one authentication anywhere makes the merged
+// row an authenticated one.
+// ---------------------------------------------------------------------------
+function foldUserRecord(into, from) {
+  log.debug("Entering foldUserRecord().");
+  ['forms', 'realms'].forEach(function (member) {
+    into[member] = into[member] || {};
+    Object.keys((from && from[member]) || {}).forEach(function (name) {
+      into[member][name] = (into[member][name] || 0) +
+                           (Number(from[member][name]) || 0);
+    });
+  });
+  into.protocols = into.protocols || {};
+  Object.keys((from && from.protocols) || {}).forEach(function (name) {
+    const theirs = from.protocols[name] || {};
+    const mine = into.protocols[name];
+    if (!mine) {
+      into.protocols[name] = {
+        protocol: theirs.protocol || name, count: Number(theirs.count) || 0,
+        methods: Object.assign({}, theirs.methods || {}),
+        firstAt: Number(theirs.firstAt) || 0,
+        lastAt: Number(theirs.lastAt) || 0
+      };
+      return;
+    }
+    mine.count = (Number(mine.count) || 0) + (Number(theirs.count) || 0);
+    mine.methods = mine.methods || {};
+    Object.keys(theirs.methods || {}).forEach(function (method) {
+      mine.methods[method] = (mine.methods[method] || 0) +
+                             (Number(theirs.methods[method]) || 0);
+    });
+    const firsts = [mine.firstAt, theirs.firstAt].map(Number)
+      .filter(function (at) { return at > 0; });
+    mine.firstAt = firsts.length ? Math.min.apply(null, firsts) : 0;
+    mine.lastAt = Math.max(Number(mine.lastAt) || 0,
+                           Number(theirs.lastAt) || 0);
+  });
+  into.authentications = (Number(into.authentications) || 0) +
+                         (Number(from.authentications) || 0);
+  const firsts = [into.firstAt, from.firstAt].map(Number)
+    .filter(function (at) { return at > 0; });
+  into.firstAt = firsts.length ? Math.min.apply(null, firsts) : 0;
+  into.lastAt = Math.max(Number(into.lastAt) || 0, Number(from.lastAt) || 0);
+  into.events = (into.events || []).concat(from.events || [])
+    .sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
+  into.eventsForgotten = (Number(into.eventsForgotten) || 0) +
+                         (Number(from.eventsForgotten) || 0);
+  while (into.events.length > MAX_EVENTS_PER_USER) {
+    into.events.shift();
+    into.eventsForgotten++;
+  }
+  into.isClient = !!(into.isClient || from.isClient);
+  if (!(into.knownBy && from.knownBy)) {
+    delete into.knownBy;
+  }
+  log.debug("Leaving foldUserRecord().");
+  return into;
+}
+
+// A copy of a record that shares nothing with it, so a fold into the copy
+// cannot edit the register or another process's contribution.
+function copyOfUserRecord(record) {
+  log.debug("Entering copyOfUserRecord().");
+  const copy = { key: record.key, name: record.name, forms: {}, realms: {},
+                 protocols: {}, events: [], eventsForgotten: 0,
+                 authentications: 0, firstAt: 0, lastAt: 0,
+                 isClient: false, knownBy: record.knownBy };
+  foldUserRecord(copy, record);
+  if (record.knownBy) {
+    copy.knownBy = record.knownBy;
+  }
+  log.debug("Leaving copyOfUserRecord().");
+  return copy;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY PROCESS'S RECORDS, NOT ONLY THIS ONE'S (2026-09-19).
+//
+// `users` is `merge: 'own'`: each process writes the authentications IT saw,
+// and what another process wrote — another node, a request worker, or THIS
+// node before its last restart, which comes back under an origin that is no
+// longer its own — is held by `persistence_replication.js` as a contribution
+// (persistence_minted.js's restore() argues why). `nums`, `calls` and
+// `artifacts` were fanned in where they are reported; this register was not,
+// so after a redeploy of the three-node testidp cluster `/admin/users` held
+// ONE authenticated row out of 423 and every client_credentials client showed
+// as a person with no directory entry — its `isClient` was on a row nobody
+// read. Keyed by identity key, in the ambient realm, as copies.
+// ---------------------------------------------------------------------------
+function everyUserRecord() {
+  log.debug("Entering everyUserRecord().");
+  const merged = new Map();
+  users.forEach(function (record) {
+    merged.set(record.key, copyOfUserRecord(record));
+  });
+  replication.remoteKeys('admin_stats.users').forEach(function (key) {
+    replication.remoteRows('admin_stats.users', undefined, key)
+      .forEach(function (value) {
+        if (!value || typeof value !== 'object') {
+          return;
+        }
+        const theirs = Object.assign({}, value, { key: value.key || key,
+                                                  name: value.name || key });
+        const mine = merged.get(theirs.key);
+        if (mine) {
+          foldUserRecord(mine, theirs);
+        } else {
+          merged.set(theirs.key, copyOfUserRecord(theirs));
+        }
+      });
+  });
+  log.debug("Leaving everyUserRecord(). " + merged.size + " record(s).");
+  return merged;
 }
 
 // ---------------------------------------------------------------------------
@@ -3665,7 +3768,7 @@ function userRows() {
     return row;
   };
 
-  users.forEach(function (record) {
+  everyUserRecord().forEach(function (record) {
     const row = blankUserRow(record);
     // The registry's own counts win over anything reconstructed below: they
     // count authentications, and the forms map there was built one presentation
@@ -3701,6 +3804,12 @@ function userRows() {
     // show that this row's `sub` is what the tokens say.
     if (record.sub && record.username) {
       row.forms[record.sub] = (row.forms[record.sub] || 0) + 1;
+    }
+    // THE TOKEN SAYS WHETHER ITS HOLDER IS A CLIENT, whatever the register
+    // does: a client_credentials token has no person behind it, and a row
+    // built from one must not be drawn as a person with no directory entry.
+    if (record.grant === 'client_credentials') {
+      row.isClient = true;
     }
     row.tokens.issued++;
     const state = tokenStateOf(record, nowMs);

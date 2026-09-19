@@ -357,6 +357,46 @@ function rawRequest(method, url, headers, body, tlsOptions) {
 }
 
 // ---------------------------------------------------------------------------
+// A KEY IS PROVISIONED BEFORE IT IS FIRST PRESENTED (2026-09-18).
+//
+// In development mode this service registers a GNAP key the first time a
+// request presents it by value; in PRODUCT mode an unregistered key is
+// refused `invalid_client` (RFC 9635 section 2.3.3), which is what a real
+// deployment does. So the harness installs a REGISTRAR — gnap_flow.js writes
+// the key onto an application entry through /admin-api — and a client calls
+// it once, before the first request that carries its own key by value (as
+// `client.key` or, RFC 9767, `resource_server.key`). It runs in both modes:
+// a job that worked only because the service made its clients up would be
+// testing the making-up (sts_consent.js's argument).
+// ---------------------------------------------------------------------------
+let registrar = null;
+
+function setRegistrar(fn) {
+  log.debug("Entering setRegistrar().");
+  registrar = fn;
+  log.debug("Leaving setRegistrar().");
+}
+
+// The key object a request body carries by value, or null.
+function presentedKey(json) {
+  log.debug("Entering presentedKey().");
+  if (!json || typeof json !== "object") {
+    log.debug("Leaving presentedKey().");
+    return null;
+  }
+  const holders = [json.client, json.resource_server];
+  for (const holder of holders) {
+    if (holder && typeof holder === "object" && holder.key &&
+        typeof holder.key === "object") {
+      log.debug("Leaving presentedKey(). Found.");
+      return holder.key;
+    }
+  }
+  log.debug("Leaving presentedKey().");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // A CLIENT INSTANCE. `proof` is httpsig | jwsd | jws | mtls. `send()` builds
 // the message, proves the key, and returns the parsed response.
 //
@@ -390,6 +430,13 @@ Client.prototype.keyObject = function () {
 Client.prototype.send = async function (method, url, opts) {
   log.debug("Entering send().");
   const options = opts || {};
+  if (registrar && !this.registered && options.provision !== false &&
+      String(method).toUpperCase() === "POST" &&
+      presentedKey(options.json)) {
+    // Marked first, so a registrar that itself sends cannot recurse.
+    this.registered = true;
+    await registrar(this, url, presentedKey(options.json));
+  }
   const headers = Object.assign({}, options.headers || {});
   let body = Buffer.alloc(0);
   if (options.json !== undefined) {
@@ -469,6 +516,7 @@ Client.prototype.send = async function (method, url, opts) {
 };
 
 module.exports = {
+  setRegistrar: setRegistrar,
   b64u: b64u,
   sha: sha,
   sfString: sfString,

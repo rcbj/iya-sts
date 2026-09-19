@@ -272,13 +272,45 @@ async function resetSetting(key) {
   log.debug("Leaving resetSetting().");
 }
 
-// A password grant, which is this file's workhorse: it is the one grant that
-// names a PERSON and needs no browser, so a refusal in it is a refusal of that
-// person and of nothing about a session.
-function tokenFor(username, clientId, scope) {
+// AN RFC 7523 GRANT, WHICH IS THIS FILE'S WORKHORSE (2026-09-18): the one
+// grant that names a PERSON and needs no browser, so a refusal in it is a
+// refusal of that person and of nothing about a session. It was the PASSWORD
+// grant until a product-mode deployment refused that grant outright — RFC 9700
+// section 2.4, a floor no realm can lower — so every person this file names
+// is issued an RFC 7523 key pair of their own (`/admin-api/pki/issue`,
+// target person), signs an assertion about THEMSELVES, and the client
+// authenticates with its secret beside it exactly as before. The issuance gate
+// is asked at the token endpoint whichever grant asked, so what the role
+// checks see is unchanged.
+const personKeys = {};
+
+async function personKey(username) {
+  log.debug("Entering personKey(). " + username);
+  if (!personKeys[username]) {
+    personKeys[username] = await act("pki", "issue",
+      { identifier: username, target: "person", purpose: "jwt",
+        keyAlg: "rsa-2048" }, "issued an RFC 7523 key pair to " + username);
+  }
+  log.debug("Leaving personKey().");
+  return personKeys[username];
+}
+
+async function tokenFor(username, clientId, scope) {
   log.debug("Entering tokenFor().");
-  const body = "grant_type=password&username=" + encodeURIComponent(username) +
-    "&password=" + encodeURIComponent(PASSWORD) +
+  const key = await personKey(username);
+  const b64 = function (o) {
+    return Buffer.from(JSON.stringify(o)).toString("base64url");
+  };
+  const now = Math.floor(Date.now() / 1000);
+  const input = b64({ alg: "RS256", typ: "JWT", kid: key.kid }) + "." +
+    b64({ iss: username, sub: username, aud: realmUrl("/oauth2/token"),
+          iat: now, exp: now + 120,
+          jti: require("crypto").randomUUID() });
+  const assertion = input + "." + require("crypto").sign("sha256",
+    Buffer.from(input), key.privateKeyPem).toString("base64url");
+  const body = "grant_type=" +
+    encodeURIComponent("urn:ietf:params:oauth:grant-type:jwt-bearer") +
+    "&assertion=" + encodeURIComponent(assertion) +
     "&client_id=" + encodeURIComponent(clientId) +
     "&client_secret=" + encodeURIComponent(CLIENT_SECRET) +
     "&scope=" + encodeURIComponent(scope || "openid");

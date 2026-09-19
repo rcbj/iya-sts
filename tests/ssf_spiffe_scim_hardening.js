@@ -475,6 +475,18 @@ function ssfBasic(t) {
             'the mode, so any name with any password drove streams',
             JSON.stringify(prod));
   });
+  // A CLIENT'S TOKEN OWNS A STREAM AS ITS client_id IN BOTH MODES
+  // (2026-09-18): RFC 9700 mode — which product implies — gives a
+  // client_credentials token `sub: urn:sts:client:<id>`, and a stream owned by
+  // that string escaped the application's ssfAllowedEvents.
+  t.check(ssfAuth.principalOfClaims({ sub: 'urn:sts:client:app1',
+                                      client_id: 'app1' }) === 'app1',
+          'an RFC 9700 client subject owns a stream as its client_id');
+  t.check(ssfAuth.principalOfClaims({ sub: 'app1', client_id: 'app1' }) ===
+            'app1', 'and so does a development-mode one');
+  t.check(ssfAuth.principalOfClaims({ sub: 'urn:uuid:1234',
+                                      client_id: 'app1' }) === 'urn:uuid:1234',
+          'a PERSON\'s token is still the person');
   config.setOverride('ssf.authBasic', false);
   try {
     const off = ssfAuth.authenticate(basic('x', 'y'), 'read');

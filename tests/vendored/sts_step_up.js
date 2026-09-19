@@ -1166,7 +1166,8 @@ async function theMonitor() {
     assert.ok(anonymous.status === 302 || anonymous.status === 303,
               "status " + anonymous.status);
   });
-  const cookie = await consoleSignIn.signInToTheConsole(base, OPERATOR, log);
+  const cookie = await consoleSignIn.signInToTheConsole(base, OPERATOR, log,
+                                                        { grant: "read" });
   const page = await send(base + R + "/admin/oauth2/monitor?format=json", {
     headers: cookie ? { cookie: cookie } : {} });
   check("?format=json of the realm's console page carries the same step-up " +

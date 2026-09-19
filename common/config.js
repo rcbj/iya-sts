@@ -943,6 +943,15 @@ const SETTINGS = [
     description: 'How far a key proof\'s created time may be from now, ' +
                  'either way (sections 7.3.1, 7.3.3 and 7.3.4). Nonces and ' +
                  'JWS proofs are remembered for twice this.' },
+  { key: 'gnap.replayCacheSize', group: 'GNAP',
+    label: 'Signature replay history size (per realm)',
+    path: 'gnap.replayCacheSize', env: 'STS_GNAP_REPLAY_CACHE_SIZE',
+    type: 'int', dflt: 100000, min: 100, max: 10000000, runtime: true,
+    description: 'How many live signed GNAP requests (JWS proofs and HTTP ' +
+                 'message signature nonces) a trust realm remembers, each ' +
+                 'for twice gnap.signatureMaxAgeS. **A FULL HISTORY REFUSES ' +
+                 'THE NEXT REQUEST (STS-GNAP-0718) RATHER THAN FORGETTING A ' +
+                 'LIVE ONE**, since a forgotten signature can be replayed.' },
   { key: 'gnap.interactionStartModes', group: 'GNAP', label: 'Interaction ' +
       'start modes',
     path: 'gnap.interactionStartModes', env: 'STS_GNAP_INTERACTION_START_MODES',
@@ -3411,6 +3420,34 @@ const SETTINGS = [
                  'was handed out. Only read while oauth2.dpopNonceRequired ' +
                  'is on.' },
 
+  // THE TWO DPoP STORES' BOUNDS (2026-09-18). Both were pruned by time only,
+  // so a high enough rate inside the window grew them without limit. They
+  // are bounded in opposite ways, and the difference is the argument: the
+  // proof-ID history decides a REPLAY, so a full one refuses the next proof
+  // rather than forget a live one (the used-assertion history's rule); the
+  // nonces are values this service HANDED OUT, so a full store drops the
+  // oldest and that client is simply asked again with a fresh nonce.
+  { key: 'oauth2.dpopReplayCacheSize', group: 'OAuth 2.0 / OIDC',
+    label: 'DPoP proof replay history size (per realm)',
+    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true,
+    description: 'How many live DPoP proof IDs (jti) a trust realm ' +
+                 'remembers, each for twice oauth2.dpopIatSkewS. **A FULL ' +
+                 'HISTORY REFUSES THE NEXT PROOF (STS-OAUTH-0554) RATHER ' +
+                 'THAN FORGETTING A LIVE ONE**, since a forgotten jti is a ' +
+                 'proof that can be replayed. Expired IDs are dropped first. ' +
+                 'Raise it for a realm that sees more than this many ' +
+                 'DPoP-bound requests in the replay window.' },
+
+  { key: 'oauth2.dpopNonceCacheSize', group: 'OAuth 2.0 / OIDC',
+    label: 'DPoP server nonces held (per realm)',
+    env: 'STS_OAUTH2_DPOP_NONCE_CACHE_SIZE', type: 'int', dflt: 10000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'How many server-issued DPoP nonces a trust realm holds. ' +
+                 'Past it the OLDEST is dropped: a client presenting it is ' +
+                 'answered use_dpop_nonce with a fresh one, which RFC 9449 ' +
+                 'section 8 already requires it to handle.' },
+
   // -------------------------------------------------------------------------
   // SENDER CONSTRAINTS AND REFRESH TOKEN ROTATION (#34, 2026-09-15).
   //
@@ -3656,6 +3693,18 @@ const SETTINGS = [
                  'measured from — a PKCE challenge or nonce is remembered ' +
                  'for twice this — so the two cannot drift apart. A code ' +
                  'already issued keeps the expiry it was minted with.' },
+
+  { key: 'oauth2.redeemedCodeCacheSize', group: 'OAuth 2.0 / OIDC',
+    label: 'Redeemed authorization codes remembered (per realm)',
+    env: 'STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE', type: 'int', dflt: 10000,
+    min: 10, max: 1000000, runtime: true,
+    description: 'How many redeemed authorization codes a trust realm ' +
+                 'remembers, so that a repeat of the SAME token request is ' +
+                 'answered with the tokens it already got and a different ' +
+                 'one is refused naming what differs. Past it the OLDEST is ' +
+                 'forgotten, which costs only that courtesy: the code itself ' +
+                 'was removed when it was redeemed, so a replay of a ' +
+                 'forgotten one is still refused as an unknown code.' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
@@ -6876,6 +6925,16 @@ const SETTINGS = [
     max: 86400, runtime: true,
     description: 'How long a c_nonce from the Nonce Endpoint may be quoted ' +
                  'in a proof; `c_nonce_expires_in` says the same number.' },
+  { key: 'oid4vci.cNonceCacheSize', group: 'OID4VCI',
+    label: 'c_nonce values held (per realm)',
+    env: 'OID4VCI_C_NONCE_CACHE_SIZE', type: 'int', dflt: 10000, min: 10,
+    max: 1000000, runtime: true,
+    description: 'How many c_nonce values from the Nonce Endpoint a trust ' +
+                 'realm holds. Past it the OLDEST is dropped: a proof ' +
+                 'quoting it is answered invalid_nonce, and the wallet ' +
+                 'fetches a new one, as OpenID4VCI section 7 has it do for ' +
+                 'an expired nonce.' },
+
 
   { key: 'oid4vci.issuerDisplayName', group: 'OID4VCI',
     label: 'Issuer display name',
@@ -7007,6 +7066,28 @@ const SETTINGS = [
     min: 60, max: 86400, runtime: true,
     description: 'How long a presentation request — its nonce, state and ' +
                  'Request Object — may wait for a wallet\'s response.' },
+  { key: 'oid4vp.maxTransactions', group: 'OID4VP',
+    label: 'Presentation requests waiting (per realm)',
+    env: 'OID4VP_MAX_TRANSACTIONS', type: 'int', dflt: 5000, min: 10,
+    max: 1000000, runtime: true,
+    description: 'How many presentation requests — the bar door\'s and ' +
+                 'wallet sign-ins — a trust realm keeps waiting for a ' +
+                 'wallet. Past it the OLDEST is dropped, the ' +
+                 'federation.maxContexts rule: refusing instead would let ' +
+                 'anybody who can reach the request endpoint stop it working ' +
+                 'for everybody, where dropping loses one abandoned request.' },
+
+  { key: 'oid4vp.signInRegisterMaxEntries', group: 'OID4VP',
+    label: 'Wallet sign-in register size (per realm)',
+    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true,
+    description: 'How many rows the wallet sign-in register keeps per trust ' +
+                 'realm — one per credential issued for a person on a ' +
+                 'verified access token (per holder key for ldp_vc). Past it ' +
+                 'the row ISSUED FIRST is dropped. That fails CLOSED: a ' +
+                 'credential with no row signs nobody in, which is also what ' +
+                 'a disowned row does.' },
+
 
   { key: 'oid4vp.walletPresentationPath', group: 'OID4VP',
     label: 'Wallet presentation page',

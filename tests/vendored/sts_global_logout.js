@@ -100,6 +100,9 @@ const zlib = require("zlib");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const krb5 = require("./krb5_drive.js");
+const facts = require("./service_facts.js");
+const anchors = require("../tools/pep-credential.js");
+const fixtures = require("./oauth_fixtures.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -129,11 +132,16 @@ base = String(base).replace(/\/+$/, "");
 // The socket on 88 is shared; since 2026-09-15 a trust realm with Kerberos
 // on has a Kerberos realm of its own, told apart by this name
 // (kerberos/CLAUDE.md).
-const KRB_REALM = process.env.KRB5_REALM || "EXAMPLE.COM";
-// Every user account shares this one password in development mode — see
+//
+// ASKED OF THE SERVICE WHEN THE LAUNCHER DOES NOT SAY (2026-09-18): a deployed
+// service names its own realm (testidp's is IYASEC.IO), and a KDC asked about
+// EXAMPLE.COM answers KDC_ERR_WRONG_REALM. See `kerberosFacts()`.
+let KRB_REALM = process.env.KRB5_REALM || "";
+// Every user account shares this one password in DEVELOPMENT mode — see
 // kerberos/CLAUDE.md on why the KDC's permissiveness lives in its account
-// policy.
-const KRB_PASSWORD = "password!";
+// policy. In PRODUCT mode a person's keys are derived from THEIR OWN password,
+// so the AS-REQ presents PERSON_PASSWORD there (`kerberosFacts()`).
+let KRB_PASSWORD = "password!";
 
 // ---------------------------------------------------------------------------
 // WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT
@@ -165,22 +173,27 @@ const CLIENT_SECRET = "global-logout-client-secret-" +
                       String(Date.now()).slice(-6);
 const MAIL_DOMAIN = "global-logout.test";
 
+// HTTPS RETURN ADDRESSES (2026-09-18): a product-mode service refuses an
+// http redirect URI other than a native application's loopback one (RFC 9700
+// section 2.6), so every address this job registers is https, which is what a
+// real relying party registers. Nothing listens there; each is read, not
+// followed.
 function redirectUriFor(application) {
   log.debug("Entering redirectUriFor().");
   log.debug("Leaving redirectUriFor().");
-  return "http://" + application + ".example.com/cb";
+  return "https://" + application + ".example.com/cb";
 }
 
 function acsUrlFor(application) {
   log.debug("Entering acsUrlFor().");
   log.debug("Leaving acsUrlFor().");
-  return "http://" + application + ".example.com/acs";
+  return "https://" + application + ".example.com/acs";
 }
 
 function replyUrlFor(application) {
   log.debug("Entering replyUrlFor().");
   log.debug("Leaving replyUrlFor().");
-  return "http://" + application + ".example.com/wsfed";
+  return "https://" + application + ".example.com/wsfed";
 }
 
 var checks = 0;
@@ -328,22 +341,27 @@ async function throughTheScreens(cookies, started, username) {
 async function oidcAuthorizationCode(username, application) {
   log.debug("Entering oidcAuthorizationCode().");
   const cookies = jar();
+  // PKCE ON EVERY AUTHORIZATION REQUEST (2026-09-18): a product-mode service
+  // asks every request for a transaction-specific challenge.
+  const pair = fixtures.pkce();
   const started = await follow(cookies, base + "/oauth2/authorize" +
     "?response_type=code&scope=" + encodeURIComponent("openid profile") +
     "&client_id=" + encodeURIComponent(application) +
     "&redirect_uri=" + encodeURIComponent(redirectUriFor(application)) +
+    "&code_challenge=" + pair.challenge + "&code_challenge_method=S256" +
     "&nonce=n-" + Date.now() + "&state=st");
   const done = await throughTheScreens(cookies, started, username);
   const code = new URL(done.landed).searchParams.get("code");
   assert.ok(code, "the OIDC authorization code flow should end at the " +
     "client's redirect URI carrying a code; it landed " +
-    "on " + done.landed.slice(0, 160));
+    "on " + done.landed.slice(0, 160) + " (HTTP " + done.r.status + ": " +
+    String(done.r.body || "").replace(/\s+/g, " ").slice(0, 300) + ")");
   const tok = await fetch(base + "/oauth2/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code", code: code, client_id: application,
-      client_secret: CLIENT_SECRET,
+      client_secret: CLIENT_SECRET, code_verifier: pair.verifier,
       redirect_uri: redirectUriFor(application) }).toString() });
   const body = await tok.json();
   assert.strictEqual(tok.status, 200,
@@ -361,21 +379,25 @@ async function oauth2AuthorizationCode(username, application) {
   // one above rather than the same flow twice: plain OAuth 2.0 issues no ID
   // Token, so the set it produces is a different shape.
   const cookies = jar();
+  const pair = fixtures.pkce();
   const started = await follow(cookies, base + "/oauth2/authorize" +
     "?response_type=code&scope=" + encodeURIComponent("api") +
     "&client_id=" + encodeURIComponent(application) +
     "&redirect_uri=" + encodeURIComponent(redirectUriFor(application)) +
+    "&code_challenge=" + pair.challenge + "&code_challenge_method=S256" +
     "&state=st");
   const done = await throughTheScreens(cookies, started, username);
   const code = new URL(done.landed).searchParams.get("code");
   assert.ok(code, "the OAuth 2.0 authorization code flow should end carrying " +
-    "a code; it landed on " + done.landed.slice(0, 160));
+    "a code; it landed on " + done.landed.slice(0, 160) + " (HTTP " +
+    done.r.status + ": " +
+    String(done.r.body || "").replace(/\s+/g, " ").slice(0, 300) + ")");
   const tok = await fetch(base + "/oauth2/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code", code: code, client_id: application,
-      client_secret: CLIENT_SECRET,
+      client_secret: CLIENT_SECRET, code_verifier: pair.verifier,
       redirect_uri: redirectUriFor(application) }).toString() });
   const body = await tok.json();
   assert.strictEqual(tok.status, 200,
@@ -404,11 +426,61 @@ function authnRequest(application) {
   return zlib.deflateRawSync(Buffer.from(xml, "utf8")).toString("base64");
 }
 
+// THE SERVICE PROVIDER SIGNS ITS AUTHNREQUEST (2026-09-18). A product-mode
+// service refuses an unsigned one (saml2.requireSignedAuthnRequests), so each
+// SAML application this job registers carries this run's signing certificate
+// (`samlSigningCertificate`, createApplication() below) and the request is
+// signed on the HTTP Redirect binding — SAML bindings section 3.4.4.1, the
+// signature over `SAMLRequest`, `RelayState` and `SigAlg` as they appear in
+// the query. Signed in both modes: a development service verifies a present
+// signature too.
+let spCredential = null;
+
+function samlSpCredential() {
+  log.debug("Entering samlSpCredential().");
+  if (!spCredential) {
+    const forge = require("node-forge");
+    const keys = forge.pki.rsa.generateKeyPair(2048);
+    const cert = forge.pki.createCertificate();
+    cert.publicKey = keys.publicKey;
+    cert.serialNumber = "01" + nodeCryptoHex(8);
+    cert.validity.notBefore = new Date(Date.now() - 60000);
+    cert.validity.notAfter = new Date(Date.now() + 3600 * 1000);
+    const name = [{ name: "commonName", value: "global-logout SP" }];
+    cert.setSubject(name);
+    cert.setIssuer(name);
+    cert.sign(keys.privateKey, forge.md.sha256.create());
+    spCredential = {
+      certificatePem: forge.pki.certificateToPem(cert),
+      privateKeyPem: forge.pki.privateKeyToPem(keys.privateKey) };
+  }
+  log.debug("Leaving samlSpCredential().");
+  return spCredential;
+}
+
+function nodeCryptoHex(bytes) {
+  log.debug("Entering nodeCryptoHex().");
+  log.debug("Leaving nodeCryptoHex().");
+  return require("crypto").randomBytes(bytes).toString("hex");
+}
+
+function signedRedirectQuery(samlRequest, relayState) {
+  log.debug("Entering signedRedirectQuery().");
+  const sigAlg = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+  const signed = "SAMLRequest=" + encodeURIComponent(samlRequest) +
+    "&RelayState=" + encodeURIComponent(relayState) +
+    "&SigAlg=" + encodeURIComponent(sigAlg);
+  const signature = require("crypto").sign("sha256", Buffer.from(signed),
+    samlSpCredential().privateKeyPem).toString("base64");
+  log.debug("Leaving signedRedirectQuery().");
+  return signed + "&Signature=" + encodeURIComponent(signature);
+}
+
 async function saml2Sso(username, application) {
   log.debug("Entering saml2Sso().");
   const cookies = jar();
-  const started = await follow(cookies, base + "/saml2/sso?SAMLRequest=" +
-    encodeURIComponent(authnRequest(application)) + "&RelayState=gl");
+  const started = await follow(cookies, base + "/saml2/sso?" +
+    signedRedirectQuery(authnRequest(application), "gl"));
   const done = await throughTheScreens(cookies, started, username);
   assert.ok(/SAMLResponse/.test(done.r.body || ""),
     "SAML 2.0 Web Browser SSO should end on the self-submitting POST form " +
@@ -487,8 +559,28 @@ async function wsTrust(username, application) {
   return { protocol: "WS-Trust", cookies: cookies };
 }
 
+// THE REALM AND THE PASSWORD THE KDC WILL ACCEPT, from the service itself.
+let kerberosAsked = false;
+
+async function kerberosFacts() {
+  log.debug("Entering kerberosFacts().");
+  if (!kerberosAsked) {
+    kerberosAsked = true;
+    const apiBase = base + "/admin-api";
+    if (!KRB_REALM) {
+      KRB_REALM = String(await facts.setting(apiBase, "krb5.realm") ||
+                         "EXAMPLE.COM");
+    }
+    if (await facts.isProduct(apiBase)) {
+      KRB_PASSWORD = PERSON_PASSWORD;
+    }
+  }
+  log.debug("Leaving kerberosFacts(). " + KRB_REALM);
+}
+
 async function kerberos(username) {
   log.debug("Entering kerberos().");
+  await kerberosFacts();
   const got = await krb5.getTgt(base, KRB_REALM, username, KRB_PASSWORD);
   assert.ok(got.ok, "the KDC should issue a TGT for " + username);
   log.debug("Leaving kerberos().");
@@ -581,16 +673,17 @@ async function x509(username) {
   const https = require("https");
   const pki = makeCertificate(username);
 
-  // The anchor goes in over the MAIN port, which is what `/tls/trust` is for.
-  // As TEXT: the endpoint takes a PEM body directly, and a JSON envelope round
-  // trip escapes the newlines out of it — which it then accepts as a "PEM"
-  // that no handshake can verify against.
-  const installed = await fetch(base + "/tls/trust", {
-    method: "POST", headers: { "content-type": "text/plain" },
-    body: pki.caPem });
-  assert.strictEqual(installed.status, 200,
-    "the test CA should be accepted at /tls/trust; it answered " +
-    installed.status);
+  // The anchor goes in through `tests/tools/pep-credential.js`'s
+  // `trustAnchor()` (2026-09-18): the GATED door, POST
+  // /admin-api/tls/trust/add, first — the only one a product-mode service
+  // opens, persisted so every node of a cluster applies it — and the open
+  // `/tls/trust` only where that fails.
+  const installed = await anchors.trustAnchor(base, pki.caPem);
+  assert.ok(installed.ok,
+    "the test CA should be accepted as a trust anchor; it answered " +
+    (installed.status || "") + " " + String(installed.why ||
+                                            installed.body || "")
+      .slice(0, 200));
 
   // **THE MAIN PORT, SINCE 2026-09-16.** This dialled `STS_MTLS_PORT` (9443),
   // the listener that required a client certificate at the handshake; it and
@@ -685,9 +778,25 @@ async function x509(username) {
 // closing the socket, which is what the assertion after the sign-out watches
 // for.
 // ---------------------------------------------------------------------------
-function ldapBind(username) {
+// THE DIRECTORY'S OWN BASE DN, AND LDAPS WHERE THE SERVICE ASKS FOR IT
+// (2026-09-18). The DN was `dc=example,dc=com` unless a launcher said
+// otherwise, and a deployed directory has its own (testidp's is
+// dc=iyasec,dc=io); a PRODUCT-mode directory also refuses a simple bind in the
+// clear ("Confidentiality Required"), so the bind goes over LDAPS on 636 there.
+async function ldapBind(username) {
   log.debug("Entering ldapBind().");
+  const apiBase = base + "/admin-api";
+  const baseDn = process.env.STS_LDAP_BASE_DN ||
+                 String(await facts.setting(apiBase, "ldap.baseDn") ||
+                        "dc=example,dc=com");
+  const secure = await facts.isProduct(apiBase);
   log.debug("Leaving ldapBind().");
+  return ldapBindTo(username, baseDn, secure);
+}
+
+function ldapBindTo(username, baseDn, secure) {
+  log.debug("Entering ldapBindTo().");
+  log.debug("Leaving ldapBindTo().");
   return new Promise(function (resolve, reject) {
     let ldap;
     try {
@@ -696,18 +805,19 @@ function ldapBind(username) {
       reject(new Error("ldapjs is not resolvable from this job: " + e.message));
       return;
     }
-    const port = Number(process.env.STS_LDAP_PORT || 389);
+    const port = secure ? Number(process.env.STS_LDAPS_PORT || 636)
+                        : Number(process.env.STS_LDAP_PORT || 389);
     const host = new URL(base).hostname;
-    const client = ldap.createClient({ url: "ldap://" + host + ":" + port,
-                                       reconnect: false });
+    const client = ldap.createClient({
+      url: (secure ? "ldaps://" : "ldap://") + host + ":" + port,
+      reconnect: false });
     let closed = false;
     // An error handler is not optional: without one, a socket the server
     // closes throws out of the client and takes the job down instead of
     // failing an assertion.
     client.on("error", function () {});
     client.on("close", function () { closed = true; });
-    const dn = "uid=" + username + ",ou=users," +
-               (process.env.STS_LDAP_BASE_DN || "dc=example,dc=com");
+    const dn = "uid=" + username + ",ou=users," + baseDn;
     client.bind(dn, PERSON_PASSWORD, function (err) {
       if (err) {
         reject(new Error("the bind was refused, and this directory refuses " +
@@ -752,18 +862,25 @@ async function introspectActive(token) {
 // authorization endpoint that comes back with a code rather than a login
 // screen is a session that still works. That is a stronger question than
 // reading /admin-api/sessions, which is the console's own opinion.
+let lastProbe = "";
+
 async function sessionStillSignsIn(cookies, application) {
   log.debug("Entering sessionStillSignsIn().");
   const started = await follow(cookies, base + "/oauth2/authorize" +
     "?response_type=code&scope=" + encodeURIComponent("openid") +
     "&client_id=" + encodeURIComponent(application) +
     "&redirect_uri=" + encodeURIComponent(redirectUriFor(application)) +
+    "&code_challenge=" + fixtures.pkce().challenge +
+    "&code_challenge_method=S256" +
     "&prompt=none&state=probe");
   // `prompt=none` is what makes this a QUESTION rather than a second sign-in:
   // OIDC Core section 3.1.2.1 says the server must not display any
   // authentication UI, so a live session answers with a code and a dead one
   // answers `login_required` instead of drawing the screen.
   const landed = String(started.landed || "");
+  // What the last probe saw, for the assertion's message.
+  lastProbe = "HTTP " + started.r.status + " at " + landed.slice(0, 300) +
+    " " + String(started.r.body || "").replace(/\s+/g, " ").slice(0, 200);
   if (landed.indexOf("code=") >= 0) {
     log.debug("Leaving sessionStillSignsIn().");
     return true;
@@ -910,6 +1027,7 @@ async function createApplication(identifier, protocols) {
   if (declares("saml2") || declares("saml11")) {
     fields.samlEntityId = [identifier];
     fields.samlAssertionConsumerService = [acsUrlFor(identifier)];
+    fields.samlSigningCertificate = [samlSpCredential().certificatePem];
   }
   if (declares("wsfed")) {
     fields.wsfedRealm = [identifier];
@@ -1062,7 +1180,8 @@ async function runScenario(label, username, applicationFor) {
           "still authorises a request at /oauth2/authorize with prompt=none, " +
           "so it is alive. This is the assertion that cannot be satisfied by " +
           "the console forgetting a row: it asks the AUTHORIZATION ENDPOINT, " +
-          "which is where a real client would find out.");
+          "which is where a real client would find out. The probe: " +
+          lastProbe);
       });
   }
 

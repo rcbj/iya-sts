@@ -334,9 +334,15 @@ const shadowCount = cacheRegistry.register({
     'changed.',
   owner: 'persistence/persistence.js',
   scope: 'realm',
+  settings: ['ldap.maxEntries'],
+  // STRUCTURAL (2026-09-18): one row per directory entry written, plus the
+  // realm's own record, so it cannot outgrow the directory — which
+  // `ldap.maxEntries` caps for the whole process.
   maxEntries: function () {
-    return null;
+    return Number(config.value('ldap.maxEntries')) + 1;
   },
+  bound: 'Structural: one row per directory entry written and one for the ' +
+    'realm record, so at most ldap.maxEntries + 1 in a realm.',
   lifetime: function () {
     return 'No expiry: refreshed at each flush, one entry per directory ' +
       'entry and realm written. Empty in memory mode.';

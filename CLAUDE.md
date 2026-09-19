@@ -626,12 +626,15 @@ belong (rule 1): requiring it registers nothing, so without that line its
 routes do not exist, and the drift check below reports every description of
 them as a path that is not registered.
 
-**So adding a protocol family costs three things**: an entry in `ENDPOINTS`, a
-card in `sts_metadata.ts`'s `PROTOCOLS`, and a row in
+**So adding a protocol family costs four things**: an entry in `ENDPOINTS`, a
+card in `sts_metadata.ts`'s `PROTOCOLS`, a row in
 `admin-ui/crypto_metadata.ts`'s `FAMILIES` — the second metadata page,
 `/admin/crypto-metadata`, checks its family list against `PROTOCOLS` in both
-directions. `tests/vendored/sts_metadata.js` fails on the first two and
-`tests/vendored/admin_api.js` on the third. What nothing checks, and what a
+directions — and the card's name in the `cards` of a row of
+`common/realms.js`'s `realmSupport()`, which is what `/admin/realms` draws as
+*What is separated, and what is shared*. `tests/vendored/sts_metadata.js`
+fails on the first two, `tests/vendored/admin_api.js` on the third and
+`tests/realm_support.js` on the fourth. What nothing checks, and what a
 settings group also owes, is a row in `admin-ui/admin.ts`'s `SETTING_HOMES`;
 `admin-ui/CLAUDE.md` carries that and the second page's argument. **A new
 page under Protocols also owes a row in `admin-core/protocol_endpoints.ts`**
@@ -770,7 +773,17 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   density in this codebase is deliberate; match it rather than trimming it.
 
 
-## node-ldapjs is a SUBMODULE, it is nested, and it is not modified
+## node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork
+
+**The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —
+the first change is the `routeAnonymousBinds` server option
+(`ldap/CLAUDE.md`, the bind refusals). A change goes in THE FORK, never as a
+patch from this repository into the library: an option whose default is
+upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
+`docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped
+here in the same change that starts using it. The service asks whether an
+option took rather than assuming the submodule is current, because an older
+checkout ignores an option it does not know.
 
 `ldap_server.js` is built on `ldapjs` 3.0.7, which resolves to `./node-ldapjs` —
 a git submodule pinned to [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs)
@@ -870,7 +883,7 @@ the file the row names.
 | Refuse any LDAP bind, **in development mode** | `ldap/CLAUDE.md` |
 | Authorize an LDAP write, **in development mode**; reads are authorized in neither mode | `ldap/CLAUDE.md` |
 | Check a Kerberos password, **in development mode** — though it cannot not check the KEY | `kerberos/CLAUDE.md` |
-| Verify an access token it did not issue, except at UserInfo | `oauth-oidc/CLAUDE.md` |
+| Verify an access token at the three OpenID4VCI endpoints, **in development mode** — product refuses one it cannot verify, and a revoked one (2026-09-18). Every other door that takes a token verifies it in both modes: UserInfo, `/admin-api`, SCIM, Shared Signals, the step-up resource, introspection, token exchange and the RFC 7523 / 7522 client authentication and grants | `oauth-oidc/CLAUDE.md`, `oid4vc/CLAUDE.md` |
 | Accept an RFC 7523 assertion from an issuer nobody DECLARED — a refusal ON by default; a PERSON as issuer may assert only about themselves | `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md` |
 | Accept an RFC 7522 assertion from an `<Issuer>` nobody DECLARED (a separate declaration), or on a certificate that merely chains to the realm's CA | `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Revoke a certificate it issued~~ — **reversed 2026-09-11**: a CRL and OCSP per CA, and consulted for presented certificates since 2026-09-12 | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `docs/pki.md` |

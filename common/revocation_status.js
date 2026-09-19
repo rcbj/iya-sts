@@ -1346,6 +1346,11 @@ function parseLdapUrl(text) {
 // mtime.
 const pemFiles = new Map();
 
+// The settings a trust file may be named by — which is the whole of the
+// file cache's bound, since it keeps one entry per setting (2026-09-18).
+const PEM_FILE_SETTINGS = ['pki.revocationCrlIssuersFile',
+                           'pki.revocationLdapCaFile'];
+
 function pemFileOf(settingKey) {
   log.debug('Entering pemFileOf(). ' + settingKey);
   const file = String(config.value(settingKey) || '');
@@ -4088,6 +4093,8 @@ function registerCaches() {
     scope: 'process',
     settings: ['pki.revocationCrlCacheEntries', 'pki.revocationCrlMaxAgeS'],
     maxEntries: bound,
+    bound: 'Enforced: pki.revocationCrlCacheEntries, the oldest write ' +
+      'dropped and fetched again when next needed.',
     lifetime: crlAge,
     entries: function () {
       return timedRows(crlCache, function (e) {
@@ -4104,6 +4111,8 @@ function registerCaches() {
     scope: 'process',
     settings: ['pki.revocationCrlCacheEntries', 'pki.revocationOcspMaxAgeS'],
     maxEntries: bound,
+    bound: 'Enforced: pki.revocationCrlCacheEntries, the oldest write ' +
+      'dropped and asked again when next needed.',
     lifetime: function () {
       return 'Until the earlier of the answer\'s nextUpdate and ' +
         'pki.revocationOcspMaxAgeS (' +
@@ -4126,6 +4135,8 @@ function registerCaches() {
     scope: 'process',
     settings: ['pki.revocationCrlCacheEntries', 'pki.revocationCrlMaxAgeS'],
     maxEntries: bound,
+    bound: 'Enforced: pki.revocationCrlCacheEntries, the oldest write ' +
+      'dropped and fetched again when next needed.',
     lifetime: crlAge,
     entries: function () {
       return timedRows(certCache, function (e) {
@@ -4145,6 +4156,8 @@ function registerCaches() {
     settings: ['pki.revocationFailureRetryS',
                'pki.revocationCrlCacheEntries'],
     maxEntries: bound,
+    bound: 'Enforced: pki.revocationCrlCacheEntries, the oldest dropped; a ' +
+      'dropped failure only means the address may be asked again sooner.',
     lifetime: function () {
       return 'pki.revocationFailureRetryS (' +
         config.value('pki.revocationFailureRetryS') + ' s) after the ' +
@@ -4167,6 +4180,8 @@ function registerCaches() {
     maxEntries: function () {
       return PARSE_MEMO_ENTRIES;
     },
+    bound: 'Enforced: 256 parses; when full the whole memo is emptied and ' +
+      'rebuilt as it is used.',
     lifetime: function () {
       return 'No expiry: keyed by content. When full the whole memo is ' +
         'emptied at once.';
@@ -4194,8 +4209,10 @@ function registerCaches() {
     owner: 'common/revocation_status.js',
     scope: 'process',
     maxEntries: function () {
-      return null;
+      return PEM_FILE_SETTINGS.length;
     },
+    bound: 'Structural: one entry per setting that names a file (' +
+      PEM_FILE_SETTINGS.join(', ') + ').',
     lifetime: function () {
       return 'Until the named file changes on disk, or the setting names ' +
         'another file. One entry per setting.';

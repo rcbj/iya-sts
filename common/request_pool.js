@@ -912,6 +912,8 @@ const affinityCount = cacheRegistry.register({
   maxEntries: function () {
     return AFFINITY_MAX * POOLS.length;
   },
+  bound: 'Enforced: 5000 per pool, the oldest dropped; a dropped pin is ' +
+    'simply routed afresh.',
   lifetime: function () {
     return 'No expiry: forgotten when its worker exits; the oldest goes ' +
       'first when a pool holds ' + AFFINITY_MAX + '. Front process only.';
