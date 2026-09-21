@@ -631,25 +631,83 @@ into `common/pki_cloud_anchors.json`). Five decisions:
   the initial payload is empty and the attested document arrives as the
   challenge response.
 
-## Workloads are not attested, and that is a narrower sentence than it was
+## Workloads are attested on the Unix socket (#40 phase four, 2026-09-21)
 
-* **NO WORKLOAD IS ATTESTED YET (#40's later phases), AND THAT IS A NARROWER
-  SENTENCE THAN IT WAS.** A Workload API caller is identified by its
-  transport, the endpoint it reached and its peer address — node cannot read a
-  Unix socket's peer credentials without the addon #40 adds — so any caller
-  that reaches the socket still gets an identity. Node attestation left this
-  sentence on 2026-09-21 (above). **What changed first was the OTHER
-  half**: the SPIRE Server API's
-  TCP port is MUTUAL TLS, its callers present an X509-SVID verified against the
-  trust bundle, and every method is authorized against SPIRE's own table. Those
-  are two different claims and merging them back into one gets both wrong.
-  Selector matching also DECIDES which entries answer a Workload API caller
+**THIS SERVICE IS THE SPIRE AGENT FOR ITS OWN WORKLOAD API**, so it attests
+the workload that connects the way an agent does. Five modules, each a
+library, wired by `spiffe_server.ts`:
+
+* `native/peercred.c` — an N-API module with five functions and no state:
+  `SO_PEERCRED`, `SO_PEERPIDFD` (Linux 6.5+), `pidfd_open` as the fallback,
+  `pidfd_send_signal(0)` for liveness, `close`. rcbj's decision on #40: a
+  small addon, compiled ONLY in an image build (`build-native.sh`, gcc in the
+  `typescript` stage of `Dockerfile` and in `tests/Dockerfile`), never on the
+  host, and no general FFI in the process. `spiffe/native/*.node` is ignored.
+* `spiffe_peer.ts` — `observe(socket)` at ACCEPT (pid, uid, gid, a pidfd, the
+  process's start time and executable inode) and `stillValid(facts)` on EVERY
+  CALL: the pidfd alive, the start time and the inode unchanged. That refuses
+  the two things SPIRE's per-call attestation exists for — a reused pid and an
+  `exec` — without running the attestors per call.
+* `spiffe_workload_attestation.ts` — the table (`spiffe.workloadAttestors`,
+  default `unix`) and SPIRE's containerinfo extractor over
+  `/proc/<pid>/cgroup`.
+* `spiffe_workload_attestor_unix.ts`, `_docker.ts`, `_k8s.ts` — SPIRE's
+  three plugins' selectors. Docker is asked over `spiffe.dockerSocketPath`
+  (`federation_http.requestLocalSocket()`); the kubelet over its read-only port
+  on loopback or its secure port (`requestConfigured()`), with the token, the
+  client certificate and the CA read from FILES — no credential is a setting,
+  because settings are drawn, returned by `/admin-api` and persisted.
+
+**THE SEAM IS `spiffe_grpc.ts`'s `bindAttestedSocket()`.** grpc-js does not
+expose an accepted connection's file descriptor, so the Workload API's Unix
+socket is bound by a `net.Server` of this module's, each connection is PAUSED,
+attested in the listener's realm, TAGGED (`remoteAddress` =
+`unix:attested-<n>`, which grpc-js carries to `call.getPeer()`) and only then
+handed over through `server.createConnectionInjector()`. **Do not resume the
+socket before the injection**: a resume with no reader emits what the client
+sent while the attestors ran — its HTTP/2 preface — to nobody, and the
+connection dies with nothing refused. The first version did that and passed
+every refusal test, because a refused connection had not yet sent anything.
+
+`prepareCall()` looks the tag up: an attestation that FAILED refuses every call
+(`UNAVAILABLE`, `STS-SPIFFE-0111`), a process that changed refuses it
+(`PERMISSION_DENIED`, `STS-SPIFFE-0112`), and otherwise `caller.attested`
+carries the facts and `spiffe_auth.workloadSelectors()` adds their selectors.
+All of that runs in the FRONT process, which accepted the connection; what
+crosses to a request worker is the caller, already plain.
+
+**What is still not attested, and why each is a sentence rather than a gap:**
+
+* **A caller over TCP** — no peer process to ask. It keeps the `transport:`,
+  `endpoint:` and `peer:` selectors.
+* **A peer in another pid namespace** (pid 0 from `SO_PEERCRED`) — attested on
+  its kernel uid and gid alone; nothing that needs the process is invented.
+* **The socket without the native module** — development serves it
+  unattested and `GET /spiffe`'s `workloadAttestation` says so; **product does
+  not bind it** (`STS-SPIFFE-0113`, `mode.requiresWorkloadAttestation()`).
+  Asserted selectors are not believed in product
+  (`mode.believesAssertedSelectors()`).
+* SPIRE's `systemd` attestor, docker's sigstore checks and Podman sockets, and
+  the Kubernetes broker — follow-ups recorded on #40.
+
+`tests/spiffe_workload_attestation.js` drives a real connection from a child
+process and asserts the child's pid, uid, gid and selectors, the revalidation,
+and a failing attestor's refusal; the attestors over fake `/proc`, Engine and
+kubelet beside it.
+
+**THE SPIRE SERVER API IS THE OTHER HALF**, and it came first: its TCP port is
+MUTUAL TLS, its callers present an X509-SVID verified against the trust bundle,
+and every method is authorized against SPIRE's own table. Those are two
+different claims and merging them back into one gets both wrong.
+
+* Selector matching also DECIDES which entries answer a Workload API caller
   now (`spiffe.attestWorkloads`), which is narrowing without attesting. **AND
   THE DIRECTORY NOW RECORDS WHAT WAS ISSUED, WHICH IS A THIRD DIFFERENT CLAIM.**
   An entry under `ou=users` carrying `x509serialNumber` says this authority
   minted that certificate for that identity — which it knows, because it minted
   it — and says nothing whatever about whether the workload holding it is the
-  one it was meant for. Nothing was attested. `spiffeCredentialStatus` beside it
+  one it was meant for — attestation is on the connection, not the entry.
+  `spiffeCredentialStatus` beside it
   is not a revocation either; see rule 3k.
   What IS refused: a Workload API call with no `workload.spiffe.io: true` header
   (every conforming implementation refuses it, and a client that omits it has a

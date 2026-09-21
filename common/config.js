@@ -10152,6 +10152,153 @@ const SETTINGS = [
                  '(<this>/<domain>/.well-known/openid-configuration) — ' +
                  'SPIRE\'s constant, settable for a test.' },
 
+  // ===== SPIFFE WORKLOAD ATTESTATION (#40 phase four, 2026-09-21) ==========
+  // This service is the SPIRE agent for its own Workload API, and these are
+  // the agent's workload attestors. Like the node attestors above, no
+  // credential is a setting: the kubelet's token, certificate and key are
+  // FILE PATHS.
+  { key: 'spiffe.workloadAttestors', group: 'SPIFFE',
+    label: 'Workload attestors', env: 'STS_SPIFFE_WORKLOAD_ATTESTORS',
+    type: 'csv', dflt: 'unix', runtime: true,
+    description: 'Which of SPIRE\'s workload attestors run for a connection ' +
+                 'to the Workload API\'s Unix socket: unix, docker, k8s, ' +
+                 'comma-separated. Each runs once per connection, at ' +
+                 'accept; every call then checks the process is still the ' +
+                 'one attested. An attestor that fails fails the ' +
+                 'connection. A TCP caller is never attested.' },
+
+  { key: 'spiffe.workloadProcRoot', group: 'SPIFFE',
+    label: 'Workload attestation /proc root',
+    env: 'STS_SPIFFE_WORKLOAD_PROC_ROOT', type: 'string', dflt: '/proc',
+    runtime: true,
+    description: 'Where a caller\'s process is read from. A peer in a pid ' +
+                 'namespace this service cannot see is attested on the ' +
+                 'uid and gid the kernel recorded at connect, and nothing ' +
+                 'else.' },
+
+  { key: 'spiffe.unixDiscoverWorkloadPath', group: 'SPIFFE',
+    label: 'unix: attest the executable\'s path and digest',
+    env: 'STS_SPIFFE_UNIX_DISCOVER_WORKLOAD_PATH', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s discover_workload_path: add path: and sha256: ' +
+                 'selectors for the caller\'s executable.' },
+
+  { key: 'spiffe.unixWorkloadSizeLimit', group: 'SPIFFE',
+    label: 'unix: largest executable hashed (bytes)',
+    env: 'STS_SPIFFE_UNIX_WORKLOAD_SIZE_LIMIT', type: 'int', dflt: 0,
+    min: -1, max: 1099511627776, runtime: true,
+    description: 'SPIRE\'s workload_size_limit: 0 hashes any size, a ' +
+                 'positive value refuses a larger executable, -1 emits no ' +
+                 'sha256: selector.' },
+
+  { key: 'spiffe.dockerSocketPath', group: 'SPIFFE',
+    label: 'docker: Engine API socket',
+    env: 'STS_SPIFFE_DOCKER_SOCKET_PATH', type: 'string',
+    dflt: 'unix:///var/run/docker.sock', runtime: true,
+    description: 'SPIRE\'s docker_socket_path. The Engine is asked about the ' +
+                 'container the caller\'s cgroups name.' },
+
+  { key: 'spiffe.dockerApiVersion', group: 'SPIFFE',
+    label: 'docker: Engine API version', env: 'STS_SPIFFE_DOCKER_API_VERSION',
+    type: 'string', dflt: '', runtime: true,
+    description: 'SPIRE\'s docker_version: empty asks the Engine\'s own ' +
+                 'default.' },
+
+  { key: 'spiffe.k8sKubeletReadOnlyPort', group: 'SPIFFE',
+    label: 'k8s: kubelet read-only port',
+    env: 'STS_SPIFFE_K8S_KUBELET_READ_ONLY_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s kubelet_read_only_port: above 0, the pod list is ' +
+                 'read over plain HTTP on the loopback address, and the ' +
+                 'secure port is not used.' },
+
+  { key: 'spiffe.k8sKubeletSecurePort', group: 'SPIFFE',
+    label: 'k8s: kubelet secure port',
+    env: 'STS_SPIFFE_K8S_KUBELET_SECURE_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s kubelet_secure_port. 0 (the default) is the ' +
+                 'kubelet\'s own 10250 — a port this service DIALS, never ' +
+                 'binds.' },
+
+  { key: 'spiffe.k8sNodeName', group: 'SPIFFE', label: 'k8s: node name',
+    env: 'STS_SPIFFE_K8S_NODE_NAME', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s node_name: the kubelet dialled on the secure ' +
+                 'port. Empty reads the next setting\'s environment ' +
+                 'variable; with neither, the kubelet is 127.0.0.1 and its ' +
+                 'certificate is checked for its chain only.' },
+
+  { key: 'spiffe.k8sNodeNameEnv', group: 'SPIFFE',
+    label: 'k8s: node name environment variable',
+    env: 'STS_SPIFFE_K8S_NODE_NAME_ENV', type: 'string', dflt: 'MY_NODE_NAME',
+    runtime: true,
+    description: 'SPIRE\'s node_name_env.' },
+
+  { key: 'spiffe.k8sCertificateFile', group: 'SPIFFE',
+    label: 'k8s: kubelet client certificate file',
+    env: 'STS_SPIFFE_K8S_CERTIFICATE_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s certificate_path, with the next setting. Empty ' +
+                 'authenticates to the kubelet with a token.' },
+
+  { key: 'spiffe.k8sPrivateKeyFile', group: 'SPIFFE',
+    label: 'k8s: kubelet client key file',
+    env: 'STS_SPIFFE_K8S_PRIVATE_KEY_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s private_key_path.' },
+
+  { key: 'spiffe.k8sUseAnonymousAuthentication', group: 'SPIFFE',
+    label: 'k8s: anonymous to the kubelet',
+    env: 'STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s use_anonymous_authentication: no token and no ' +
+                 'certificate on the secure port.' },
+
+  { key: 'spiffe.k8sTokenFile', group: 'SPIFFE',
+    label: 'k8s: kubelet bearer token file',
+    env: 'STS_SPIFFE_K8S_TOKEN_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s token_path. Empty is the in-cluster service ' +
+                 'account\'s token.' },
+
+  { key: 'spiffe.k8sSkipKubeletVerification', group: 'SPIFFE',
+    label: 'k8s: skip kubelet certificate verification',
+    env: 'STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s skip_kubelet_verification.' },
+
+  { key: 'spiffe.k8sKubeletCaFile', group: 'SPIFFE',
+    label: 'k8s: kubelet CA file', env: 'STS_SPIFFE_K8S_KUBELET_CA_FILE',
+    type: 'string', dflt: '', runtime: true,
+    description: 'SPIRE\'s kubelet_ca_path. Empty is the in-cluster service ' +
+                 'account\'s ca.crt.' },
+
+  { key: 'spiffe.k8sMaxPollAttempts', group: 'SPIFFE',
+    label: 'k8s: pod list attempts', env: 'STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS',
+    type: 'int', dflt: 60, min: 1, max: 10000, runtime: true,
+    description: 'SPIRE\'s max_poll_attempts: how often the pod list is ' +
+                 'read before a container not yet in it fails the ' +
+                 'attestation.' },
+
+  { key: 'spiffe.k8sPollRetryIntervalMs', group: 'SPIFFE',
+    label: 'k8s: pod list retry interval (ms)',
+    env: 'STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS', type: 'int', dflt: 500,
+    min: 0, max: 60000, runtime: true,
+    description: 'SPIRE\'s poll_retry_interval.' },
+
+  { key: 'spiffe.k8sDisableContainerSelectors', group: 'SPIFFE',
+    label: 'k8s: pod selectors only',
+    env: 'STS_SPIFFE_K8S_DISABLE_CONTAINER_SELECTORS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s disable_container_selectors.' },
+
+  { key: 'spiffe.k8sEnableNamespaceLabels', group: 'SPIFFE',
+    label: 'k8s: namespace label selectors',
+    env: 'STS_SPIFFE_K8S_ENABLE_NAMESPACE_LABELS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Add ns-label: selectors, read from the API server with ' +
+                 'the in-cluster service account.' },
+
   { key: 'spiffe.maxJoinTokens', group: 'SPIFFE', label: 'Unspent join ' +
       'tokens held',
     env: 'STS_SPIFFE_MAX_JOIN_TOKENS', type: 'int', dflt: 256, min: 1,

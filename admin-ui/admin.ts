@@ -1576,9 +1576,9 @@ const SECTIONS = [
                    'at the Workload API is identified — the ' +
                    '<code>transport:</code>, <code>endpoint:</code> and ' +
                    '<code>peer:</code> selectors, and whether an ASSERTED ' +
-                   'one is believed. This service attests no workload and no ' +
-                   'node; that is the one thing on this page that no setting ' +
-                   'turns on.' },
+                   'one is believed. A caller on the Unix socket is ' +
+                   'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
+                   'not; an agent is attested by its node attestor.' },
           { path: '/admin/spiffe/entries', label: 'Registration entries',
             blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
                    'issued against that entry carries. The store is the ' +
@@ -23947,6 +23947,57 @@ class AdminConsole {
       'list of what is and is not checked.</div>';
   }
 
+  // WORKLOAD ATTESTATION ON THE UNIX SOCKET (#40 phase four): whether the
+  // kernel can be asked at all, which attestors run, and each connection
+  // open now with what it was attested as.
+  spiffeWorkloadAttestation(state) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.spiffeWorkloadAttestation().");
+    if (!state) {
+      log.debug("Leaving AdminConsole.spiffeWorkloadAttestation(). None.");
+      return '';
+    }
+    const kernel = state.nativeModule
+      ? 'The native module is loaded: each connection to the Workload ' +
+        'API\'s Unix socket is attested when it is accepted, and every call ' +
+        'on it checks that the process is still the one attested.'
+      : (state.unattestedSocketServed
+        ? '<strong>The native module is not loaded, so the Unix socket is ' +
+          'served UNATTESTED</strong> (development): ' +
+          this.esc(state.problem)
+        : '<strong>The native module is not loaded, so the Unix socket is ' +
+          'NOT SERVED</strong> (product): ' + this.esc(state.problem));
+    const out = '<h2>Workload attestation</h2>' + this.note(kernel +
+      ' A TCP caller is never attested. Which attestors run is ' +
+      '<code>spiffe.workloadAttestors</code>' +
+      (state.unknownConfigured.length
+        ? '; it names ' + state.unknownConfigured.map(function (t) {
+            return '<code>' + self.esc(t) + '</code>';
+          }).join(', ') + ', which nothing here implements'
+        : '') + '.') +
+      '<table><tr><th>Attestor</th><th>Runs</th><th>What it verifies</th>' +
+      '</tr>' + state.attestors.map(function (a) {
+        return '<tr><td><code>' + self.esc(a.type) + '</code></td><td>' +
+          (a.enabled ? 'yes' : 'no') + '</td><td>' + self.esc(a.verifies) +
+          '</td></tr>';
+      }).join('') + '</table>' +
+      (state.connections.length
+        ? '<table><tr><th>Connection</th><th>pid</th><th>uid</th>' +
+          '<th>gid</th><th>Selectors</th><th>State</th></tr>' +
+          state.connections.map(function (c) {
+            return '<tr><td><code>' + self.esc(c.tag) + '</code></td><td>' +
+              self.esc(String(c.pid)) + '</td><td>' + self.esc(String(c.uid)) +
+              '</td><td>' + self.esc(String(c.gid)) + '</td><td>' +
+              self.esc(String(c.selectors)) + '</td><td>' +
+              self.esc(c.error ? 'refused: ' + c.error
+                               : (c.note || 'attested')) + '</td></tr>';
+          }).join('') + '</table>'
+        : this.note('No connection is open on the socket now.'));
+    log.debug("Leaving AdminConsole.spiffeWorkloadAttestation().");
+    return out;
+  }
+
   // A listener row, and the fourth column is WHAT A CALLER HAS TO PRESENT ON
   // IT. Not decoration: the four sockets have three different postures — plain,
   // plain-and-trusted-as-local, and mutual TLS — and a reader who cannot see
@@ -24147,6 +24198,8 @@ class AdminConsole {
       this.spiffeListenerRows(json.listeners.serverApi, 'SPIRE Server API') +
       '</table>' +
 
+      this.spiffeWorkloadAttestation(json.workloadAttestation) +
+
       '<h2>Who may call the SPIRE Server API</h2>' +
       '<p>' + this.esc(json.authentication.what || '') + '</p>' +
       this.note('A caller may be several of these at once and the check asks ' +
@@ -24172,8 +24225,10 @@ class AdminConsole {
       'page</a>; SPIRE has both, and neither is cached, so either takes ' +
       'effect on the next call.') +
       this.note('Workload API selectors: a caller there is identified as ' +
-      '<code>transport:</code>, <code>endpoint:</code> and ' +
-      '<code>peer:</code>, and ' + (json.authentication.attestWorkloads
+      '<code>transport:</code>, <code>endpoint:</code>, ' +
+      '<code>peer:</code> over TCP, and on the Unix socket by what the ' +
+      'workload attestors established (above), and ' +
+      (json.authentication.attestWorkloads
         ? 'those decide which entries answer it ' +
           '(<code>spiffe.attestWorkloads</code>).'
         : 'that decides nothing at the moment &mdash; ' +

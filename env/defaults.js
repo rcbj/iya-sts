@@ -877,6 +877,26 @@ var config = {
     azureImdsTrustBundle: "",                                     // azure_imds extra roots (PEM)
     azureImdsIntermediateHost: "www.microsoft.com",               // azure_imds intermediate certificate host
     azureImdsDiscoveryUrl: "https://login.microsoftonline.com",   // azure_imds tenant discovery base URL
+    workloadAttestors: "unix",                                    // Workload attestors
+    workloadProcRoot: "/proc",                                    // Workload attestation /proc root
+    unixDiscoverWorkloadPath: false,                              // unix: attest the executable's path and digest
+    unixWorkloadSizeLimit: 0,                                     // unix: largest executable hashed (bytes)
+    dockerSocketPath: "unix:///var/run/docker.sock",              // docker: Engine API socket
+    dockerApiVersion: "",                                         // docker: Engine API version
+    k8sKubeletReadOnlyPort: 0,                                    // k8s: kubelet read-only port
+    k8sKubeletSecurePort: 0,                                      // k8s: kubelet secure port
+    k8sNodeName: "",                                              // k8s: node name
+    k8sNodeNameEnv: "MY_NODE_NAME",                               // k8s: node name environment variable
+    k8sCertificateFile: "",                                       // k8s: kubelet client certificate file
+    k8sPrivateKeyFile: "",                                        // k8s: kubelet client key file
+    k8sUseAnonymousAuthentication: false,                         // k8s: anonymous to the kubelet
+    k8sTokenFile: "",                                             // k8s: kubelet bearer token file
+    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification
+    k8sKubeletCaFile: "",                                         // k8s: kubelet CA file
+    k8sMaxPollAttempts: 60,                                       // k8s: pod list attempts
+    k8sPollRetryIntervalMs: 500,                                  // k8s: pod list retry interval (ms)
+    k8sDisableContainerSelectors: false,                          // k8s: pod selectors only
+    k8sEnableNamespaceLabels: false,                              // k8s: namespace label selectors
     maxJoinTokens: 256,                                           // Unspent join tokens held
     maxPageSize: 1000,                                            // Largest page a List* returns
     maxRecordedConnections: 512,                                  // mTLS connections remembered

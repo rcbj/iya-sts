@@ -4925,6 +4925,32 @@ async function verifyPkcs7SignedData(der, options) {
   };
 }
 
+// The SHA-256 of a file, streamed, lowercase hex — refusing one larger than
+// `limit` bytes when `limit` is above 0 (SPIRE's `util.GetSHA256Digest()`,
+// which the unix workload attestor hashes an executable with, #40). Rejects
+// with a sentence.
+async function sha256OfFile(file, limit) {
+  log.debug("Entering sha256OfFile().");
+  const fs = require('fs');
+  const size = fs.statSync(file).size;
+  if (limit > 0 && size > limit) {
+    log.debug("Leaving sha256OfFile(). Too large.");
+    // error-code: none — reported by the caller under its own code
+    throw new Error('workload ' + file + ' exceeds size limit (' + size +
+                    ' > ' + limit + ')');
+  }
+  const hash = nodeCrypto.createHash('sha256');
+  await new Promise(function (resolve, reject) {
+    fs.createReadStream(file).on('data', function (chunk) {
+      hash.update(chunk);
+    }).on('end', function () {
+      resolve(undefined);
+    }).on('error', reject);
+  });
+  log.debug("Leaving sha256OfFile().");
+  return hash.digest('hex');
+}
+
 module.exports = {
   // --- a credential several processes have to derive alike ---
   deriveSharedCredential: deriveSharedCredential,
@@ -5038,6 +5064,7 @@ module.exports = {
   tpmKdfa: tpmKdfa,
   tpmMakeCredential: tpmMakeCredential,
   verifyPkcs7SignedData: verifyPkcs7SignedData,
+  sha256OfFile: sha256OfFile,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,

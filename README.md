@@ -1604,6 +1604,26 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.azureImdsTrustBundle` | `STS_SPIFFE_AZURE_IMDS_TRUST_BUNDLE` | (empty) | yes | Extra PEM roots beside the DigiCert roots SPIRE embeds. |
 | `spiffe.azureImdsIntermediateHost` | `STS_SPIFFE_AZURE_IMDS_INTERMEDIATE_HOST` | `www.microsoft.com` | yes | The only host a CA Issuers URL may name. |
 | `spiffe.azureImdsDiscoveryUrl` | `STS_SPIFFE_AZURE_IMDS_DISCOVERY_URL` | Microsoft's | yes | Where a tenant domain's ID is looked up. |
+| `spiffe.workloadAttestors` | `STS_SPIFFE_WORKLOAD_ATTESTORS` | `unix` | yes | Workload attestors run for a Workload API Unix-socket connection: unix, docker, k8s. Once per connection; every call checks the process is unchanged; a failing attestor refuses the connection. TCP callers are never attested. |
+| `spiffe.workloadProcRoot` | `STS_SPIFFE_WORKLOAD_PROC_ROOT` | `/proc` | yes | Where a caller's process is read. A peer in another pid namespace is attested on its kernel uid and gid only. |
+| `spiffe.unixDiscoverWorkloadPath` | `STS_SPIFFE_UNIX_DISCOVER_WORKLOAD_PATH` | `false` | yes | unix: add `path:` and `sha256:` for the caller's executable. |
+| `spiffe.unixWorkloadSizeLimit` | `STS_SPIFFE_UNIX_WORKLOAD_SIZE_LIMIT` | `0` | yes | unix: 0 hashes any size, above 0 refuses a larger executable, -1 emits no `sha256:`. |
+| `spiffe.dockerSocketPath` | `STS_SPIFFE_DOCKER_SOCKET_PATH` | `unix:///var/run/docker.sock` | yes | docker: the Engine API socket. |
+| `spiffe.dockerApiVersion` | `STS_SPIFFE_DOCKER_API_VERSION` | (empty) | yes | docker: the Engine API version; empty is the Engine's default. |
+| `spiffe.k8sKubeletReadOnlyPort` | `STS_SPIFFE_K8S_KUBELET_READ_ONLY_PORT` | `0` | yes | k8s: above 0, the pod list is read over plain HTTP on loopback. |
+| `spiffe.k8sKubeletSecurePort` | `STS_SPIFFE_K8S_KUBELET_SECURE_PORT` | `0` | yes | k8s: the kubelet's secure port, dialled; 0 is its own 10250. |
+| `spiffe.k8sNodeName` | `STS_SPIFFE_K8S_NODE_NAME` | (empty) | yes | k8s: the kubelet host; empty reads the next setting's variable, and with neither the kubelet is 127.0.0.1 checked for its chain only. |
+| `spiffe.k8sNodeNameEnv` | `STS_SPIFFE_K8S_NODE_NAME_ENV` | `MY_NODE_NAME` | yes | k8s: the environment variable holding the node name. |
+| `spiffe.k8sCertificateFile` | `STS_SPIFFE_K8S_CERTIFICATE_FILE` | (empty) | yes | k8s: client certificate FILE for the kubelet; empty uses a token. |
+| `spiffe.k8sPrivateKeyFile` | `STS_SPIFFE_K8S_PRIVATE_KEY_FILE` | (empty) | yes | k8s: its private key FILE. |
+| `spiffe.k8sUseAnonymousAuthentication` | `STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION` | `false` | yes | k8s: no token and no certificate. |
+| `spiffe.k8sTokenFile` | `STS_SPIFFE_K8S_TOKEN_FILE` | (empty) | yes | k8s: bearer token FILE; empty is the in-cluster service account's. |
+| `spiffe.k8sSkipKubeletVerification` | `STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION` | `false` | yes | k8s: do not verify the kubelet's certificate. |
+| `spiffe.k8sKubeletCaFile` | `STS_SPIFFE_K8S_KUBELET_CA_FILE` | (empty) | yes | k8s: the kubelet's CA FILE; empty is the in-cluster `ca.crt`. |
+| `spiffe.k8sMaxPollAttempts` | `STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS` | `60` | yes | k8s: pod list reads before a missing container fails. |
+| `spiffe.k8sPollRetryIntervalMs` | `STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS` | `500` | yes | k8s: between those reads. |
+| `spiffe.k8sDisableContainerSelectors` | `STS_SPIFFE_K8S_DISABLE_CONTAINER_SELECTORS` | `false` | yes | k8s: pod selectors only. |
+| `spiffe.k8sEnableNamespaceLabels` | `STS_SPIFFE_K8S_ENABLE_NAMESPACE_LABELS` | `false` | yes | k8s: add `ns-label:` selectors from the API server. |
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | Unspent, unexpired join tokens a realm holds. At the bound a NEW token is refused with RESOURCE_EXHAUSTED; a token already handed to an agent is never evicted. |
 | `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every SPIRE Server API `List*` method. |
 | `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes (per process — a realm may not carry it) | How many mTLS connections are remembered so an X509-SVID is one authentication per connection rather than per call. |
@@ -4835,8 +4855,8 @@ assertion is verified.
 
 #### Why this one cannot be permissive
 
-This service checks no password, validates no access token and attests no
-workload, and that is the point of it. Three surfaces are already exceptions —
+This service checks no password and validates no access token, and that is
+the point of it. Three surfaces are already exceptions —
 SCIM, the SPIRE Server API, the admin console — and all three are **turnstiles**:
 they refuse a caller so that a client can be made to exercise a refusal, and any
 of them could be opened tomorrow with nothing lost but an error path.

@@ -8186,6 +8186,22 @@ const CODES = [
     summary: 'An azure_imds attested document did not carry this ' +
       'challenge\'s nonce, or lacked a VM or subscription ID.',
     spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0111',
+    summary: 'A connection to the Workload API\'s Unix socket could not be ' +
+      'attested — the kernel would not name its peer, or a workload ' +
+      'attestor (unix, docker, k8s) failed — and every call on it is ' +
+      'refused.',
+    spec: 'gRPC UNAVAILABLE' },
+  { code: 'STS-SPIFFE-0112',
+    summary: 'A Workload API call arrived on a connection attested for a ' +
+      'process that has since exited, whose pid was reused, or that ' +
+      'executed a different program.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0113',
+    summary: 'A realm\'s Workload API Unix socket was not bound: this is a ' +
+      'product and the native module workload attestation needs is not ' +
+      'in the image.',
+    spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

@@ -56,10 +56,11 @@
 //     took the question over, so the `!authRequired()` arms below are dead
 //     code kept against a third mode wanting them.
 //
-// **WHAT IS STILL NOT ATTESTED IS THE WORKLOAD API** — see
-// `spiffe_workload.ts`'s header. NODE attestation left this sentence on
-// 2026-09-21 (#40): `AttestAgent` below verifies every type it accepts through
-// `spiffe_node_attestation.ts`'s table and refuses the rest.
+// **WHAT IS STILL NOT ATTESTED IS A WORKLOAD API CALLER OVER TCP.** NODE
+// attestation left this sentence on 2026-09-21 (#40): `AttestAgent` below
+// verifies every type it accepts through `spiffe_node_attestation.ts`'s table
+// and refuses the rest; the Workload API's Unix socket followed the same day
+// (`spiffe_workload_attestation.ts`).
 //
 // ---------------------------------------------------------------------------
 // THE BATCH METHODS ANSWER PER ITEM AND DO NOT FAIL AS A WHOLE

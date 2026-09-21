@@ -163,6 +163,30 @@ function verifiesCredentials() {
   return isProduct();
 }
 
+// May a SPIFFE Workload API caller's OWN claims about itself be matched as
+// selectors (`spiffe.acceptAssertedSelectors`, the `x-sts-workload-selector`
+// header)? (#40, 2026-09-21.) Development says yes when that setting is on:
+// it is how a client's "these selectors matched" path is exercised without a
+// real attestor. Product says no whatever the setting says — a selector the
+// caller wrote is a claim nothing checked, and a registration entry written
+// for `unix:uid:0` must not be had by typing it into a header.
+function believesAssertedSelectors() {
+  log.debug("Entering believesAssertedSelectors().");
+  log.debug("Leaving believesAssertedSelectors().");
+  return !isProduct();
+}
+
+// Must the SPIFFE Workload API's Unix socket be ATTESTED to be served at all?
+// (#40, 2026-09-21.) Product says yes: without the native module that reads a
+// caller's credentials, every process that can reach the socket would get
+// whatever the transport selectors match, so the socket is not served.
+// Development serves it and says, on GET /spiffe, that nothing is attested.
+function requiresWorkloadAttestation() {
+  log.debug("Entering requiresWorkloadAttestation().");
+  log.debug("Leaving requiresWorkloadAttestation().");
+  return isProduct();
+}
+
 // May a user, application, service principal or authorization server be created
 // because something NAMED it? Development says yes and that is most of what
 // makes it a mock: a client can point at this service with any client_id and
@@ -1014,6 +1038,26 @@ const REQUIREMENTS = [
     product: 'The same, over a registry that no longer mints an entry for ' +
              'whoever asks.',
     where: 'spiffe/spiffe_auth.ts' },
+  // #40 (2026-09-21): what node and workload attestation check, by mode.
+  { id: 'spiffe-node-attestation',
+    what: 'SPIFFE node attestation (AttestAgent)',
+    development: 'Every type is VERIFIED by its attestor or refused — ' +
+                 'join_token, x509pop, sshpop, tpm_devid, k8s_psat, ' +
+                 'http_challenge, aws_iid, gcp_iit, azure_imds — as the ' +
+                 'realm lists in spiffe.nodeAttestors.',
+    product: 'The same; nothing about node attestation differs by mode.',
+    where: 'spiffe/spiffe_node_attestation.ts' },
+  { id: 'spiffe-workload-attestation',
+    what: 'SPIFFE workload attestation (the Workload API Unix socket)',
+    development: 'A caller\'s kernel credentials and process are read at ' +
+                 'connect (spiffe.workloadAttestors: unix, docker, k8s) where ' +
+                 'the native module is built; without it the socket is served ' +
+                 'on transport selectors alone and says so. Asserted ' +
+                 'selectors are believed when spiffe.acceptAssertedSelectors ' +
+                 'is on.',
+    product: 'Without the native module the Workload API socket is NOT ' +
+             'served. Asserted selectors are never believed.',
+    where: 'spiffe/spiffe_peer.ts, spiffe/spiffe_auth.ts' },
   // 2026-09-12. The one row here whose two columns differ in what is REFUSED
   // for a reason that is not "development checks nothing": both modes consult
   // the register, and the difference is what an UNREACHABLE foreign CRL costs.
@@ -1242,6 +1286,8 @@ module.exports = {
   isDevelopment: isDevelopment,
   verifiesCredentials: verifiesCredentials,
   autoCreates: autoCreates,
+  believesAssertedSelectors: believesAssertedSelectors,
+  requiresWorkloadAttestation: requiresWorkloadAttestation,
   requiresConfidentialClientAuthentication:
     requiresConfidentialClientAuthentication,
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,

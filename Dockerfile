@@ -58,6 +58,14 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # ---------------------------------------------------------------------------
 FROM node:24.16.0-bookworm-slim AS typescript
 WORKDIR /usr/src/sts
+# A C COMPILER, IN THIS STAGE ONLY (#40, 2026-09-21): `build-native.sh`
+# compiles the one native module, spiffe/native/peercred.c (SO_PEERCRED and a
+# pidfd, for SPIFFE workload attestation), against this image's own Node
+# headers. The final image copies the .node file out and carries no compiler.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+      gcc libc6-dev \
+ && rm -rf /var/lib/apt/lists/*
 COPY package*.json .npmrc ./
 COPY node-ldapjs ./node-ldapjs
 RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
@@ -65,6 +73,7 @@ COPY tests/package*.json ./tests/
 RUN npm install --prefix ./tests && npm cache clean --force
 COPY . ./
 RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
+ && STS_IN_IMAGE_BUILD=1 ./build-native.sh \
  && rm -rf ./node_modules ./tests/node_modules ./node-ldapjs/node_modules
 
 FROM ubuntu:latest

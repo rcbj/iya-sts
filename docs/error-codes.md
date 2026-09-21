@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2828** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2831** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 110
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 113
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
@@ -2110,6 +2110,9 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0108` | A cloud node is not one this realm admits: a project, tenant or subscription not allowed, an account outside the organization, an instance outside the EKS clusters, a gcp_iit token for another audience or expired. | gRPC PERMISSION_DENIED (INTERNAL for the aws_iid organization and EKS checks, as SPIRE answers) |
 | `STS-SPIFFE-0109` | An aws_iid instance failed the block device check: its root volume and first network interface were not attached together. | gRPC INTERNAL |
 | `STS-SPIFFE-0110` | An azure_imds attested document did not carry this challenge's nonce, or lacked a VM or subscription ID. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0111` | A connection to the Workload API's Unix socket could not be attested — the kernel would not name its peer, or a workload attestor (unix, docker, k8s) failed — and every call on it is refused. | gRPC UNAVAILABLE |
+| `STS-SPIFFE-0112` | A Workload API call arrived on a connection attested for a process that has since exited, whose pid was reused, or that executed a different program. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0113` | A realm's Workload API Unix socket was not bound: this is a product and the native module workload attestation needs is not in the image. | — |
 
 ## STS-TLS
 

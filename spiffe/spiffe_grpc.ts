@@ -96,6 +96,10 @@ import nodeCrypto = require('crypto');
 // register nothing, so neither can move a route or close a cycle.
 import spiffeId = require('./spiffe_id');
 import ca = require('./spiffe_ca');
+// The kernel's facts about a Workload API socket's caller (#40 phase four).
+// A LIBRARY that requires only helpers and config.
+import peer = require('./spiffe_peer');
+import net = require('net');
 
 // ---------------------------------------------------------------------------
 // LOADING.
@@ -155,11 +159,16 @@ interface SpiffeGrpcDeps {
   nodeCrypto: typeof nodeCrypto;
   spiffeId: typeof spiffeId;
   ca: typeof ca;
+  peer: typeof peer;
+  net: typeof net;
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadRequestPool(): typeof import('../common/request_pool');
   loadRequestWorker(): typeof import('../common/request_worker');
 }
+
+// The accepting listeners of attested sockets, by the gRPC server they feed.
+const ATTESTED_LISTENERS = new Map<any, any[]>();
 
 // The services `SpiffeGrpc.wire()` names.
 type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
@@ -192,6 +201,8 @@ class SpiffeGrpc {
       nodeCrypto: nodeCrypto,
       spiffeId: spiffeId,
       ca: ca,
+      peer: peer,
+      net: net,
       loadRequestPool: function () {
         return require('../common/request_pool');
       },
@@ -678,6 +689,30 @@ class SpiffeGrpc {
                              'else.') };
     }
     const caller = auth.callerOf(call, surface);
+    // A CONNECTION ACCEPTED ON THE ATTESTED SOCKET (#40 phase four). Its
+    // facts were gathered, and its workload attestors run, before gRPC saw
+    // it; here, on EVERY call, the process must still be the one attested,
+    // and a connection whose attestation failed is refused with the reason
+    // — a workload is never answered on a partial attestation.
+    const facts = surface === 'workload'
+      ? this.deps.peer.factsFor(String(caller.peer || '')) : null;
+    if (facts) {
+      if (facts.error) {
+        log.debug('Leaving SpiffeGrpc.prepareCall(). Attestation failed.');
+        return { caller: caller, errorCode: 'STS-SPIFFE-0111',
+                 refusal: this.unavailable('Workload attestation failed for ' +
+                                           'this connection: ' + facts.error) };
+      }
+      const changed = this.deps.peer.stillValid(facts);
+      if (changed) {
+        log.debug('Leaving SpiffeGrpc.prepareCall(). The process changed.');
+        return { caller: caller, errorCode: 'STS-SPIFFE-0112',
+                 refusal: this.permissionDenied('This connection was ' +
+                   'attested for a process that is no longer the one ' +
+                   'holding it: ' + changed + '. Reconnect.') };
+      }
+      caller.attested = facts;
+    }
     if (surface === 'workload') {
       // What this service can see about a Workload API caller, as selectors.
       // Built HERE rather than in the handlers because all four issuing methods
@@ -1508,6 +1543,89 @@ class SpiffeGrpc {
   }
 
   // ---------------------------------------------------------------------------
+  // THE WORKLOAD API'S UNIX SOCKET, ACCEPTED HERE AND ATTESTED BEFORE gRPC
+  // SEES A CONNECTION (#40 phase four).
+  //
+  // `bindOne()` would let grpc-js accept the socket, and then no handler can
+  // reach the connection's file descriptor to ask the kernel who it is. So
+  // this binds a `net.Server` on the path itself, and for each connection:
+  // `onConnection(socket)` resolves the facts (`spiffe_peer.observe()` and the
+  // workload attestors, in the listener's realm — the caller supplies that),
+  // the socket is TAGGED with the facts' `unix:attested-<n>` as its remote
+  // address, and only then handed to grpc-js through
+  // `createConnectionInjector()`, which the probe on #40 showed carries that
+  // tag to `call.getPeer()`. Bytes the client sent meanwhile wait in the
+  // socket. A failure to bind is REPORTED, as `bindOne()`'s is.
+  // ---------------------------------------------------------------------------
+  bindAttestedSocket(server, socketPath: string,
+                     onConnection: (socket: any) => Promise<any>):
+      Promise<Record<string, any>> {
+    const { log, grpc, net, peer, errorCodes } = this.deps;
+    const address = 'unix://' + socketPath;
+    log.debug("Entering SpiffeGrpc.bindAttestedSocket(). " + socketPath);
+    const injector = server.createConnectionInjector(
+      grpc.ServerCredentials.createInsecure());
+    const listener = net.createServer(function (socket: any) {
+      socket.pause();
+      Promise.resolve(onConnection(socket)).then(function (facts) {
+        if (socket.destroyed) {
+          peer.forget(facts.tag);
+          return;
+        }
+        Object.defineProperty(socket, 'remoteAddress', { value: facts.tag });
+        Object.defineProperty(socket, 'remotePort',
+                              { value: Number(facts.tag.split('-').pop()) });
+        socket.on('close', function () {
+          peer.forget(facts.tag);
+        });
+        // NOT resumed here: a resume with no reader yet EMITS what the
+        // client sent while the attestors ran — its HTTP/2 preface — to
+        // nobody, and the connection dies with nothing refused. Node's
+        // HTTP/2 session takes the paused socket and reads what is buffered.
+        injector.injectConnection(socket);
+      }, function (e) {
+        log.error(errorCodes.tag('STS-SPIFFE-0111') + 'spiffe: a Workload ' +
+                  'API connection could not be attested and was closed: ' +
+                  ((e && e.message) || e));
+        socket.destroy();
+      });
+    });
+    const held = ATTESTED_LISTENERS.get(server) || [];
+    held.push(listener);
+    ATTESTED_LISTENERS.set(server, held);
+    log.debug("Leaving SpiffeGrpc.bindAttestedSocket().");
+    return new Promise(function (resolve) {
+      listener.once('error', function (e: any) {
+        log.error(errorCodes.tag('STS-SPIFFE-0011') +
+                  'spiffe: could not bind ' + address + ': ' + e.message);
+        resolve({ address: address, listening: false, error: e.message,
+                  port: 0, attested: true });
+      });
+      listener.listen(socketPath, function () {
+        resolve({ address: address, listening: true, error: '', port: 0,
+                  attested: true });
+      });
+    });
+  }
+
+  // The accepting listeners bindAttestedSocket() opened for `server`, closed
+  // when its realm stops — grpc-js's own shutdown does not know them.
+  closeAttested(server): void {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.closeAttested().");
+    (ATTESTED_LISTENERS.get(server) || []).forEach(function (listener) {
+      try {
+        listener.close();
+      } catch (e) {
+        log.debug("Caught in SpiffeGrpc.closeAttested(): " +
+                  ((e && e.message) || e));
+      }
+    });
+    ATTESTED_LISTENERS.delete(server);
+    log.debug("Leaving SpiffeGrpc.closeAttested().");
+  }
+
+  // ---------------------------------------------------------------------------
   // THE SPIRE SERVER API'S TLS CREDENTIALS — and the two things about them that
   // are easy to get wrong in opposite directions.
   //
@@ -1809,6 +1927,8 @@ export = {
   serverStream: slot.forward('serverStream'),
   bidiStream: slot.forward('bidiStream'),
   prepareSocketPath: slot.forward('prepareSocketPath'),
+  bindAttestedSocket: slot.forward('bindAttestedSocket'),
+  closeAttested: slot.forward('closeAttested'),
   restrictSocket: slot.forward('restrictSocket'),
   buildServer: slot.forward('buildServer'),
   bindOne: slot.forward('bindOne'),

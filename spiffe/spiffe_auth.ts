@@ -344,11 +344,15 @@ class SpiffeAuth {
     return !!config.value('spiffe.attestWorkloads');
   }
 
+  // ON, AND BELIEVED ONLY OUTSIDE PRODUCT MODE (#40, 2026-09-21): a
+  // selector the caller wrote is a claim nothing checked, and a registration
+  // entry for `unix:uid:0` must not be had by typing it into a header.
   acceptAssertedSelectors() {
-    const { log, config } = this.deps;
+    const { log, config, mode } = this.deps;
     log.debug("Entering SpiffeAuth.acceptAssertedSelectors().");
     log.debug("Leaving SpiffeAuth.acceptAssertedSelectors().");
-    return !!config.value('spiffe.acceptAssertedSelectors');
+    return !!config.value('spiffe.acceptAssertedSelectors') &&
+           mode.believesAssertedSelectors();
   }
 
   // The admin ids, as a list. A string in configuration because it is a list of
@@ -1184,8 +1188,18 @@ class SpiffeAuth {
     const out = [{ type: 'transport',
                    value: caller.transport === 'uds' ? 'uds' : 'tcp' }];
     if (where) out.push({ type: 'endpoint', value: where });
-    const address = this.peerSelectorValue(caller.peer);
+    // A `peer:` is a TCP address. A Unix connection's peer string is the
+    // attested socket's per-connection tag, which no entry could select on.
+    const address = caller.transport === 'uds' ? ''
+      : this.peerSelectorValue(caller.peer);
     if (address) out.push({ type: 'peer', value: address });
+    // THE ATTESTED SELECTORS (#40 phase four): what the workload attestors
+    // established from the kernel at accept — `unix:uid:1000` read, not
+    // written — revalidated for this call by `spiffe_grpc.prepareCall()`.
+    ((caller.attested && caller.attested.selectors) || [])
+      .forEach(function (selector) {
+        out.push({ type: selector.type, value: selector.value });
+      });
     const asserted = this.assertedSelectorsOf(call);
     if (asserted.length) {
       log.info('spiffe: a Workload API caller asserted ' + asserted.length +

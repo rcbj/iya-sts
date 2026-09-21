@@ -7,8 +7,9 @@ nav_order: 16
 
 This service **checks no password and accepts an access token it cannot verify at
 its OpenID4VCI credential endpoints** in development mode — the rows below say
-what product mode checks instead — and, in every mode, **attests no workload**
-(node attestation is verified or refused; see SPIFFE, below). Read this page
+what product mode checks instead. Node attestation is verified or refused, and
+a workload is attested on the Workload API's Unix socket but **never over TCP**
+(see SPIFFE, below). Read this page
 before using it for anything, and read
 it again before concluding that something here is a bug.
 
@@ -47,7 +48,7 @@ service can be told to be strict, it can.
 | Check where a SAML response or a WS-Federation token is delivered — **in development mode** | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` a request names is used as it stands, and with none the response goes to the registered address or to a built-in mock — **except for a SAML 2.0 service provider whose metadata has been consumed**, which is answered only at an endpoint that metadata registered, in every mode, by `AssertionConsumerServiceIndex`, by URL or by default. **In product mode it must be registered** on the application entry (`samlAssertionConsumerService`, `wsfedReplyUrl`), compared exactly, with no mock fallback. **An address development RECORDED does not count as registered**: every address a development-mode request writes onto an entry — and every callback the console and portal learn from a Host header — is marked *observed* (`appReturnAddressObserved`), and product refuses a marked address exactly as it refuses one that is not there, with a page saying how to confirm it. Before switching a realm to product, open each application under **Applications** and press **Confirm** on the addresses that really are that application's and **Discard** on the rest — or use `POST /admin-api/applications/confirm-address` and `/discard-address`, which list them as `returnAddressesObserved`. Adding the address by hand confirms it too. **Addresses recorded before this marking existed carry no mark and cannot be told apart from registered ones** — review those by hand |
 | Authenticate a caller at the SAML 1.1 attribute authority — **in development mode** | Anybody may send an `AttributeQuery` about anybody. **Product mode refuses both query types.** In both modes an `AuthenticationQuery` is answered only from a live session, and an attribute answer carries no invented `AuthenticationStatement` |
 | Require a credential at the WS-Trust STS — **in development mode** | A request with no credential gets a token for `anonymous`, an unsigned SAML assertion is believed, and an `OnBehalfOf` needs no requester. **Product mode refuses all three**, accepting only a directory-verified UsernameToken or an assertion this STS signed. A requested lifetime is clamped to `wstrust.maxTokenLifetimeMin` in both modes |
-| Attest a workload — node attestation is verified or refused since 2026-09-21 (#40) | See SPIFFE, below |
+| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)**: all nine of SPIRE's node attestors verify or refuse, and the Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors. **A Workload API caller over TCP is still not attested** | See SPIFFE, below |
 | Let a group grant anything, bar two | A token now *carries* one; no endpoint reads it. `cn=admin-read` and `cn=admin-write` are the exception and grant the admin console, nothing else |
 | Decide who may delegate to whom IN THE ACT, in two of the three families that can | The KDC polices S4U properly, off the same two attributes a real domain uses, on every request and whatever anything is set to. WS-Trust `OnBehalfOf`/`ActAs` is unpoliced: anybody may ask for a token about anybody. **RFC 8693 and the OAuth families are the qualified case since 2026-09-01**: a DELEGATED PERMISSION can be configured between two application entries — a resource exposes permissions, a client is granted them, and a client asks for one as an ordinary scope — and `oauth2.delegatedPermissionsEnforced` turns an ungranted ask into `invalid_scope`. It is OFF by default, so an unconfigured service behaves exactly as this row always described. Every act says which — see below |
 
@@ -614,14 +615,42 @@ SPIFFE Workload Endpoint specification requires that the endpoint not demand
 authentication and that TLS not be required. The mutual TLS the SPIRE Server API
 requires deliberately does not reach it, and no mode changes that.
 
-What it lacks there is **attestation, not authentication**, and the two must not
-be merged. A real agent reads the peer credentials of its Unix socket —
-`SO_PEERCRED`, giving pid and from that uid, gid, executable, container, pod —
-and turns them into selectors. **Node has no portable way to read them.** So a
-caller is identified by the transport it arrived on, the endpoint it reached and
-its peer address, and by nothing else, and the selectors are spelt `transport:`,
-`endpoint:` and `peer:` rather than `unix:` or `k8s:`. Writing `unix:uid:1000`
-for a uid nothing read would be inventing an attested fact.
+What it needs there is **attestation, not authentication**, and the two must
+not be merged. **Since 2026-09-21 (#40) the Unix socket attests its caller** the
+way a SPIRE agent does: the kernel names the connecting process (`SO_PEERCRED`,
+through a small native module built into the image, and a pidfd that holds the
+process), and the workload attestors that `spiffe.workloadAttestors` names turn it
+into SPIRE's selectors:
+
+* `unix`: `uid:`, `user:`, `gid:`, `group:`, the supplementary groups, and with
+  `spiffe.unixDiscoverWorkloadPath` the executable's `path:` and `sha256:`;
+* `docker`: the container's `label:`, `env:`, `image_id:` and
+  `image_config_digest:`, asked of the Docker Engine;
+* `k8s`: the pod's `sa:`, `ns:`, `pod-name:`, `pod-label:`, `pod-owner:`,
+  `container-name:`, `container-image:` and the rest of SPIRE's list, read from
+  the kubelet.
+
+A connection is attested once, when it is accepted, and **every call on it
+checks that the process is still the one attested**: a process that has exited,
+a reused pid or an `exec` of another program is refused (`PERMISSION_DENIED`). An
+attestor that fails refuses every call on the connection (`UNAVAILABLE`). A peer
+in a pid namespace this service cannot see is attested on the uid and gid the
+kernel recorded, and nothing else.
+
+What is still not attested:
+
+* **A caller over TCP.** It has no peer process to ask, so it is identified by
+  the transport, the endpoint and its address, spelt `transport:`, `endpoint:`
+  and `peer:`.
+* **A Unix-socket caller where the native module is missing.** Development serves
+  the socket unattested and `GET /spiffe` says so under `workloadAttestation`.
+  **Product does not serve the socket at all** (`STS-SPIFFE-0113`).
+* SPIRE's `systemd` workload attestor, the docker attestor's sigstore signature
+  checks and Podman sockets, and the Kubernetes broker. Each is a follow-up on #40.
+
+**Asserted selectors are never believed in product mode.** In development,
+`spiffe.acceptAssertedSelectors` still lets a caller assert them, so that
+selector matching can be exercised with no attestor at all.
 
 Selector matching still **decides** which entries answer a caller
 (`spiffe.attestWorkloads`), which is narrowing without attesting; and

@@ -944,11 +944,22 @@ class FederationHttp {
   // signing certificate names in its CA Issuers URL, which Microsoft serves
   // over http, as AIA URLs are. Nothing secret travels on such a request and
   // nothing unverified comes back from it, which is the whole of what https
-  // would have added. It NEVER rejects.
+  // would have added.
+  //
+  // FOUR MORE OPTIONS, FOR THE KUBELET (#40 phase four), each SPIRE's k8s
+  // workload attestor's: `cert` and `key` (PEM) authenticate this client with
+  // a certificate; `chainOnly` verifies the server's chain against `ca` and
+  // not its NAME — SPIRE's check when no node name is configured, because a
+  // kubelet's certificate names the node and not 127.0.0.1; `skipVerify` is
+  // `skip_kubelet_verification`, an administrator's explicit choice, logged on
+  // every request; and `loopbackPlainHttp` admits http to 127.0.0.1 or ::1
+  // ONLY, which is the kubelet's read-only port. It NEVER rejects.
   // -------------------------------------------------------------------------
   requestConfigured(raw: string, options?: {
     method?: string; headers?: Record<string, string>; body?: Buffer | string;
-    ca?: string; timeoutMs?: number; signedArtifact?: boolean }):
+    ca?: string; timeoutMs?: number; signedArtifact?: boolean;
+    cert?: string; key?: string; chainOnly?: boolean; skipVerify?: boolean;
+    loopbackPlainHttp?: boolean }):
       Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
                 kind: string; why: string; url: string }> {
     const { log } = this.deps;
@@ -962,8 +973,10 @@ class FederationHttp {
         why: 'federation.outbound is off, so this service makes no ' +
              'outbound request at all' });
     }
-    const plainSigned = !!opts.signedArtifact &&
-      /^http:\/\//i.test(String(raw || '')) && !opts.body;
+    const plainSigned = (!!opts.signedArtifact && !opts.body &&
+      /^http:\/\//i.test(String(raw || ''))) ||
+      (!!opts.loopbackPlainHttp &&
+       /^http:\/\/(127\.0\.0\.1|\[::1\])(:\d+)?\//i.test(String(raw || '')));
     const problem = plainSigned ? '' : this.urlProblem(raw);
     if (problem) {
       log.debug("Leaving FederationHttp.requestConfigured(). " + problem);
@@ -994,12 +1007,65 @@ class FederationHttp {
       rejectUnauthorized: secure && !this.allowInsecure()
     };
     if (secure && opts.ca) requestOptions.ca = String(opts.ca);
+    if (secure && opts.cert && opts.key) {
+      requestOptions.cert = String(opts.cert);
+      requestOptions.key = String(opts.key);
+    }
+    if (secure && opts.chainOnly) {
+      // The chain is still verified against `ca`; only the name is not.
+      requestOptions.checkServerIdentity = function () {
+        return undefined;
+      };
+    }
+    if (secure && opts.skipVerify) {
+      log.warn('outbound: ' + target.origin + ' is dialled WITHOUT ' +
+               'verifying its certificate, because the configuration asks ' +
+               'for that (a kubelet\'s skip_kubelet_verification).');
+      requestOptions.rejectUnauthorized = false;
+    }
     const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
                                                  : this.timeoutMs();
     log.debug("Leaving FederationHttp.requestConfigured().");
     return this.exchange(secure ? this.deps.https : this.deps.http,
                          requestOptions, body, this.maxBodyBytes(),
                          timeoutMs, String(raw));
+  }
+
+  // -------------------------------------------------------------------------
+  // A LOCAL UNIX SOCKET AN ADMINISTRATOR NAMED (#40 phase four): the Docker
+  // Engine API, which SPIRE's docker workload attestor asks about the
+  // container a workload runs in. Not a network request at all — nothing
+  // leaves the host — but it is a request this service makes, so it keeps the
+  // rules the others do: the kill switch, no redirect, the cap, the timeout.
+  // `socketPath` is a setting (`spiffe.dockerSocketPath`); `path` is built by
+  // the caller from a container ID read out of the kernel's cgroup file.
+  // It NEVER rejects.
+  // -------------------------------------------------------------------------
+  requestLocalSocket(socketPath: string, path: string, options?: {
+    method?: string; timeoutMs?: number }):
+      Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
+                kind: string; why: string; url: string }> {
+    const { log } = this.deps;
+    const opts = options || {};
+    log.debug("Entering FederationHttp.requestLocalSocket(). " + socketPath +
+              " " + path);
+    const where = 'unix://' + socketPath + path;
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.requestLocalSocket(). Outbound off.");
+      return Promise.resolve({ ok: false, status: 0, body: Buffer.alloc(0),
+        headers: {}, kind: 'outbound-off', url: where,
+        why: 'federation.outbound is off, so this service makes no ' +
+             'outbound request at all' });
+    }
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
+                                                 : this.timeoutMs();
+    log.debug("Leaving FederationHttp.requestLocalSocket().");
+    return this.exchange(this.deps.http, {
+      socketPath: socketPath, path: path,
+      method: String(opts.method || 'GET').toUpperCase(),
+      headers: { 'Accept': 'application/json', 'Host': 'docker',
+                 'User-Agent': this.deps.userAgent }
+    }, null, this.maxBodyBytes(), timeoutMs, where);
   }
 
   // -------------------------------------------------------------------------
@@ -1344,6 +1410,7 @@ export = {
   fetchPublished: slot.forward('fetchPublished'),
   requestConfigured: slot.forward('requestConfigured'),
   fetchHttpChallenge: slot.forward('fetchHttpChallenge'),
+  requestLocalSocket: slot.forward('requestLocalSocket'),
   maxBodyBytes: slot.forward('maxBodyBytes'),
   urlProblem: slot.forward('urlProblem'),
   fetchJson: slot.forward('fetchJson'),

@@ -7,7 +7,8 @@ nav_order: 1
 
 A mock identity service that speaks **nineteen protocol families** in one small
 Node process. It exists to exercise *clients*: it checks no password, validates
-no access token and attests no workload.
+no access token, and attests a workload only on the SPIFFE Workload API's
+Unix socket.
 
 That last sentence is the whole design, and it is worth reading twice before
 using this for anything. A real identity provider refuses things; this one mostly
