@@ -1344,10 +1344,11 @@ class VcIssuer {
   // buildCredentialFor and the credential endpoint are async as well.
   //
   // Holder binding differs from the other formats by necessity: there is no
-  // cnf.jwk here. The holder is named by credentialSubject.id, a did:key built
-  // from the key it proved possession of, and what proves possession at
-  // presentation time is the BBS derived proof itself rather than a separate
-  // signature by the holder.
+  // cnf.jwk here. The holder is named by credentialSubject.id, a did:jwk built
+  // from the key it proved possession of, and what proves possession at a
+  // sign-in is a Data Integrity proof by that did:jwk over the presentation
+  // (`vc_data_integrity.ts`, rule 3at). This comment said did:key and "no
+  // separate signature by the holder" until 2026-09-21, both since changed.
   private async buildLdpVc(subjectClaims, holderJwk, credentialIssuer,
                             issuerDid, status) {
     const { log, logArtifact, b64u, bbsKeyPair, bbs2023, VCI_JWT_TYPES

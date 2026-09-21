@@ -5,17 +5,21 @@ nav_order: 1
 
 # iya-sts
 
-A mock identity service that speaks **nineteen protocol families** in one small
-Node process. It exists to exercise *clients*: it checks no password, validates
-no access token and attests no workload.
+An identity service that speaks **nineteen protocol families** in one small
+Node process, in one of two modes (`global.mode`).
 
-That last sentence is the whole design, and it is worth reading twice before
-using this for anything. A real identity provider refuses things; this one mostly
-does not, on purpose, because a client that has only ever met a permissive server
-has never run its own refusal paths — and a client that has only met a strict one
-cannot reproduce the behaviour it is trying to detect. Where this service *can*
-be told to be strict, it can, and [what is not checked](what-is-not-checked.md)
-says exactly where the line is.
+**Development mode, the default, exists to exercise *clients*:** it checks no
+end user's password, creates whoever and whatever a request names, and accepts
+tokens it cannot verify at the doors where a client under test needs to. A
+client that has only ever met a permissive server has never run its own refusal
+paths — and a client that has only met a strict one cannot reproduce the
+behaviour it is trying to detect.
+
+**Product mode is meant to be deployed:** it verifies every password, creates
+nothing because something named it, invents no claim value, and implies RFC
+9700 mode. Neither mode attests a workload.
+[What is not checked](what-is-not-checked.md) says exactly where the line is in
+each.
 
 ## Index of pages
 
@@ -28,7 +32,7 @@ Every page on this site, grouped by what a reader is looking for.
 - [Configuration](configuration.md) — every setting, and which can change at runtime
 - [Endpoints](endpoints.md) — how to find out, rather than a list that goes stale
 - [Trust realms](trust-realms.md) — several logical identity services in one process, told apart by a path segment: what each one separates, and what every realm shares
-- [What is not checked](what-is-not-checked.md) — the permissive posture, its three exceptions, and the one feature that inverts it
+- [What is not checked](what-is-not-checked.md) — what development and product mode each check, what neither does, and the features that refuse in both
 - [Error codes](error-codes.md) — every way this service can fail or refuse, by subsystem: the `STS-…` code recorded on the audit row and in the log, and what the client is told instead (a code is never sent to a client)
 
 **Sessions and signals**
@@ -101,8 +105,10 @@ The page worth going to next is <https://localhost:8081/admin/sts-metadata> —
 every protocol this service speaks, and every endpoint it registers, read off
 the live Express router, with a sentence about each and a link to the
 specification it implements. It is a page of the admin console, so it asks you
-to sign in first: any username will do, because no password is checked anywhere
-in this service.
+to sign in first: in development mode any username will do, because no password
+is checked; in product mode sign in as the bootstrap administrator `admin`,
+whose password is written to the log once at the first start unless
+`admin.bootstrapPassword` supplied one.
 
 [Getting started](getting-started.md) has the rest: the ports, the container, and
 what to do when 389 or 88 will not bind.
@@ -148,10 +154,12 @@ the diagram and a walk through each layer.
 
 ## The four things to know before you rely on it
 
-**Nothing persists.** Every store is a Map in this process. The signing key is
-regenerated on every start — deliberately, so that a client cannot cache a key it
-should be re-fetching — and every document that carries it is served
-`Cache-Control: no-store`.
+**In development mode nothing you would miss persists.** The signing keys and
+the certificate authority are regenerated on every start — deliberately, so that
+a client cannot cache a key it should be re-fetching — and every document that
+carries a key is served `Cache-Control: no-store`. Product mode keeps them,
+sealed under a key-encryption key; [persistence](persistence.md) says what
+survives in each.
 
 **Every surface tells you what it does not do.** That is not modesty; it is the
 point. `GET /oauth2/rfc9700` publishes every BCP requirement with `yes`,
@@ -162,20 +170,20 @@ would teach you something false about every real server you will ever meet.
 
 **The admin console at `/admin` asks for a sign-in and a role** — unconditionally,
 with no setting that opens it — and the roles are two ordinary groups in the
-embedded directory.
-It is a turnstile and not a lock: no password is checked at that screen either,
-so anybody who can reach this port can sign in as anybody and — while neither
-role group has a member — hold both roles. The console can revoke tokens, add
-claims to every future token and assertion, and create people in the directory.
-Do not put this on a public address.
+embedded directory. In development mode it is a turnstile and not a lock: no
+password is checked, so anybody who can reach this port can sign in as anybody.
+In both modes, until the bootstrap administrator `admin` first signs in, anybody
+who signs in holds both roles. The console can revoke tokens, add claims to every
+future token and assertion, and create people in the directory. Do not put a
+development-mode instance on a public address.
 
 **`/admin-api` requires an OAuth 2.0 access token** since 2026-09-09 —
 audienced to this API, carrying `admin:read` to read and `admin:write` to
 change anything. Ask the token endpoint for one with the client-credentials
 grant as the seeded `sts-management-api` client, whose secret is
 `adminApi.clientSecret`, and send `resource=<base>/admin-api` so the audience is
-right. `adminApi.authRequired=false` restores the open API, which is what this
-paragraph described until that date.
+right. `adminApi.authRequired=false` opens the API in development mode; in
+product mode it falls back to the console's session and roles.
 
 **Federation is the one feature that refuses by default, and that is deliberate.**
 Everywhere else this service accepts what it is given. It cannot do that where it
@@ -184,6 +192,7 @@ unauthenticated HTTP request claiming to be a person, and the session it would
 produce is the same one every other protocol here reads — so "accept anything"
 would be an authentication bypass for the whole process rather than a permissive
 mock. A relationship must be configured, is created disabled, and refuses an
-assertion that does not verify against the certificate configured on it. **Past
-that gate everything is as permissive as the rest**: any username in a verified
-assertion is accepted. See [what is not checked](what-is-not-checked.md).
+assertion that does not verify against the certificate configured on it. **The
+gate is on the signer, not the subject**: any person a partner asserts is
+accepted — created on first sight in development, required to exist already in
+product. See [what is not checked](what-is-not-checked.md).

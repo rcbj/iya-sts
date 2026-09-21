@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2796** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2800** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -61,8 +61,8 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 184
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 434
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 185
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 437
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1025,6 +1025,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0203` | An account was disabled and ending what the person held (the global logout) failed; the lock stands and every door refuses them. | none — logged; the disable's reply says what failed |
 | `STS-AUTHN-0204` | A sign-in that demands a security key (a WS-Federation HardwareToken wauth, or OAuth acr_values naming only key aliases) was answered with something else — a one-time code, a recovery code — or the account holds a second factor and no key to present. | HTTP 400 invalid_request, or the sign-in screen again |
 | `STS-AUTHN-0205` | The product-mode bootstrap was given a password through admin.bootstrapPassword that the password policy refuses, so no bootstrap account was created and nobody can sign in. It is NOT replaced with a generated one: the operator set it so that the only way in would not be in a log, and generating one would put a working credential there and leave theirs not working. | none — logged, and the service starts with nobody able to sign in |
+| `STS-AUTHN-0206` | Product mode: a passwordless sign-in named a person who holds no security key that signs in on its own, and the sign-in screen does not enrol one — enrolling there would give the account to whoever claimed the name first. A primary key is added on /portal/keys, by an activation link or by an operator. Development enrols on first use (mode.enrolsKeysOnFirstUse()). | none — the sign-in screen is drawn again with the reason |
 
 ## STS-OAUTH
 
@@ -1468,6 +1469,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0552` | A PUBLIC client (token_endpoint_auth_method="none") asked for the client credentials grant in product mode. RFC 6749 section 4.4 defines that grant for a client that HAS credentials and OAuth 2.1 section 4.2 limits it to confidential clients; a public client using it would mint a token for anybody who knows the client_id. | unauthorized_client (HTTP 400) |
 | `STS-OAUTH-0553` | A client whose application entry declares NO token_endpoint_auth_method presented no credential. Product mode reads the omission as RFC 7591 section 2's default, client_secret_basic, and refuses it at the token endpoint and at PAR; development records it as an unauthenticated client and answers. Setting oauthTokenEndpointAuthMethod to "none" makes it a public client. An application created from the console or /admin-api has been given a method since 2026-09-18, so this is an entry made before that or by another door. | invalid_client (HTTP 401) in product mode; none in development |
 | `STS-OAUTH-0554` | A DPoP proof was refused because the realm's proof-ID replay history held oauth2.dpopReplayCacheSize LIVE entries: forgetting one would let that proof be replayed, so the new proof is refused instead until entries age out (twice oauth2.dpopIatSkewS). | invalid_dpop_proof (HTTP 400 / 401) |
+| `STS-OAUTH-0555` | Product mode: an RFC 8693 subject_token that did not verify against this realm's signing key (a forged, foreign, expired or unreadable token) was refused. Development exchanges it unverified (mode.exchangesUnverifiedTokens()). | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0556` | Product mode: an RFC 8693 actor_token that did not verify against this realm's signing key was refused. Development reads its sub unverified into the act claim. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0557` | An RFC 8693 subject_token or actor_token that verified was refused because this realm has revoked it. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 
 ## STS-SAML
 

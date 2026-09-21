@@ -5432,13 +5432,24 @@ class Authn {
       this.integratedOptionHtml(record) +
       // AND THE WALLET (#38), last: offered to everybody, like Kerberos.
       this.walletOptionHtml(record) +
-      '<div class="meta"><div>No password is checked. The username you enter ' +
-      'is the identity the issued tokens describe.</div><div>Passwordless: ' +
-      'the password field is not read at all, and the security key becomes ' +
-      'the only factor — a key is enrolled for this username on first use, ' +
-      'so the first person to claim a name here gets it. This service ' +
-      'authenticates nobody; that is the same statement as the line above ' +
-      'and not a weaker one.</div><div>Signing in for: ' +
+      // WHAT THIS SCREEN CHECKS, BY MODE (2026-09-21). It said "no password
+      // is checked" and "a key is enrolled on first use" in product too, where
+      // both have been false — the first since 2026-09-06, the second since
+      // `mode.enrolsKeysOnFirstUse()`.
+      (mode.verifiesCredentials()
+        ? '<div class="meta"><div>Your password is checked against your ' +
+          'account.</div><div>Passwordless: the password field is not read, ' +
+          'and a security key you registered for signing in is the only ' +
+          'factor. A key is added at /portal/keys after signing in, never ' +
+          'here.</div><div>Signing in for: '
+        : '<div class="meta"><div>No password is checked. The username you ' +
+          'enter is the identity the issued tokens describe.</div>' +
+          '<div>Passwordless: the password field is not read at all, and the ' +
+          'security key becomes the only factor — a key is enrolled for this ' +
+          'username on first use, so the first person to claim a name here ' +
+          'gets it. This service authenticates nobody; that is the same ' +
+          'statement as the line above and not a weaker one.</div>' +
+          '<div>Signing in for: ') +
       '<code>' + xmlEscape(record.protocol) + '</code></div>' +
       record.details.map(function (d) {
         return '<div>' + xmlEscape(d.label) + ': <code>' +
@@ -6706,13 +6717,19 @@ class Authn {
       errorCodes.mark(res,
                       errorCodes.codeOf(verdict) ||
                       webauthnPolicy.failureCodeFor(verdict));
+      // A POLICY refusal made before the verifier's list existed — the two
+      // product-mode enrolment refusals (STS-AUTHN-0024, 0206) — carries a
+      // `why` and no `failed`. Reading `failed.join()` off one answered 500
+      // until 2026-09-21, which hid both refusals behind an error page.
+      const failed = Array.isArray(verdict.failed) && verdict.failed.length
+        ? verdict.failed : [String(verdict.why || 'refused')];
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
-                verdict.failed.join('; '));
+                failed.join('; '));
       return this.sendWebauthnPage(res,
                                    this.webauthnPage(base, String(body.mfa_id),
                            step.username,
                            'The second factor did not verify — ' +
-                           verdict.failed.join('; ') + '.'));
+                           failed.join('; ') + '.'));
     }
 
     pendingMfa.delete(String(body.mfa_id));
@@ -7564,6 +7581,37 @@ class Authn {
       }
 
       // ---------------------------------------------------------------------
+      // NO ENROLMENT ON FIRST USE IN PRODUCT (2026-09-21).
+      //
+      // The passwordless path reads no password, and `webauthnPage()` answers
+      // a person who holds no `primary` key with the ENROL ceremony — so in
+      // product, where the only other check was that the name exists
+      // (`knownUser()` at the registration), anybody who knew a username
+      // could register their own authenticator as that person's primary
+      // credential and be signed in as them. And stay: the key is on the
+      // entry until somebody notices it. Development keeps "the first person
+      // to claim a name gets it", which the screen says.
+      //
+      // Refused HERE, before a step is minted, so the ceremony is never drawn;
+      // the registration branch below asks the same question as well, because
+      // a step minted on one side of a mode change is still a step. **The
+      // sentence is the same whether the name exists or not**, so this is not
+      // a way to find out which usernames do.
+      if (passwordless && !mode.enrolsKeysOnFirstUse() &&
+          credentials.mechanismsFor(username).primaryKeys < 1) {
+        log.info('authn: product mode, so a passwordless sign-in for "' +
+                 username + '", who holds no primary security key, was ' +
+                 'refused rather than enrolling one at the sign-in screen.');
+        log.debug("Leaving the authentication endpoint. No primary key to " +
+                  "sign in with, and product mode enrols none here.");
+        errorCodes.mark(res, 'STS-AUTHN-0206');
+        return this.sendLoginPage(res, this.loginPage(base, record,
+          'There is no security key registered for signing in to this ' +
+          'account. Sign in with your password, then add a key at ' +
+          '/portal/keys.'));
+      }
+
+      // ---------------------------------------------------------------------
       // THE CREDENTIAL (2026-09-06). One call, both modes.
       //
       // **THIS USED TO BE THE RESERVED-PASSWORD CHECK AND NOTHING ELSE**, and
@@ -8176,7 +8224,22 @@ class Authn {
             // creating objects because something referenced them is exactly
             // what product mode removes. Development creates the entry, which
             // is what it does everywhere else.
-            if (!mode.autoCreates() && !stats.knownUser(step.username)) {
+            // AND A PRIMARY KEY IS NOT ENROLLED HERE AT ALL IN PRODUCT
+            // (2026-09-21) — the sign-in handler refuses before the ceremony
+            // is drawn, and this is the same refusal for a step that got past
+            // it. Nothing on the passwordless path proved who is asking.
+            if (step.passwordless && !mode.enrolsKeysOnFirstUse()) {
+              log.info('authn: product mode, so a primary security key was ' +
+                       'NOT enrolled for "' + step.username + '" at the ' +
+                       'sign-in screen.');
+              verdict = errorCodes.mark({ ok: false,
+                          why: 'This service is in product mode, where a ' +
+                               'security key that signs in on its own is ' +
+                               'added at /portal/keys after signing in, ' +
+                               'never at the sign-in screen.' },
+                          'STS-AUTHN-0206');
+            } else if (!mode.autoCreates() &&
+                       !stats.knownUser(step.username)) {
               log.info('authn: product mode, so a WebAuthn key was NOT ' +
                        'enrolled for "' + step.username + '" — there is no ' +
                        'directory entry for them and enrolling would create ' +

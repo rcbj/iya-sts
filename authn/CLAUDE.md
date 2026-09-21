@@ -1767,6 +1767,34 @@ and be signed in — which is the bypass `finishPasswordSignIn()` already argues
 about the checkbox, met again one demand along. Somebody who holds NO second
 factor still enrols one here, as they always did.
 
+## IN PRODUCT THE SIGN-IN SCREEN ENROLS NO PRIMARY KEY (2026-09-21)
+
+**The passwordless path was an account takeover in product mode.** The box
+reads no password, and `webauthnPage()` answers somebody holding no `primary`
+key with the ENROL ceremony. The only product-mode check on that path was
+`knownUser()` at the registration, which asks whether the name EXISTS — the
+guard against creating a person, not against claiming one. So anybody who knew
+a username could register their own authenticator as that person's primary
+credential, be signed in, and keep the key. Development's "the first person to
+claim a name gets it" had been carried into product unchanged.
+
+`mode.enrolsKeysOnFirstUse()` is the switch. In product the sign-in handler
+refuses a passwordless sign-in for somebody holding no primary key BEFORE a step
+is minted (`STS-AUTHN-0206`), with the same sentence whether or not the name
+exists, so the refusal enumerates nobody; and the registration branch refuses a
+passwordless enrolment as well, for a step minted on the other side of a mode
+change. A primary key is added where the person has already proved who they
+are: `/portal/keys` behind a session, an activation link, or an operator. The
+SECOND-factor enrolment at this screen is untouched — it comes after a password
+product verified, and only for somebody holding no second factor, which the
+section above argues. The screen's own sentence about what it checks now reads
+the mode too. `tests/passkey_first_use_product.js` holds both modes with a real
+ceremony — and its first run found that `finishWebauthn()` read
+`verdict.failed.join()` off a policy refusal that carries only a `why`, so this
+refusal AND the older one beside it (`STS-AUTHN-0024`, product enrolling for
+somebody who does not exist) had always answered 500. It falls back to the
+`why` now.
+
 ## A DISABLED ACCOUNT IS REFUSED AT `startSession()` AND AT EVERY SESSION IT ALREADY HAS (2026-09-17)
 
 `common/account_state.ts` owns the state (`common/CLAUDE.md`, 3at); this module

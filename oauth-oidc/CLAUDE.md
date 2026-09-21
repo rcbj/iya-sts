@@ -2107,6 +2107,24 @@ exactly as it was before this existed.
 row names an attribute. `may_act` is the claim a real deployment would use for
 it; this service neither issues nor reads one.
 
+**IN PRODUCT MODE BOTH TOKENS MUST VERIFY (2026-09-21), AND UNTIL THEN NEITHER
+HAD TO.** The branch tried `verifyJws()` on the `subject_token` and, on failure,
+read its payload unverified and exchanged it — the development behaviour, with
+no mode check on the path, so product did it too. The subject_token is the
+whole of this grant: no browser, no password, no consent. So any client that
+could authenticate could write `{"sub": <anybody>}` into a JWT signed with
+nothing and get a token this realm signed for that person. The `actor_token`
+was never verified in any mode, so `act` named whoever the caller wrote.
+`mode.exchangesUnverifiedTokens()` is the switch: in product a subject_token or
+actor_token that does not verify against this realm's key (which also holds
+`exp` and `nbf`) is `invalid_request` — RFC 8693 section 2.2.2's code for an
+invalid token — with `STS-OAUTH-0555` or `0556`; one this realm revoked is
+`0557` in both modes. Development still exchanges a foreign token and says on
+`/admin/users` that the subject was told about rather than authenticated.
+**A foreign issuer is not supported in product at all** — accepting one would
+need a declared-issuer register like RFC 7523's, and that is not built.
+`tests/token_exchange_product.js` holds both modes.
+
 **AN EXCHANGE MAY ASK FOR A REFRESH TOKEN SINCE 2026-09-01, AND THAT REVERSED A
 SENTENCE THIS FILE AND README.md BOTH USED TO STATE FLATLY.** The old one was
 that an exchanged token carries no refresh token because there is no end-user

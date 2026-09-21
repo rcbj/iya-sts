@@ -2139,7 +2139,10 @@ class VcVerifier {
   // or software-secured — which is exactly what is known here: the Key
   // Binding JWT proves the key, and a JWK says nothing about where the key
   // lives. `hwk` or `swk` would be this service claiming knowledge it does not
-  // have, and the issuer accepts no key attestation that could supply it.
+  // have — UNLESS the issuer verified a key attestation when it issued the
+  // credential, which `assuranceOf()` below reads off the register: hardware
+  // storage adds `hwk`, and user authentication attested as well makes `mfa`.
+  // Nothing the presentation says about itself is believed.
   // `user` is not appropriate either: nothing about a presentation proves the
   // holder was present or tested, only that their wallet signed. It is ONE
   // factor, rated as every other one factor here is rated (`"1"`); two are

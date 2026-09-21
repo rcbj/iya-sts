@@ -10114,10 +10114,40 @@ class OAuth2Server {
                     e.message);
         }
       }
+      // -----------------------------------------------------------------------
+      // A TOKEN THAT DOES NOT VERIFY IS NOT EXCHANGED IN PRODUCT (2026-09-21).
+      //
+      // The subject_token is the WHOLE of what this grant asks for: there is
+      // no browser, no password and no consent anywhere in it, so the token
+      // that comes out is exactly as good as the check on the one that went
+      // in. Development reads a token it cannot verify for its name and
+      // exchanges it anyway, which is what lets a client under test drive the
+      // grant with a token from any issuer. Product did the SAME until this
+      // date — there was no mode check anywhere on the path — so any client
+      // that could authenticate could write `{"sub": <anybody>}` into a JWT,
+      // sign it with nothing, and be handed a token this realm signed for that
+      // person. RFC 8693 section 2.2.2: an invalid subject_token or
+      // actor_token is `invalid_request`.
+      //
+      // `verifyJws()` holds the signature, `exp` and `nbf`; the revocation set
+      // is asked here, as the refresh grant asks it, because a verified token
+      // this realm has revoked is not one it will exchange either.
+      const strictExchange = !mode.exchangesUnverifiedTokens();
       try {
         subject = stsCrypto.verifyJws(subjectJws, STS.certPem);
       } catch (e) {
         log.debug("Caught in tokenGrant(): " + ((e && e.message) || e));
+        if (strictExchange) {
+          log.info('oauth2: product mode refused a token exchange by "' +
+                   client.client_id + '": the subject_token did not verify ' +
+                   'against this realm\'s signing key (' +
+                   ((e && e.message) || e) + ').');
+          errorCodes.mark(res, 'STS-OAUTH-0555');
+          log.debug("Leaving OAuth2Server.tokenGrant().");
+          return self.oauthError(res, 400, 'invalid_request',
+                                 'The subject_token is not a token this ' +
+                                 'authorization server can verify.');
+        }
         // A token from somewhere else: exchange it anyway, but say who it was
         // for as best it can be read.
         subjectVerified = false;
@@ -10133,16 +10163,53 @@ class OAuth2Server {
           subject = {};
         }
       }
+      if (subjectVerified && subject.jti && stats.isRevoked(subject.jti)) {
+        log.info('oauth2: a token exchange by "' + client.client_id +
+                 '" presented a subject_token this realm has revoked.');
+        errorCodes.mark(res, 'STS-OAUTH-0557');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, 'invalid_request',
+                               'The subject_token has been revoked.');
+      }
       let act;
       if (body.actor_token) {
-        try {
-          act = { sub: (jsonFromB64u(String(body.actor_token).split('.')[1]) ||
-                        {}).sub };
-        } catch (e) {
-          log.error(errorCodes.tag('STS-OAUTH-0226') + 'the actor_token ' +
-                                                       'could not be ' +
-                                                       'read: ' + e.message);
-          act = undefined;
+        // THE ACTOR IS VERIFIED BY THE SAME RULE, for the same reason: `act`
+        // is the record, inside the token that comes out, of who acted on the
+        // subject's behalf, and a name read out of an unverified token puts a
+        // claim there that nobody made. Development still reads it unverified.
+        let actorClaims = null;
+        if (strictExchange) {
+          try {
+            actorClaims = stsCrypto.verifyJws(String(body.actor_token),
+                                              STS.certPem);
+          } catch (e) {
+            log.debug("Caught in tokenGrant(): " + ((e && e.message) || e));
+            log.info('oauth2: product mode refused a token exchange by "' +
+                     client.client_id + '": the actor_token did not verify ' +
+                     'against this realm\'s signing key.');
+            errorCodes.mark(res, 'STS-OAUTH-0556');
+            log.debug("Leaving OAuth2Server.tokenGrant().");
+            return self.oauthError(res, 400, 'invalid_request',
+                                   'The actor_token is not a token this ' +
+                                   'authorization server can verify.');
+          }
+          if (actorClaims.jti && stats.isRevoked(actorClaims.jti)) {
+            errorCodes.mark(res, 'STS-OAUTH-0557');
+            log.debug("Leaving OAuth2Server.tokenGrant().");
+            return self.oauthError(res, 400, 'invalid_request',
+                                   'The actor_token has been revoked.');
+          }
+          act = { sub: actorClaims.sub };
+        } else {
+          try {
+            act = { sub: (jsonFromB64u(String(body.actor_token)
+              .split('.')[1]) || {}).sub };
+          } catch (e) {
+            log.error(errorCodes.tag('STS-OAUTH-0226') + 'the actor_token ' +
+                                                         'could not be ' +
+                                                         'read: ' + e.message);
+            act = undefined;
+          }
         }
       }
       stats.recordAuthentication({

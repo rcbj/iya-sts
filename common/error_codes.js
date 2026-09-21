@@ -3804,6 +3804,14 @@ const CODES = [
       'way in would not be in a log, and generating one would put a working ' +
       'credential there and leave theirs not working.',
     spec: 'none — logged, and the service starts with nobody able to sign in' },
+  { code: 'STS-AUTHN-0206',
+    summary: 'Product mode: a passwordless sign-in named a person who holds ' +
+      'no security key that signs in on its own, and the sign-in screen ' +
+      'does not enrol one — enrolling there would give the account to ' +
+      'whoever claimed the name first. A primary key is added on ' +
+      '/portal/keys, by an activation link or by an operator. Development ' +
+      'enrols on first use (mode.enrolsKeysOnFirstUse()).',
+    spec: 'none — the sign-in screen is drawn again with the reason' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -5738,6 +5746,21 @@ const CODES = [
       'is refused instead until entries age out (twice ' +
       'oauth2.dpopIatSkewS).',
     spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
+  { code: 'STS-OAUTH-0555',
+    summary: 'Product mode: an RFC 8693 subject_token that did not verify ' +
+      'against this realm\'s signing key (a forged, foreign, expired or ' +
+      'unreadable token) was refused. Development exchanges it unverified ' +
+      '(mode.exchangesUnverifiedTokens()).',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
+  { code: 'STS-OAUTH-0556',
+    summary: 'Product mode: an RFC 8693 actor_token that did not verify ' +
+      'against this realm\'s signing key was refused. Development reads its ' +
+      'sub unverified into the act claim.',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
+  { code: 'STS-OAUTH-0557',
+    summary: 'An RFC 8693 subject_token or actor_token that verified was ' +
+      'refused because this realm has revoked it.',
+    spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +

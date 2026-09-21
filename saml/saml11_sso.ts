@@ -1865,10 +1865,11 @@ class Saml11Sso {
   // hardest. See decision 4 for why all four request types are answered where
   // the 2.0 module answers one.
   //
-  // It is not authenticated, and on a service that authenticates nobody that is
-  // the ordinary state of affairs rather than a decision about this endpoint.
-  // What stands in for authentication on the artifact path is the
-  // AssertionHandle, which is twenty random bytes, and the one-shot rule.
+  // An artifact request is authenticated since the #37 follow-up — a
+  // signature or a TLS client certificate, by `saml2.requireSignedAuthnRequests`
+  // (`authenticateArtifactCaller()`) — and is resolved only for the relying
+  // party it was issued to. The AssertionHandle's twenty random bytes and the
+  // one-shot rule are still what protect it where no signature is required.
   //
   // **A QUERY, THOUGH, HAS NO SUCH THING**, and that is worth saying out loud
   // rather than leaving inside the sentence above: in DEVELOPMENT mode anybody
@@ -2199,9 +2200,10 @@ class Saml11Sso {
       // release policy for SAML 1.1 relying parties — does not exist here. A
       // query gated on "presented some verified certificate" would answer any
       // holder of any certificate this service trusts about anybody, which is
-      // the same hole with a handshake in front of it. Artifact resolution and
-      // AssertionIDReference are UNCHANGED: each is protected by twenty random
-      // bytes nobody can name without having been handed them.
+      // the same hole with a handshake in front of it. Artifact resolution is
+      // authenticated separately (`authenticateArtifactCaller()`), and it and
+      // AssertionIDReference are protected by twenty random bytes nobody can
+      // name without having been handed them.
       // -----------------------------------------------------------------------
       if (!mode.opensTestControls()) {
         log.info('saml11: refused an ' +

@@ -461,6 +461,38 @@ function acceptsUnverifiedIssuerTokens() {
   return !isProduct();
 }
 
+// Does the RFC 8693 token exchange accept a `subject_token` or `actor_token`
+// this realm CANNOT VERIFY (2026-09-21)? Development says yes: it reads the
+// name out of a token from anywhere and exchanges it, which is what lets a
+// client under test drive the grant with a token some other issuer minted.
+// Product says no. The subject_token is the WHOLE of what the grant asks for —
+// there is no browser, password or consent anywhere in it — so an unverified
+// one is a token for whoever the caller wrote into a JWT it signed itself, or
+// did not sign at all. Until this predicate existed product exchanged exactly
+// that, and the page saying every door verifies its tokens was wrong about
+// this one. `oauth-oidc/oauth2.ts`'s token-exchange branch asks it.
+function exchangesUnverifiedTokens() {
+  log.debug("Entering exchangesUnverifiedTokens().");
+  log.debug("Leaving exchangesUnverifiedTokens().");
+  return !isProduct();
+}
+
+// Does the sign-in screen ENROL a security key for a passwordless sign-in that
+// names somebody holding none (2026-09-21)? Development says yes — "enrol on
+// first use", so a tester can reach a passkey sign-in with no set-up — and the
+// first person to claim a name gets it, which the screen says. Product says
+// no. Nothing on that path proves who is asking: no password is read, and the
+// only other check was that the name EXISTS, so anybody who knew a username
+// could register their own authenticator as that person's primary credential
+// and be signed in as them, for good. In product a primary key is added only
+// where the person has already proved who they are — `/portal/keys` behind a
+// session, an activation link, or an operator. `authn/authn.ts` asks it.
+function enrolsKeysOnFirstUse() {
+  log.debug("Entering enrolsKeysOnFirstUse().");
+  log.debug("Leaving enrolsKeysOnFirstUse().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -669,8 +701,8 @@ const REQUIREMENTS = [
     product: 'Verified against the hashed `userPassword` on the person\'s ' +
              'directory entry, at every one of those doors. A person with no ' +
              '`userPassword` set cannot sign in at all. The OAuth 2.0 ' +
-             'password grant is one of those doors, and refuses a person ' +
-             'holding a second factor, which that grant cannot carry. ' +
+             'password grant does not exist in product mode, which implies ' +
+             'RFC 9700 mode (section 2.4). ' +
              'WS-Trust requires a credential, and accepts an assertion only ' +
              'when this realm signed it and it is inside its Conditions.',
     where: 'common/credentials.ts, ws-trust/wstrust.ts, oauth-oidc/oauth2.ts' },
@@ -686,6 +718,26 @@ const REQUIREMENTS = [
              'key, or that this realm revoked, is refused invalid_token ' +
              '(HTTP 401) before anything is issued.',
     where: 'oid4vc/vc_issuer.ts, oauth-oidc/dpop.ts' },
+  { id: 'token-exchange-tokens',
+    what: 'An RFC 8693 token exchange accepts only a subject_token and ' +
+          'actor_token this realm can verify',
+    development: 'A subject_token this realm cannot verify is read for its ' +
+                 'name and exchanged anyway, and an actor_token is read and ' +
+                 'never verified, so a client can drive the grant with a ' +
+                 'token from any issuer.',
+    product: 'Both must verify against this realm\'s signing key, be ' +
+             'unexpired and not revoked, or the exchange is refused ' +
+             'invalid_request (HTTP 400, RFC 8693 section 2.2.2).',
+    where: 'oauth-oidc/oauth2.ts' },
+  { id: 'passkey-first-use',
+    what: 'The sign-in screen does not enrol a security key for somebody ' +
+          'who has not proved who they are',
+    development: 'A passwordless sign-in naming somebody who holds no ' +
+                 'primary key enrols one on the spot, with no password read ' +
+                 '— the first person to claim a name gets it.',
+    product: 'It is refused. A primary key is added on /portal/keys behind ' +
+             'a session, by an activation link, or by an operator.',
+    where: 'authn/authn.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -1262,6 +1314,8 @@ module.exports = {
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
   acceptsUnverifiedIssuerTokens: acceptsUnverifiedIssuerTokens,
+  exchangesUnverifiedTokens: exchangesUnverifiedTokens,
+  enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,
