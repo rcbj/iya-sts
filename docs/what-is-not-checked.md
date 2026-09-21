@@ -505,8 +505,14 @@ port is bound as mutual TLS on every start.
 `spiffe.nodeAttestors` **and** an attestor here can verify; anything else is
 refused with `FAILED_PRECONDITION`, as SPIRE refuses an attestor it has no plugin
 for. Until then any type was accepted with its payload unread and the agent
-marked `unverified:true`. The verifiable type today is `join_token` (minted here,
-single use); SPIRE's other node attestors are being added under issue #40.
+marked `unverified:true`. The verifiable types are `join_token` (minted here,
+single use), `x509pop` (an X.509 certificate chaining to the realm's anchors and
+a signature over a fresh challenge — RSA, ECDSA or, beyond SPIRE, a
+post-quantum key), `sshpop` (an SSH host certificate from a configured
+authority, and a signature by its host key) and `tpm_devid` (a DevID key
+resident in a TPM whose endorsement key a configured manufacturer certified,
+proved by credential activation). SPIRE's Kubernetes and cloud attestors are
+being added under issue #40.
 
 ### The admin console, at `/admin`
 

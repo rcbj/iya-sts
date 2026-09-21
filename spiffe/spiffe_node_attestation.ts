@@ -20,7 +20,8 @@
 // that the realm has not turned on in `spiffe.nodeAttestors`, is REFUSED with
 // FAILED_PRECONDITION, which is what SPIRE answers for an attestor it has no
 // plugin for. `join_token` is still the easy path for development, and it is
-// verified — this server minted it.
+// verified — this server minted it. `x509pop`, `sshpop` and `tpm_devid`
+// (phase two) prove possession of a key by answering a challenge.
 //
 // A LIBRARY: it registers no route, requires nothing of this service but the
 // logger and the settings, and holds no state but the table. `spiffe_api.ts`

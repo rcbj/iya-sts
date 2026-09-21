@@ -833,6 +833,21 @@ var config = {
     joinTokenTtl: 600,                                       // Join token lifetime (seconds)
     nodeAttestors: "join_token",                             // Node attestors accepted
     attestationChallengeTimeout: 30,                         // Attestation challenge timeout (s)
+    x509popMode: "external_pki",                             // x509pop mode
+    x509popCaBundle: "",                                     // x509pop trust anchors (PEM)
+    x509popSpiffePrefix: "/spire-exchange/",                 // x509pop SVID path prefix
+    x509popAgentPathTemplate: "",                            // x509pop agent path template
+    x509popMaxIntermediates: 4,                              // x509pop intermediates allowed
+    x509popMaxRsaKeySize: 8192,                              // x509pop largest RSA key (bits)
+    x509popVerifyClientIp: false,                            // x509pop verifies the client address
+    x509popGroupTemplate: "",                                // x509pop group template
+    x509popAllowedGroups: "",                                // x509pop allowed groups
+    sshpopCertAuthorities: "",                               // sshpop host certificate authorities
+    sshpopCanonicalDomain: "",                               // sshpop canonical domain
+    sshpopAgentPathTemplate: "",                             // sshpop agent path template
+    sshpopVerifyClientIp: false,                             // sshpop verifies the client address
+    tpmDevidCaBundle: "",                                    // tpm_devid DevID trust anchors (PEM)
+    tpmEndorsementCaBundle: "",                              // tpm_devid endorsement trust anchors (PEM)
     maxJoinTokens: 256,                                      // Unspent join tokens held
     maxPageSize: 1000,                                       // Largest page a List* returns
     maxRecordedConnections: 512,                             // mTLS connections remembered

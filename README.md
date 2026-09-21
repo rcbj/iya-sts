@@ -1560,6 +1560,21 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.joinTokenTtl` | `STS_SPIFFE_JOIN_TOKEN_TTL` | `600` | yes | A join token's lifetime when CreateJoinToken names none. |
 | `spiffe.nodeAttestors` | `STS_SPIFFE_NODE_ATTESTORS` | `join_token` | yes | The node attestors AttestAgent accepts in this realm. Each is verified; a type not listed, or not one this server can verify, is refused with FAILED_PRECONDITION. |
 | `spiffe.attestationChallengeTimeout` | `STS_SPIFFE_ATTESTATION_CHALLENGE_TIMEOUT` | `30` | yes | Seconds AttestAgent waits for a challenge_response once an attestor has challenged. |
+| `spiffe.x509popMode` | `STS_SPIFFE_X509POP_MODE` | external_pki | yes | x509pop `mode`: external_pki verifies against `spiffe.x509popCaBundle`; spiffe against this realm's own SPIFFE bundle. |
+| `spiffe.x509popCaBundle` | `STS_SPIFFE_X509POP_CA_BUNDLE` | (empty) | yes | PEM trust anchors for x509pop (SPIRE's ca_bundle_path). Empty refuses every x509pop agent. |
+| `spiffe.x509popSpiffePrefix` | `STS_SPIFFE_X509POP_SPIFFE_PREFIX` | `/spire-exchange/` | yes | spiffe mode: the X509-SVID path must start with it. |
+| `spiffe.x509popAgentPathTemplate` | `STS_SPIFFE_X509POP_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template; empty is SPIRE's default for the mode. Field references and sprig string/hash functions; other Go template syntax is refused. |
+| `spiffe.x509popMaxIntermediates` | `STS_SPIFFE_X509POP_MAX_INTERMEDIATES` | `4` | yes | Most intermediates an x509pop attestation may carry. |
+| `spiffe.x509popMaxRsaKeySize` | `STS_SPIFFE_X509POP_MAX_RSA_KEY_SIZE` | `8192` | yes | Largest RSA key accepted on any x509pop certificate. |
+| `spiffe.x509popVerifyClientIp` | `STS_SPIFFE_X509POP_VERIFY_CLIENT_IP` | `false` | yes | The agent's address must be an IP SAN of its leaf. |
+| `spiffe.x509popGroupTemplate` | `STS_SPIFFE_X509POP_GROUP_TEMPLATE` | (empty) | yes | Renders a `group:` selector when the result is in `spiffe.x509popAllowedGroups`. |
+| `spiffe.x509popAllowedGroups` | `STS_SPIFFE_X509POP_ALLOWED_GROUPS` | (empty) | yes | The groups `spiffe.x509popGroupTemplate` may produce. |
+| `spiffe.sshpopCertAuthorities` | `STS_SPIFFE_SSHPOP_CERT_AUTHORITIES` | (empty) | yes | SSH host CAs in authorized_keys form, one per line. Empty refuses every sshpop agent. |
+| `spiffe.sshpopCanonicalDomain` | `STS_SPIFFE_SSHPOP_CANONICAL_DOMAIN` | (empty) | yes | The first principal must end in it; the Hostname is the principal without it. |
+| `spiffe.sshpopAgentPathTemplate` | `STS_SPIFFE_SSHPOP_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for sshpop. |
+| `spiffe.sshpopVerifyClientIp` | `STS_SPIFFE_SSHPOP_VERIFY_CLIENT_IP` | `false` | yes | The agent's address must be in the certificate's source-address critical option. |
+| `spiffe.tpmDevidCaBundle` | `STS_SPIFFE_TPM_DEVID_CA_BUNDLE` | (empty) | yes | PEM anchors for tpm_devid DevID certificates. Empty refuses every tpm_devid agent. |
+| `spiffe.tpmEndorsementCaBundle` | `STS_SPIFFE_TPM_ENDORSEMENT_CA_BUNDLE` | (empty) | yes | PEM anchors for TPM endorsement key certificates. Empty refuses every tpm_devid agent. |
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | Unspent, unexpired join tokens a realm holds. At the bound a NEW token is refused with RESOURCE_EXHAUSTED; a token already handed to an agent is never evicted. |
 | `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every SPIRE Server API `List*` method. |
 | `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes (per process — a realm may not carry it) | How many mTLS connections are remembered so an X509-SVID is one authentication per connection rather than per call. |
@@ -7298,8 +7313,11 @@ Four things follow, and each is deliberate:
   this server can verify; anything else is refused with FAILED_PRECONDITION, as
   SPIRE refuses an attestor it has no plugin for. Until that date any type was
   accepted with its payload unread and marked `unverified:true`; that is gone in
-  every mode. Today the verifiable type is **`join_token`**, which this server
-  minted and therefore checks — see the refusals below; the other SPIRE node
+  every mode. The verifiable types are **`join_token`**, which this server
+  minted and therefore checks — see the refusals below — and **`x509pop`**,
+  **`sshpop`** and **`tpm_devid`**, which prove possession of a key by
+  answering a challenge, each configured by its `spiffe.x509pop*`,
+  `spiffe.sshpop*` or `spiffe.tpm*` settings. SPIRE's Kubernetes and cloud
   attestors are being added under #40.
 
 #### Who may call the SPIRE Server API

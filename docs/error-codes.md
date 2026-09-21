@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2802** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2816** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 84
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 98
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
@@ -2084,6 +2084,20 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0082` | The AttestAgent stream closed or was cancelled while a node attestor's challenge was outstanding. | gRPC CANCELLED |
 | `STS-SPIFFE-0083` | An agent already attested with evidence that is not re-attestable (a join token, a trust-on-first-use document) attested again; the agent must be deleted first, as in SPIRE. | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0084` | CreateJoinToken's agent_id could not be registered as the token's alias entry (not in this trust domain, reserved, or the registry refused it), so no token was issued. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0085` | A node attestor the realm accepts is not configured: x509pop in external_pki mode with no spiffe.x509popCaBundle, sshpop with no spiffe.sshpopCertAuthorities, tpm_devid with no DevID or endorsement anchors, or a template that does not parse. | gRPC FAILED_PRECONDITION |
+| `STS-SPIFFE-0086` | A node attestation payload or challenge response could not be read: not the attestor's JSON, or a certificate, SSH certificate or TPM structure in it that does not parse. | gRPC INVALID_ARGUMENT (INTERNAL for sshpop, as SPIRE answers) |
+| `STS-SPIFFE-0087` | An x509pop attestation carried more intermediate certificates than spiffe.x509popMaxIntermediates. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0088` | An x509pop attestation carried an RSA key larger than spiffe.x509popMaxRsaKeySize. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0089` | A node attestor's certificate did not chain to its configured trust anchors (x509pop, the tpm_devid DevID or endorsement certificate). | gRPC PERMISSION_DENIED (x509pop), INVALID_ARGUMENT (tpm_devid) |
+| `STS-SPIFFE-0090` | The agent's address is not one its certificate allows (x509pop IP subjectAltNames, sshpop source-address), or the certificate carries no such restriction. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0091` | verify_client_ip is on and the agent has no address to verify (it came in on the Unix socket). | gRPC INTERNAL |
+| `STS-SPIFFE-0092` | No challenge could be issued for the attesting key: an x509pop certificate not for digitalSignature, or a key type the attestor does not sign with. | gRPC INTERNAL |
+| `STS-SPIFFE-0093` | A node attestor's challenge response did not verify: the signature over the nonces, or the DevID signature. | gRPC PERMISSION_DENIED (x509pop), INTERNAL (sshpop), INVALID_ARGUMENT (tpm_devid) |
+| `STS-SPIFFE-0094` | An x509pop attestation in spiffe mode presented no SPIFFE ID, or one outside spiffe.x509popSpiffePrefix. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0095` | An agent path template could not produce a valid agent SPIFFE ID for this attestation. | gRPC INTERNAL |
+| `STS-SPIFFE-0096` | An sshpop host certificate was refused: not a host certificate, no principal, an authority not configured, outside its validity, an unsupported critical option, a signature that does not verify, or a first principal outside spiffe.sshpopCanonicalDomain. | gRPC INTERNAL |
+| `STS-SPIFFE-0097` | A tpm_devid attestation did not prove its DevID key resides in the TPM: incomplete, an endorsement certificate that does not match the EK, or a certification the attestation key did not sign. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0098` | A tpm_devid credential activation returned the wrong secret: the TPM holding the EK did not decrypt it for this AK. | gRPC INVALID_ARGUMENT |
 
 ## STS-TLS
 

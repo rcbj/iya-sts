@@ -23,6 +23,9 @@ export interface NodeAttestationContext {
   type: string;
   payload: Buffer;
   trustDomain: string;
+  // The address the agent connected from, without its port — '' on the Unix
+  // socket, which has none. SPIRE's `verify_client_ip` compares it.
+  clientIp: string;
   call: any;
   challenge(bytes: Buffer): Promise<Buffer>;
 }

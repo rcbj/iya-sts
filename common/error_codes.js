@@ -8062,6 +8062,72 @@ const CODES = [
       'token\'s alias entry (not in this trust domain, reserved, or the ' +
       'registry refused it), so no token was issued.',
     spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0085',
+    summary: 'A node attestor the realm accepts is not configured: x509pop ' +
+      'in external_pki mode with no spiffe.x509popCaBundle, sshpop with no ' +
+      'spiffe.sshpopCertAuthorities, tpm_devid with no DevID or ' +
+      'endorsement anchors, or a template that does not parse.',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0086',
+    summary: 'A node attestation payload or challenge response could not be ' +
+      'read: not the attestor\'s JSON, or a certificate, SSH certificate or ' +
+      'TPM structure in it that does not parse.',
+    spec: 'gRPC INVALID_ARGUMENT (INTERNAL for sshpop, as SPIRE answers)' },
+  { code: 'STS-SPIFFE-0087',
+    summary: 'An x509pop attestation carried more intermediate certificates ' +
+      'than spiffe.x509popMaxIntermediates.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0088',
+    summary: 'An x509pop attestation carried an RSA key larger than ' +
+      'spiffe.x509popMaxRsaKeySize.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0089',
+    summary: 'A node attestor\'s certificate did not chain to its configured ' +
+      'trust anchors (x509pop, the tpm_devid DevID or endorsement ' +
+      'certificate).',
+    spec: 'gRPC PERMISSION_DENIED (x509pop), INVALID_ARGUMENT (tpm_devid)' },
+  { code: 'STS-SPIFFE-0090',
+    summary: 'The agent\'s address is not one its certificate allows ' +
+      '(x509pop IP subjectAltNames, sshpop source-address), or the ' +
+      'certificate carries no such restriction.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0091',
+    summary: 'verify_client_ip is on and the agent has no address to verify ' +
+      '(it came in on the Unix socket).',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0092',
+    summary: 'No challenge could be issued for the attesting key: an x509pop ' +
+      'certificate not for digitalSignature, or a key type the attestor ' +
+      'does not sign with.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0093',
+    summary: 'A node attestor\'s challenge response did not verify: the ' +
+      'signature over the nonces, or the DevID signature.',
+    spec: 'gRPC PERMISSION_DENIED (x509pop), INTERNAL (sshpop), ' +
+      'INVALID_ARGUMENT (tpm_devid)' },
+  { code: 'STS-SPIFFE-0094',
+    summary: 'An x509pop attestation in spiffe mode presented no SPIFFE ID, ' +
+      'or one outside spiffe.x509popSpiffePrefix.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0095',
+    summary: 'An agent path template could not produce a valid agent SPIFFE ' +
+      'ID for this attestation.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0096',
+    summary: 'An sshpop host certificate was refused: not a host ' +
+      'certificate, no principal, an authority not configured, outside its ' +
+      'validity, an unsupported critical option, a signature that does not ' +
+      'verify, or a first principal outside spiffe.sshpopCanonicalDomain.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0097',
+    summary: 'A tpm_devid attestation did not prove its DevID key resides in ' +
+      'the TPM: incomplete, an endorsement certificate that does not match ' +
+      'the EK, or a certification the attestation key did not sign.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0098',
+    summary: 'A tpm_devid credential activation returned the wrong secret: ' +
+      'the TPM holding the EK did not decrypt it for this AK.',
+    spec: 'gRPC INVALID_ARGUMENT' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

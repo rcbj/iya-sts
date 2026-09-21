@@ -9777,6 +9777,138 @@ const SETTINGS = [
                  'Past it the call fails with DEADLINE_EXCEEDED and nothing ' +
                  'is spent.' },
 
+  // #40 phase two (2026-09-21): the x509pop, sshpop and tpm_devid node
+  // attestors, each configured per realm with SPIRE's own options. A trust
+  // anchor is PEM text here where SPIRE takes a file path, as
+  // oid4vp.trustedIssuerCertificates is, so the console and /admin-api can set
+  // it; an attestor with no anchor configured refuses every agent.
+  { key: 'spiffe.x509popMode', group: 'SPIFFE', label: 'x509pop mode',
+    env: 'STS_SPIFFE_X509POP_MODE', type: 'enum', dflt: 'external_pki',
+    enumValues: ['external_pki', 'spiffe'], runtime: true,
+    description: 'SPIRE\'s x509pop `mode`. external_pki verifies the agent\'s ' +
+                 'certificate against spiffe.x509popCaBundle; spiffe verifies ' +
+                 'it against this realm\'s own SPIFFE trust bundle and names ' +
+                 'the agent after its X509-SVID path below ' +
+                 'spiffe.x509popSpiffePrefix.' },
+
+  { key: 'spiffe.x509popCaBundle', group: 'SPIFFE',
+    label: 'x509pop trust anchors (PEM)',
+    env: 'STS_SPIFFE_X509POP_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'PEM certificates, concatenated — SPIRE\'s ca_bundle_path(s). ' +
+                 'In external_pki mode an agent\'s certificate must chain to ' +
+                 'one of them; empty refuses every x509pop agent. A root ' +
+                 'need not be self-signed, as in SPIRE.' },
+
+  { key: 'spiffe.x509popSpiffePrefix', group: 'SPIFFE',
+    label: 'x509pop SVID path prefix',
+    env: 'STS_SPIFFE_X509POP_SPIFFE_PREFIX', type: 'string',
+    dflt: '/spire-exchange/', runtime: true,
+    description: 'SPIRE\'s spiffe_prefix: in spiffe mode the agent\'s ' +
+                 'X509-SVID path must start with it, and what follows it is ' +
+                 'SVIDPathTrimmed in the agent path template.' },
+
+  { key: 'spiffe.x509popAgentPathTemplate', group: 'SPIFFE',
+    label: 'x509pop agent path template',
+    env: 'STS_SPIFFE_X509POP_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is SPIRE\'s default for ' +
+                 'the mode: /{{ .PluginName }}/{{ .Fingerprint }}, or ' +
+                 '/{{ .PluginName }}/{{ .SVIDPathTrimmed }} in spiffe mode. ' +
+                 'Field references and sprig\'s string, hash and encoding ' +
+                 'functions are evaluated; the rest of Go\'s template ' +
+                 'language is refused rather than rendered differently.' },
+
+  { key: 'spiffe.x509popMaxIntermediates', group: 'SPIFFE',
+    label: 'x509pop intermediates allowed',
+    env: 'STS_SPIFFE_X509POP_MAX_INTERMEDIATES', type: 'int', dflt: 4, min: 1,
+    max: 32, runtime: true,
+    description: 'SPIRE\'s max_intermediates: an attestation carrying more ' +
+                 'intermediate certificates is refused before any is read.' },
+
+  { key: 'spiffe.x509popMaxRsaKeySize', group: 'SPIFFE',
+    label: 'x509pop largest RSA key (bits)',
+    env: 'STS_SPIFFE_X509POP_MAX_RSA_KEY_SIZE', type: 'int', dflt: 8192,
+    min: 1024, max: 16384, runtime: true,
+    description: 'SPIRE\'s max_rsa_key_size: an RSA key larger than this on ' +
+                 'any certificate presented is refused, because verifying ' +
+                 'with a huge key is the expensive half of the protocol.' },
+
+  { key: 'spiffe.x509popVerifyClientIp', group: 'SPIFFE',
+    label: 'x509pop verifies the client address',
+    env: 'STS_SPIFFE_X509POP_VERIFY_CLIENT_IP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the address the agent connected ' +
+                 'from must be one of the leaf certificate\'s IP ' +
+                 'subjectAltNames. An agent on the Unix socket has no address ' +
+                 'and is refused.' },
+
+  { key: 'spiffe.x509popGroupTemplate', group: 'SPIFFE',
+    label: 'x509pop group template',
+    env: 'STS_SPIFFE_X509POP_GROUP_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s group_template: rendered over the verified ' +
+                 'certificate, and when the result is one of ' +
+                 'spiffe.x509popAllowedGroups the agent gets the selector ' +
+                 'x509pop:group:<it>. Set both or neither.' },
+
+  { key: 'spiffe.x509popAllowedGroups', group: 'SPIFFE',
+    label: 'x509pop allowed groups',
+    env: 'STS_SPIFFE_X509POP_ALLOWED_GROUPS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s allowed_groups, comma-separated: the only values ' +
+                 'spiffe.x509popGroupTemplate may produce a selector for.' },
+
+  { key: 'spiffe.sshpopCertAuthorities', group: 'SPIFFE',
+    label: 'sshpop host certificate authorities',
+    env: 'STS_SPIFFE_SSHPOP_CERT_AUTHORITIES', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s cert_authorities: SSH public keys in ' +
+                 'authorized_keys form, one per line, whose host ' +
+                 'certificates an sshpop agent may present. Empty refuses ' +
+                 'every sshpop agent.' },
+
+  { key: 'spiffe.sshpopCanonicalDomain', group: 'SPIFFE',
+    label: 'sshpop canonical domain',
+    env: 'STS_SPIFFE_SSHPOP_CANONICAL_DOMAIN', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s canonical_domain: the host certificate\'s first ' +
+                 'principal must end in .<it>, and the Hostname in the agent ' +
+                 'path template is the principal without it. Empty takes the ' +
+                 'principal whole.' },
+
+  { key: 'spiffe.sshpopAgentPathTemplate', group: 'SPIFFE',
+    label: 'sshpop agent path template',
+    env: 'STS_SPIFFE_SSHPOP_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template for sshpop. Empty is ' +
+                 '/{{ .PluginName }}/{{ .Fingerprint }}; the same subset of ' +
+                 'Go\'s template language as x509pop\'s.' },
+
+  { key: 'spiffe.sshpopVerifyClientIp', group: 'SPIFFE',
+    label: 'sshpop verifies the client address',
+    env: 'STS_SPIFFE_SSHPOP_VERIFY_CLIENT_IP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the host certificate must carry ' +
+                 'a source-address critical option and the agent\'s address ' +
+                 'must be in it.' },
+
+  { key: 'spiffe.tpmDevidCaBundle', group: 'SPIFFE',
+    label: 'tpm_devid DevID trust anchors (PEM)',
+    env: 'STS_SPIFFE_TPM_DEVID_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s devid_ca_path: PEM certificates a tpm_devid ' +
+                 'agent\'s DevID certificate must chain to. Empty refuses ' +
+                 'every tpm_devid agent.' },
+
+  { key: 'spiffe.tpmEndorsementCaBundle', group: 'SPIFFE',
+    label: 'tpm_devid endorsement trust anchors (PEM)',
+    env: 'STS_SPIFFE_TPM_ENDORSEMENT_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s endorsement_ca_path: PEM certificates of the TPM ' +
+                 'manufacturers whose endorsement key certificates are ' +
+                 'trusted. Empty refuses every tpm_devid agent.' },
+
   { key: 'spiffe.maxJoinTokens', group: 'SPIFFE', label: 'Unspent join ' +
       'tokens held',
     env: 'STS_SPIFFE_MAX_JOIN_TOKENS', type: 'int', dflt: 256, min: 1,

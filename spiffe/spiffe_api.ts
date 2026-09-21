@@ -122,6 +122,11 @@ import claims = require('../cluster/cluster_claims');
 // this module's. LIBRARIES; neither registers a route.
 import attestation = require('./spiffe_node_attestation');
 import joinTokenAttestor = require('./spiffe_attestor_join_token');
+// The attestors whose stores are nobody's (#40 phase two): each is
+// configured by settings alone and registered as it is built.
+import x509popAttestor = require('./spiffe_attestor_x509pop');
+import sshpopAttestor = require('./spiffe_attestor_sshpop');
+import tpmDevidAttestor = require('./spiffe_attestor_tpm_devid');
 
 const status = rpc.grpc.status;
 
@@ -144,6 +149,8 @@ interface SpiffeApiDeps {
   claims: typeof claims;
   attestation: typeof attestation;
   joinTokenAttestor: typeof joinTokenAttestor;
+  // Each attestor other than join_token, built with its own defaults.
+  attestors: Array<{ build(): any }>;
   status: typeof status;
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
@@ -181,6 +188,20 @@ class SpiffeApi {
       claims: claims,
       attestation: attestation,
       joinTokenAttestor: joinTokenAttestor,
+      attestors: [
+        { build: function () {
+          return new x509popAttestor.X509popAttestor(
+            x509popAttestor.X509popAttestor.defaultDeps());
+        } },
+        { build: function () {
+          return new sshpopAttestor.SshpopAttestor(
+            sshpopAttestor.SshpopAttestor.defaultDeps());
+        } },
+        { build: function () {
+          return new tpmDevidAttestor.TpmDevidAttestor(
+            tpmDevidAttestor.TpmDevidAttestor.defaultDeps());
+        } }
+      ],
       status: status,
       loadPkijs: function () {
         return require('pkijs');
@@ -1006,6 +1027,10 @@ class SpiffeApi {
             type: attestationType,
             payload: Buffer.from(data.payload || []),
             trustDomain: self.trustDomain(),
+            // `address:port`, or `[v6]:port`; '' on the Unix socket.
+            clientIp: String((call.spiffeCaller || {}).peer || '')
+              .replace(/:\d+$/, '')
+              .replace(/^\[(.*)\]$/, '$1'),
             call: call,
             challenge: function (bytes) {
               log.debug("Entering challenge(). type=" + attestationType);
@@ -1393,6 +1418,9 @@ class SpiffeApi {
         }
       });
       table.register(this.joinTokenAttestorInstance);
+      this.deps.attestors.forEach(function (one) {
+        table.register(one.build());
+      });
       this.attestationTable = table;
     }
     log.debug("Leaving SpiffeApi.nodeAttestation().");

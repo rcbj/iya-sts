@@ -468,8 +468,8 @@ every page, and granting that agent everything beneath its id all the same. A
 real SPIRE agent pointed here could join a trust domain with an invented type.
 rcbj's decision on #40: **refuse, in every mode**, and implement SPIRE's
 node attestors instead (`join_token`, `x509pop`, `sshpop`, `tpm_devid`,
-`k8s_psat`, `aws_iid`, `gcp_iit`, `azure_imds`, `http_challenge` — the first
-is in; the rest arrive in #40's later phases).
+`k8s_psat`, `aws_iid`, `gcp_iit`, `azure_imds`, `http_challenge` — the
+first four are in; the Kubernetes and cloud ones arrive in #40's phase three).
 
 * **THE TABLE IS `spiffe_node_attestation.ts`** and each attestor is a class in
   a `spiffe_attestor_<type>.ts` of its own, returning the shapes in
@@ -517,6 +517,59 @@ is in; the rest arrive in #40's later phases).
 * **`GET /spiffe` carries `nodeAttestation`**: every type this build
   verifies, whether the realm accepts it, and any configured name nothing
   verifies.
+
+### x509pop, sshpop and tpm_devid: proof of possession (#40 phase two)
+
+Each is SPIRE's server plugin step for step, because a real `spire-agent` is
+the client: `spiffe_attestor_x509pop.ts`, `spiffe_attestor_sshpop.ts`,
+`spiffe_attestor_tpm_devid.ts`, over three libraries that stand in for the Go
+packages SPIRE uses — `spiffe_x509_path.ts` (`x509.Certificate.Verify()`),
+`spiffe_ssh.ts` (`x/crypto/ssh`'s certificates and `CertChecker`) and
+`spiffe_tpm.ts` (go-tpm's structures, KDFa and `credactivation`). Six things
+were decided rather than copied, and each is the place to look first:
+
+* **A TRUST ANCHOR IS PEM TEXT IN A SETTING, NOT A FILE PATH.** SPIRE takes
+  `ca_bundle_path`, `devid_ca_path`, `endorsement_ca_path` and
+  `cert_authorities_path`; here they are `spiffe.x509popCaBundle`,
+  `spiffe.tpmDevidCaBundle`, `spiffe.tpmEndorsementCaBundle` and
+  `spiffe.sshpopCertAuthorities`, per realm, as
+  `oid4vp.trustedIssuerCertificates` is — so the console and `/admin-api`
+  (rule 7) can set them. An attestor with none configured refuses every agent
+  with FAILED_PRECONDITION (`STS-SPIFFE-0085`), which is SPIRE's "not
+  configured".
+* **THE STATUS CODES ARE SPIRE'S, EVEN WHERE THEY LOOK WRONG.** x509pop
+  answers a bad path PERMISSION_DENIED; tpm_devid answers the same thing
+  INVALID_ARGUMENT; sshpop answers almost everything INTERNAL, because
+  `handshake.go` wraps it so. A client may branch on the code, and one that
+  works against SPIRE must work here.
+* **THE PATH BUILDER FAILS CLOSED WHERE GO WOULD EVALUATE.** An unhandled
+  critical extension is refused (Go refuses them too; tpm_devid allows a
+  critical subjectAltName on the EK certificate, as SPIRE strips it), and a
+  CA with nameConstraints is refused outright, because the constraints are
+  not evaluated here. A path accepted unchecked would be wrong; one refused
+  says why. Signatures are checked by the vendored `x509.verifyChain()`,
+  which reads ML-DSA, SLH-DSA and composite signatures — so a post-quantum
+  CA above an x509pop or DevID leaf verifies.
+* **x509pop CHALLENGES A POST-QUANTUM KEY, BEYOND SPIRE.** SPIRE's challenge
+  has an RSA and an ECDSA member; a leaf with an ML-DSA, SLH-DSA or composite
+  key is challenged here with `pqc_signature` (`{"nonce", "algorithm"}`,
+  answered `{"nonce", "signature"}` over the same SHA-256 of both nonces). A
+  stock agent never holds such a key and never sees the member.
+* **AGENT PATH TEMPLATES ARE A SUBSET OF GO'S, AND SAY WHERE IT ENDS.**
+  `spiffe_agent_path.ts` evaluates field references (`.Subject.CommonName`,
+  `.URISanSelectors.k`), pipelines, and sprig's string, hash and encoding
+  functions from SPIRE's list; `if`, `range`, variables and any other
+  function are refused when the template is parsed — a template rendered
+  differently here from SPIRE would give an agent a different identity.
+* **NOTHING IS CLAIMED.** Each of the three proves possession by answering a
+  challenge this server chose, so its `commit()` and `release()` are empty
+  and all three are re-attestable, as in SPIRE.
+
+`tests/spiffe_attestors.js` drives all three with software clients —
+certificates from the vendored engine, an OpenSSH host certificate assembled
+byte by byte, and a software TPM whose ActivateCredential is written
+independently of `spiffe_tpm.ts` — and asserts every refusal beside each
+acceptance. A real `spire-agent` (and swtpm) is phase five's.
 
 ## Workloads are not attested, and that is a narrower sentence than it was
 
