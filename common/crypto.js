@@ -4842,6 +4842,89 @@ function tpmMakeCredential(akName, ekPublicKey, seedBytes, secret, hash) {
            secret: encryptedSeed };
 }
 
+// A PKCS#7 / CMS SignedData with its content attached, VERIFIED: the one
+// SignerInfo's signature (over its signed attributes, whose messageDigest
+// must be the content's) under the signer's certificate. AWS signs an
+// instance identity document this way (its RSA-2048 signature) and Azure an
+// attested document.
+//   der           the SignedData, DER (a ContentInfo)
+//   options.certificates  certificate DERs to find the signer among BESIDE
+//                 the ones the SignedData carries — AWS's carries none and the
+//                 signer is the region's published certificate
+// Resolves `{ ok, content, signerDer, embeddedDers, why }`. Never rejects.
+// It checks the signature and nothing about the certificate: whether the
+// signer is one to believe is the caller's question (`pki.js`).
+async function verifyPkcs7SignedData(der, options) {
+  log.debug("Entering verifyPkcs7SignedData().");
+  const opts = options || {};
+  const pkijs = require('pkijs');
+  const refuse = function (why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    return { ok: false, content: null, signerDer: null, embeddedDers: [],
+             why: why };
+  };
+  let signed = null;
+  try {
+    const parsed = asn1js.fromBER(new Uint8Array(Buffer.from(der || [])));
+    if (parsed.offset === -1) {
+      log.debug("Leaving verifyPkcs7SignedData(). Not BER.");
+      return refuse('the signature is not DER');
+    }
+    const info = new pkijs.ContentInfo({ schema: parsed.result });
+    signed = new pkijs.SignedData({ schema: info.content });
+  } catch (e) {
+    log.debug("Caught in verifyPkcs7SignedData(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyPkcs7SignedData(). Not a SignedData.");
+    return refuse('the signature is not a PKCS#7 SignedData: ' + e.message);
+  }
+  if (!signed.signerInfos || signed.signerInfos.length !== 1) {
+    log.debug("Leaving verifyPkcs7SignedData(). Not one signer.");
+    return refuse('expected exactly one signer, found ' +
+                  ((signed.signerInfos || []).length));
+  }
+  const econtent = signed.encapContentInfo &&
+    signed.encapContentInfo.eContent;
+  if (!econtent) {
+    log.debug("Leaving verifyPkcs7SignedData(). Detached.");
+    return refuse('the SignedData carries no content');
+  }
+  const content = Buffer.from(econtent.getValue
+    ? econtent.getValue() : econtent.valueBlock.valueHexView);
+  const embedded = (signed.certificates || []).filter(function (one) {
+    return one instanceof pkijs.Certificate;
+  });
+  const extra = (opts.certificates || []).map(function (one) {
+    return pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(one)));
+  });
+  signed.certificates = embedded.concat(extra);
+  let verdict = null;
+  try {
+    verdict = await signed.verify({ signer: 0, checkChain: false,
+                                    extendedMode: true });
+  } catch (e) {
+    log.debug("Caught in verifyPkcs7SignedData(): " +
+              ((e && (e.message || e.code)) || e));
+    const reason = (e && (e.message || (e.signatureVerified === false
+      ? 'the signature does not verify' : ''))) || String(e);
+    log.debug("Leaving verifyPkcs7SignedData(). Refused.");
+    return refuse('the signature does not verify: ' + reason);
+  }
+  if (!verdict || !verdict.signatureVerified || !verdict.signerCertificate) {
+    log.debug("Leaving verifyPkcs7SignedData(). Did not verify.");
+    return refuse('the signature does not verify under the signer\'s ' +
+                  'certificate');
+  }
+  log.debug("Leaving verifyPkcs7SignedData(). Verified.");
+  return {
+    ok: true, content: content, why: '',
+    signerDer: Buffer.from(verdict.signerCertificate.toSchema().toBER(false)),
+    embeddedDers: embedded.map(function (one) {
+      return Buffer.from(one.toSchema().toBER(false));
+    })
+  };
+}
+
 module.exports = {
   // --- a credential several processes have to derive alike ---
   deriveSharedCredential: deriveSharedCredential,
@@ -4954,6 +5037,7 @@ module.exports = {
   ecdsaIntegersToP1363: ecdsaIntegersToP1363,
   tpmKdfa: tpmKdfa,
   tpmMakeCredential: tpmMakeCredential,
+  verifyPkcs7SignedData: verifyPkcs7SignedData,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,

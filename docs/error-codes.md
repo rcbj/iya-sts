@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2816** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2828** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 98
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 110
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
@@ -2098,6 +2098,18 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0096` | An sshpop host certificate was refused: not a host certificate, no principal, an authority not configured, outside its validity, an unsupported critical option, a signature that does not verify, or a first principal outside spiffe.sshpopCanonicalDomain. | gRPC INTERNAL |
 | `STS-SPIFFE-0097` | A tpm_devid attestation did not prove its DevID key resides in the TPM: incomplete, an endorsement certificate that does not match the EK, or a certification the attestation key did not sign. | gRPC INVALID_ARGUMENT |
 | `STS-SPIFFE-0098` | A tpm_devid credential activation returned the wrong secret: the TPM holding the EK did not decrypt it for this AK. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0099` | A node attestor could not get an answer from a source it is configured to ask: a Kubernetes API server (TokenReview, a pod, a node), Google's certificates, Microsoft's tenant discovery or intermediate, or a cloud API. | gRPC INTERNAL |
+| `STS-SPIFFE-0100` | A k8s_psat token was not authenticated by the cluster's TokenReview, or not for this server's audience. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0101` | A k8s_psat agent's service account is not in the cluster's allow list, or the pod the token is bound to is not the pod that now has that name. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0102` | A k8s_psat agent named a cluster this realm is not configured for, or sent no cluster or token. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0103` | An http_challenge agent's port or agent name is not acceptable (required_port, allow_non_root_ports, the name's form). | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0104` | An http_challenge agent's host name matches none of spiffe.httpChallengeAllowedDnsPatterns (or is localhost), so it was neither resolved nor dialled. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0105` | An http_challenge fetch did not return the nonce: the host was unreachable, internal (product mode), redirected, or served something else. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0106` | A cloud node attestor is enabled and the SDK it calls its cloud with is not installed; the refusal names the package. | gRPC FAILED_PRECONDITION |
+| `STS-SPIFFE-0107` | A cloud identity document or token did not verify: an aws_iid signature against the region's AWS certificate, an azure_imds PKCS#7 signature or its certificate chain, a gcp_iit token signature. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0108` | A cloud node is not one this realm admits: a project, tenant or subscription not allowed, an account outside the organization, an instance outside the EKS clusters, a gcp_iit token for another audience or expired. | gRPC PERMISSION_DENIED (INTERNAL for the aws_iid organization and EKS checks, as SPIRE answers) |
+| `STS-SPIFFE-0109` | An aws_iid instance failed the block device check: its root volume and first network interface were not attached together. | gRPC INTERNAL |
+| `STS-SPIFFE-0110` | An azure_imds attested document did not carry this challenge's nonce, or lacked a VM or subscription ID. | gRPC INVALID_ARGUMENT |
 
 ## STS-TLS
 

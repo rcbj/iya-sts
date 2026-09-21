@@ -1575,6 +1575,35 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.sshpopVerifyClientIp` | `STS_SPIFFE_SSHPOP_VERIFY_CLIENT_IP` | `false` | yes | The agent's address must be in the certificate's source-address critical option. |
 | `spiffe.tpmDevidCaBundle` | `STS_SPIFFE_TPM_DEVID_CA_BUNDLE` | (empty) | yes | PEM anchors for tpm_devid DevID certificates. Empty refuses every tpm_devid agent. |
 | `spiffe.tpmEndorsementCaBundle` | `STS_SPIFFE_TPM_ENDORSEMENT_CA_BUNDLE` | (empty) | yes | PEM anchors for TPM endorsement key certificates. Empty refuses every tpm_devid agent. |
+| `spiffe.k8sPsatClusters` | `STS_SPIFFE_K8S_PSAT_CLUSTERS` | (empty) | yes | k8s_psat clusters as JSON: allow list, audience, apiServer, caFile, tokenFile, label keys. The bearer token is always a FILE; no apiServer means in-cluster. |
+| `spiffe.httpChallengeAllowedDnsPatterns` | `STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS` | (empty) | yes | Regular expressions a host name must match BEFORE it is resolved or dialled. Empty refuses every http_challenge agent (stricter than SPIRE). |
+| `spiffe.httpChallengeRequiredPort` | `STS_SPIFFE_HTTP_CHALLENGE_REQUIRED_PORT` | `0` | yes | The one port allowed; 0 allows any. |
+| `spiffe.httpChallengeAllowNonRootPorts` | `STS_SPIFFE_HTTP_CHALLENGE_ALLOW_NON_ROOT_PORTS` | `true` | yes | Off, only ports below 1024. |
+| `spiffe.httpChallengeTofu` | `STS_SPIFFE_HTTP_CHALLENGE_TOFU` | `true` | yes | A host name attests once until its agent is deleted. |
+| `spiffe.httpChallengeVerifyClientIp` | `STS_SPIFFE_HTTP_CHALLENGE_VERIFY_CLIENT_IP` | `false` | yes | The agent's address must be one its host name resolves to. |
+| `spiffe.awsIidPartition` | `STS_SPIFFE_AWS_IID_PARTITION` | `aws` | yes | The partition for the assume-role ARN. |
+| `spiffe.awsIidAssumeRole` | `STS_SPIFFE_AWS_IID_ASSUME_ROLE` | (empty) | yes | A role name assumed in each node's account. Access keys are never a setting — the SDK chain supplies them. |
+| `spiffe.awsIidSkipBlockDevice` | `STS_SPIFFE_AWS_IID_SKIP_BLOCK_DEVICE` | `false` | yes | Skip the root-volume / first-interface attach-time check. |
+| `spiffe.awsIidDisableInstanceProfileSelectors` | `STS_SPIFFE_AWS_IID_DISABLE_INSTANCE_PROFILE_SELECTORS` | `false` | yes | No iamrole: selectors, and no IAM call. |
+| `spiffe.awsIidLocalValidAccountIds` | `STS_SPIFFE_AWS_IID_LOCAL_VALID_ACCOUNT_IDS` | (empty) | yes | Accounts exempt from the block device check. |
+| `spiffe.awsIidAgentPathTemplate` | `STS_SPIFFE_AWS_IID_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for aws_iid. |
+| `spiffe.awsIidVerifyOrganization` | `STS_SPIFFE_AWS_IID_VERIFY_ORGANIZATION` | (empty) | yes | JSON: an AWS Organizations check, or an account list. |
+| `spiffe.awsIidEksClusterNames` | `STS_SPIFFE_AWS_IID_EKS_CLUSTER_NAMES` | (empty) | yes | EKS clusters the instance must be a node of. |
+| `spiffe.awsIidEndpoint` | `STS_SPIFFE_AWS_IID_ENDPOINT` | (empty) | yes | An endpoint every AWS client is pointed at instead. |
+| `spiffe.gcpIitProjectIdAllowList` | `STS_SPIFFE_GCP_IIT_PROJECT_ID_ALLOW_LIST` | (empty) | yes | Projects allowed; required. |
+| `spiffe.gcpIitAgentPathTemplate` | `STS_SPIFFE_GCP_IIT_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for gcp_iit. |
+| `spiffe.gcpIitUseInstanceMetadata` | `STS_SPIFFE_GCP_IIT_USE_INSTANCE_METADATA` | `false` | yes | Read the instance from Compute Engine for tag/label/metadata selectors. |
+| `spiffe.gcpIitAllowedLabelKeys` | `STS_SPIFFE_GCP_IIT_ALLOWED_LABEL_KEYS` | (empty) | yes | Instance labels made selectors. |
+| `spiffe.gcpIitAllowedMetadataKeys` | `STS_SPIFFE_GCP_IIT_ALLOWED_METADATA_KEYS` | (empty) | yes | Instance metadata made selectors. |
+| `spiffe.gcpIitMaxMetadataValueSize` | `STS_SPIFFE_GCP_IIT_MAX_METADATA_VALUE_SIZE` | `128` | yes | Longest allowed metadata value. |
+| `spiffe.gcpIitServiceAccountFile` | `STS_SPIFFE_GCP_IIT_SERVICE_ACCOUNT_FILE` | (empty) | yes | A service account key FILE; empty uses application default credentials. |
+| `spiffe.gcpIitCertsUrl` | `STS_SPIFFE_GCP_IIT_CERTS_URL` | Google's | yes | Where Google publishes the identity-token certificates. |
+| `spiffe.azureImdsTenants` | `STS_SPIFFE_AZURE_IMDS_TENANTS` | (empty) | yes | azure_imds tenants as JSON: tenantId, tokenAuth (a token FILE), allowed VM tags, subscriptions. No app secret is ever a setting. |
+| `spiffe.azureImdsAgentPathTemplate` | `STS_SPIFFE_AZURE_IMDS_AGENT_PATH_TEMPLATE` | (empty) | yes | SPIRE's agent_path_template for azure_imds. |
+| `spiffe.azureImdsAllowedMetadataDomains` | `STS_SPIFFE_AZURE_IMDS_ALLOWED_METADATA_DOMAINS` | `metadata.azure.com` | yes | Domains the attested document's signing certificate must name. |
+| `spiffe.azureImdsTrustBundle` | `STS_SPIFFE_AZURE_IMDS_TRUST_BUNDLE` | (empty) | yes | Extra PEM roots beside the DigiCert roots SPIRE embeds. |
+| `spiffe.azureImdsIntermediateHost` | `STS_SPIFFE_AZURE_IMDS_INTERMEDIATE_HOST` | `www.microsoft.com` | yes | The only host a CA Issuers URL may name. |
+| `spiffe.azureImdsDiscoveryUrl` | `STS_SPIFFE_AZURE_IMDS_DISCOVERY_URL` | Microsoft's | yes | Where a tenant domain's ID is looked up. |
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | Unspent, unexpired join tokens a realm holds. At the bound a NEW token is refused with RESOURCE_EXHAUSTED; a token already handed to an agent is never evicted. |
 | `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every SPIRE Server API `List*` method. |
 | `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes (per process — a realm may not carry it) | How many mTLS connections are remembered so an X509-SVID is one authentication per connection rather than per call. |
@@ -7317,8 +7346,13 @@ Four things follow, and each is deliberate:
   minted and therefore checks — see the refusals below — and **`x509pop`**,
   **`sshpop`** and **`tpm_devid`**, which prove possession of a key by
   answering a challenge, each configured by its `spiffe.x509pop*`,
-  `spiffe.sshpop*` or `spiffe.tpm*` settings. SPIRE's Kubernetes and cloud
-  attestors are being added under #40.
+  `spiffe.sshpop*` or `spiffe.tpm*` settings — and **`k8s_psat`**,
+  **`http_challenge`**, **`aws_iid`**, **`gcp_iit`** and **`azure_imds`**:
+  a cluster's TokenReview, a nonce served from an allowed host name, and each
+  cloud's signed identity document with its API asked for selectors. The
+  cloud SDKs are optional peer dependencies (`npm install` them in a
+  deployment that uses those attestors), and no cloud credential is ever a
+  setting — each SDK's own credential chain supplies it.
 
 #### Who may call the SPIRE Server API
 

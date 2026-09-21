@@ -127,6 +127,12 @@ import joinTokenAttestor = require('./spiffe_attestor_join_token');
 import x509popAttestor = require('./spiffe_attestor_x509pop');
 import sshpopAttestor = require('./spiffe_attestor_sshpop');
 import tpmDevidAttestor = require('./spiffe_attestor_tpm_devid');
+// Phase three: the Kubernetes, HTTP and cloud attestors.
+import k8sPsatAttestor = require('./spiffe_attestor_k8s_psat');
+import httpChallengeAttestor = require('./spiffe_attestor_http_challenge');
+import awsIidAttestor = require('./spiffe_attestor_aws_iid');
+import gcpIitAttestor = require('./spiffe_attestor_gcp_iit');
+import azureImdsAttestor = require('./spiffe_attestor_azure_imds');
 
 const status = rpc.grpc.status;
 
@@ -200,6 +206,26 @@ class SpiffeApi {
         { build: function () {
           return new tpmDevidAttestor.TpmDevidAttestor(
             tpmDevidAttestor.TpmDevidAttestor.defaultDeps());
+        } },
+        { build: function () {
+          return new k8sPsatAttestor.K8sPsatAttestor(
+            k8sPsatAttestor.K8sPsatAttestor.defaultDeps());
+        } },
+        { build: function () {
+          return new httpChallengeAttestor.HttpChallengeAttestor(
+            httpChallengeAttestor.HttpChallengeAttestor.defaultDeps());
+        } },
+        { build: function () {
+          return new awsIidAttestor.AwsIidAttestor(
+            awsIidAttestor.AwsIidAttestor.defaultDeps());
+        } },
+        { build: function () {
+          return new gcpIitAttestor.GcpIitAttestor(
+            gcpIitAttestor.GcpIitAttestor.defaultDeps());
+        } },
+        { build: function () {
+          return new azureImdsAttestor.AzureImdsAttestor(
+            azureImdsAttestor.AzureImdsAttestor.defaultDeps());
         } }
       ],
       status: status,

@@ -468,8 +468,8 @@ every page, and granting that agent everything beneath its id all the same. A
 real SPIRE agent pointed here could join a trust domain with an invented type.
 rcbj's decision on #40: **refuse, in every mode**, and implement SPIRE's
 node attestors instead (`join_token`, `x509pop`, `sshpop`, `tpm_devid`,
-`k8s_psat`, `aws_iid`, `gcp_iit`, `azure_imds`, `http_challenge` — the
-first four are in; the Kubernetes and cloud ones arrive in #40's phase three).
+`k8s_psat`, `aws_iid`, `gcp_iit`, `azure_imds`, `http_challenge` — all nine
+are in since phase three).
 
 * **THE TABLE IS `spiffe_node_attestation.ts`** and each attestor is a class in
   a `spiffe_attestor_<type>.ts` of its own, returning the shapes in
@@ -581,6 +581,55 @@ certificates from the vendored engine, an OpenSSH host certificate assembled
 byte by byte, and a software TPM whose ActivateCredential is written
 independently of `spiffe_tpm.ts` — and asserts every refusal beside each
 acceptance. A real `spire-agent` (and swtpm) is phase five's.
+
+### k8s_psat, http_challenge and the three clouds (#40 phase three)
+
+`spiffe_attestor_k8s_psat.ts`, `spiffe_attestor_http_challenge.ts`,
+`spiffe_attestor_aws_iid.ts`, `spiffe_attestor_gcp_iit.ts` and
+`spiffe_attestor_azure_imds.ts`, each SPIRE's server plugin step for step. The
+certificates and signatures they need are `common/pki.js`'s and
+`common/crypto.js`'s (`verifyPkcs7SignedData()`, `verifyJws()`,
+`verifyPathToAnchors()`, and the AWS and Azure anchors SPIRE embeds, generated
+into `common/pki_cloud_anchors.json`). Five decisions:
+
+* **THEY DIAL, AND TWO DIFFERENT ARGUMENTS COVER IT.** Every Kubernetes API
+  server, Google certificate URL, Microsoft discovery document and AIA
+  intermediate is the ADMINISTRATOR'S kind of URL — a setting, or SPIRE's
+  constant made settable — and goes through `federation_http.ts`'s
+  `requestConfigured()` (`fetchJson()`'s argument: no internal-address
+  refusal, because an API server lives on one; https, with a cluster's own CA
+  as the roots; plain http only for a `signedArtifact`, the intermediate,
+  whose signature is checked before a byte is believed). `http_challenge` is
+  the CALLER'S kind and is the root `CLAUDE.md`'s sixth exception:
+  `fetchHttpChallenge()`, only after the host matched
+  `spiffe.httpChallengeAllowedDnsPatterns` — **empty refuses every agent,
+  stricter than SPIRE**, whose empty list allows any name — with the
+  internal-address refusal and pinning in product mode, no redirect and 64
+  bytes.
+* **NO CREDENTIAL IS EVER A SETTING.** A setting is drawn on the console,
+  returned by `/admin-api` and persisted — and `secret: true` on a row is read
+  by nothing. So where SPIRE takes an access key, an app secret or a
+  kubeconfig, this takes a FILE PATH (`tokenFile`, `caFile`,
+  `spiffe.gcpIitServiceAccountFile`, an Azure `tokenAuth.tokenPath`) or each
+  SDK's own credential chain.
+* **THE CLOUD SDKs ARE OPTIONAL PEER DEPENDENCIES** (rcbj, 2026-09-21),
+  `common/secrets.js`'s arrangement: `@aws-sdk/client-ec2`, `-iam`,
+  `-organizations`, `-eks`, `-auto-scaling`, `@aws-sdk/credential-providers`,
+  `@google-cloud/compute` (only for `spiffe.gcpIitUseInstanceMetadata`),
+  `@azure/identity`, `@azure/arm-resourcegraph`, `@azure/arm-compute`. A realm
+  that enables one of these attestors without its SDK is refused with
+  FAILED_PRECONDITION naming the package (`STS-SPIFFE-0106`). Each attestor
+  takes its SDK through `load` in its constructor dependencies, which is how
+  `tests/spiffe_attestors_cloud.js` hands it fakes.
+* **TRUST ON FIRST USE IS THE PHASE-ONE RULE, NOT A NEW ONE.** aws_iid,
+  gcp_iit, azure_imds and a TOFU http_challenge answer `canReattest: false`,
+  and `AttestAgent` refuses a second attestation of an existing agent
+  (`STS-SPIFFE-0083`) — SPIRE's `AssessTOFU()`, which reads its agent store
+  the same way.
+* **azure_imds CHALLENGES FIRST**: its evidence is a document minted FOR the
+  nonce, so the conversation `bidiStream()` gained in phase one carries it —
+  the initial payload is empty and the attested document arrives as the
+  challenge response.
 
 ## Workloads are not attested, and that is a narrower sentence than it was
 

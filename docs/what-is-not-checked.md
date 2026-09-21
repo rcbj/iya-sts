@@ -511,8 +511,12 @@ a signature over a fresh challenge — RSA, ECDSA or, beyond SPIRE, a
 post-quantum key), `sshpop` (an SSH host certificate from a configured
 authority, and a signature by its host key) and `tpm_devid` (a DevID key
 resident in a TPM whose endorsement key a configured manufacturer certified,
-proved by credential activation). SPIRE's Kubernetes and cloud attestors are
-being added under issue #40.
+proved by credential activation), `k8s_psat` (a projected service account
+token the cluster's own TokenReview authenticates), `http_challenge` (a nonce
+served from a host name the realm allows — as strong as the network's DNS,
+and the one place this service dials an address a caller named), and
+`aws_iid`, `gcp_iit` and `azure_imds` (each cloud's signed identity document,
+once per instance).
 
 ### The admin console, at `/admin`
 

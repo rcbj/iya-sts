@@ -7098,6 +7098,53 @@ async function checkSshHostCertificate(cert, principal, authorities,
   return '';
 }
 
+// ----- The clouds' published signing certificates (#40 phase three) ---------
+//
+// `pki_cloud_anchors.json` is GENERATED from SPIRE's own embedded tables (its
+// `_provenance` member says from which files): AWS's per-region certificates
+// for instance identity documents, RSA-2048 (PKCS#7 signatures) and RSA-1024
+// (the older raw signature, with one default for most regions), and the four
+// roots Azure's attested documents chain to. They are public certificates,
+// shipped the way SPIRE ships them, and never edited by hand.
+//
+// **AN AWS CERTIFICATE HERE IS A KEY HOLDER, NOT A PATH.** SPIRE verifies an
+// identity document's signature with the region's certificate's public key
+// and asks nothing about the certificate's own validity — AWS's default
+// RSA-1024 certificate expired on 2024-06-05 and still verifies the older
+// signature form in SPIRE — so `awsIidCertificate()` answers a certificate
+// and the caller uses its key. Azure's roots ARE a path's anchors
+// (`verifyPathToAnchors()`).
+let cloudAnchors = null;
+function cloudAnchorTable() {
+  log.debug("Entering cloudAnchorTable().");
+  if (!cloudAnchors) {
+    cloudAnchors = require('./pki_cloud_anchors.json');
+  }
+  log.debug("Leaving cloudAnchorTable().");
+  return cloudAnchors;
+}
+
+// The AWS certificate for `region` and `keyType` ('rsa2048' | 'rsa1024'), as
+// certificateFromDer() answers, or null — RSA-2048 has no fallback and an
+// unknown region is refused, RSA-1024 falls back to AWS's default, as SPIRE.
+function awsIidCertificate(region, keyType) {
+  log.debug("Entering awsIidCertificate(). " + region + "/" + keyType);
+  const table = cloudAnchorTable();
+  const pem = keyType === 'rsa2048'
+    ? table.awsRsa2048[String(region || '')]
+    : (table.awsRsa1024[String(region || '')] || table.awsRsa1024Default);
+  log.debug("Leaving awsIidCertificate(). " + (pem ? 'found' : 'none'));
+  return pem ? certificateBundle(pem).certificates[0] || null : null;
+}
+
+// The roots an Azure attested document's signing certificate must chain to.
+function azureImdsRoots() {
+  log.debug("Entering azureImdsRoots().");
+  log.debug("Leaving azureImdsRoots().");
+  return certificateBundle(cloudAnchorTable().azureRoots.join('\n'))
+    .certificates;
+}
+
 module.exports = {
   // --- somebody else's certificates (#40) ---
   certificateFromDer: certificateFromDer,
@@ -7112,6 +7159,8 @@ module.exports = {
   sshFingerprint: sshFingerprint,
   verifySshSignature: verifySshSignature,
   checkSshHostCertificate: checkSshHostCertificate,
+  awsIidCertificate: awsIidCertificate,
+  azureImdsRoots: azureImdsRoots,
   TIERS: TIERS,
   TIER_IDS: TIER_IDS,
   // A GETTER, so a reader of `pki.MAX_OBJECTS` sees `pki.maxStoredObjects`.
