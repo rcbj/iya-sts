@@ -517,6 +517,48 @@ function childMain() {
     note(reactivated.status === 200 && reactivated.json.active === true &&
          !credentials.accountDisabled('ad-scim-user'),
          'I4. and `active: true` enables them', reactivated.status);
+    // PATCH is how most provisioning clients deactivate (Entra ID, Okta):
+    // a replace of the one member, never the whole resource. scim.ts has no
+    // PATCH code of its own — scimmy reads the resource out, applies the
+    // operation and writes it back in — so this asks that the round trip
+    // carries the lock, rather than trusting that it must.
+    const scimPatch = function (value) {
+      return scimBrowser.go('PATCH', '/scim/v2/Users/' + created.json.id, {
+        headers: scimHeaders,
+        json: { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                Operations: [{ op: 'replace', path: 'active',
+                               value: value }] } });
+    };
+    await signIn(scimSession, 'ad-scim-user');
+    const patchedOff = await scimPatch(false);
+    await sleep(300);
+    note(patchedOff.status === 200 && patchedOff.json.active === false &&
+         credentials.accountDisabled('ad-scim-user'),
+         'I6. a PATCH replacing `active` with false DISABLES the account, as ' +
+         'the PUT does', patchedOff.status + ' ' +
+         JSON.stringify(patchedOff.json && patchedOff.json.active));
+    note(authn.sessionsOf('ad-scim-user').length === 0,
+         'I7. and ends their sessions, as the PUT does',
+         authn.sessionsOf('ad-scim-user').length);
+    const patchedOn = await scimPatch(true);
+    note(patchedOn.status === 200 && patchedOn.json.active === true &&
+         !credentials.accountDisabled('ad-scim-user'),
+         'I8. and a PATCH replacing it with true enables them',
+         patchedOn.status + ' ' +
+         JSON.stringify(patchedOn.json && patchedOn.json.active));
+    // Entra ID sends the boolean as the STRING "False" (Microsoft documents
+    // it as a known deviation). Whatever scimmy makes of it, it must not be
+    // a 2xx that leaves the account enabled: that is the original bug.
+    const patchedString = await scimPatch('False');
+    await sleep(300);
+    const stringDisabled = credentials.accountDisabled('ad-scim-user');
+    note(patchedString.status >= 400 || stringDisabled,
+         'I9. a PATCH with the string "False" either disables the account or ' +
+         'is refused — never answered 2xx with the account left enabled',
+         patchedString.status + ' disabled=' + stringDisabled);
+    if (stringDisabled) {
+      credentials.setAccountDisabled('ad-scim-user', false);
+    }
     const unsaid = scimMap.fromScimUser(
       { userName: 'x' }, { pwdAccountLockedTime: ['000001010000Z'] });
     note((unsaid.attributes.pwdAccountLockedTime || [])[0] ===
