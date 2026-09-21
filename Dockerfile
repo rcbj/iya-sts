@@ -313,7 +313,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 #
 # **AND `.github/workflows/tests.yml` JOINED THEM ON 2026-09-10**, one step
 # further out again: tests/teardown_bounds.js asserts that the CI job's own
-# timeout sits above the sum of the two ./docker-run-tests.sh reaches itself,
+# timeout sits above the sum of the two ./run-tests.sh reaches itself,
 # so the workflow is the subject of a test and has to be in the context. The
 # rest of `.github` is still excluded and nothing here reads any of it.
 #
@@ -321,7 +321,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # reason again: tests/error_codes.js reads docs/error-codes.md and
 # docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
 # read the test compose file. Excluded from the context, all three failed with
-# ENOENT in the first ./docker-run-tests.sh run that reached them.
+# ENOENT in the first ./run-tests.sh run that reached them.
 # `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
 # from a workstation or CI and never by the service.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \

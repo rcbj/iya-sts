@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 # THE SUITE TASK'S FIRST CONTAINER: the remote PEP's client certificate.
 #
-# What ./docker-run-tests.sh's mintThePepCredential() does, for the task in
+# What ./run-tests.sh's mintThePepCredential() does, for the task in
 # environment/runner.tf: wait for the load balancer, mint a Root, an Issuing
 # CA and a TLS client leaf with tests/tools/pep-credential.js (which POSTs the
 # Root to /tls/trust), and leave them on the task's shared volume at

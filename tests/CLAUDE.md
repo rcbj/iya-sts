@@ -115,7 +115,7 @@ are worth knowing because neither is about testing:
   are missing. Writing a job named "through the management API" and finding it
   could not be written is what found it.
 * `tests/docker-compose-ldap.yml` publishes 389 for the test stack and for
-  nothing else. `./docker-run-tests.sh` needs none of it — its runner is a
+  nothing else. `./run-tests.sh` needs none of it — its runner is a
   container on the bridge with the service — but `./local-run-tests.sh`'s
   runner was a host process, and `docker-compose.yml` deliberately publishes
   neither 389 nor 636, because the host most likely to want a mock directory is
@@ -276,7 +276,7 @@ the module is one directory up and always there — and kills the container at
 load in 2.6 seconds.
 
 **THE LAUNCHER OWNS THAT CONTAINER, AND THE REASON IS THE CONTAINERIZED
-RUNNER.** `./docker-run-tests.sh` puts the suite INSIDE a container with no
+RUNNER.** `./run-tests.sh` puts the suite INSIDE a container with no
 docker socket in it, deliberately — that file argues why where it also excludes
 the parent suite's postgres job — so a job that started its own PEP could never
 run in the stack that gates this repository. The launcher therefore brings one
@@ -328,7 +328,7 @@ seed.
 
 **AND `./run-coverage.sh` WAS NOT TAKING THAT PATH AT ALL, WHICH IS A THIRD
 THING THE 401 HID.** `docker-compose-run-tests.yml` gives the `tests` service a
-DEFAULT `XACML_PEP_URL=http://xacml-pep:9090` — right for `./docker-run-tests.sh`,
+DEFAULT `XACML_PEP_URL=http://xacml-pep:9090` — right for `./run-tests.sh`,
 which brings that container up beside the service. The coverage run uses
 `--no-deps` and starts no such container, so the variable named a host that does
 not exist, and the job read a non-empty `XACML_PEP_URL` as *a launcher provided
@@ -376,6 +376,21 @@ belong here — a test that needs to choose how the PROCESS was started, that
 hands a document to an independent implementation in the same address space,
 **or that needs A SECOND CONTAINER on this service's own docker network and
 drives the seam between them.**
+
+**THE "IF YES" HALF WAS REVERSED ON 2026-09-21, BY rcbj: a new test that CAN
+be asserted over HTTP is written HERE, in `tests/vendored/`, marked
+`local: true`** — not in the parent suite. What forced it is where the suite
+now runs. `./run-tests.sh --target=aws:<env>` and the `product` mode both reach
+the service only over the wire, so the protocol half is the ONLY coverage
+either of them has, and a family whose features are asserted in process alone
+(PAR, JAR, RAR, JWT introspection, SAML request signatures, most of SPIFFE,
+XACML conformance, the VC status lists — the list the 2026-09-21 audit
+produced) is simply untested there. A job in the parent's suite reaches this
+tree only through a gitlink that trails it; a `local` job runs against this
+working tree in every mode and every target. **Everything above this paragraph
+is the record of the rule it replaced**, kept because the reasons in-process
+tests exist at all — choosing how the process starts, a second container, a
+socket no stack publishes — are unchanged.
 
 **ONE QUESTION COMES BEFORE THAT ONE SINCE 2026-08-28**, and it is the second
 row of the table above: is the thing under test this service's own `/admin`
@@ -430,7 +445,7 @@ belongs in the parent suite.
 
 **That paragraph is about `npm test` and the files in this directory.** The
 VENDORED half does need a stack, a browser and a second npm package
-(`tests/package.json` — see below); it is reached by `./docker-run-tests.sh`
+(`tests/package.json` — see below); it is reached by `./run-tests.sh`
 and `./run-coverage.sh`, and never by `npm test`.
 
 **Since #50 neither half runs on a checkout.** Part of the service is
@@ -447,13 +462,13 @@ because a typo in a filter must never read as "everything passed".
 ### The report, and where the tooling lives
 
 ```bash
-./docker-run-tests.sh                # EVERY job, with a report written — the
+./run-tests.sh                # EVERY job, with a report written — the
                                      # service AND the runner in containers
                                      # built from this working tree
-./docker-run-tests.sh --modes=memory # one mode of tools/modes.sh, not all
+./run-tests.sh --modes=memory # one mode of tools/modes.sh, not all
                                      # three; --modes=cluster is the fourth
-./docker-run-tests.sh --no-build     # reuse the images already built
-./docker-run-tests.sh --only=crypto --no-browser
+./run-tests.sh --no-build     # reuse the images already built
+./run-tests.sh --only=crypto --no-browser
                                      # anything else goes to run-report.js
 ./docker-npm-test.sh                 # only the in-process files, in the
                                      # tests image (--only=<substring>, --list)
@@ -470,7 +485,7 @@ node tests/tools/vendor-check.js --sync  # re-copy the parent's files over it
 nothing of the parent's. `./local-run-tests.sh`, which carried all of these as
 options, was removed on 2026-09-16.
 
-**`./docker-run-tests.sh` IS THE WHOLE SUITE**, and the two files in this
+**`./run-tests.sh` IS THE WHOLE SUITE**, and the two files in this
 directory that serve it are not tests: `Dockerfile`
 (node, a Chrome and this working tree, built with the repository root's
 `.dockerignore` — see below) and `run-tests-in-container.sh` (the image's CMD —
@@ -481,7 +496,7 @@ There were two launchers until 2026-09-16: this one for the environment, and
 `./local-run-tests.sh` — the jobs as node processes on the host, the
 development loop — for a test. #50 ended the second, because a job run on a
 checkout meets the refusal above, so re-running one job is now
-`./docker-run-tests.sh --only=<job> --modes=memory` and costs an image build
+`./run-tests.sh --only=<job> --modes=memory` and costs an image build
 (`--no-build` when the service has not changed).
 
 `tests/tools/run-report.js` is what the launcher drives, inside the tests
@@ -500,14 +515,14 @@ READ.**
 | File | What it is | Where it comes from |
 |---|---|---|
 | `logs/00-mock-sts-service.log` | the mock's own account of what it issued | `run-report.js` writes it when it started the service itself (a coverage run, or a bare run); otherwise the launcher takes it out of `docker compose logs sts` before the teardown removes the container |
-| `logs/00-test-runner.log` | **the RUNNER's own output** — which jobs it chose, the ones it could not start and why, the reason a job was reported SKIPPED, the summary | `./docker-run-tests.sh` takes it out of `docker compose logs tests`, because there the runner IS a container (`./local-run-tests.sh` tee'd it, until it was removed on 2026-09-16) |
+| `logs/00-test-runner.log` | **the RUNNER's own output** — which jobs it chose, the ones it could not start and why, the reason a job was reported SKIPPED, the summary | `./run-tests.sh` takes it out of `docker compose logs tests`, because there the runner IS a container (`./local-run-tests.sh` tee'd it, until it was removed on 2026-09-16) |
 
 **THE SECOND ONE IS NOT THE JOBS' LOGS AND THAT IS THE WHOLE REASON IT EXISTS.**
 `logs/NN-<job>.log` holds the JOB's output, so **a job that never started has no
 file there** — and a run in which something could not start is exactly the run
 somebody comes back to a report for an hour later. Until 2026-09-07 what the
 runner said about it lived in a terminal and in nothing else, which for
-`./docker-run-tests.sh` meant a container that was removed at the end of the
+`./run-tests.sh` meant a container that was removed at the end of the
 run.
 
 Where a mode could not write a report at all — it died bringing the service up —
@@ -659,7 +674,7 @@ Three things about the report runner are decisions rather than mechanics:
   since 2026-08-28.** The copied ones are authored over there by the rule at
   the top of this file, and that suite drives the pinned `sts/` gitlink — so
   those jobs do not otherwise run against what you just edited.
-  `./docker-run-tests.sh` builds the service image and the tests image from
+  `./run-tests.sh` builds the service image and the tests image from
   this tree, brings both up from `docker-compose-run-tests.yml`, and the tests
   container hands this runner the service's URL with `--service-url`.
   (`./local-run-tests.sh` did the same with `docker-compose.yml` and ran the
@@ -1210,7 +1225,7 @@ on.**
 | `tests/vendored/sts_saml2_bearer_grant.js` **(ours)** | **RFC 7521 AND RFC 7522 AT A REAL TOKEN ENDPOINT, AND THE TWO KEY PAIRS THAT MAY NOT SIGN FOR EACH OTHER** (2026-09-11). Here for the THIRD reason, which is the job above's word for word: the key pair comes from `/admin-api/pki` — with `purpose: "saml"`, a control on this repository's own console — and the trust decision from `/admin-api/applications`. Twelve sections in a throwaway realm. **The one it exists for is section 6**: both key pairs are issued to ONE application and then each is presented at the OTHER profile's grant. A SAML assertion signed with the RFC 7523 key is refused, a JWT signed with the RFC 7522 key is refused at the JWT grant, **and the JWT signed with its own key is accepted at that same endpoint seconds later** — which is what turns two refusals into a rule rather than a service that has stopped working. Section 3 has the same shape one level up: declaring the issuer for RFC 7523 does NOT declare it for RFC 7522, asserted before the SAML declaration is written. Then the fourteen refusals — a replay on the assertion `ID`, a wrong key, a **broken reference digest** (the half of an XML Signature a verifier checking only the SignatureValue would wave through, and how signature wrapping gets in), a foreign audience, a foreign `Recipient`, an expiry, no expiry at all, no `<Subject>`, an UNSIGNED assertion cited by item number, a lifetime over the ceiling, and an unknown `<Condition>`. Section 8 drives §2.2 client authentication with RFC 9700 mode ON **in that realm only** — without it a bad assertion is not refused and the section would assert nothing. Section 12: taking one profile's key pair off leaves the other's working, at the endpoint and on the entry. **It signs with `saml_xmldsig.js`**, this suite's own XML Signature, canonical by construction — for `sts_dpop.js`'s reason with more force than usual, since exclusive canonicalization is where every XML Signature implementation ever written has had a bug. It carries a FLOOR on its check count |
 | `tests/vendored/sts_database_metrics.js` **(ours)** | **THE DATABASE REPORT AGAINST A REAL POSTGRESQL** (2026-09-11), and the only job in either suite whose subject is a surface whose SHAPE this repository does not decide. `tests/database_metrics.js` holds what needs no server; this holds the four things that do. **THAT THE STATEMENTS ARE VALID SQL FOR THIS SERVER AT ALL** — they are PostgreSQL's grammar and catalog, and an in-process test asserting they parse would be asserting its own opinion of both. **THAT THE COLUMNS ARRIVE**, which it checks by COUNT and never by name: naming one would be this test having exactly the opinion the page exists not to have. **THAT A PROBE THE LEAST-PRIVILEGE ROLE CANNOT READ COSTS A ROW AND NOT THE PAGE**, carrying PostgreSQL's SQLSTATE, because 42P01 (an older server) and 42501 (a missing grant) are different things to do about and a message alone would make a client parse English. **AND THAT NO CONNECTION STRING OR PASSWORD IS IN THE REPLY.** It also pins the two normalisations a reader would never think to check: `reltuples` is `-1` for a never-analysed table — every table in a database this service has just built — so a page that printed it would report minus one row; and a PRIMARY KEY with no scans is never called an unused index, which would make the one actionable number on the page noise. **IT SKIPS RATHER THAN FAILS WITHOUT A DATABASE**, which is this suite's standing refusal and is argued rather than assumed: `persistence.mode` is RESTART-ONLY, so unlike a job that needs a realm or a setting there is no door this one could knock on — and it still asserts the no-database sentence on the way past, which is the half that IS true of a memory-mode service |
 | `tests/vendored/sts_pki_revocation.js` **(ours)** | **THE CRL AND OCSP ENDPOINTS AND THE REVOCATION PANE, OVER HTTP** (2026-09-11). `tests/pki_revocation.js` holds the register and the documents and sends no request; this is the wiring, which is where a feature like this actually breaks. **THE ENDPOINTS ARE UNGATED AND HAVE TO BE** — a relying party fetches a CRL before it has decided to trust anything, so a list behind this console's gate is a revocation nobody acts on, and that is one line of middleware away from being true. Asserted with **`Authorization: none`**, without which the launchers' preloaded admin token rides along and the job would be proving anonymity while sending a credential. **THE MEDIA TYPES ARE THE PROTOCOL**: `application/pkix-crl`, `application/pkix-cert`, `application/ocsp-response` — a handler sending DER as `text/html` passes every test that parses the body itself. **AND THE BYTES SURVIVE THE TRANSPORT**, which is the class of failure every in-process assertion about a document's structure still passes. It asserts the CRL is the ONE cacheable document here (it carries its own `nextUpdate`) where everything else that publishes key material is `no-store`; that a 404 is PLAIN TEXT naming the index rather than an HTML page a revocation client cannot parse; that an OCSP refusal is a **200 inside the protocol**; that revoking through `/admin-api/pki` grows the PUBLISHED list on the next fetch; that a second revocation cannot move a date forward; and that only a `certificateHold` releases. **It found the defect that made the whole POST endpoint unreachable**: `common/app.js`'s text parser takes EVERY content type, so a handler reading the request stream itself found it already drained — every POST hung, `curl` reported `000`, nothing was logged, and the service answered everything else in milliseconds. The fix is a content type in that file's raw-parser list, which is the same row Kerberos MS-KKDCP already needed and for the same two reasons |
-| `tests/vendored/sts_pki_distribution_points.js` **(ours)** | **EVERY REVOCATION ADDRESS EVERY CERTIFICATE NAMES, FOLLOWED AS WRITTEN, IN EVERY TRUST REALM** (2026-09-13). The job above built `/pki/crl/<scope>/<ca>` by hand and was green while every certificate named `https://localhost:8081/…` on a stack published on 18081 — **THE RULE HERE IS THAT NOTHING IS REWRITTEN**: no URL re-based onto the address the job was handed, no port substituted, because a job that "helpfully" fixed the port is the test that kept the defect hidden. It collects every certificate the service publishes (each realm's JWKS, both SAML metadata documents, WS-Federation metadata, `/sts/cert`, `/tls/server-certificate`, the SPIFFE bundle, the main port's handshake, every authority's own certificate from its caIssuers address, and key pairs it issues to an application and a person in a realm of its own), and holds what they name to **RFC 5280** (http AND ldap CRL points, OCSP and caIssuers, NO https or ldaps — section 8), each CRL from every scheme to section 5 (issuer bytes, signature, v2, AKI = the issuer's SKI, cRLNumber, nextUpdate still ahead, and a NEW number when a second signing has a later thisUpdate), the `ldap://` fetch to **RFC 4516/4523** anonymously, and every responder to **RFC 6960, 5019 and 8954** for every certificate naming it — POST with a nonce and GET of the base64 form, CertID and nonce echoed, `good`, signature from the issuer, whole-second GeneralizedTimes, the §6.2 cache headers, `unknown` for a serial never issued, `unauthorized` for another issuer's certificate, `malformedRequest` for a 33-octet nonce, and a 400 rather than a 404 for a GET of the bare address. Then it does the same for **every authority in `/pki/revocation`**, named by a collected certificate or not. **IT NEEDS THE LAUNCHER TO HAVE TOLD THE SERVICE ITS PUBLISHED PORTS** — `PKI_DISTRIBUTION_PORT` from `STS_PKI_HOST_PORT`, `PKI_DISTRIBUTION_LDAP_PORT` from `STS_LDAP_HOST_PORT`, or `PKI_DISTRIBUTION_BASE_URL`/`PKI_DISTRIBUTION_LDAP_HOST` naming `sts` under `./docker-run-tests.sh` — and failing there is the point. Mutation-tested against twelve; ten caught here, and the two survivors (publication with no realm ambient; the product-mode anonymous read) are `crl_directory_publication.js`'s |
+| `tests/vendored/sts_pki_distribution_points.js` **(ours)** | **EVERY REVOCATION ADDRESS EVERY CERTIFICATE NAMES, FOLLOWED AS WRITTEN, IN EVERY TRUST REALM** (2026-09-13). The job above built `/pki/crl/<scope>/<ca>` by hand and was green while every certificate named `https://localhost:8081/…` on a stack published on 18081 — **THE RULE HERE IS THAT NOTHING IS REWRITTEN**: no URL re-based onto the address the job was handed, no port substituted, because a job that "helpfully" fixed the port is the test that kept the defect hidden. It collects every certificate the service publishes (each realm's JWKS, both SAML metadata documents, WS-Federation metadata, `/sts/cert`, `/tls/server-certificate`, the SPIFFE bundle, the main port's handshake, every authority's own certificate from its caIssuers address, and key pairs it issues to an application and a person in a realm of its own), and holds what they name to **RFC 5280** (http AND ldap CRL points, OCSP and caIssuers, NO https or ldaps — section 8), each CRL from every scheme to section 5 (issuer bytes, signature, v2, AKI = the issuer's SKI, cRLNumber, nextUpdate still ahead, and a NEW number when a second signing has a later thisUpdate), the `ldap://` fetch to **RFC 4516/4523** anonymously, and every responder to **RFC 6960, 5019 and 8954** for every certificate naming it — POST with a nonce and GET of the base64 form, CertID and nonce echoed, `good`, signature from the issuer, whole-second GeneralizedTimes, the §6.2 cache headers, `unknown` for a serial never issued, `unauthorized` for another issuer's certificate, `malformedRequest` for a 33-octet nonce, and a 400 rather than a 404 for a GET of the bare address. Then it does the same for **every authority in `/pki/revocation`**, named by a collected certificate or not. **IT NEEDS THE LAUNCHER TO HAVE TOLD THE SERVICE ITS PUBLISHED PORTS** — `PKI_DISTRIBUTION_PORT` from `STS_PKI_HOST_PORT`, `PKI_DISTRIBUTION_LDAP_PORT` from `STS_LDAP_HOST_PORT`, or `PKI_DISTRIBUTION_BASE_URL`/`PKI_DISTRIBUTION_LDAP_HOST` naming `sts` under `./run-tests.sh` — and failing there is the point. Mutation-tested against twelve; ten caught here, and the two survivors (publication with no realm ambient; the product-mode anonymous read) are `crl_directory_publication.js`'s |
 | `tests/vendored/sts_pki_workbench.js` **(ours)** | **THE CERTIFICATE & KEY CONFIGURATION PANE THROUGH BOTH ITS DOORS** (2026-09-10), in a throwaway realm that is left standing. `tests/pki_authoring.js` holds the model and makes no request; what is here is the four things it cannot see. **THE ROUND TRIP IS THE FEATURE**: with no script the form IS the state, so a field the page fails to re-render falls back to its default on every press — silently, for ever — and the only way to ask is to POST what a browser would and read what comes back. Beside it, every field the service SAYS it reads is checked against the markup of the page it SERVED, which is the half that catches a control drawn only in some states. **THE DOWNLOAD IS NOT A PAGE**: media type, `Content-Disposition` and the body's first byte being a DER SEQUENCE rather than an HTML error wearing the right media type. **THE GATE**, which is middleware on a path. And **rule 7**, compared across two live doors — a CA made in the BROWSER, a leaf issued from it through `/admin-api`, and the store reporting both with no private key anywhere in the reply. **It found the defect that makes "post back what came back" true**: every action answers with the whole form, whose flags are JSON booleans, and a `false` matched none of the string cases and read as TRUE — so apply-profile then issue-certificate turned every cleared box on. Six mutants, five caught; **the sixth is RECORDED rather than papered over** — `mayWrite()` in the export handler is reachable only by a session holding Admin Read and not Admin Write, and producing one means putting a member in the DEFAULT realm's role roster, which, when this was written, closed the console's empty-roster window and took console writes away from every other job in the run. The window has been the bootstrap account's since 2026-09-13 (`admin-ui/admin_rbac.ts`); the mutant is still recorded rather than reached |
 | `tests/vendored/sts_portal_backup_keys.js` **(ours)** | **TWO SECURITY KEYS, THE FIRST ONE LOST, AND THE SECOND STILL SIGNING THEM IN (2026-09-10).** The point of a backup is the day the original is gone, so that is the shape: enrol two from `/portal/keys`, take the first away, require the second still works and that the person tidies up without an operator. It exists because none of it was possible — that page said *there is no enrol button here, because a WebAuthn ceremony belongs to a sign-in and this page is not one*, which is false (a ceremony belongs to whoever is asking), and the sign-in screen's checkbox is reserved for people holding no second factor, so there was **one key per person and no door to add another**. Four claims: the portal can enrol at all, and the page relaxes `script-src` to `'self'` **while keeping `frame-ancestors`** — asserted on the `script-src` DIRECTIVE and not the whole header, because `style-src 'unsafe-inline'` is the service-wide default and reading the whole policy calls a correct service broken; **the SAME authenticator is refused a second time** and the armed page's `data-exclude` names the key they hold, since a second row for one device is a backup lost with the original; **EITHER key completes a sign-in** and a third nobody enrolled does not; and the lost one is removed self-service while the last `mfa` key may go, because it was never a way IN. **THE COOKIE JAR KEEPS COOKIES BY NAME**, and the one-line version used elsewhere here does not — a signed-in portal browser holds the sign-on cookie AND the portal's own, whichever arrived last evicts the other, and what that looks like is a GET succeeding and the POST beside it redirecting to the authorization endpoint: a server that forgot to check its session. It cost an hour. Mutation-tested against five, all caught — the duplicate check at the write, `excludeCredentials` never sent, the label dropped, the CSP not relaxed, and **the enrolment id not checked, which survived until the fixture grew a `finish` naming a different one** |
 | `tests/vendored/sts_webauthn_second_factor.js` **(ours)** | **A REAL WEBAUTHN CEREMONY AGAINST THE SIGN-IN SCREEN, AND THE JOB THAT PROVES THE TWO CREDENTIAL STORES BECAME ONE (2026-09-10).** `authn/authn.ts` kept a map of one key per person while `common/credentials.ts` kept the keys on the directory entry with their ROLES — and `credentials.addKey()` had NO CALLER, so the store everything read was empty. **The assertion that finds that is the SECOND sign-in**: a key enrolled at that screen was never asked for again, because `mfaRequired` could not become true from one, so anybody who knew the password signed in without it while `/portal/keys` showed an account with a second factor on it. Every other assertion here passes against the broken version. Sections: the enrolment ceremony is drawn and ACCEPTED by the real verifier; the key reaches the store `/portal/keys`, `/admin/users` and the sign-in screen all read, carrying the role it was enrolled in and the credential id the browser sent; **the second sign-in demands it with the checkbox untouched and draws an ASSERTION rather than another enrolment** (a `create` there is the bypass — register your own authenticator and be signed in claiming two factors); a valid ceremony from an authenticator this person never enrolled is refused; the signature counter advances through `noteKeyUsed()`; the *use your key instead* link is reachable, its own gate having refused everybody; and an operator's `clear-key` removes a key that really exists and the demand stops. **It carries its own AUTHENTICATOR** — a real P-256 key, real CBOR, a real signature over the real signed bytes — rather than importing the verifier, on `sts_dpop.js`'s rule. **The origin and RP ID are computed from the service's base** and not written down, or the fixture passes on one stack and fails on the other two with a message about a rejected ceremony. Mutation-tested against five, four caught here — the page always drawing an enrolment, the counter never recorded, the role hardcoded, and `removeKey()` ignoring the removed key's role — and **the fifth survived and is recorded in `tests/webauthn_policy.js`**: checking the assertion against `usable[0]` instead of the credential the browser NAMED passes this file perfectly, because its person holds exactly one key and the two are then the same key. It found a second defect in its first run: `removeKey()`'s last-way-in guard did not look at the ROLE of the key being removed, so clearing a second factor for somebody with no password — the ordinary state in development mode — was refused with *that is the only way they can sign in*, about a credential that could not sign them in at all |
@@ -1255,7 +1270,7 @@ finished and can be worth nothing.
 renderer), `vendor-check.js` (the drift check over `vendored/`, and a TOOL
 rather than a job on purpose — its own header argues why a check that needs the
 other checkout must not be what decides whether this repository is green),
-the compose-stack helpers (`compose.sh`, shared by `./docker-run-tests.sh`
+the compose-stack helpers (`compose.sh`, shared by `./run-tests.sh`
 and `./run-coverage.sh`),
 `service.js` (one throwaway copy of this service, started and
 stopped by pid, on a block of ports of its own) and `coverage_entry.js` (`server.js`
@@ -1538,7 +1553,7 @@ the kill was reached and did not land. A stop that outlives SIGKILL is a wedged
 daemon or a process the kernel will not interrupt.
 
 **What this repository decides is what happens NEXT, and the answer was "wait
-for ever, then lose the run".** It is now two bounds `./docker-run-tests.sh` reaches ITSELF
+for ever, then lose the run".** It is now two bounds `./run-tests.sh` reaches ITSELF
 (`STS_MODE_TIMEOUT`, `STS_TEARDOWN_TIMEOUT`), and the difference that matters is
 that a bound reached HERE can say what happened, capture the container logs,
 keep the report and still give the mode a verdict, where the CI timeout catches
@@ -1562,7 +1577,7 @@ about a run four minutes from finishing. **128+N is a signal and not an answer**
 only a smaller code is something the runner decided.
 
 **It was found by forcing the bound on a real run** (`STS_MODE_TIMEOUT=100
-./docker-run-tests.sh --modes=memory`), which is the only way it could have
+./run-tests.sh --modes=memory`), which is the only way it could have
 been: every in-process assertion about the recovery was green, and the five
 cases were verified against real exited containers before the wiring was driven
 end to end. **A timing fix that has only been seen to pass has not been shown to
@@ -1607,7 +1622,7 @@ token at all.
 **THE FAILURE IS THE RUN'S AND NOT THE JOB'S.** Both docker launchers mint the
 token before starting anything and abort the mode if they cannot: without one,
 every job that touches that API reports a 401 and the report names twenty
-problems where there is one. `docker-run-tests.sh` mints it **once per mode**
+problems where there is one. `run-tests.sh` mints it **once per mode**
 rather than once per run, which is the one thing about it that is easy to get
 wrong — the
 token is SIGNED by a key this service regenerates on every start, and that
@@ -1632,7 +1647,7 @@ ran the suite in RFC 9700 mode or against a product-mode stack.
 ANYWAY.** There are three ways a job here reaches a service and only two of them
 go through a launcher that mints:
 
-* `./local-run-tests.sh` and `./docker-run-tests.sh` — a CONTAINER they started,
+* `./local-run-tests.sh` and `./run-tests.sh` — a CONTAINER they started,
   and they mint against it
 * **`./run-coverage.sh`, `./local-run-tests.sh --no-docker`, and a bare `node
   tests/tools/run-report.js`** — a THROWAWAY `run-report.js` started itself
@@ -2439,7 +2454,7 @@ leaving the feature covered only on a developer's machine.
 ## THE `cluster` MODE: TWO NODES BEHIND A LOAD BALANCER (2026-09-14, issue #46)
 
 `tests/tools/modes.sh` has a FOURTH mode, and it is **asked for by name**
-(`./docker-run-tests.sh --modes=cluster`) rather than run by default — a fourth whole
+(`./run-tests.sh --modes=cluster`) rather than run by default — a fourth whole
 run of the suite and two services' worth of memory, on a bare run that is
 already an hour. The three default modes differ in what shares state INSIDE one
 container; this one is the first in which the thing under test is BETWEEN
@@ -2463,7 +2478,7 @@ stacks they started before:
 | node B | `sts2`, which `extends` node A — one definition, so nothing the override does not name can differ — started only once node A is HEALTHY, so a cold start's first key set is never a race the suite depends on |
 | the store | ONE postgres and ONE OpenBao, shared; the key-encryption key comes out of OpenBao (`STS_KEYS_SOURCE=persisted`), without which active-active refuses to start (`STS-CLUSTER-0008`) |
 | `sts-lb` | HAProxy (`haproxy:3.2.23-alpine`, pinned), `mode tcp`, round robin, **TLS passed through**, `send-proxy-v2` (below), on 8081, 8082, 389, 636, 88/tcp and 8444 (8443 and 9443 were there until 2026-09-16, when both listeners were deleted; mutual TLS rides 8081, which is why passthrough is still right), a TCP-connect health check on each. It owns every published port under the variables the service used to, so every address a launcher computes is the balancer's with no second set of names |
-| the files | `tests/docker-compose-run-tests-cluster.yml` (over `docker-compose-run-tests.yml`, `./docker-run-tests.sh`), `tests/cluster/haproxy.cfg`, and `tests/docker-compose-cluster.yml` (over `docker-compose.yml` and the LDAP layer, for `./local-run-tests.sh`, which was removed on 2026-09-16; no launcher layers it now) |
+| the files | `tests/docker-compose-run-tests-cluster.yml` (over `docker-compose-run-tests.yml`, `./run-tests.sh`), `tests/cluster/haproxy.cfg`, and `tests/docker-compose-cluster.yml` (over `docker-compose.yml` and the LDAP layer, for `./local-run-tests.sh`, which was removed on 2026-09-16; no launcher layers it now) |
 
 Both nodes are **development mode** (the suite signs people in with no
 password — the `postgres` arm of `modes.sh` says why), **one process each**
@@ -2535,7 +2550,7 @@ the one fetch it always was.
   the network name its own client address. So a non-loopback connection to a
   node from anywhere else is refused, and the suite has no such client (the
   healthchecks are loopback, the remote PEP dials `sts-lb`).
-  `STS_TEST_CLUSTER_PROXY_PROTOCOL=off ./docker-run-tests.sh` runs the mode
+  `STS_TEST_CLUSTER_PROXY_PROTOCOL=off ./run-tests.sh` runs the mode
   without it, which is how a PROXY-protocol failure is told from a cluster
   one. The rate limits needed no raising either way: the suite already came
   from ONE address (the runner's), and the budget is shared by both nodes
@@ -2576,7 +2591,7 @@ around the balancer was reset in 36ms and a loopback one served.
 Building this mode in a second checkout while another session ran the suite
 from the first found it: both launchers built and ran `rcbj/sts`, a tag is
 machine-wide exactly as a `container_name` and a subnet are, and
-`./docker-run-tests.sh` builds once and `up`s each later mode from whatever the
+`./run-tests.sh` builds once and `up`s each later mode from whatever the
 tag points at by then. A named project (`STS_TEST_COMPOSE_PROJECT`,
 `STS_DOCKER_TEST_PROJECT`) now builds and runs `rcbj/sts:<project>` and its
 PEP and runner twins; `image: ${STS_IMAGE:-rcbj/sts}` in both compose files

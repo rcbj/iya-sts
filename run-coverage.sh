@@ -69,7 +69,7 @@
 #   work. ./coverage and ./tests/report are bind mounts, so both come out onto
 #   the host.
 #
-#   WHAT THAT BUYS is the property ./docker-run-tests.sh has: the host needs
+#   WHAT THAT BUYS is the property ./run-tests.sh has: the host needs
 #   DOCKER AND NOTHING ELSE — no node, no `npm install`, no Chrome — which is
 #   what lets .github/workflows/tests.yml run a coverage pass beside the suite.
 #   What it COSTS is an image build and root-owned output; both are named
@@ -120,7 +120,7 @@ OPEN=0
 WHERE="docker"
 WHERE_ASKED=0
 BUILD=1
-# Its OWN compose project, so that a coverage run and a ./docker-run-tests.sh
+# Its OWN compose project, so that a coverage run and a ./run-tests.sh
 # run on one machine cannot tear down or reuse each other's containers. The
 # images are named in the compose file (`image:`), so the two still share a
 # build rather than each keeping one.
@@ -250,7 +250,7 @@ unset STS_TEST_SERVICE_URL
 # it: run-report.js starts the service in process here, and the VENDORED
 # modules under common/vendored/ each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel`, never seeing STS_LOG_LEVEL. So
-# the file is chosen the way ./docker-run-tests.sh chooses its own, and by the
+# the file is chosen the way ./run-tests.sh chooses its own, and by the
 # same rule — the level picks it, a STS_TEST_CONFIG_FILE named in the
 # environment wins, and trace or debug asks for the whole record and gets
 # env/local.js with it — which is at `info` itself since 2026-09-12, like every
@@ -271,7 +271,7 @@ then
 elif [ -n "${STS_TEST_CONFIG_FILE}" ];
 then
   # A FILE was named and no level was: it decides both halves, and this script
-  # exports no level of its own. ./docker-run-tests.sh does the same, and the
+  # exports no level of its own. ./run-tests.sh does the same, and the
   # reason is there — a service logging at `info` out of a file that says
   # `debug` is nobody's idea of an answer.
   :
@@ -389,7 +389,7 @@ else
   # `unset` above, arriving by a different route.
   #
   # The volume is named here rather than in the compose file so that an
-  # ordinary ./docker-run-tests.sh run — which shares that file — never mounts
+  # ordinary ./run-tests.sh run — which shares that file — never mounts
   # a coverage directory it does not write.
   # -----------------------------------------------------------------------
   # STS_LOG_LEVEL IS ADDED ONLY WHEN IT HAS A VALUE, and `-e NAME=` is not a
@@ -413,7 +413,7 @@ else
     #
     # `docker-compose-run-tests.yml` gives the `tests` service a DEFAULT
     # `XACML_PEP_URL=http://xacml-pep:9090`, which is right for
-    # ./docker-run-tests.sh: that launcher brings the PEP up beside the
+    # ./run-tests.sh: that launcher brings the PEP up beside the
     # service and the job attaches to it. **This run uses `--no-deps` and
     # starts no such container**, so the variable names a host that does not
     # exist — and `sts_xacml_remote_pep.js` reads a non-empty XACML_PEP_URL as
@@ -501,7 +501,7 @@ else
     /usr/src/sts/coverage /usr/src/sts/tests/report > /dev/null 2>&1 || true
 
   # The network `run` created, and nothing else — this project has its own
-  # name, so `down` here can never reach the stack ./docker-run-tests.sh or a
+  # name, so `down` here can never reach the stack ./run-tests.sh or a
   # `docker compose up` in this directory is holding.
   docker_compose -f "${COMPOSE_FILE}" down --remove-orphans > /dev/null 2>&1 || true
 

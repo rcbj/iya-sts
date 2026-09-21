@@ -42,7 +42,7 @@
 .github
 # ...EXCEPT THE ONE WORKFLOW THAT IS THE SUBJECT OF A TEST (2026-09-10). This is
 # the block below's argument a fourth step out: tests/teardown_bounds.js reads
-# `./docker-run-tests.sh`'s own two wall clocks and this job's `timeout-minutes`
+# `./run-tests.sh`'s own two wall clocks and this job's `timeout-minutes`
 # and asserts the second is above the sum of the first — which is a claim about
 # two files, one of which is a CI definition. `pages.yml` and
 # `build-container.yml` stay out, because nothing asserts anything about them.
@@ -57,7 +57,7 @@ clean.sh
 # Claude Code's per-checkout state, and above all its AGENT WORKTREES: a
 # session that isolates a subagent checks a second copy of this repository out
 # under .claude/worktrees/, and the context is copied whole. On 2026-09-16 one
-# appeared between two modes of ./docker-run-tests.sh and the next image
+# appeared between two modes of ./run-tests.sh and the next image
 # carried it, so every test that walks the tree for source (error_codes,
 # admin_actions_layer) found a second service in it and failed naming files
 # that are not this one. .git/info/exclude keeps it out of `git status`, which

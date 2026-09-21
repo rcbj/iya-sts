@@ -16,9 +16,9 @@ Dockerfile removes this directory from the image.
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
 | `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `suite`, `ecr-password` — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
-| `run-suite-in-aws.sh` | per run | starts the suite task in the VPC, waits, downloads the report — **every job** | CI, or a person |
+| `run-suite-in-aws.sh` | per run | starts the suite task in the VPC, waits, downloads the report — **every job**. Not a launcher since 2026-09-21: `../../run-tests.sh --target=aws-ephemeral` reaches it through the Terraform image's `suite` action | CI, or `./run-tests.sh` |
 | `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
-| `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below) | a person |
+| `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below). **Not a launcher since 2026-09-21**: `../../run-tests.sh --target=aws:<env>` runs it | `./run-tests.sh` |
 | `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the two callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
 | `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
 | `../../.github/workflows/testidp-deploy.yml`, `testidp-destroy.yml` | per deployment | build `testidp`'s two images and apply it, admitting only the address(es) given as `allowed_ip`; destroy it (typed confirmation) | GitHub Actions (dispatch only) |
@@ -53,7 +53,7 @@ need the service to call the runner: `sts_gnap_core`'s push finish method and
 `sts_xacml_remote_pep`'s nudge to a PEP that shares a certificate directory with
 the job. Neither a developer machine nor a GitHub-hosted runner can be dialled.
 The task is three containers sharing localhost and a volume — the credential
-minter, the PEP, the suite — the shape `./docker-run-tests.sh` gives the same
+minter, the PEP, the suite — the shape `./run-tests.sh` gives the same
 jobs. The nodes reach the task directly; the task reaches the NLB through the
 NAT gateway like any client, so every address it follows is the public one. The
 report goes to the foundation's bucket, because the environment is destroyed at
@@ -428,12 +428,30 @@ ports are exactly as open as the main port; a new `allowed_ip` on the
 environment reaches them at this stack's next apply. Target groups are named
 `<prefix>-sp-<port>`, since a realm id can be 31 characters.
 
-**DESTROY EVERY REALM'S STACK BEFORE THE ENVIRONMENT.** Its security-group
-rules cross-reference the environment's two groups, and a group that another
-group's rule still names cannot be deleted, so `environment` destroy (and
-`testidp-destroy.yml`) would stop on the security groups with this stack's
-rules still in place, while its target groups would outlive the load balancer.
-Nothing enforces the order.
+**EVERY REALM'S STACK COMES DOWN BEFORE THE ENVIRONMENT, AND SINCE
+2026-09-21 THE ENTRYPOINT DOES IT** (`destroy_dependent_stacks()`). Its
+security-group rules cross-reference the environment's two groups, and a
+group that another group's rule still names cannot be deleted — the rules
+belong to THIS state, so the environment's Terraform cannot see them and
+does not remove them.
+
+**The day the order was not enforced cost 33 minutes and left the
+environment standing: `testidp`, 2026-09-20.** The workflow destroyed
+everything else, then spent fifteen minutes per group watching
+`DeleteSecurityGroup` answer `DependencyViolation` — the default realm's
+8092 and 8181 rules — retried once on the entrypoint's own rule, failed the
+same way, and stopped with both groups, the VPC and this stack's state still
+there. Re-running it could not help: the second run had the first run's
+blind spot. The remains were removed by hand on 2026-09-21.
+
+**An `environment` destroy now enumerates the dependent stacks from their
+STATE KEYS and destroys each one first** — every
+`environment/<env>/spiffe-realm/*.tfstate` and
+`environment/<env>/suite-callbacks.tfstate` — so nothing has to be told
+which realms an environment was given, and a dependent that will not destroy
+stops the environment's destroy instead of being discovered afterwards. It
+runs while the environment still EXISTS, which this stack requires: it reads
+the environment's remote state and finds the load balancer by name.
 
 ## The deployer's permissions, and how to extend them
 

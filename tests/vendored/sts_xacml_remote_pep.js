@@ -94,7 +94,7 @@
 //   * `./local-run-tests.sh` added `--profile xacml` to the project it
 //     already brought the service up in, on a free host port, and exported
 //     the three — until that launcher was removed on 2026-09-16.
-//   * `./docker-run-tests.sh` declares the service in
+//   * `./run-tests.sh` declares the service in
 //     `docker-compose-run-tests.yml`; the tests container reaches it at
 //     `http://xacml-pep:9090` on the bridge they share.
 //
@@ -604,7 +604,7 @@ function pepLog(lines) {
   // TRIED EVEN FOR A CONTAINER THIS JOB DID NOT CREATE, because under
   // ./local-run-tests.sh (removed 2026-09-16) the launcher's container and
   // this process were on the same machine, and its log is the most useful
-  // thing a failure here can carry. Under ./docker-run-tests.sh there is no
+  // thing a failure here can carry. Under ./run-tests.sh there is no
   // docker to ask, so the fallback names the container and the command
   // rather than pretending.
   const got = dockerQuiet(["logs", "--tail", String(lines || 30), PEP_NAME]);
@@ -631,7 +631,7 @@ function pepLog(lines) {
 // is not the same KIND of thing in each, so the network is discovered rather
 // than assumed:
 //
-//   * `./docker-run-tests.sh` puts the service in a CONTAINER on a compose
+//   * `./run-tests.sh` puts the service in a CONTAINER on a compose
 //     network (as `./local-run-tests.sh` did, with a published port, until it
 //     was removed on 2026-09-16). The PEP joins that
 //     network, dials the service by its container HOSTNAME on the INTERNAL port

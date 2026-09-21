@@ -23,7 +23,7 @@ node_modules
 data/
 
 # THE TEST REPORT and the coverage report, both generated and both timestamped.
-# `./docker-run-tests.sh` writes tests/report/<mode>/<run>/ and points
+# `./run-tests.sh` writes tests/report/<mode>/<run>/ and points
 # tests/report/<mode>/latest at it (`./local-run-tests.sh` wrote there too until
 # it was removed on 2026-09-16); `./run-coverage.sh` writes its own run under
 # tests/report/ and writes coverage/, including coverage/raw/ — V8's own JSON,

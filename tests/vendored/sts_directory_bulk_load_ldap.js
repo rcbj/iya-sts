@@ -45,7 +45,7 @@
 // naming a service nobody was thinking about — so this job cannot simply assume
 // `localhost:389`. The launcher sets it up:
 //
-//   * `./docker-run-tests.sh` — the runner is a container on the bridge with
+//   * `./run-tests.sh` — the runner is a container on the bridge with
 //     the service, so `ldap://sts:389` works with nothing published at all.
 //   * `./local-run-tests.sh`, until it was removed on 2026-09-16 — the runner
 //     was a host process, so that launcher picked a FREE host port and layered
@@ -815,7 +815,7 @@ async function test() {
     assert.fail("could not bind to " + ldapUrl() + ": " + (e.message || e) +
       "\n\nThis job drives the directory's OWN SOCKET, which " +
       "docker-compose.yml deliberately does not publish (a host running " +
-      "slapd would fail to start the stack). ./docker-run-tests.sh " +
+      "slapd would fail to start the stack). ./run-tests.sh " +
       "arranges it and sets STS_LDAP_URL, by putting the runner on the " +
       "bridge with the service. Running " +
       "this file by hand against `node server.js` needs STS_LDAP_URL, or " +

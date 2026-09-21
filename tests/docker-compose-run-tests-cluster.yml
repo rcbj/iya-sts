@@ -1,7 +1,7 @@
 # ===========================================================================
 # tests/docker-compose-run-tests-cluster.yml — THE `cluster` MODE'S STACK FOR
 # THE CONTAINERIZED RUNNER, LAYERED OVER docker-compose-run-tests.yml BY
-# ./docker-run-tests.sh (2026-09-14, issue #46).
+# ./run-tests.sh (2026-09-14, issue #46).
 #
 # The twin of tests/docker-compose-cluster.yml, and its header is the argument
 # for both: node B extends node A, node B starts once node A is healthy, the

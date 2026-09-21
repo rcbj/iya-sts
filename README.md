@@ -8224,15 +8224,15 @@ service has ever issued.
 ./docker-npm-test.sh              # the in-process suite, in the tests image
 ./docker-npm-test.sh --only=crypto  # ...only the files whose name matches
 ./docker-npm-test.sh --list       # ...name them and run none
-./docker-run-tests.sh             # EVERY job, ENTIRELY IN CONTAINERS: the
+./run-tests.sh             # EVERY job, ENTIRELY IN CONTAINERS: the
                                   # service AND the runner, on a host that has
                                   # docker and nothing else. What CI runs
-./docker-run-tests.sh --modes=memory  # one mode rather than all three
-./docker-run-tests.sh --modes=cluster # a fourth mode, only when named: two
+./run-tests.sh --modes=memory  # one mode rather than all three
+./run-tests.sh --modes=cluster # a fourth mode, only when named: two
                                       # service containers active-active on one
                                       # postgres behind an HAProxy, every job's
                                       # requests alternating between them
-./docker-run-tests.sh --only=crypto --no-browser
+./run-tests.sh --only=crypto --no-browser
                                   # anything else goes to the runner
 ./run-coverage.sh                 # coverage, collected by a run of its own —
                                   # in a container, with the RUNNER in the
@@ -8245,9 +8245,9 @@ TypeScript, compiled only inside an image build, so `npm test` and
 `STS-CORE-0093`) and the in-process suite runs through `./docker-npm-test.sh`.
 **`./local-run-tests.sh` — the host-run development loop, the jobs as node
 processes against a service container — was removed on 2026-09-16 for the
-same reason**, so `./docker-run-tests.sh` is the whole suite.
+same reason**, so `./run-tests.sh` is the whole suite.
 
-`./docker-run-tests.sh` puts the runner in a container — node, the browser and
+`./run-tests.sh` puts the runner in a container — node, the browser and
 this working tree, built from `tests/Dockerfile` — brings it and the service up
 from `docker-compose-run-tests.yml` on a private network, and exits with the
 suite's status. It needs **docker and nothing else**: no node, no
@@ -8255,7 +8255,7 @@ suite's status. It needs **docker and nothing else**: no node, no
 `.github/workflows/tests.yml` runs on every push.
 
 **CI RUNS THE SUITE AND COVERAGE IN TWO JOBS THAT DO NOT DEPEND ON EACH OTHER** —
-`tests` wraps `./docker-run-tests.sh` and `coverage` wraps `./run-coverage.sh`,
+`tests` wraps `./run-tests.sh` and `coverage` wraps `./run-coverage.sh`,
 and three artifacts come out of a run: `test-report` (the plain suite's
 `tests/report/latest`), `coverage-report` (the rendered `coverage/`) and
 `coverage-test-report` (the instrumented run's own report). They are two jobs
@@ -8264,12 +8264,12 @@ symlink, so in one workspace the second run would quietly relabel the first
 run's artifact; two jobs are two workspaces. It also means the coverage pass
 still runs when the suite goes red, which is when its report is worth most, and
 that the two run in parallel. **A third job, `cluster` (2026-09-15), runs
-`./docker-run-tests.sh --modes=cluster`** — the fourth mode, two active-active
+`./run-tests.sh --modes=cluster`** — the fourth mode, two active-active
 nodes behind a load balancer, which no bare run includes — on a runner of its
 own and uploads `cluster-test-report`. All four uploads are `if: always()`.
 
 Neither can disturb a mock you are already running. Each is its own compose
-project with its own container names, and `./docker-run-tests.sh` publishes no
+project with its own container names, and `./run-tests.sh` publishes no
 port at all, so `docker compose up`'s `sts` on 8081 is untouched by both —
 including by their teardowns.
 
@@ -8278,7 +8278,7 @@ The in-process suite (`npm test`, run by `./docker-npm-test.sh`) is what
 this repository's own module contracts, which no caller over HTTP could check.
 `tests/CLAUDE.md` argues where the line is.
 
-**`./docker-run-tests.sh` writes a report** — `tests/report/<mode>/<timestamp>/`
+**`./run-tests.sh` writes a report** — `tests/report/<mode>/<timestamp>/`
 with `report.html`, JUnit `report.xml`, `summary.json` and one log per job, and
 `tests/report/<mode>/latest` pointing at the newest. It runs each test file in a
 process of its own, so a file that hangs is a job that times out rather than a
@@ -8295,7 +8295,7 @@ pin. FOURTEEN jobs live in `tests/vendored/` — nine of them byte-identical
 copies of the parent's, and FIVE this repository's own: the four that drive
 `/admin` and `/admin-api`, ours since 2026-08-28, and the delegated permission
 example added 2026-09-01, which was never over there at all. Every
-`./docker-run-tests.sh` runs the lot: the metadata drift checks, the management
+`./run-tests.sh` runs the lot: the metadata drift checks, the management
 API and every one of its operations, the whole admin console in a real browser,
 the five-application delegated permission example, DPoP, the authorization
 server's endpoints, the DID-named issuer, SAML 1.1, SAML encryption, the

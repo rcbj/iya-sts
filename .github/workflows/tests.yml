@@ -8,7 +8,7 @@
 # this workflow exists to use, and it is why the suite was made self-contained
 # on 2026-08-28 and why ./run-coverage.sh was containerized on 2026-08-29.
 #
-#   tests     ./docker-run-tests.sh — builds docker-compose-run-tests.yml (the
+#   tests     ./run-tests.sh — builds docker-compose-run-tests.yml (the
 #             service from this repository's Dockerfile, and a test runner with
 #             node and a Chrome in it), runs every job against the
 #             service over the compose network, and always tears the stack down.
@@ -17,7 +17,7 @@
 #             measures as a child process in there, because V8 writes coverage
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
-#   cluster   ./docker-run-tests.sh --modes=cluster — the fourth mode of
+#   cluster   ./run-tests.sh --modes=cluster — the fourth mode of
 #             tests/tools/modes.sh, which no bare run includes: two
 #             active-active nodes on one postgres and one OpenBao, behind an
 #             HAProxy in TCP mode, every job's requests alternating between
@@ -26,7 +26,7 @@
 # WHY THEY ARE TWO JOBS RATHER THAN TWO STEPS, which is the shape
 # ../id-proto-debugger/.github/workflows/tests.yml uses and the reason to copy
 # it here. Both launchers write into tests/report/ and point a `latest` symlink
-# at their own timestamped directory — ./docker-run-tests.sh one per MODE under
+# at their own timestamped directory — ./run-tests.sh one per MODE under
 # tests/report/<mode>/, ./run-coverage.sh the bare tests/report/latest, which is
 # why the two uploads name different paths. In one job the second run would
 # write into the tree the first one's upload has not read yet, so an artifact
@@ -83,7 +83,7 @@ jobs:
     # THE OUTER BOUND, AND IT IS DELIBERATELY NOT THE ONE THAT SHOULD FIRE.
     #
     # A hung browser job is caught by run-report.js's own per-job watchdog, and
-    # since 2026-09-10 a hung DOCKER call is caught by ./docker-run-tests.sh's
+    # since 2026-09-10 a hung DOCKER call is caught by ./run-tests.sh's
     # own two (STS_MODE_TIMEOUT and STS_TEARDOWN_TIMEOUT). Those bounds explain
     # themselves, capture the container logs, keep the report and still give
     # the mode the verdict the suite reached; this one cancels the job and
@@ -135,7 +135,7 @@ jobs:
       # for a sudo password), builds both images from this checkout, and exits
       # with the test container's status.
       - name: Run the containerized test suite
-        run: ./docker-run-tests.sh
+        run: ./run-tests.sh
 
       # The tests container writes tests/report as root through a bind mount;
       # hand it back to the runner user before the upload step reads it.
@@ -149,7 +149,7 @@ jobs:
       #
       # THE WHOLE tests/report TREE AND NOT `tests/report/latest`, WHICH IT
       # NAMED UNTIL 2026-09-07 AND WHICH HAD BEEN UPLOADING NOTHING SINCE THE
-      # MODE MATRIX LANDED. ./docker-run-tests.sh runs the suite once per mode
+      # MODE MATRIX LANDED. ./run-tests.sh runs the suite once per mode
       # and hands each `--report-dir=tests/report/<mode>`, so `latest` lives
       # under THOSE directories and the bare `tests/report/latest` no longer
       # exists in a fresh checkout at all. `if-no-files-found: warn` is what
@@ -259,10 +259,12 @@ jobs:
   # one question neither job above can answer: whether two containers on one
   # store agree. The three default modes differ in what shares state INSIDE one
   # container; this is the only run in which the thing under test is BETWEEN
-  # containers. Red here and green in the `tests` job's `postgres` mode is a
-  # CLUSTER defect, and that comparison is why both run on every push.
+  # containers. Red here and green in the `tests` job's `dispatch` mode (the
+  # other development mode on a shared store; it was `postgres` until that mode
+  # became `product` on 2026-09-21) is a CLUSTER defect, and that comparison is
+  # why both run on every push.
   #
-  # A JOB OF ITS OWN RATHER THAN `--modes=memory,postgres,dispatch,cluster` IN
+  # A JOB OF ITS OWN RATHER THAN `--modes=memory,product,dispatch,cluster` IN
   # THE `tests` JOB, for three reasons. The time: three modes already take
   # about 80 minutes of that job's 120, and a fourth would push it past the
   # ceiling tests/teardown_bounds.js holds it to. The verdict: a cluster defect
@@ -300,7 +302,7 @@ jobs:
       # tests/docker-compose-run-tests-cluster.yml over the usual file, and
       # exits with the runner's status.
       - name: Run the containerized test suite in the cluster mode
-        run: ./docker-run-tests.sh --modes=cluster
+        run: ./run-tests.sh --modes=cluster
 
       # See the tests job: the runner writes tests/report as root.
       - name: Normalize report permissions

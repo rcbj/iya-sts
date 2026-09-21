@@ -2,7 +2,7 @@
 # tests/tools/compose.sh — how this repository's launchers talk to docker.
 #
 # SOURCED, never run: it defines four functions and sets nothing.
-# ./docker-run-tests.sh (which brings up the service AND the tests container
+# ./run-tests.sh (which brings up the service AND the tests container
 # and drives nothing itself) and ./run-coverage.sh (which runs the tests
 # container alone) are its callers now; ./local-run-tests.sh (which brought up
 # ONE service and drove it from this machine) was the other until it was
@@ -114,7 +114,7 @@ docker_compose()
 # interrupt, and the only lever left is to stop WAITING for it.
 #
 # So: a bound, and a caller that decides what a bound being reached means. It
-# is never a verdict on the tree — see docker-run-tests.sh, which recovers the
+# is never a verdict on the tree — see run-tests.sh, which recovers the
 # mode's real answer from the container docker has already recorded the exit
 # code of.
 #

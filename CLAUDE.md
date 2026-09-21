@@ -836,21 +836,33 @@ copy.
 Those are two claims and keeping them apart is the whole of this section.
 
 ```bash
-./docker-npm-test.sh    # the in-process half, in the tests image (#50)
-./docker-run-tests.sh   # EVERY job, runner and service in containers; what CI runs
-./run-coverage.sh       # coverage, collected by a run of its own
+./docker-npm-test.sh                    # the in-process half, in the tests image (#50)
+./run-tests.sh                          # EVERY job, every mode, in containers; what CI runs
+./run-tests.sh --target=aws:testidp     # the protocol half against an AWS environment
+./run-tests.sh --target=aws-ephemeral   # apply `ci`, run the suite in its VPC, destroy it
+./run-coverage.sh                       # coverage, collected by a run of its own
 ```
+
+**`./run-tests.sh` IS THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE
+IS (2026-09-21).** It was `./docker-run-tests.sh`; `deploy/aws/run-suite.sh`
+and the apply-test-destroy of `aws-cluster.yml` were launchers of their own and
+are its AWS targets' machinery now. Its header argues the targets. **The local
+modes are `memory`, `product` and `dispatch`** — `product` REPLACED `postgres`
+that day, and `tests/tools/modes.sh` records why the old refusal stopped being
+true and what the swap costs. Every local mode runs every job, both halves; an
+AWS target runs the protocol half only, because the in-process files cannot be
+pointed at a URL.
 
 **`npm test` refuses on a checkout since #50** (the TypeScript is compiled
 only inside an image), so `./docker-npm-test.sh` builds the tests image and
 runs it there. **`./local-run-tests.sh` was removed on 2026-09-16**: it ran
-its jobs on the host, which #50 made impossible, so `./docker-run-tests.sh` is
-the whole suite (`--modes=` narrows it; `tests/CLAUDE.md` has the options).
+its jobs on the host, which #50 made impossible (`--modes=` narrows the local
+run; `tests/CLAUDE.md` has the options).
 
 Where a new test goes, asked in this order:
 
 1. **Is it about this service's own `/admin` or `/admin-api`?** Then `tests/vendored/`, `local: true` — an ownership argument, not a capability one.
-2. **Can it be asserted over HTTP against a running service?** Then `../id-proto-debugger/tests/`.
+2. **Can it be asserted over HTTP against a running service?** Then **`tests/vendored/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
 3. **Otherwise here**: it chooses how the process starts, needs a second container on the service's network, or needs a socket no stack publishes.
 
 **Never edit a vendored copy** — the next

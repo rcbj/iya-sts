@@ -20,7 +20,7 @@
     "So the test dependencies live here, one directory down, where `omit=dev`",
     "does not reach them and the service's own install does not carry them.",
     "`npm install --prefix tests` is the command; tests/Dockerfile runs it",
-    "when it builds the tests image that ./docker-run-tests.sh and",
+    "when it builds the tests image that ./run-tests.sh and",
     "./docker-npm-test.sh use, and a job that cannot load because it is",
     "absent FAILS naming this file rather than being skipped.",
     "",

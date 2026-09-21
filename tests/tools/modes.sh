@@ -3,7 +3,7 @@
 # tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: THREE BY
 # DEFAULT, AND A FOURTH (`cluster`) ON REQUEST.
 #
-# `./docker-run-tests.sh` runs the whole suite once per mode, and this file is
+# `./run-tests.sh` runs the whole suite once per mode, and this file is
 # the ONE place the modes are defined. It was written when
 # `./local-run-tests.sh` did the same (it was removed on 2026-09-16): two
 # copies would have been two answers to "what does a green run cover", and the
@@ -27,19 +27,43 @@
 #             failure here is a failure in the service rather than in anything
 #             about how it was deployed.
 #
-#   postgres  PERSISTED AND COORDINATING, still one process. This is where a
-#             write goes through the change log and comes back, so it is the
-#             mode that exercises `persistence_replication.js` against every
-#             protocol rather than against `tests/replication.js`'s stubs. A
-#             failure here and a pass in `memory` is a persistence defect.
+#   product   THE SHIPPED CONFIGURATION: `global.mode=product`, PERSISTED AND
+#             COORDINATING, still one process (2026-09-21 — it replaced the
+#             `postgres` mode, which was this minus product mode). Passwords
+#             are checked, nothing is seeded, an unregistered client or
+#             address is refused, the keystore is sealed under OpenBao's KEK,
+#             and every write goes through the change log and comes back —
+#             so it exercises `persistence_replication.js` against every
+#             protocol AND the hardened service, which until this mode no
+#             protocol job saw outside AWS.
 #
-#   dispatch  THE SAME, PLUS REQUEST WORKERS. The front process proxies and N
-#             children run the handlers, so this is the only mode in which the
-#             routing, the affinity, the certificate forwarding and the read
-#             barrier are exercised by real protocol traffic at all. A failure
-#             here and a pass in `postgres` is a dispatch defect — and that
-#             distinction is the whole reason the three are separate runs
-#             rather than one run with more turned on.
+#             **IT WAS REFUSED HERE UNTIL 2026-09-21, AND THE REASON STOPPED
+#             BEING TRUE.** The `postgres` arm said a product protocol mode
+#             "would fail by design and teach nobody anything", because the
+#             jobs signed people in under invented names with no password.
+#             4d172a3 and d37957d (2026-09-18/19) changed the jobs so they run
+#             against `testidp`, which is product mode: they ask the service
+#             what it is (`tests/vendored/service_facts.js`), register real
+#             clients and people with passwords and PKCE, and authenticate to
+#             introspection. rcbj then asked for the swap.
+#
+#             **WHAT THE SWAP COSTS, SAID SO NOBODY REDISCOVERS IT.** `postgres`
+#             differed from `memory` in ONE axis, so a failure there and a
+#             pass in `memory` was a persistence defect by construction. This
+#             mode differs in TWO — the store and the hardening — so the same
+#             pair of results now says "persistence OR product mode", and the
+#             job's own log has to say which. `dispatch` still runs the store
+#             in development mode (with workers on top), which is the closest
+#             thing left to the old single-axis comparison.
+#
+#   dispatch  PERSISTED AND COORDINATING IN DEVELOPMENT MODE, PLUS REQUEST
+#             WORKERS. The front process proxies and N children run the
+#             handlers, so this is the only mode in which the routing, the
+#             affinity, the certificate forwarding and the read barrier are
+#             exercised by real protocol traffic at all. A failure here and a
+#             pass in `memory` is a dispatch (or persistence) defect; the
+#             three are separate runs rather than one run with more turned on
+#             so that each red mode names the axis it added.
 #
 #   cluster   TWO CONTAINERS, ACTIVE-ACTIVE, ON ONE POSTGRES AND ONE OPENBAO
 #             (2026-09-14, issue #46), each a single process, behind an HAProxy
@@ -47,14 +71,14 @@
 #             client opens a new connection per request, so its requests
 #             alternate between the nodes: a write on one and the read-back
 #             on the other is the ordinary case rather than a race. A failure
-#             here and a pass in `postgres` is a CLUSTER defect — something a
+#             here and a pass in `dispatch` is a CLUSTER defect — something a
 #             node holds that the other cannot see, or two nodes deciding one
 #             thing twice. tests/CLAUDE.md says what it does not cover.
 #
 #             NOT IN STS_ALL_MODES, and that is a decision about cost rather
 #             than about importance: it is a fourth whole run of the suite and
 #             two services' worth of memory, and a bare run is already an
-#             hour. `--modes=cluster` asks for it; `--modes=memory,postgres,
+#             hour. `--modes=cluster` asks for it; `--modes=memory,product,
 #             dispatch,cluster` is everything.
 #
 # ---------------------------------------------------------------------------
@@ -65,7 +89,7 @@
 
 # The mode names a bare run runs, in the order they run. `cluster` is defined
 # below and is asked for by name — see the header.
-STS_ALL_MODES=(memory postgres dispatch)
+STS_ALL_MODES=(memory product dispatch)
 
 # ---------------------------------------------------------------------------
 # The environment each mode adds to the stack, one `NAME=value` per line.
@@ -119,32 +143,32 @@ STS_TEST_FRESH_CONNECTIONS=0
 STS_TEST_CLUSTER_NODES=1
 EOF
       ;;
-    postgres)
-      # DEVELOPMENT MODE, THOUGH THIS ONE HAS A STORE AND COULD RUN THE OTHER —
-      # and that is a decision about what this suite IS rather than an omission.
-      # Product mode makes every surface that used to decide for itself whether
-      # a credential was required ask `common/mode.js` instead, and the answer
-      # is yes: passwords are checked, activation is required, the permissive
-      # mock stops being permissive. Nearly every protocol job here signs
-      # somebody in under a name it invented with no password, because that is
-      # what a mock identity service is for. A `product` protocol mode would
-      # therefore fail by design and teach nobody anything.
+    product)
+      # THE SHIPPED STACK, ONE PROCESS (2026-09-21). See the header for why it
+      # replaced `postgres` and what that costs.
       #
-      # PRODUCT MODE IS COVERED, AND IN PROCESS: `tests/keystore.js` and
-      # `tests/minted_persistence.js` flip `global.mode` directly and assert the
-      # things that actually differ — a signing key that survives a restart,
-      # minted rows sealed under the KEK. That is the right place for it. What
-      # is NOT covered by any protocol job is the shipped default stack, and
-      # this comment is where a reader should learn that rather than infer it.
+      # `STS_MODE=product` REACHES THE SERVICE ONLY BECAUSE
+      # docker-compose-run-tests.yml NOW FORWARDS IT. Until this mode existed
+      # that file never passed STS_MODE to the container at all, so the
+      # `development` every arm named was a no-op that happened to match
+      # `global.mode`'s default. Naming `product` here without that line would
+      # have run the development service and reported "product: passed".
+      #
+      # THE KEYSTORE UNDER OPENBAO'S KEK (`persisted`), which product mode
+      # requires anyway — named because every arm names what the stack could
+      # otherwise decide. Workers OFF, so a failure here and a pass in `memory`
+      # is the store or the hardening and never the dispatcher. Cluster OFF
+      # explicitly: product mode on postgres otherwise defaults `auto` to
+      # active-passive (cluster/CLAUDE.md), which is a different axis.
       cat <<'EOF'
-STS_MODE=development
+STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
-STS_KEYS_SOURCE=generated
+STS_KEYS_SOURCE=persisted
 STS_CLUSTER_MODE=off
 STS_PROXY_PROTOCOL=off
 STS_TEST_FRESH_CONNECTIONS=0
@@ -206,10 +230,12 @@ EOF
       # twin) layered over the mode's usual one; what follows is what each
       # NODE is, and both are given exactly the same.
       #
-      # DEVELOPMENT MODE, for the reason the `postgres` arm gives: the suite
-      # signs people in with no password. That is also why this mode names
-      # `active-active` rather than leaving `cluster.mode=auto` to decide —
-      # auto is `off` outside product mode.
+      # DEVELOPMENT MODE, and naming `active-active` rather than leaving
+      # `cluster.mode=auto` to decide — auto is `off` outside product mode.
+      # (It said "for the reason the `postgres` arm gives: the suite signs
+      # people in with no password" until 2026-09-21; the `product` mode
+      # showed the suite no longer depends on that, and this arm stays in
+      # development only to keep the cluster the one axis it adds.)
       #
       # THE KEY-ENCRYPTION KEY FROM OPENBAO (`STS_KEYS_SOURCE=persisted`), as in
       # `dispatch`, and here it is not optional: active-active refuses to start
@@ -220,7 +246,9 @@ EOF
       # containers; within one, `dispatch` already covers the workers, and two
       # nodes of four processes each is a stack this machine has been killed
       # for memory running before. So each node is one process, and anything
-      # that fails here and passes in `postgres` is a cross-node defect.
+      # that fails here and passes in `dispatch` — the other development
+      # mode on the shared store — is a cross-node defect. (It said
+      # `postgres` until that mode was replaced by `product` on 2026-09-21.)
       #
       # PROXY PROTOCOL v2 ON, as behind the NLB this imitates: the balancer
       # sends a header naming the real peer and both nodes require it from the
@@ -265,7 +293,7 @@ stsModeDescription()
 {
   case "$1" in
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
-    postgres) echo "one process, persisted and coordinating through the change log" ;;
+    product)  echo "one process, global.mode=product, persisted and coordinating, keystore under the KEK" ;;
     dispatch) echo "3 request workers + 1 for the console and portal, every path dispatched, read-your-write on" ;;
     cluster)  echo "2 single-process nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
     *)        echo "unknown" ;;

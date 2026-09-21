@@ -113,7 +113,7 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //   * `./local-run-tests.sh` added `--profile xacml` to the project it already
 //     started the service in and published the PEP on a free host port, until
 //     it was removed on 2026-09-16;
-//   * `./docker-run-tests.sh` declares an `xacml-pep` service in
+//   * `./run-tests.sh` declares an `xacml-pep` service in
 //     `docker-compose-run-tests.yml`, on the bridge the tests container shares
 //     with the service.
 //
@@ -564,7 +564,7 @@ const JOBS = [
   //
   // **THE LDAP ONE NEEDS THE DIRECTORY'S OWN SOCKET**, which
   // `docker-compose.yml` deliberately does not publish. The launchers arrange
-  // it and hand the job `STS_LDAP_URL` — `./docker-run-tests.sh` by putting
+  // it and hand the job `STS_LDAP_URL` — `./run-tests.sh` by putting
   // the runner on the bridge with the service, and `./local-run-tests.sh`
   // (removed 2026-09-16) by layering `tests/docker-compose-ldap.yml` with a
   // free host port. It is NOT

@@ -4,7 +4,7 @@
 # (2026-09-14, issue #46).
 #
 # **NO LAUNCHER LAYERS IT SINCE 2026-09-16**, when ./local-run-tests.sh was
-# removed. `./docker-run-tests.sh --modes=cluster` runs the mode from
+# removed. `./run-tests.sh --modes=cluster` runs the mode from
 # tests/docker-compose-run-tests-cluster.yml instead; "the launcher" below is
 # the removed one.
 #

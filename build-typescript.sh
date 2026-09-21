@@ -50,7 +50,7 @@ done
 if [ ! -f /.dockerenv ] && [ -z "${STS_IN_IMAGE_BUILD:-}" ]; then
   echo "build-typescript.sh: this runs inside an image build only (issue #50:" \
        "no compiled files on the host). Use ./docker-npm-test.sh or" \
-       "./docker-run-tests.sh." >&2
+       "./run-tests.sh." >&2
   exit 1
 fi
 

@@ -68,7 +68,7 @@ function read(rel) {
 // something that was already started, which is the same argument run-report.js
 // makes about `--service-url`.
 // ./local-run-tests.sh was the second until it was removed (2026-09-16, #50).
-const MINTING_LAUNCHERS = ['docker-run-tests.sh'];
+const MINTING_LAUNCHERS = ['run-tests.sh'];
 
 function run(t) {
   log.debug("Entering run().");

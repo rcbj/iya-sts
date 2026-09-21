@@ -230,12 +230,86 @@ else
     -backend-config="bucket=${bucket}" >&2
 fi
 
+# EVERY STACK BUILT ON TOP OF AN ENVIRONMENT COMES DOWN BEFORE IT
+# (2026-09-21). `spiffe-realm/` puts two listeners, two target groups and
+# FOUR SECURITY-GROUP RULES on the environment's own `nlb` and `nodes`
+# groups, which it finds with `data` rather than owning; `suite-callbacks/`
+# puts a subnet and a NAT gateway behind an address the load balancer
+# admits. Terraform removes the rules ITS OWN state records — a rule another
+# state owns is invisible to it, and keeps the group alive, so
+# DeleteSecurityGroup answers DependencyViolation, the provider retries for
+# fifteen minutes per group, and the destroy ends with both groups and the
+# VPC still standing.
+#
+# **THAT IS WHAT HAPPENED TO `testidp` ON 2026-09-20**: the default realm's
+# 8092/8181 rules outlived the environment they were attached to, the
+# workflow spent 33 minutes failing twice over, and re-running it could not
+# help — the second run had the same blind spot as the first. The two groups
+# and the VPC were still there on 2026-09-21 and were removed by hand.
+#
+# The state keys ARE the enumeration, so nothing has to be told which realms
+# an environment was given: one object per dependent stack, under a prefix
+# the deployer role may already list (foundation/iam_deployer.tf,
+# `TerraformStateList`). A dependent whose state is empty destroys nothing
+# and costs one `init`, which is the right price for not having to know.
+#
+# Order matters in the other direction too: `spiffe-realm` reads the
+# environment's remote state and looks its load balancer up by name, so it
+# can only be destroyed WHILE the environment still exists. Here, not after.
+destroy_dependent_stacks() {
+  local prefix="environment/${TF_ENV}/"
+  local keys key realm
+  # A failure to list is reported and not fatal: an environment with no
+  # dependents must still come down when the listing is what broke.
+  if ! keys="$(aws s3api list-objects-v2 --bucket "${bucket}" \
+    --prefix "${prefix}" --query 'Contents[].Key' --output text 2>/dev/null)";
+  then
+    say "WARNING: could not list s3://${bucket}/${prefix} — if a stack built"
+    say "         on this environment still holds security-group rules, the"
+    say "         destroy below will fail with DependencyViolation."
+    return 0
+  fi
+  [ "${keys}" = "None" ] && keys=""
+  for key in ${keys}; do
+    case "${key}" in
+      "${prefix}spiffe-realm/"*.tfstate)
+        realm="${key#"${prefix}"spiffe-realm/}"
+        realm="${realm%.tfstate}"
+        say "dependent stack first: spiffe-realm/${realm}"
+        # The credentials of this process, already the deployer role: the
+        # child's own assume step sees an assumed-role ARN, not a user's,
+        # and leaves them alone. The forced-role variable is cleared so it
+        # cannot try to chain a second assume from them.
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=spiffe-realm \
+          TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
+          die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      "${prefix}suite-callbacks.tfstate")
+        say "dependent stack first: suite-callbacks"
+        MOCK_STS_DEPLOYER_ROLE_ARN= TF_STACK=suite-callbacks \
+          TF_ACTION=destroy "$0" || \
+          die "the suite-callbacks stack would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      *)
+        # A key under this environment's prefix that is not a stack this
+        # script knows how to destroy. Said out loud rather than skipped
+        # silently, because the next DependencyViolation will be its doing.
+        say "NOTE: state key left alone (no stack here owns it): ${key}"
+        ;;
+    esac
+  done
+}
+
 case "${TF_ACTION}" in
   init)     say "init only." ;;
   validate) terraform validate -no-color ;;
   plan)     tf plan -input=false -no-color "${VAR_FILE_ARGS[@]}" ;;
   apply)    tf apply -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" ;;
   destroy)
+    if [ "${TF_STACK}" = "environment" ];
+    then
+      destroy_dependent_stacks
+    fi
     # A destroy that fails half way leaves resources running and billing; the
     # usual cause is an ENI a stopped task has not released yet. Once more,
     # after a minute, before giving up.
@@ -244,7 +318,7 @@ case "${TF_ACTION}" in
       say "destroy failed; retrying once in 60 seconds"
       sleep 60
       tf destroy -input=false -no-color -auto-approve "${VAR_FILE_ARGS[@]}" || \
-        die "DESTROY FAILED TWICE — '${TF_ENV}' may still be running and billing. Re-run the destroy."
+        die "DESTROY FAILED TWICE — '${TF_ENV}' may still be running and billing. Re-run the destroy. A DependencyViolation on a security group means something OUTSIDE this state holds a rule on it; find what put it there, destroy that, and run this again."
     fi
     ;;
   # ADOPT A RESOURCE THAT EXISTS AND THE STATE DOES NOT RECORD (2026-09-19):

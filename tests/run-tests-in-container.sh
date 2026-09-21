@@ -128,7 +128,7 @@ waitForTheService()
 # --service-url is what makes this container drive the `sts` one instead of
 # starting a throwaway service of its own. run-report.js's rule is that
 # WHOEVER STARTED IT STOPS IT, so nothing here takes that container down —
-# compose does, when this process exits and docker-run-tests.sh's
+# compose does, when this process exits and run-tests.sh's
 # --abort-on-container-exit fires.
 #
 # A CHROME IS PRESENT, so the browser jobs run. They are the console's only
