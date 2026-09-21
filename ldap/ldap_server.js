@@ -2941,8 +2941,8 @@ function seed() {
     description: 'SPIFFE agents that have attested here. A RECORD rather ' +
       'than configuration: everything on these entries was written by this ' +
       'service, and nothing about an agent is editable from the console. ' +
-      'Node attestation is never verified — whatever an agent claimed is ' +
-      'what is written down.'
+      'An agent here was verified by the node attestor its type names; a ' +
+      'type nothing verifies is refused, never recorded.'
   }, { origin: 'seed' });
   // -------------------------------------------------------------------------
   // EVERYTHING BELOW THE CONTAINERS IS DEMONSTRATION DATA, AND PRODUCT MODE

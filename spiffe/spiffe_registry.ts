@@ -835,13 +835,11 @@ class SpiffeRegistry {
   // here is written by this service when an agent attests; nothing about an
   // agent is editable, for the reason stated in the header.
   //
-  // **ATTESTATION IS NOT CHECKED.** Whatever the agent says its attestor was
-  // and whatever selectors it claims are written down as claimed (a join token
-  // is the exception — `spiffe_api.ts` checks it). That was this service's
-  // posture everywhere when this was written, and for node attestation it still
-  // is; it is stated on
-  // `/spiffe`, on `/admin/spiffe` and in the attribute descriptions above
-  // rather than left to be inferred from a mock that never says no.
+  // **WHAT IS WRITTEN HERE WAS VERIFIED (#40, 2026-09-21).** It used to be
+  // whatever the agent claimed, with an `unverified:true` selector saying so;
+  // since that date `AttestAgent` accepts only a type an attestor in
+  // `spiffe_node_attestation.ts`'s table verified, and the selectors recorded
+  // are the ones that attestor derived from what it verified.
   //
   // The ONE refusal is a BAN, and it exists so that the ban button is not a
   // lie: a banned agent is refused at AttestAgent and at RenewAgent.
@@ -1345,10 +1343,10 @@ const SCHEMA = {
             'under the reserved /spire/agent path.' },
     { name: 'spiffeAttestationType', kind: 'single', from: 'the agent',
       editable: false,
-      what: 'The node attestor the agent said it used — `join_token`, ' +
-            '`k8s_psat`, `aws_iid`, anything. TAKEN ON TRUST AND NEVER ' +
-            'VERIFIED, which is the whole of what this service does about ' +
-            'node attestation.' },
+      what: 'The node attestor that verified the agent — `join_token`, and ' +
+            'the other types a realm names in spiffe.nodeAttestors. A type ' +
+            'no attestor here verifies is refused at AttestAgent, never ' +
+            'recorded.' },
     { name: 'spiffeAgentSelector', kind: 'multi', from: 'the agent',
       editable: false,
       what: 'The selectors the attestation produced. Invented from what the ' +

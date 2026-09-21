@@ -831,6 +831,8 @@ var config = {
     retainedAuthorities: 4,                                  // Authorities kept published after a rotation
     agentSvidTtl: 0,                                         // Agent SVID lifetime (seconds)
     joinTokenTtl: 600,                                       // Join token lifetime (seconds)
+    nodeAttestors: "join_token",                             // Node attestors accepted
+    attestationChallengeTimeout: 30,                         // Attestation challenge timeout (s)
     maxJoinTokens: 256,                                      // Unspent join tokens held
     maxPageSize: 1000,                                       // Largest page a List* returns
     maxRecordedConnections: 512,                             // mTLS connections remembered

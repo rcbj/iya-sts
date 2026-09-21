@@ -3412,8 +3412,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'SOCKETS, all four: this page is built by walking the Express ' +
           'router and cannot see one, so their state is reported by GET ' +
           '/spiffe and on /admin/spiffe rather than here. MOST OF THAT PAGE ' +
-          'IS WHAT IS AND IS NOT CHECKED — no workload attestation and no ' +
-          'node attestation (a Workload API caller is identified by its ' +
+          'IS WHAT IS AND IS NOT CHECKED — no workload attestation (node ' +
+          'attestation is verified or refused since 2026-09-21, #40; a ' +
+          'Workload API caller is identified by its ' +
           'transport, endpoint and peer address and nothing else, because ' +
           'node cannot read a socket\'s peer credentials), no revocation ' +
           'anywhere — the directory does record a `spiffeCredentialStatus` ' +
@@ -3788,10 +3789,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Every agent that has called AttestAgent, filtered and paged, with ' +
           'a drill-down per agent (?agent=). These entries are a RECORD ' +
           'rather than configuration, so the only writes are ban, unban and ' +
-          'delete. NODE ATTESTATION IS NEVER VERIFIED: whatever attestor an ' +
-          'agent names and whatever payload it sends are written down as ' +
-          'claimed, which is why every agent carries a selector valued ' +
-          '`unverified:true`. The BAN is enforced — one of the few refusals ' +
+          'delete. NODE ATTESTATION IS VERIFIED OR REFUSED (#40): an agent ' +
+          'here attested with a type its realm accepts and an attestor ' +
+          'verified, and its selectors are that attestor\'s. The BAN is ' +
+          'enforced — one of the few refusals ' +
           'in this service, and what keeps the button from being a lie — ' +
           'while DELETE is forgetting rather than revoking: the agent ' +
           'reappears the moment it attests again. Add ?format=json.' },

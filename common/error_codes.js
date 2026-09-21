@@ -7922,8 +7922,8 @@ const CODES = [
       'named or the connection carries.',
     spec: 'gRPC NOT_FOUND' },
   { code: 'STS-SPIFFE-0051',
-    summary: 'AttestAgent received a challenge_response when this server ' +
-      'issues no attestation challenge.',
+    summary: 'AttestAgent received a challenge_response with no attestation ' +
+      'challenge outstanding on the stream.',
     spec: 'gRPC INVALID_ARGUMENT' },
   { code: 'STS-SPIFFE-0052',
     summary: 'The agent attesting or renewing is banned on this server.',
@@ -7945,8 +7945,11 @@ const CODES = [
     spec: 'gRPC PERMISSION_DENIED' },
   { code: 'STS-SPIFFE-0057',
     summary: 'A join token created for a named agent was presented by an ' +
-      'attestation producing a different agent.',
-    spec: 'gRPC PERMISSION_DENIED' },
+      'attestation producing a different agent. Retired 2026-09-21 (#40): ' +
+      'the attesting agent is always the join token\'s own, so the check ' +
+      'refused every such token; agent_id now registers an alias entry, as ' +
+      'SPIRE does (STS-SPIFFE-0084).',
+    spec: 'gRPC PERMISSION_DENIED', retired: true },
   { code: 'STS-SPIFFE-0058',
     summary: 'RenewAgent was called on a connection that carries no attested ' +
       'agent\'s X509-SVID.',
@@ -8029,6 +8032,36 @@ const CODES = [
     summary: 'An agent asked for an SVID from a registration entry that is ' +
       'not beneath it (BatchNewX509SVID, NewJWTSVID).',
     spec: 'gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID)' },
+  { code: 'STS-SPIFFE-0078',
+    summary: 'AttestAgent named a node attestor this realm does not accept: ' +
+      'not in spiffe.nodeAttestors, or not one this server can verify. ' +
+      'Nothing is taken on trust (#40).',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0079',
+    summary: 'AttestAgent carried no attestation type in params.data.type.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0080',
+    summary: 'A node attestor challenged the agent and no challenge_response ' +
+      'arrived within spiffe.attestationChallengeTimeout.',
+    spec: 'gRPC DEADLINE_EXCEEDED' },
+  { code: 'STS-SPIFFE-0081',
+    summary: 'The message after an attestation challenge carried no ' +
+      'challenge_response.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0082',
+    summary: 'The AttestAgent stream closed or was cancelled while a node ' +
+      'attestor\'s challenge was outstanding.',
+    spec: 'gRPC CANCELLED' },
+  { code: 'STS-SPIFFE-0083',
+    summary: 'An agent already attested with evidence that is not ' +
+      're-attestable (a join token, a trust-on-first-use document) attested ' +
+      'again; the agent must be deleted first, as in SPIRE.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0084',
+    summary: 'CreateJoinToken\'s agent_id could not be registered as the ' +
+      'token\'s alias entry (not in this trust domain, reserved, or the ' +
+      'registry refused it), so no token was issued.',
+    spec: 'gRPC INVALID_ARGUMENT' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

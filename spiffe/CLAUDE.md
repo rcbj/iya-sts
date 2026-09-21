@@ -90,9 +90,11 @@ Six things follow, and each is where to look:
    printable payload on the agent's entry as `payload:<text>` — which for a join
    token was the token itself, in the directory; a join token's selector is
    `token-sha256:<16 hex>` instead, so somebody holding the token can still find
-   the agent it attested and nobody can reconstruct it. Entries written before
-   the change keep the `payload:` selector they were given; the token in one is
-   spent, since only a successful attestation writes it.
+   the agent it attested and nobody can reconstruct it.
+   (`selectorsFromAttestation()` and its `payload:` selectors are gone
+   altogether since 2026-09-21: an
+   attestor returns only the selectors it VERIFIED — see *Node attestation is
+   a table* below.)
    `tests/spiffe_join_token.js` looks for the token in every key and body of the
    store, on the agent's entry and in the audit log.
 
@@ -456,15 +458,75 @@ that up silently.
 
 ---
 
-## Nothing here is attested, and that is a narrower sentence than it was
+## Node attestation is a table, and nothing is taken on trust (#40, 2026-09-21)
 
-* **NOTHING IN SPIFFE IS ATTESTED, AND THAT IS NOW A NARROWER SENTENCE THAN IT
-  WAS.** No workload and no node: a Workload API caller is identified by its
+**`AttestAgent` used to accept ANY attestation type.** Only `join_token` was
+checked; every other type was issued an agent SVID under
+`/spire/agent/<type>/<digest of the payload>` with its payload unread and a
+selector `<type>:unverified:true` on the agent's entry — reported honestly on
+every page, and granting that agent everything beneath its id all the same. A
+real SPIRE agent pointed here could join a trust domain with an invented type.
+rcbj's decision on #40: **refuse, in every mode**, and implement SPIRE's
+node attestors instead (`join_token`, `x509pop`, `sshpop`, `tpm_devid`,
+`k8s_psat`, `aws_iid`, `gcp_iit`, `azure_imds`, `http_challenge` — the first
+is in; the rest arrive in #40's later phases).
+
+* **THE TABLE IS `spiffe_node_attestation.ts`** and each attestor is a class in
+  a `spiffe_attestor_<type>.ts` of its own, returning the shapes in
+  `types/spiffe-attestation.d.ts`: the agent's id by SPIRE's template, the
+  selectors IT VERIFIED, `canReattest`, and a `commit()`/`release()` pair.
+  `spiffe.nodeAttestors` (per realm, default `join_token`) names what a realm
+  accepts; a type absent from it, or present and not in the table, is
+  FAILED_PRECONDITION (`STS-SPIFFE-0078`) — SPIRE's answer for an attestor it
+  has no plugin for. There is no fallback attestor and there must not be one.
+* **AN ATTESTOR NEVER RETURNS A SELECTOR IT DID NOT ESTABLISH.** The selector
+  types are SPIRE's, and a registration entry written against SPIRE's
+  documentation trusts them.
+* **EVIDENCE IS SPENT WHEN THE SVID EXISTS, NOT WHEN IT VERIFIED.** The
+  attestor claims what it must (a join token through `cluster_claims`, as
+  #46 required), `AttestAgent` calls `commit()` after the agent is recorded
+  and `release()` on any failure after the attestor returned, so a refusal
+  spends nothing.
+* **EVIDENCE THAT IS NOT RE-ATTESTABLE ATTESTS ONCE.** An agent that exists
+  and whose attestor says `canReattest: false` is refused
+  (`STS-SPIFFE-0083`) until an operator deletes it — SPIRE's rule for a join
+  token and the trust-on-first-use cloud documents. `reattestable` in the
+  answer is the attestor's, no longer `type !== 'join_token'`.
+* **A CHALLENGE IS A CONVERSATION ON THE SAME STREAM.** `spiffe_grpc.ts`'s
+  `bidiStream()` hands the handler `conversation.challenge(message, ms)`,
+  which writes `{ challenge }` and resolves with the client's NEXT message
+  instead of dispatching it as a new request. Timeout
+  (`spiffe.attestationChallengeTimeout`) is DEADLINE_EXCEEDED
+  (`STS-SPIFFE-0080`), a next message without `challenge_response` is
+  INVALID_ARGUMENT (`0081`), the client ending or cancelling with one
+  outstanding is CANCELLED (`0082`).
+* **A CLIENT'S HALF-CLOSE WAITS FOR THE HANDLERS IN FLIGHT.** `bidiStream()`
+  answered `end` with `call.end()` at once, so a client that sent its one
+  message and half-closed got an empty stream while `AttestAgent` went on to
+  SPEND THE JOIN TOKEN — every retry then refused as spent.
+  `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  worked round it; the stream now ends once every handler has answered.
+* **`CreateJoinToken`'s `agent_id` IS AN ALIAS ENTRY, AS IN SPIRE.** It was
+  stored and compared with the attesting agent's id, which is always
+  `/spire/agent/join_token/<digest>` — so a token minted for a named agent
+  could never attest (`STS-SPIFFE-0057`, retired). It now registers an entry
+  naming `agent_id`, parented on the token's agent and selecting
+  `spiffe_id:<that agent>`, checked BEFORE the token exists
+  (`STS-SPIFFE-0084`); `entriesAuthorizedFor()` reaches it because it starts
+  from the agent itself.
+* **`GET /spiffe` carries `nodeAttestation`**: every type this build
+  verifies, whether the realm accepts it, and any configured name nothing
+  verifies.
+
+## Workloads are not attested, and that is a narrower sentence than it was
+
+* **NO WORKLOAD IS ATTESTED YET (#40's later phases), AND THAT IS A NARROWER
+  SENTENCE THAN IT WAS.** A Workload API caller is identified by its
   transport, the endpoint it reached and its peer address — node cannot read a
-  Unix socket's peer credentials — so any caller that reaches the socket still
-  gets an identity, and an agent's attestation payload is written down as
-  claimed, which is why every agent entry carries a selector valued
-  `unverified:true`. **What changed is the OTHER half**: the SPIRE Server API's
+  Unix socket's peer credentials without the addon #40 adds — so any caller
+  that reaches the socket still gets an identity. Node attestation left this
+  sentence on 2026-09-21 (above). **What changed first was the OTHER
+  half**: the SPIRE Server API's
   TCP port is MUTUAL TLS, its callers present an X509-SVID verified against the
   trust bundle, and every method is authorized against SPIRE's own table. Those
   are two different claims and merging them back into one gets both wrong.
@@ -480,8 +542,9 @@ that up silently.
   (every conforming implementation refuses it, and a client that omits it has a
   bug nothing else will report), a JWT-SVID with no audience, a
   `ValidateJWTSVID` that does not really verify, an entry in another trust
-  domain or under `/spire`, a banned agent, a join token this server did not
-  mint or that has expired or been spent or was minted for another agent, an
+  domain or under `/spire`, a banned agent, an attestation type nothing here
+  verifies, a join token this server did not
+  mint or that has expired or been spent, an
   X509-SVID that no authority here signed or that is outside its validity
   window, every method the caller's entity is not allowed, and a federated
   bundle whose JWKs have no `use`. The old posture is no longer reachable:

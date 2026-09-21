@@ -385,12 +385,12 @@ class SpiffeServer {
         'the interesting behaviour of a Workload ' +
         'API and there is otherwise no way to exercise a client\'s "these ' +
         'matched and those did not" path here.',
-        'NO NODE ATTESTATION. Whatever attestor an agent names and whatever ' +
-        'payload it sends are written down as claimed and never verified. ' +
-        'The agent selectors on /admin/spiffe/agents carry an ' +
-        '`unverified:true` value for exactly this ' +
-        'reason. The ONE exception is a join token, ' +
-        'which this server minted and therefore checks: see `refused` below.',
+        'NODE ATTESTATION IS VERIFIED OR REFUSED (#40, 2026-09-21). ' +
+        'AttestAgent accepts only a type the realm names in ' +
+        'spiffe.nodeAttestors and an attestor here verifies — ' +
+        '`nodeAttestation` below lists them — and refuses every other with ' +
+        'FAILED_PRECONDITION. Nothing an agent claims is written down ' +
+        'unverified.',
         'A CSR SIGNATURE IS NOT VERIFIED. Only the public key is read out of ' +
         'a CSR — which is what stops a caller naming itself something it is ' +
         'not — but proof of possession is not checked.',
@@ -433,11 +433,12 @@ class SpiffeServer {
         'trust domain whose key verified it.',
         'A registration entry whose SPIFFE ID is invalid, belongs to another ' +
         'trust domain, or sits under the reserved /spire path.',
-        'AttestAgent for a banned agent, and a ' +
-        'join token this server did not mint, one that has expired, one ' +
-        'presented twice, and one minted for a named agent and presented by ' +
-        'another. A join token is the one attestation payload here this ' +
-        'service ISSUED and can therefore verify.',
+        'AttestAgent for an attestation type the realm does not accept or ' +
+        'no attestor here verifies (FAILED_PRECONDITION), evidence its ' +
+        'attestor could not verify, a banned agent, a second attestation ' +
+        'with evidence that is not re-attestable, and a challenge left ' +
+        'unanswered. For a join token: one this server did not mint, one ' +
+        'that has expired, and one presented twice.',
         'Every method on the SPIRE Server API that the caller\'s entity is ' +
         'not allowed, with UNAUTHENTICATED when nothing was presented and ' +
         'PERMISSION_DENIED when something was and it was not enough. The two ' +
@@ -459,6 +460,9 @@ class SpiffeServer {
         'registered — the same refusal it gives WS-Federation\'s wreqptr and ' +
         'a client\'s jwks_uri.'
       ],
+      // The node attestors this build verifies, which this realm accepts, and
+      // any configured name nothing verifies (#40).
+      nodeAttestation: serverApi.nodeAttestationState(),
       links: {
         bundle: base + BUNDLE_PATH,
         console: base + '/admin/spiffe',

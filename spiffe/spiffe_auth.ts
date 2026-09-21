@@ -96,8 +96,9 @@
 // The Workload API still hands out identities to anybody who can reach the
 // socket; there is no attestation of a workload's identity, only of which
 // entries its observable selectors match. Node attestation at `AttestAgent` is
-// still taken on trust — the payload is not verified and every agent entry
-// still carries `unverified:true`. It used to be possible to stand all of this
+// no longer on this list (#40, 2026-09-21): a type is verified by its attestor
+// in `spiffe_node_attestation.ts`'s table or refused. It used to be possible
+// to stand all of this
 // down — `spiffe.authRequired` off, and the service behaved exactly as it did
 // before this file existed — and it is not: that setting was removed on
 // 2026-09-06 when `global.mode` took the question over. See `GET /spiffe`,

@@ -1558,6 +1558,8 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.maxAgents` | `STS_SPIFFE_MAX_AGENTS` | `200` | yes | How many attested agents are held. The agent id comes off whatever the caller sent, so any caller can invent one; past the cap the oldest is dropped rather than the newest refused, because an agent that cannot attest is an agent that cannot do anything at all. |
 | `spiffe.maxFederatedBundles` | `STS_SPIFFE_MAX_FEDERATED_BUNDLES` | `32` | yes | How many foreign trust domains' bundles are held. They are PASTED IN and never fetched — see /spiffe — so this bounds what an operator or the SPIRE Server API can add, not what any polling loop could accumulate. |
 | `spiffe.joinTokenTtl` | `STS_SPIFFE_JOIN_TOKEN_TTL` | `600` | yes | A join token's lifetime when CreateJoinToken names none. |
+| `spiffe.nodeAttestors` | `STS_SPIFFE_NODE_ATTESTORS` | `join_token` | yes | The node attestors AttestAgent accepts in this realm. Each is verified; a type not listed, or not one this server can verify, is refused with FAILED_PRECONDITION. |
+| `spiffe.attestationChallengeTimeout` | `STS_SPIFFE_ATTESTATION_CHALLENGE_TIMEOUT` | `30` | yes | Seconds AttestAgent waits for a challenge_response once an attestor has challenged. |
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | Unspent, unexpired join tokens a realm holds. At the bound a NEW token is refused with RESOURCE_EXHAUSTED; a token already handed to an agent is never evicted. |
 | `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every SPIRE Server API `List*` method. |
 | `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes (per process — a realm may not carry it) | How many mTLS connections are remembered so an X509-SVID is one authentication per connection rather than per call. |
@@ -7291,11 +7293,14 @@ Four things follow, and each is deliberate:
   carries the caller's *stable* selectors — transport and endpoint, never the
   peer, whose port is ephemeral — so the next caller of the same shape matches it
   instead of inventing another.
-* **Node attestation is taken on trust.** Whatever attestor an agent names and
-  whatever payload it sends are written down as claimed, which is why every agent
-  entry carries a selector valued `unverified:true`: an agent's selectors here
-  are claims, not attested facts. The one exception is a **join token**, which
-  this server minted and therefore checks — see the refusals below.
+* **Node attestation is verified or refused (#40, 2026-09-21).** An agent's
+  attestation type must be one the realm names in `spiffe.nodeAttestors` AND one
+  this server can verify; anything else is refused with FAILED_PRECONDITION, as
+  SPIRE refuses an attestor it has no plugin for. Until that date any type was
+  accepted with its payload unread and marked `unverified:true`; that is gone in
+  every mode. Today the verifiable type is **`join_token`**, which this server
+  minted and therefore checks — see the refusals below; the other SPIRE node
+  attestors are being added under #40.
 
 #### Who may call the SPIRE Server API
 

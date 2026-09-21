@@ -56,10 +56,10 @@
 //     took the question over, so the `!authRequired()` arms below are dead
 //     code kept against a third mode wanting them.
 //
-// **WHAT IS STILL NOT ATTESTED IS THE WORKLOAD API AND NODE ATTESTATION.** See
-// `spiffe_workload.ts`'s header for the first, which is the specification's
-// requirement rather than this service's laxity, and `AttestAgent` below for
-// the second.
+// **WHAT IS STILL NOT ATTESTED IS THE WORKLOAD API** — see
+// `spiffe_workload.ts`'s header. NODE attestation left this sentence on
+// 2026-09-21 (#40): `AttestAgent` below verifies every type it accepts through
+// `spiffe_node_attestation.ts`'s table and refuses the rest.
 //
 // ---------------------------------------------------------------------------
 // THE BATCH METHODS ANSWER PER ITEM AND DO NOT FAIL AS A WHOLE
@@ -118,6 +118,10 @@ import auth = require('./spiffe_auth');
 // The atomic "once" a join token is spent through across nodes — see
 // AttestAgent. A LIBRARY that reaches `persistence.js` lazily.
 import claims = require('../cluster/cluster_claims');
+// The node attestors (#40): the table, and the one attestor whose store is
+// this module's. LIBRARIES; neither registers a route.
+import attestation = require('./spiffe_node_attestation');
+import joinTokenAttestor = require('./spiffe_attestor_join_token');
 
 const status = rpc.grpc.status;
 
@@ -138,6 +142,8 @@ interface SpiffeApiDeps {
   rpc: typeof rpc;
   auth: typeof auth;
   claims: typeof claims;
+  attestation: typeof attestation;
+  joinTokenAttestor: typeof joinTokenAttestor;
   status: typeof status;
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
@@ -146,6 +152,10 @@ interface SpiffeApiDeps {
 }
 
 class SpiffeApi {
+  // Built by `nodeAttestation()` on first use.
+  private attestationTable: any = null;
+  private joinTokenAttestorInstance: any = null;
+
   constructor(private readonly deps: SpiffeApiDeps) {
     deps.log.debug("Entering SpiffeApi.constructor().");
     deps.log.debug("Leaving SpiffeApi.constructor().");
@@ -169,6 +179,8 @@ class SpiffeApi {
       rpc: rpc,
       auth: auth,
       claims: claims,
+      attestation: attestation,
+      joinTokenAttestor: joinTokenAttestor,
       status: status,
       loadPkijs: function () {
         return require('pkijs');
@@ -863,10 +875,11 @@ class SpiffeApi {
   }
 
   buildAgentHandlers() {
-    const { log, rpc, registry, spiffeId, errorCodes, ca, auth, nowSec, claims,
+    const { log, rpc, registry, spiffeId, errorCodes, ca, auth, nowSec,
             crypto, stats, status, audit, config } = this.deps;
     const self = this;
     log.debug("Entering SpiffeApi.buildAgentHandlers().");
+    const attestation = this.nodeAttestation();
     const agentHandlers = {
       CountAgents: rpc.unary('server', 'Agent.CountAgents',
                              async function (call) {
@@ -921,49 +934,59 @@ class SpiffeApi {
         return {};
       }),
 
-      // ATTESTATION. The one place this service could have pretended hardest
-      // and does not.
+      // ATTESTATION (#40, 2026-09-21: every type is VERIFIED or refused).
       //
       // A real server runs the named node attestor against the payload —
-      // verifies a Kubernetes projected service account token, an AWS instance
-      // identity document, a join token it minted — and derives the agent's
-      // SPIFFE ID and selectors from what it proves. Some attestors then issue
-      // a CHALLENGE and expect a signed response, which is why this is a
-      // bidirectional stream.
+      // verifies a join token it minted, an X.509 proof of possession, a
+      // Kubernetes projected service account token, an AWS instance identity
+      // document — and derives the agent's SPIFFE ID and selectors from what
+      // it proved. Some attestors then issue a CHALLENGE and expect a signed
+      // response, which is why this is a bidirectional stream and why the
+      // attestor is handed `challenge()`.
       //
-      // Here: the payload is not verified, no challenge is ever issued, and the
-      // agent id is derived from what the caller sent. What IS real is the CSR
-      // — only the public key is read out of it, so an agent still cannot name
-      // itself something it is not — the join token's single use, and the ban.
+      // The attestor is `spiffe_node_attestation.ts`'s table, asked for the
+      // type the agent named in THIS realm; a type the table cannot verify or
+      // the realm has not turned on is FAILED_PRECONDITION, what SPIRE
+      // answers for an attestor it has no plugin for. There is no fallback:
+      // until 2026-09-21 any other type was accepted with its payload unread
+      // and its agent entry marked `unverified:true`, and that branch is gone
+      // in every mode. What is still this handler's is the rest of SPIRE's
+      // sequence: the ban, the CSR (only its public key is read, so an agent
+      // cannot name itself), the one-attestation rule for evidence that is
+      // not re-attestable, and spending the evidence only once the SVID
+      // exists.
       AttestAgent: rpc.bidiStream('server', 'Agent.AttestAgent',
-                                  async function (request, call) {
+                                  async function (request, call,
+                                                  conversation) {
         await ca.ready();
-        // A challenge response arriving when no challenge was issued. Refused
-        // rather than ignored: a client in that state has misread the protocol,
-        // and an empty answer would leave it waiting.
+        // A challenge response arriving when no challenge is outstanding.
+        // Refused rather than ignored: a client in that state has misread the
+        // protocol, and an empty answer would leave it waiting.
         if (request.challenge_response !== undefined && !request.params) {
           errorCodes.mark(call, 'STS-SPIFFE-0051');
-          throw rpc.invalidArgument('This server issues no attestation ' +
-                                    'challenge, so there is nothing a ' +
+          throw rpc.invalidArgument('No attestation challenge is outstanding ' +
+                                    'on this stream, so there is nothing a ' +
                                     'challenge_response can answer. Send the ' +
-                                    'params step and the SVID comes back ' +
-                                    'immediately.');
+                                    'params step first.');
         }
         const params = request.params || {};
         const data = params.data || {};
-        const attestationType = String(data.type || '').trim() || 'unknown';
-        const agentId = self.agentIdFor(attestationType, data.payload);
-        const existing = registry.agentById(agentId);
-        if (existing && existing.banned) {
-          // One of the few refusals in this service, and it earns its place: a
-          // ban that did not refuse would make the button on
-          // /admin/spiffe/agents a lie. PERMISSION_DENIED with the reason SPIRE
-          // uses.
-          errorCodes.mark(call, 'STS-SPIFFE-0052');
-          throw rpc.permissionDenied('The agent ' + agentId + ' is banned on ' +
-                                     'this server. Unban it from ' +
-                                     '/admin/spiffe/agents or with the ' +
-                                     'management API.');
+        const attestationType = String(data.type || '').trim();
+        if (!attestationType) {
+          errorCodes.mark(call, 'STS-SPIFFE-0079');
+          throw rpc.invalidArgument('AttestAgent names its attestor in ' +
+                                    'params.data.type, and this one is ' +
+                                    'empty.');
+        }
+        const attestor = attestation.attestorFor(attestationType);
+        if (!attestor) {
+          errorCodes.mark(call, 'STS-SPIFFE-0078');
+          throw rpc.statusError(status.FAILED_PRECONDITION,
+            'could not find node attestor type "' + attestationType + '": ' +
+            'this realm accepts ' +
+            (attestation.enabled().join(', ') || 'no node attestor') +
+            ' (spiffe.nodeAttestors). An attestation type this server cannot ' +
+            'verify is refused rather than taken on trust.');
         }
         const csr = (params.params || {}).csr;
         if (!csr || !csr.length) {
@@ -973,114 +996,92 @@ class SpiffeApi {
                                     'keeps its own private key, so there is ' +
                                     'nothing to issue against without one.');
         }
-        // ---------------------------------------------------------------------
-        // A JOIN TOKEN IS A CREDENTIAL, SO IT IS CHECKED.
-        //
-        // It is the one attestation payload here that this service ISSUED and
-        // can therefore verify: `CreateJoinToken` minted it, it has a lifetime,
-        // and it is single-use. A server that accepted a join token it never
-        // issued would be accepting a forgery of its own credential, which is a
-        // different thing from being permissive about a payload somebody else's
-        // attestor would have verified.
-        //
-        // Gated like everything else this file gained. The old behaviour — any
-        // token attests — used to stay reachable behind `spiffe.authRequired`
-        // and no longer does. The refusals
-        // are three and they are deliberately distinguishable: a token nobody
-        // minted, a token that ran out, and a token already spent are three
-        // different bugs in a client and reading one message for all three
-        // would send somebody looking in the wrong place.
-        // ---------------------------------------------------------------------
-        // The claim a checked join token is spent through, when there is one.
-        let joinTokenClaim = null;
-        if (attestationType === 'join_token' && auth.authRequired()) {
-          const presented = String(Buffer.from(data.payload || [])
-                                         .toString('utf8')).trim();
-          const held = joinTokens.get(self.joinTokenKey(presented));
-          if (!presented) {
-            errorCodes.mark(call, 'STS-SPIFFE-0054');
-            throw rpc.invalidArgument('A join_token attestation carries the ' +
-                                      'token as params.data.payload, and ' +
-                                      'this one is empty.');
-          }
-          if (!held) {
-            errorCodes.mark(call, 'STS-SPIFFE-0055');
-            throw rpc.permissionDenied('That join token was not issued by ' +
-                                       'this server, or it has already been ' +
-                                       'spent — a join token is single-use, ' +
-                                       'and the one it attested is ' +
-                                       'on /admin/spiffe/agents. Ask ' +
-                                       'for a new one with CreateJoinToken.');
-          }
-          if (held.expiresAt && held.expiresAt < nowSec()) {
-            joinTokens.delete(self.joinTokenKey(presented));
-            errorCodes.mark(call, 'STS-SPIFFE-0056');
-            throw rpc.permissionDenied('That join token expired at ' +
-              new Date(held.expiresAt * 1000).toISOString() + '. It has been ' +
-              'discarded; ask for another with CreateJoinToken, which takes ' +
-              'a ttl.');
-          }
-          if (held.agentId && held.agentId !== agentId) {
-            // A token minted FOR a named agent, presented by another. SPIRE
-            // binds the two; without this the `agent_id` argument to
-            // CreateJoinToken would be a note rather than a constraint.
-            errorCodes.mark(call, 'STS-SPIFFE-0057');
-            throw rpc.permissionDenied('That join token was issued for ' +
-              held.agentId + ' and this attestation would produce ' + agentId +
-              '. A join token created for a named agent may only attest that ' +
-              'agent.');
-          }
-          // -------------------------------------------------------------------
-          // SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 2).
-          //
-          // The token is deleted from `joinTokens` at the SUCCESSFUL
-          // attestation below, and that store replicates to the other nodes a
-          // moment later. Two AttestAgent calls carrying one token at two nodes
-          // inside that moment both found it and both attested — two agents,
-          // each with an SVID, from a credential that is single-use by
-          // definition. So it is CLAIMED here, once every check that refuses
-          // without side effects has passed and before anything is signed; the
-          // claim lives until the token would have expired, plus a minute of
-          // skew. A claim another call holds is the refusal a spent token
-          // always was (`STS-SPIFFE-0055`); an attestation that fails after the
-          // claim gives it back, so the token is still spendable exactly as it
-          // was on one node.
-          // -------------------------------------------------------------------
-          const claimed = await claims.claim({
-            scope: 'spiffe.join-token', value: self.joinTokenKey(presented),
-            ttlMs: Math.max(60 * 1000, held.expiresAt
-              ? (held.expiresAt - nowSec()) * 1000 + 60 * 1000 : 0)
-          });
-          if (!claimed.ok && claimed.reason === 'used') {
-            errorCodes.mark(call, 'STS-SPIFFE-0055');
-            throw rpc.permissionDenied('That join token was not issued by ' +
-                                       'this server, or it has already been ' +
-                                       'spent — a join token is ' +
-                                       'single-use. Ask for a new ' +
-                                       'one with CreateJoinToken.');
-          }
-          if (!claimed.ok) {
-            log.error(errorCodes.tag('STS-SPIFFE-0075') +
-                      'spiffe: a join token ' +
-                      'could not be proved unspent (' + claimed.why +
-                      '); the attestation is refused.');
-            errorCodes.mark(call, 'STS-SPIFFE-0075');
-            throw rpc.unavailable('This server could not check the join ' +
-                                  'token just now. Retry.');
-          }
-          joinTokenClaim = claimed.handle;
-        }
-        let svid = null;
+        // The attestor verifies — and may challenge, and may claim the
+        // evidence. Everything it throws is the call's answer; a conversation
+        // that broke down (a timeout, the client gone) is named here, because
+        // the attestor only asked a question.
+        let verified = null;
         try {
-          // `spiffe.agentSvidTtl`, where 0 — its default, and the literal this
-          // was — means spiffe.svidTtl. See agentSvidTtl().
-          svid = await ca.signCsr(Buffer.from(csr), agentId,
-                                  { ttl: self.agentSvidTtl() });
+          verified = await attestor.attest({
+            type: attestationType,
+            payload: Buffer.from(data.payload || []),
+            trustDomain: self.trustDomain(),
+            call: call,
+            challenge: function (bytes) {
+              log.debug("Entering challenge(). type=" + attestationType);
+              log.debug("Leaving challenge().");
+              return conversation.challenge({ challenge: bytes },
+                                            attestation.challengeTimeoutMs())
+                .then(function (next) {
+                  log.debug("Entering the challenge answer.");
+                  if (!next || next.params ||
+                      next.challenge_response === undefined) {
+                    const err: any = new Error('The message after an ' +
+                      'attestation challenge must carry challenge_response.');
+                    err.conversation = 'unexpected';
+                    log.debug("Leaving the challenge answer. Not one.");
+                    throw err;
+                  }
+                  log.debug("Leaving the challenge answer.");
+                  return Buffer.from(next.challenge_response);
+                });
+            }
+          });
+        } catch (e) {
+          log.debug("Caught in AttestAgent: " + ((e && e.message) || e));
+          const reason = e && e.conversation;
+          if (reason === 'timeout') {
+            errorCodes.mark(call, 'STS-SPIFFE-0080');
+            throw rpc.statusError(status.DEADLINE_EXCEEDED,
+              'The ' + attestationType + ' attestor challenged and no ' +
+              'response arrived: ' + e.message + ' ' +
+              '(spiffe.attestationChallengeTimeout).');
+          }
+          if (reason === 'unexpected') {
+            errorCodes.mark(call, 'STS-SPIFFE-0081');
+            throw rpc.invalidArgument(e.message);
+          }
+          if (reason) {
+            errorCodes.mark(call, 'STS-SPIFFE-0082');
+            throw rpc.statusError(status.CANCELLED,
+              'The attestation stream closed during the ' + attestationType +
+              ' challenge: ' + e.message);
+          }
+          throw e;
+        }
+        const agentId = verified.agentId;
+        const existing = registry.agentById(agentId);
+        try {
+          if (existing && existing.banned) {
+            // One of the few refusals in this service, and it earns its
+            // place: a ban that did not refuse would make the button on
+            // /admin/spiffe/agents a lie. PERMISSION_DENIED with the reason
+            // SPIRE uses.
+            errorCodes.mark(call, 'STS-SPIFFE-0052');
+            throw rpc.permissionDenied('The agent ' + agentId + ' is banned ' +
+                                       'on this server. Unban it from ' +
+                                       '/admin/spiffe/agents or with the ' +
+                                       'management API.');
+          }
+          if (existing && !verified.canReattest) {
+            // SPIRE's rule for evidence that is not re-attestable (a join
+            // token, and the trust-on-first-use cloud documents): it attests
+            // an agent ONCE, and presenting it again is somebody else holding
+            // a copy. Deleting the agent is how an operator lets it back.
+            errorCodes.mark(call, 'STS-SPIFFE-0083');
+            throw rpc.permissionDenied('The agent ' + agentId + ' has ' +
+              'already attested, and ' + attestationType + ' evidence is not ' +
+              're-attestable. Delete the agent from /admin/spiffe/agents to ' +
+              'let it attest again.');
+          }
+          // `spiffe.agentSvidTtl`, where 0 — its default, and the literal
+          // this was — means spiffe.svidTtl. See agentSvidTtl().
+          const svid = await ca.signCsr(Buffer.from(csr), agentId,
+                                        { ttl: self.agentSvidTtl() });
           const recorded = registry.recordAttestation(agentId, {
             attestationType: attestationType,
-            selectors: self.selectorsFromAttestation(attestationType,
-                                                     data.payload),
-            canReattest: attestationType !== 'join_token',
+            selectors: verified.selectors,
+            canReattest: verified.canReattest,
             svidHash: crypto.createHash('sha256').update(svid.certificateDer)
               .digest('hex').slice(0, 32),
             expiresAt: svid.expiresAt
@@ -1089,87 +1090,53 @@ class SpiffeApi {
             errorCodes.mark(call, 'STS-SPIFFE-0052');
             throw rpc.permissionDenied('The agent ' + agentId + ' is banned.');
           }
+          // The evidence is spent HERE, at the successful attestation, and
+          // not when it was verified — the same reasoning that puts
+          // oauth2_bcp.js's transaction check at the point the values are
+          // spent rather than at the top of the endpoint.
+          verified.commit();
+          stats.recordSvid('X.509', {
+            subject: agentId, entryId: '', serial: svid.serialHex,
+            expiresAt: svid.expiresAt,
+            // See buildX509Response() in spiffe_workload.ts: the directory
+            // files this agent's identity by the certificate it was just
+            // given.
+            certificate: svid.certificate
+          });
+          // THE ATTESTED AGENT IS AN IDENTITY, AND IT REACHES THE FUNNEL
+          // HERE, below every refusal — a row must mean "a credential was
+          // ACCEPTED", the rule `recordAuthentication()` itself follows.
+          auth.recordIdentity({
+            presented: agentId,
+            protocol: 'SPIFFE',
+            method: verified.method,
+            note: verified.note
+          });
+          return {
+            result: {
+              svid: {
+                // **THE WHOLE CHAIN, LEAF FIRST, ANCHOR EXCLUDED.**
+                // `cert_chain` is a `repeated bytes` in `svid.proto`; since
+                // 2026-09-11 this realm's SPIFFE Issuing CA and its
+                // Intermediate sit between every SVID and the anchor, and an
+                // agent handed only the leaf cannot build a path to the
+                // bundle it was given. `spiffe_ca.ts`'s `chainDerOf()` is the
+                // one place the order is decided.
+                cert_chain: svid.chainCertificatesDer,
+                id: spiffeId.toProto(agentId),
+                expires_at: String(svid.expiresAt),
+                hint: ''
+              },
+              reattestable: verified.canReattest
+            }
+          };
         } catch (e) {
-          // THE CLAIM IS GIVEN BACK: nothing was attested, so the token is not
+          // THE EVIDENCE IS GIVEN BACK: nothing was attested, so nothing is
           // spent. The error is the call's answer, unchanged.
           log.debug("Caught in AttestAgent: " + ((e && e.message) || e));
-          if (joinTokenClaim) {
-            claims.release(joinTokenClaim);
-          }
+          verified.release();
           throw e;
         }
-        // A join token is spent HERE, at the successful attestation, and not
-        // when it is looked up — the same reasoning that puts oauth2_bcp.js's
-        // transaction check at the point the values are spent rather than at
-        // the top of the endpoint.
-        if (attestationType === 'join_token') {
-          const token = String(Buffer.from(data.payload || [])
-                                     .toString('utf8')).trim();
-          if (joinTokens.has(self.joinTokenKey(token))) {
-            joinTokens.delete(self.joinTokenKey(token));
-            log.info('spiffe: the join token ending ' + token.slice(-6) +
-                     ' has been spent and cannot be used again.');
-          }
-        }
-        stats.recordSvid('X.509', {
-          subject: agentId, entryId: '', serial: svid.serialHex,
-          expiresAt: svid.expiresAt,
-          // See buildX509Response() in spiffe_workload.ts: the directory files
-          // this agent's identity by the certificate it was just given.
-          certificate: svid.certificate
-        });
-        // ---------------------------------------------------------------------
-        // THE ATTESTED AGENT IS AN IDENTITY, AND IT REACHES THE FUNNEL HERE.
-        //
-        // Here rather than at the top of the handler, because a row must mean
-        // "a credential was ACCEPTED" — the same rule `recordAuthentication()`
-        // itself follows by returning early on an identity it could not read,
-        // and the same reason `/oid4vp/response` records the holder BELOW its
-        // refusals. An agent that was banned, or whose join token was refused,
-        // threw several lines above and records nothing.
-        //
-        // **WHAT WAS ACCEPTED IS NAMED, AND FOR A NODE ATTESTOR IT SAYS
-        // `unverified`.** A join token this server minted and spent is a real
-        // credential; a `k8s_psat` payload is a document nothing here verified,
-        // and its agent entry carries `unverified:true` for exactly that
-        // reason. Both create the identity — an agent that attested is an agent
-        // that is here — but a page that reported them identically would be
-        // claiming a check that did not happen.
-        // ---------------------------------------------------------------------
-        auth.recordIdentity({
-          presented: agentId,
-          protocol: 'SPIFFE',
-          method: attestationType === 'join_token'
-            ? 'agent attestation (join token)'
-            : 'agent attestation (' + attestationType + ', unverified)',
-          note: attestationType === 'join_token'
-            ? 'attested with a join token this server minted and has now spent'
-            : 'attested with a ' + attestationType +
-              ' payload; NOTHING VERIFIED ' +
-              'IT, which is why the agent\'s selectors carry unverified:true'
-        });
-        return {
-          result: {
-            svid: {
-              // **THE WHOLE CHAIN, LEAF FIRST, ANCHOR EXCLUDED.** `cert_chain`
-              // is a `repeated bytes` in `svid.proto` and it was one entry long
-              // here for as long as this file existed, because the trust
-              // domain's authority was self-signed and there was nothing
-              // between the leaf and the anchor. Since 2026-09-11 that
-              // authority is this realm's SPIFFE Issuing CA under the service
-              // Root, so there are two certificates above every SVID and an
-              // agent handed only the leaf cannot build a path to the bundle it
-              // was given.
-              // `spiffe_ca.ts`'s `chainDerOf()` is the one place the order is
-              // decided; all four sites in this file read it.
-              cert_chain: svid.chainCertificatesDer,
-              id: spiffeId.toProto(agentId),
-              expires_at: String(svid.expiresAt),
-              hint: ''
-            },
-            reattestable: attestationType !== 'join_token'
-          }
-        };
       }),
 
       // ---------------------------------------------------------------------
@@ -1319,8 +1286,46 @@ class SpiffeApi {
             'or expires. Wait for one to expire, create tokens with a ' +
             'shorter ttl, or raise the setting.');
         }
+        // ---------------------------------------------------------------------
+        // A NAMED AGENT IS AN ALIAS ENTRY, AS IN SPIRE (#40, 2026-09-21).
+        //
+        // `agent_id` used to be stored beside the token and compared with the
+        // id the attestation produced — which is always
+        // `/spire/agent/join_token/<digest>`, so a token created for a named
+        // agent could never attest at all (STS-SPIFFE-0057, now retired).
+        // SPIRE does not constrain anything with it: it registers an entry
+        // naming `agent_id`, parented on the join token's agent and selecting
+        // `spiffe_id:<that agent>`, so the agent is ALSO issued the name the
+        // operator chose — a node alias. Checked before the token exists, so
+        // a refused name mints nothing.
+        // ---------------------------------------------------------------------
+        let alias = null;
+        if (agentId) {
+          self.nodeAttestation();
+          const tokenAgent = self.joinTokenAttestorInstance
+            .agentIdFor(self.trustDomain(), token);
+          alias = { spiffeId: agentId, parentId: tokenAgent,
+                    selectors: [{ type: 'spiffe_id', value: tokenAgent }] };
+          const checked = registry.checkRecord(alias, self.trustDomain());
+          if (!checked.ok) {
+            errorCodes.mark(call, 'STS-SPIFFE-0084');
+            throw rpc.invalidArgument('agent_id cannot name this join ' +
+              'token\'s agent: ' + checked.errors.join(' '));
+          }
+        }
         joinTokens.set(self.joinTokenKey(token), { expiresAt: expiresAt,
                                                    agentId: agentId || '' });
+        if (alias) {
+          const created = registry.createEntry(alias, 'join token alias',
+                                               self.trustDomain(), '');
+          if (!created.ok) {
+            joinTokens.delete(self.joinTokenKey(token));
+            errorCodes.mark(call, 'STS-SPIFFE-0084');
+            throw rpc.invalidArgument('agent_id could not be registered as ' +
+              'this join token\'s alias, so no token was issued: ' +
+              created.errors.join(' '));
+          }
+        }
         audit.audit({
           action: 'spiffe.agent.create', actor: '',
           protocol: 'SPIRE Server API',
@@ -1365,65 +1370,42 @@ class SpiffeApi {
     return config.value('spiffe.agentSvidTtl');
   }
 
-  // An agent's SPIFFE ID. SPIRE derives it from what the attestor PROVED;
-  // nothing is proved here, so it is derived from what was sent — a digest of
-  // the attestation payload, so that the same agent attesting twice is one
-  // entry rather than two, which is the property that makes the agents page
-  // readable.
-  agentIdFor(attestationType, payload) {
-    const { log, crypto, spiffeId } = this.deps;
-    log.debug("Entering SpiffeApi.agentIdFor().");
-    const material = Buffer.isBuffer(payload) ? payload
-      : Buffer.from(String(payload || ''), 'utf8');
-    const suffix = crypto.createHash('sha256')
-      .update(attestationType + '|').update(material)
-      .digest('hex').slice(0, 32);
-    log.debug("Leaving SpiffeApi.agentIdFor().");
-    return spiffeId.agentId(this.trustDomain(), attestationType, suffix);
+  // THE NODE ATTESTORS THIS SERVER CAN VERIFY (#40), built once, on first
+  // use. The table decides nothing about a realm — `attestorFor()` reads the
+  // ambient realm's `spiffe.nodeAttestors` on every call — so one table serves
+  // every realm's sockets. `join_token` is registered here rather than in the
+  // table's own module because its store is this module's: `CreateJoinToken`
+  // writes it.
+  nodeAttestation() {
+    const { log, attestation, joinTokenAttestor, nowSec, crypto, errorCodes,
+            spiffeId, rpc, claims } = this.deps;
+    const self = this;
+    log.debug("Entering SpiffeApi.nodeAttestation().");
+    if (!this.attestationTable) {
+      const table = new attestation.NodeAttestation(
+        attestation.NodeAttestation.defaultDeps());
+      this.joinTokenAttestorInstance = new joinTokenAttestor.JoinTokenAttestor({
+        log: log, nowSec: nowSec, crypto: crypto, errorCodes: errorCodes,
+        spiffeId: spiffeId, rpc: rpc, claims: claims,
+        tokens: joinTokens,
+        keyOf: function (token) {
+          return self.joinTokenKey(token);
+        }
+      });
+      table.register(this.joinTokenAttestorInstance);
+      this.attestationTable = table;
+    }
+    log.debug("Leaving SpiffeApi.nodeAttestation().");
+    return this.attestationTable;
   }
 
-  // The selectors an attestation "produced". A real attestor derives these from
-  // what it verified. These are derived from what was claimed and are marked as
-  // such — the `unverified` type is this service's own, and it is there so that
-  // nobody reading an agent's selectors mistakes them for attested facts.
-  selectorsFromAttestation(attestationType, payload) {
-    const { log, crypto } = this.deps;
-    log.debug('Entering SpiffeApi.selectorsFromAttestation().');
-    const out = [{ type: attestationType, value: 'unverified:true' }];
-    const text = Buffer.isBuffer(payload) ? payload.toString('utf8')
-      : String(payload || '');
-    // **A JOIN TOKEN IS A CREDENTIAL AND NEVER A SELECTOR VALUE (2026-09-12).**
-    // The branch below put every short printable payload on the agent's entry
-    // as
-    // `payload:<text>` — and a join token is exactly that, so the token that
-    // had just attested the agent was written into the SPIFFE registry, in the
-    // directory, readable wherever an agent's selectors are drawn. It is spent
-    // by then, which narrows the harm and does not make storing a credential
-    // right. (Tokens are checked and spent in every mode: `auth.authRequired()`
-    // is
-    // `mode.gatesSpireServerApi()`, which answers true in development too.)
-    // What goes on the entry is a digest prefix, which still lets somebody
-    // holding the token recognise the agent it attested and lets nobody
-    // reconstruct it.
-    if (attestationType === 'join_token') {
-      if (text) {
-        out.push({ type: attestationType,
-                   value: 'token-sha256:' + crypto.createHash('sha256')
-                     .update(text.trim(), 'utf8').digest('hex').slice(0, 16) });
-      }
-      log.debug('Leaving SpiffeApi.selectorsFromAttestation(). A join token, ' +
-                'by digest.');
-      return out;
-    }
-    if (text && text.length <= 256 && /^[\x20-\x7e]*$/.test(text)) {
-      // A short printable payload is usually a join token or a name, and having
-      // it on the entry is what makes the agents page useful. Anything longer
-      // or binary is a document (a signed JWT, an instance identity document)
-      // and goes nowhere near a selector value.
-      out.push({ type: attestationType, value: 'payload:' + text });
-    }
-    log.debug('Leaving SpiffeApi.selectorsFromAttestation().');
-    return out;
+  // What `GET /spiffe` and the console draw about node attestation, in the
+  // ambient realm.
+  nodeAttestationState() {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeApi.nodeAttestationState().");
+    log.debug("Leaving SpiffeApi.nodeAttestationState().");
+    return this.nodeAttestation().state();
   }
 
   // ===========================================================================
@@ -2470,9 +2452,10 @@ const SERVICE_ROWS = [
           'BatchUpdateEntry are two doors onto one entry.' },
   { name: 'agent', label: 'Agent',
     what: 'Attesting, listing, banning and join tokens. NODE ATTESTATION IS ' +
-          'NEVER VERIFIED — whatever attestor an agent names and whatever ' +
-          'payload it sends are taken on trust — but the CSR is real, a join ' +
-          'token is single-use, and a ban is enforced.' },
+          'VERIFIED OR REFUSED: an agent\'s type must be one the realm ' +
+          'accepts (spiffe.nodeAttestors) and one an attestor here verifies. ' +
+          'The CSR is real, a join token is single-use, evidence that is not ' +
+          're-attestable attests once, and a ban is enforced.' },
   { name: 'bundle', label: 'Bundle',
     what: 'This trust domain\'s bundle, and every federated one. Appending ' +
           'to this trust domain\'s own is refused with a reason; federated ' +
@@ -2516,5 +2499,6 @@ export = {
   // the directory because a credential does not belong in one.
   joinTokens: joinTokens,
   entryToProto: slot.forward('entryToProto'),
-  entryFromProto: slot.forward('entryFromProto')
+  entryFromProto: slot.forward('entryFromProto'),
+  nodeAttestationState: slot.forward('nodeAttestationState')
 };

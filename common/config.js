@@ -9752,6 +9752,31 @@ const SETTINGS = [
     description: 'How long a join token from CreateJoinToken lives when the ' +
                  'request names no ttl. A request\'s own ttl still wins.' },
 
+  // #40 (2026-09-21): the node attestors AttestAgent accepts, per realm. A
+  // type not named here — or named and not one this build can verify — is
+  // refused with FAILED_PRECONDITION; nothing is taken on trust in any mode.
+  { key: 'spiffe.nodeAttestors', group: 'SPIFFE', label: 'Node attestors ' +
+      'accepted',
+    env: 'STS_SPIFFE_NODE_ATTESTORS', type: 'csv', dflt: 'join_token',
+    runtime: true,
+    description: 'The attestation types Agent.AttestAgent accepts in this ' +
+                 'realm, comma-separated — SPIRE\'s NodeAttestor plugins. ' +
+                 'Each is VERIFIED: a type not listed, or listed and not one ' +
+                 'this server can verify, is refused with ' +
+                 'FAILED_PRECONDITION, as SPIRE refuses an attestor it has ' +
+                 'no plugin for. join_token, the default, needs nothing but ' +
+                 'a token from CreateJoinToken. GET /spiffe lists the types ' +
+                 'this build verifies.' },
+
+  { key: 'spiffe.attestationChallengeTimeout', group: 'SPIFFE',
+    label: 'Attestation challenge timeout (s)',
+    env: 'STS_SPIFFE_ATTESTATION_CHALLENGE_TIMEOUT', type: 'int', dflt: 30,
+    min: 1, max: 600, runtime: true,
+    description: 'How long AttestAgent waits for an agent\'s ' +
+                 'challenge_response once a node attestor has challenged it. ' +
+                 'Past it the call fails with DEADLINE_EXCEEDED and nothing ' +
+                 'is spent.' },
+
   { key: 'spiffe.maxJoinTokens', group: 'SPIFFE', label: 'Unspent join ' +
       'tokens held',
     env: 'STS_SPIFFE_MAX_JOIN_TOKENS', type: 'int', dflt: 256, min: 1,

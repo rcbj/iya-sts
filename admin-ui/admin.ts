@@ -23923,8 +23923,9 @@ class AdminConsole {
       'its peer address, and nothing else. Those DO now decide which entries ' +
       'answer (<code>spiffe.attestWorkloads</code>), and they prove nothing ' +
       'about who is calling: anybody who can reach the socket can still get ' +
-      'an identity. Node attestation is taken on trust too, which is why ' +
-      'every agent below carries an <code>unverified:true</code> selector.') +
+      'an identity. Node attestation is not: an agent below attested with a ' +
+      'type its realm accepts and an attestor here verified, or it was ' +
+      'refused.') +
       '<div class="' + (enforced ? 'note' : 'warn') + '">' +
       (enforced
         ? '<strong>The SPIRE Server API is the exception.</strong> Its TCP ' +
@@ -24517,11 +24518,10 @@ class AdminConsole {
       'than configuration &mdash; everything on them was written by this ' +
       'service when an agent attested &mdash; which is why nothing about an ' +
       'agent is editable and only the ban is.') +
-      this.warn('<strong>Node attestation is never verified.</strong> ' +
-      'Whatever attestor an agent names and whatever payload it sends are ' +
-      'written down as claimed. That is why every agent carries a selector ' +
-      'valued <code>unverified:true</code>: an agent\'s selectors here are ' +
-      'claims, not attested facts.') +
+      this.note('<strong>Node attestation is verified or refused.</strong> ' +
+      'An agent here attested with a type its realm names in ' +
+      '<code>spiffe.nodeAttestors</code> and an attestor verified, and its ' +
+      'selectors are the ones that attestor derived.') +
       '<form method="get" action="/admin/spiffe/agents"><div class="formrow">' +
       '<label for="q">Search</label>' +
       '<input id="q" name="q" value="' + this.esc(json.filter.q) +

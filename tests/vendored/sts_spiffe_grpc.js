@@ -1130,7 +1130,9 @@ async function test() {
     // attestation then completed on the server, SPENT THE TOKEN and recorded
     // the agent, and the client received an empty stream: every retry was
     // refused as spent. Recorded as a service defect rather than worked around
-    // silently; this is the conforming client shape either way.
+    // silently, and FIXED on 2026-09-21 (#40): the stream now ends only once
+    // the handler has answered (`tests/spiffe_node_attestation.js` holds it).
+    // This stays the conforming client shape either way.
     function attest(token, csrDer) {
       log.debug("Entering attest().");
       const client = server(svc.Agent, null);

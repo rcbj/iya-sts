@@ -895,7 +895,7 @@ the file the row names.
 | ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17 (#38)**: `/authn/wallet` signs in the entry a holder-bound SD-JWT VC this realm issued was issued for; any other presentation still verifies and signs nobody in | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | ~~Publish a status for a credential it issued~~ — **reversed 2026-09-17**: a Token Status List and two Bitstring Status Lists per realm, a reference in every credential, and the Verifier consults them — this realm's from its own store, a trusted foreign issuer's by fetching the list | `oid4vc/CLAUDE.md` |
 | ~~Deactivate anybody on SCIM `active: false`~~ — **reversed 2026-09-17**: it is `pwdAccountLockedTime` on the entry, the same DISABLED state an administrator writes from `/admin/users`, and every door refuses the person while it is set | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
-| Attest a workload or a node | `spiffe/CLAUDE.md` |
+| Attest a workload — node attestation is verified or refused in every mode since 2026-09-21 (#40), and SPIRE's other attestors and workload attestation are #40's later phases | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one, which is a different claim | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
 | Let a group grant anything BY BEING A GROUP — what a group grants is what a role or a roster names it for: the console rosters, REMOTE_PEPS and XACML_USER, and a configured role's group members; the groups claim grants nothing | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |

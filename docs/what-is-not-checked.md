@@ -5,9 +5,11 @@ nav_order: 16
 
 # What is not checked
 
-This service **checks no password, accepts an access token it cannot verify at
-its OpenID4VCI credential endpoints, and attests no workload** — in development
-mode; the rows below say what product mode checks instead. Read this page before using it for anything, and read
+This service **checks no password and accepts an access token it cannot verify at
+its OpenID4VCI credential endpoints** in development mode — the rows below say
+what product mode checks instead — and, in every mode, **attests no workload**
+(node attestation is verified or refused; see SPIFFE, below). Read this page
+before using it for anything, and read
 it again before concluding that something here is a bug.
 
 It is permissive on purpose. A client that has only ever met a permissive server
@@ -45,7 +47,7 @@ service can be told to be strict, it can.
 | Check where a SAML response or a WS-Federation token is delivered — **in development mode** | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` a request names is used as it stands, and with none the response goes to the registered address or to a built-in mock — **except for a SAML 2.0 service provider whose metadata has been consumed**, which is answered only at an endpoint that metadata registered, in every mode, by `AssertionConsumerServiceIndex`, by URL or by default. **In product mode it must be registered** on the application entry (`samlAssertionConsumerService`, `wsfedReplyUrl`), compared exactly, with no mock fallback. **An address development RECORDED does not count as registered**: every address a development-mode request writes onto an entry — and every callback the console and portal learn from a Host header — is marked *observed* (`appReturnAddressObserved`), and product refuses a marked address exactly as it refuses one that is not there, with a page saying how to confirm it. Before switching a realm to product, open each application under **Applications** and press **Confirm** on the addresses that really are that application's and **Discard** on the rest — or use `POST /admin-api/applications/confirm-address` and `/discard-address`, which list them as `returnAddressesObserved`. Adding the address by hand confirms it too. **Addresses recorded before this marking existed carry no mark and cannot be told apart from registered ones** — review those by hand |
 | Authenticate a caller at the SAML 1.1 attribute authority — **in development mode** | Anybody may send an `AttributeQuery` about anybody. **Product mode refuses both query types.** In both modes an `AuthenticationQuery` is answered only from a live session, and an attribute answer carries no invented `AuthenticationStatement` |
 | Require a credential at the WS-Trust STS — **in development mode** | A request with no credential gets a token for `anonymous`, an unsigned SAML assertion is believed, and an `OnBehalfOf` needs no requester. **Product mode refuses all three**, accepting only a directory-verified UsernameToken or an assertion this STS signed. A requested lifetime is clamped to `wstrust.maxTokenLifetimeMin` in both modes |
-| Attest a workload or a node | See SPIFFE, below |
+| Attest a workload — node attestation is verified or refused since 2026-09-21 (#40) | See SPIFFE, below |
 | Let a group grant anything, bar two | A token now *carries* one; no endpoint reads it. `cn=admin-read` and `cn=admin-write` are the exception and grant the admin console, nothing else |
 | Decide who may delegate to whom IN THE ACT, in two of the three families that can | The KDC polices S4U properly, off the same two attributes a real domain uses, on every request and whatever anything is set to. WS-Trust `OnBehalfOf`/`ActAs` is unpoliced: anybody may ask for a token about anybody. **RFC 8693 and the OAuth families are the qualified case since 2026-09-01**: a DELEGATED PERMISSION can be configured between two application entries — a resource exposes permissions, a client is granted them, and a client asks for one as an ordinary scope — and `oauth2.delegatedPermissionsEnforced` turns an ungranted ask into `invalid_scope`. It is OFF by default, so an unconfigured service behaves exactly as this row always described. Every act says which — see below |
 
@@ -497,6 +499,14 @@ What comes out of that surface is a credential another service will believe,
 which is why. **There is no setting that turns it off**: `spiffe.authRequired`
 was removed on 2026-09-06 when `global.mode` took over the question, and the TCP
 port is bound as mutual TLS on every start.
+
+**Node attestation is verified or refused, in every mode (2026-09-21).**
+`Agent.AttestAgent` accepts only an attestation type the realm names in
+`spiffe.nodeAttestors` **and** an attestor here can verify; anything else is
+refused with `FAILED_PRECONDITION`, as SPIRE refuses an attestor it has no plugin
+for. Until then any type was accepted with its payload unread and the agent
+marked `unverified:true`. The verifiable type today is `join_token` (minted here,
+single use); SPIRE's other node attestors are being added under issue #40.
 
 ### The admin console, at `/admin`
 

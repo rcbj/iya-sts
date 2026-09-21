@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2796** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2802** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 84
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
@@ -2050,13 +2050,13 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0048` | An item of BatchUpdateEntry named no entry id. | gRPC INVALID_ARGUMENT (per batch item) |
 | `STS-SPIFFE-0049` | The registry refused a registration entry update in a BatchUpdateEntry call. | gRPC INVALID_ARGUMENT (per batch item) |
 | `STS-SPIFFE-0050` | No agent is recorded on this server under the id the call named or the connection carries. | gRPC NOT_FOUND |
-| `STS-SPIFFE-0051` | AttestAgent received a challenge_response when this server issues no attestation challenge. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0051` | AttestAgent received a challenge_response with no attestation challenge outstanding on the stream. | gRPC INVALID_ARGUMENT |
 | `STS-SPIFFE-0052` | The agent attesting or renewing is banned on this server. | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0053` | A call that signs a certificate signing request carried none (AttestAgent, RenewAgent, MintX509SVID, a BatchNewX509SVID item). | gRPC INVALID_ARGUMENT (or per batch item) |
 | `STS-SPIFFE-0054` | A join_token attestation carried an empty token. | gRPC INVALID_ARGUMENT |
 | `STS-SPIFFE-0055` | A join token presented at AttestAgent was never issued by this realm, or has already been spent. | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0056` | A join token presented at AttestAgent has expired. | gRPC PERMISSION_DENIED |
-| `STS-SPIFFE-0057` | A join token created for a named agent was presented by an attestation producing a different agent. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0057` *(retired)* | A join token created for a named agent was presented by an attestation producing a different agent. Retired 2026-09-21 (#40): the attesting agent is always the join token's own, so the check refused every such token; agent_id now registers an alias entry, as SPIRE does (STS-SPIFFE-0084). | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0058` | RenewAgent was called on a connection that carries no attested agent's X509-SVID. | gRPC UNIMPLEMENTED |
 | `STS-SPIFFE-0059` | CreateJoinToken was refused because the realm holds spiffe.maxJoinTokens unexpired tokens. | gRPC RESOURCE_EXHAUSTED |
 | `STS-SPIFFE-0060` | AppendBundle or PublishJWTAuthority asked this service to add an authority to its own bundle, which it refuses. | gRPC PERMISSION_DENIED |
@@ -2077,6 +2077,13 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0075` | A join token at AttestAgent could not be proved unspent because the cluster store could not be asked, so the attestation was refused. | gRPC UNAVAILABLE |
 | `STS-SPIFFE-0076` | A realm's SPIFFE JWT authority or self-signed X.509 authority could not be established once for the cluster, so none was made. | the SPIFFE call fails as when no authority could be built |
 | `STS-SPIFFE-0077` | An agent asked for an SVID from a registration entry that is not beneath it (BatchNewX509SVID, NewJWTSVID). | gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID) |
+| `STS-SPIFFE-0078` | AttestAgent named a node attestor this realm does not accept: not in spiffe.nodeAttestors, or not one this server can verify. Nothing is taken on trust (#40). | gRPC FAILED_PRECONDITION |
+| `STS-SPIFFE-0079` | AttestAgent carried no attestation type in params.data.type. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0080` | A node attestor challenged the agent and no challenge_response arrived within spiffe.attestationChallengeTimeout. | gRPC DEADLINE_EXCEEDED |
+| `STS-SPIFFE-0081` | The message after an attestation challenge carried no challenge_response. | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0082` | The AttestAgent stream closed or was cancelled while a node attestor's challenge was outstanding. | gRPC CANCELLED |
+| `STS-SPIFFE-0083` | An agent already attested with evidence that is not re-attestable (a join token, a trust-on-first-use document) attested again; the agent must be deleted first, as in SPIRE. | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0084` | CreateJoinToken's agent_id could not be registered as the token's alias entry (not in this trust domain, reserved, or the registry refused it), so no token was issued. | gRPC INVALID_ARGUMENT |
 
 ## STS-TLS
 

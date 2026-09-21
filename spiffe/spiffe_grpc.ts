@@ -1204,10 +1204,23 @@ class SpiffeGrpc {
   }
 
   // A bidirectional stream. Only `AttestAgent` and `SyncAuthorizedEntries` are
-  // one, and both are request/response in practice — the client sends, the
-  // server answers, and the stream closes. So the shape here is "for each
-  // message the client sends, answer it", which is what those two do and is
-  // much easier to get right than a general duplex.
+  // one. The shape is "for each message the client sends, answer it" — which
+  // is all `SyncAuthorizedEntries` needs — PLUS A CONVERSATION (#40,
+  // 2026-09-21), which is what `AttestAgent` needs once an attestor can
+  // challenge: the handler is handed `conversation.challenge(message, ms)`,
+  // which writes a server message and resolves with the client's NEXT one
+  // instead of treating that message as a fresh request.
+  //
+  // **A CLIENT'S HALF-CLOSE WAITS FOR THE HANDLERS IN FLIGHT.** It used to
+  // answer `end` with `call.end()` at once, and `AttestAgent` is asynchronous:
+  // a client that sent its one message and half-closed (a shape gRPC allows)
+  // got an empty stream while the handler went on to SPEND THE JOIN TOKEN and
+  // record the agent, so every retry was refused as spent.
+  // `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  // worked round it on the client side; this is the fix. The stream is ended
+  // once every handler started so far has written its answer or failed, and a
+  // challenge outstanding at the half-close is failed with `ended` — the
+  // client can no longer send the response it is waiting for.
   bidiStream(surface, method, handler) {
     const { log } = this.deps;
     const self = this;
@@ -1224,27 +1237,122 @@ class SpiffeGrpc {
         log.debug('Leaving the ' + method + ' bidi handler. Refused.');
         return;
       }
+      const inFlight = new Set();
+      let failed = false;
+      let clientEnded = false;
+      let finished = false;
+      // The one outstanding challenge, if any: { resolve, reject, timer }.
+      let waiting = null;
+      function conversationError(reason, message) {
+        log.debug("Entering conversationError().");
+        const err: any = new Error(message);
+        err.conversation = reason;
+        log.debug("Leaving conversationError().");
+        return err;
+      }
+      function failWaiting(reason, message) {
+        log.debug("Entering failWaiting().");
+        if (!waiting) {
+          log.debug("Leaving failWaiting(). Nothing outstanding.");
+          return;
+        }
+        const w = waiting;
+        waiting = null;
+        clearTimeout(w.timer);
+        w.reject(conversationError(reason, message));
+        log.debug("Leaving failWaiting().");
+      }
+      function finish() {
+        log.debug("Entering finish().");
+        if (finished || !clientEnded || inFlight.size) {
+          log.debug("Leaving finish(). Not yet.");
+          return;
+        }
+        finished = true;
+        if (!failed) {
+          self.recordCall(surface, method, true, { streaming: true },
+                          prepared.caller);
+          call.end();
+        }
+        log.debug('Leaving finish(). The ' + method + ' bidi stream is ' +
+                  'ended.');
+      }
+      const conversation = {
+        // Write `message` and resolve with the client's next message. At most
+        // one at a time: an attestor is a sequence, and two challenges
+        // outstanding at once would leave the next message's meaning to a
+        // race.
+        challenge: function (message, timeoutMs) {
+          log.debug("Entering challenge().");
+          if (waiting) {
+            log.debug("Leaving challenge(). One is already outstanding.");
+            return Promise.reject(conversationError('busy',
+              'A challenge is already outstanding on this stream.'));
+          }
+          if (clientEnded || failed) {
+            log.debug("Leaving challenge(). The stream is closing.");
+            return Promise.reject(conversationError('ended',
+              'The client ended the stream before it could be challenged.'));
+          }
+          log.debug("Leaving challenge().");
+          return new Promise(function (resolve, reject) {
+            waiting = {
+              resolve: resolve, reject: reject,
+              timer: setTimeout(function () {
+                failWaiting('timeout', 'No challenge response arrived within ' +
+                            Math.round(timeoutMs / 1000) + ' second(s).');
+              }, timeoutMs)
+            };
+            call.write(message);
+          });
+        }
+      };
       call.on('data', function (request) {
-        Promise.resolve()
-          .then(function () { return handler(request, call); })
+        if (waiting) {
+          // The answer to the outstanding challenge, and not a new request.
+          const w = waiting;
+          waiting = null;
+          clearTimeout(w.timer);
+          w.resolve(request);
+          return;
+        }
+        const running = Promise.resolve()
+          .then(function () { return handler(request, call, conversation); })
           .then(function (reply) {
-            if (reply) call.write(reply);
+            if (reply && !failed) call.write(reply);
           })
           .catch(function (err) {
+            log.debug("Caught in the " + method + " bidi handler: " +
+                      ((err && err.message) || err));
+            if (failed) {
+              return;
+            }
+            failed = true;
+            failWaiting('ended', 'The stream failed.');
             const status = self.errorToStatus(err, method);
             self.recordCall(surface, method, false, { status: status.code },
                             prepared.caller, self.failureCodeOf(call, err));
             call.emit('error', status);
+          })
+          .then(function () {
+            inFlight.delete(running);
+            finish();
           });
+        inFlight.add(running);
       });
       call.on('end', function () {
-        self.recordCall(surface, method, true, { streaming: true },
-                        prepared.caller);
-        call.end();
+        clientEnded = true;
+        failWaiting('ended', 'The client ended the stream with a challenge ' +
+                    'outstanding.');
+        finish();
         log.debug('Leaving the ' + method +
                   ' bidi handler. The client ended it.');
       });
+      call.on('cancelled', function () {
+        failWaiting('cancelled', 'The client cancelled the stream.');
+      });
       call.on('error', function (err) {
+        failWaiting('ended', 'The stream ended with ' + err.message);
         log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
                   err.message);
       });
