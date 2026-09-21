@@ -15,7 +15,8 @@
 //      before anything is verified.
 //   2. The leaf must chain to the realm's anchors — `spiffe.x509popCaBundle`
 //      (external_pki mode) or this realm's own SPIFFE trust bundle (spiffe
-//      mode) — `spiffe_x509_path.ts` builds and checks the path.
+//      mode) — `common/pki.js`'s `verifyPathToAnchors()` builds and checks
+//      the path, and `common/crypto.js` checks every signature below.
 //   3. `spiffe.x509popVerifyClientIp`: the agent's address must be one of
 //      the leaf's IP subjectAltNames.
 //   4. THE CHALLENGE. The leaf's keyUsage must allow digitalSignature. The
@@ -53,7 +54,10 @@ import errorCodes = require('../common/error_codes');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
 import ca = require('./spiffe_ca');
-import x509Path = require('./spiffe_x509_path');
+// Certificates and signatures are checked in the two modules that check
+// every other certificate and signature here (rcbj, 2026-09-21).
+import pki = require('../common/pki');
+import stsCrypto = require('../common/crypto');
 import agentPath = require('./spiffe_agent_path');
 
 type NodeAttestationContext =
@@ -75,10 +79,9 @@ interface X509popDeps {
   spiffeId: typeof spiffeId;
   rpc: typeof rpc;
   ca: typeof ca;
-  path: typeof x509Path;
+  pki: typeof pki;
+  stsCrypto: typeof stsCrypto;
   agentPath: typeof agentPath;
-  loadX509(): any;
-  loadPqc(): any;
 }
 
 class X509popAttestor {
@@ -98,14 +101,8 @@ class X509popAttestor {
     helpers.log.debug("Leaving X509popAttestor.defaultDeps().");
     return {
       log: log, crypto: nodeCrypto, config: config, errorCodes: errorCodes,
-      spiffeId: spiffeId, rpc: rpc, ca: ca, path: x509Path,
-      agentPath: agentPath,
-      loadX509: function () {
-        return require('../common/vendored/x509');
-      },
-      loadPqc: function () {
-        return require('../common/vendored/pqc_x509');
-      }
+      spiffeId: spiffeId, rpc: rpc, ca: ca, pki: pki, stsCrypto: stsCrypto,
+      agentPath: agentPath
     };
   }
 
@@ -202,68 +199,21 @@ class X509popAttestor {
     return hex;
   }
 
-  // What the three kinds of key sign with, or '' for a key this attestor
-  // does not challenge.
-  keyKind(x509: nodeCrypto.X509Certificate): { kind: string; alg: string } {
-    const { log } = this.deps;
-    log.debug("Entering X509popAttestor.keyKind().");
-    let kind = '';
-    try {
-      kind = String((x509.publicKey as any).asymmetricKeyType || '');
-    } catch (e) {
-      log.debug("Caught in X509popAttestor.keyKind(): " +
-                ((e && e.message) || e));
-      // A key node cannot read: perhaps post-quantum, asked below.
-    }
-    if (kind === 'rsa' || kind === 'rsa-pss') {
-      log.debug("Leaving X509popAttestor.keyKind(). RSA.");
-      return { kind: 'rsa', alg: '' };
-    }
-    if (kind === 'ec') {
-      log.debug("Leaving X509popAttestor.keyKind(). ECDSA.");
-      return { kind: 'ecdsa', alg: '' };
-    }
-    const spki = this.spkiDer(x509);
-    const read = spki ? this.deps.loadPqc().decodeSpki(new Uint8Array(spki))
-                      : null;
-    if (read && read.alg) {
-      log.debug("Leaving X509popAttestor.keyKind(). Post-quantum.");
-      return { kind: 'pqc', alg: String(read.alg.id || read.alg) };
-    }
-    log.debug("Leaving X509popAttestor.keyKind(). Unsupported.");
-    return { kind: '', alg: kind };
+  // The leaf's key, described by `crypto.publicKeyFromSpki()` from the SPKI
+  // `pki.spkiOf()` reads — so a post-quantum key node cannot read is still
+  // described. `kind` is 'rsa', 'ec', 'pq', or something this attestor does
+  // not challenge.
+  keyOf(leaf: any): any {
+    const { log, pki, stsCrypto } = this.deps;
+    log.debug("Entering X509popAttestor.keyOf().");
+    const spki = pki.spkiOf(leaf);
+    log.debug("Leaving X509popAttestor.keyOf().");
+    return spki ? stsCrypto.publicKeyFromSpki(spki)
+                : { kind: '', key: null, curve: '', pqAlgorithm: '' };
   }
 
-  // The leaf's SubjectPublicKeyInfo, read with the vendored engine so that a
-  // key node does not know is still there.
-  spkiDer(x509: nodeCrypto.X509Certificate): Buffer | null {
-    const { log } = this.deps;
-    log.debug("Entering X509popAttestor.spkiDer().");
-    try {
-      const der = (x509.publicKey as any).export({ type: 'spki',
-                                                   format: 'der' });
-      log.debug("Leaving X509popAttestor.spkiDer(). From node.");
-      return Buffer.from(der);
-    } catch (e) {
-      log.debug("Caught in X509popAttestor.spkiDer(): " +
-                ((e && e.message) || e));
-    }
-    try {
-      const pkijs = require('pkijs');
-      const cert = pkijs.Certificate.fromBER(new Uint8Array(x509.raw));
-      const der = Buffer.from(cert.subjectPublicKeyInfo.toSchema()
-        .toBER(false));
-      log.debug("Leaving X509popAttestor.spkiDer(). From the engine.");
-      return der;
-    } catch (e) {
-      log.debug("Caught in X509popAttestor.spkiDer(): " +
-                ((e && e.message) || e));
-      log.debug("Leaving X509popAttestor.spkiDer(). Unreadable.");
-      return null;
-    }
-  }
-
-  // The digest both nonces are signed as.
+  // The digest both nonces are signed as, or null when a nonce is not 32
+  // bytes (SPIRE's `combineNonces()`).
   combined(challenge: Buffer, response: Buffer): Buffer | null {
     const { log, crypto } = this.deps;
     log.debug("Entering X509popAttestor.combined().");
@@ -278,85 +228,50 @@ class X509popAttestor {
       .digest();
   }
 
-  // Does `response` answer `challenge` for this leaf's key?
-  async verifyResponse(leaf: nodeCrypto.X509Certificate,
-                       key: { kind: string; alg: string },
-                       nonce: Buffer, response: any): Promise<boolean> {
-    const { log, crypto } = this.deps;
+  // Does `response` answer the challenge for this key? Every check is
+  // `crypto.verifyRawSignature()`'s. SPIRE signs the SHA-256 of both nonces
+  // AS a digest (`rsa.SignPSS`, `ecdsa.Sign`), which node's hashed verify
+  // over the two nonces reproduces; the post-quantum member signs the
+  // digest itself.
+  async verifyResponse(key: any, nonce: Buffer, response: any):
+      Promise<boolean> {
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering X509popAttestor.verifyResponse(). " + key.kind);
     const member = response && response[key.kind === 'rsa' ? 'rsa_signature'
-      : key.kind === 'ecdsa' ? 'ecdsa_signature' : 'pqc_signature'];
+      : key.kind === 'ec' ? 'ecdsa_signature' : 'pqc_signature'];
     if (!member || typeof member !== 'object') {
       log.debug("Leaving X509popAttestor.verifyResponse(). No member.");
       return false;
     }
     const theirs = this.bytesOf(member.nonce);
-    const digestInput = theirs ? Buffer.concat([nonce, theirs]) : null;
-    if (!this.combined(nonce, theirs)) {
+    const digest = this.combined(nonce, theirs);
+    if (!digest) {
       log.debug("Leaving X509popAttestor.verifyResponse(). Bad nonce.");
       return false;
     }
-    try {
-      if (key.kind === 'rsa') {
-        // rsa.SignPSS over the digest with SHA-256 and the salt length
-        // detected on verify — node hashes `digestInput` to that same digest.
-        const ok = crypto.verify('sha256', digestInput, {
-          key: leaf.publicKey, padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
-          saltLength: crypto.constants.RSA_PSS_SALTLEN_AUTO
-        }, this.bytesOf(member.signature) || Buffer.alloc(0));
-        log.debug("Leaving X509popAttestor.verifyResponse(). RSA " + ok);
-        return ok;
-      }
-      if (key.kind === 'ecdsa') {
-        const curve = String(((leaf.publicKey as any).asymmetricKeyDetails ||
-                              {}).namedCurve || '');
-        const size = CURVE_BYTES[curve];
-        const r = this.bytesOf(member.r);
-        const s = this.bytesOf(member.s);
-        if (!size || !r || !s || r.length > size || s.length > size) {
-          log.debug("Leaving X509popAttestor.verifyResponse(). Bad r/s.");
-          return false;
-        }
-        // big.Int.Bytes() drops leading zeroes; IEEE P1363 wants each half
-        // at the curve's full width.
-        const raw = Buffer.concat([Buffer.alloc(size - r.length), r,
-                                   Buffer.alloc(size - s.length), s]);
-        // ecdsa.Sign(key, digest): node's 'sha256' over `digestInput` is
-        // that digest.
-        const ok = crypto.verify('sha256', digestInput, {
-          key: leaf.publicKey, dsaEncoding: 'ieee-p1363'
-        }, raw);
-        log.debug("Leaving X509popAttestor.verifyResponse(). ECDSA " + ok);
-        return ok;
-      }
-      // Post-quantum: over the 32-byte digest itself, which is the message.
-      const x509 = this.deps.loadX509();
-      const sig = x509.sigAlg(key.alg.toLowerCase());
-      const spki = this.spkiDer(leaf);
-      if (!sig || !spki) {
-        log.debug("Leaving X509popAttestor.verifyResponse(). No algorithm.");
-        return false;
-      }
-      const spkiPem = '-----BEGIN PUBLIC KEY-----\n' +
-        spki.toString('base64').replace(/(.{64})/g, '$1\n').replace(/\n$/, '') +
-        '\n-----END PUBLIC KEY-----\n';
-      const ok = await x509.verifyBytes(sig, spkiPem,
-        this.bytesOf(member.signature) || Buffer.alloc(0),
-        this.combined(nonce, theirs));
-      log.debug("Leaving X509popAttestor.verifyResponse(). " + key.alg + " " +
-                ok);
-      return !!ok;
-    } catch (e) {
-      log.debug("Caught in X509popAttestor.verifyResponse(): " +
-                ((e && e.message) || e));
-      log.debug("Leaving X509popAttestor.verifyResponse(). Threw.");
-      return false;
+    const both = Buffer.concat([nonce, theirs]);
+    let ok = false;
+    if (key.kind === 'rsa') {
+      ok = await stsCrypto.verifyRawSignature(
+        { family: 'rsa-pss', hash: 'sha256', saltLength: 'auto' }, key,
+        both, this.bytesOf(member.signature) || Buffer.alloc(0));
+    } else if (key.kind === 'ec') {
+      const raw = stsCrypto.ecdsaIntegersToP1363(key.curve,
+        this.bytesOf(member.r), this.bytesOf(member.s));
+      ok = !!raw && await stsCrypto.verifyRawSignature(
+        { family: 'ecdsa', hash: 'sha256', encoding: 'p1363' }, key, both,
+        raw);
+    } else {
+      ok = await stsCrypto.verifyRawSignature({ family: 'pq' }, key, digest,
+        this.bytesOf(member.signature) || Buffer.alloc(0));
     }
+    log.debug("Leaving X509popAttestor.verifyResponse(). " + ok);
+    return ok;
   }
 
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
-    const { log, crypto, config, errorCodes, spiffeId, rpc, ca, path,
+    const { log, crypto, config, errorCodes, spiffeId, rpc, ca, pki,
             agentPath } = this.deps;
     const self = this;
     log.debug("Entering X509popAttestor.attest().");
@@ -384,14 +299,14 @@ class X509popAttestor {
     }
     let roots = [];
     if (!problem && mode === 'external_pki') {
-      roots = path.bundle(bundleText).certificates;
+      roots = pki.certificateBundle(bundleText).certificates;
       if (!roots.length) {
         problem = 'spiffe.x509popCaBundle holds no certificate';
       }
     } else if (!problem) {
       // The ambient realm's — the realm of the socket the agent reached.
       roots = (ca.trustAnchors(null) || []).map(function (anchor) {
-        return path.certificate(anchor.certificateDer);
+        return pki.certificateFromDer(anchor.certificateDer);
       }).filter(Boolean);
     }
     let template = null;
@@ -444,14 +359,14 @@ class X509popAttestor {
     }
     const maxRsa = Number(config.value('spiffe.x509popMaxRsaKeySize'));
     for (let i = 0; i < certificates.length; i++) {
-      const one = path.certificate(certificates[i]);
+      const one = pki.certificateFromDer(certificates[i]);
       if (!one) {
         log.debug("Leaving X509popAttestor.attest(). Unparseable.");
         errorCodes.mark(call, 'STS-SPIFFE-0086');
         throw rpc.invalidArgument(i === 0 ? 'unable to parse leaf certificate'
           : 'unable to parse intermediate certificate ' + (i - 1));
       }
-      if (path.rsaBits(one) > maxRsa) {
+      if (pki.rsaKeyBits(one) > maxRsa) {
         log.debug("Leaving X509popAttestor.attest(). RSA too large.");
         errorCodes.mark(call, 'STS-SPIFFE-0088');
         throw rpc.invalidArgument(i === 0
@@ -460,8 +375,9 @@ class X509popAttestor {
       }
     }
     // 2. THE PATH.
-    const verified = await path.verify(certificates[0],
-                                       certificates.slice(1), roots);
+    const verified = await pki.verifyPathToAnchors(certificates[0],
+                                                   certificates.slice(1),
+                                                   roots);
     if (!verified.ok) {
       log.debug("Leaving X509popAttestor.attest(). No path.");
       errorCodes.mark(call, 'STS-SPIFFE-0089');
@@ -486,35 +402,30 @@ class X509popAttestor {
       }
     }
     // 4. THE CHALLENGE.
-    const described = await this.deps.loadX509().describeCertificate(leaf.pem);
-    const keyUsage = ((described && described.extensions) || [])
-      .filter(function (ext) {
-        return ext.name === 'keyUsage';
-      })[0];
-    if (!keyUsage || !Array.isArray(keyUsage.value) ||
-        keyUsage.value.indexOf('digitalSignature') < 0) {
+    const keyUsage = await pki.keyUsageOf(leaf);
+    if (!keyUsage || keyUsage.indexOf('digitalSignature') < 0) {
       log.debug("Leaving X509popAttestor.attest(). Not for signatures.");
       errorCodes.mark(call, 'STS-SPIFFE-0092');
       throw rpc.statusError(status.INTERNAL, 'unable to generate ' +
         'challenge: certificate not intended for digital signature use');
     }
-    const key = this.keyKind(leaf.x509);
-    if (!key.kind) {
+    const key = this.keyOf(leaf);
+    if (['rsa', 'ec', 'pq'].indexOf(key.kind) < 0) {
       log.debug("Leaving X509popAttestor.attest(). Unsupported key.");
       errorCodes.mark(call, 'STS-SPIFFE-0092');
       throw rpc.statusError(status.INTERNAL, 'unable to generate ' +
-        'challenge: unsupported public key type ' + (key.alg || 'unknown'));
+        'challenge: unsupported public key type ' + (key.kind || 'unknown'));
     }
     const nonce = crypto.randomBytes(NONCE_LENGTH);
     const challenge = key.kind === 'rsa'
       ? { rsa_signature: { nonce: nonce.toString('base64') },
           ecdsa_signature: null }
-      : key.kind === 'ecdsa'
+      : key.kind === 'ec'
         ? { rsa_signature: null,
             ecdsa_signature: { nonce: nonce.toString('base64') } }
         : { rsa_signature: null, ecdsa_signature: null,
             pqc_signature: { nonce: nonce.toString('base64'),
-                             algorithm: key.alg } };
+                             algorithm: key.pqAlgorithm } };
     const answer = await context.challenge(
       Buffer.from(JSON.stringify(challenge), 'utf8'));
     const response = this.json(answer);
@@ -523,12 +434,12 @@ class X509popAttestor {
       errorCodes.mark(call, 'STS-SPIFFE-0086');
       throw rpc.invalidArgument('unable to unmarshal challenge response');
     }
-    if (!(await this.verifyResponse(leaf.x509, key, nonce, response))) {
+    if (!(await this.verifyResponse(key, nonce, response))) {
       log.debug("Leaving X509popAttestor.attest(). Response refused.");
       errorCodes.mark(call, 'STS-SPIFFE-0093');
       throw rpc.permissionDenied('challenge response verification failed: ' +
-        (key.kind === 'rsa' ? 'RSA' : key.kind === 'ecdsa' ? 'ECDSA'
-                                                           : key.alg) +
+        (key.kind === 'rsa' ? 'RSA' : key.kind === 'ec' ? 'ECDSA'
+                                                        : key.pqAlgorithm) +
         ' signature verify failed');
     }
     // 5. spiffe MODE.
@@ -629,7 +540,8 @@ class X509popAttestor {
       }),
       canReattest: true,
       method: 'agent attestation (x509pop, ' +
-              (key.kind === 'pqc' ? key.alg : key.kind.toUpperCase()) + ')',
+              (key.kind === 'pq' ? key.pqAlgorithm
+                                 : key.kind === 'ec' ? 'ECDSA' : 'RSA') + ')',
       note: 'attested by proof of possession of the key in a certificate ' +
             'chaining to ' + (mode === 'spiffe' ? 'this realm\'s SPIFFE bundle'
                                                 : 'spiffe.x509popCaBundle'),

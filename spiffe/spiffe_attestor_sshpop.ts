@@ -14,7 +14,8 @@
 //   2. It is checked as `CertChecker.CheckHostKey("<first principal>:22")`:
 //      a host certificate, signed by one of `spiffe.sshpopCertAuthorities`,
 //      inside its validity window, with no critical option but
-//      `source-address` (`spiffe_ssh.ts`). It must name a principal.
+//      `source-address` (`common/pki.js`'s `checkSshHostCertificate()`,
+//      whose signatures `common/crypto.js` checks). It must name a principal.
 //   3. `spiffe.sshpopVerifyClientIp`: the agent's address must be inside the
 //      certificate's `source-address` critical option.
 //   4. The first principal less `.<spiffe.sshpopCanonicalDomain>` is the
@@ -40,7 +41,9 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
-import ssh = require('./spiffe_ssh');
+// SSH certificates are checked where every other certificate is (rcbj,
+// 2026-09-21).
+import pki = require('../common/pki');
 import agentPath = require('./spiffe_agent_path');
 
 type NodeAttestationContext =
@@ -60,7 +63,7 @@ interface SshpopDeps {
   errorCodes: typeof errorCodes;
   spiffeId: typeof spiffeId;
   rpc: typeof rpc;
-  ssh: typeof ssh;
+  pki: typeof pki;
   agentPath: typeof agentPath;
 }
 
@@ -80,7 +83,7 @@ class SshpopAttestor {
     helpers.log.debug("Leaving SshpopAttestor.defaultDeps().");
     return { log: log, nowSec: nowSec, crypto: nodeCrypto, net: net,
              config: config, errorCodes: errorCodes, spiffeId: spiffeId,
-             rpc: rpc, ssh: ssh, agentPath: agentPath };
+             rpc: rpc, pki: pki, agentPath: agentPath };
   }
 
   json(bytes: Buffer): any {
@@ -133,14 +136,14 @@ class SshpopAttestor {
 
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
-    const { log, nowSec, crypto, config, errorCodes, spiffeId, rpc, ssh,
+    const { log, nowSec, crypto, config, errorCodes, spiffeId, rpc, pki,
             agentPath } = this.deps;
     log.debug("Entering SshpopAttestor.attest().");
     const call = context.call;
     const status = rpc.grpc.status;
     const authorities = String(config.value('spiffe.sshpopCertAuthorities') ||
                                '').split('\n').map(function (line) {
-      return ssh.parseAuthorizedKey(line);
+      return pki.parseSshAuthorizedKey(line);
     }).filter(Boolean);
     let template = null;
     let problem = authorities.length ? ''
@@ -168,7 +171,7 @@ class SshpopAttestor {
     const data = this.json(context.payload);
     let cert = null;
     try {
-      const parsed = ssh.parsePublicKey(Buffer.from(String(
+      const parsed = pki.parseSshPublicKey(Buffer.from(String(
         (data || {}).Certificate || ''), 'base64'));
       cert = (parsed as any).certType ? parsed : null;
     } catch (e) {
@@ -189,8 +192,8 @@ class SshpopAttestor {
       throw rpc.statusError(status.INTERNAL, 'cert has no valid principals');
     }
     const principal = cert.principals[0];
-    const refused = ssh.checkHostCertificate(cert, principal, authorities,
-                                             nowSec());
+    const refused = await pki.checkSshHostCertificate(cert, principal,
+                                                      authorities, nowSec());
     if (refused) {
       log.debug("Leaving SshpopAttestor.attest(). Host key refused.");
       errorCodes.mark(call, 'STS-SPIFFE-0096');
@@ -256,10 +259,10 @@ class SshpopAttestor {
     }
     const toBeSigned = crypto.createHash('sha256').update(nonce)
       .update(theirs).digest();
-    if (!ssh.verify(cert, toBeSigned, {
+    if (!(await pki.verifySshSignature(cert, toBeSigned, {
       format: String(signature.Format || ''),
       blob: Buffer.from(String(signature.Blob || ''), 'base64')
-    })) {
+    }))) {
       log.debug("Leaving SshpopAttestor.attest(). Signature refused.");
       errorCodes.mark(call, 'STS-SPIFFE-0093');
       throw rpc.statusError(status.INTERNAL, 'failed to verify signature');

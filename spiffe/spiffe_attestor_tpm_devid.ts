@@ -23,7 +23,7 @@
 //   4. THE CHALLENGE, two in one: 32 random bytes the DevID key must sign
 //      (RSA PKCS#1 v1.5 or ECDSA, over SHA-256), and a credential only the
 //      TPM holding the EK can activate for this AK
-//      (`spiffe_tpm.ts`'s `makeCredential()`), whose secret — a nonce the
+//      (`common/crypto.js`'s `tpmMakeCredential()`), whose secret — a nonce the
 //      size of the EK's name hash — must come back. That proves the AK is in
 //      the TPM the manufacturer certified.
 //   5. The agent is `/tpm_devid/<SHA-1 of the DevID certificate>`, with
@@ -40,7 +40,10 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
-import x509Path = require('./spiffe_x509_path');
+// Certificate paths and signatures are checked where every other one is
+// (rcbj, 2026-09-21).
+import pki = require('../common/pki');
+import stsCrypto = require('../common/crypto');
 import tpm = require('./spiffe_tpm');
 
 type NodeAttestationContext =
@@ -57,7 +60,8 @@ interface TpmDevidDeps {
   errorCodes: typeof errorCodes;
   spiffeId: typeof spiffeId;
   rpc: typeof rpc;
-  path: typeof x509Path;
+  pki: typeof pki;
+  stsCrypto: typeof stsCrypto;
   tpm: typeof tpm;
 }
 
@@ -78,7 +82,7 @@ class TpmDevidAttestor {
     helpers.log.debug("Leaving TpmDevidAttestor.defaultDeps().");
     return { log: log, crypto: nodeCrypto, config: config,
              errorCodes: errorCodes, spiffeId: spiffeId, rpc: rpc,
-             path: x509Path, tpm: tpm };
+             pki: pki, stsCrypto: stsCrypto, tpm: tpm };
   }
 
   json(bytes: Buffer): any {
@@ -128,14 +132,15 @@ class TpmDevidAttestor {
 
   async attest(context: NodeAttestationContext):
       Promise<NodeAttestationResult> {
-    const { log, crypto, config, spiffeId, rpc, path, tpm } = this.deps;
+    const { log, crypto, config, spiffeId, rpc, pki, stsCrypto,
+            tpm } = this.deps;
     const self = this;
     log.debug("Entering TpmDevidAttestor.attest().");
     const call = context.call;
     const status = rpc.grpc.status;
-    const devidRoots = path.bundle(String(
+    const devidRoots = pki.certificateBundle(String(
       config.value('spiffe.tpmDevidCaBundle') || '')).certificates;
-    const ekRoots = path.bundle(String(
+    const ekRoots = pki.certificateBundle(String(
       config.value('spiffe.tpmEndorsementCaBundle') || '')).certificates;
     if (!devidRoots.length || !ekRoots.length) {
       log.debug("Leaving TpmDevidAttestor.attest(). Not configured.");
@@ -161,15 +166,16 @@ class TpmDevidAttestor {
       throw this.refuse(call, 'STS-SPIFFE-0086', status.INVALID_ARGUMENT,
                         'no DevID certificate to attest');
     }
-    const devidLeaf = path.certificate(devidChain[0]);
+    const devidLeaf = pki.certificateFromDer(devidChain[0]);
     if (!devidLeaf) {
       log.debug("Leaving TpmDevidAttestor.attest(). Bad DevID.");
       throw this.refuse(call, 'STS-SPIFFE-0086', status.INVALID_ARGUMENT,
                         'unable to parse DevID certificate');
     }
     // 2. THE DevID PATH.
-    const devidPath = await path.verify(devidChain[0], devidChain.slice(1),
-                                        devidRoots);
+    const devidPath = await pki.verifyPathToAnchors(devidChain[0],
+                                                    devidChain.slice(1),
+                                                    devidRoots);
     if (!devidPath.ok) {
       log.debug("Leaving TpmDevidAttestor.attest(). DevID path.");
       throw this.refuse(call, 'STS-SPIFFE-0089', status.INVALID_ARGUMENT,
@@ -186,7 +192,7 @@ class TpmDevidAttestor {
       throw this.refuse(call, 'STS-SPIFFE-0097', status.INVALID_ARGUMENT,
                         missing);
     }
-    const ekCert = path.certificate(this.bytesOf(data.EKCert));
+    const ekCert = pki.certificateFromDer(this.bytesOf(data.EKCert));
     if (!ekCert) {
       log.debug("Leaving TpmDevidAttestor.attest(). Bad EK certificate.");
       throw this.refuse(call, 'STS-SPIFFE-0086', status.INVALID_ARGUMENT,
@@ -225,8 +231,9 @@ class TpmDevidAttestor {
         'public key in EK certificate differs from public key created via ' +
         'EK template');
     }
-    const ekPath = await path.verify(ekCert.der, [], ekRoots, undefined,
-                                     ['subjectAltName']);
+    const ekPath = await pki.verifyPathToAnchors(ekCert.der, [], ekRoots,
+                                                 { allowCritical:
+                                                   ['subjectAltName'] });
     if (!ekPath.ok) {
       log.debug("Leaving TpmDevidAttestor.attest(). EK path.");
       throw this.refuse(call, 'STS-SPIFFE-0089', status.INVALID_ARGUMENT,
@@ -235,7 +242,7 @@ class TpmDevidAttestor {
     }
     // The AK certified the DevID key.
     const certified = this.bytesOf(data.CertifiedDevID);
-    const signatureProblem = tpm.checkSignature(akPub, certified,
+    const signatureProblem = await tpm.checkSignature(akPub, certified,
       this.bytesOf(data.CertificationSignature));
     let certifiedName = null;
     let certifyProblem = signatureProblem;
@@ -285,26 +292,18 @@ class TpmDevidAttestor {
       throw this.refuse(call, 'STS-SPIFFE-0086', status.INVALID_ARGUMENT,
                         'unable to unmarshall challenges response');
     }
-    // SPIRE's `VerifyDevIDChallenge()`: CheckSignature with SHA-256.
-    let devidSigned = false;
-    try {
-      const kind = String((devidLeaf.x509.publicKey as any)
-        .asymmetricKeyType || '');
-      // SHA256WithRSA (PKCS#1 v1.5), or ECDSAWithSHA256 (ASN.1 DER).
-      if (kind === 'rsa') {
-        devidSigned = crypto.verify('sha256', devidNonce, {
-          key: devidLeaf.x509.publicKey,
-          padding: crypto.constants.RSA_PKCS1_PADDING
-        }, this.bytesOf(answer.DevID));
-      } else if (kind === 'ec') {
-        devidSigned = crypto.verify('sha256', devidNonce,
-                                    devidLeaf.x509.publicKey,
-                                    this.bytesOf(answer.DevID));
-      }
-    } catch (e) {
-      log.debug("Caught in TpmDevidAttestor.attest(): " +
-                ((e && e.message) || e));
-    }
+    // SPIRE's `VerifyDevIDChallenge()`: CheckSignature with SHA-256 —
+    // SHA256WithRSA (PKCS#1 v1.5), or ECDSAWithSHA256 (ASN.1 DER).
+    const devidKey = stsCrypto.publicKeyFromSpki(pki.spkiOf(devidLeaf));
+    const devidSigned = devidKey.kind === 'rsa'
+      ? await stsCrypto.verifyRawSignature(
+        { family: 'rsa-pkcs1', hash: 'sha256' }, devidKey, devidNonce,
+        this.bytesOf(answer.DevID))
+      : devidKey.kind === 'ec'
+        ? await stsCrypto.verifyRawSignature(
+          { family: 'ecdsa', hash: 'sha256', encoding: 'der' }, devidKey,
+          devidNonce, this.bytesOf(answer.DevID))
+        : false;
     if (!devidSigned) {
       log.debug("Leaving TpmDevidAttestor.attest(). DevID challenge.");
       throw this.refuse(call, 'STS-SPIFFE-0093', status.INVALID_ARGUMENT,

@@ -522,11 +522,22 @@ first four are in; the Kubernetes and cloud ones arrive in #40's phase three).
 
 Each is SPIRE's server plugin step for step, because a real `spire-agent` is
 the client: `spiffe_attestor_x509pop.ts`, `spiffe_attestor_sshpop.ts`,
-`spiffe_attestor_tpm_devid.ts`, over three libraries that stand in for the Go
-packages SPIRE uses — `spiffe_x509_path.ts` (`x509.Certificate.Verify()`),
-`spiffe_ssh.ts` (`x/crypto/ssh`'s certificates and `CertChecker`) and
-`spiffe_tpm.ts` (go-tpm's structures, KDFa and `credactivation`). Six things
-were decided rather than copied, and each is the place to look first:
+`spiffe_attestor_tpm_devid.ts`.
+
+**NO CERTIFICATE AND NO SIGNATURE IS CHECKED IN THIS DIRECTORY.** What stands
+in for the Go packages SPIRE uses was written here as three libraries on the
+day and MOVED the same day, at rcbj's direction, into the modules that check
+every other certificate and signature in this service: `common/pki.js`
+(`verifyPathToAnchors()` — Go's `x509.Certificate.Verify()` with caller
+roots — and the OpenSSH certificate reader and `checkSshHostCertificate()`)
+and `common/crypto.js` (section 8: `verifyRawSignature()` for RSA, RSA-PSS,
+ECDSA, EdDSA and the post-quantum families, and TPM 2.0 `tpmKdfa()` and
+`tpmMakeCredential()`). What stays here is `spiffe_tpm.ts`, a CODEC for the
+TPM's byte layout that hands every signature and derivation to `crypto.js`,
+and `spiffe_agent_path.ts`, which is SPIRE's template language and no kind of
+crypto. The vendored `x509.js` is where the chain signatures are finally
+checked, and it is not edited here. Six things were decided rather than
+copied, and each is the place to look first:
 
 * **A TRUST ANCHOR IS PEM TEXT IN A SETTING, NOT A FILE PATH.** SPIRE takes
   `ca_bundle_path`, `devid_ca_path`, `endorsement_ca_path` and
@@ -542,7 +553,7 @@ were decided rather than copied, and each is the place to look first:
   INVALID_ARGUMENT; sshpop answers almost everything INTERNAL, because
   `handshake.go` wraps it so. A client may branch on the code, and one that
   works against SPIRE must work here.
-* **THE PATH BUILDER FAILS CLOSED WHERE GO WOULD EVALUATE.** An unhandled
+* **THE PATH BUILDER (`pki.js`) FAILS CLOSED WHERE GO WOULD EVALUATE.** An unhandled
   critical extension is refused (Go refuses them too; tpm_devid allows a
   critical subjectAltName on the EK certificate, as SPIRE strips it), and a
   CA with nameConstraints is refused outright, because the constraints are
