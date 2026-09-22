@@ -137,8 +137,23 @@ Claims worth knowing:
 ## OpenID Connect ID Token
 
 Issued beside the access token above, from the same token response. Its
-`typ` header is `JWT`, and its payload's `typ` is `ID`, which is how this
-service refuses an ID Token presented as an access token.
+`typ` header is `JWT`.
+
+**This sample was captured before
+[#118](https://github.com/rcbj/iya-sts/issues/118) (2026-09-22) and shows
+the earlier shape.** An ID Token from the authorization code flow no longer
+carries:
+
+* the payload member `typ: "ID"`, which no specification defines. An ID
+  Token has no `typ` member now, while an access token carries
+  `typ: "Bearer"` and a refresh token `typ: "Refresh"`, and that is how the
+  two are still told apart.
+* the profile and email claims. OpenID Connect Core section 5.4 returns them
+  from UserInfo when an access token is issued, and in the ID Token only for
+  `response_type=id_token`.
+* an `auth_time` when the time of authentication is not known.
+
+`at_hash` is now computed with the hash of the ID Token's own `alg`.
 
 *Encoded:*
 
@@ -196,15 +211,16 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0cy1mNzA0NTI0MWU2YjAiLCJ4NXUiOiJo
   `SessionIndex`, in the CAEP events' `session` subject and in the Logout
   Token below. The ID Token, SAML 2.0, SAML 1.1 and WS-Federation samples
   all came from this one session.
-* `at_hash` is the left half of the SHA-256 of the access token
+* `at_hash` is the left half of the SHA-256 of the access token, SHA-256
+  being RS256's hash
   ([OIDC Core 3.1.3.6](https://openid.net/specs/openid-connect-core-1_0.html#CodeIDToken)).
 * `name`, `given_name`, `family_name`, `email` and `email_verified` are
   invented in development mode (`mode.inventsClaimValues()`), which is why the
   family name is `Mock`. Product mode fills them only from the directory
   entry, and never sets `email_verified`.
 * `email` is here although the request asked only for `openid profile`.
-  That is a bug, [#155](https://github.com/rcbj/iya-sts/issues/155); UserInfo
-  releases by scope correctly.
+  That was a bug, [#155](https://github.com/rcbj/iya-sts/issues/155), fixed by
+  #118: none of these claims are in a code-flow ID Token now.
 
 ## Other JWTs
 

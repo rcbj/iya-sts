@@ -506,7 +506,13 @@ class GnapSubject {
         return { ok: false };
       }
       const grace = Number(config.value('gnap.assertionMaxAgeS')) || 0;
-      if (claims.typ !== 'ID' ||
+      // WHAT MAKES IT AN ID TOKEN. Every JWT this service signs is signed
+      // with the same key; an access token carries `typ: 'Bearer'` and a
+      // refresh token `typ: 'Refresh'`, and an ID Token carries NO `typ`
+      // member since #118 (2026-09-22) — it said `typ: 'ID'`, which no
+      // specification defines. So a payload with any `typ`, or without the
+      // `sub` and `aud` OIDC Core section 2 requires, is not one.
+      if (claims.typ !== undefined || !claims.sub || !claims.aud ||
           (ctx.oauthIssuer && claims.iss !== ctx.oauthIssuer) ||
           (claims.exp && claims.exp + grace < helpers.nowSec())) {
         log.debug("Leaving GnapSubject.usernameFromAssertion(). Not a " +
