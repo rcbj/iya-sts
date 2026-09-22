@@ -702,7 +702,7 @@ or `POST
 
 ### The recovery code settings, and the mechanism no specification defines
 
-Four `backupCodes.*` rows, drawn on `/admin/backup-codes` under Protocols. They
+Five `backupCodes.*` rows, drawn on `/admin/backup-codes` under Protocols. They
 configure the way back in when the second factor is not to hand — the phone is
 lost or flat, the security key is at home.
 
@@ -712,51 +712,43 @@ recovery code. What every identity provider does converges anyway — a handful 
 random strings, each accepted once — so the decisions that are left are this
 service's own and `common/backup_codes.ts` argues each.
 
-**A set is issued by an ACT and not by a request.** There is no control
-anywhere — not on `/portal`, not on `/admin`, not on `/admin-api` — that creates
-one. A set is issued the first time a person enrols a second factor: a confirmed
-authenticator app, or a security key in the `mfa` role. A recovery mechanism a
-person has to remember to ask for produces exactly the population it exists to
-protect, one at a time, because the people who did not ask are the people who
-will need it.
+**A person generates their own set, on `/portal/mfa`** (since 2026-09-11; until
+then a set was issued automatically the first time a second factor was
+enrolled). The set is shown ONCE, and stored only when the person confirms they
+have kept it. Until they do it waits apart from their entry for
+`backupCodes.pendingTtlS`, and one that expires changes nothing about a set they
+already held. A person who holds a second factor and no set is prompted to
+generate one.
 
-**Once. Not once per enrolment.** Enrolling a different second factor later does
-not reissue, and that is the rule to know before reading anything else here.
-Somebody who printed a list in March and replaced their authenticator app in
-June would otherwise be holding strings that had stopped working with nothing
-having said so — a recovery credential that silently expires is worse than none,
-because the person believes they have a way back. **An operator's Clear on that
-person's row under `/admin/users` (or `POST
-/admin-api/users/clear-backup-codes`) is the only route to a second set**, after
-which the next second factor they enrol issues one.
+**Generating again REPLACES the set whole; a set is never topped up.** When it
+runs low the person generates a new one. **An operator's Clear on that person's
+row under `/admin/users` (or `POST /admin-api/users/clear-backup-codes`)
+deletes a set**; no console or API operation creates one or shows a code.
 
-**None of these four invalidates a set that exists**, which is the way the
+**The codes are HASHED, one scrypt hash per code**, as `userPassword` is. A
+secret this service only VERIFIES is hashed, and since the set is shown exactly
+once and never again, nothing has to be able to present a code back — which is
+what the earlier design, sealing the codes so the portal could show them again,
+had to give up hashing for.
+
+**None of these rows invalidates a set that exists**, which is the way the
 `totp.*` rows above differ: those carry a paragraph about NEW enrolments because
-their values were told to an app this service cannot reach. Nothing here is told
-to anybody — a recovery code is a string compared against a stored string — so
-shortening `backupCodes.length` changes what the next set looks like and leaves
-an existing one matching exactly as it did. `backupCodes.enabled=false` likewise
-stops a new set being issued and takes nothing away: a switch that removed the
-only way back into an account whose phone is lost would be the worst one here.
+their values were told to an app this service cannot reach. A stored code is
+compared against its hash, so shortening `backupCodes.length` changes what the
+next set looks like and leaves an existing one matching exactly as it did.
+`backupCodes.enabled=false` likewise stops a new set being generated and takes
+nothing away: a switch that removed the only way back into an account whose
+phone is lost would be the worst one here.
 
-**The codes are encrypted and not hashed.** This repository's rule is that a
-secret the service VERIFIES is hashed and a secret it must PRESENT cannot be;
-`userPassword` is scrypt for that reason. A recovery code is both, and what
-decides it is whether a person may look at their remaining codes again — this
-service says yes, on `/portal/mfa`, because a list shown exactly once at the end
-of an enrolment somebody is rushing through is a list most people close without
-reading, and the moment it matters is months later. They are sealed with
-AES-256-GCM under the same key-encryption key as the signing keys wherever that
-key outlives the process, and stored as the strings they were shown as where it
-does not — sealing under development mode's per-run key would mean a printed
-list that stopped working at the next restart, which is the precise failure this
-mechanism exists to prevent.
+**Nothing but the person sees them, and only once.** The console reports
+counts, the management API reports counts, and neither has an operation that
+returns a code. Showing them to whoever holds Admin Read would be an
+administrative door handing out a working second factor — the same refusal this
+service already makes about enrolling an authenticator app from the console.
 
-**Nothing but the person sees them.** The console reports counts, the management
-API reports counts, and neither has an operation that returns a code. Showing
-them to whoever holds Admin Read would be an administrative door handing out a
-working second factor — the same refusal this service already makes about
-enrolling an authenticator app from the console.
+[Authentication](authentication.md#recovery-codes) describes the sign-in side:
+where a code is typed, what the session records, and why a spend that cannot be
+written refuses the sign-in.
 
 ### The WebAuthn settings, and the one of thirteen this service enforces
 

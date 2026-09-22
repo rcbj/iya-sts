@@ -1402,9 +1402,9 @@ const SECTIONS = [
                'href="/admin/users">Users</a>.' },
       { path: '/admin/backup-codes', label: 'Recovery codes',
         blurb: 'The way back in when the second factor is not to hand ' +
-               '&mdash; a set of single-use codes issued AUTOMATICALLY, and ' +
-               'ONCE, the first time somebody enrols an authenticator app or ' +
-               'a security key in the <code>mfa</code> role. <strong>The ' +
+               '&mdash; a set of single-use codes a person generates for ' +
+               'themselves, standing in for an authenticator app or a ' +
+               'security key in the <code>mfa</code> role. <strong>The ' +
                'only mechanism on this console that no specification ' +
                'defines</strong>: there is no RFC for a recovery code, so ' +
                'every decision behind it is this service\'s own and ' +
@@ -1480,7 +1480,7 @@ const SECTIONS = [
                '<a href="/admin/groups">Groups</a>; this page is the ' +
                'directory itself.' },
       { path: '/admin/wstrust', label: 'WS-Trust',
-        blurb: 'The security token service at <code>/wstrust</code>, ' +
+        blurb: 'The security token service at <code>/sts</code>, ' +
                'WS-Trust 1.0 to 1.4, and the one setting it has of its own — ' +
                'who its tokens say issued them. What an assertion CONTAINS ' +
                'is the SAML pages next door, because the assertion is built ' +
@@ -1608,15 +1608,16 @@ const SECTIONS = [
       // Beside the certificate it configures, and UNGROUPED: a `TLS` heading
       // over `TLS / mutual TLS` would say the label twice.
       { path: '/admin/tls/trust', label: 'Client-certificate truststore',
-        blurb: 'Every anchor LDAPS 636 and the main port verify ' +
-               'a client certificate against — which, since a verified ' +
-               'certificate is an identity here, is the list of whose ' +
-               'certificates this service believes. Each row says whether it ' +
-               'came from <code>tls.trustAnchorsFile</code> or was added ' +
-               'while the process was running; add PEM certificates or ' +
-               'remove one row at a time, in either mode. Nothing here is ' +
-               'persisted, and there is deliberately no button that empties ' +
-               'it.' }
+        blurb: 'Every anchor the main port verifies a client ' +
+               'certificate against (LDAPS 636 asks for none) — which, since ' +
+               'a verified certificate is an identity here, is the list of ' +
+               'whose certificates this service believes. Each row says ' +
+               'whether it came from <code>tls.trustAnchorsFile</code> or was ' +
+               'added while the process was running; add PEM certificates or ' +
+               'remove one row at a time, in either mode. An anchor added ' +
+               'here is kept in the directory (<code>ou=trustAnchors</code>), ' +
+               'so it survives a restart and reaches every process, and there ' +
+               'is deliberately no button that empties it.' }
     ] },
   { title: 'Directory',
     what: 'The embedded LDAP directory, and the identities this service has ' +
@@ -39696,13 +39697,14 @@ const PROTOCOL_SETTINGS_PAGES = [
   // -------------------------------------------------------------------------
   { path: '/admin/backup-codes', title: 'Recovery codes',
     lead: '<strong>The way back in when the second factor is not to ' +
-          'hand.</strong> A set of single-use codes, issued AUTOMATICALLY ' +
-          'and ONCE the first time a person enrols an authenticator app or a ' +
-          'security key in the <code>mfa</code> role. There is no control ' +
-          'anywhere — here, on <code>/admin-api</code>, or on ' +
-          '<code>/portal</code> — that issues a set on request. Who holds ' +
-          'one is <a href="/admin/users">Users</a>, and clearing a set is on ' +
-          'that person\'s own row.',
+          'hand.</strong> A set of single-use codes that a person generates ' +
+          'for themselves on <code>/portal/mfa</code>, is shown once, and ' +
+          'which is stored — one scrypt hash per code — only when they ' +
+          'confirm they have kept it. Generating again REPLACES the set. ' +
+          'There is no control here or on <code>/admin-api</code> that ' +
+          'issues a set or shows a code. Who holds one is <a ' +
+          'href="/admin/users">Users</a>, and clearing a set is on that ' +
+          'person\'s own row.',
     also: ['<strong>THIS IS THE ONLY MECHANISM ON THIS CONSOLE THAT NO ' +
            'SPECIFICATION DEFINES.</strong> Everything else here implements ' +
            'somebody\'s document and can be checked against it; there is no ' +
@@ -39711,42 +39713,34 @@ const PROTOCOL_SETTINGS_PAGES = [
            'accepted once — and the decisions that are left are this ' +
            'service\'s own. <code>common/backup_codes.ts</code> argues each ' +
            'of them, and the four settings below are what it leaves open.',
-           '<strong>THEY ARE ENCRYPTED AND NOT HASHED, AND THAT IS A PRODUCT ' +
-           'DECISION RATHER THAN A CRYPTOGRAPHIC ONE.</strong> This ' +
-           'repository\'s own rule is that a secret this service VERIFIES is ' +
-           'hashed and a secret it must PRESENT cannot be — which is why ' +
-           '<code>userPassword</code> is scrypt. A recovery code is both, ' +
-           'and what decides it is whether a person may look at their ' +
-           'remaining codes again. <strong>This service says yes</strong>, ' +
-           'because a list shown exactly once at the end of an enrolment ' +
-           'somebody is rushing through is a list most people close without ' +
-           'reading — and the moment it matters is months later, when the ' +
-           'phone is gone. The cost is said out loud: anybody holding the ' +
-           'key-encryption key can read somebody\'s codes, exactly as they ' +
-           'can read a <a href="/admin/totp">TOTP</a> shared secret, which ' +
-           'is why both are SECOND factors here and neither can be made a ' +
-           'first one.',
-           '<strong>A SET IS ISSUED ONCE.</strong> Not once per enrolment — ' +
-           'once. Enrolling a different second factor does not reissue, ' +
-           'because somebody who printed a list and later replaced their ' +
-           'authenticator app would otherwise be holding strings that had ' +
-           'stopped working with nothing anywhere having said so. A recovery ' +
-           'credential that silently expires is worse than none, because the ' +
-           'person believes they have a way back. An operator\'s Clear is ' +
-           'the only route to a second set.',
+           '<strong>THEY ARE HASHED, ONE SCRYPT HASH PER CODE, AS ' +
+           '<code>userPassword</code> IS (SINCE 2026-09-11).</strong> This ' +
+           'repository\'s own rule is that a secret this service only ' +
+           'VERIFIES is hashed. Until 2026-09-11 the codes were encrypted ' +
+           'instead, so that a person could read their remaining codes back; ' +
+           'the set is now shown exactly once, when it is generated, and ' +
+           'nothing — the person included — can see a stored code again.',
+           '<strong>A PERSON GENERATES THEIR OWN SET, AND GENERATING AGAIN ' +
+           'REPLACES IT.</strong> Until 2026-09-11 a set was issued ' +
+           'automatically, once, the first time a second factor was ' +
+           'enrolled. Now it is generated on <code>/portal/mfa</code>, held ' +
+           'apart from the entry until the person confirms they have kept ' +
+           'it, and REPLACES any earlier set whole — a set is never topped ' +
+           'up. A person who holds a second factor and no set is prompted ' +
+           'to generate one. An operator\'s Clear deletes a set.',
            '<strong>CHANGING THESE SETTINGS AFFECTS NEW SETS ONLY, AND ' +
            'NOTHING HERE SAYS "NEW ENROLMENTS ONLY" THE WAY <a ' +
            'href="/admin/totp">TOTP</a> DOES.</strong> That page has to, ' +
            'because its parameters were TOLD TO AN APP this service cannot ' +
-           'reach. Nothing here is told to anybody: a recovery code is a ' +
-           'string compared against a stored string, so shortening the ' +
+           'reach. Nothing here is told to anybody: a recovery code is ' +
+           'compared against its stored hash, so shortening the ' +
            'length changes what the next set looks like and leaves an ' +
            'existing set matching exactly as it did.'],
     status: slot.forward('backupCodesMechanismBlock'),
     links: [['/admin/totp', 'one of the two factors these stand in for'],
             ['/admin/webauthn', 'the other'],
             ['/admin/users', 'who holds a set, and how to clear one'],
-            ['/portal/mfa', 'where a person reads their own set back']] },
+            ['/portal/mfa', 'where a person generates their own set']] },
 
   { path: '/admin/webauthn', title: 'WebAuthn',
     lead: '<strong>Security keys — W3C WebAuthn Level 3 over FIDO CTAP2 — as ' +

@@ -3215,16 +3215,17 @@ const ENDPOINTS: EndpointEntry[] = [
                                                      'replace, modify, delete',
     specs: ['rfc7644', 'rfc7643', 'rfc4511'],
     effect: 'PUT and PATCH rewrite an entry under ou=users; DELETE removes it',
-    what: 'THE id IS THE ENTRY\'S DN, percent-encoded — RFC 7643 section 3.1 ' +
-          'wants an opaque server-assigned identifier and the DN already is ' +
-          'one. PUT replaces ONLY THE MAPPED ATTRIBUTES and leaves the rest ' +
+    what: 'THE id IS THE ENTRY\'S entryUUID (the DN until 2026-09-14) — RFC ' +
+          '7643 section 3.1 wants an identifier that is never reassigned, and ' +
+          'a rename reassigns a DN; a DN presented as an id still resolves. ' +
+          'PUT replaces ONLY THE MAPPED ATTRIBUTES and leaves the rest ' +
           'of the entry alone: read strictly, a SCIM PUT would delete ' +
           'schacDateOfBirth, authnMethod and every x509 attribute the moment ' +
           'a client updated a phone number, and those are facts SCIM never ' +
           'knew about and cannot restore. PATCH is section 3.5.2 in full, ' +
-          'value-filter paths included. DELETE leaves the DN behind in every ' +
-          'group that lists it, because this directory does no referential ' +
-          'integrity on purpose.' },
+          'value-filter paths included. DELETE leaves the member behind in ' +
+          'every group that lists it, because this directory does no ' +
+          'referential integrity on purpose.' },
   { path: '/scim/v2/Groups', group: 'SCIM', name: 'Groups: list and create',
     specs: ['rfc7644', 'rfc7643', 'rfc4519'],
     effect: 'POST creates an entry under ou=groups',
@@ -3243,9 +3244,9 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['rfc7644', 'rfc7643', 'rfc4519'],
     effect: 'PUT and PATCH rewrite a group entry; DELETE removes it',
     what: 'READ resolves member, uniqueMember and memberUid alike and ' +
-          'returns each member as the DN — treating the three differently is ' +
-          'how every posixGroup membership silently disappears. WRITE puts ' +
-          'new values in member, since a SCIM member id is a DN, and clears ' +
+          'returns each member by its id — treating the three differently is ' +
+          'how every posixGroup membership silently disappears. WRITE turns ' +
+          'each member id into its DN and puts it in member, and clears ' +
           'the other two so that a client which removed everybody does not ' +
           'find the group still populated. A member naming nothing is ' +
           'ACCEPTED and logged: a dangling member is a state worth being ' +
@@ -3492,8 +3493,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'SURFACES, and the only one that can report the two invisible ' +
           'ones. This service is the issuing authority for one trust domain ' +
           'per trust realm (spiffe.trustDomain, `example.org` by default; a ' +
-          'realm created at runtime is seeded `<realm>.<that>` and binds ' +
-          'sockets of its own only when its spiffe.enabled is on — what ' +
+          'realm created at runtime is seeded with its own DNS domain and ' +
+          'binds sockets of its own only when its spiffe.enabled is on — ' +
+          'what ' +
           'follows describes the default realm\'s): the BUNDLE ' +
           'ENDPOINT below is plain HTTPS; the SPIFFE WORKLOAD API (the gRPC ' +
           'service SpiffeWorkloadAPI, five of seven methods) is on a UNIX ' +

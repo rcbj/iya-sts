@@ -375,11 +375,80 @@ assertion, the assertion's `jti` is in the register, and a resource server
 holding the token can be told which trusted party asserted the subject. The
 party is acting **openly**, which is what the word means.
 
-## The settings
+## Configuration
 
-| Setting | Default | What it does |
-|---|---|---|
-| `oauth2.jwtBearerGrant` | `true` | Whether the token endpoint performs the §2.1 grant. The metadata advertises it only while it is on, because a `grant_types_supported` member is a promise. It does **not** affect §2.2. |
-| `oauth2.jwtBearerRequireRegisteredIssuer` | `true` | Whether an assertion from an issuer nobody declared is refused. See above before turning it off. |
-| `oauth2.jwtBearerMaxLifetimeS` | `300` | The most seconds between `iat` and `exp`. Zero switches the check off. |
-| `oauth2.clientAssertionSkewS` | `60` | How far out somebody else's clock may be. It answers one question, so it applies to both halves of the profile. |
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Whether the token endpoint performs the §2.1 grant. The metadata advertises it only while it is on, because a `grant_types_supported` member is a promise. It does **not** affect §2.2. |
+| `oauth2.jwtBearerRequireRegisteredIssuer` | `STS_OAUTH2_JWT_BEARER_REQUIRE_REGISTERED_ISSUER` | `true` | yes | Whether a §2.1 assertion from an issuer no application declares on `oauthAssertionIssuer` is refused. See [above](#the-one-thing-that-is-not-permissive) before turning it off. |
+| `oauth2.jwtBearerMaxLifetimeS` | `STS_OAUTH2_JWT_BEARER_MAX_LIFETIME_S` | `300` | yes | The most seconds between `iat` and `exp`. Zero switches the check off. |
+| `oauth2.clientAssertionSkewS` | `STS_OAUTH2_CLIENT_ASSERTION_SKEW_S` | `60` | yes | How far out somebody else's clock may be for `exp`, `nbf` and `iat`, and how long past its expiry a `jti` is remembered. It answers one question, so it applies to both halves of the profile. |
+| `oauth2.assertionReplayCacheSize` | `STS_OAUTH2_ASSERTION_REPLAY_CACHE_SIZE` | `1000` | yes | Unexpired rows the used-assertion history holds per realm, for RFC 7523 and RFC 7522 together; a full history refuses the next assertion rather than forgetting a live one. |
+| `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` lets a person issue their own key pair; off takes away no key already held. |
+| `pki.personSelfServicePerIdentity` | `STS_PKI_PERSON_SELF_SERVICE_PER_IDENTITY` | `5` | yes | How often one person may press Generate there in a `security.rateLimitWindowS` window. |
+| `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit counted per client address. |
+
+Whether a registered or presented certificate is checked for revocation is
+`pki.revocationCheck`, and the hierarchy that issues the key pairs is
+configured on [PKI](pki.md#configuration). See
+[Configuration](configuration.md) for how a value resolves and where it is
+changed — the console page, or `POST /admin-api/config/set`.
+
+## Design decisions
+
+* **RFC 7521 and RFC 7523 are one feature.** RFC 7521 has no wire format of its
+  own, so everything it asks for is implemented through RFC 7523 and neither is
+  testable without the other.
+* **Client authentication and the grant are two features that share one
+  history.** Each is implemented in full, and an assertion is accepted once,
+  ever, whatever it is presented as — see
+  [above](#two-uses-of-one-format-and-they-are-not-the-same-feature).
+* **An assertion is spent only when tokens are issued.** A request refused for
+  another reason releases it, so a fixable mistake does not burn the document.
+* **`jti` is required where the RFC says optional.** An assertion with no `jti`
+  cannot be remembered, and accepting it would be accepting a bearer
+  credential this service has no way to spend.
+* **The issuer of a grant must be declared, and that refusal is on by
+  default.** A grant has no browser, password or consent step, so the
+  signature is its entire security — see
+  [above](#the-one-thing-that-is-not-permissive).
+* **Holding a key is not being trusted to assert.** A key pair is enough for
+  client authentication; speaking about somebody else takes a separate
+  declaration — see [above](#holding-a-key-is-not-being-trusted-to-assert).
+* **A person's key may only speak for that person.** A party that may assert
+  about other people is an application an operator declared — see
+  [above](#the-rule).
+* **The signature is verified before any claim is believed.** The unverified
+  `iss` is used only to find candidate keys and decides nothing.
+* **A certificate that arrives with the signature is checked, not read, and a
+  chain is validated at every use.** A key taken from an unchecked `x5c` would
+  prove nothing — see [above](#which-key-verifies-it).
+* **`jwks_uri` is recorded and never followed.** Fetching a URL a client
+  registered in order to verify its credential is a server-side request
+  forgery; a client is told to register `jwks` instead.
+* **Scope is narrowed and never widened; `cnf` is carried and never
+  enforced.** The grant has no parameter in which to prove possession of a
+  `cnf` key, so demanding one would refuse every conforming client.
+* **The profile's own claims are stripped before the rest reach the token.** An
+  `exp` copied off an assertion would be a token lifetime chosen by whoever
+  signed it.
+* **`alg: "none"` and `RSA1_5` are refused by name.** A caller is told which
+  rule it broke, rather than that its assertion did not verify — see
+  [above](#an-encrypted-assertion).
+* **It is recorded as a delegation, not an impersonation.** The issuer is on
+  the assertion and the act is visible — see
+  [above](#it-is-recorded-as-a-delegation).
+
+## Related
+
+* [SAML assertions](saml-assertions.md) — the RFC 7522 profile of the same
+  framework
+* [PKI](pki.md) — where the key pairs and their certificates come from
+* [OAuth 2.0 and OpenID Connect](oauth-oidc.md) — the token endpoint these are
+  presented at
+* [OAuth security profiles](oauth-security.md) — RFC 9700 and OAuth 2.1 modes,
+  which verify every declared client authentication method
+* [Accepted tokens](accepted-tokens.md)
+* [Trust realms](trust-realms.md)
+* [What is not checked](what-is-not-checked.md)
+* [Configuration](configuration.md) and [error codes](error-codes.md)

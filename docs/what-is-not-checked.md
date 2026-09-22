@@ -700,9 +700,11 @@ These are true in a product deployment today, and are tracked as issues:
 * **During the bootstrap window** (`admin.openWhenEmpty`), anybody who signs in
   by any method — federation, SPNEGO, a certificate, a wallet — holds both
   console roles ([#103](https://github.com/rcbj/iya-sts/issues/103)).
-* **`oauth2.breakIdTokenNonce`**, **`spiffe.acceptAssertedSelectors`** and
-  **`spiffe.trustLocalSocket`** are honoured in product; the first two are off by
-  default and the third is on ([#104](https://github.com/rcbj/iya-sts/issues/104)).
+* **`oauth2.breakIdTokenNonce`** and **`spiffe.trustLocalSocket`** are honoured
+  in product; the first is off by default and the second is on
+  ([#104](https://github.com/rcbj/iya-sts/issues/104)).
+  `spiffe.acceptAssertedSelectors` is not: product never believes asserted
+  selectors, whatever it says (#40).
 * **A WebAuthn attestation statement is not verified**: there is no FIDO
   metadata service ([#105](https://github.com/rcbj/iya-sts/issues/105)).
 * **The directory has no per-identity read authorization**: anybody who has bound

@@ -10,8 +10,8 @@
 // It accepts an RST and dispatches on wst:RequestType:
 //
 //   Issue    -> RSTR Collection with a freshly minted, STS-signed SAML 2.0
-//               assertion (or a JWT / plain UsernameToken echo, per TokenType),
-//               a Lifetime, and an attached reference.
+//               assertion (or a JWT, when TokenType asks for one), a
+//               Lifetime, and an attached reference.
 //   Renew    -> RSTR with a fresh token for the supplied RenewTarget.
 //   Validate -> RSTR with wst:Status/wst:Code valid|invalid.
 //   Cancel   -> RSTR with wst:RequestedTokenCancelled.

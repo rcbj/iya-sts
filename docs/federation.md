@@ -1,0 +1,376 @@
+---
+title: Federation
+---
+
+# Federation
+
+iya-sts can be **either end of a federation relationship** with a foreign
+identity service, in five protocols: SAML 2.0
+([Web Browser SSO](https://docs.oasis-open.org/security/saml/v2.0/saml-profiles-2.0-os.pdf)),
+SAML 1.1 (Browser/POST), WS-Federation 1.2 (the passive requestor profile),
+[OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) and
+[OAuth 2.0](https://www.rfc-editor.org/rfc/rfc6749). As a **service provider**
+it sends a person to a partner and consumes what comes back; as an **identity
+provider** it marks a partner as a federation partner and decides which
+attributes are released to it. Relationships are **per trust realm**: each
+realm has its own register, and a relationship is verified against the
+certificate configured in that realm.
+
+It is the one feature in this service that **refuses by default** — nothing
+federated happens until somebody configures a relationship, and what a
+relationship configures is a key.
+
+## Features
+
+### One relationship is one direction
+
+A relationship has a **role** (`service-provider` — this service consumes — or
+`identity-provider` — this service asserts) and a **protocol** (`saml2`,
+`saml11`, `wsfed`, `oidc`, `oauth2`). A partner this service both consumes from
+and asserts to is **two relationships**, because every field differs by
+direction: whose endpoints, whose certificate, an inbound attribute mapping or
+an outbound release list. A field that belongs to the other direction is
+refused by name rather than written and ignored.
+
+Relationships live in the directory under `ou=federations`, one entry each, and
+there are three doors onto that register: the console, the management API and
+an `ldapmodify`.
+
+### The endpoints
+
+| Path | What it is |
+|---|---|
+| `GET /federation` | what federation is here, every relationship in both directions, and the URL to give each partner |
+| `GET /federation/login/{id}` | **start**: sends the browser to the partner — an `<AuthnRequest>`, a SAML 1.1 inter-site transfer URL, `wa=wsignin1.0`, or an OAuth 2.0 authorization request. Takes `?returnTo=` (a path on this service) and `?application=` (a hint naming what the person is signing in to) |
+| `GET\|POST /federation/acs/{id}` | **finish**: the assertion consumer service, the WS-Federation `wreply` and the OAuth 2.0 `redirect_uri`, all one path. **This is the URL to configure at the partner** |
+| `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned |
+| `GET /authn/select-idp` | the chooser drawn when an application names several usable partners |
+
+In a trust realm every path is under `/realm/{id}`. One path receives all five
+protocols, so there is exactly one URL to configure at the partner.
+
+### This service as service provider
+
+The five protocols, and where each differs:
+
+* **SAML 2.0** — an `<AuthnRequest>` out on HTTP-Redirect (default) or
+  HTTP-POST (`fedBinding`), a `<Response>` back. The request always asks for
+  the response on HTTP-POST. `fedSignRequest` signs the request with this
+  service's key; on the Redirect binding the request goes unsigned and the log
+  says so, because that binding signs the query string, a construction this
+  service does not build.
+* **SAML 1.1** — there is no request message. The browser goes to the
+  partner's inter-site transfer service with a `TARGET`, and unsolicited
+  responses are forced on for the relationship because there is nothing to be
+  `InResponseTo`.
+* **WS-Federation** — `wa=wsignin1.0` with this service's `wtrealm`; the
+  `wresult` carries a SAML 1.1 or SAML 2.0 assertion inside an RSTR.
+* **OpenID Connect** — the authorization code flow by default.
+  `fedResponseType: id_token` with `response_mode=form_post` needs **no back
+  channel at all**, which is the way to federate with an OIDC partner from a
+  deployment with no egress. The `nonce` is checked. Attributes come off the ID
+  Token and, when configured, UserInfo.
+* **OAuth 2.0** — the authorization code flow with no ID Token; attributes come
+  off the access token when it is a JWT and otherwise from a configured
+  userinfo-shaped endpoint. It is a distinct protocol rather than OIDC with a
+  flag, and it **warns on every sign-in**, because an access token says a client
+  was authorized, not that a person signed in.
+
+**PKCE is always sent** in both OAuth-shaped protocols, whatever the partner
+advertises, and cannot be turned off.
+
+What is checked on the way in, in every mode:
+
+* the signature, against **the certificate configured on the relationship**
+  (`fedSigningCertificate`) — never one the document carries in its own
+  `<ds:KeyInfo>` — and over the element being trusted, not the first signature
+  in the document;
+* an ID Token or JWT access token against the relationship's keys
+  (`fedJwks`, or `fedJwksUri`), with `alg: none` refused by name and the
+  algorithm family taken from the key, so HS256 cannot be verified with a
+  public key;
+* the **issuer** against `fedPeer`, which is required;
+* the **audience**: every `AudienceRestriction` must name this service. A
+  SAML 2.0 assertion with no restriction is refused; SAML 1.1 and WS-Federation,
+  whose profiles make it optional, are accepted with a warning;
+* the validity window, and that the response answers a request this service
+  sent (`InResponseTo`, or the handle in `RelayState` / `wctx` / `state`),
+  unless `fedAllowUnsolicited` is on;
+* the partner's signing certificate for **revocation**, under
+  `pki.revocationCheck`.
+
+The request context — the request id, `nonce`, PKCE verifier and where the
+person was going — is kept on the server, per trust realm; the partner carries
+only an opaque handle. A handle minted in one realm cannot be spent in another.
+
+### What a federated sign-in writes
+
+A verified sign-in maps the partner's attributes onto a directory entry under
+`ou=users` and starts **the same session** every other protocol reads, so a
+federated identity then satisfies an OAuth 2.0 authorization request, a
+`wsignin1.0`, a SAML `AuthnRequest` or the console with none of those knowing
+federation exists.
+
+* **The username** is the value `fedUsernameSource` names, or the subject
+  (the NameID or `sub`). A partner's `urn:uuid:` subject becomes `sub-<uuid>`
+  and is never looked up locally. `federation.usernamePrefix` is put in front
+  of it.
+* **Attributes** are mapped in three layers: the relationship's own
+  `fedAttributeMap` (`<incoming name>=<LDAP attribute>`), then a default table
+  covering the ordinary OIDC claims, SAML `urn:oid:` names and AD FS claim URIs,
+  then **nothing** — an unrecognised name is listed as unmapped on the result
+  page, on `/admin/federation` and in the log, not written under its own name.
+* A partner's value **overwrites** an invented one; an attribute the partner
+  stopped sending is **left alone**; `uid` is never written from an assertion.
+  `federationAttribute` on the entry says which attributes came from the
+  partner, beside `federationRelationship`, `federationIssuer`,
+  `federationSubject` and `federationLastSeen`.
+* The session's `amr` starts with `federated`, followed by what the partner
+  said; a SAML partner's authentication context travels on `acr`.
+
+### Provisioning: dynamic or pre-provisioned
+
+Two switches on each service-provider-side relationship:
+
+| Switch | On (default) | Off |
+|---|---|---|
+| `fedAutocreateUsers` | the first sign-in creates the person's entry | the entry must already exist (SCIM, `/admin/users/new`, `/admin-api`); a sign-in for somebody with none is refused 403 *has not been provisioned* (`STS-FED-0090`) |
+| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion | the partner's values are written only when the sign-in creates the entry |
+
+A pre-provisioned person must exist under the username the relationship maps
+them to.
+
+### Home realm discovery
+
+`appFederationRelationship` on an **application** entry names the partners that
+application's people sign in through, and holds a list:
+
+| What the entry names | What a person meets |
+|---|---|
+| nothing | the sign-in screen, with a button per usable partner under it (`federation.loginButtons`) |
+| one usable relationship | nothing — the browser goes straight to that partner |
+| several usable | `/authn/select-idp`: one button per partner, no password field |
+| several, `appFederationAutoRedirect` FALSE | the sign-in screen, with those partners as its only buttons |
+| only unusable values | the sign-in screen, with a banner naming what is wrong with each |
+
+A relationship that is disabled, half-configured or on the wrong side is
+**printed, not dropped** — a list of three with one disabled would otherwise
+look exactly like a correct list of two.
+
+### This service as identity provider
+
+Every protocol endpoint here already answers any partner, so an
+identity-provider-side relationship changes nothing about whether a partner is
+answered. It names the partner's application entry (`fedApplication` — its
+entityID, endpoints and certificate stay there) and adds two things:
+
+* **A release policy.** `fedRelease` lists the claims or attributes released
+  to this partner. It filters what the claim and SAML attribute configuration
+  and the groups claim would add, and can never remove `sub`, `iss`, `exp`, a
+  NameID or anything else a protocol puts in an artifact itself. **An empty list
+  is no policy, not "release nothing"**, so registering a partner never stops it
+  receiving what it received the day before.
+* **How this service authenticates for the partner** (`fedAuthnMechanism`):
+
+| Value | What the person meets |
+|---|---|
+| `password` | the sign-in screen |
+| `password-mfa` | the sign-in screen with the second factor required (`amr ["pwd","hwk"]`, `acr "mfa"`) |
+| `webauthn` | a passwordless security key alone — one factor |
+| `spnego` | a Kerberos ticket the browser already holds, no screen (see [Kerberos](kerberos.md)) |
+| `wallet` | a credential this realm issued, presented from the person's wallet (see [OpenID4VP](oid4vp.md)) |
+| `federation` | on to another service-provider-side relationship in this realm, named by `fedAuthnRelationship` |
+| *(empty)* | says nothing: falls through to the application entry and then the sign-in screen |
+
+`federation` makes this realm an **identity bridge**: a SAML 2.0 partner can be
+answered by consuming a WS-Federation token from somebody else, and nothing
+bounds the depth. A request that demanded two factors (a
+`RequestedAuthnContext`, a `wauth`) is never answered with a one-factor
+mechanism because a relationship preferred one.
+
+### Outbound requests
+
+Federation is where this service first made an **outbound** request, and it
+dials only URLs an administrator wrote on a relationship: the partner's token
+endpoint (`fedTokenUrl`), UserInfo (`fedUserinfoUrl`) and JWKS (`fedJwksUri`).
+The rules:
+
+* `federation.outbound` turns every one of them off;
+* **https only** unless `federation.outboundAllowInsecure`, and that exception
+  is logged on every request;
+* **no redirect is followed** — a 302 from a token endpoint would hand the
+  client credential to whatever `Location` said;
+* the body is capped (`federation.maxResponseBytes`) and the request timed out
+  (`federation.outboundTimeoutMs`), because a browser is waiting;
+* nothing that comes back is trusted until it is verified.
+
+SAML 2.0, SAML 1.1 and WS-Federation need no back channel at all, and an OIDC
+partner can be used with no egress through `fedResponseType: id_token` and its
+keys pasted into `fedJwks`.
+
+### Not implemented
+
+* Decrypting an `<EncryptedAssertion>` a partner sends — refused, naming the
+  cause (`STS-FED-0011`).
+* Consuming a federated **sign-out** — a `wsignout1.0` or `<LogoutRequest>`
+  arriving at the ACS is refused (`STS-FED-0024`).
+* Refreshing a partner's tokens, or re-checking a federated person after the
+  session exists.
+* Validating the partner's certificate against a CA or its validity dates — it
+  is a pinned key; only its revocation is checked.
+* Restricting **which** people a partner may assert.
+
+## Development and product mode
+
+The refusals above are the same in both modes — federation is not permissive in
+development. What the mode changes:
+
+| | Development | Product |
+|---|---|---|
+| A person with no directory entry | created on first sign-in unless `fedAutocreateUsers` is off | **never created**: the person must already exist, or the sign-in is refused `STS-FED-0090` and the partner's attributes are written onto the entry that does exist |
+| Revocation of the partner's signing certificate (`pki.revocationCheck=auto`) | soft-fail: a status that cannot be fetched is accepted | hard-fail: a status that cannot be established is refused |
+
+See [What is not checked](what-is-not-checked.md), *Federation inverts all of
+this*.
+
+## Configuration
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `federation.enabled` | `STS_FEDERATION_ENABLED` | `true` | yes | Whether `/federation` answers at all; off, every route 404s and no partner button appears, with no relationship changed. |
+| `federation.max` | `STS_FEDERATION_MAX` | `50` | yes | How many relationships may exist under `ou=federations`; past it a new one is refused, never an old one evicted. |
+| `federation.usernamePrefix` | `STS_FEDERATION_USERNAME_PREFIX` | *(empty)* | yes | Put in front of every federated username, so a federated `alice` and the local `alice` are two entries; empty makes them one. |
+| `federation.loginButtons` | `STS_FEDERATION_LOGIN_BUTTONS` | `true` | yes | Show a button per usable service-provider-side relationship on `/authn/login`. |
+| `federation.outbound` | `STS_FEDERATION_OUTBOUND` | `true` | yes | Whether this service may call a partner's token, UserInfo or JWKS endpoint at all. |
+| `federation.outboundTimeoutMs` | `STS_FEDERATION_OUTBOUND_TIMEOUT_MS` | `15000` | yes | How long to wait for a partner before the sign-in fails with an error naming the timeout. |
+| `federation.outboundAllowInsecure` | `STS_FEDERATION_OUTBOUND_ALLOW_INSECURE` | `false` | yes | Accept an `http://` partner endpoint and an untrusted certificate, logged on every request. |
+| `federation.requestTtlMin` | `STS_FEDERATION_REQUEST_TTL_MIN` | `10` | yes | How long an outbound sign-in's context is remembered; a later response is refused as unsolicited. |
+| `federation.maxContexts` | `STS_FEDERATION_MAX_CONTEXTS` | `500` | yes | How many in-flight sign-in contexts are held per trust realm; past it the oldest is dropped. |
+| `federation.maxApplicationLength` | `STS_FEDERATION_MAX_APPLICATION_LENGTH` | `256` | yes | The longest `?application=` a federated login carries across the round trip. |
+| `federation.maxApplicationUse` | `STS_FEDERATION_MAX_APPLICATION_USE` | `64` | yes | How many per-application usage rows one relationship keeps; the busiest are kept. |
+| `federation.releaseIndexTtlMs` | `STS_FEDERATION_RELEASE_INDEX_TTL_MS` | `5000` | yes | How long the index of release lists is reused before it is rebuilt; `0` rebuilds it for every token. |
+| `federation.maxResponseBytes` | `STS_FEDERATION_MAX_RESPONSE_BYTES` | `262144` | yes | The cap on a partner's token response, UserInfo document or JWKS. |
+| `federation.jwtAlgorithms` | `STS_FEDERATION_JWT_ALGORITHMS` | `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512` | yes | The JWS algorithms a partner's ID Token or JWT access token may use; it only narrows, never admitting `none` or an HMAC. |
+| `federation.spNameIdFormat` | `STS_FEDERATION_SP_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` | yes | The `<md:NameIDFormat>` published in `/federation/metadata/{id}`. |
+
+What this service calls itself to a partner is derived from the URL the browser
+reached it at; `global.publicBaseUrl` pins it for everything, and
+`fedLocalEntityId` on one relationship pins it for that partner.
+
+This table is a copy of rows in `common/config.js`; the live source is
+`/admin/federation` and `GET /admin-api/config`.
+
+See [Configuration](configuration.md) for how a value is resolved and where it
+is changed: on `/admin/federation`, through `POST /admin-api/config/set`, or in
+an appconfig file.
+
+### The relationship's own fields
+
+These are attributes of the relationship entry, set on `/admin/federation` or
+`/admin-api/federation`, not settings.
+
+| Field | Side | What it holds |
+|---|---|---|
+| `fedName`, `fedEnabled` | both | a display name; whether the relationship does anything (created `FALSE`) |
+| `fedPeer` | both | the partner's own identifier — entityID, issuer or `wtrealm`; required and checked on the service-provider side |
+| `fedLocalEntityId` | SP | what this service is called to this partner, when not the derived name |
+| `fedSsoUrl` | SP | where the browser is sent |
+| `fedTokenUrl`, `fedUserinfoUrl` | SP | the two URLs this service dials for an OAuth-shaped partner |
+| `fedJwksUri`, `fedJwks` | SP | the partner's keys, fetched or pasted (pasted is read first and never refreshed) |
+| `fedSigningCertificate` | SP | the partner's signing certificate, base64 DER — what every SAML and WS-Federation assertion is verified against |
+| `fedClientId`, `fedClientSecret` | SP | this service's client credentials at the partner |
+| `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` or `id_token` |
+| `fedBinding`, `fedSignRequest` | SP | the outbound SAML binding; whether the `AuthnRequest` is signed |
+| `fedUsernameSource`, `fedAttributeMap` | SP | which incoming value is the username; extra attribute mappings |
+| `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAllowUnsolicited` | SP | the provisioning switches; accepting a response nobody asked for |
+| `fedApplication` | IdP | the partner's entry under `ou=applications` |
+| `fedAuthnMechanism`, `fedAuthnRelationship` | IdP | how this service authenticates for the partner |
+| `fedRelease` | IdP | the attributes released to the partner |
+
+What each protocol requires before a relationship is usable: `fedSsoUrl` and
+`fedPeer` always; `fedSigningCertificate` for the three SAML-shaped protocols;
+`fedClientId` for OIDC; `fedTokenUrl` and `fedClientId` for OAuth 2.0. A missing
+one is named on the page and the relationship refuses until it is filled.
+
+## Design decisions
+
+* **A relationship must be configured, and what it configures is a key.**
+  `/federation/acs/{id}` receives an unauthenticated request claiming to be a
+  person, and the session it produces is the one every protocol and the console
+  read. "Accept any SAML Response" would be an authentication bypass for the
+  whole process, so there is no permissive version to offer.
+* **Created disabled; enabled as a second act; half-configured refuses.** A
+  partner that half-worked would look finished from every angle except the one
+  where it accepts something it should not.
+* **Verified against the relationship's certificate, never the document's.** A
+  signature carrying its own certificate proves only that somebody signed it;
+  pinning the key is the difference between a check and a decoration.
+* **Issuer and audience are refusals, not warnings.** An assertion a partner
+  minted for another of its relying parties verifies against the same key, so
+  accepting any audience would let anybody holding one sign in here.
+* **The gate is on the signer, not the subject.** Once an assertion verifies,
+  any person it names is accepted; which people exist is a provisioning
+  question, answered by `fedAutocreateUsers` and the mode.
+* **One path receives all five protocols.** A SAML ACS, a `wreply` and a
+  `redirect_uri` are three names for "where the answer comes back"; five paths
+  would be four more ways to configure the wrong one.
+* **The return address is kept on the server.** `RelayState`, `wctx` and
+  `state` carry only a handle, because a return URL in the parameter is an open
+  redirect for anybody who can forge one.
+* **A failure is shown, recorded and not redirected.** The person already
+  signed in at the partner; the page names the check this service disliked, and
+  the relationship records it as its last error.
+* **Unmapped attributes are listed, not stored under their own names.** The
+  directory has no schema, so a wrongly named attribute would be accepted
+  silently forever.
+* **An empty release list filters nothing.** "No policy" and "release nothing"
+  must be different states, or registering a partner would silently change
+  what it receives.
+* **Only administrator-configured URLs are dialled.** A partner's token
+  endpoint was written down by somebody configuring the partnership; a
+  `jwks_uri` sent to dynamic registration or a WS-Federation `wreqptr` was
+  chosen by a caller and is still never followed.
+* **The outbound HTTP-POST binding is a real form with a real button.** A
+  person leaving this service for a foreign identity provider is the moment a
+  deliberate click is worth having, so federation adds no script to any page.
+* **Federated identities share the local namespace unless told otherwise.**
+  `federation.usernamePrefix` is empty so a mock pointed at a partner returns
+  familiar names; set it when the question is whether the two namespaces
+  should meet.
+
+## In the running service
+
+* **Protocols → Federation** (`/admin/federation`): every relationship in both
+  directions with its state and readiness, the URL to give each partner, the
+  unmapped attributes a partner sent, create and edit forms, and the
+  `federation.*` settings.
+* **`/admin/federation/map`**: the register drawn as a picture — applications
+  and foreign service providers on the left, the trust realm in the middle,
+  identity providers on the right; an arrow is a request. Lines are coloured
+  green (ready), grey (disabled), red (enabled and not configured) and amber (a
+  broker whose onward partner is unusable). It also shows per-application
+  sign-in counts and names the remainder that belongs to no application.
+  `?format=svg` and `?format=json` return the picture and the graph.
+* **`GET /federation`**: the public description, with the URL to configure at
+  each partner.
+* **Management API**: `GET /admin-api/federation` and
+  `POST /admin-api/federation/{action}` (`create` and its siblings) — see
+  `/admin-api/openapi.json`.
+* **Every federation failure** is recorded under an `STS-FED-NNNN` code on the
+  audit row and in the log, never sent to the client — see
+  [Error codes](error-codes.md).
+
+## Related
+
+* [Sessions](sessions.md) — the session a federated sign-in starts
+* [Authentication](authentication.md) — the sign-in screen, the partner buttons
+  and the chooser
+* [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md),
+  [WS-Federation](ws-federation.md), [OAuth 2.0 & OpenID Connect](oauth-oidc.md)
+  — the same protocols with this service as the identity provider
+* [Kerberos](kerberos.md) — the `spnego` mechanism
+* [SCIM](scim.md) — pre-provisioning people a relationship will not create
+* [Trust realms](trust-realms.md) — the register is per realm
+* [PKI](pki.md) — revocation checking of a partner's certificate
+* [What is not checked](what-is-not-checked.md)
+* [Configuration](configuration.md)

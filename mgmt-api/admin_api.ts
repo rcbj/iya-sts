@@ -1093,8 +1093,8 @@ class AdminApi {
       { path: '/oid4vci-settings', console: '/admin/oid4vci', tag: 'OpenID4VCI',
         operationId: 'getOid4vciSettings',
         summary: 'The credential issuer\'s own settings',
-        description: 'The nine `oid4vci.*` settings: the wallet an offer ' +
-                     'sends a holder to, the authorization server the ' +
+        description: 'The `oid4vci.*` settings, among them the wallet an ' +
+                     'offer sends a holder to, the authorization server the ' +
                      'credential endpoint will take a token from, the batch ' +
                      'size, the deferred issuance timings, the offer ' +
                      'username, whether a credential request must be ' +
@@ -1166,17 +1166,18 @@ class AdminApi {
                      'recovery code, so `status` has no specification ' +
                      'column: every field in it is a decision this service ' +
                      'made, and `bitsPerCode` is the one worth reading ' +
-                     'first.\n\n**A SET IS ISSUED AUTOMATICALLY AND ONCE**, ' +
-                     'by the act of enrolling a second factor. Nothing on ' +
-                     'this API issues one on request and nothing on it reads ' +
-                     'a code back; `POST /users/clear-backup-codes` deletes ' +
-                     'a set, which is the only route to a second ' +
+                     'first.\n\n**A PERSON GENERATES THEIR OWN SET** on ' +
+                     '/portal/mfa, is shown it once, and it is stored as ' +
+                     'one scrypt hash per code only when they confirm they ' +
+                     'have kept it; generating again replaces it. Nothing ' +
+                     'on this API issues a set and nothing on it reads a ' +
+                     'code back; `POST /users/clear-backup-codes` deletes ' +
                      'one.\n\n**CHANGING THESE AFFECTS NEW SETS ONLY, AND NO ' +
                      'EXISTING SET IS INVALIDATED** — unlike `totp.*`, this ' +
                      'needs no paragraph about enrolments, because nothing ' +
                      'here was told to an app this service cannot reach. A ' +
-                     'recovery code is a string compared against a stored ' +
-                     'string.\n\nWho holds a set is `GET /users`, which ' +
+                     'recovery code is compared against its stored ' +
+                     'hash.\n\nWho holds a set is `GET /users`, which ' +
                      'reports the counts and never the codes.' },
       { path: '/webauthn', console: '/admin/webauthn', tag: 'WebAuthn',
         operationId: 'getWebauthnSettings',
@@ -1366,15 +1367,19 @@ class AdminApi {
                      'with the node answering (`nodes[].agrees`).' },
       { path: '/wstrust', console: '/admin/wstrust', tag: 'WS-Trust',
         operationId: 'getWsTrustSettings',
-        summary: 'The security token service\'s own setting',
-        description: 'One setting — who a WS-Trust token says issued it — ' +
-                     'and it is a different setting from `saml.issuer`, ' +
-                     'which is the Issuer INSIDE the assertion. They share a ' +
-                     'default and were one setting until they had to ' +
-                     'differ.\n\nWhat an assertion CONTAINS is `GET ' +
-                     '/saml-attributes`: WS-Trust here issues SAML ' +
-                     '1.1 and SAML 2.0 assertions through the same two ' +
-                     'builders the SAML profiles use.' },
+        summary: 'The security token service\'s own settings',
+        description: 'The `wstrust.*` settings: who a WS-Trust JWT says ' +
+                     'issued it, the token lifetime and its ceiling, and ' +
+                     'the JWT signing algorithm. `wstrust.issuer` is a ' +
+                     'different setting from `saml.issuer`, which is the ' +
+                     'Issuer INSIDE an assertion; they share a default and ' +
+                     'were one setting until they had to differ.\n\n' +
+                     'WS-Trust here issues a JWT when the request\'s ' +
+                     'TokenType is `urn:ietf:params:oauth:token-type:jwt` ' +
+                     'and a SAML 2.0 assertion for any other TokenType, ' +
+                     'built by the same builder the SAML 2.0 profile uses; ' +
+                     'what that assertion CONTAINS is `GET ' +
+                     '/saml-attributes`.' },
       { path: '/wsfed', console: '/admin/wsfed', tag: 'WS-Federation',
         operationId: 'getWsFedSettings',
         summary: 'The passive requestor profile\'s own setting',

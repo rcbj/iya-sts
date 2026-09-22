@@ -9483,8 +9483,11 @@ const SETTINGS = [
                  '— and this one answers a question about THIS service. Two ' +
                  'questions, two documents, so that editing the demo policy ' +
                  'cannot change who may sign in and narrowing a role cannot ' +
-                 'change what /xacml/pdp answers. It is created from the ' +
-                 '`role-issuance` template and seeded on first start.' },
+                 'change what /xacml/pdp answers. The `role-issuance` ' +
+                 'policy is BUILT IN and is never seeded into ou=policies: ' +
+                 'a repository entry with this name, written into a realm\'s ' +
+                 'own ou=policies, overrides it for that realm alone, and ' +
+                 'deleting the entry brings the built-in back.' },
 
   // --- Audit log -----------------------------------------------------------
   //

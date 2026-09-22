@@ -1537,7 +1537,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `spiffe.enabled` | `STS_SPIFFE_ENABLED` | `true` | yes | Whether the three SPIFFE surfaces answer. |
-| `spiffe.trustDomain` | `STS_SPIFFE_TRUST_DOMAIN` | `example.org` | **restart**, and **settable on a REALM** — the process's authorities are generated at startup and every certificate they hold names this trust domain; a realm is created with SPIFFE off and builds its own when it is turned on | The trust domain this service is the issuing authority for: the authority part of every SPIFFE ID it mints, so spiffe://example.org/… by default. **It is also the common root every other realm's is built from** — a realm created here is given `<realm>.<this value>`, the way it is given an entityID of its own. Set it on a realm to name that realm's domain outright. Once a realm's authorities are built the name is fixed, and a later change is reported as drift on `/admin/spiffe` rather than acted on. |
+| `spiffe.trustDomain` | `STS_SPIFFE_TRUST_DOMAIN` | `example.org` | **restart**, and **settable on a REALM** — the process's authorities are generated at startup and every certificate they hold names this trust domain; a realm is created with SPIFFE off and builds its own when it is turned on | The trust domain this service is the issuing authority for: the authority part of every SPIFFE ID it mints, so spiffe://example.org/… by default. A realm created here is given **its own DNS domain** as its trust domain (since 2026-09-18; it was `<realm>.<this value>` before), the way it is given an entityID of its own. Set it on a realm to name that realm's trust domain outright. Once a realm's authorities are built the name is fixed, and a later change is reported as drift on `/admin/spiffe` rather than acted on. |
 | `spiffe.x509KeyType` | `STS_SPIFFE_X509_KEY_TYPE` | `ec-p256` | **restart** — the X.509 authority is generated with this key type at startup | The key the trust domain's X.509 authority is generated with, and therefore the key type of every X509-SVID it signs. EC P-256 by default because that is what SPIRE issues and what the X509-SVID specification recommends. |
 | `spiffe.jwtKeyType` | `STS_SPIFFE_JWT_KEY_TYPE` | `ec-p256` | **restart** — the JWT authority is generated with this key type at startup | The key the trust domain's JWT authority is generated with, which decides the `alg` of every JWT-SVID: ES256, ES384, ES512 or RS256. |
 | `spiffe.caTtl` | `STS_SPIFFE_CA_TTL` | `86400` | **restart** — the authority certificate is issued for this long at startup | How long the X.509 authority's own certificate is valid. |
@@ -2170,8 +2170,9 @@ written *from* Discovery and shares its member registry, so the overlap is real 
 than a coincidence that has to be maintained.
 
 **What it does not say is the part worth reading.**
-`display_values_supported`, the encryption members and `check_session_iframe` are all
-absent (`acr_values_supported` is published since RFC 9470 made the authorization endpoint
+`display_values_supported` and `check_session_iframe` are absent (the encryption
+members — ID Token, UserInfo and request object — are published now that each is
+implemented, ID Token encryption since 2026-09-17, and `acr_values_supported` is published since RFC 9470 made the authorization endpoint
 honour `acr_values` — see *Step-up authentication*), because none is implemented and an invented value is worse than the member's
 absence, which says exactly the right thing. `end_session_endpoint` *is* advertised
 because `/oauth2/logout` really does end the session — but it neither requires nor
@@ -2188,8 +2189,10 @@ reject; the inserted form behaves like its `oauth-authorization-server` twin.
 
 Writing the OIDC document beside the RFC 8414 one made three claims in the older
 document visibly untrue, and they were removed rather than copied across:
-`response_modes_supported` promised `form_post`, which `redirectBack()` has never done —
-it 302s, always — so a client asking for it sat waiting for a POST that could not come;
+`response_modes_supported` promised `form_post`, which `redirectBack()` did not do at
+the time — it 302'd, always — so a client asking for it sat waiting for a POST that
+could not come (`form_post` has since been built and is advertised again: see
+*`response_mode=form_post`, which this service advertised and did not have*, below);
 `ui_locales_supported` named four locales for a login screen that is written in English
 and never reads the parameter; and `scopes_supported` offered `address` and `phone`,
 each of which is a request for a named set of claims (OIDC Core 5.4) that `userFor()`
@@ -4432,7 +4435,8 @@ not. **The ceremony script is a separate resource** (`/authn/webauthn.js`) rathe
 an inline `<script>`, because `app.js` sets `script-src 'none'` on every response and
 that one page relaxes it to `'self'`: an inline script there simply would not run, with
 the button doing nothing and no error anywhere. And **the RP ID is this origin's host
-and is not configurable** — WebAuthn binds a ceremony to the calling origin, and that is
+unless `webauthn.rpId` widens it** to a registrable domain suffix of that host — never
+anything else — because WebAuthn binds a ceremony to the calling origin, and that is
 the whole of its phishing resistance.
 
 What comes out the other side is the point: a key **after a password** records
@@ -7254,7 +7258,8 @@ silent disagreement `config.js`'s header warns about.
 
 This service is a **SPIFFE issuing authority** for one trust domain **per trust
 realm** (`spiffe.trustDomain`, `example.org` by default for the process, and
-`<realm>.example.org` for every realm created under it). SPIFFE's server side is
+the realm's own DNS domain for every realm created under it). SPIFFE's server
+side is
 three separate things, and they are worth separating because they have almost
 nothing in common with each other:
 

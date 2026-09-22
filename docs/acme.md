@@ -192,13 +192,32 @@ answers `revoked`. An administrator can revoke any of them on `/admin/acme`.
 the certificate's validity, or — for a revoked certificate — a window in the
 past, which tells a client to renew now.
 
-## Settings
+## Configuration
 
-On **Protocols → ACME**, per realm: `acme.enabled`, `acme.allowedProfiles`,
-`acme.defaultProfile`, `acme.certificateLifetimeDays`, `acme.maxRequestBytes`,
-`acme.attemptsPerIdentity`, `acme.attemptsPerAddress`, `acme.nonceLifetimeS`,
-`acme.orderLifetimeS` and `acme.eabLifetimeS`. **Monitoring → ACME
-enrollments** shows what the server has done.
+Every `acme.*` setting is runtime and per trust realm, on **Protocols → ACME**
+(`/admin/acme`). **Monitoring → ACME enrollments** shows what the server has
+done.
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `acme.enabled` | `STS_ACME_ENABLED` | `true` | yes | Off makes every `/enroll/acme` endpoint answer 503 with a `serverInternal` problem naming the setting; accounts, orders and certificates are kept. |
+| `acme.allowedProfiles` | `STS_ACME_ALLOWED_PROFILES` | all nine leaf profiles | yes | The `/admin/pki` profiles an order may name and the directory advertises; the five CA, OCSP and KDC profiles are never issued whatever this says. |
+| `acme.defaultProfile` | `STS_ACME_DEFAULT_PROFILE` | `tls-client` | yes | The profile of an order that names none; it must also be in `acme.allowedProfiles`. |
+| `acme.certificateLifetimeDays` | `STS_ACME_CERTIFICATE_LIFETIME_DAYS` | `90` | yes | The validity of a certificate issued at finalize, shortened to the ACME Issuing CA's own expiry. |
+| `acme.maxRequestBytes` | `STS_ACME_MAX_REQUEST_BYTES` | `65536` | yes | A flattened JWS larger than this is refused (413) before it is parsed; a post-quantum CSR is the largest legitimate request. |
+| `acme.attemptsPerIdentity` | `STS_ACME_ATTEMPTS_PER_IDENTITY` | `30` | yes | Refused requests one account or EAB key id may make in a web-security window before `rateLimited`. |
+| `acme.attemptsPerAddress` | `STS_ACME_ATTEMPTS_PER_ADDRESS` | `120` | yes | Refused requests one client address may make in a web-security window before `rateLimited`. |
+| `acme.nonceLifetimeS` | `STS_ACME_NONCE_LIFETIME_S` | `300` | yes | How long a `Replay-Nonce` may wait before it is presented; each is accepted once. |
+| `acme.orderLifetimeS` | `STS_ACME_ORDER_LIFETIME_S` | `86400` | yes | How long an order stays pending or ready before it expires with its authorizations. |
+| `acme.eabLifetimeS` | `STS_ACME_EAB_LIFETIME_S` | `604800` | yes | How long an EAB key may wait before it binds an account; each binds one account and no other. |
+
+The nine leaf profiles are `tls-server`, `tls-client`, `tls-server-client`,
+`digital-signature`, `key-encipherment`, `code-signing`, `email`,
+`timestamping` and `smartcard-logon`. How many certificates one entry may hold
+across ACME, EST and SCEP is `pki.enrollmentMaxCertificatesPerEntry`
+([PKI](pki.md#configuration)). See [Configuration](configuration.md) for how a
+value resolves and where it is changed — the console page, or
+`POST /admin-api/config/set`.
 
 ## Development and product mode
 
@@ -206,6 +225,50 @@ In **product** mode a request that does not arrive over TLS is refused. In
 **development** mode ACME also answers over plain HTTP and logs that it did.
 Everything else is the same in both: the EAB MAC is verified, an account may be
 issued only for its own entry, and a host name must be registered.
+
+## Design decisions
+
+* **An account is bound to one directory entry, for life, through a required
+  External Account Binding.** Every certificate therefore names an entry and is
+  kept on it, and an administrator issues for somebody else only by creating an
+  EAB key for their entry — ACME has no other administrator's door. See
+  [above](#getting-an-external-account-binding-key).
+* **No challenge dials out.** This service never fetches from an address a
+  caller supplied, so `http-01`, `dns-01`, `tls-alpn-01` and `email-reply-00`
+  are not offered; an identifier is authorized from the entry and its
+  authorization is created `valid`. The challenge type, `sts-entry-binding-01`,
+  says what happened.
+* **An identifier the entry does not own fails the order at once.** It is
+  refused at `newOrder` with `rejectedIdentifier`, rather than leaving a
+  `pending` authorization no client could ever complete.
+* **A host name is issued only when an administrator registered it.** The same
+  registration serves ACME, EST and SCEP, and a wildcard only when written as a
+  wildcard — see [above](#host-names).
+* **The certificate is built from the order and the entry, never the CSR.** The
+  CSR must name exactly the order's identifiers, and the subject, the `urn:sts:`
+  name and the key usages come from the entry and the profile.
+* **ACME is CSR-only, and a private key is never kept.** The CA never sees the
+  key; a server-generated key pair is EST's `/serverkeygen`.
+* **The CA, OCSP-responder and KDC profiles are never issued.** Their holder
+  could issue certificates for anybody, sign `good` about a revoked certificate
+  or impersonate the realm's KDC — see [above](#profiles).
+* **`replaces` does not revoke.** RFC 9773's `replaces` is a statement about
+  renewal, and a client rolling over needs the old certificate to keep working
+  until it deploys the new one.
+* **A subscriber may give only the revocation reasons that are a subscriber's.**
+  Reasons 2 and 10 are an authority's, 6 (`certificateHold`) is the one
+  reversible reason, and 7 and 8 are unassigned or for delta CRLs; an
+  administrator on the console may use any reason.
+* **A nonce is spent only after the signature verifies.** Cheap checks run
+  first, so a forged request cannot burn a nonce a client is holding, and two
+  copies of one signed request cannot both pass.
+* **A nonce carries its own proof.** It is MAC'd with a secret every process —
+  and, on a shared store, every node — holds, so any process can check it with
+  no lookup; one from before a restart fails and is answered `badNonce` with a
+  fresh one, which a client retries.
+* **A post-quantum account key is refused.** An account is found by its key's
+  RFC 7638 thumbprint, and those key types have none; a post-quantum
+  *certificate* key is fine.
 
 ## What is not implemented
 
@@ -221,3 +284,15 @@ issued only for its own entry, and a host name must be registered.
 Errors are RFC 7807 problem documents with `urn:ietf:params:acme:error:*`
 types; the operator-facing `STS-ACME-*` codes are on the
 [error code page](error-codes.md) and in the audit log, never in a response.
+
+## Related
+
+* [PKI](pki.md) — the realm's certificate authority, its profiles, CRLs and
+  OCSP responders
+* [EST](est.md) and [SCEP](scep.md) — the other two enrollment protocols, over
+  the same rules
+* [TLS and mutual TLS](tls.md) — where an issued `tls-client` certificate signs
+  a person in
+* [Trust realms](trust-realms.md)
+* [What is not checked](what-is-not-checked.md)
+* [Configuration](configuration.md) and [error codes](error-codes.md)

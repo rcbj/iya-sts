@@ -21,56 +21,67 @@ nothing because something named it, invents no claim value, and implies RFC
 [What is not checked](what-is-not-checked.md) says exactly where the line is in
 each.
 
-## Index of pages
+## Where to read
 
-Every page on this site, grouped by what a reader is looking for.
+The sidebar on every page is the full list, grouped as below. The protocol
+pages share one shape — features, what development and product mode change,
+every setting with its environment variable and default, and the design
+decisions behind the behaviour — so the same question has the same place on
+each.
 
-**Using it**
+**Start here** —
+[Getting started](getting-started.md) ·
+[Architecture](architecture.md) ·
+[Configuration](configuration.md) ·
+[Endpoints](endpoints.md) ·
+[Trust realms](trust-realms.md) ·
+[What is not checked](what-is-not-checked.md) ·
+[Accepted tokens](accepted-tokens.md) ·
+[Error codes](error-codes.md)
 
-- [Getting started](getting-started.md) — running it, the ports, the container
-- [Architecture](architecture.md) — the diagram, layer by layer: the leader process and its listeners, the dispatcher and worker pools, the subsystems and hosted surfaces, the session every artifact is projected from, and the stores underneath
-- [Configuration](configuration.md) — every setting, and which can change at runtime
-- [Endpoints](endpoints.md) — how to find out, rather than a list that goes stale
-- [Trust realms](trust-realms.md) — several logical identity services in one process, told apart by a path segment: what each one separates, and what every realm shares
-- [What is not checked](what-is-not-checked.md) — what development and product mode each check, what neither does, and the features that refuse in both
-- [Accepted tokens](accepted-tokens.md) — every door that takes a token from a caller, what the token must be, and the one place a token from another issuer still gets through
-- [Error codes](error-codes.md) — every way this service can fail or refuse, by subsystem: the `STS-…` code recorded on the audit row and in the log, and what the client is told instead (a code is never sent to a client)
+**Administration** — [Management API](management-api.md): `/admin-api`, every
+console control reachable by a machine with an OAuth 2.0 access token.
 
-**Sessions and signals**
+**Sessions and signals** —
+[Sessions](sessions.md) ·
+[Signing out](signing-out.md) ·
+[CAEP events](caep-events.md) ·
+[Signals received](signals-received.md)
 
-- [Sessions](sessions.md) — what a session IS here: the browser sign-on session every protocol shares, the Kerberos TGT, the LDAP connection, the five things that are not sessions, and the six places one is visible
-- [Signing out](signing-out.md) — `/logout`: one list of everything you are still signed into, across every family, and what cannot be ended
-- [CAEP events](caep-events.md) — the eight Continuous Access Evaluation Profile events: which activities in this service emit each one, which five nobody here can cause and how to send those by hand, and the three gates every event passes on its way to a receiver
-- [Signals received](signals-received.md) — the admin console and the user portal are registered Shared Signals receivers of this service's own transmitter: why the delivery is a real HTTP push rather than a function call, the five reasons an inbox is empty, and what a person is shown about themselves and never about anybody else
+**Operating it** —
+[Persistence](persistence.md) ·
+[Encryption at rest](encryption-at-rest.md) ·
+[Caches](caches.md) ·
+[A cluster in AWS](aws-cluster.md)
 
-**Assertions at the token endpoint**
+**For contributors** —
+[Repository layout](layout.md) ·
+[Parent project migration](parent-project-migration.md)
 
-- [JWT assertions](jwt-assertions.md) — RFC 7521 and RFC 7523: a signed JWT instead of a client secret, and instead of an authorization code — two uses of one format, and why they are not the same feature
-- [SAML 2.0 assertions](saml-assertions.md) — RFC 7521 and RFC 7522: the same framework's other profile, a separate implementation, and a separate key pair per application that cannot sign for the JWT one
+### Protocols, by the admin console's Protocols menu
 
-**Authorization**
+Every page under **Protocols** in the admin console, and the page here that
+documents it.
 
-- [GNAP](gnap.md) — an RFC 9635 authorization server per trust realm, with RFC 9767's resource server connections: a grant that starts from a key and is negotiated rather than redirected
-- [Remote PEP](remote-pep.md) — the second container: a remote XACML Policy Enforcement Point that pulls this service's policy repository and decides in its own process, with a worked authorization decision for an application
-
-**Certificates**
-
-- [PKI](pki.md) — the certificate authority at `/admin/pki`: one Root for the service, an Intermediate per trust realm, an Issuing CA per use case, and every key pair this service generates as a leaf of it
-- [ACME](acme.md) — an RFC 8555 server per trust realm: accounts bound for life to one person or application by an External Account Binding key, identifiers authorized from the directory with no challenge dialling out, the nine certificate profiles, revocation and RFC 9773 renewal information, with certbot and acme.sh examples
-- [EST](est.md) — an RFC 7030 server per trust realm: a PKCS#10 request from an authenticated device, person or application, answered from the realm's EST Issuing CA and kept on the directory entry it names
-- [SCEP](scep.md) — an RFC 8894 server per trust realm: a device with a single-use challenge password, a signed and encrypted request, and a certificate from the realm's SCEP Issuing CA
-
-**Operating it**
-
-- [Persistence](persistence.md) — what survives a restart and what never can: three modes, and the reason nothing this service mints is ever written down
-- [Encryption at rest](encryption-at-rest.md) — the two different questions behind that phrase: what this service seals before a value reaches a store (and why there is ONE key for every trust realm rather than one each), and what encrypts everything else — LUKS, ZFS, cloud disks, the forks that have TDE, and why column-level encryption leaves plaintext in the WAL
-- [Caches](caches.md) — everything this service remembers instead of working out or fetching again, and every replay store that makes a one-time value work once: what each holds, how long, the setting that bounds it, and the windows in which an answer can be out of date
-- [A cluster in AWS](aws-cluster.md) — three active-active nodes on ECS Fargate across three availability zones behind a Network Load Balancer, RDS PostgreSQL 18 with a read replica, the key and database password in Secrets Manager: the Terraform, what it costs, and the workflow that brings one up, runs the suite and tears it down
-
-**For contributors**
-
-- [Repository layout](layout.md) — where the code is
-- [Parent project migration](parent-project-migration.md) — what the OAuth2/OIDC Debugger, of which this repository is a submodule, needs when its `sts/` pin is bumped: the paths it reaches in by, and the COPY set that has to follow every new require
+| Console group | Console pages | Documentation |
+|---|---|---|
+| OAuth2 / OIDC | `/admin/oauth2`, `/admin/authorization-servers`, `/admin/token-lifetimes`, `/admin/claims`, `/admin/userinfo-claims` | [OAuth 2.0 and OpenID Connect](oauth-oidc.md), [Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS](oauth-security.md), [JWT assertions](jwt-assertions.md) |
+| SAML | `/admin/saml2`, `/admin/saml11`, `/admin/saml-assertions`, `/admin/saml-attributes` | [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md), [SAML assertions as grants (RFC 7522)](saml-assertions.md) |
+| Verifiable Credentials | `/admin/oid4vci`, `/admin/vc`, `/admin/vc-status`, `/admin/oid4vp`, `/admin/vc-verifier-config` | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) |
+| XACML | `/admin/xacml`, `/admin/xacml/policies`, `/admin/xacml/editor`, `/admin/xacml/peps`, `/admin/xacml/decide` | [XACML 3.0 and ALFA](xacml.md), [Remote PEP](remote-pep.md) |
+| SCIM | `/admin/scim` | [SCIM 2.0](scim.md) |
+| Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) |
+| Federation | `/admin/federation` | [Federation](federation.md) |
+| GNAP | `/admin/gnap` | [GNAP](gnap.md) |
+| TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md) |
+| Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) |
+| LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) |
+| WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) |
+| WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) |
+| PKI | `/admin/pki` | [PKI](pki.md) |
+| Certificate enrollment | `/admin/acme`, `/admin/est`, `/admin/scep` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md) |
+| SPIFFE | `/admin/spiffe`, `/admin/spiffe/entries`, `/admin/spiffe/agents` | [SPIFFE](spiffe.md) |
+| TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) |
 
 ## Start here
 
@@ -124,34 +135,38 @@ the diagram and a walk through each layer.
 
 ## What it speaks
 
-| Family | Where |
-|---|---|
-| OAuth 2.0 and OpenID Connect — a full authorization server | `/oauth2/*`, `/.well-known/openid-configuration` |
-| DPoP (RFC 9449) and certificate-bound tokens (RFC 8705) | the token endpoint and the four protected endpoints |
-| RFC 9700, the Security BCP, as an optional MODE | `GET /oauth2/rfc9700` |
-| OAuth 2.1 (draft-16) as an optional MODE, which turns the one above on | `GET /oauth2/oauth21` |
-| WS-Trust 1.0 – 1.4 | `/wstrust` |
-| WS-Federation 1.2, passive requestor, with a mock relying party | `/wsfed`, `/wsfed/rp` |
-| SAML 2.0 Web Browser SSO — a full identity provider, all three bindings | `/saml2`, `/saml2/metadata/{sp}`, `/saml2/sp` |
-| SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}`, `/saml11/rp` |
-| SAML 2.0 and SAML 1.1 assertions | inside all four above |
-| **Federation** — this service as either end of a relationship with a foreign identity service, in five of those protocols | `/federation`, `/admin/federation` |
-| **JWT assertions (RFC 7521, RFC 7523)** — both halves: an assertion instead of a client secret, and an assertion instead of an authorization code | the token endpoint |
-| **SAML 2.0 assertions (RFC 7521, RFC 7522)** — the same framework's other profile: a signed `<saml:Assertion>` instead of a client secret, and instead of an authorization code. A **separate key pair per application** from the JWT one, and neither can sign for the other | the token endpoint |
-| **A certificate authority** — ONE Root for the service, an Intermediate per trust realm and per the process, an Issuing CA per use case, and **every key pair this service generates as a leaf of it** | `/admin/pki`, `/admin-api/pki` |
-| WebAuthn Level 3 over FIDO CTAP2, the relying party's half — a second factor or the only credential on an account | the login screen, `/portal/keys`, `/admin/webauthn` |
-| **TOTP (RFC 6238)** — an authenticator app as a second factor, enrolled as a QR code and **genuinely verified** | `/portal/mfa`, `/authn/totp`, `/admin/totp` |
-| **Recovery codes** — the way back in when the second factor is not to hand, issued **automatically and once** by the act of enrolling one, and the only mechanism here that no specification defines | `/portal/mfa`, `/authn/backup-code`, `/admin/backup-codes` |
-| Kerberos v5 — a KDC, a protected service, and MS-KKDCP | TCP/UDP 88, `/KdcProxy` |
-| SPNEGO (RFC 4559/4178) | `/spnego` |
-| LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 |
-| SCIM 2.0 provisioning | `/scim/v2` |
-| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls`, `/tls/sign-in` |
-| SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets |
-| OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` |
-| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` |
-| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc-status` |
-| W3C DID Core with DIF domain linkage | `/.well-known/did.json` |
+| Family | Where | Read |
+|---|---|---|
+| OAuth 2.0 and OpenID Connect — a full authorization server | `/oauth2/*`, `/.well-known/openid-configuration` | [oauth-oidc](oauth-oidc.md) |
+| DPoP (RFC 9449) and certificate-bound tokens (RFC 8705) | the token endpoint and the four protected endpoints | [oauth-security](oauth-security.md) |
+| RFC 9700, the Security BCP, as an optional MODE | `GET /oauth2/rfc9700` | [oauth-security](oauth-security.md) |
+| OAuth 2.1 (draft-16) as an optional MODE, which turns the one above on | `GET /oauth2/oauth21` | [oauth-security](oauth-security.md) |
+| WS-Trust 1.0 – 1.4 | `/sts` | [ws-trust](ws-trust.md) |
+| WS-Federation 1.2, passive requestor, with a mock relying party | `/wsfed`, `/wsfed/rp` | [ws-federation](ws-federation.md) |
+| SAML 2.0 Web Browser SSO — a full identity provider, all three bindings | `/saml2`, `/saml2/metadata/{sp}`, `/saml2/sp` | [saml2-sso](saml2-sso.md) |
+| SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}`, `/saml11/rp` | [saml11](saml11.md) |
+| SAML 2.0 and SAML 1.1 assertions | inside all four above | [saml2-sso](saml2-sso.md) |
+| **Federation** — this service as either end of a relationship with a foreign identity service, in five of those protocols | `/federation`, `/admin/federation` | [federation](federation.md) |
+| **JWT assertions (RFC 7521, RFC 7523)** — both halves: an assertion instead of a client secret, and an assertion instead of an authorization code | the token endpoint | [jwt-assertions](jwt-assertions.md) |
+| **SAML 2.0 assertions (RFC 7521, RFC 7522)** — the same framework's other profile: a signed `<saml:Assertion>` instead of a client secret, and instead of an authorization code. A **separate key pair per application** from the JWT one, and neither can sign for the other | the token endpoint | [saml-assertions](saml-assertions.md) |
+| **A certificate authority** — ONE Root for the service, an Intermediate per trust realm and per the process, an Issuing CA per use case, and **every key pair this service generates as a leaf of it** | `/admin/pki`, `/admin-api/pki` | [pki](pki.md) |
+| WebAuthn Level 3 over FIDO CTAP2, the relying party's half — a second factor or the only credential on an account | the login screen, `/portal/keys`, `/admin/webauthn` | [authentication](authentication.md) |
+| **TOTP (RFC 6238)** — an authenticator app as a second factor, enrolled as a QR code and **genuinely verified** | `/portal/mfa`, `/authn/totp`, `/admin/totp` | [authentication](authentication.md) |
+| **Recovery codes** — the way back in when the second factor is not to hand, generated by the person, shown **once** and stored as a hash, and the only mechanism here that no specification defines | `/portal/mfa`, `/authn/backup-code`, `/admin/backup-codes` | [authentication](authentication.md) |
+| Kerberos v5 — a KDC, a protected service, and MS-KKDCP | TCP/UDP 88, `/KdcProxy` | [kerberos](kerberos.md) |
+| SPNEGO (RFC 4559/4178) | `/spnego` | [kerberos](kerberos.md) |
+| LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 | [ldap](ldap.md) |
+| SCIM 2.0 provisioning | `/scim/v2` | [scim](scim.md) |
+| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls`, `/tls/sign-in` | [tls](tls.md) |
+| SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets | [spiffe](spiffe.md) |
+| OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md) |
+| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` | [oid4vp](oid4vp.md) |
+| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc-status` | [oid4vci](oid4vci.md) |
+| W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
+| Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |
+| XACML 3.0 and ALFA — a PDP, a policy repository, and the PEPs that decide this service's own issuance | `/xacml/*`, `/admin/xacml` | [xacml](xacml.md) |
+| GNAP (RFC 9635) with RFC 9767 resource server connections | `/gnap/*`, `/admin/gnap` | [gnap](gnap.md) |
+| ACME, EST and SCEP certificate enrollment | `/enroll/acme`, `/.well-known/est`, `/enroll/scep` | [acme](acme.md), [est](est.md), [scep](scep.md) |
 
 ## The four things to know before you rely on it
 
