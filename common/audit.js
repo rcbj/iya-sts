@@ -396,6 +396,9 @@ const ACTIONS = [
   // units it moved: `common/signing_rotation.ts`.
   { action: 'keys.rotate', category: 'service',
     label: 'A realm\'s signing keys were rotated' },
+  { action: 'keys.rotate.emergency', category: 'service',
+    label: 'A realm\'s signing keys were rotated in an EMERGENCY: ' +
+           'certificates revoked for keyCompromise, sessions ended' },
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
 

@@ -2323,6 +2323,30 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API key export endpoint.");
           const body = self.withAction(req, parseBody(req));
+          // ROTATE AND EMERGENCY (#48): the console's `/admin/keys/rotate`,
+          // through the one action it posts to. `crypto_metadata.ts` is
+          // required HERE, at the request, because it is 20a in the order and
+          // this module is 19.
+          if (body.action === 'rotate' || body.action === 'emergency') {
+            const result = require('../admin-ui/crypto_metadata')
+              .keysAction(req, body, 'the management API at ' +
+                          '/admin-api/keys/' + body.action);
+            if (!result.ok) {
+              errorCodes.mark(res, result.errorCode || 'STS-API-0014');
+              self.sendJson(res, result.status || 400,
+                            { ok: false, errors: result.errors });
+              log.debug("Leaving the management API key endpoint. Refused.");
+              return;
+            }
+            self.sendJson(res, 202, { ok: true, accepted: true,
+              runId: result.runId, emergency: result.emergency,
+              units: result.units, message: result.message,
+              run: BASE + '/scheduler?run=' +
+                   encodeURIComponent(result.runId) });
+            log.debug("Leaving the management API key endpoint. Queued " +
+                      result.runId + ".");
+            return;
+          }
           if (body.action !== 'export') {
             // THE SENTENCE IS THE SHAPE THE SUITE READS, and that is not a
             // formatting preference: `sts_admin_api_operations.js` matches
@@ -2333,7 +2357,7 @@ class AdminApi {
             errorCodes.mark(res, 'STS-API-0014');
             self.sendJson(res, 400, { ok: false, errors: [
               'Unknown action "' + body.action + '". The actions here are: ' +
-              'export.'] });
+              'export, rotate, emergency.'] });
             log.debug("Leaving the management API key export endpoint. " +
                       "Unknown action.");
             return;

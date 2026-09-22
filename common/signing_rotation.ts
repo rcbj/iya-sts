@@ -109,6 +109,7 @@ interface SigningRotationDeps {
   revocation: () => Json;
   ssf: () => Json;
   applications: () => Json;
+  authn: () => Json;
   now: () => number;
 }
 
@@ -151,6 +152,9 @@ class SigningRotation {
       },
       applications: function (): Json {
         return require('./applications');
+      },
+      authn: function (): Json {
+        return require('../authn/authn');
       },
       now: function (): number {
         return Date.now();
@@ -399,12 +403,21 @@ class SigningRotation {
       return !o.units || !o.units.length || o.units.indexOf(u.unit) >= 0 ||
              o.units.indexOf(u.useCase) >= 0;
     });
+    // AN EMERGENCY (#48): every key of every unit named is presumed
+    // compromised. Its certificates are revoked FIRST, as keyCompromise —
+    // a certificate already revoked keeps its first reason, and the
+    // promotion's own certification would otherwise supersede them — then
+    // the units rotate with no grace, and every session of the realm ends.
+    let compromised: Json[] = [];
+    if (o.emergency) {
+      compromised = this.revokeCompromised(realmId, keys, wanted);
+    }
     // One promotion per distinct grace, so each unit keeps its own; almost
     // always one call, two when the credential signer is a unit of its own.
     const byGrace: Json = {};
     const self = this;
     wanted.forEach(function (u: Json): void {
-      const g = String(self.graceMs(u.unit, keys));
+      const g = String(o.emergency ? 0 : self.graceMs(u.unit, keys));
       (byGrace[g] = byGrace[g] || []).push(u.unit);
     });
     let rotated: Json[] = [];
@@ -412,7 +425,8 @@ class SigningRotation {
     // THE REFRESH-TOKEN ENCRYPTION KEYS (D7), when named — or with every unit.
     if (!o.units || !o.units.length || o.units.indexOf('refresh:enc') >= 0 ||
         o.units.indexOf('refresh') >= 0) {
-      const r = helpers.rotateRefreshTokenKeys(realmId, this.refreshGraceMs(),
+      const r = helpers.rotateRefreshTokenKeys(realmId,
+        o.emergency ? 0 : this.refreshGraceMs(),
         'a rotation of the refresh-token keys (' +
         String(o.reason || 'scheduled') + ')');
       if (!r.ok) {
@@ -429,7 +443,8 @@ class SigningRotation {
     const graces = Object.keys(byGrace);
     for (let i = 0; i < graces.length; i++) {
       const done = await helpers.promoteGenerations(realmId, {
-        units: byGrace[graces[i]], graceMs: Number(graces[i]) });
+        units: byGrace[graces[i]], graceMs: Number(graces[i]),
+        emergency: !!o.emergency });
       if (!done.ok) {
         log.error(errorCodes.tag('STS-KEYS-0063') + 'signing rotation: the "' +
                   realmId + '" realm\'s ' + byGrace[graces[i]].join(', ') +
@@ -441,13 +456,22 @@ class SigningRotation {
       rotated = rotated.concat(done.rotated);
       generation = done.generation;
     }
+    let signedOut: Json[] = [];
+    if (o.emergency) {
+      signedOut = this.endSessions(realmId);
+    }
     audit().record({
-      action: 'keys.rotate', protocol: 'Keys', channel: 'scheduler',
+      action: o.emergency ? 'keys.rotate.emergency' : 'keys.rotate',
+      protocol: 'Keys', channel: 'scheduler',
       outcome: 'success', realm: realmId,
       summary: rotated.length + ' signing key(s) of the "' + realmId +
-               '" realm rotated (' + String(o.reason || 'scheduled') + ')',
+               '" realm rotated (' + String(o.reason || 'scheduled') + ')' +
+               (o.emergency ? '; ' + compromised.length + ' certificate(s) ' +
+                'revoked for keyCompromise and ' + signedOut.length +
+                ' session(s) ended' : ''),
       detail: { rotated: rotated, trigger: String(o.trigger || ''),
-                generation: generation }
+                generation: generation,
+                compromised: compromised, sessionsEnded: signedOut.length }
     });
     // The refresh-token keys are this service's alone and published nowhere,
     // so a receiver is told only of the signing keys it can fetch.
@@ -459,7 +483,194 @@ class SigningRotation {
                return r.unit + ' ' + r.from + ' -> ' + r.to;
              }).join(', ') + ' (generation ' + generation + ').');
     log.debug("Leaving SigningRotation.rotate(). " + rotated.length + ".");
-    return { rotated: rotated, generation: generation };
+    return { rotated: rotated, generation: generation,
+             revoked: compromised.length, sessionsEnded: signedOut.length };
+  }
+
+  // Revoke, for keyCompromise, the certificate of every key of every unit
+  // named — current, next and retired. Answers what was revoked.
+  private revokeCompromised(realmId: string, keys: Json,
+                            wanted: Json[]): Json[] {
+    const { log, helpers, pki, revocation } = this.deps;
+    log.debug("Entering SigningRotation.revokeCompromised().");
+    const scope = String(keys.realm || realmId);
+    const out: Json[] = [];
+    wanted.forEach(function (u: Json): void {
+      const kids = [u.kid].concat(helpers.standbyOf(keys, u.unit)
+        .map(function (one: Json): string {
+          return one.kid;
+        }));
+      kids.forEach(function (kid: string): void {
+        let held: Json = null;
+        try {
+          held = pki().certificateFor(scope, u.useCase, u.slot, kid);
+        } catch (e) {
+          log.debug("Caught in a callback in " +
+                    "SigningRotation.revokeCompromised(): " +
+                    ((e && e.message) || e));
+          held = null;
+        }
+        if (!held || !held.serialHex) {
+          return;
+        }
+        try {
+          const done = revocation().revoke(scope, u.useCase, {
+            serialHex: held.serialHex, reason: 'keyCompromise',
+            subject: held.subject || '',
+            note: 'an emergency rotation of ' + u.unit + ' (key ' + kid + ')'
+          });
+          if (done && done.ok) {
+            out.push({ unit: u.unit, kid: kid, serialHex: held.serialHex,
+                       already: !!done.already });
+          }
+        } catch (e) {
+          // The key is dropped whatever happens here; the audit row says how
+          // many certificates were revoked, so a shortfall is visible.
+          log.debug("Caught in a callback in " +
+                    "SigningRotation.revokeCompromised(): " +
+                    ((e && e.message) || e));
+        }
+      });
+    });
+    log.debug("Leaving SigningRotation.revokeCompromised(). " + out.length +
+              ".");
+    return out;
+  }
+
+  // Every session of the realm ended (a CAEP session-revoked each, through
+  // authn), and a RISC sessions-revoked for every account that had one — the
+  // two SSF notices D4 reserves for an emergency.
+  private endSessions(realmId: string): Json[] {
+    const { log, authn, ssf, realms } = this.deps;
+    log.debug("Entering SigningRotation.endSessions().");
+    let ended: Json[] = [];
+    try {
+      ended = authn().endEverySessionIn(realmId, 'an emergency key rotation');
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KEYS-0064') + 'signing rotation: the ' +
+                'sessions of the "' + realmId + '" realm could not be ended ' +
+                'after an emergency rotation: ' + ((e && e.message) || e));
+      ended = [];
+    }
+    const accounts: string[] = [];
+    ended.forEach(function (one: Json): void {
+      if (one.username && accounts.indexOf(one.username) < 0) {
+        accounts.push(one.username);
+      }
+    });
+    const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
+    accounts.forEach(function (username: string): void {
+      try {
+        Promise.resolve(realms.run(realm, function (): Json {
+          return ssf().riscAction('emit', { type: 'sessions-revoked',
+                                            account_id: username });
+        })).catch(function (e: Json): void {
+          log.debug("Caught in a callback in SigningRotation.endSessions(): " +
+                    ((e && e.message) || e));
+        });
+      } catch (e) {
+        // No Shared Signals in this process: the sessions are ended anyway.
+        log.debug("Caught in a callback in SigningRotation.endSessions(): " +
+                  ((e && e.message) || e));
+      }
+    });
+    log.debug("Leaving SigningRotation.endSessions(). " + ended.length +
+              " session(s), " + accounts.length + " account(s).");
+    return ended;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE CONSOLE AND THE API ASK FOR (#48): a run of `signing.rotate-now`
+  // queued, never a rotation in the request — so it runs once, on the
+  // scheduler's leader, wherever it was asked. `units` empty means every unit
+  // and the refresh-token keys. An emergency needs `confirm` to be the word
+  // `compromised`, because it signs everybody out and cannot be undone.
+  // ---------------------------------------------------------------------------
+  requestRotation(realmId: string, options?: Json): Json {
+    const { log, scheduler, helpers } = this.deps;
+    const o = options || {};
+    log.debug("Entering SigningRotation.requestRotation(). realm=" + realmId);
+    const keys = helpers.stsKeysFor.of(realmId);
+    const known = helpers.signingUnitsOf(keys).map(function (u: Json) {
+      return u.unit;
+    }).concat(['refresh:enc']);
+    const units = (Array.isArray(o.units) ? o.units
+      : (o.units ? [o.units] : [])).map(String).filter(Boolean);
+    const unknown = units.filter(function (u: string): boolean {
+      return known.indexOf(u) < 0;
+    });
+    if (unknown.length) {
+      log.debug("Leaving SigningRotation.requestRotation(). Unknown unit.");
+      return { ok: false, errorCode: 'STS-KEYS-0065', status: 400,
+               why: 'Unknown signing unit(s): ' + unknown.join(', ') +
+                    '. The units of this realm are ' + known.join(', ') +
+                    '.' };
+    }
+    if (o.emergency && String(o.confirm || '') !== 'compromised') {
+      log.debug("Leaving SigningRotation.requestRotation(). Unconfirmed.");
+      return { ok: false, errorCode: 'STS-KEYS-0066', status: 400,
+               why: 'An emergency rotation revokes the keys\' certificates ' +
+                    'for keyCompromise and signs everybody in the realm out; ' +
+                    'confirm it by sending confirm: "compromised".' };
+    }
+    const answer = scheduler().requestRun(ROTATE_NOW_JOB, {
+      realm: realmId,
+      params: { units: units, emergency: !!o.emergency },
+      requestedBy: String(o.requestedBy || ''), via: String(o.via || ''),
+      channel: String(o.channel || 'console') });
+    log.debug("Leaving SigningRotation.requestRotation(). " +
+              (answer.ok ? answer.runId : answer.why));
+    return answer.ok
+      ? { ok: true, runId: answer.runId, alreadyQueued: !!answer.alreadyQueued,
+          emergency: !!o.emergency, units: units }
+      : { ok: false, errorCode: answer.errorCode, status: answer.status || 400,
+          why: answer.why };
+  }
+
+  // THE ROTATION STATE of a realm, for `/admin/keys` and `GET /admin-api/keys`:
+  // every unit with its current, next and retired kids, when it last rotated,
+  // its interval and grace, and whether the schedule is on.
+  rotationView(realmId: string): Json {
+    const { log, helpers } = this.deps;
+    log.debug("Entering SigningRotation.rotationView(). realm=" + realmId);
+    const keys = helpers.stsKeysFor.of(realmId);
+    const self = this;
+    const iso = function (ms: Json): string | null {
+      return Number(ms) > 0 ? new Date(Number(ms)).toISOString() : null;
+    };
+    const rotated = (keys.generations && keys.generations.rotated) || {};
+    const units = helpers.signingUnitsOf(keys).map(function (u: Json) {
+      const standby = helpers.standbyOf(keys, u.unit);
+      const next = standby.filter(function (one: Json): boolean {
+        return one.role === 'next';
+      })[0];
+      return {
+        unit: u.unit, current: u.kid,
+        next: next ? { kid: next.kid, since: iso(next.createdAt) } : null,
+        retired: standby.filter(function (one: Json): boolean {
+          return one.role === 'retired';
+        }).map(function (one: Json): Json {
+          return { kid: one.kid, retiredAt: iso(one.retiredAt),
+                   verifiesUntil: iso(one.retiredUntil) };
+        }),
+        lastRotated: iso(rotated[u.unit]),
+        intervalDays: self.intervalMs(u.unit, keys) / DAY_MS,
+        graceDays: Math.round(self.graceMs(u.unit, keys) / DAY_MS * 100) / 100,
+        credentialSigner: u.unit === self.credentialUnit(keys)
+      };
+    });
+    const out = {
+      scheduled: this.offReason() === '',
+      offReason: this.offReason(),
+      units: units,
+      refresh: { lastRotated: iso(rotated['refresh:enc']),
+                 retired: helpers.retiredRefreshTokenKeysFor(keys).length,
+                 graceDays: Math.round(this.refreshGraceMs() / DAY_MS * 100) /
+                            100 }
+    };
+    log.debug("Leaving SigningRotation.rotationView(). " + units.length +
+              " unit(s).");
+    return out;
   }
 
   // The Shared Signals event (D4). Never lets a failure reach the rotation,
@@ -595,7 +806,9 @@ class SigningRotation {
         const p = ctx.params || {};
         return self.rotate(ctx.realm, {
           units: Array.isArray(p.units) && p.units.length ? p.units : null,
-          reason: 'requested', trigger: ctx.trigger });
+          emergency: !!p.emergency,
+          reason: p.emergency ? 'emergency' : 'requested',
+          trigger: ctx.trigger });
       }
     });
     s.register({
@@ -645,5 +858,7 @@ export = {
   credentialUnit: slot.forward('credentialUnit'),
   unitForAlg: slot.forward('unitForAlg'),
   offReason: slot.forward('offReason'),
-  refreshGraceMs: slot.forward('refreshGraceMs')
+  refreshGraceMs: slot.forward('refreshGraceMs'),
+  requestRotation: slot.forward('requestRotation'),
+  rotationView: slot.forward('rotationView')
 };

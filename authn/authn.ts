@@ -3772,6 +3772,38 @@ class Authn {
     return session;
   }
 
+  // END EVERY SESSION OF ONE REALM (#48, an emergency key rotation). Each
+  // through the same door as one (`dropSession()`), so each is an audit row, a
+  // CAEP session-revoked and the back-channel Logout Tokens of its relying
+  // parties. Collected first and ended afterwards, for the sweep's reason.
+  // Answers who was signed out, so the caller can tell RISC about accounts.
+  endEverySessionIn(realmId, via) {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.endEverySessionIn(). realm=" + realmId);
+    const realm = realms.get(String(realmId || '')) ||
+                  realms.get(realms.DEFAULT_ID);
+    const store = sessions.realmMap(realm.id);
+    const ids = [];
+    if (store) {
+      store.forEach(function (session, id) {
+        if (session) {
+          ids.push({ id: id,
+                     username: String((session.user &&
+                                       session.user.username) || '') });
+        }
+      });
+    }
+    const ended = realms.run(realm, function () {
+      return ids.filter(function (one) {
+        return !!self.dropSession(one.id, via, false);
+      });
+    });
+    log.debug("Leaving Authn.endEverySessionIn(). " + ended.length +
+              " ended.");
+    return ended;
+  }
+
   // Clear the session cookie on this response, whatever the session it named.
   // It is the second half of a browser sign-out and it is EXPORTED because
   // /logout can end the caller's own session by id — through the list, like any
@@ -8989,6 +9021,7 @@ export = {
   sessionsOf: slot.forward('sessionsOf'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
+  endEverySessionIn: slot.forward('endEverySessionIn'),
   clearSessionCookie: slot.forward('clearSessionCookie'),
   beginAuthentication: slot.forward('beginAuthentication'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A

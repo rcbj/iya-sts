@@ -1522,6 +1522,33 @@ and drawn nowhere. **`ssf/CLAUDE.md` carries the full
 list of what adding the seventeenth family actually cost, which was nine files
 rather than three** — it is the record of one family, where this is the rule.
 
+## `/admin/keys` ALSO ROTATES THE SIGNING KEYS (2026-09-22, #42/#48, rcbj's D5)
+
+The Rotation section above the key list, drawn by `crypto_metadata.ts`'s
+`renderRotation()` from `common/signing_rotation.ts`'s `rotationView()`:
+every unit's current, next and retired kids, when it last rotated, its
+interval and grace, whether the schedule is on — and two forms posting to
+`/admin/keys/rotate`, both through `keysAction()`, which is also what
+`POST /admin-api/keys/rotate|emergency` calls (rule 7):
+
+* **Rotate selected / Rotate all** (`action=rotate`): the next key of each
+  becomes current and the key it replaces goes on verifying through its
+  grace.
+* **Emergency** (`action=emergency`, confirmed by typing `compromised`):
+  new keys rather than the published next ones, no grace, certificates
+  revoked for keyCompromise BEFORE the promotion (a certificate keeps its
+  first revocation reason), the refresh-token keys replaced, and every
+  session of the realm ended — CAEP session-revoked through authn, RISC
+  sessions-revoked per account (D4).
+
+**Neither rotates in the request.** Each queues a run of
+`signing.rotate-now` (manual only, on in every mode) and lands on
+`/admin/scheduler?run=<id>`: the rotation happens once, on the scheduler's
+leader. Admin Write; a realm administrator rotates the realm the console is
+signed in to, which the realm being ambient makes so. No script: checkboxes,
+a text box and submit buttons. The page also draws the Signing keys settings
+group (its `SETTING_HOMES` row).
+
 ## `/admin/keys` IS THE ONE PAGE HERE WHERE READING IS TAKING (2026-08-30)
 
 Added in `crypto_metadata.ts` — the same module, because it already requires

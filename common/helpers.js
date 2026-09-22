@@ -2934,12 +2934,18 @@ async function promoteGenerations(realmId, options) {
       return;
     }
     if (o.emergency) {
+      // Every other key of the unit goes with it: the next key and the
+      // retired ones were all stored in the same set as the key presumed
+      // compromised (#48).
       standby.filter(function (one) {
-        return one.unit === row.unit && one.role === 'next' &&
-               one !== nextEntry;
+        return one.unit === row.unit && one !== nextEntry &&
+               (one.role === 'next' || one.role === 'retired');
       }).forEach(function (one) {
-        dropped.push({ unit: row.unit, kid: one.kid, role: 'next',
+        dropped.push({ unit: row.unit, kid: one.kid, role: one.role,
                        useCase: row.useCase, slot: row.slot });
+      });
+      standby = standby.filter(function (one) {
+        return !(one.unit === row.unit && one.role === 'retired');
       });
     }
     standby = standby.filter(function (one) {

@@ -272,6 +272,12 @@ const JOBS = [
   // and a step-down hands it over. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_scheduler.js',            browser: false, local: true },
+  // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
+  // rotation keeping the retired key verifying, the /admin/keys Rotate form,
+  // and an emergency after which an earlier token is refused — in a
+  // throwaway realm, so the emergency signs nobody else out. `local: true`:
+  // this repository's own /admin and /admin-api.
+  { file: 'sts_key_rotation.js',         browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
   // out a sixty-second sign-on session, which is why the watchdog is raised.

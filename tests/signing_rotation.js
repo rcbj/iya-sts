@@ -28,6 +28,11 @@
 //      supersedes its certificate on its Issuing CA's list.
 //   G. THE RECORD. One audit row per act, and the Shared Signals notice (D4)
 //      names the signing keys and never the refresh-token keys.
+//   H. AN EMERGENCY (#48): new keys rather than the published next ones, no
+//      retired key kept, certificates revoked for keyCompromise, refresh
+//      tokens refused at once, every session ended.
+//   I. THE REQUEST. An unknown unit and an unconfirmed emergency are
+//      refused; a rotation asked for is a queued run.
 //
 // In a child process, with the whole stack and a clock the test moves.
 // ===========================================================================
@@ -298,6 +303,87 @@ function childMain() {
     const row = events.EVENT_BY_URI[events.SIGNING_KEY_ROTATED];
     note(row && row.subject === 'none' && row.family === 'sts',
          'G3. the event is this service\'s own, with no subject');
+
+    // --- H. an emergency (#48) ---------------------------------------------------
+    const authn = require(ROOT + '/authn/authn');
+    // A sign-in without a response object — tests/scheduler_jobs.js's shape.
+    const session = authn.startSession({ set: function () {}, req: null },
+      'sr-emergency', ['pwd'], '1', 'OAuth 2.0 / OIDC');
+    const sessionId = session && session.id;
+    // A retired key to be there: an ordinary rotation first.
+    await own.rotate(REALM, { units: ['jose:RS256'], reason: 'requested' });
+    const retiredBefore = helpers.standbyOf(keysNow(), 'jose:RS256')
+      .filter(function (one) { return one.role === 'retired'; });
+    note(retiredBefore.length >= 1,
+         'H0. before the emergency the unit has a retired key');
+    const beforeKid = keysNow().kid;
+    const beforeNext = nextOf('jose:RS256');
+    // The key that rotation made current is certified a moment AFTER it
+    // (`certifyLater()`), so its certificate is waited for, not assumed.
+    let beforeCert = null;
+    for (let i = 0; i < 200 && !beforeCert; i++) {
+      beforeCert = pki.certificateFor(scope, 'jose', 'RS256', beforeKid);
+      if (!beforeCert) {
+        await new Promise(function (r) { setTimeout(r, 50); });
+      }
+    }
+    const sealed = rtCrypto.seal(helpers.signJwt({ sub: 'sr-alice',
+      typ: 'Refresh', jti: 'sr-3', iat: nowS, exp: nowS + 3600 }));
+    const em = await own.rotate(REALM, { emergency: true,
+                                         reason: 'emergency' });
+    note(keysNow().kid !== beforeKid &&
+         keysNow().kid !== (beforeNext && beforeNext.kid),
+         'H1. an emergency replaces the key with a NEW one, not the ' +
+         'published next key (stored beside the compromised one)',
+         beforeKid + ' -> ' + keysNow().kid);
+    note(!helpers.standbyOf(keysNow(), 'jose:RS256').some(function (one) {
+      return one.kid === beforeKid || one.role === 'retired';
+    }), 'H2. and keeps NO retired key of the unit: nothing it signed ' +
+        'verifies any more');
+    const compromised = beforeCert && revocation.listFor(scope, 'jose')
+      .some(function (one) {
+        return String(one.serialHex).replace(/^0+/, '').toLowerCase() ===
+               String(beforeCert.serialHex).replace(/^0+/, '').toLowerCase() &&
+               one.reason === 'keyCompromise';
+      });
+    note(compromised && em.revoked >= 1,
+         'H3. its certificate is revoked for keyCompromise, not superseded',
+         JSON.stringify({ revoked: em.revoked, cert: !!beforeCert }));
+    let sealedOpened = true;
+    try {
+      rtCrypto.open(sealed);
+    } catch (e) {
+      sealedOpened = false;
+    }
+    note(!sealedOpened,
+         'H4. a refresh token sealed before it is refused at once');
+    note(em.sessionsEnded >= 1 && !authn.sessionById(sessionId),
+         'H5. every session of the realm is ended',
+         JSON.stringify({ ended: em.sessionsEnded, id: sessionId }));
+    const last = notices[notices.length - 1] || {};
+    note(last.reason === 'emergency',
+         'H6. the Shared Signals notice says emergency', last.reason);
+    note(audit.list().some(function (r) {
+      return r.action === 'keys.rotate.emergency';
+    }), 'H7. with an audit row of its own');
+
+    // --- I. what the console and the API ask for ------------------------------------
+    const unknown = own.requestRotation(REALM, { units: ['jose:nope'] });
+    note(!unknown.ok && unknown.errorCode === 'STS-KEYS-0065',
+         'I1. an unknown unit is refused, naming the units', unknown.why);
+    const unconfirmed = own.requestRotation(REALM, { emergency: true });
+    note(!unconfirmed.ok && unconfirmed.errorCode === 'STS-KEYS-0066',
+         'I2. an emergency without confirm: "compromised" is refused',
+         unconfirmed.why);
+    const queued = own.requestRotation(REALM, { units: ['xml:RS256'] });
+    note(queued.ok && /^m-/.test(queued.runId || ''),
+         'I3. a rotation asked for is a queued run of signing.rotate-now',
+         JSON.stringify(queued));
+    const view = own.rotationView(REALM);
+    note(view && view.units.some(function (u) {
+      return u.unit === 'jose:RS256' && u.current === keysNow().kid;
+    }) && view.refresh && typeof view.refresh.graceDays === 'number',
+         'I4. the rotation view names every unit\'s current key');
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

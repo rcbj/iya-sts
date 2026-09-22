@@ -800,6 +800,24 @@ same key. RS256, the default, is the token signer's key, so it rotates on the
 token interval; choose an algorithm of its own (for example ES256K) to give
 credentials a longer-lived key.
 
+**Rotating by hand**, in either mode: the Rotation section of `/admin/keys`
+(Rotate selected, Rotate all), or
+
+```bash
+curl -X POST https://sts.example/admin-api/keys/rotate \
+     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"units": ["jose:RS256"]}'        # [] or omitted: every unit
+```
+
+which answers `202` with a `runId` to follow at
+`/admin-api/scheduler?run=<runId>`. **An emergency**, for keys presumed
+compromised, is `POST /admin-api/keys/emergency` with
+`{"confirm": "compromised"}` (or the Emergency form): every key is replaced
+with a new one — not the published next key — with no grace, the old
+certificates are revoked for `keyCompromise`, the refresh-token keys are
+replaced, and every session of the realm is ended. Everything signed before
+it stops verifying at once.
+
 After each rotation a Shared Signals event of this service's own,
 `urn:iya:sts:secevent:event-type:signing-key-rotated`, goes to every stream
 that asked for it. The settings are the Signing keys group on `/admin/keys`.

@@ -1649,6 +1649,21 @@ const CODES = [
     spec: 'the scheduler run fails with this code; /admin/keys and ' +
       '/admin-api report it' },
   // ===== PKI ===============================================================
+  { code: 'STS-KEYS-0064',
+    summary: 'After an emergency key rotation the realm\'s sessions could ' +
+      'not be ended; the keys were rotated and their certificates revoked.',
+    spec: 'none — logged; the run still succeeds and its audit row counts ' +
+      'the sessions ended' },
+  { code: 'STS-KEYS-0065',
+    summary: 'A rotation was asked for a signing unit this realm does not ' +
+      'have.',
+    spec: 'HTTP 400 from POST /admin-api/keys/rotate; a refusal on ' +
+      '/admin/keys' },
+  { code: 'STS-KEYS-0066',
+    summary: 'An emergency rotation was asked for without its confirmation ' +
+      '(confirm: "compromised").',
+    spec: 'HTTP 400 from POST /admin-api/keys/emergency; a refusal on ' +
+      '/admin/keys' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

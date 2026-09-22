@@ -3903,6 +3903,8 @@ class CryptoMetadata {
       // SETTING_HOMES, beside the public document every generation of every
       // signer is published in.
       admin.respond(req, res, report, 'Key pairs', '/admin/keys',
+                    self.renderRotation(report.rotation,
+                                        admin.mayWrite(req)) +
                     self.renderKeyPairs(report) +
                     '<p>Every signer of this realm, each key generation ' +
                     'with its chain, is published anonymously in the ' +
@@ -3913,6 +3915,27 @@ class CryptoMetadata {
                     '<h2>Settings</h2>' + admin.configFormsFor('/admin/keys'));
       log.debug("Leaving the key pairs endpoint. " + report.keys.length +
                 " key(s).");
+    });
+
+    // ROTATE / EMERGENCY (#48). Admin Write; a realm administrator rotates
+    // the realm the console is signed in to and no other, which the realm
+    // being AMBIENT already makes so.
+    app.post('/admin/keys/rotate', function (req, res) {
+      log.debug("Entering the key rotation endpoint.");
+      if (!admin.mayWrite(req)) {
+        errorCodes.mark(res, 'STS-ADMIN-0012');
+        admin.respondToAction(req, res, '/admin/keys', { ok: false, errors: [
+          'Rotating keys needs the Admin Write role.'] });
+        log.debug("Leaving the key rotation endpoint. Read-only.");
+        return;
+      }
+      const result = self.keysAction(req, parseBody(req), 'the admin console');
+      if (!result.ok) {
+        errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0012');
+      }
+      admin.respondToAction(req, res, result.ok ? result.href : '/admin/keys',
+                            result);
+      log.debug("Leaving the key rotation endpoint. " + result.ok);
     });
 
     app.post('/admin/keys/export', function (req, res) {
@@ -4405,6 +4428,159 @@ class CryptoMetadata {
     }
   }
 
+  // `common/signing_rotation.ts`, LAZILY: it is built at 23b-ii, after this
+  // page (20a), and is read only when a page is drawn or a form posted.
+  private rotation(): any {
+    const { log } = this.deps;
+    log.debug("Entering CryptoMetadata.rotation().");
+    log.debug("Leaving CryptoMetadata.rotation().");
+    return require('../common/signing_rotation');
+  }
+
+  rotationViewOf(realmId) {
+    const { log } = this.deps;
+    log.debug("Entering CryptoMetadata.rotationViewOf().");
+    let view = null;
+    try {
+      view = this.rotation().rotationView(realmId);
+    } catch (e) {
+      // No rotation module in this process (a test that loads this page
+      // alone): the page is drawn without the section.
+      log.debug("Caught in CryptoMetadata.rotationViewOf(): " +
+                ((e && e.message) || e));
+      view = null;
+    }
+    log.debug("Leaving CryptoMetadata.rotationViewOf().");
+    return view;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ROTATE AND EMERGENCY (#48, rcbj's D5) — the ONE action both the console's
+  // two forms and `POST /admin-api/keys/rotate|emergency` call (rule 7). It
+  // queues a run of `signing.rotate-now` on the scheduler and answers its id:
+  // the rotation happens on the leader, once, wherever it was asked.
+  // ---------------------------------------------------------------------------
+  keysAction(req, body, via) {
+    const { log, realms } = this.deps;
+    log.debug("Entering CryptoMetadata.keysAction().");
+    const b = body || {};
+    const action = String(b.action || '').trim();
+    if (action !== 'rotate' && action !== 'emergency') {
+      log.debug("Leaving CryptoMetadata.keysAction(). Unknown action.");
+      return { ok: false, errorCode: 'STS-ADMIN-0012', status: 400,
+               errors: ['The action "' + action + '" is not one of export, ' +
+                        'rotate and emergency.'] };
+    }
+    let actor = '';
+    try {
+      const state = require('../admin-core/admin_views').gateStateFor(req);
+      actor = String((state && state.username) || '');
+    } catch (e) {
+      log.debug("Caught in CryptoMetadata.keysAction(): " +
+                ((e && e.message) || e));
+      actor = '';
+    }
+    // `all` (the Rotate all button, or the API's own spelling) means every
+    // unit, whatever boxes were ticked beside it.
+    const asked = []
+      .concat(b.units === undefined || b.units === null ? [] : b.units)
+      .map(String).filter(Boolean);
+    const units = asked.indexOf('all') >= 0 || b.all === true ? [] : asked;
+    const answer = this.rotation().requestRotation(realms.currentId(), {
+      units: units, emergency: action === 'emergency',
+      confirm: b.confirm, requestedBy: actor, via: via,
+      channel: /management API/.test(via) ? 'http' : 'console' });
+    if (!answer.ok) {
+      log.debug("Leaving CryptoMetadata.keysAction(). Refused.");
+      return { ok: false, errorCode: answer.errorCode,
+               status: answer.status || 400, errors: [answer.why] };
+    }
+    log.debug("Leaving CryptoMetadata.keysAction(). " + answer.runId);
+    return {
+      ok: true, accepted: true, runId: answer.runId,
+      emergency: answer.emergency, units: answer.units,
+      href: '/admin/scheduler?run=' + encodeURIComponent(answer.runId),
+      message: (answer.emergency ? 'An EMERGENCY rotation' : 'A rotation') +
+               ' of ' + (units.length ? units.join(', ') : 'every signing ' +
+               'unit and the refresh-token keys') + ' was queued as run ' +
+               answer.runId + '. It runs on the scheduler\'s leader at its ' +
+               'next tick.'
+    };
+  }
+
+  // The section drawn above the key list: each unit's generations, and the
+  // two forms. No script: checkboxes and a submit button.
+  renderRotation(view, canWrite) {
+    const { log, esc } = this.deps;
+    log.debug("Entering CryptoMetadata.renderRotation().");
+    if (!view) {
+      log.debug("Leaving CryptoMetadata.renderRotation(). No view.");
+      return '';
+    }
+    const rows = view.units.map(function (u) {
+      return '<tr>' +
+        (canWrite ? '<td><input type="checkbox" name="units" value="' +
+                    esc(u.unit) + '" id="rotate-unit-' + esc(u.unit) +
+                    '"></td>' : '') +
+        '<td><code>' + esc(u.unit) + '</code>' +
+        (u.credentialSigner ? ' <em>(credentials)</em>' : '') + '</td>' +
+        '<td><code>' + esc(u.current) + '</code></td>' +
+        '<td>' + (u.next ? '<code>' + esc(u.next.kid) + '</code><br>since ' +
+                  esc(u.next.since || '') : '—') + '</td>' +
+        '<td>' + (u.retired.length ? u.retired.map(function (r) {
+          return '<code>' + esc(r.kid) + '</code> until ' +
+                 esc(r.verifiesUntil || '');
+        }).join('<br>') : '—') + '</td>' +
+        '<td>' + esc(u.lastRotated || 'never') + '</td>' +
+        '<td>' + esc(String(u.intervalDays)) + ' / ' +
+        esc(String(u.graceDays)) + '</td></tr>';
+    }).join('');
+    const table = '<table class="data"><thead><tr>' +
+      (canWrite ? '<th>Rotate</th>' : '') +
+      '<th>Unit</th><th>Current</th><th>Next</th><th>Retired, verifying ' +
+      'until</th><th>Last rotated</th><th>Interval / grace (days)</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+    const status = '<p>' + (view.scheduled
+      ? 'Scheduled rotation is <strong>on</strong>: each next key is ' +
+        'promoted once it has been published for a whole interval ' +
+        '(<code>signing.rotate</code>, hourly).'
+      : 'Scheduled rotation is <strong>off</strong>: ' + esc(view.offReason) +
+        '. A rotation by hand still works.') +
+      ' The refresh-token encryption keys rotate with every unit; ' +
+      esc(String(view.refresh.retired)) + ' retired set(s) still open old ' +
+      'refresh tokens (grace ' + esc(String(view.refresh.graceDays)) +
+      ' days).</p>';
+    if (!canWrite) {
+      log.debug("Leaving CryptoMetadata.renderRotation(). Read only.");
+      return '<h2>Rotation</h2>' + status + table;
+    }
+    const out = '<h2>Rotation</h2>' + status +
+      '<form method="post" action="/admin/keys/rotate">' +
+      '<input type="hidden" name="action" value="rotate">' + table +
+      '<p><button type="submit" id="keys-rotate-selected">Rotate ' +
+      'selected</button> ' +
+      '<button type="submit" name="units" value="all" ' +
+      'id="keys-rotate-all">Rotate all</button> — the next key of each ' +
+      'becomes current and the key it replaces goes on verifying through ' +
+      'its grace.</p></form>' +
+      '<h3>Emergency rotation</h3>' +
+      '<p class="warn">For keys presumed <strong>compromised</strong>. ' +
+      'Every key of every unit is replaced with a NEW key — the published ' +
+      'next keys too — with no grace; their certificates are revoked for ' +
+      'keyCompromise; the refresh-token keys are replaced; and EVERY ' +
+      'session of this realm is ended, with CAEP session-revoked and RISC ' +
+      'sessions-revoked sent. Everything already issued stops verifying at ' +
+      'once. It cannot be undone.</p>' +
+      '<form method="post" action="/admin/keys/rotate">' +
+      '<input type="hidden" name="action" value="emergency">' +
+      '<label>Type <code>compromised</code> to confirm: <input type="text" ' +
+      'name="confirm" id="keys-emergency-confirm" autocomplete="off">' +
+      '</label> <button type="submit" id="keys-emergency">Rotate every key ' +
+      'now</button></form>';
+    log.debug("Leaving CryptoMetadata.renderRotation().");
+    return out;
+  }
+
   keysJson(base) {
     const { log, realms, keystore, stsKeystore } = this.deps;
     const self = this;
@@ -4437,6 +4613,9 @@ class CryptoMetadata {
       },
       formats: keystore.keystoreFormats(),
       keys: rows,
+      // THE ROTATION STATE (#42/#48): every signing unit's current, next and
+      // retired keys and the schedule — what the Rotate controls act on.
+      rotation: self.rotationViewOf(realms.currentId()),
       warning: 'THIS RESOURCE LISTS KEYS; the export operation beside it ' +
                'HANDS OVER PRIVATE KEY MATERIAL. ' +
                (store.persisting
@@ -4718,5 +4897,7 @@ export = {
   cryptoJson: slot.forward('cryptoJson'),
   keyInventory: slot.forward('keyInventory'),
   keysJson: slot.forward('keysJson'),
-  exportKey: slot.forward('exportKey')
+  exportKey: slot.forward('exportKey'),
+  // For `mgmt-api/admin_api.ts` (rule 7): the Rotate / Emergency action.
+  keysAction: slot.forward('keysAction')
 };

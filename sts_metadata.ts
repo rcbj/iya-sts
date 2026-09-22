@@ -3563,6 +3563,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'ready" would be a page with nothing on it. A REFUSAL is still a ' +
           'page, so a bad password or an impossible format reads like every ' +
           'other refusal here. Needs Admin Write.' },
+  { path: '/admin/keys/rotate', group: 'Admin',
+    name: 'Rotate signing keys, or rotate them in an emergency',
+    specs: [],
+    what: 'NON-SPEC (#42/#48). The two forms in the Rotation section of ' +
+          '/admin/keys. `action=rotate` with the units ticked (or all): each ' +
+          'next key becomes current and the key it replaces goes on ' +
+          'verifying through its grace. `action=emergency`, confirmed by ' +
+          'typing `compromised`: every key of every unit is replaced with no ' +
+          'grace, their certificates are revoked for keyCompromise, the ' +
+          'refresh-token keys are replaced and every session of the realm ' +
+          'is ended (CAEP session-revoked, RISC sessions-revoked). Either ' +
+          'queues a run of signing.rotate-now on the scheduler and lands on ' +
+          'that run\'s page. Needs Admin Write; a realm administrator ' +
+          'rotates the realm they signed in to.' },
   { path: '/admin/crypto-metadata', group: 'Admin', name: 'Cryptography',
     specs: [],
     what: 'NON-SPEC. The companion to this page, one layer down: what this ' +
@@ -5843,8 +5857,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'can be exported as. A LIST AND NEVER KEY MATERIAL. Mirrors GET ' +
           '/admin/keys.' },
   { path: '/admin-api/keys/:action', group: 'Management API',
-    name: 'Export a key pair', specs: [],
-    what: 'NON-SPEC. THIS OPERATION RETURNS PRIVATE KEY MATERIAL, base64 in ' +
+    name: 'Export a key pair, or rotate the signing keys', specs: [],
+    what: 'NON-SPEC. `rotate` and `emergency` (#48) are /admin/keys/rotate\'s ' +
+          'two forms: `{ "units": [...] }` (empty or "all" for every unit) ' +
+          'and, for an emergency, `"confirm": "compromised"`; each answers ' +
+          '202 with the runId of the queued signing.rotate-now run, to ' +
+          'follow at /admin-api/scheduler?run=. `export`: ' +
+          'THIS OPERATION RETURNS PRIVATE KEY MATERIAL, base64 in ' +
           'a JSON reply because this API answers JSON everywhere else. Takes ' +
           'a key id, a format (pem, der, jwk, pkcs12) and a password — ' +
           'required for pkcs12, optional elsewhere, where it encrypts the ' +
