@@ -2637,6 +2637,28 @@ function writePki(rowKey, payload) {
       return { ok: false, error: e.message, lost: [] };
     });
   }
+  // **A CERTIFICATE THIS ROW PUBLISHES MAY NOT BE ON ITS OWN CRL**
+  // (2026-09-22), applied to every row this process seals rather than only to
+  // a merged one. `merge()` enforces it for the path where another node wrote
+  // underneath us; this is the path where NOBODY did, which is where the
+  // cluster failure actually came from — a rebuild superseded the
+  // Intermediate it replaced and then did not get its new tier into the row,
+  // so the row went on publishing a certificate its own CRL called revoked
+  // (`sts_pki_distribution_points`, in cluster mode). `pki_merge.js`'s
+  // liveAgain() argues the invariant; it answers what it dropped, which is
+  // evidence of the lost write rather than something to tidy away.
+  const dropped = pkiMerge.dropRevocationsOfLiveTiers(chain);
+  if (dropped.length) {
+    log.warn(errorCodes.tag('STS-KEYS-0069') + 'keystore: the "' + id +
+             '" certificate authority listed ' + dropped.length +
+             ' certificate(s) it still PUBLISHES as revoked (' +
+             dropped.map(function (one) {
+               return one.ca + ' ' + one.serialHex;
+             }).join(', ') + '); the revocation(s) were dropped rather than ' +
+             'written, because a row may not publish a certificate its own ' +
+             'CRL calls revoked. A tier this process replaced and did not ' +
+             'get into the row is how that happens.');
+  }
   const text = JSON.stringify(chain);
   const cipher = crypto.encryptWithKek(kek, text, 'pki-hierarchy');
   if (!arbitrates()) {

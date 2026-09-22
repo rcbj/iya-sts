@@ -1529,16 +1529,24 @@ const SECTIONS = [
                'project\'s own PKI code, vendored byte-identical, so a ' +
                'certificate issued here and one issued on its PKI / X.509 ' +
                'page are built by one encoder.' },
-      // CERTIFICATE ENROLLMENT (2026-09-13): the three protocols a device, a
-      // person or an application asks the certificate authority above for a
-      // certificate over. Grouped, because the three pages answer one
-      // question for three wire formats; each is drawn by its own family
-      // module (acme/, est/, scep/) and each has a Monitoring twin.
-      { title: 'Certificate enrollment',
-        what: 'ACME, EST and SCEP issue from this realm\'s certificate ' +
-              'authority to the person or application that authenticated — ' +
-              'or, for a holder of Admin Write, to any entry in the realm — ' +
-              'and keep every certificate on the entry it names.',
+      // CERT ISSUANCE (2026-09-13 as *Certificate enrollment*; RENAMED AND
+      // WIDENED 2026-09-22 at rcbj's ask): every protocol by which something
+      // asks the certificate authority above for a certificate. It was the
+      // three enrollment protocols, with SPIFFE a group of its own beneath
+      // them; SPIFFE is IN it now, because an X509-SVID is a certificate this
+      // realm's SPIFFE Issuing CA issues (`common/pki.js`) and a reader who
+      // has just read PKI is looking for every way this service hands one
+      // out, not for three of the four. Each page is still drawn by its own
+      // family module (acme/, est/, scep/, spiffe/); the three enrollment
+      // pages have a Monitoring twin, grouped there under the same heading.
+      { title: 'Cert issuance',
+        what: 'ACME, EST, SCEP and SPIFFE all issue from this realm\'s ' +
+              'certificate authority. The three enrollment protocols issue ' +
+              'to the person or application that authenticated — or, for a ' +
+              'holder of Admin Write, to any entry in the realm — and keep ' +
+              'every certificate on the entry it names; SPIFFE issues an ' +
+              'X509-SVID to a WORKLOAD, against a registration entry rather ' +
+              'than a directory identity.',
         items: [
           // ===== ACME section row (acme/acme_admin.ts) =====
           { path: '/admin/acme', label: 'ACME',
@@ -1557,18 +1565,8 @@ const SECTIONS = [
             blurb: 'Simple Certificate Enrolment Protocol (RFC 8894): ' +
                    'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
                    'certificate, and single-use challenge passwords issued ' +
-                   'for one entry and one profile.' }
-        ] },
-      // SPIFFE, BESIDE THE OTHER CERTIFICATE PROTOCOLS (moved 2026-09-13, at
-      // rcbj's ask, from between Verifiable Credentials and XACML). An
-      // X509-SVID is a certificate this realm's SPIFFE Issuing CA issues
-      // (common/pki.js), so the reader who has just read PKI and the three
-      // enrollment protocols is looking for the fourth way this service
-      // hands out a certificate, and the TLS pages below verify them.
-      { title: 'SPIFFE',
-        what: 'Workload identity: the trust domain, the entries that decide ' +
-              'what a workload gets, and the agents that ask for it.',
-        items: [
+                   'for one entry and one profile.' },
+          // ===== SPIFFE's three pages (spiffe/spiffe_server.ts) =====
           { path: '/admin/spiffe', label: 'SPIFFE',
             blurb: 'The trust domain, the signing authority behind every ' +
                    'X509-SVID and JWT-SVID, the four sockets the Workload ' +
@@ -1593,7 +1591,8 @@ const SECTIONS = [
                    'and when. These entries are a RECORD rather than ' +
                    'configuration — this service wrote all of it when the ' +
                    'agent attested — which is why nothing on an agent is ' +
-                   'editable and the ban is the only control.' } ] },
+                   'editable and the ban is the only control.' },
+        ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
                'regenerated on every start, and what this service makes of a ' +
@@ -2193,26 +2192,40 @@ const SECTIONS = [
                'revocations, failed key proofs, introspections and ' +
                'registrations, and the GNAP error codes it was answered ' +
                'with. No reset: the durable record is the Audit log.' },
-      // CERTIFICATE ENROLLMENT TRAFFIC (2026-09-13): filed here by the
-      // question each page answers, beside the other protocol traffic pages.
-      // ===== ACME monitoring row =====
-      { path: '/admin/acme/monitor', label: 'ACME enrollments',
-        blurb: 'What the ACME server has done in this realm: requests by ' +
-               'operation, certificates issued and revoked, refusals by ' +
-               'error code, the profiles asked for, the accounts and EAB ' +
-               'keys that asked, and the most recent requests.' },
-      // ===== EST monitoring row =====
-      { path: '/admin/est/monitor', label: 'EST enrollments',
-        blurb: 'What the EST server has done in this realm: requests by ' +
-               'operation, certificates issued (and server-generated keys), ' +
-               'refusals by error code, the profiles asked for, who ' +
-               'authenticated and how, and the most recent requests.' },
-      // ===== SCEP monitoring row =====
-      { path: '/admin/scep/monitor', label: 'SCEP enrollments',
-        blurb: 'What the SCEP server has done in this realm: GetCACaps, ' +
-               'GetCACert and PKIOperation counts, certificates issued, ' +
-               'challenges created and redeemed, refusals by error code and ' +
-               'failInfo, and the most recent requests.' },
+      // CERT ISSUANCE TRAFFIC (2026-09-13; GROUPED 2026-09-22 at rcbj's ask,
+      // under the heading its Protocols counterpart carries). Three flat rows
+      // sat here beside the other traffic pages, which read as three
+      // unrelated protocols rather than as one question — *what has been
+      // issued, and to whom* — asked over three wire formats. **SPIFFE is
+      // NOT in this group**, unlike the Protocols one: it has no monitoring
+      // page, and a heading listing three of four families is the drift a
+      // reader cannot see. Adding one puts it here.
+      { title: 'Cert issuance',
+        what: 'What each enrollment protocol has done in this realm — the ' +
+              'requests, the certificates issued, and the refusals with the ' +
+              'code each was answered with. The durable record is the Audit ' +
+              'log; these counters are this process\'s own.',
+        items: [
+          // ===== ACME monitoring row =====
+          { path: '/admin/acme/monitor', label: 'ACME enrollments',
+            blurb: 'What the ACME server has done in this realm: requests ' +
+                   'by operation, certificates issued and revoked, refusals ' +
+                   'by error code, the profiles asked for, the accounts and ' +
+                   'EAB keys that asked, and the most recent requests.' },
+          // ===== EST monitoring row =====
+          { path: '/admin/est/monitor', label: 'EST enrollments',
+            blurb: 'What the EST server has done in this realm: requests by ' +
+                   'operation, certificates issued (and server-generated ' +
+                   'keys), refusals by error code, the profiles asked for, ' +
+                   'who authenticated and how, and the most recent ' +
+                   'requests.' },
+          // ===== SCEP monitoring row =====
+          { path: '/admin/scep/monitor', label: 'SCEP enrollments',
+            blurb: 'What the SCEP server has done in this realm: GetCACaps, ' +
+                   'GetCACert and PKIOperation counts, certificates issued, ' +
+                   'challenges created and redeemed, refusals by error code ' +
+                   'and failInfo, and the most recent requests.' }
+        ] },
       // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
       // not under Protocols beside `/admin/oauth2` for the XACML monitor's
       // reason: that page is what the server is CONFIGURED to do and this is

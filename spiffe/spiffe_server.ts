@@ -611,14 +611,38 @@ class SpiffeServer {
             'issue an SVID: ' + this.esc(state.error)
           : 'The issuing authority is still being generated. An RSA-4096 key ' +
             'takes a few seconds; reload.') + '</p>') +
-      '<p class="warn"><strong>NOTHING HERE IS ATTESTED.</strong> No ' +
-      'workload ' +
-      'and no node: any caller that can reach the Workload API socket can ' +
-      'obtain an identity in this trust domain, and an agent\'s attestation ' +
-      'payload is written down as claimed. That is this service\'s posture ' +
-      'everywhere — it checks no password and accepts every LDAP bind — and ' +
-      'it matters more here than anywhere else, because what comes out is a ' +
-      'credential another service will believe.</p>' +
+      // **THIS SAID *NOTHING HERE IS ATTESTED. No workload and no node* UNTIL
+      // 2026-09-22**, which #40 had made false in both halves a day earlier —
+      // every one of SPIRE's node attestors verifies or refuses, and the
+      // Workload API's Unix socket attests its caller. A page that
+      // OVERSTATES what a service checks is the worse of the two errors, so
+      // what is left here is the narrow, true version, READ from the state
+      // rather than asserted; the `notChecked` list below has the detail.
+      '<p class="' +
+      (document.workloadAttestation &&
+       document.workloadAttestation.nativeModule ? 'note' : 'warn') + '">' +
+      '<strong>WHAT IS ATTESTED HERE, AND WHAT IS NOT.</strong> A node ' +
+      'attesting through the SPIRE Server API is VERIFIED (#40, ' +
+      '2026-09-21) — an agent\'s payload used to be written down as claimed ' +
+      'and is checked now — and a workload on the Workload API\'s ' +
+      '<strong>Unix socket</strong> is attested from the kernel\'s own ' +
+      'account of the connecting process. ' +
+      (document.workloadAttestation &&
+       document.workloadAttestation.nativeModule
+        ? 'This build attests it.'
+        : '<strong>THIS BUILD DOES NOT</strong>: it holds no ' +
+          'peer-credentials module (' +
+          this.esc(String((document.workloadAttestation &&
+                           document.workloadAttestation.problem) ||
+                          'not built')) +
+          '), so the socket is served unattested here and any caller on it ' +
+          'obtains an identity in this trust domain. Product mode does not ' +
+          'serve it at all.') +
+      ' <strong>A caller over TCP is not attested</strong> — there is no ' +
+      'peer process to ask — so anybody who can reach that port obtains an ' +
+      'identity in this trust domain. It matters more here than anywhere ' +
+      'else in this service, because what comes out is a credential another ' +
+      'service will believe.</p>' +
       '<p class="' + (document.authentication.enforced ? 'note' : 'warn') +
       '">' +
       (document.authentication.enforced
@@ -1738,6 +1762,10 @@ export = {
   listen: slot.forward('listen'),
   close: slot.forward('close'),
   description: slot.forward('description'),
+  // What is attested on the Workload API, for `server.js`'s startup line as
+  // well as `/spiffe` (#40): a banner that ASSERTS what this service checks
+  // goes stale the day the answer changes, and this one did.
+  workloadAttestationState: slot.forward('workloadAttestationState'),
   BUNDLE_PATH: BUNDLE_PATH,
   bindings: function () {
     log.debug("Entering bindings().");

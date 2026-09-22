@@ -1437,9 +1437,16 @@ class VcIssuer {
                   ? 'The document does not canonicalise the way it did when ' +
                     'it was signed: ' +
                     JSON.stringify(differing.slice(0, 3))
-                  : 'The document is identical, so the signature does not ' +
-                    'match this public key — the key set\'s public and ' +
-                    'secret halves are not a pair.'));
+                  : 'The document canonicalises the same and the proof ' +
+                    'header is the same, so what is left is the SIGNATURE ' +
+                    'or the KEY — which need different fixes, so the pair ' +
+                    'was tried against a control document: ' +
+                    (await this.bbsPairWorks(keys)) + ' Secret ' +
+                    (keys.secretKey ? keys.secretKey.length : 0) +
+                    ' byte(s), public ' +
+                    (keys.publicKey ? keys.publicKey.length : 0) +
+                    ' byte(s), from ' + String(keys.source || 'unrecorded') +
+                    '.'));
       log.debug("Leaving VcIssuer.buildLdpVc(). It does not verify.");
       throw new Error('the ldp_vc credential this issuer just ' +
                       'built does not verify');
@@ -1468,6 +1475,44 @@ class VcIssuer {
   // either — the day this reads `sub` before `preferred_username`, say — would
   // link a DID to a person nothing else here is filed under, and the symptom
   // would be a second directory entry rather than an error.
+  // THE CONTROL FOR THE SELF-CHECK ABOVE (2026-09-22). *The statements and
+  // the header match, therefore the halves are not a pair* is an INFERENCE
+  // and it is not a sound one — a signature can fail for something neither
+  // comparison covers. So on the failure path only, the same pair signs a
+  // FIXED minimal document and verifies it: if that works, the pair is sound
+  // and the fault is in the credential this issuer built; if it does not, the
+  // pair really is broken and the key path is where to look. It costs
+  // nothing in the ordinary case, because it runs only once a credential has
+  // already failed to verify.
+  private async bbsPairWorks(keys): Promise<string> {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.bbsPairWorks().");
+    try {
+      const control = { '@context': ['https://www.w3.org/ns/credentials/v2'],
+                        type: ['VerifiableCredential'],
+                        issuer: 'did:example:control',
+                        credentialSubject: { id: 'did:example:subject' } };
+      const made = await bbs2023.issue(control,
+        { verificationMethod: 'did:example:control#bbs',
+          created: new Date().toISOString() },
+        keys.secretKey, keys.publicKey);
+      const ok = await bbs2023.verifyBase(made.credential, keys.publicKey);
+      log.debug("Leaving VcIssuer.bbsPairWorks(). " + !!(ok && ok.ok));
+      return (ok && ok.ok)
+        ? 'the pair SIGNS AND VERIFIES a control document, so the halves ' +
+          'ARE a pair and the fault is in the credential that was built.'
+        : 'the pair FAILS on a control document too, so the public and ' +
+          'secret halves are NOT a pair.';
+    } catch (e) {
+      // Diagnosis must never replace the refusal the caller is raising.
+      log.debug("Caught in VcIssuer.bbsPairWorks(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving VcIssuer.bbsPairWorks(). Threw.");
+      return 'the control document could not be signed at all (' +
+             ((e && e.message) || e) + ').';
+    }
+  }
+
   private holderNameFrom(accessToken) {
     const { log, jsonFromB64u } = this.deps;
     log.debug("Entering VcIssuer.holderNameFrom().");

@@ -381,6 +381,51 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0030') + 'ldap: the directory could ' +
                                                 'not start: ' + err.message);
   });
+  // WHAT IS ATTESTED ON THE WORKLOAD API, READ RATHER THAN ASSERTED (#40,
+  // 2026-09-21). This banner ended with *NOTHING HERE IS ATTESTED: any caller
+  // that reaches the Workload API gets any identity in the trust domain* —
+  // true until #40's fourth phase, and false afterwards, because the Unix
+  // socket attests its caller the way a SPIRE agent does. A startup line that
+  // OVERSTATES what a service checks is the worse error of the two, so this
+  // one asks `spiffe_server` for the state and says what it finds: the
+  // native peer-credentials module is compiled only in an image build, so a
+  // development process that has none serves the socket unattested and says
+  // exactly that. A caller over TCP has no peer process to ask and is not
+  // attested either way — `spiffe/CLAUDE.md` argues both.
+  function workloadAttestationSentence() {
+    log.debug("Entering workloadAttestationSentence().");
+    let state = null;
+    try {
+      state = spiffeServer.workloadAttestationState();
+    } catch (e) {
+      // An older build, or no instance: the line says less rather than
+      // claiming either answer.
+      log.debug("Caught in workloadAttestationSentence(): " +
+                ((e && e.message) || e));
+      state = null;
+    }
+    if (!state) {
+      log.debug("Leaving workloadAttestationSentence(). Unknown.");
+      return 'What is attested on the Workload API is on that page.';
+    }
+    if (!state.nativeModule) {
+      log.debug("Leaving workloadAttestationSentence(). Unattested.");
+      return 'NOTHING IS ATTESTED on the Workload API here: this build has ' +
+             'no peer-credentials module (' +
+             String(state.problem || 'not built') + '), so any caller that ' +
+             'reaches it gets any identity in the trust domain.';
+    }
+    const on = (state.attestors || []).filter(function (one) {
+      return one && one.enabled;
+    }).map(function (one) {
+      return one.type;
+    });
+    log.debug("Leaving workloadAttestationSentence(). Attested.");
+    return 'A caller on the Workload API\'s UNIX SOCKET is ATTESTED (' +
+           (on.length ? on.join(', ') : 'no attestor enabled') + '); one ' +
+           'over TCP is not, and gets any identity in the trust domain.';
+  }
+
   // The SPIFFE gRPC listeners — the Workload API and the SPIRE Server API, a
   // Unix socket and a TCP port each, per realm that has SPIFFE turned on —
   // started here for the reason the other sockets are. GET /spiffe describes
@@ -402,10 +447,8 @@ function announce() {
                .join('; ') + '), which leaves the rest of this service ' +
                'untouched' : '') +
              '. The trust bundle is at ' + spiffeServer.BUNDLE_PATH +
-             ' and GET /spiffe says what is and is not checked — which is ' +
-             'most of that page, because NOTHING HERE IS ATTESTED: any ' +
-             'caller that reaches the Workload API gets any identity in the ' +
-             'trust domain.');
+             ' and GET /spiffe says what is and is not checked. ' +
+             workloadAttestationSentence());
   }).catch(function (err) {
     // Reported rather than thrown, exactly as the other three are.
     log.error(errorCodes.tag('STS-CORE-0031') +

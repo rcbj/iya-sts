@@ -145,7 +145,6 @@ function instanceOver(state) {
   log.debug("Leaving instanceOver().");
   return new SigningHistory({
     log: QUIET,
-    realms: require('../common/realms'),
     errorCodes: require('../common/error_codes'),
     helpers: function () {
       return fakeHelpers(state);

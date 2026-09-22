@@ -360,6 +360,70 @@ function mergeCount(base, mine, theirs) {
   return (m < was || t < was) ? Math.min(m, t) : t + (m - was);
 }
 
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE THIS ROW PUBLISHES MAY NOT BE ON ITS OWN CRL (2026-09-22).
+//
+// The two rules above are each right and they can contradict one another: a
+// TIER is first writer wins, and a REVOCATION is never lost. So a node that
+// rebuilt a branch — superseding the Intermediate it replaced — and then did
+// NOT get its new tier into the row leaves the union carrying a revocation of
+// the certificate the row still publishes. `sts_pki_distribution_points`
+// found exactly that in `cluster` mode: *lists CN=sts Intermediate CA … as
+// REVOKED, and this service is publishing that certificate right now*.
+//
+// **THE INVARIANT IS THE NARROW ONE AND IT IS NOT A THIRD POLICY**: whatever
+// the row publishes as a live tier is not revoked BY THIS ROW. Nothing else
+// is touched — a revocation of anything that is not a live tier is permanent,
+// as RFC 5280 requires, and the tier that won is untouched.
+//
+// It answers WHAT IT DROPPED rather than doing it quietly, because the drop is
+// evidence of the lost write above it: `pki.js` logs it, so the race stays
+// visible instead of being tidied away.
+// ---------------------------------------------------------------------------
+function liveTierSerials(row) {
+  log.debug("Entering liveTierSerials().");
+  const out = {};
+  function note(tier) {
+    log.debug("Entering note().");
+    if (tier && tier.serialHex) {
+      out[normalSerial(tier.serialHex)] = true;
+    }
+    log.debug("Leaving note().");
+  }
+  TIER_MEMBERS.forEach(function (member) {
+    note(row[member]);
+  });
+  TIER_MAP_MEMBERS.forEach(function (member) {
+    const held = row[member] || {};
+    Object.keys(held).forEach(function (key) {
+      note(held[key]);
+    });
+  });
+  log.debug("Leaving liveTierSerials(). " + Object.keys(out).length +
+            " live tier(s).");
+  return out;
+}
+
+function liveAgain(row) {
+  log.debug("Entering liveAgain().");
+  const live = liveTierSerials(row);
+  const dropped = [];
+  const lists = row.revoked || {};
+  Object.keys(lists).forEach(function (ca) {
+    const kept = (lists[ca] || []).filter(function (one) {
+      if (one && one.serialHex && live[normalSerial(one.serialHex)]) {
+        dropped.push({ ca: ca, serialHex: one.serialHex,
+                       reason: String((one && one.reason) || '') });
+        return false;
+      }
+      return true;
+    });
+    lists[ca] = kept;
+  });
+  log.debug("Leaving liveAgain(). " + dropped.length + " dropped.");
+  return dropped;
+}
 // ---------------------------------------------------------------------------
 // THE MERGE. Returns `{ row, lost, displaced }`: the row to write, the tier
 // members `mine` changed and did not get (`root`, `intermediate`,
@@ -439,13 +503,21 @@ function merge(base, mine, theirs, options) {
     row.issuedKeyPairs = mergeIssued(m.issuedKeyPairs, t.issuedKeyPairs,
                                      displaced, nowMs);
   }
+  const published = liveAgain(row);
   log.debug("Leaving merge(). " + lost.length + " member(s) lost, " +
-            displaced.length + " displaced.");
-  return { row: row, lost: lost, displaced: displaced.length };
+            displaced.length + " displaced, " + published.length +
+            " revocation(s) of a live tier dropped.");
+  return { row: row, lost: lost, displaced: displaced.length,
+           published: published };
 }
 
 module.exports = {
   merge: merge,
+  // The invariant on its own, for `keystore.js`: a row is sealed through one
+  // path when nobody else has written it and through `merge()` when somebody
+  // has, and a certificate the row publishes may not be on its own CRL
+  // either way. See liveAgain()'s own block.
+  dropRevocationsOfLiveTiers: liveAgain,
   canonical: canonical,
   normalSerial: normalSerial
 };

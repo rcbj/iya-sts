@@ -4367,6 +4367,42 @@ at all — the two different "offs" `GET /admin-api/roles` reports as `enforced`
 and `gated`. This page narrows and populates; the decision is a policy, and the
 document that implements it is on `/admin/xacml`.
 
+## CERT ISSUANCE IS ONE GROUP IN BOTH SECTIONS (2026-09-22)
+
+rcbj's ask: combine ACME, EST and SCEP into one group called **Cert issuance**
+under Protocols AND under Monitoring, and put SPIFFE in the Protocols one.
+
+Under **Protocols** it was *Certificate enrollment* (the three enrollment
+protocols) with **SPIFFE a group of its own** immediately beneath it — which
+is four ways this service hands out a certificate, drawn as three plus one.
+They are one group now, and the heading passes the test the directory group's
+was written for (*does the heading name more than the pages under it do?*):
+every page in it is a protocol by which something asks this realm's
+certificate authority for a certificate.
+
+**What the group deliberately does NOT claim is that the four are alike.**
+The three enrollment protocols issue to a person or an application — a
+DIRECTORY ENTRY, which is what `common/cert_enrollment.ts` decides and what
+every certificate is kept on — and SPIFFE issues an X509-SVID to a WORKLOAD,
+against a registration entry. The group's `what` says exactly that, because a
+heading that flattened the difference would be the page telling an operator
+that a registration entry is a directory identity.
+
+Under **Monitoring** the same three were three FLAT rows, which read as three
+unrelated protocols rather than one question asked over three wire formats.
+They are a group with the same heading, so the two sections agree.
+
+**SPIFFE IS NOT IN THE MONITORING GROUP, and that is a decision rather than an
+oversight**: it has no monitoring page, and a group of three under a heading
+that names four families is drift a reader cannot see. The day SPIFFE gets one
+it goes here, and the comment above the group says so.
+
+Nothing else moved: the paths, the modules that draw the pages and every
+`SETTING_HOMES` row are untouched — this is the `SECTIONS` table's shape and
+nothing below it. `sectionPages()` splices a group's pages in where the group
+sits, so the page walk, the sidebar and `admin_api.js`'s parity all see the
+same list they did.
+
 ## The directory group grew to EIGHT pages (2026-09-05)
 
 `/admin/ldap/roles`, `/admin/ldap/policies` and `/admin/ldap/peps` joined the

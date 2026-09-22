@@ -177,7 +177,15 @@ async function thePageAndTheApiAgree(cookie) {
   const json = await report();
   const pageJson = await call("GET", base + "/admin/scheduler?format=json" +
                               "&per=200", { headers: { Cookie: cookie } });
-  const html = await call("GET", base + "/admin/scheduler",
+  // **`per=200` HERE TOO, AND IT IS THE POINT RATHER THAN A CONVENIENCE**
+  // (2026-09-22). The jobs table is PAGED now — `admin-ui/CLAUDE.md`, *every
+  // list that can grow without a bound is paged*; a REALM job has a row per
+  // realm, so a service with fifty realms has fifty rows of each. The check
+  // below asks for a row per job the API lists, so it has to ask for a page
+  // big enough to hold them: without this it failed on `signing.rotate`,
+  // which sorts onto the second page, about a page that was drawing exactly
+  // what it should. The JSON fetch above already asks the same way.
+  const html = await call("GET", base + "/admin/scheduler?per=200",
                           { headers: { Cookie: cookie } });
   const ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
     .sort();

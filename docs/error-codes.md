@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2888** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2889** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 68
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 69
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 174
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -454,6 +454,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0066` | An emergency rotation was asked for without its confirmation (confirm: "compromised"). | HTTP 400 from POST /admin-api/keys/emergency; a refusal on /admin/keys |
 | `STS-KEYS-0067` | A realm's signing-key history could not be recorded; the rotation or retirement itself succeeded. | none — logged. The next observation writes the rows, because the history is derived from the key set rather than from the event |
 | `STS-KEYS-0068` | The signing-key history was asked for a unit this realm has no record of. | HTTP 400 from GET /admin-api/keys/history; a refusal on /admin/keys/history |
+| `STS-KEYS-0069` | A certificate authority row listed a certificate it still publishes as revoked; the revocation was dropped rather than written. | none — logged. A row may not publish a certificate its own CRL calls revoked; the drop is evidence of a tier write that was lost |
 
 ## STS-PKI
 

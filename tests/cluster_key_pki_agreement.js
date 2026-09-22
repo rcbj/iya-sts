@@ -688,6 +688,77 @@ async function spiffeSection(t) {
   log.debug("Leaving spiffeSection().");
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE THE ROW PUBLISHES IS NOT ON THE ROW'S OWN CRL (2026-09-22).
+//
+// The two rules this file already holds can contradict one another: a TIER is
+// first writer wins, and a REVOCATION is never lost. A node that rebuilt a
+// branch — superseding the Intermediate it replaced — and then did NOT get its
+// new tier into the row leaves the union carrying a revocation of the
+// certificate the row STILL PUBLISHES. `sts_pki_distribution_points` found
+// exactly that in `cluster` mode: *lists CN=sts Intermediate CA … as REVOKED,
+// and this service is publishing that certificate right now*, on both the http
+// and the ldap distribution point.
+//
+// The invariant is the narrow one — whatever the row publishes as a live tier
+// is not revoked BY THAT ROW — so this asserts both halves: the revocation of
+// the LIVE tier is dropped, and a revocation of anything else is untouched,
+// because RFC 5280 makes those permanent.
+// ---------------------------------------------------------------------------
+async function publishedNotRevokedSection(t, kek) {
+  log.debug("Entering publishedNotRevokedSection().");
+  t.log.info('=== 6b. a live tier is never on its own row\'s CRL ===');
+  const store = sharedStore(20);
+  const seed = {
+    version: 2, scope: 'acme',
+    root: { serialHex: 'r1', certificatePem: 'R1' },
+    intermediate: { serialHex: '01', certificatePem: 'I1' },
+    issuing: { jose: { serialHex: '02', certificatePem: 'J1' } },
+    revoked: {},
+    crlNumbers: { root: 1 },
+    issuedKeyPairs: []
+  };
+  store.rows.set('pki:acme', crypto.encryptWithKek(kek, JSON.stringify(seed),
+                                                   'pki-hierarchy'));
+  const a = await startNode(store, { adopted: [], published: [] });
+
+  // A REBUILD THAT SUPERSEDED THE INTERMEDIATE AND DID NOT REPLACE IT — the
+  // state a lost tier write leaves behind: the revocation is in the row and
+  // the certificate it names is still the live Intermediate.
+  const row = JSON.parse(JSON.stringify(a.pkiFor('acme')));
+  row.revoked = row.revoked || {};
+  row.revoked.root = [
+    { serialHex: '01', reason: 'superseded',
+      revokedAt: '2026-09-22T21:00:00.000Z' },
+    // And one that must SURVIVE: a leaf this authority really did revoke.
+    { serialHex: 'de', reason: 'keyCompromise',
+      revokedAt: '2026-09-22T21:00:01.000Z' }
+  ];
+  a.attachPki('acme', row);
+  await a.settleAll();
+
+  const stored = opened(kek, store.rows.get('pki:acme'));
+  const listed = (stored.revoked && stored.revoked.root) || [];
+  t.check(!listed.some(function (one) {
+    return String(one.serialHex).toLowerCase() === '01';
+  }), 'THE LIVE INTERMEDIATE IS NOT ON THE ROOT\'S LIST — a row may not ' +
+      'publish a certificate its own CRL calls revoked, which is what ' +
+      'sts_pki_distribution_points found in cluster mode',
+      JSON.stringify(listed.map(function (one) {
+        return one.serialHex;
+      })));
+  t.check(listed.some(function (one) {
+    return String(one.serialHex).toLowerCase() === 'de';
+  }), 'and a revocation of anything that is NOT a live tier is untouched — ' +
+      'RFC 5280 makes those permanent',
+      JSON.stringify(listed.map(function (one) {
+        return one.serialHex;
+      })));
+  t.check(stored.intermediate && stored.intermediate.serialHex === '01',
+          'the tier the row publishes is unchanged by the drop');
+  log.debug("Leaving publishedNotRevokedSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-cluster-keys-'));
@@ -714,6 +785,7 @@ async function run(t) {
     await offSection(t, kek);
     await keysSection(t, kek);
     await mergeSection(t, kek);
+    await publishedNotRevokedSection(t, kek);
     await buildSection(t);
     await crlSection(t);
     await spiffeSection(t);

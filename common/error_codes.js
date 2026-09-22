@@ -1678,6 +1678,12 @@ const CODES = [
       'no record of.',
     spec: 'HTTP 400 from GET /admin-api/keys/history; a refusal on ' +
       '/admin/keys/history' },
+  { code: 'STS-KEYS-0069',
+    summary: 'A certificate authority row listed a certificate it still ' +
+      'publishes as revoked; the revocation was dropped rather than ' +
+      'written.',
+    spec: 'none — logged. A row may not publish a certificate its own CRL ' +
+      'calls revoked; the drop is evidence of a tier write that was lost' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

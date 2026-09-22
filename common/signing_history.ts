@@ -70,14 +70,8 @@ type Json = any;
 // short-lived store declares.
 const history = realms.map({ persist: 'signing.history' });
 
-// A row is small, but the store is unbounded BY DESIGN, so a page of it is
-// what a reader gets. This is the default page size the view uses when a
-// caller asks for none; the console's own pager overrides it.
-const DEFAULT_PER = 20;
-
 interface SigningHistoryDeps {
   log: Json;
-  realms: typeof realms;
   errorCodes: typeof errorCodes;
   // Lazily, both: `helpers` for the key set and the unit table, `pki` for the
   // certificate a key was issued. Neither may be required at load — see the
@@ -101,7 +95,6 @@ class SigningHistory {
     log.debug("Leaving SigningHistory.defaultDeps().");
     return {
       log: log,
-      realms: realms,
       errorCodes: errorCodes,
       helpers: function (): Json {
         return require('./helpers');
@@ -130,7 +123,7 @@ class SigningHistory {
   // service has today — a kid is derived from the key material — but the unit
   // is in it so that a reader of the store can tell which unit a row belongs
   // to without parsing a key identifier whose shape is each algorithm's own.
-  rowKey(unit: string, kid: string): string {
+  private rowKey(unit: string, kid: string): string {
     this.deps.log.debug("Entering SigningHistory.rowKey().");
     this.deps.log.debug("Leaving SigningHistory.rowKey().");
     return String(unit) + '#' + String(kid);
@@ -484,12 +477,6 @@ class SigningHistory {
     };
   }
 
-  // The default page size the console and the API use when a caller asks for
-  // none. Exported so both doors agree without either writing a number down.
-  get DEFAULT_PER(): number {
-    return DEFAULT_PER;
-  }
-
   // For the tests, and for nothing in the service: the store this module
   // writes, so a test can assert what was recorded rather than what a view
   // reported about it. `helpers.resetStsKeys()`'s note applies — nothing in
@@ -515,7 +502,5 @@ export = {
   historyView: instance.historyView.bind(instance),
   unitsOf: instance.unitsOf.bind(instance),
   rowsOf: instance.rowsOf.bind(instance),
-  rowKey: instance.rowKey.bind(instance),
-  forgetForTests: instance.forgetForTests.bind(instance),
-  DEFAULT_PER: DEFAULT_PER
+  forgetForTests: instance.forgetForTests.bind(instance)
 };
