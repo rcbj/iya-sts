@@ -103,13 +103,15 @@ locals {
   # its own: every file that iterates this map takes it with no edit. Merged
   # CONDITIONALLY so `dev` and `ci` render the four rows they always did. With
   # it, a service has five target groups, which is ECS's limit.
+  # `health` is how the load balancer checks the port (2026-09-21): a GET of
+  # /healthcheck where the port speaks HTTP, a TCP connect where it does not.
   published_ports = merge({
-    https = { listener = 443, container = 8081 }
-    ldap  = { listener = 389, container = 389 }
-    ldaps = { listener = 636, container = 636 }
-    pki   = { listener = var.pki_listener_port, container = 8082 }
+    https = { listener = 443, container = 8081, health = "HTTPS" }
+    ldap  = { listener = 389, container = 389, health = "TCP" }
+    ldaps = { listener = 636, container = 636, health = "TCP" }
+    pki   = { listener = var.pki_listener_port, container = 8082, health = "HTTP" }
     }, var.publish_kerberos ? {
-    kerberos = { listener = 88, container = 88 }
+    kerberos = { listener = 88, container = 88, health = "TCP" }
   } : {})
 }
 

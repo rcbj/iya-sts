@@ -119,6 +119,18 @@ SECRET_ARN="$(out admin_api_client_secret_arn)"
 NLB_DNS="$(out nlb_dns_name)"
 LDAP_PORT="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).ldap.listener))' "$(out load_balancer_ports)")"
 NODES="$(node -e 'process.stdout.write(String(Object.keys(JSON.parse(process.argv[1])).length))' "$(out ecs_services)")"
+# WHAT THIS ENVIRONMENT DOES NOT PUBLISH (2026-09-21), for the jobs that
+# dial a port of their own rather than the main one. Kerberos TCP 88 is a
+# row of `load_balancer_ports` only where `publish_kerberos` is on (testidp);
+# SPIFFE's ports come from the separate spiffe-realm stack, which this
+# environment's outputs cannot see, so they count as unpublished unless the
+# caller names a socket (STS_SPIFFE_WORKLOAD_URL). Without this both jobs
+# dialled the load balancer on a port nobody listens on and failed on a
+# timeout, as though the service were broken; now each declines and says why.
+UNPUBLISHED="$(node -e 'const p = JSON.parse(process.argv[1]); const u = [];
+  if (!p.kerberos) { u.push("kerberos"); }
+  if (!process.env.STS_SPIFFE_WORKLOAD_URL) { u.push("spiffe"); }
+  process.stdout.write(u.join(","));' "$(out load_balancer_ports)")"
 [ -n "${URL}" ] || die "${ENVIRONMENT} has no service_url output; is it applied?"
 say "${ENVIRONMENT} at ${URL}, ${NODES} node(s), run ${RUN_ID}"
 
@@ -245,6 +257,9 @@ docker run --rm --network host \
   -e JOB_TIMEOUT="${STS_SUITE_JOB_TIMEOUT_MS:-1200000}" \
   -e STS_TEST_CLUSTER_NODES="${STS_TEST_CLUSTER_NODES:-${NODES}}" \
   -e STS_TEST_FRESH_CONNECTIONS=1 \
+  -e STS_TEST_UNPUBLISHED="${UNPUBLISHED}" \
+  -e STS_SPIFFE_WORKLOAD_URL="${STS_SPIFFE_WORKLOAD_URL:-}" \
+  -e STS_SPIFFE_SERVER_URL="${STS_SPIFFE_SERVER_URL:-}" \
   -e STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
   -e STS_PUBLIC_BASE_URL="${URL}" \
   -e STS_TEST_SERVICE_URL="${URL}" \

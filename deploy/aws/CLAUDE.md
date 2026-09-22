@@ -8,7 +8,7 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the permissions boundary, the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 636, and the plain-HTTP CRL/OCSP port — 8082, or 80 in `testidp` — plus TCP 88 for the KDC in `testidp`), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a public ACM certificate and a CNAME (`dns.tf`), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services | the deployer role |
 | `spiffe-realm/` | per realm | one trust realm's two SPIFFE ports (Workload API, SPIRE Server API) on an existing environment's NLB: two listeners, two target groups with the nodes registered BY ADDRESS, and the security-group rules — state at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
@@ -81,7 +81,7 @@ reported as an unencrypted UserInfo response.
 **Four published ports.** 443 → 8081; 389 (the directory in the clear) and
 **636 (the same directory behind TLS, since 2026-09-17)** on the same numbers
 inside and out; and the plain-HTTP CRL/OCSP listener, **8082 inside and
-`var.pki_listener_port` outside** — 8082 in `dev` and `ci`, 80 in `testidp`.
+`var.pki_listener_port` outside** — 80 in every environment since 2026-09-21 (it was 8082 everywhere but `testidp`).
 The service writes the OUTSIDE number into what it publishes:
 `PKI_DISTRIBUTION_BASE_URL` is built from `published_ports.pki.listener` and
 `PKI_DISTRIBUTION_LDAP_HOST` names the NLB, so a certificate's CRL address is
@@ -109,10 +109,13 @@ target group behind PROXY v2 (which `server.js` installs on the KDC's TCP
 socket) and a TCP-connect health check — nothing on it is HTTP. **UDP 88 is
 not published, by rcbj's decision**: Kerberos over UDP does not do well across
 the open internet, and a datagram could not carry the PROXY header anyway; a
-client is pointed at TCP (`udp_preference_limit = 1`). Gated by a variable
-rather than added for every environment because `dev` and `ci` have no job that
-speaks raw Kerberos to the load balancer — the suite uses MS-KKDCP on 443 — and
-they render the four rows they always did.
+client is pointed at TCP (`udp_preference_limit = 1`). **Published in every
+environment since 2026-09-21** (`publish_kerberos` defaults true), by rcbj's
+decision that a temporary test environment publishes exactly the ports
+`testidp` does, so the two cannot drift: until then only `testidp` had it,
+and `sts_kerberos_spnego`, which does speak raw Kerberos to the load balancer,
+timed out on `ci`. The variable stays, to take the port away; `run-suite.sh`
+then tells the job, which declines.
 
 **Adding it re-deploys `dev` and `ci` once.** Every listener, target group,
 security-group rule pair and container port mapping iterates
@@ -273,11 +276,12 @@ plan against its state showed two new empty outputs and nothing else.
   publicly trusted name. `cert-init` is what puts the certificate in the task
   (*TLS passes through the NLB*, above). `STS_PUBLIC_BASE_URL`, the first
   `STS_TLS_HOSTNAMES` entry and the CRL/OCSP addresses use the public name.
-* **`pki_listener_port = 80`** (2026-09-17): the plain-HTTP CRL/OCSP/caIssuers
-  listener is published on 80 rather than 8082, so what a relying party reads
-  out of a certificate is `http://test-idp.iyasec.io/pki/…` — the port an
-  http:// address is expected on. The container is still 8082, and `dev` and
-  `ci` keep 8082 on both sides. See *Four published ports* above.
+* **Its ports are every environment's since 2026-09-21.** The CRL/OCSP
+  listener on 80 (so a certificate names `http://test-idp.iyasec.io/pki/…`,
+  the port an http:// address is expected on) and the KDC on TCP 88 were set
+  in `testidp.tfvars` until then; they are the variables' defaults now, so a
+  temporary test environment publishes what this one does. See *Four
+  published ports* above.
 * **Product mode with the dispatcher**: `tests/tools/modes.sh`'s `dispatch`
   row (three request workers, one surface worker, `*`, read-your-write) with
   `sts_mode = "product"`, from four `workers_*` variables. The bootstrap

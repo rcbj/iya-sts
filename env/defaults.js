@@ -48,15 +48,15 @@ var config = {
 
   // --- Global ----------------------------------------------------------
   global: {
-    host: "0.0.0.0",              // HTTP bind address; restart to apply
-    port: 8081,                   // HTTP port; restart to apply
-    domain: "example.com",        // Domain; restart to apply
-    trustProxy: false,            // Trust forwarded headers
-    trustedProxies: "",           // Trusted proxy addresses
-    proxyProtocol: "off",         // PROXY protocol on the TCP listeners; restart to apply
-    proxyProtocolTimeoutMs: 5000, // PROXY protocol header timeout (ms)
-    publicBaseUrl: "",            // Public base URL
-    corsOrigins: ""               // Origins treated as this service's own
+    host: "0.0.0.0",               // HTTP bind address; restart to apply
+    port: 8081,                    // HTTP port; restart to apply
+    domain: "example.com",         // Domain; restart to apply
+    trustProxy: false,             // Trust forwarded headers
+    trustedProxies: "",            // Trusted proxy addresses
+    proxyProtocol: "off",          // PROXY protocol on the TCP listeners; restart to apply
+    proxyProtocolTimeoutMs: 30000, // PROXY protocol header timeout (ms)
+    publicBaseUrl: "",             // Public base URL
+    corsOrigins: ""                // Origins treated as this service's own
   },
 
   // --- Admin console ---------------------------------------------------

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2863** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2864** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 114
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 115
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 92
@@ -2153,6 +2153,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0112` | A Workload API call arrived on a connection attested for a process that has since exited, whose pid was reused, or that executed a different program. | gRPC PERMISSION_DENIED |
 | `STS-SPIFFE-0113` | A realm's Workload API Unix socket was not bound: this is a product and the native module workload attestation needs is not in the image. | — |
 | `STS-SPIFFE-0114` | A realm's SPIRE Server API could not take a new certificate after the service Root was replaced, so it still presents a chain under the old Root and a client holding the new bundle cannot verify it until a restart. | — |
+| `STS-SPIFFE-0115` | After the service Root was replaced, a realm's certificate authority branch did not arrive under the new Root within 30 seconds, so its SPIRE Server API was re-keyed anyway and the branch was repaired in this process — which may leave the realm with two Intermediate CAs if the process that replaced the Root rebuilds it too. | — |
 
 ## STS-TLS
 

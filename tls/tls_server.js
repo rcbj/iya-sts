@@ -3090,6 +3090,19 @@ function observeConnectionsOn(server, label) {
   // gave. On this port a client certificate is never REQUIRED, so what lands
   // here is a broken handshake rather than a refused credential.
   server.on('tlsClientError', function (error, socket) {
+    // A PEER THAT CLOSED BEFORE SAYING ANYTHING (2026-09-21) is a load
+    // balancer's TCP health check — a connect and a close — or a client that
+    // gave up before its hello, and it is not a handshake that failed. On the
+    // ci environment each node logged one about every second, all day: 162 a
+    // minute across three nodes, each an audit row too. Debug, and no row;
+    // every other failure keeps both.
+    if (error && (error.code === 'ECONNRESET' ||
+                  error.message === 'socket hang up')) {
+      log.debug('tls: a connection on ' + label + ' closed before its TLS ' +
+                'hello (' + error.message + ') — a health check or a ' +
+                'client that gave up.');
+      return;
+    }
     log.warn('tls: a handshake failed on ' + label + ' from ' +
              ((socket && socket.remoteAddress) || 'an unknown address') +
              ': ' + error.message + '. A client certificate is asked for and ' +

@@ -61,11 +61,17 @@ resource "aws_lb_target_group" "nodes" {
   deregistration_delay   = 30
   connection_termination = true
 
-  # A TCP connect. mock-sts accepts the PROXY v2 LOCAL header the NLB sends on
-  # a health check, and counts a connection closed with no data as a probe.
+  # mock-sts accepts the PROXY v2 LOCAL header the NLB sends on a health
+  # check. Where the port speaks HTTP the check is a GET of /healthcheck
+  # (2026-09-21): it completes the TLS handshake and asks the process to
+  # answer, where a bare TCP connect only asked whether the socket accepted —
+  # and on 8081 read as a failed handshake, logged once a second per node.
+  # LDAP, LDAPS and Kerberos stay a TCP connect; there is nothing to GET.
   health_check {
-    protocol            = "TCP"
+    protocol            = each.value.health
     port                = "traffic-port"
+    path                = each.value.health == "TCP" ? null : "/healthcheck"
+    matcher             = each.value.health == "TCP" ? null : "200"
     interval            = 10
     healthy_threshold   = 2
     unhealthy_threshold = 3

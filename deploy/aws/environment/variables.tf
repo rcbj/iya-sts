@@ -232,9 +232,12 @@ variable "publish_kerberos" {
   description = <<-EOT
     Publish the KDC on the load balancer: TCP 88 outside and inside, through a
     PROXY v2 target group like every other published port (server.js installs
-    the PROXY protocol on the KDC's TCP listener). FALSE (the default) keeps
-    the test arrangement, where no job speaks raw Kerberos to the load balancer
-    — the suite uses MS-KKDCP over 443 — and `testidp` sets it true.
+    the PROXY protocol on the KDC's TCP listener). TRUE BY DEFAULT SINCE
+    2026-09-21, for every environment, by rcbj's decision that a temporary
+    test environment publishes exactly what `testidp` does: it was `testidp`
+    only, so `sts_kerberos_spnego` had no KDC to reach on `ci` and timed out.
+    False takes the port away again (and run-suite.sh tells the Kerberos job,
+    which then declines).
 
     PURE TCP, AND UDP 88 IS NOT PUBLISHED — rcbj's decision (2026-09-18):
     Kerberos over UDP does not do well across the open internet (fragmented
@@ -248,16 +251,18 @@ variable "publish_kerberos" {
     service, which is the limit.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "pki_listener_port" {
   description = <<-EOT
     The load balancer's FRONT-END port for the plain-HTTP CRL, OCSP and
     caIssuers listener; the container is always on `pki.httpPort` (8082)
-    behind it. 8082 (the default) keeps the test arrangement — the same number
-    on both sides — and `testidp` sets 80, which is where a relying party
-    expects to find an http:// address it read out of a certificate.
+    behind it. 80 BY DEFAULT SINCE 2026-09-21, for every environment — where
+    a relying party expects to find an http:// address it read out of a
+    certificate — by rcbj's decision that a temporary test environment
+    publishes what `testidp` does. It was `testidp` only, with 8082 (the same
+    number on both sides) everywhere else.
 
     IT IS THE FRONT-END PORT THAT GOES INSIDE EVERY CERTIFICATE, because that
     is the side a relying party reaches: `ecs.tf` builds
@@ -265,7 +270,7 @@ variable "pki_listener_port" {
     from inside its container. Changing it re-issues nothing already signed.
   EOT
   type        = number
-  default     = 8082
+  default     = 80
 }
 
 variable "workers_request_count" {

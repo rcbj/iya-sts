@@ -88,6 +88,9 @@ import auth = require('./spiffe_auth');
 // `spiffe_auth.ts` just above, which is where it is first required and its
 // routes register, so this adds a cache hit and moves nothing.
 import tlsServer = require('../tls/tls_server');
+// For `scopeChainsToRoot()`, in `refreshServerCredentials()`. A library,
+// loaded long before this module; it registers nothing.
+import pki = require('../common/pki');
 // Workload attestation (#40 phase four): the kernel's facts about a caller,
 // and the attestors that turn them into selectors. LIBRARIES.
 import peer = require('./spiffe_peer');
@@ -1573,9 +1576,11 @@ class SpiffeServer {
       if (!entry.apiCredentials) {
         return;
       }
-      Promise.resolve(self.inRealm(realmId, function () {
-        return rpc.refreshServerApiCredentials(entry.apiCredentials);
-      })).catch(function (e) {
+      self.awaitRealmBranch(realmId).then(function () {
+        return self.inRealm(realmId, function () {
+          return rpc.refreshServerApiCredentials(entry.apiCredentials);
+        });
+      }).catch(function (e) {
         log.error(errorCodes.tag('STS-SPIFFE-0114') +
                   'spiffe: the "' + (realmId || 'default') + '" realm\'s ' +
                   'SPIRE Server API kept its old certificate after the ' +
@@ -1585,6 +1590,50 @@ class SpiffeServer {
       });
     });
     log.debug('Leaving SpiffeServer.refreshServerCredentials().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REALM'S BRANCH UNDER THE NEW ROOT BEFORE ANYTHING IS ISSUED FROM IT
+  // (2026-09-21). The listener certificate changes the moment a replaced Root
+  // arrives here — often from ANOTHER process, whose build-root then rebuilds
+  // every realm's branch a few hundred milliseconds later. Re-keying straight
+  // away issued from a branch still under the old Root, `pki.issueUnder()`
+  // repaired it in THIS process, and the rebuilding process built it too: two
+  // Intermediate CAs for one realm, which `sts_pki_distribution_points` found
+  // in `single-node`, where no cluster claim serialises the two. The listener
+  // already waits for its branch rather than building it (`tls/CLAUDE.md`);
+  // this is the same rule for the SPIRE Server API. Bounded: a branch that
+  // never arrives is left to `issueUnder()`'s repair, which is what happened
+  // before this wait existed.
+  // ---------------------------------------------------------------------------
+  private awaitRealmBranch(realmId: string): Promise<boolean> {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeServer.awaitRealmBranch(). realm=' + realmId);
+    const deadline = Date.now() + 30000;
+    log.debug('Leaving SpiffeServer.awaitRealmBranch().');
+    return new Promise(function (resolve) {
+      function look() {
+        const current = self.inRealm(realmId, function () {
+          return pki.scopeChainsToRoot(realmId);
+        });
+        if (current) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          log.warn(errorCodes.tag('STS-SPIFFE-0115') + 'spiffe: the "' +
+                   (realmId || 'default') + '" realm\'s ' +
+                   'certificate authority branch did not arrive under the ' +
+                   'new Root within 30s; its SPIRE Server API is re-keyed ' +
+                   'now, and the branch is repaired in this process.');
+          resolve(false);
+          return;
+        }
+        setTimeout(look, 250).unref();
+      }
+      look();
+    });
   }
 
   // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),

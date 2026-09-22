@@ -19,14 +19,11 @@
 #     certificate into the task before the node starts. It terminated at the
 #     load balancer for one day and that cost the client certificate —
 #     deploy/aws/CLAUDE.md, *TLS passes through the NLB*
-#   * the plain-HTTP CRL/OCSP listener published on PORT 80 rather than 8082,
-#     which is where a relying party expects an http:// address it read out of
-#     a certificate. The container is still on 8082; the front-end port is what
-#     goes inside every certificate this service signs
-#     (`PKI_DISTRIBUTION_BASE_URL`, ecs.tf), so `http://test-idp.iyasec.io/pki/
-#     …` is what a client follows
-#   * the KDC published on TCP 88 (publish_kerberos), so a Kerberos client
-#     can reach it directly as well as over MS-KKDCP at /KdcProxy on 443
+#   * (NOT ANY LONGER: its PORTS. The CRL/OCSP listener on 80 and the KDC on
+#     TCP 88 were this file's until 2026-09-21, when rcbj asked that every
+#     environment publish what this one does — they are the variables'
+#     defaults now, so a temporary test environment and this one cannot
+#     drift. `variables.tf` carries both arguments.)
 #   * product mode with the request dispatcher — the `dispatch` row of
 #     tests/tools/modes.sh with STS_MODE=product. THE BOOTSTRAP
 #     ADMINISTRATOR'S PASSWORD IS IN SECRETS MANAGER (2026-09-17), at
@@ -39,14 +36,6 @@
 # ---------------------------------------------------------------------------
 public_hostname  = "test-idp.iyasec.io"
 public_zone_name = "iyasec.io"
-
-# The front-end port for the plain-HTTP CRL/OCSP/caIssuers listener. The
-# container stays on 8082; `dev` and `ci` keep 8082 on both sides.
-pki_listener_port = 80
-
-# The KDC on TCP 88, through the load balancer like every other port
-# (2026-09-18). TCP only — see the variable. `dev` and `ci` do not publish it.
-publish_kerberos = true
 
 # The service's own names under iyasec.io rather than the example domains the
 # settings default to (2026-09-18): the default realm's DNS domain (which roots
