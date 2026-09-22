@@ -245,6 +245,11 @@ import signals = require('../ssf/ssf_receivers');
 // that requires only the logger and reads `ssf/ssf.ts` out of the require cache
 // when an event is due, so it moves no route from here — see its header.
 import accountSignals = require('../ssf/account_signals');
+// RISC section 2.8's register, for the account holder's own opt-out choice on
+// /portal/signals (#146). A library that registers no route; the portal is
+// loaded after the composition root defers instance building, so the require
+// builds nothing early.
+import risc = require('../ssf/risc');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
@@ -903,6 +908,14 @@ const SIGNALS_QUERY = vz.object({
   page: vt.opt(vt.integer(1, 100000))
 });
 
+// THE ACCOUNT HOLDER'S RISC PARTICIPATION (#146): one of section 2.8's three
+// moves a person may make. opt-out-effective is not among them — only the
+// scheduler job makes that move, after risc.optOutDelayHours.
+const PARTICIPATION_FORM = vz.object({
+  move: vz.enum(['optOutInitiated', 'optOutCancelled', 'optIn']).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
 // What `ldap/ldap_server.js` hands `setDirectory()`: the one function this
 // portal reads a directory entry through.
 interface DirectoryHooks {
@@ -940,6 +953,7 @@ interface PortalDeps {
   gate: typeof gate;
   signals: typeof signals;
   accountSignals: typeof accountSignals;
+  risc: typeof risc;
   log: typeof helpers.log;
   parseBody: typeof helpers.parseBody;
   baseUrlOf: typeof helpers.baseUrlOf;
@@ -986,6 +1000,7 @@ class Portal {
       gate: gate,
       signals: signals,
       accountSignals: accountSignals,
+      risc: risc,
       log: helpers.log,
       parseBody: helpers.parseBody,
       baseUrlOf: helpers.baseUrlOf
@@ -3801,6 +3816,58 @@ class Portal {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHETHER SECURITY EVENTS ABOUT THIS ACCOUNT ARE SHARED (#146, RISC 1.0
+  // section 2.8), which the specification makes the ACCOUNT HOLDER's choice.
+  // Opting out is not immediate: it enters opt-out-initiated, receivers keep
+  // being told everything, and after risc.optOutDelayHours it becomes
+  // effective — the delay exists so that somebody who has just taken an
+  // account over cannot silence the events that would report them. Only the
+  // move the state diagram allows from where the account is gets a button.
+  // ---------------------------------------------------------------------------
+  private participationCard(session): string {
+    const self = this;
+    const { log, risc, config, websecurity } = this.deps;
+    log.debug('Entering Portal.participationCard().');
+    if (!risc.enabled()) {
+      log.debug('Leaving Portal.participationCard(). RISC is off.');
+      return '';
+    }
+    const username = session.user.username;
+    const now = risc.optOutOf(username);
+    const hours = Number(config.value('risc.optOutDelayHours'));
+    const said = now.state === 'opt-in'
+      ? 'Security events about your account <strong>are shared</strong> ' +
+        'with the applications that receive them.'
+      : now.state === 'opt-out-initiated'
+        ? 'You asked to <strong>stop sharing</strong> security events ' +
+          (now.since ? 'on ' + self.esc(now.since) + ' ' : '') +
+          'and it takes effect ' + self.esc(String(hours)) + ' hour(s) ' +
+          'after you asked. Until then they are still shared, and you can ' +
+          'cancel.'
+        : 'Security events about your account are <strong>not ' +
+          'shared</strong>, apart from the notice that you opted out.';
+    const labels = { optOutInitiated: 'Stop sharing security events',
+                     optOutCancelled: 'Cancel: keep sharing them',
+                     optIn: 'Share security events again' };
+    const buttons = now.moves.map(function (move) {
+      return '<form method="post" action="' + self.esc(BASE + '/signals') +
+        '">' + websecurity.field(session.id) +
+        '<input type="hidden" name="move" value="' + self.esc(move) + '">' +
+        '<button' + (move === 'optOutInitiated' ? ' class="danger"' : '') +
+        '>' + self.esc(labels[move]) + '</button></form>';
+    }).join('');
+    log.debug('Leaving Portal.participationCard(). ' + now.state);
+    return '<div class="card"><h2>Sharing security events about your ' +
+      'account</h2><p>' + said + '</p>' + buttons +
+      '<p class="note">These are OpenID RISC events: an account disabled, a ' +
+      'password that must be changed, a contact detail changed. Applications ' +
+      'you use receive them to protect your account there. Stopping them is ' +
+      'your choice (RISC section 2.8), and it waits ' +
+      self.esc(String(hours)) + ' hour(s) so that somebody who has taken ' +
+      'your account over cannot silence them at once.</p></div>';
+  }
+
   private signalsPage(session, message, error, wanted) {
     const self = this;
     const { log, signals } = this.deps;
@@ -3875,6 +3942,7 @@ class Portal {
       : '';
 
     const html = self.shell(BASE + '/signals', session, message, error,
+      self.participationCard(session) +
       '<div class="card">' +
       '<h2>What has been reported about your account</h2>' +
       '<p class="sub">This portal is a registered receiver of this identity ' +
@@ -3892,10 +3960,12 @@ class Portal {
       'an account &mdash; a phone number, for instance &mdash; it is left ' +
       'out rather than guessed at, so it is possible for something about you ' +
       'to be missing from this list. It is never possible for something ' +
-      'about somebody else to be on it.</p><p class="note"><strong>This is a ' +
-      'record and not a control.</strong> Nothing here can be edited or ' +
-      'removed, including by you: a list of what was said about your account ' +
-      'would be worth nothing if the account\'s owner could empty it. To end ' +
+      'about somebody else to be on it.</p><p class="note"><strong>This list ' +
+      'is a record and not a control</strong> (the one control on this page ' +
+      'is whether events are shared at all, above). Nothing in it can be ' +
+      'edited or removed, including by you: a list of what was said about ' +
+      'your account would be worth nothing if the account\'s owner could ' +
+      'empty it. To end ' +
       'a session, use <a href="/logout">sign out of everything</a>; to ' +
       'change a credential, use the pages in <em>How you sign in</em>.</p><p ' +
       'class="note">The notices are OpenID CAEP (what happened to a ' +
@@ -4563,6 +4633,73 @@ class Portal {
                 session.user.username + '.');
       return self.send(res, 200, self.signalsPage(session, null, null,
                                         asked.value.page || 1));
+    });
+
+    // THE ACCOUNT HOLDER'S RISC CHOICE (#146). See participationCard().
+    app.post(BASE + '/signals', async function (req, res) {
+      log.debug('Entering POST ' + BASE + '/signals.');
+      const session = self.requireSignIn(req, res, BASE + '/signals',
+                                         accessGate.ACTION.MANAGE_OWN);
+      if (!session) {
+        log.debug('Leaving POST ' + BASE + '/signals. Not signed in.');
+        return undefined;
+      }
+      const username = session.user.username;
+      const posted = validation.checkParsed(parseBody(req), 'body',
+                                            PARTICIPATION_FORM);
+      if (!posted.ok) {
+        errorCodes.mark(res, self.innerCode(posted) || 'STS-PORTAL-0001');
+        return self.refuseShape(res, posted);
+      }
+      const csrf = websecurity.checkCsrf(session.id, posted.value);
+      if (!csrf.ok) {
+        log.debug('Leaving POST ' + BASE + '/signals. CSRF.');
+        errorCodes.mark(res, self.innerCode(csrf) || 'STS-PORTAL-0017');
+        return self.send(res, 403, self.signalsPage(session, null,
+                                                    csrf.detail, 1));
+      }
+      const { risc } = self.deps;
+      const move = String(posted.value.move || '');
+      if (!risc.enabled() || !risc.optOutMoveAllowed(username, move)) {
+        log.debug('Leaving POST ' + BASE + '/signals. Not a move from ' +
+                  'here.');
+        errorCodes.mark(res, 'STS-PORTAL-0075');
+        return self.send(res, 409, self.signalsPage(session, null,
+          'That is not a change your account can make now: it is ' +
+          risc.optOutOf(username).state + '.', 1));
+      }
+      const before = risc.optOutOf(username).state;
+      await self.deps.accountSignals.optOutMoved({ username: username,
+        act: move, via: 'portal',
+        reasonAdmin: username + ' changed their RISC participation on the ' +
+                     'portal.' });
+      const after = risc.optOutOf(username).state;
+      if (after === before) {
+        // Nothing recorded it — Shared Signals is off in this process, so
+        // there is no register to move and no receiver to tell.
+        log.warn(errorCodes.tag('STS-PORTAL-0076') + 'portal: ' + username +
+                 '\'s RISC ' + move + ' was not recorded.');
+        errorCodes.mark(res, 'STS-PORTAL-0076');
+        return self.send(res, 503, self.signalsPage(session, null,
+          'Your choice could not be recorded: this service is not ' +
+          'sending security events at the moment.', 1));
+      }
+      audit.record({
+        category: 'signals', action: 'portal.risc.' + move,
+        actor: username, outcome: 'success',
+        summary: username + ' moved their RISC participation from ' + before +
+                 ' to ' + after,
+        detail: { address: websecurity.addressOf(req) }
+      });
+      log.debug('Leaving POST ' + BASE + '/signals. ' + before + ' -> ' +
+                after + '.');
+      return self.send(res, 200, self.signalsPage(session,
+        after === 'opt-out-initiated'
+          ? 'You asked to stop sharing security events. It takes effect ' +
+            'after the waiting period, and you can cancel until then.'
+          : after === 'opt-in'
+            ? 'Security events about your account are shared.'
+            : 'Done.', null, 1));
     });
 
     // THE PAGE BEHIND THE POST BELOW. Same path, different method: the form has

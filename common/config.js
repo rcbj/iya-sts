@@ -9199,26 +9199,55 @@ const SETTINGS = [
     label: 'Which acts emit automatically',
     env: 'STS_RISC_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'account-purged,account-disabled,account-enabled,' +
-          'identifier-changed,account-credential-change-required,' +
-          'recovery-information-changed',
+          'identifier-changed,identifier-recycled,' +
+          'account-credential-change-required,' +
+          'recovery-information-changed,recovery-activated,' +
+          'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
+          'opt-out-effective,opt-in',
     runtime: true,
     description: 'The SHORT NAMES of the RISC events this service emits by ' +
-                 'itself, out of the six acts it can actually observe: the ' +
-                 'four in its own directory, and — since 2026-09-13 — the ' +
-                 'two ' +
-                 'an administrator performs on a person\'s /admin/users page ' +
-                 'or through /admin-api/users. A password reset or a reset ' +
-                 'link emits account-credential-change-required, and ' +
-                 'clearing somebody\'s recovery codes (alone, or with every ' +
-                 'other second factor) emits recovery-information-changed. ' +
-                 'Four of the remaining eight — the opt-out set — are ' +
-                 'emitted by hand and CHANGE REAL STATE here when they are, ' +
-                 'because RISC defines each of them as "the account is in ' +
-                 'this state" rather than as a report that it moved. The ' +
-                 'other four describe things nothing here does: no breach ' +
-                 'corpus is searched by this service. A row naming one of ' +
-                 'the eight is dropped with a warning rather than producing ' +
-                 'an event nothing can cause.' },
+                 'itself, out of the thirteen acts it can observe (every ' +
+                 'one since 2026-09-22, #146). In its own directory: an ' +
+                 'account purged, disabled (with the reason an ' +
+                 'administrator gave, and none when none was given) or ' +
+                 'enabled, an identifier changed, and an identifier ' +
+                 'RECYCLED — given to an account after another released it ' +
+                 'within risc.recycleWindowDays. From an administrator: a ' +
+                 'password reset, a reset link or a required change emits ' +
+                 'account-credential-change-required, a reset link also ' +
+                 'emits recovery-activated, a reset marked as caused by a ' +
+                 'compromised credential emits credential-compromise, and ' +
+                 'clearing recovery codes emits ' +
+                 'recovery-information-changed (as does a person confirming ' +
+                 'new ones on the portal). From the account holder on ' +
+                 '/portal/signals: opt-out-initiated, opt-out-cancelled and ' +
+                 'opt-in, and opt-out-effective when risc.optOutDelayHours ' +
+                 'has passed. Only the deprecated sessions-revoked is never ' +
+                 'caused here; a row naming it is dropped with a warning ' +
+                 'rather than producing an event nothing can cause.' },
+
+  { key: 'risc.recycleWindowDays', group: 'RISC',
+    label: 'Recycled identifier window (days)',
+    env: 'STS_RISC_RECYCLE_WINDOW_DAYS', type: 'int', dflt: 365,
+    min: 0, max: 3650, runtime: true,
+    description: 'How long after an account released an email address or ' +
+                 'phone number — moved off it, or was purged holding it — ' +
+                 'another account taking it is reported as RISC ' +
+                 'identifier-recycled (section 2.6). The memory is the RISC ' +
+                 'register\'s, so it is also bounded by ' +
+                 'risc.maxAccountsTracked. 0 reports nothing.' },
+
+  { key: 'risc.optOutDelayHours', group: 'RISC',
+    label: 'Opt-out takes effect after (hours)',
+    env: 'STS_RISC_OPT_OUT_DELAY_HOURS', type: 'int', dflt: 24,
+    min: 0, max: 720, runtime: true,
+    description: 'How long an account holder\'s opt-out on /portal/signals ' +
+                 'stays in RISC section 2.8\'s opt-out-initiated state ' +
+                 'before it becomes effective (opt-out-effective, sent by ' +
+                 'the risc.opt-out-effective scheduler job). The delay is ' +
+                 'the section\'s point: receivers keep getting events, and ' +
+                 'the holder can cancel, until it passes. 0 makes it ' +
+                 'effective on the job\'s next run.' },
 
   { key: 'risc.eventsSupported', group: 'RISC',
     label: 'RISC event types offered', env: 'STS_RISC_EVENTS_SUPPORTED',

@@ -42,14 +42,28 @@ The vocabularies run over that pipe:
 
 | Vocabulary | Events | About | Emitted on its own when |
 |---|---|---|---|
-| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, an administrator changes a credential |
-| **RISC** | 14 | an account | a person is deleted, `active` goes false or true, a mail address or telephone number changes, an administrator resets a password or clears recovery codes |
+| **CAEP** | 8 | a session | someone signs in, uses single sign-on, signs out, a session expires, a person re-authenticates at a different `acr`, any credential of a person changes, a directory change moves a claim of somebody holding live tokens |
+| **RISC** | 14 | an account | a person is deleted, disabled or enabled; a mail address or telephone number changes, or is given to an account after another released it; an administrator resets a password (optionally marking it compromised) or issues a reset link; recovery codes are cleared or confirmed; the account holder opts out or back in on `/portal/signals` |
 
-The remaining CAEP and RISC events describe things this service never does:
-no device reports compliance to it, no risk engine talks to it, it searches
-no breach corpus and it runs no recovery flow. You emit those by hand from the
-console or the management API. [CAEP events](caep-events.md) covers what
-triggers each CAEP event.
+The remaining events describe things this service does not observe:
+- CAEP's device compliance and risk level: no device reports to it (#164) and
+  no risk engine talks to it (#62).
+- RISC's deprecated `sessions-revoked`.
+
+You emit those by hand from the console or the management API.
+[CAEP events](caep-events.md) covers what triggers each CAEP event.
+
+**RISC opt-out (section 2.8) is the account holder's choice.** On
+`/portal/signals` a person can stop sharing security events about their
+account. Their account enters `opt-out-initiated`; receivers keep being told
+everything; and after `risc.optOutDelayHours` a scheduler job sends
+`opt-out-effective`, after which only opt-out events are sent about them.
+They can cancel during the wait, or opt back in afterwards. The wait stops
+somebody who has just taken an account over from silencing it at once.
+
+**`account-disabled` carries a `reason` only when an administrator gives one**
+(`hijacking` or `bulk-account`, on the console's disable form or as
+`riscReason` on `/admin-api/users/disable`).
 
 One more event exists, and it belongs to this service rather than to any
 specification: `urn:iya:sts:secevent:event-type:signing-key-rotated`. It goes
@@ -419,7 +433,9 @@ types from what a stream may ask for.
 |---|---|---|---|---|
 | `risc.enabled` | `STS_RISC_ENABLED` | `true` | yes | Offers RISC's fourteen event types and keeps the account register. |
 | `risc.autoEmit` | `STS_RISC_AUTO_EMIT` | `true` | yes | Sends RISC events automatically for the directory changes this service can observe. |
-| `risc.autoEmitTypes` | `STS_RISC_AUTO_EMIT_TYPES` | `account-purged,account-disabled,account-enabled,identifier-changed,account-credential-change-required,recovery-information-changed` | yes | Which of those acts produce an event. |
+| `risc.autoEmitTypes` | `STS_RISC_AUTO_EMIT_TYPES` | every type but `sessions-revoked` | yes | Which of those acts produce an event. |
+| `risc.recycleWindowDays` | `STS_RISC_RECYCLE_WINDOW_DAYS` | `365` | yes | How long after an account released an address or number another account taking it is reported as `identifier-recycled`. Also bounded by `risc.maxAccountsTracked`. `0` reports nothing. |
+| `risc.optOutDelayHours` | `STS_RISC_OPT_OUT_DELAY_HOURS` | `24` | yes | How long an opt-out waits in `opt-out-initiated` before the `risc.opt-out-effective` job makes it effective. |
 | `risc.eventsSupported` | `STS_RISC_EVENTS_SUPPORTED` | all fourteen | yes | Which RISC types a stream may ask for, including the deprecated `sessions-revoked`. |
 | `risc.subjectFormat` | `STS_RISC_SUBJECT_FORMAT` | `iss_sub` | yes | The RFC 9493 format of an account subject: `iss_sub`, `email` or `opaque`. The two identifier events always use `email`. |
 | `risc.honourOptOut` | `STS_RISC_HONOUR_OPT_OUT` | `true` | yes | Suppresses events for an account in the `opt-out` state, except the four opt-out events. |

@@ -3271,10 +3271,16 @@ class AdminApi {
                         description:
                           'The person, as /admin-api/users names them.' },
                 username: { type: 'string',
-                            description: 'Accepted for `user`.' }
+                            description: 'Accepted for `user`.' },
+                compromised: { type: 'boolean',
+                               description: 'The reset is BECAUSE a ' +
+                                 'credential was compromised: RISC ' +
+                                 '`credential-compromise` (`password`) is ' +
+                                 'sent as well (#146).' }
               },
               required: ['user'],
-              examples: [{ user: 'alice' }],
+              examples: [{ user: 'alice' }, { user: 'alice',
+                                              compromised: true }],
               additionalProperties: false
             },
             responseDescription: 'The generated password, ONCE, whether the ' +
@@ -3303,7 +3309,10 @@ class AdminApi {
                          'is enforced.\n\n**Shared Signals**: a CAEP ' +
                          '`credential-change` (`password`, `revoke`) where a ' +
                          'password was removed, a RISC ' +
-                         '`account-credential-change-required`, and a CAEP ' +
+                         '`account-credential-change-required` and ' +
+                         '`recovery-activated` (#146), RISC ' +
+                         '`credential-compromise` when `compromised` is ' +
+                         'true, and a CAEP ' +
                          '`credential-change` (`password`, `create`) when ' +
                          'the link is spent.',
             requestBodyRequired: true,
@@ -3314,10 +3323,16 @@ class AdminApi {
                         description:
                           'The person, as /admin-api/users names them.' },
                 username: { type: 'string',
-                            description: 'Accepted for `user`.' }
+                            description: 'Accepted for `user`.' },
+                compromised: { type: 'boolean',
+                               description: 'The reset is BECAUSE a ' +
+                                 'credential was compromised: RISC ' +
+                                 '`credential-compromise` (`password`) is ' +
+                                 'sent as well (#146).' }
               },
               required: ['user'],
-              examples: [{ user: 'alice' }],
+              examples: [{ user: 'alice' }, { user: 'alice',
+                                              compromised: true }],
               additionalProperties: false
             },
             responseDescription: 'The reset link, ONCE, when it expires, ' +
@@ -3482,10 +3497,16 @@ class AdminApi {
                 username: { type: 'string',
                             description: 'Accepted for `user`.' },
                 reason: { type: 'string',
-                          description: 'Recorded on the audit row.' }
+                          description: 'Recorded on the audit row.' },
+                riscReason: { type: 'string',
+                              enum: ['hijacking', 'bulk-account'],
+                              description: 'RISC account-disabled\'s ' +
+                                '`reason` (section 2.2), sent to ' +
+                                'receivers; omitted when not given (#146).' }
               },
               required: ['user'],
-              examples: [{ user: 'mallory', reason: 'left the company' }],
+              examples: [{ user: 'mallory', reason: 'left the company' },
+                         { user: 'mallory', riscReason: 'hijacking' }],
               additionalProperties: false
             },
             responseDescription: 'Whether anything changed, and in `ended` ' +

@@ -5604,6 +5604,12 @@ function createUser(name, options) {
   if (invent) {
     applyVcAttributes(created, wanted);
   }
+  // AND THE ACCOUNT OBSERVER IS TOLD, as an LDAP add always told it (#146).
+  // The three doors that create through this function — the console,
+  // /admin-api/users and SCIM — told it nothing, so an account created
+  // disabled sent no RISC account-disabled and an address given to a new
+  // account could never be reported recycled.
+  noteAccountChange('created', created.dn, {}, attributeSnapshot(created));
   // ---------------------------------------------------------------------
   // AND THE PERSON IS PUT IN THE IDENTITY REGISTER, WHICH IS WHAT MAKES THEM
   // VISIBLE ON /admin/users. THIS WAS A PRE-EXISTING GAP, found while building
@@ -8290,11 +8296,14 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Leaving readAccountDisabled().");
       return !!(flags && flags.accountLockedTime);
     },
-    writeAccountDisabled: function (key, value) {
+    // `options.riscReason` (#146) is RISC account-disabled's `reason`, which
+    // only the administrator who disabled somebody can supply; it rides the
+    // account observer's notice to `ssf/risc.ts`.
+    writeAccountDisabled: function (key, value, options) {
       log.debug("Entering writeAccountDisabled().");
       log.debug("Leaving writeAccountDisabled().");
       return writePersonFlag(key, 'pwdAccountLockedTime',
-                             value ? ADMINISTRATIVE_LOCK : '');
+                             value ? ADMINISTRATIVE_LOCK : '', options);
     },
     // A PASSWORD RESET LINK (2026-09-13): the hash and the expiry, written and
     // cleared together, which is `writeActivation()`'s shape.
@@ -8914,7 +8923,7 @@ function readPersonFlags(key) {
            accountLockedTime: one('pwdAccountLockedTime') };
 }
 
-function writePersonFlag(key, name, value) {
+function writePersonFlag(key, name, value, options) {
   log.debug('Entering writePersonFlag(). key=' + key + ', name=' + name);
   if (PERSON_FLAGS.indexOf(name) < 0) {
     log.debug('Leaving writePersonFlag(). Not one of the flags.');
@@ -8947,7 +8956,10 @@ function writePersonFlag(key, name, value) {
   touchDirectory(stored.dn);
   if (observed) {
     noteAccountChange('updated', stored.dn, observed,
-                      attributeSnapshot(stored), { consequences: false });
+                      attributeSnapshot(stored),
+                      { consequences: false,
+                        riscReason: String((options &&
+                                            options.riscReason) || '') });
   }
   log.debug('Leaving writePersonFlag().');
   return true;
@@ -13941,7 +13953,8 @@ function noteAccountChange(kind, dn, before, after, options) {
   try {
     accountObserver({ kind: String(kind), dn: String(dn),
       username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
-      before: before || {}, after: after || {} });
+      before: before || {}, after: after || {},
+      reason: String((options && options.riscReason) || '') });
   } catch (e) {
     log.error(errorCodes.tag('STS-LDAP-0032') +
               'ldap: the account observer threw and the write stands: ' +

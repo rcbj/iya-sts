@@ -275,6 +275,10 @@ const SWEEP_JOB = 'ssf.dead-letter-sweep';
 // scheduleMaintenance().
 const MAINTENANCE_JOB = 'ssf.stream-maintenance';
 
+// An account holder's RISC opt-out becoming effective after the delay (#146).
+// See scheduleOptOuts().
+const OPT_OUT_JOB = 'risc.opt-out-effective';
+
 class SharedSignals {
   // The well-known suffix RFC 8414's registry carries for this document. It
   // is `ssf-configuration` and NOT `ssf-configuration.json`, and not under
@@ -1420,6 +1424,65 @@ class SharedSignals {
     });
     log.debug('Leaving SharedSignals.scheduleMaintenance(). On the ' +
               'scheduler.');
+  }
+
+  // -------------------------------------------------------------------------
+  // RISC SECTION 2.8's DELAY, AS A SCHEDULER JOB (#146). An account holder who
+  // opts out on /portal/signals is in opt-out-initiated until
+  // risc.optOutDelayHours has passed; this job sends opt-out-effective for
+  // each such account, which moves the register to opt-out. A cluster job, per
+  // realm: the register is a store every node shares, and one node sending the
+  // event is the point. Every five minutes, so the delay is honoured to within
+  // that.
+  // -------------------------------------------------------------------------
+  scheduleOptOuts(): void {
+    const { log, config } = this.deps;
+    log.debug('Entering SharedSignals.scheduleOptOuts().');
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(OPT_OUT_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleOptOuts(). Registered.');
+      return;
+    }
+    scheduler.register({
+      id: OPT_OUT_JOB,
+      title: 'RISC opt-outs becoming effective',
+      describe: 'Sends RISC opt-out-effective for every account whose ' +
+                'holder opted out on /portal/signals at least ' +
+                'risc.optOutDelayHours ago and did not cancel (RISC 1.0 ' +
+                'section 2.8), which moves the account to the opt-out ' +
+                'state.',
+      owner: 'ssf/ssf.ts',
+      kind: 'cluster',
+      scope: 'realm',
+      everyMs: function () {
+        return 5 * 60 * 1000;
+      },
+      off: function () {
+        return config.value('risc.enabled') === false ? 'risc.enabled is off'
+                                                      : '';
+      },
+      run: () => {
+        return this.makeOptOutsEffective();
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleOptOuts(). On the scheduler.');
+  }
+
+  // The job's body: one opt-out-effective per account that is due.
+  makeOptOutsEffective(): Promise<Json> {
+    const { log, risc } = this.deps;
+    log.debug('Entering SharedSignals.makeOptOutsEffective().');
+    const due = risc.optOutsDue();
+    log.debug('Leaving SharedSignals.makeOptOutsEffective(). ' + due.length +
+              ' due.');
+    return Promise.all(due.map((username) => {
+      return this.emitRiscAccountAct({ username: username,
+        act: 'optOutEffective',
+        reasonAdmin: 'The opt-out ' + username + ' asked for took effect ' +
+                     'after risc.optOutDelayHours.' });
+    })).then((results) => {
+      return { effective: due.length, results: results };
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -4673,6 +4736,7 @@ class SharedSignals {
     helpers.log.debug('Entering SharedSignals.wire().');
     instance.scheduleSweep();
     instance.scheduleMaintenance();
+    instance.scheduleOptOuts();
     instance.provideCapability();
     instance.installHooks();
     instance.seedOwnReceivers();

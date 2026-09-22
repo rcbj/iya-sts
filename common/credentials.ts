@@ -5056,7 +5056,9 @@ class Credentials {
 
   // Writes or clears the lock. `common/account_state.ts` is the caller that
   // also ends what the person holds; this is only the attribute.
-  setAccountDisabled(username, disabled) {
+  // `options.riscReason` (#146): RISC account-disabled's reason, handed to the
+  // directory write so its account observer can carry it.
+  setAccountDisabled(username, disabled, options?) {
     const { log, errorCodes } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
@@ -5077,7 +5079,8 @@ class Credentials {
     }
     let written = false;
     try {
-      written = !!directory.writeAccountDisabled(name, !!disabled);
+      written = !!directory.writeAccountDisabled(name, !!disabled,
+                                                 options || {});
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0202') + 'credentials: ' +
                 'pwdAccountLockedTime for ' + name + ' could not be ' +

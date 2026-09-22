@@ -523,54 +523,89 @@ was purged on the strength of a message never sent.
 
 ---
 
-## THE FOUR ACTS THIS SERVICE CAN OBSERVE IN ITS DIRECTORY, AND THE TEN IT
-## CANNOT
+## WHAT RISC IS SENT BY ITSELF, AND FROM WHERE (rewritten for #146, 2026-09-22)
 
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a person is deleted | `account-purged` | `deletePerson()` and the LDAP delete handler |
-| `scimActive` goes false | `account-disabled` | `writePerson()` and the LDAP modify handler |
-| `scimActive` goes true | `account-enabled` | the same |
-| `mail` / `telephoneNumber` / `mobile` moves | `identifier-changed` | the same |
+| `pwdAccountLockedTime` appears | `account-disabled`, with `reason` only when an administrator gave one (`hijacking`, `bulk-account`) | every write of the entry: `account_state.ts`'s disable, SCIM `active: false`, an `ldapmodify` |
+| `pwdAccountLockedTime` goes | `account-enabled` | the same |
+| `mail` / `telephoneNumber` / `mobile` moves | `identifier-changed`, the subject the OLD value | the same |
+| a create or a contact change takes an address another account released within `risc.recycleWindowDays` | `identifier-recycled`, the subject the address | the same, read against the register's `releasedIdentifiers` |
+| a password reset, a reset link | `account-credential-change-required` | the admin doors (`observeAct()`) |
+| a reset link | `recovery-activated` | the admin door |
+| a reset marked "the credential was compromised" | `credential-compromise` (`password`) | the admin doors |
+| recovery codes cleared, or confirmed on the portal | `recovery-information-changed` | the admin doors, `/portal/mfa` |
+| the account holder opts out, cancels, opts in | `opt-out-initiated`, `opt-out-cancelled`, `opt-in` | `POST /portal/signals` |
+| an opt-out's delay has passed | `opt-out-effective` | the `risc.opt-out-effective` scheduler job |
 
-**THE OBSERVER SITS ON THE STORE AND NOT ON A DOOR**, which is why there are
-five call sites in `ldap_server.js` rather than one in `scim.js`. The same act
-reaches this directory over SCIM, over LDAP and from the console, and a RISC
-feature that only noticed the SCIM one would report a deprovisioning done with
-a PATCH and stay silent about one done with an `ldapmodify`. That is not a
-smaller feature; it is a transmitter that lies by omission about half its own
-traffic — **which is precisely the defect CAEP shipped with for one revision**
-(`session-presented` from the OAuth2 authorization endpoint alone) and it took
-a test naming every protocol to find, because a count of zero is also what
-*nobody asked for that type* looks like.
+**THE DIRECTORY OBSERVER SITS ON THE STORE AND NOT ON A DOOR**, which is why
+there are several call sites in `ldap_server.js` rather than one in `scim.js`.
+The same act reaches this directory over SCIM, over LDAP and from the console,
+and a feature that noticed only the SCIM one would report a deprovisioning
+done with a PATCH and stay silent about one done with an `ldapmodify`. That is
+a transmitter lying by omission about half its own traffic. **CAEP shipped
+exactly that defect for one revision** (`session-presented` from the OAuth2
+authorization endpoint alone), and it took a test naming every protocol to
+find it, because a count of zero is also what *nobody asked for that type*
+looks like.
 
 **AND IT IS HANDED THE ATTRIBUTES BEFORE AND AFTER, AND `risc.ts` DECIDES.**
-The directory knows what a write is; it does not know that `scimActive` going
-false is an `account-disabled`. That is RISC's reading and it belongs in RISC's
-file — a version of `ldap_server.js` that answered "a disable happened" would
-be the vocabulary leaking into the store.
+The directory knows what a write is; it does not know that a lock appearing is
+an `account-disabled`. The one thing it carries besides the attributes is the
+administrator's RISC `reason` for a disable (`notice.reason`, threaded from
+`admin_actions.ts` through `account_state.ts`, `credentials.ts` and
+`writePersonFlag()`). A reason is never invented. Until #146 every disable
+said `hijacking`, which told receivers an account had been taken over when
+somebody had merely left.
 
-**AN ABSENT ATTRIBUTE IS NOT A FALSE ONE.** `activeIn()` answers `null` for a
-write that says nothing about `active`, because *nobody has ever said* and
-*somebody said no* are two different facts and reading the first as the second
-would emit an `account-disabled` for every person created without the
-attribute.
+**AN ABSENT ENTRY IS NOT AN ACTIVE ONE.** `activeIn()` answers `null` for a
+create's `before` and a delete's `after`, so creating a person is not an
+`account-enabled` and deleting a disabled one is not either.
 
-**AND `active` STILL DEACTIVATES NOBODY HERE.** No endpoint reads it, no bind
-is refused and no token is withheld; `scim_map.js` says so, because a mock that
-silently pretended would teach a provisioning client that its deprovisioning
-path works. What changed is that this service now SAYS so, over RISC — which is
-exactly the division the profile draws: a transmitter reports and a receiver
-decides.
+**`identifier-recycled` IS READ FROM THE REGISTER'S OWN HISTORY.**
+- Each row keeps `releasedIdentifiers`: an address it moved off, or everything
+  it held when purged, each with its time.
+- An account taking one of those within the window is the act, and the event's
+  subject is the address.
+- The memory is the register's, so it is also bounded by
+  `risc.maxAccountsTracked`: a trimmed row forgets what it released.
 
-Of the other ten, two have been sent by the admin doors since 2026-09-13
-(`account-credential-change-required`, `recovery-information-changed` — see
-*Credential changes from the admin doors* below). The remaining eight describe
-things nothing here does — no breach corpus is searched by this service and no
-recovery flow runs in it — so they are emitted by hand from `/admin/risc` or
-`POST /admin-api/risc/emit`. **Four of those eight change real state when they
-go**, because RISC section 2.8 defines each opt-out event
-as *"the account is in the X state"* rather than as a report that it moved.
+**THE ACCOUNT HOLDER'S OPT-OUT.** Section 2.8 makes it their choice, so
+`/portal/signals` offers the one move the state diagram allows from where the
+account is (`risc.optOutOf()`).
+- Opting out stays in `opt-out-initiated`, and receivers keep being told
+  everything, until `risc.optOutDelayHours` has passed; the scheduler job then
+  sends `opt-out-effective`. The delay is the section's own defence: somebody
+  who has just taken an account over cannot silence it at once.
+- The row's `optOutInitiatedAt` is what the job reads. It is set on both paths
+  that move the state: `applyOptOut()` when the event is transmitted, and
+  `applyActLocally()` when it is not.
+- A move is refused unless the register actually moved (STS-PORTAL-0075 and
+  -0076). With Shared Signals off there is nothing to record it.
+
+**Three older gaps #146's HTTP job found:**
+- **`createUser()` never told the account observer.** The console,
+  `/admin-api` and SCIM all create through it, and only an LDAP add told the
+  observer. So an account created disabled sent no `account-disabled`, and a
+  created address could not be recycled. It calls `noteAccountChange()` now.
+- **Identifiers are released when the directory says so** (`observe()`), not
+  only when an event about it has been delivered. The next write can take the
+  address before a push has come back.
+- **A `phone_number` subject is read back** (`accountIdOf()`). A transmitted
+  phone `identifier-changed` matched no account before, and
+  `applyToState()`'s identifier branch filed every change as the email.
+
+**`optOutsDue()` CLAIMS what it returns.** The state moves to `opt-out` only
+after delivery, so without the claim a second run of the job would send
+`opt-out-effective` twice (seen).
+
+**Not here:**
+- `credential-compromise` has no detector (#62).
+- A person cannot start recovery themselves until there is a mail channel
+  (#63).
+- The deprecated `sessions-revoked` is by hand only.
+- A received event is not acted on (#153, #117).
 
 ---
 

@@ -1758,6 +1758,16 @@ class AdminActions {
                     'changed when you next sign in.' });
       accountSignals.credentialChangeRequired({ username: who,
         reasonAdmin: 'An administrator reset the password of ' + who + '.' });
+      // THE ADMINISTRATOR'S WORD THAT THIS WAS A COMPROMISE (#146), and the
+      // only automatic source of credential-compromise until #62 scores one.
+      if (body.compromised === true || body.compromised === 'true' ||
+          body.compromised === 'on') {
+        accountSignals.credentialCompromised({ username: who,
+          credentialType: 'password',
+          reasonAdmin: 'An administrator reset the password of ' + who +
+                       ' because it was compromised.',
+          reasonUser: 'Your password was compromised and has been reset.' });
+      }
       log.info('admin: the password of "' + who + '" was reset by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
@@ -1813,6 +1823,19 @@ class AdminActions {
         reasonAdmin: 'An administrator issued a password reset link for ' +
                      who +
                      '.' });
+      // A RESET LINK IS ACCOUNT RECOVERY STARTED (#146), which is RISC's
+      // recovery-activated. A person's own start comes with #63.
+      accountSignals.recoveryActivated({ username: who,
+        reasonAdmin: 'An administrator started account recovery for ' + who +
+                     ' with a password reset link.' });
+      if (body.compromised === true || body.compromised === 'true' ||
+          body.compromised === 'on') {
+        accountSignals.credentialCompromised({ username: who,
+          credentialType: 'password',
+          reasonAdmin: 'An administrator revoked the password of ' + who +
+                       ' because it was compromised.',
+          reasonUser: 'Your password was compromised and has been revoked.' });
+      }
       log.info('admin: a password reset link was issued for "' + who + '" by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
@@ -1987,9 +2010,20 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
             'the person in `user`.'] });
       }
+      const riscReason = String(body.riscReason || body.risc_reason || '');
+      if (riscReason && ['hijacking', 'bulk-account'].indexOf(riscReason) < 0) {
+        log.debug("Leaving AdminActions.usersAction(). Not a RISC reason.");
+        return this.refused('STS-ADMIN-0794', { ok: false, errors: ['"' +
+          riscReason + '" is not a reason RISC account-disabled carries; ' +
+          'it is hijacking or bulk-account (RISC 1.0 section 2.2), or ' +
+          'none.'] });
+      }
       const answer = accountState.setDisabled(who, action === 'disable', {
         actor: ctx.actor, via: ctx.via,
-        reason: String(body.reason || '') });
+        reason: String(body.reason || ''),
+        // RISC account-disabled's `reason` (#146): `hijacking` or
+        // `bulk-account`, or nothing — never invented.
+        riscReason: riscReason });
       if (!answer.ok) {
         log.debug("Leaving AdminActions.usersAction(). The " + action +
                   " was refused.");
