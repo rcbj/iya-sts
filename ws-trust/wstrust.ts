@@ -547,9 +547,8 @@ class WsTrust {
                    firstByLocal(assertion, 'NameIdentifier');
     const named = nameId ? (nameId.textContent || '').trim() : '';
     const xml = new XMLSerializer().serializeToString(assertion);
-    const signature = stsCrypto.verifyXmlSignature(xml,
-                                                   { element: 'Assertion',
-                                                     certPem: STS.certPem });
+    // Any generation of this realm's XML key (#42): helpers.verifyOwnXml().
+    const signature = helpers.verifyOwnXml(xml, { element: 'Assertion' });
     if (!signature.ok) {
       log.debug("Leaving WsTrust.checkedAssertion(). The signature did not " +
                 "verify.");
@@ -1507,7 +1506,10 @@ class WsTrust {
   private stsCertEndpoint(req, res) {
     const { log, STS } = this.deps;
     log.debug("Entering the STS certificate endpoint.");
-    res.type('text/plain').set('Cache-Control', 'no-store').send(STS.certPem);
+    // The XML signing key's certificate (#42, D2): what signs the SAML
+    // assertions this STS issues.
+    res.type('text/plain').set('Cache-Control', 'no-store')
+       .send(STS.xml.certPem);
     log.debug("Leaving the STS certificate endpoint.");
   }
 

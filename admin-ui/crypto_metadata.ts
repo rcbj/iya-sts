@@ -3831,7 +3831,7 @@ class CryptoMetadata {
 
   registerRoutes(app: { get: Function; post: Function }): void {
     const { log, baseUrlOf, parseBody, errorCodes, admin, certificateDialog,
-            certificateViews } = this.deps;
+            certificateViews, esc } = this.deps;
     const self = this;
     log.debug("Entering CryptoMetadata.registerRoutes().");
     // ------------------------------------------------------------------------
@@ -3899,8 +3899,18 @@ class CryptoMetadata {
     app.get('/admin/keys', function (req, res) {
       log.debug("Entering the key pairs endpoint.");
       const report = self.keysJson(baseUrlOf(req));
+      // The 'Signing keys' settings group (#42) is drawn here, its home in
+      // SETTING_HOMES, beside the public document every generation of every
+      // signer is published in.
       admin.respond(req, res, report, 'Key pairs', '/admin/keys',
-                    self.renderKeyPairs(report));
+                    self.renderKeyPairs(report) +
+                    '<p>Every signer of this realm, each key generation ' +
+                    'with its chain, is published anonymously in the ' +
+                    '<a href="' + esc(baseUrlOf(req) + '/crypto/metadata.json') +
+                    '">crypto metadata document</a> (also as <a href="' +
+                    esc(baseUrlOf(req) + '/crypto/metadata.xml') +
+                    '">XML</a>).</p>' +
+                    '<h2>Settings</h2>' + admin.configFormsFor('/admin/keys'));
       log.debug("Leaving the key pairs endpoint. " + report.keys.length +
                 " key(s).");
     });

@@ -1206,7 +1206,8 @@ class Dpop {
     let claims: Json = null;
     let verified = false;
     try {
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      // Any generation of this realm's key (#42) — helpers.verifyOwnJws().
+      claims = helpers.verifyOwnJws(accessToken);
       verified = true;
     } catch (e) {
       log.debug("Caught in Dpop.presentedAccessToken(): " +

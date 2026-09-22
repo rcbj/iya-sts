@@ -37525,6 +37525,10 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // SIGNER ROTATION (2026-09-22, #42/#48), on /admin/keys — the page that
+  // shows every unit's current, next and retired keys and carries the
+  // Rotate controls (rcbj's D5).
+  { group: 'Signing keys', pages: ['/admin/keys'] },
   // THE SCHEDULER'S SETTINGS (2026-09-22, #49), on the page that shows the
   // jobs they switch and the ticks they time.
   { group: 'Scheduler', pages: ['/admin/scheduler'] },

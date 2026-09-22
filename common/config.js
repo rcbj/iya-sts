@@ -11142,6 +11142,44 @@ const SETTINGS = [
                  'a list somebody has to write is a list somebody has read.' },
 
   // -------------------------------------------------------------------------
+  // SIGNER ROTATION (2026-09-22, #42/#48). A REALM carries these: each realm's
+  // keys are its own, and so is how often they are replaced. The rotation
+  // runs on the scheduler (`signing.rotate`, `signing.retire`) and only in
+  // product mode — `mode.rotatesSigningKeys()` — because a development process
+  // makes new keys at every start anyway. `common/helpers.js`, KEY
+  // GENERATIONS, is the model; /admin/keys draws it.
+  // -------------------------------------------------------------------------
+  { key: 'signing.rotationIntervalDays', group: 'Signing keys',
+    label: 'Rotate each signing key every (days)',
+    env: 'STS_SIGNING_ROTATION_INTERVAL_DAYS', type: 'int', dflt: 90, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a signing key stays CURRENT before the scheduler ' +
+                 'promotes the NEXT key of its unit — (realm, use case, ' +
+                 'algorithm): the JOSE and XML RSA keys, each curve key and ' +
+                 'each post-quantum key — and mints a new next one. The next ' +
+                 'key is published from the moment it is minted (the JWKS, ' +
+                 'the SAML and WS-Federation metadata, /crypto/metadata), so ' +
+                 'a relying party that refreshes its copy at least this often ' +
+                 'already holds it when it starts signing. 0 switches ' +
+                 'scheduled rotation off; a rotation by hand (/admin/keys) ' +
+                 'still works. Product mode only.' },
+
+  { key: 'signing.retiredKeyGraceDays', group: 'Signing keys',
+    label: 'Keep a retired key verifying for (days)',
+    env: 'STS_SIGNING_RETIRED_KEY_GRACE_DAYS', type: 'int', dflt: 0, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a key that was just replaced goes on VERIFYING ' +
+                 'what it signed — and, for an RSA key, decrypting what was ' +
+                 'encrypted to it — before `signing.retire` drops it and ' +
+                 'revokes its certificate with reason superseded. 0, the ' +
+                 'default, means the DERIVED minimum: the longest lifetime of ' +
+                 'anything the key could have signed (access tokens, ID ' +
+                 'Tokens, refresh tokens, SAML and WS-Federation assertions). ' +
+                 'A value below that minimum is raised to it, because a ' +
+                 'retirement that stranded a live token would be the outage ' +
+                 'rotation exists to avoid.' },
+
+  // -------------------------------------------------------------------------
   // THE SCHEDULER (2026-09-22, #49). Every periodic job in this service runs
   // on it — `cluster/scheduler.ts` argues the design, and /admin/scheduler
   // (Monitoring) draws what it has done. SERVICE-WIDE, every one: a realm

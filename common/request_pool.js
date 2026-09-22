@@ -1703,7 +1703,12 @@ function receivePublishedKeys(entry, published) {
   // and the two arbiters would disagree for as long as they kept exchanging
   // it. The store decides for every node; this channel only carries it.
   // -------------------------------------------------------------------------
-  if (published.confirmed) {
+  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation, not a race: the
+  // higher generation is the set every process moves to, as the store's own
+  // merge decides (`keystore.js`, decideKeys()).
+  const newer = heldBlob &&
+    keystore.generationOf(published.blob) > keystore.generationOf(heldBlob);
+  if (published.confirmed || newer) {
     keystore.adoptShared(realmId, published.blob);
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
              'confirmed by the store through worker ' + (entry && entry.pid) +

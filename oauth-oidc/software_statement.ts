@@ -455,8 +455,12 @@ class SoftwareStatement {
       }
       issuerKind = 'realm';
       publisher = String(unverified.sub || '');
-      candidates.push({ kid: STS.kid ? String(STS.kid) : '', key: STS.certPem,
-                        source: 'realm' });
+      // EVERY LIVE GENERATION of the realm's key (#42): a statement issued
+      // before a rotation still verifies until that key's grace ends.
+      helpers.ownRsaCertificates('jose').forEach(function (own: any): void {
+        candidates.push({ kid: String(own.kid || ''), key: own.certPem,
+                          source: 'realm' });
+      });
     } else {
       const party = self.declaringApplication(iss);
       if (party) {
@@ -935,8 +939,8 @@ class SoftwareStatement {
     let verifies = false;
     let why = '';
     try {
-      stsCrypto.verifyJws(String(statement), STS.certPem,
-                          { algorithms: ['RS256'], clockTolerance: 0 });
+      helpers.verifyOwnJws(String(statement),
+                           { algorithms: ['RS256'], clockTolerance: 0 });
       verifies = true;
     } catch (e) {
       log.debug("Caught in SoftwareStatement.describe(): " +

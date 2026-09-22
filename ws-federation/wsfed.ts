@@ -1755,10 +1755,14 @@ class WsFederation {
     const keyDescriptor = (use) => {
       log.debug("Entering keyDescriptor().");
       log.debug("Leaving keyDescriptor().");
-      return '<KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
-        'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
-        '<ds:X509Certificate>' + STS.certB64 +
-        '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></KeyDescriptor>';
+      // One per live generation of the XML key (#42): the token-signing
+      // certificate a relying party trusts is published ahead of its use.
+      return helpers.ownRsaCertificates('xml').map(function (one: any) {
+        return '<KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
+          'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
+          '<ds:X509Certificate>' + stsCrypto.stripPem(one.certPem) +
+          '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></KeyDescriptor>';
+      }).join('');
     };
 
     const endpoint = (element, address) => {
@@ -1843,8 +1847,9 @@ class WsFederation {
       // for every signature a WS-Federation relying party verifies here.
       const how = documentSettings.signatureOptions();
       const signed = stsCrypto.signXml(xml, {
-        privateKeyPem: STS.privateKeyPem,
-        certPem: STS.certPem,
+        // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
+        privateKeyPem: STS.xml.privateKeyPem,
+        certPem: STS.xml.certPem,
         sigAlg: how.sigAlg,
         c14nAlg: how.c14nAlg,
         placement: stsCrypto.PLACEMENT.FIRST,
@@ -1916,10 +1921,8 @@ class WsFederation {
     // argument that could be wrong in two directions no longer exists. What it
     // takes instead is the thing this function actually needed to be told:
     // WHICH element's signature to check.
-    const result = stsCrypto.verifyXmlSignature(xml, {
-      element: element,
-      certPem: STS.certPem
-    });
+    // Any generation of this realm's XML key (#42): helpers.verifyOwnXml().
+    const result = helpers.verifyOwnXml(xml, { element: element });
     log.debug("Leaving WsFederation.verifyAssertionSignature(). ok=" +
               result.ok);
     return { ok: result.ok, why: result.why,

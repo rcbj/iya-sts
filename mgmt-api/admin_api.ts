@@ -15912,9 +15912,10 @@ class AdminApi {
         // ---------------------------------------------------------------------
         let claims = null;
         try {
-          const certPem = realms.run(realms.get(realms.DEFAULT_ID),
-                                     function () { return STS.certPem; });
-          claims = stsCrypto.verifyJws(presented, certPem);
+          // Any generation of the DEFAULT realm's key (#42).
+          claims = realms.run(realms.get(realms.DEFAULT_ID), function () {
+            return helpers.verifyOwnJws(presented);
+          });
         } catch (e) {
           log.debug("Caught in a callback in module scope: " +
                     ((e && e.message) || e));
@@ -15940,7 +15941,7 @@ class AdminApi {
         let tokenRealm = realms.DEFAULT_ID;
         if (!claims && realms.currentId() !== realms.DEFAULT_ID) {
           try {
-            claims = stsCrypto.verifyJws(presented, STS.certPem);
+            claims = helpers.verifyOwnJws(presented);
             tokenRealm = realms.currentId();
           } catch (e) {
             log.debug("Caught in a callback in module scope: " +

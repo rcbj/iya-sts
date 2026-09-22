@@ -2490,6 +2490,10 @@ const CODES = [
     summary: 'A certificate was not recorded because the Issuing CA that ' +
       'signed it was replaced, repeatedly, while it was being signed.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0187',
+    summary: 'The public crypto metadata document (/crypto/metadata) could ' +
+      'not be built.',
+    spec: 'HTTP 500 server_error from /crypto/metadata' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',

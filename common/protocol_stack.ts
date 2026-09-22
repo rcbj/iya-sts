@@ -563,6 +563,16 @@ class ProtocolStack {
                'ProxyProtocol');
     this.build('pki/pki_service', require('../pki/pki_service'), 'PkiService');
     this.register(app, require('../pki/pki_service'), 'pki/pki_service');
+    // 17c. THE PUBLIC CRYPTO METADATA DOCUMENT (#42, 2026-09-22):
+    // `/crypto/metadata{,.json,.xml,.jwt,.signed.xml,.xsd}`. Beside the
+    // revocation endpoints and for their reason: it requires libraries only,
+    // with `pki.js`, `oauth2.ts`'s signer and the revocation module each
+    // LAZILY, so it is grouped with them on `/admin/sts-metadata`.
+    this.build('pki/crypto_metadata_document',
+               require('../pki/crypto_metadata_document'),
+               'CryptoMetadataDocument');
+    this.register(app, require('../pki/crypto_metadata_document'),
+                  'pki/crypto_metadata_document');
     // The admin console. It must come AFTER oauth2.js and, like wsfed.ts, the
     // order is a dependency rather than a preference: its metrics page reports
     // the browser sign-on sessions oauth2.js owns, read through the `sessions`

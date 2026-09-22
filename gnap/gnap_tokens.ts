@@ -467,7 +467,7 @@ class GnapTokens {
       }
       let claims;
       try {
-        claims = stsCrypto.verifyJws(jws, STS.certPem,
+        claims = helpers.verifyOwnJws(jws,
                                      { algorithms: ['RS256'],
                                        clockTolerance: 0 });
       } catch (e) {
@@ -477,7 +477,7 @@ class GnapTokens {
         // expired signature error is re-read without the time check.
         if (e && e.name === 'TokenExpiredError') {
           try {
-            claims = stsCrypto.verifyCompactJws(jws, STS.certPem,
+            claims = helpers.verifyOwnCompactJws(jws,
                                                 { algorithms: ['RS256'] })
                               .claims;
           } catch (e2) {
@@ -489,7 +489,7 @@ class GnapTokens {
                                 'signature does not verify: ' + e2.message);
           }
         } else if (e && e.name === 'NotBeforeError') {
-          claims = stsCrypto.verifyCompactJws(jws, STS.certPem,
+          claims = helpers.verifyOwnCompactJws(jws,
                                               { algorithms: ['RS256'] })
                             .claims;
         } else {

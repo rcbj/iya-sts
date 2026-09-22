@@ -953,6 +953,12 @@ var config = {
     acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
   },
 
+  // --- Signing keys ----------------------------------------------------
+  signing: {
+    rotationIntervalDays: 90, // Rotate each signing key every (days)
+    retiredKeyGraceDays: 0    // Keep a retired key verifying for (days)
+  },
+
   // --- Scheduler -------------------------------------------------------
   scheduler: {
     enabled: true,    // Run scheduled jobs

@@ -394,10 +394,10 @@ class DebuggerServer {
     const o = opts || {};
     let claims = null;
     try {
-      const certPem = realms.run(realms.get(realms.DEFAULT_ID), function () {
-        return helpers.STS.certPem;
+      // Any generation of the DEFAULT realm's key (#42).
+      claims = realms.run(realms.get(realms.DEFAULT_ID), function () {
+        return helpers.verifyOwnJws(String(token));
       });
-      claims = stsCrypto.verifyJws(String(token), certPem);
     } catch (e) {
       log.debug("Caught in DebuggerServer.verifyAccessToken(): " +
                 ((e && e.message) || e));

@@ -726,6 +726,60 @@ const DOCUMENTS = [
       return certificatePem(text, "the server certificate");
     } },
 
+  // -- The public crypto metadata document (#42, 2026-09-22) ---------------
+  // Every signer generation of the realm with its chain, anonymous in both
+  // modes because it holds public material only — which is what the rows
+  // check: a JWK with no private member, and no PEM private key anywhere.
+  { family: "PKI", spec: "this service's own",
+    path: "/crypto/metadata.json",
+    type: JSON_TYPE, json: true, badCredential: "ignored",
+    must: function (d) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (d.issuer !== base) {
+        bad.push("issuer is " + d.issuer + " and the document was fetched " +
+                 "from " + base);
+      }
+      const units = Array.isArray(d.units) ? d.units : [];
+      if (!units.some(function (u) { return u.unit === "jose:RS256"; }) ||
+          !units.some(function (u) { return u.unit === "xml:RS256"; })) {
+        bad.push("the jose:RS256 and xml:RS256 units are not both listed");
+      }
+      const jwks = [];
+      units.forEach(function (u) {
+        (u.keys || []).forEach(function (k) {
+          if (!k.kid || !k.state) {
+            bad.push(u.unit + " has a key with no kid or state");
+          }
+          if (k.jwk) {
+            jwks.push(k.jwk);
+          }
+        });
+      });
+      bad.push.apply(bad, publicKeySet(jwks, "the crypto metadata"));
+      if (/PRIVATE KEY/.test(JSON.stringify(d))) {
+        bad.push("the crypto metadata CONTAINS A PRIVATE KEY");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "PKI", spec: "this service's own",
+    path: "/crypto/metadata.xml",
+    type: XML_TYPE, json: false, badCredential: "ignored",
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/<cm:CryptoMetadata\b[^>]*xmlns:cm="urn:iya:sts:crypto-metadata:1"/
+        .test(String(text))) {
+        bad.push("the root is not cm:CryptoMetadata in its own namespace");
+      }
+      if (/PRIVATE KEY/.test(String(text))) {
+        bad.push("the crypto metadata CONTAINS A PRIVATE KEY");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+
   // -- The service's own directory of realms -------------------------------
   // NOT a protocol family (`sts_metadata.ts` files it under `Service`), and it
   // is here because it is the document a client reads to discover the OTHER
@@ -809,7 +863,9 @@ const CONTROLS = [
 // against `sts_metadata.ts`'s PROTOCOLS in section 6, so a new family
 // arrives here as a failure rather than as silence. The NINETEENTH did
 // exactly that on 2026-09-10 — PKI arrived with no row and this job went red
-// naming it, which is the whole of what the check is for.
+// naming it, which is the whole of what the check is for. PKI left this table
+// on 2026-09-22 (#42): its crypto metadata document is the stranger's first
+// read, and it is in DOCUMENTS.
 // ---------------------------------------------------------------------------
 const NO_PUBLIC_METADATA = {
   "Kerberos":
@@ -829,18 +885,6 @@ const NO_PUBLIC_METADATA = {
     "anonymous client reads it before it binds — but it is on the " +
     "directory's own socket, which no stack here publishes to this job. See " +
     "the header for what covering it would cost.",
-  "PKI":
-    "the one place an X.509 authority normally answers a stranger is a CRL " +
-    "distribution point or an OCSP responder, and this service publishes " +
-    "NEITHER — that is a recorded non-goal rather than an omission, so a " +
-    "certificate issued here is good until it expires and nothing anywhere " +
-    "makes it stop. What is left is the hierarchy itself and the key pairs " +
-    "issued from it, and all three of this family's routes are under " +
-    "/admin/pki behind the console's gate: the private half of an issued " +
-    "key pair goes onto the application's own directory entry and the " +
-    "public half is published as that application's JWKS, which belongs to " +
-    "the application rather than to this family. An anonymous GET of " +
-    "anything here is meant to fail.",
   "WebAuthn / CTAP":
     "Level 3 has no relying-party metadata document; the creation and " +
     "request options are minted per ceremony at /authn/webauthn.",

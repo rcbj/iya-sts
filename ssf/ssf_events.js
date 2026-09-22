@@ -1636,20 +1636,27 @@ function publicKeyForHeader(header) {
   // for the key, or its RFC 9278 thumbprint URI, which is what a SET carries
   // under `keys.kidFormat: jwk-thumbprint-uri` — whatever the setting says now
   // (common/jose_kid.js).
-  if (kid ? kidNamesKey(kid, STS.kid) : alg === 'RS256') {
+  // EVERY LIVE GENERATION of the RSA key (#42): a SET signed a moment before
+  // a rotation names the key that is now `retired`, and it is still ours.
+  const ownRsa = require('../common/helpers').ownRsaCertificates('jose')
+    .filter(function (one) {
+      return kid ? kidNamesKey(kid, one.kid) : one.role === 'current';
+    })[0];
+  if (ownRsa && (kid || alg === 'RS256')) {
     // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,
     // where eight modules already read it — so it is resolved separately from
     // the certificate this service publishes for it.
     try {
       log.debug('Leaving publicKeyForHeader(). The service RSA key.');
-      return { key: nodeCrypto.createPublicKey(STS.certPem), pq: false };
+      return { key: nodeCrypto.createPublicKey(ownRsa.certPem), pq: false };
     } catch (e) {
       log.debug('Leaving publicKeyForHeader(). The certificate would not ' +
                 'load: ' + e.message);
       return null;
     }
   }
-  const list = allSigningKeys();
+  // Every live generation of the other keys too (#42).
+  const list = require('../common/helpers').allVerificationKeys();
   const found = list.filter(function (one) {
     return kid ? kidNamesKey(kid, one.publicJwk.kid) : one.alg === alg;
   })[0];

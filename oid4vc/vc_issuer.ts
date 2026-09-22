@@ -1798,7 +1798,7 @@ class VcIssuer {
       // opinion, so a token that introspected active could be refused here
       // seconds before it should have been. The shared verifier applies it by
       // default.
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      claims = helpers.verifyOwnJws(accessToken);
     } catch (e) {
       log.debug("Caught in VcIssuer.requestedClaimPaths(): " +
                 ((e && e.message) || e));
@@ -1926,7 +1926,7 @@ class VcIssuer {
       // Applies `oauth2.clockSkewS` since 2026-08-27 — see the note in
       // requestedClaimPaths() above; this was the second of the four sites that
       // had drifted away from the rule oauth2.js states.
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      claims = helpers.verifyOwnJws(accessToken);
     } catch (e) {
       // Not our token (or not valid): nothing was granted by us. The caller
       // still checks the token elsewhere; this only answers "what did we

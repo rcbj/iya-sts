@@ -510,11 +510,19 @@ class VcVerifier {
     }
     const candidates = [];
     const family = stsCrypto.JWS_ALGS[alg].family;
+    // EVERY LIVE GENERATION of this realm's keys (#42): a credential outlives
+    // a rotation, and verifies against the key that signed it until that
+    // key's grace ends.
     if (family === 'rsa' || family === 'rsa-pss' || /^(RS|PS)/.test(alg)) {
-      candidates.push({ label: 'this issuer\'s RSA key', key: STS.certPem });
+      helpers.ownRsaCertificates('jose').forEach((one: any) => {
+        if (!header.kid || kidNamesKey(header.kid, one.kid)) {
+          candidates.push({ label: 'this issuer\'s RSA key (' + one.role +
+                                   ')', key: one.certPem });
+        }
+      });
     } else {
-      (stsKeysFor().extraKeys || []).forEach((one) => {
-        if (one.publicJwk && one.alg === alg &&
+      helpers.allVerificationKeys().forEach((one: any) => {
+        if (one.publicJwk && one.publicJwk.kty !== 'AKP' && one.alg === alg &&
             (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid))) {
           candidates.push({ label: 'this issuer\'s ' + alg + ' key',
                             key: crypto.createPublicKey(
@@ -581,7 +589,8 @@ class VcVerifier {
                 "post-quantum.");
       return this.verifyIssuerSignature(token);
     }
-    const keys = await allSigningKeysAsync();
+    // Every live generation (#42).
+    const keys = await helpers.allVerificationKeysAsync();
     const candidates = keys.filter(function (one) {
       return !!one.publicJwk && one.alg === alg &&
              (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid));

@@ -743,6 +743,48 @@ signed while it was on names a key the JWKS no longer lists until that token
 expires. This service's own checks of its own tokens accept either name whatever
 the setting says. It can be set per realm.
 
+## Signing key generations, and the crypto metadata document
+
+Every signer of a realm is a UNIT — a use case and an algorithm: `jose:RS256`
+(tokens), `xml:RS256` (SAML, WS-Federation and WS-Trust, a key of its own
+since 2026-09-22), one per elliptic curve and one per post-quantum algorithm.
+A unit holds a **current** key, and may hold a **next** key and **retired**
+keys:
+
+* a **next** key is published — in `/oauth2/jwks`, in the SAML 2.0, SAML 1.1
+  and WS-Federation metadata, in the DID document and in `/crypto/metadata` —
+  before it signs anything, so a relying party that refreshes its copy of
+  your keys already holds it on the day it starts being used;
+* when a unit is rotated, its next key becomes current and the old one is
+  **retired**: still published and still accepted for what it signed, until
+  `signing.retiredKeyGraceDays` or the longest lifetime of anything it could
+  have signed, whichever is later;
+* after that the retired key is dropped, its certificate superseded.
+
+Each generation has a certificate of its own from the unit's Issuing CA.
+
+`GET /crypto/metadata` (per realm: `/realm/<id>/crypto/metadata`) lists every
+generation of every unit with its kid, JWK, certificate chain, validity,
+SHA-256 fingerprint and revocation addresses; the algorithms per use case; and
+the rotation policy. It needs no credential, is never cached, and comes as:
+
+| Path | Form |
+|---|---|
+| `/crypto/metadata` | by `Accept`: JSON, XML (`application/xml`) or signed JSON (`application/jwt`) |
+| `/crypto/metadata.json` | JSON |
+| `/crypto/metadata.xml` | XML, namespace `urn:iya:sts:crypto-metadata:1` |
+| `/crypto/metadata.jwt` | the JSON signed as a JWS by the realm's current JOSE key |
+| `/crypto/metadata.signed.xml` | the XML with an enveloped XML Signature by the realm's current XML key |
+| `/crypto/metadata.xsd` | the XML Schema |
+
+OpenID Connect discovery links to it as `crypto_metadata_uri`, and the SAML
+2.0 metadata in an `md:Extensions` element (`cm:CryptoMetadataLocation`). No
+specification defines this document.
+
+In development mode keys are made anew at every start and are not rotated;
+in product mode they are rotated every `signing.rotationIntervalDays` (the
+Signing keys settings on `/admin/keys`).
+
 ## Where the CA private keys live
 
 They inherit the mode, and both surfaces that report it say which is in force

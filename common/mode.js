@@ -273,6 +273,19 @@ function seedsDemoData() {
   return !isProduct();
 }
 
+// Does this service ROTATE its signing keys on a schedule? (2026-09-22, #42.)
+// Product keeps a key set for as long as the store does, so a key that is
+// never replaced is a key whose compromise never ends; each unit gets a
+// `next` key, published before it signs anything, promoted by `signing.rotate`
+// and kept verifying through its grace after. Development makes its keys anew
+// at every start and has nothing to rotate — a rotation there would only
+// churn the documents a client is being pointed at.
+function rotatesSigningKeys() {
+  log.debug("Entering rotatesSigningKeys().");
+  log.debug("Leaving rotatesSigningKeys().");
+  return isProduct();
+}
+
 // Does the realm chooser in front of `/admin` and `/portal` LIST the realms?
 // (2026-09-14, #32.) A person arriving at either surface with no session, on a
 // service with realms defined, chooses which realm to sign in through.
@@ -1145,7 +1158,23 @@ const REQUIREMENTS = [
              'handed an ALLOW-LIST — this service\'s own addresses and ' +
              'debugger.allowedDestinations — and refuses every other ' +
              'destination, raw sockets included.',
-    where: 'debugger/debugger_server.ts, debugger/debugger_api_process.ts' }
+    where: 'debugger/debugger_server.ts, debugger/debugger_api_process.ts' },
+  // 2026-09-22 (#42). It was NOT_YET's `key-overlap` — "a rotation has NO
+  // OVERLAP" — until key GENERATIONS gave every unit a next key published
+  // before it signs and retired keys that verify through their grace.
+  { id: 'signing-key-rotation',
+    what: 'Signing keys are rotated, with an overlap',
+    development: 'NOT ROTATED: the keys are made anew at every start. Every ' +
+                 'unit still carries its generations, so a next or retired ' +
+                 'key made by hand is published and verifies as in product.',
+    product: 'Every unit (realm, use case, algorithm) holds a NEXT key, ' +
+             'published in the JWKS, the SAML and WS-Federation metadata ' +
+             'and /crypto/metadata before it signs anything, promoted every ' +
+             'signing.rotationIntervalDays by the signing.rotate job; the key ' +
+             'it replaces goes on verifying for signing.retiredKeyGraceDays ' +
+             'or the longest token lifetime, whichever is longer.',
+    where: 'common/helpers.js, common/keystore.js, common/pki.js, ' +
+           'pki/crypto_metadata_document.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -1209,13 +1238,6 @@ const NOT_YET = [
           'pki.revocationLdapDirectory set and every RDN single-valued; and ' +
           'LDAPS 636 asks for no client certificate, so nothing there is ' +
           'consulted.' },
-  { id: 'key-overlap',
-    what: 'A rotation has NO OVERLAP. This service publishes one key per ' +
-          'realm per algorithm, so everything signed with the old key stops ' +
-          'verifying the moment the new one is in use. A product deployment ' +
-          'wants both keys in JWKS for a window, which needs the old private ' +
-          'key kept — the thing rotation is for getting rid of — so it is a ' +
-          'design rather than a setting.' },
   // **THE SPIFFE HALF OF THIS ROW NARROWED ON 2026-09-11.** It said "the TLS
   // server certificate and the SPIFFE authorities, which belong to their own
   // modules and are shared across realms" — and the SPIFFE X.509 authority is
@@ -1345,6 +1367,7 @@ module.exports = {
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
   gatesManagementApi: gatesManagementApi,
   seedsDemoData: seedsDemoData,
+  rotatesSigningKeys: rotatesSigningKeys,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,

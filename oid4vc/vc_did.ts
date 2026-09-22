@@ -293,6 +293,20 @@ class VcDid {
     // /oauth2/jwks publishes — so the two documents cannot describe different
     // keys. Nothing is added for RS256, which keeps the document exactly as it
     // was.
+    // EVERY LIVE GENERATION OF THE RSA KEY (#42): a credential outlives a
+    // rotation, so a verifier resolving this DID must find the retired key
+    // that signed it — and the `next` one, published ahead of its use.
+    helpers.ownRsaCertificates('jose').forEach(function (own: any): void {
+      if (own.role === 'current') {
+        return;
+      }
+      const jwk: any = crypto.createPublicKey(own.certPem)
+        .export({ format: 'jwk' });
+      methods.push({ id: did + '#' + own.kid, type: 'JsonWebKey2020',
+                     controller: did,
+                     publicKeyJwk: { kty: 'RSA', use: 'sig', alg: 'RS256',
+                                     kid: own.kid, n: jwk.n, e: jwk.e } });
+    });
     const signer = await this.didSignerAsync();
     if (signer.alg !== 'RS256' && signer.kid !== STS.kid) {
       const held = stsKeysFor();
@@ -304,6 +318,16 @@ class VcDid {
         methods.push({ id: did + '#' + signer.kid, type: 'JsonWebKey2020',
                        controller: did,
                        publicKeyJwk: extra.publicJwk });
+        // And that unit's live standby keys (#42), for the RSA key's reason.
+        helpers.standbyOf(held).forEach(function (one: any): void {
+          if (one.kind !== 'rsa' && one.alg === extra.alg &&
+              (one.crv || '') === (extra.publicJwk.crv || '') &&
+              (one.role === 'next' || !(Number(one.retiredUntil) > 0) ||
+               Number(one.retiredUntil) > Date.now())) {
+            methods.push({ id: did + '#' + one.kid, type: 'JsonWebKey2020',
+                           controller: did, publicKeyJwk: one.publicJwk });
+          }
+        });
       } else {
         log.error(errorCodes.tag('STS-VC-0043') +
                   'the ' + signer.alg + ' key credentials are signed with ' +

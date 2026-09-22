@@ -2820,6 +2820,90 @@ const ENDPOINTS: EndpointEntry[] = [
           'rather than a chain over a different key. `no-store`, like every ' +
           'document publishing this service\'s key material. Ungated, ' +
           'because what it returns is already named by the token.' },
+  { path: '/crypto/metadata', group: 'PKI',
+    name: 'The crypto metadata document, by Accept',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC: no specification defines such a document. By `Accept`: ' +
+          'JSON by default, XML for application/xml, the signed JSON for ' +
+          'application/jwt. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.json', group: 'PKI',
+    name: 'The crypto metadata document, as JSON',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The model itself. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.xml', group: 'PKI',
+    name: 'The crypto metadata document, as XML',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The same model, in the namespace ' +
+          'urn:iya:sts:crypto-metadata:1, validating against ' +
+          '/crypto/metadata.xsd. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.jwt', group: 'PKI',
+    name: 'The crypto metadata document, signed as a JWS',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The JSON as the claims of a JWS signed by the realm\'s ' +
+          'current JOSE signer, through the one signer RFC 8414\'s ' +
+          'signed_metadata uses (oauth2.signedMetadataAlgorithm), `sub` ' +
+          'the issuer. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.signed.xml', group: 'PKI',
+    name: 'The crypto metadata document, as signed XML',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The XML with an enveloped XML Signature first in the ' +
+          'root, by the realm\'s current XML signer and the algorithm ' +
+          'saml2.signatureAlgorithm selects. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.xsd', group: 'PKI',
+    name: 'The crypto metadata document\'s XML Schema',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC: the XSD of urn:iya:sts:crypto-metadata:1, which the ' +
+          'signed and the unsigned XML both validate against.' },
   { path: '/pki/revocation', group: 'PKI',
     name: 'Every CRL and OCSP responder this service publishes',
     specs: ['rfc5280', 'rfc6960'],

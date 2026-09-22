@@ -1024,9 +1024,9 @@ function run(t) {
                                                       sigAlg: RSA_SHA256 });
   t.check(!noCert.ok && errorCodes.codeOf(noCert) === 'STS-KEYS-0060',
           'and refuses to verify without a certificate');
-  t.check(helpers.STS.certB64 && direct.implicitCertificatesFor(
+  t.check(helpers.STS.xml.certB64 && direct.implicitCertificatesFor(
             'https://idp.test', 'https://idp.test/saml2/sp')[0] ===
-          helpers.STS.certB64 &&
+          helpers.STS.xml.certB64 &&
           !direct.implicitCertificatesFor('https://idp.test',
                                           'https://other.test/saml2/sp')
             .length,
