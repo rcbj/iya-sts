@@ -935,6 +935,24 @@ const SETTINGS = [
     description: 'RFC 9767 section 3.1\'s token_formats_supported. A format ' +
                  'not listed is never issued, and a resource set that ' +
                  'accepts only unlisted formats is refused at registration.' },
+  { key: 'gnap.zcapCryptosuite', group: 'GNAP', label: 'ZCAP proof suite',
+    path: 'gnap.zcapCryptosuite', env: 'STS_GNAP_ZCAP_CRYPTOSUITE',
+    type: 'enum',
+    enumValues: ['eddsa-jcs-2022', 'mldsa44-jcs-2024', 'slhdsa128-jcs-2024',
+                 'Ed25519Signature2020'],
+    dflt: 'eddsa-jcs-2022', runtime: true,
+    description: 'The Data Integrity proof a zcap token is signed with, and ' +
+                 'the only one this realm accepts back. eddsa-jcs-2022 (a ' +
+                 'W3C Recommendation) signs the JSON itself, so what is ' +
+                 'signed is what a resource server reads. mldsa44-jcs-2024 ' +
+                 'and slhdsa128-jcs-2024 are post-quantum, from a W3C First ' +
+                 'Public Working Draft. WARNING: Ed25519Signature2020 is for ' +
+                 'compatibility with verifiers that know nothing newer — it ' +
+                 'signs the RDF canonicalization of the capability rather ' +
+                 'than the JSON, is safe here only because the @context is ' +
+                 'pinned, and a resource server cannot verify it without a ' +
+                 'JSON-LD processor. Changing it strands zcap tokens already ' +
+                 'issued.' },
   { key: 'gnap.accessTokenLifetimeS', group: 'GNAP', label: 'Access token ' +
       'lifetime (seconds)',
     path: 'gnap.accessTokenLifetimeS', env: 'STS_GNAP_ACCESS_TOKEN_LIFETIME_S',

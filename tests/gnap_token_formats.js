@@ -574,75 +574,298 @@ async function biscuitCases(t) {
   log.debug("Leaving biscuitCases().");
 }
 
+// ---------------------------------------------------------------------------
+// ZCAP IN EVERY SUITE `gnap.zcapCryptosuite` OFFERS (#43).
+//
+// The matrix runs once per suite, and a JCS proof is then checked a SECOND
+// way, by code in this file that is not the service's — RFC 8785 written out
+// below, SHA-256, and node's Ed25519 or noble's ML-DSA / SLH-DSA directly —
+// so that "the proof verifies" is not the service agreeing with itself.
+// ---------------------------------------------------------------------------
+const ZCAP_SUITES = ['eddsa-jcs-2022', 'mldsa44-jcs-2024', 'slhdsa128-jcs-2024',
+                     'Ed25519Signature2020'];
+const PQ_ALG_OF = { 'mldsa44-jcs-2024': 'ML-DSA-44',
+                    'slhdsa128-jcs-2024': 'SLH-DSA-SHA2-128s' };
+
+// RFC 8785: members sorted by UTF-16 code unit, primitives as JSON.stringify
+// serialises them (the RFC adopts ECMAScript's number and string forms).
+function jcsOf(value) {
+  log.debug("Entering jcsOf().");
+  let out;
+  if (value === null || typeof value !== 'object') {
+    out = JSON.stringify(value);
+  } else if (Array.isArray(value)) {
+    out = '[' + value.map(jcsOf).join(',') + ']';
+  } else {
+    out = '{' + Object.keys(value).sort().map(function (k) {
+      return JSON.stringify(k) + ':' + jcsOf(value[k]);
+    }).join(',') + '}';
+  }
+  log.debug("Leaving jcsOf().");
+  return out;
+}
+
+function base58Decode(text) {
+  log.debug("Entering base58Decode().");
+  const alphabet =
+      '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  let n = 0n;
+  for (const ch of text) {
+    const i = alphabet.indexOf(ch);
+    if (i < 0) {
+      throw new Error('not base58: ' + ch);
+    }
+    n = n * 58n + BigInt(i);
+  }
+  let hex = n.toString(16);
+  if (hex.length % 2) {
+    hex = '0' + hex;
+  }
+  const zeros = /^1*/.exec(text)[0].length;
+  log.debug("Leaving base58Decode().");
+  return Buffer.concat([Buffer.alloc(zeros),
+                        n === 0n ? Buffer.alloc(0) : Buffer.from(hex, 'hex')]);
+}
+
+// The Data Integrity JCS verification of EdDSA 3.3.2 / Quantum-Resistant
+// 3.3.2 and 3.4.2, done here: proof @context a prefix of the document's,
+// hashData = SHA-256(JCS(proof config)) || SHA-256(JCS(document)).
+function independentJcsVerify(doc, suite, publicJwk) {
+  log.debug("Entering independentJcsVerify().");
+  const proof = doc.proof;
+  const unsecured = Object.assign({}, doc);
+  delete unsecured.proof;
+  const config = Object.assign({}, proof);
+  delete config.proofValue;
+  if (jcsOf(config['@context']) !== jcsOf(doc['@context'])) {
+    log.debug("Leaving independentJcsVerify(). Context.");
+    return false;
+  }
+  const sha = function (text) {
+    return nodeCrypto.createHash('sha256').update(text, 'utf8').digest();
+  };
+  const hashData = Buffer.concat([sha(jcsOf(config)), sha(jcsOf(unsecured))]);
+  const value = String(proof.proofValue);
+  const signature = value.charAt(0) === 'z' ? base58Decode(value.slice(1))
+                                            : Buffer.from(value.slice(1),
+                                                          'base64url');
+  let ok;
+  if (suite === 'eddsa-jcs-2022') {
+    ok = value.charAt(0) === 'z' && signature.length === 64 &&
+         nodeCrypto.verify(null, hashData,
+                           nodeCrypto.createPublicKey({ key: publicJwk,
+                                                        format: 'jwk' }),
+                           signature);
+  } else if (suite === 'mldsa44-jcs-2024') {
+    const { ml_dsa44 } = require('@noble/post-quantum/ml-dsa.js');
+    ok = value.charAt(0) === 'u' &&
+         ml_dsa44.verify(Buffer.from(publicJwk.pub, 'base64url'), hashData,
+                         signature);
+  } else {
+    const { slh_dsa_sha2_128s } = require('@noble/post-quantum/slh-dsa.js');
+    ok = value.charAt(0) === 'u' &&
+         slh_dsa_sha2_128s.verify(Buffer.from(publicJwk.pub, 'base64url'),
+                                  hashData, signature);
+  }
+  log.debug("Leaving independentJcsVerify(). " + ok);
+  return ok;
+}
+
+// Two keys of the kind a suite signs with, in the shape gnap_tokens.ts
+// hands `token_zcap.ts`.
+function zcapKeysFor(suite, controller) {
+  log.debug("Entering zcapKeysFor(). suite=" + suite);
+  const pqJose = require('../common/pq_jose');
+  const make = function (fragment) {
+    const alg = PQ_ALG_OF[suite];
+    if (alg) {
+      const pair = pqJose.generate(alg);
+      return { cryptosuite: suite, privateKey: pair.priv,
+               publicJwk: pqJose.akpPublicJwk(alg, pair.pub, fragment),
+               controller: controller, keyId: controller + '#' + fragment };
+    }
+    const pair = nodeCrypto.generateKeyPairSync('ed25519');
+    return { cryptosuite: suite, privateKey: pair.privateKey,
+             publicKey: pair.publicKey,
+             publicJwk: pair.publicKey.export({ format: 'jwk' }),
+             controller: controller, keyId: controller + '#' + fragment };
+  };
+  const keys = make('as-1');
+  const other = make('as-1');
+  log.debug("Leaving zcapKeysFor().");
+  return { keys: keys,
+           wrongKeys: Object.assign({}, keys, { publicKey: other.publicKey,
+                                                publicJwk: other.publicJwk }) };
+}
+
 async function zcapCases(t) {
   log.debug("Entering zcapCases().");
-  const pair = nodeCrypto.generateKeyPairSync('ed25519');
-  const other = nodeCrypto.generateKeyPairSync('ed25519');
   const controller = 'https://as.example/realm/acme/gnap/zcap/controller';
-  const keys = { privateKey: pair.privateKey, publicKey: pair.publicKey,
-                 controller: controller,
-                 keyId: controller + '#as-1' };
-  const wrongKeys = Object.assign({}, keys, { publicKey: other.publicKey });
-  const minted = await commonCases(t, zcap, keys, wrongKeys, function (value) {
+  const minted = {};
+  for (const suite of ZCAP_SUITES) {
+    minted[suite] = await zcapSuiteCases(t, suite, controller);
+  }
+  t.log.info('=== zcap: a realm accepts only the suite it is set to ===');
+  const eddsa = minted['eddsa-jcs-2022'];
+  const legacy = minted['Ed25519Signature2020'];
+  const mldsa = minted['mldsa44-jcs-2024'];
+  refused(t,
+          await zcap.verify(eddsa.value, Object.assign({}, legacy.keys),
+                            { now: NOW, presentedKey: { jkt: JKT } }),
+          'STS-GNAP-0336', 'zcap: an eddsa-jcs-2022 token is refused where ' +
+                           'the compatibility suite is set');
+  refused(t,
+          await zcap.verify(legacy.value, Object.assign({}, eddsa.keys),
+                            { now: NOW, presentedKey: { jkt: JKT } }),
+          'STS-GNAP-0336', 'zcap: an Ed25519Signature2020 token is refused ' +
+                           'under the default — no silent downgrade to the ' +
+                           'RDF-canonicalized suite');
+  refused(t,
+          await zcap.verify(mldsa.value, Object.assign({}, eddsa.keys),
+                            { now: NOW, presentedKey: { jkt: JKT } }),
+          'STS-GNAP-0336', 'zcap: a post-quantum token is refused where ' +
+                           'eddsa-jcs-2022 is set');
+  // The same Ed25519 key under the other Ed25519 suite: what refuses it is
+  // the suite, not the key.
+  refused(t,
+          await zcap.verify(eddsa.value,
+                            Object.assign({}, eddsa.keys,
+                                          { cryptosuite:
+                                              'Ed25519Signature2020' }),
+                            { now: NOW, presentedKey: { jkt: JKT } }),
+          'STS-GNAP-0336', 'zcap: the same key under the other Ed25519 suite ' +
+                           'is refused — the suite decides, not the key');
+  const set = JSON.parse(Buffer.from(eddsa.value, 'base64url')
+                               .toString('utf8'));
+  set.proof = [set.proof, set.proof];
+  refused(t,
+          await zcap.verify(Buffer.from(JSON.stringify(set))
+                                  .toString('base64url'), eddsa.keys,
+                            { now: NOW, presentedKey: { jkt: JKT } }),
+          'STS-GNAP-0336', 'zcap: a proof set is refused — this format ' +
+                           'writes exactly one proof');
+  refused(t,
+          await zcap.mint(fullModel(), Object.assign({}, eddsa.keys,
+                                                     { cryptosuite:
+                                                         'eddsa-rdfc-2022' })),
+          'STS-GNAP-0330', 'zcap: a suite that is not one of the four is ' +
+                           'refused rather than guessed');
+  refused(t,
+          await zcap.mint(fullModel(), Object.assign({}, mldsa.keys,
+                                                     { cryptosuite:
+                                                         'eddsa-jcs-2022' })),
+          'STS-GNAP-0330', 'zcap: an ML-DSA-44 key is refused for ' +
+                           'eddsa-jcs-2022');
+  const defaulted = Object.assign({}, eddsa.keys);
+  delete defaulted.cryptosuite;
+  const d = await zcap.mint(fullModel(), defaulted);
+  t.check(d.cryptosuite === 'eddsa-jcs-2022' &&
+          zcap.DEFAULT_CRYPTOSUITE === 'eddsa-jcs-2022',
+          'zcap: with no suite named, a token is signed eddsa-jcs-2022',
+          JSON.stringify(d).slice(0, 200));
+  log.debug("Leaving zcapCases().");
+}
+
+async function zcapSuiteCases(t, suite, controller) {
+  log.debug("Entering zcapSuiteCases(). suite=" + suite);
+  const legacy = suite === 'Ed25519Signature2020';
+  const made = zcapKeysFor(suite, controller);
+  const keys = made.keys;
+  const started = Date.now();
+  t.log.info('=== zcap (' + suite + ') ===');
+  const minted = await commonCases(t, zcap, keys, made.wrongKeys,
+                                   function (value) {
     const doc = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
     doc.gnapAccess[0].actions.push('delete');
     return { value: Buffer.from(JSON.stringify(doc), 'utf8')
                           .toString('base64url'), code: 'STS-GNAP-0333',
              wrongKeyCode: 'STS-GNAP-0333', garbageCode: 'STS-GNAP-0332' };
   });
-  t.log.info('=== zcap: the capability shape, the pinned context, the ' +
-             'controller document ===');
+  t.log.info('=== zcap (' + suite + '): the capability shape, the pinned ' +
+             'context, the controller document ===');
   const doc = JSON.parse(Buffer.from(minted.value, 'base64url')
                                .toString('utf8'));
+  const root = 'urn:zcap:root:' + encodeURIComponent('https://rs1.example/api');
   t.check(doc.invocationTarget === 'https://rs1.example/api' &&
-          doc.parentCapability === 'urn:zcap:root:' +
-                                   encodeURIComponent(
-                                       'https://rs1.example/api') &&
+          doc.parentCapability === root &&
           doc.controller === 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:' +
                              JKT &&
           JSON.stringify(doc.allowedAction) === JSON.stringify(
               ['read', 'write', 'withdraw']) &&
           doc.proof && doc.proof.proofPurpose === 'capabilityDelegation',
-          'zcap: target is aud[0], parent is its root, controller is the RFC ' +
-          '9278 jkt URN, allowedAction is the union of ' +
+          'zcap (' + suite + '): target is aud[0], parent is its root, ' +
+          'controller is the RFC 9278 jkt URN, allowedAction is the union of ' +
           'actions', JSON.stringify(doc).slice(0, 400));
+  t.check(gnapAccess.canonicalJson(doc['@context']) ===
+          gnapAccess.canonicalJson(legacy ? zcap.LEGACY_CONTEXT :
+                                            zcap.CONTEXT) &&
+          doc['@context'][0] === 'https://w3id.org/zcap/v1' &&
+          doc['@context'][1] === (legacy ?
+            'https://w3id.org/security/suites/ed25519-2020/v1' :
+            'https://w3id.org/security/data-integrity/v2'),
+          'zcap (' + suite + '): @context is zcap/v1, then the proof\'s ' +
+          'vocabulary (ZCAP-LD v0.4.0-rc.6\'s form for a JCS suite), then ' +
+          'the GNAP terms', JSON.stringify(doc['@context']).slice(0, 200));
+  if (legacy) {
+    t.check(doc.proof.type === 'Ed25519Signature2020',
+            'zcap (' + suite + '): the proof is Ed25519Signature2020');
+  } else {
+    t.check(doc.proof.type === 'DataIntegrityProof' &&
+            doc.proof.cryptosuite === suite &&
+            JSON.stringify(doc.proof.capabilityChain) ===
+              JSON.stringify([root]) &&
+            doc.proof.verificationMethod === keys.keyId &&
+            doc.proof.created === '2033-05-18T03:32:20Z',
+            'zcap (' + suite + '): a DataIntegrityProof naming the suite, ' +
+            'the chain [root], the AS key and created = iat',
+            JSON.stringify(doc.proof).slice(0, 300));
+    t.check(independentJcsVerify(doc, suite, keys.publicJwk),
+            'zcap (' + suite + '): the proof verifies by THIS FILE\'s ' +
+            'RFC 8785 and signature check, not the service\'s');
+    const touched = JSON.parse(JSON.stringify(doc));
+    touched.gnapLabel = 'photos token!';
+    t.check(!independentJcsVerify(touched, suite, keys.publicJwk),
+            'zcap (' + suite + '): and a changed member does not');
+  }
   const swapped = JSON.parse(JSON.stringify(doc));
   swapped['@context'][2].gnapLabel = 'gnap:sub';
   refused(t,
           await zcap.verify(Buffer.from(JSON.stringify(swapped))
                                   .toString('base64url'), keys,
                                { now: NOW, presentedKey: { jkt: JKT } }),
-          'STS-GNAP-0332', 'zcap: a capability whose @context is not exactly ' +
-                           'the pinned one is refused');
+          'STS-GNAP-0332', 'zcap (' + suite + '): a capability whose ' +
+                           '@context is not exactly the pinned one is refused');
   refused(t,
           await zcap.verify(minted.value, keys,
                             { now: NOW + 3600 + 31536000,
                               presentedKey: { jkt: JKT } }),
-          'STS-GNAP-0304', 'zcap: a capability a year past expiry is refused ' +
-          '— the ZCAP library checks a PARENT\'s expires and never the ' +
-          'verified capability\'s own, so this check is the only one');
+          'STS-GNAP-0304', 'zcap (' + suite + '): a capability a year past ' +
+          'expiry is refused — the ZCAP library checks a PARENT\'s expires ' +
+          'and never the verified capability\'s own, so this check is the ' +
+          'only one');
   const extra = Object.assign({}, doc, { gnapExtra: 1 });
   refused(t,
           await zcap.verify(Buffer.from(JSON.stringify(extra))
                                   .toString('base64url'), keys,
                                { now: NOW, presentedKey: { jkt: JKT } }),
-          'STS-GNAP-0332', 'zcap: a member this format does not write is ' +
-                           'refused');
+          'STS-GNAP-0332', 'zcap (' + suite + '): a member this format does ' +
+                           'not write is refused');
   refused(t,
           await zcap.verify(minted.value,
                                Object.assign({}, keys,
                                              { keyId: controller + '#as-2' }),
                                { now: NOW, presentedKey: { jkt: JKT } }),
-          'STS-GNAP-0333', 'zcap: a proof naming a key the offline loader ' +
-                           'does not serve is refused');
+          'STS-GNAP-0333', 'zcap (' + suite + '): a proof naming a key this ' +
+                           'AS does not hold is refused');
   const bearer = await zcap.mint(bearerModel(), keys);
   const bdoc = JSON.parse(Buffer.from(bearer.value, 'base64url')
                                 .toString('utf8'));
   t.check(bdoc.invocationTarget === 'urn:gnap:as:https://as.example/gnap' &&
           bdoc.controller === 'urn:gnap:bearer' &&
           bdoc.allowedAction === undefined,
-          'zcap: with no audience the target is the AS, a bearer controller ' +
-          'is urn:gnap:bearer, and no actions means no allowedAction');
+          'zcap (' + suite + '): with no audience the target is the AS, a ' +
+          'bearer controller is urn:gnap:bearer, and no actions means no ' +
+          'allowedAction');
   // A resource server's identifier is an application entry's name, which is
   // usually not a URI. Minting refused every such token until 2026-09-12 — the
   // in-process audiences above were all URLs, so only sts_gnap_rs.js saw it.
@@ -651,31 +874,50 @@ async function zcapCases(t) {
                JSON.parse(Buffer.from(named.value, 'base64url')
                                 .toString('utf8')) : {};
   t.check(ndoc.invocationTarget === 'urn:gnap:rs:photo-rs',
-          'zcap: an audience that is not a URI is carried as ' +
+          'zcap (' + suite + '): an audience that is not a URI is carried as ' +
           'urn:gnap:rs:<id> rather than refused',
           JSON.stringify(named).slice(0, 300));
   const namedBack = named.value ?
                     await zcap.verify(named.value, keys,
                                       { now: NOW, presentedKey: { jkt: JKT },
-                                                                          audience: 'photo-rs' }) : {};
+                                        audience: 'photo-rs' }) : {};
   t.check(namedBack.ok && namedBack.model.aud[0] === 'photo-rs',
-          'zcap: and it verifies back to the same audience',
+          'zcap (' + suite + '): and it verifies back to the same audience',
           JSON.stringify(namedBack).slice(0, 300));
-  const cd = await zcap.controllerDocument({ privateKey: pair.privateKey,
-                                             controller: controller,
-                                             keyId: keys.keyId });
+  const cdKeys = legacy ? { cryptosuite: suite, privateKey: keys.privateKey,
+                            controller: controller, keyId: keys.keyId }
+                        : Object.assign({}, keys);
+  const cd = await zcap.controllerDocument(cdKeys);
+  const vm = (cd.verificationMethod || [])[0] || {};
   t.check(cd.id === controller && cd.capabilityDelegation[0] === keys.keyId &&
-          cd.verificationMethod[0].type === 'Ed25519VerificationKey2020' &&
-          cd.verificationMethod[0].controller === controller,
-          'zcap: controllerDocument() publishes the AS key for ' +
-          'capabilityDelegation', JSON.stringify(cd));
+          vm.id === keys.keyId && vm.controller === controller,
+          'zcap (' + suite + '): controllerDocument() publishes the AS key ' +
+          'for capabilityDelegation', JSON.stringify(cd).slice(0, 300));
+  if (legacy) {
+    t.check(vm.type === 'Ed25519VerificationKey2020',
+            'zcap (' + suite + '): as an Ed25519VerificationKey2020');
+  } else {
+    const di = require('../oid4vc/vc_data_integrity');
+    t.check(JSON.stringify(cd['@context']) ===
+              JSON.stringify(['https://www.w3.org/ns/cid/v1']) &&
+            vm.type === 'Multikey' &&
+            vm.publicKeyMultibase === di.multikeyOf(keys.publicJwk) &&
+            vm.publicKeyMultibase.charAt(0) ===
+              (suite === 'eddsa-jcs-2022' ? 'z' : 'u') &&
+            (suite !== 'eddsa-jcs-2022' || /^z6Mk/.test(vm.publicKeyMultibase)),
+            'zcap (' + suite + '): as a Multikey in a Controlled Identifiers ' +
+            'v1.0 document — base58-btc for Ed25519, base64url for the ' +
+            'post-quantum keys', JSON.stringify(vm).slice(0, 200));
+  }
   refused(t,
           await zcap.mint(fullModel(),
                           Object.assign({}, keys,
                                         { keyId: 'https://elsewhere#k' })),
-          'STS-GNAP-0330', 'zcap: a keyId outside the controller document is ' +
-                           'refused');
-  log.debug("Leaving zcapCases().");
+          'STS-GNAP-0330', 'zcap (' + suite + '): a keyId outside the ' +
+                           'controller document is refused');
+  t.log.info('zcap (' + suite + ') in ' + (Date.now() - started) + 'ms');
+  log.debug("Leaving zcapSuiteCases().");
+  return { value: minted.value, keys: keys };
 }
 
 // ---------------------------------------------------------------------------

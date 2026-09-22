@@ -73,6 +73,7 @@ var config = {
     enabled: true,                                                         // Run the GNAP authorization server
     accessTokenFormat: "jwt-signed",                                       // Default access token format
     tokenFormats: "jwt-signed,jwt-encrypted,macaroon,biscuit,zcap",        // Token formats offered
+    zcapCryptosuite: "eddsa-jcs-2022",                                     // ZCAP proof suite
     accessTokenLifetimeS: 3600,                                            // Access token lifetime (seconds)
     interactionLifetimeS: 600,                                             // Interaction lifetime (seconds)
     continueWaitS: 5,                                                      // Continuation wait (seconds)

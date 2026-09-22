@@ -564,6 +564,13 @@ because in GNAP the key IS the client.
   only hosts in `gnap.pushAllowedHosts` when that list is set.
 * **Macaroon third-party caveats, Biscuit third-party blocks and ZCAP invocation
   proofs are not implemented**; a token that needs one is refused.
+* **A zcap token's proof is checked only in the suite the realm is set to.**
+  By default that is `eddsa-jcs-2022`, which signs the JSON a resource server
+  reads. **`gnap.zcapCryptosuite=Ed25519Signature2020` weakens this**: it
+  signs the RDF canonicalization instead, so its safety rests on this service
+  refusing any `@context` but its own, and a resource server cannot check the
+  signature without a JSON-LD processor. Set it only for a verifier that knows
+  nothing newer — see [zcap proof suites](gnap.md#zcap-proof-suites).
 
 ## A logout cannot recall what has already been issued
 

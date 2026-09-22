@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2864** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2865** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 92
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 273
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 274
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 170
@@ -2602,12 +2602,13 @@ Raised from: gnap/.
 | `STS-GNAP-0324` | A biscuit authorization check failed, or the authorizer could not be built for the presentation. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0325` | Biscuit authorization exceeded its run limits (facts, iterations or time), which is a refusal and never a pass. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0326` | A biscuit attenuation block was refused: empty, a parameter of an unsupported type, or rejected by the library. | — |
-| `STS-GNAP-0330` | ZCAP keys are unusable (no absolute controller URL, a keyId not under it, or not an Ed25519 KeyObject), or a capability's invocationTarget is not an absolute URI. | — |
+| `STS-GNAP-0330` | ZCAP keys are unusable (no absolute controller URL, a keyId not under it, not a key of the kind gnap.zcapCryptosuite signs with, or a suite that is none of the four), or a capability's invocationTarget is not an absolute URI. | — |
 | `STS-GNAP-0331` | The ZCAP libraries could not be loaded. | HTTP 401 invalid_token at a resource server; at issuance the token is left out |
 | `STS-GNAP-0332` | A presented ZCAP is not base64url JSON with exactly the members and @context this format writes. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0333` | A presented ZCAP's delegation proof does not verify under this authorization server's key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0334` | A presented ZCAP's GNAP terms are inconsistent, or it names no invocationTarget. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0335` | The ZCAP libraries refused to sign a capability. | — |
+| `STS-GNAP-0336` | A presented ZCAP carries a proof of a suite other than the one this realm's gnap.zcapCryptosuite names, or not exactly one proof. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0340` | A presented jwt-encrypted GNAP access token is encrypted to a resource server's key, which this authorization server does not hold. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0341` | A presented jwt-encrypted GNAP access token does not decrypt. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0342` | A presented JWT GNAP access token's signature does not verify. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |

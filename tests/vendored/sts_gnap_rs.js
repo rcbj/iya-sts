@@ -27,11 +27,16 @@
 //   biscuit        the protobuf walked here and the authority block's Ed25519
 //                  signature verified against the published root key, and the
 //                  proof's next secret shown to be the next key's private half
-//   zcap           the capability's verification method resolved through the
-//                  published controller document to the published Ed25519 key.
-//                  The Ed25519Signature2020 proof itself needs RDF dataset
-//                  canonicalization, which is not written out here — the one
-//                  check in this file that is the service's word, and said so.
+//   zcap           the realm's default suite, eddsa-jcs-2022 (#43): the
+//                  verification method resolved through the published
+//                  controller document to a Multikey that is the published
+//                  Ed25519 key, then the Data Integrity proof verified HERE —
+//                  RFC 8785 written out below, SHA-256 of the proof
+//                  configuration and of the capability, and node's Ed25519.
+//                  Until 2026-09-22 the proof was Ed25519Signature2020, which
+//                  needs RDF dataset canonicalization this file does not
+//                  carry, so its signature was the service's word; with a
+//                  JCS suite none of the five formats is.
 //
 // Everything runs in a THROWAWAY TRUST REALM that is left behind.
 //
@@ -315,6 +320,54 @@ function verifyBiscuit(value, rootRaw) {
            blocks: top.filter(function (f) { return f[0] === 3; }).length };
 }
 
+// RFC 8785, the JSON Canonicalization Scheme: members sorted by UTF-16 code
+// unit (what Array.prototype.sort() compares), every primitive as
+// JSON.stringify() writes it — the RFC adopts ECMAScript's serialisation of
+// strings and numbers.
+function jcs(value) {
+  log.debug("Entering jcs().");
+  let out;
+  if (value === null || typeof value !== "object") {
+    out = JSON.stringify(value);
+  } else if (Array.isArray(value)) {
+    out = "[" + value.map(jcs).join(",") + "]";
+  } else {
+    out = "{" + Object.keys(value).sort().map(function (k) {
+      return JSON.stringify(k) + ":" + jcs(value[k]);
+    }).join(",") + "}";
+  }
+  log.debug("Leaving jcs().");
+  return out;
+}
+
+// W3C Data Integrity EdDSA Cryptosuites v1.0, section 3.3.2 (eddsa-jcs-2022):
+// the proof's @context is the document's, hashData is SHA-256(JCS(proof
+// configuration)) || SHA-256(JCS(document without proof)), and the proof
+// value is a base58-btc Ed25519 signature over it.
+function verifyEddsaJcs(cap, publicRaw) {
+  log.debug("Entering verifyEddsaJcs().");
+  const proof = cap.proof;
+  const unsecured = Object.assign({}, cap);
+  delete unsecured.proof;
+  const config = Object.assign({}, proof);
+  delete config.proofValue;
+  assert.strictEqual(jcs(config["@context"]), jcs(cap["@context"]),
+                     "the proof carries the capability's @context");
+  const sha = function (text) {
+    return nodeCrypto.createHash("sha256").update(text, "utf8").digest();
+  };
+  const hashData = Buffer.concat([sha(jcs(config)), sha(jcs(unsecured))]);
+  assert.ok(/^z/.test(proof.proofValue), "a base58-btc proof value");
+  const signature = base58btc(String(proof.proofValue).slice(1));
+  assert.strictEqual(signature.length, 64, "a 64-byte Ed25519 signature");
+  const key = nodeCrypto.createPublicKey({
+    key: { kty: "OKP", crv: "Ed25519", x: gnap.b64u(publicRaw) },
+    format: "jwk" });
+  const good = nodeCrypto.verify(null, hashData, key, signature);
+  log.debug("Leaving verifyEddsaJcs(). " + good);
+  return good;
+}
+
 const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58btc(text) {
   log.debug("Entering base58btc().");
@@ -556,16 +609,31 @@ async function test() {
                                                   "not verify");
             });
     } else if (format === "zcap") {
-      check("zcap: the capability's verification method resolves through the " +
-            "published controller document to the published Ed25519 " +
-            "key", function () {
+      check("zcap: an eddsa-jcs-2022 Data Integrity proof whose verification " +
+            "method resolves through the published controller document to " +
+            "the published Ed25519 key, and whose signature verifies HERE " +
+            "over RFC 8785", function () {
               const cap = JSON.parse(Buffer.from(token.value, "base64url")
                                            .toString("utf8"));
-              const proof = Array.isArray(cap.proof) ? cap.proof[0] : cap.proof;
-              assert.strictEqual(proof.type, "Ed25519Signature2020");
-              assert.ok(/^z/.test(proof.proofValue) &&
-                        base58btc(proof.proofValue.slice(1)).length === 64,
-                        "a 64-byte multibase signature");
+              assert.ok(cap.proof && !Array.isArray(cap.proof),
+                        "exactly one proof");
+              const proof = cap.proof;
+              assert.strictEqual(material.zcap.cryptosuite, "eddsa-jcs-2022",
+                                 "/gnap/keys names the realm's suite");
+              assert.strictEqual(proof.type, "DataIntegrityProof");
+              assert.strictEqual(proof.cryptosuite, "eddsa-jcs-2022");
+              assert.strictEqual(proof.proofPurpose, "capabilityDelegation");
+              assert.deepStrictEqual(proof.capabilityChain,
+                                     [cap.parentCapability],
+                                     "a one-link chain from the root");
+              assert.deepStrictEqual(cap["@context"].slice(0, 2),
+                                     ["https://w3id.org/zcap/v1",
+                                      "https://w3id.org/security/" +
+                                      "data-integrity/v2"],
+                                     "ZCAP-LD v0.4's context order");
+              assert.deepStrictEqual(controllerDoc.json["@context"],
+                                     ["https://www.w3.org/ns/cid/v1"],
+                                     "a Controlled Identifiers v1.0 document");
               const methods = [].concat(controllerDoc.json.verificationMethod ||
                                         [],
                                         controllerDoc.json.assertionMethod ||
@@ -579,6 +647,10 @@ async function test() {
               assert.ok(method,
                         "the controller document names " +
                         proof.verificationMethod);
+              assert.strictEqual(method.type, "Multikey");
+              assert.ok((controllerDoc.json.capabilityDelegation || [])
+                          .indexOf(proof.verificationMethod) >= 0,
+                        "the key is authorized for capabilityDelegation");
               const multikey =
                   base58btc(String(method.publicKeyMultibase).slice(1));
               assert.strictEqual(multikey.slice(0, 2).toString("hex"), "ed01",
@@ -587,6 +659,13 @@ async function test() {
               assert.strictEqual(gnap.b64u(multikey.slice(2)),
                                  material.biscuit.jwk.x,
                                  "the same key /gnap/keys publishes");
+              assert.ok(verifyEddsaJcs(cap, multikey.slice(2)),
+                        "the Ed25519 signature over the JCS hash data " +
+                        "verifies");
+              const touched = JSON.parse(JSON.stringify(cap));
+              touched.gnapLabel = String(touched.gnapLabel || "") + "!";
+              assert.ok(!verifyEddsaJcs(touched, multikey.slice(2)),
+                        "and a changed member does not");
             });
     }
     r = await client.send("GET", h.RS, { token: token.value });

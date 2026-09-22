@@ -10178,7 +10178,8 @@ const CODES = [
     spec: '' },
   { code: 'STS-GNAP-0330',
     summary: 'ZCAP keys are unusable (no absolute controller URL, a keyId ' +
-      'not under it, or not an Ed25519 KeyObject), or a capability\'s ' +
+      'not under it, not a key of the kind gnap.zcapCryptosuite signs ' +
+      'with, or a suite that is none of the four), or a capability\'s ' +
       'invocationTarget is not an absolute URI.',
     spec: '' },
   { code: 'STS-GNAP-0331',
@@ -10203,6 +10204,12 @@ const CODES = [
   { code: 'STS-GNAP-0335',
     summary: 'The ZCAP libraries refused to sign a capability.',
     spec: '' },
+  { code: 'STS-GNAP-0336',
+    summary: 'A presented ZCAP carries a proof of a suite other than the ' +
+      'one this realm\'s gnap.zcapCryptosuite names, or not exactly one ' +
+      'proof.',
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
+      'demonstration resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0340',
     summary: 'A presented jwt-encrypted GNAP access token is encrypted to ' +
       'a resource server\'s key, which this authorization server does not ' +

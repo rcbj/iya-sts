@@ -85,13 +85,56 @@ All five formats RFC 9767 registers are minted and verified.
 | `jwt-encrypted` | that JWT inside a JWE | to the resource server's own `gnapJweKey` (RSA-OAEP-256 or ECDH-ES+A256KW), else `dir` A256GCM that only introspection can open |
 | `macaroon` | the V2 binary format, HMAC-SHA256, first-party caveats | the root key written onto the resource server's application entry as `gnapMacaroonKey` |
 | `biscuit` | Ed25519, Datalog facts and checks | the root public key in `/gnap/keys` |
-| `zcap` | a ZCAP-LD capability signed with Ed25519Signature2020 | the controller document at `/gnap/zcap/controller` |
+| `zcap` | a ZCAP-LD capability with a Data Integrity `eddsa-jcs-2022` proof (see [below](#zcap-proof-suites)) | the controller document at `/gnap/zcap/controller` |
 
 Which format a token gets is decided in this order: a registered resource set
 that accepts only some formats, then the resource server's
 `gnapAccessTokenFormat`, then the client's, then `gnap.accessTokenFormat`.
 
 **Resource servers can always introspect**, whatever the format.
+
+### zcap proof suites
+
+RFC 9767 registers `zcap` with a reference to *Authorization Capabilities for
+Linked Data v0.3* (ZCAP-LD), which requires a Data Integrity proof but names no
+particular one. `gnap.zcapCryptosuite` chooses it, per realm, and **a realm
+accepts only the suite it is set to** — a token signed any other way is refused
+(`STS-GNAP-0336`) before its signature is looked at.
+
+| `gnap.zcapCryptosuite` | Specification | Signs | The controller document publishes |
+|---|---|---|---|
+| **`eddsa-jcs-2022`** (default) | W3C Data Integrity EdDSA Cryptosuites v1.0 (Recommendation), section 3.3 | the JSON itself, canonicalized by RFC 8785 (JCS), with the realm's Ed25519 key | a `Multikey`, `z6Mk…` |
+| `mldsa44-jcs-2024` | W3C Quantum-Resistant Cryptosuites v1.0 (First Public Working Draft), section 3.3 | the JSON (JCS), with the realm's ML-DSA-44 key | a `Multikey`, base64url (`u…`) |
+| `slhdsa128-jcs-2024` | the same draft, section 3.4 | the JSON (JCS), with the realm's SLH-DSA-SHA2-128s key — each signature takes about two seconds | a `Multikey`, base64url (`u…`) |
+| `Ed25519Signature2020` | EdDSA Cryptosuites v1.0, Appendix A — kept there as "an earlier version" | the **RDF canonicalization** (URDNA2015) of the capability | an `Ed25519VerificationKey2020` |
+
+A capability signed with a JCS suite has the `@context`
+`["https://w3id.org/zcap/v1", "https://w3id.org/security/data-integrity/v2", {GNAP terms}]`
+— ZCAP-LD v0.4's form — and a proof carrying `type: DataIntegrityProof`, the
+`cryptosuite`, `proofPurpose: capabilityDelegation`, `capabilityChain` (the
+root capability's id) and the same `@context`. To verify one, a resource server
+needs no JSON-LD processor: remove `proofValue` from the proof and the proof
+from the capability, take SHA-256 of each one's JCS form, concatenate the two
+hashes (the proof's first), and check the signature over that with the key the
+controller document publishes.
+
+The two post-quantum suites exist for resource servers that want signatures a
+quantum computer cannot forge. Their specification is a draft, so few ZCAP
+verifiers outside this service accept them yet.
+
+> **Warning: `Ed25519Signature2020` is for compatibility only.** Use it only
+> for a resource server that can verify nothing newer. It signs the RDF graph
+> the capability expands to, not the JSON a resource server reads, so two
+> different JSON documents can share one valid signature: a changed
+> `@context` that remaps a term produces the same graph. This service refuses
+> any `@context` other than the exact one it writes, which closes that gap
+> here, but a resource server has to do the same. A resource server also needs
+> a JSON-LD processor and an RDF canonicalizer to check the signature at all.
+> The EdDSA Recommendation itself advises new implementations to move off this
+> suite.
+
+Changing `gnap.zcapCryptosuite` strands zcap tokens already issued in that
+realm, which are refused until they expire (`gnap.accessTokenLifetimeS`).
 
 ## Clients and resource servers are applications
 

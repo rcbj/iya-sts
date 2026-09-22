@@ -16,18 +16,26 @@
 // API, the Origin prefixed with `origin:` (Appendix A.4). This file verifies
 // that proof, and signs one for a test to present.
 //
-// THREE CRYPTOSUITES, ALL OF THEM THE JCS KIND, AND WHY JCS:
+// FOUR CRYPTOSUITES, ALL OF THEM THE JCS KIND, AND WHY JCS:
 //
 //   ecdsa-jcs-2019    W3C Data Integrity ECDSA Cryptosuites v1.0, section
 //                     3.3 — P-256 with SHA-256, P-384 with SHA-384
 //   eddsa-jcs-2022    W3C Data Integrity EdDSA Cryptosuites v1.0, section
 //                     3.3 — Ed25519
 //   mldsa44-jcs-2024  W3C Quantum-Resistant Cryptosuites v1.0 (First Public
-//                     Working Draft), section 3.3 — ML-DSA-44 with SHA-256.
-//                     That draft defines no ML-DSA-65 or ML-DSA-87 suite
-//                     ("a maximum security category of 2"), so neither is
-//                     accepted here: a suite name nobody registered would be
-//                     this service inventing one.
+//                     Working Draft, 16 June 2026), section 3.3 — ML-DSA-44
+//                     with SHA-256. That draft defines no ML-DSA-65 or
+//                     ML-DSA-87 suite ("a maximum security category of 2"),
+//                     so neither is accepted here: a suite name nobody
+//                     registered would be this service inventing one.
+//   slhdsa128-jcs-2024
+//                     the same draft, section 3.4 — SLH-DSA-SHA2-128s with
+//                     SHA-256 ("a maximum security category of 1"; its Table
+//                     7). Added 2026-09-22 for the GNAP zcap token (#43); the
+//                     draft's FALCON-512 and SQIsign-I suites are not here,
+//                     because their multicodec codes are, in the draft's own
+//                     words, "preliminary and not currently registered" and
+//                     this service holds no key for either.
 //
 // The RDFC variants canonicalize the presentation as an RDF dataset, which
 // means a JSON-LD processor and a document loader for whatever `@context` a
@@ -98,7 +106,8 @@
 // resolved from the identifier itself with no network. `did:jwk` is what
 // `vc_issuer.ts` binds an `ldp_vc` credential to; `did:key` with a Multikey
 // is what the three specifications' own examples use (P-256 `0x1200`, P-384
-// `0x1201`, Ed25519 `0xed`, ML-DSA-44 `0x1210`). A method a resolver would
+// `0x1201`, Ed25519 `0xed`, ML-DSA-44 `0x1210`, SLH-DSA-SHA2-128s
+// `0x1220`). A method a resolver would
 // have to FETCH is refused, for the reason JCS was chosen above.
 //
 // **NO NPM PACKAGE FOR JCS OR BASE58, THOUGH BOTH ARE IN `node_modules`.**
@@ -131,7 +140,7 @@ interface Check {
 
 interface Suite {
   id: string;
-  kind: 'ec' | 'ed25519' | 'ml-dsa';
+  kind: 'ec' | 'ed25519' | 'pq';
   multibase: 'z' | 'u';
   spec: string;
   pqAlg?: string;
@@ -152,9 +161,13 @@ const SUITES: Record<string, Suite> = {
     id: 'eddsa-jcs-2022', kind: 'ed25519', multibase: 'z',
     spec: 'W3C Data Integrity EdDSA Cryptosuites v1.0, section 3.3' },
   'mldsa44-jcs-2024': {
-    id: 'mldsa44-jcs-2024', kind: 'ml-dsa', multibase: 'u',
+    id: 'mldsa44-jcs-2024', kind: 'pq', multibase: 'u',
     pqAlg: 'ML-DSA-44',
-    spec: 'W3C Quantum-Resistant Cryptosuites v1.0 (FPWD), section 3.3' }
+    spec: 'W3C Quantum-Resistant Cryptosuites v1.0 (FPWD), section 3.3' },
+  'slhdsa128-jcs-2024': {
+    id: 'slhdsa128-jcs-2024', kind: 'pq', multibase: 'u',
+    pqAlg: 'SLH-DSA-SHA2-128s',
+    spec: 'W3C Quantum-Resistant Cryptosuites v1.0 (FPWD), section 3.4' }
 };
 
 const SUPPORTED_CRYPTOSUITES = Object.keys(SUITES);
@@ -169,9 +182,17 @@ const EC_CURVES: Record<string, { hash: string; sigBytes: number;
              pointBytes: 48 }
 };
 
-// ML-DSA-44's sizes (FIPS 204, table 2) — a public key and a signature of
+// The post-quantum keys' sizes — FIPS 204 table 2 for ML-DSA-44, FIPS 205
+// table 2 for SLH-DSA-SHA2-128s, both restated in the draft's Tables 4 and 6
+// — and their Multikey prefixes (its Table 1). A public key or a signature of
 // any other length is not one, whatever it decodes to.
-const ML_DSA_44 = { pub: 1312, sig: 2420 };
+const PQ_KEYS: Record<string, { pub: number; sig: number;
+                                prefix: number[]; suite: string }> = {
+  'ML-DSA-44': { pub: 1312, sig: 2420, prefix: [0x90, 0x24],
+                 suite: 'mldsa44-jcs-2024' },
+  'SLH-DSA-SHA2-128s': { pub: 32, sig: 7856, prefix: [0xa0, 0x24],
+                         suite: 'slhdsa128-jcs-2024' }
+};
 
 // The Multikey prefixes (the varint of each multicodec code) this file
 // resolves a `did:key` by.
@@ -179,7 +200,8 @@ const MULTIKEY_PREFIXES: { prefix: number[]; kind: string }[] = [
   { prefix: [0x80, 0x24], kind: 'P-256' },
   { prefix: [0x81, 0x24], kind: 'P-384' },
   { prefix: [0xed, 0x01], kind: 'Ed25519' },
-  { prefix: [0x90, 0x24], kind: 'ML-DSA-44' }
+  { prefix: [0x90, 0x24], kind: 'ML-DSA-44' },
+  { prefix: [0xa0, 0x24], kind: 'SLH-DSA-SHA2-128s' }
 ];
 
 const BASE58_ALPHABET =
@@ -432,6 +454,22 @@ class VcDataIntegrity {
   didKeyOf(jwk: any): string {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.didKeyOf().");
+    log.debug("Leaving VcDataIntegrity.didKeyOf().");
+    return 'did:key:' + this.multikeyOf(jwk);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE MULTIKEY `publicKeyMultibase` OF A PUBLIC JWK (Controlled Identifiers
+  // v1.0's Multikey): the multicodec prefix and the raw key, base58-btc for
+  // the EC and EdDSA suites (EdDSA Cryptosuites v1.0 section 2.1.1: "MUST
+  // start with the base-58-btc prefix") and base64url for the post-quantum
+  // ones (the Quantum-Resistant draft's section 2.1.1: "MUST then be encoded
+  // using the base-64-url alphabet"). What a `did:key` is made of, and what a
+  // controller document publishes a Multikey verification method with.
+  // -------------------------------------------------------------------------
+  multikeyOf(jwk: any): string {
+    const { log } = this.deps;
+    log.debug("Entering VcDataIntegrity.multikeyOf().");
     const pub = this.publicJwkOf(jwk);
     let prefix: number[] = null;
     let raw: Buffer = null;
@@ -444,19 +482,19 @@ class VcDataIntegrity {
     } else if (pub.kty === 'OKP' && pub.crv === 'Ed25519') {
       raw = Buffer.from(pub.x, 'base64url');
       prefix = [0xed, 0x01];
-    } else if (pub.kty === 'AKP' && pub.alg === 'ML-DSA-44') {
+    } else if (pub.kty === 'AKP' && PQ_KEYS[pub.alg]) {
       raw = Buffer.from(pub.pub, 'base64url');
-      prefix = [0x90, 0x24];
+      prefix = PQ_KEYS[pub.alg].prefix;
       base = 'u';
     } else {
-      log.debug("Leaving VcDataIntegrity.didKeyOf(). No Multikey.");
+      log.debug("Leaving VcDataIntegrity.multikeyOf(). No Multikey.");
       throw new Error('no Multikey this file knows for this key.');
     }
     const bytes = Buffer.concat([Buffer.from(prefix), raw]);
     const encoded = base === 'z' ? 'z' + this.base58Encode(bytes)
                                  : 'u' + bytes.toString('base64url');
-    log.debug("Leaving VcDataIntegrity.didKeyOf().");
-    return 'did:key:' + encoded;
+    log.debug("Leaving VcDataIntegrity.multikeyOf().");
+    return encoded;
   }
 
   private jwkOfMultikey(multikey: string): any {
@@ -476,7 +514,8 @@ class VcDataIntegrity {
     if (!found) {
       log.debug("Leaving VcDataIntegrity.jwkOfMultikey(). Unknown codec.");
       throw new Error('the did:key names a key type this file does not ' +
-                      'resolve (P-256, P-384, Ed25519 and ML-DSA-44 only).');
+                      'resolve (P-256, P-384, Ed25519, ML-DSA-44 and ' +
+                      'SLH-DSA-SHA2-128s only).');
     }
     const raw = bytes.subarray(found.prefix.length);
     let jwk: any;
@@ -485,12 +524,12 @@ class VcDataIntegrity {
         throw new Error('an Ed25519 Multikey is 32 bytes.');
       }
       jwk = { kty: 'OKP', crv: 'Ed25519', x: raw.toString('base64url') };
-    } else if (found.kind === 'ML-DSA-44') {
-      if (raw.length !== ML_DSA_44.pub) {
-        throw new Error('an ML-DSA-44 Multikey is ' + ML_DSA_44.pub +
-                        ' bytes.');
+    } else if (PQ_KEYS[found.kind]) {
+      if (raw.length !== PQ_KEYS[found.kind].pub) {
+        throw new Error('an ' + found.kind + ' Multikey is ' +
+                        PQ_KEYS[found.kind].pub + ' bytes.');
       }
-      jwk = { kty: 'AKP', alg: 'ML-DSA-44', pub: raw.toString('base64url') };
+      jwk = { kty: 'AKP', alg: found.kind, pub: raw.toString('base64url') };
     } else {
       const size = EC_CURVES[found.kind].pointBytes;
       if (raw.length !== size + 1 && raw.length !== 2 * size + 1) {
@@ -563,8 +602,8 @@ class VcDataIntegrity {
       suite = 'ecdsa-jcs-2019';
     } else if (k.kty === 'OKP' && k.crv === 'Ed25519') {
       suite = 'eddsa-jcs-2022';
-    } else if (k.kty === 'AKP' && k.alg === 'ML-DSA-44') {
-      suite = 'mldsa44-jcs-2024';
+    } else if (k.kty === 'AKP' && PQ_KEYS[k.alg]) {
+      suite = PQ_KEYS[k.alg].suite;
     }
     log.debug("Leaving VcDataIntegrity.cryptosuiteForJwk(). " +
               (suite || 'none'));
@@ -589,10 +628,10 @@ class VcDataIntegrity {
             'curve') + ' has no Data Integrity cryptosuite.';
     } else if (k.kty === 'AKP') {
       why = 'the W3C Quantum-Resistant Cryptosuites draft defines ' +
-            'ML-DSA-44 only (mldsa44-jcs-2024), so ' + (k.alg || 'this ' +
-            'algorithm') + ' has no cryptosuite there — nor do ML-DSA-65, ' +
-            'ML-DSA-87, SLH-DSA at this service\'s parameter sets, or any ' +
-            'composite.';
+            'ML-DSA-44 (mldsa44-jcs-2024) and SLH-DSA-SHA2-128s ' +
+            '(slhdsa128-jcs-2024) of the algorithms this service holds, so ' +
+            (k.alg || 'this algorithm') + ' has none there; ML-DSA-65, ' +
+            'ML-DSA-87, SLH-DSA-SHAKE-128s and the composites have none.';
     } else {
       why = 'a key of kty "' + (k.kty || '') + '" has no Data Integrity ' +
             'cryptosuite.';
@@ -646,20 +685,20 @@ class VcDataIntegrity {
     if (suite.kind === 'ec') {
       return EC_CURVES[jwk.crv] ? EC_CURVES[jwk.crv].sigBytes : 0;
     }
-    return suite.kind === 'ed25519' ? 64 : ML_DSA_44.sig;
+    return suite.kind === 'ed25519' ? 64 : PQ_KEYS[suite.pqAlg].sig;
   }
 
   private async signBytes(suite: Suite, privateKey: any, jwk: any,
                           data: Buffer): Promise<Buffer> {
     const { log, pqSignAsync } = this.deps;
     log.debug("Entering VcDataIntegrity.signBytes(). suite=" + suite.id);
-    if (suite.kind === 'ml-dsa') {
+    if (suite.kind === 'pq') {
       const priv = privateKey && typeof privateKey === 'object' &&
         typeof privateKey.priv === 'string'
         ? Buffer.from(privateKey.priv, 'base64url')
         : Buffer.from(privateKey);
       const sig = await pqSignAsync(suite.pqAlg, priv, data);
-      log.debug("Leaving VcDataIntegrity.signBytes(). ML-DSA.");
+      log.debug("Leaving VcDataIntegrity.signBytes(). " + suite.pqAlg);
       return Buffer.from(sig);
     }
     const key = privateKey instanceof crypto.KeyObject ? privateKey
@@ -677,10 +716,11 @@ class VcDataIntegrity {
                             signature: Buffer): Promise<boolean> {
     const { log, pqVerifyAsync } = this.deps;
     log.debug("Entering VcDataIntegrity.verifyBytes(). suite=" + suite.id);
-    if (suite.kind === 'ml-dsa') {
+    if (suite.kind === 'pq') {
       const ok = await pqVerifyAsync(suite.pqAlg,
         Buffer.from(jwk.pub, 'base64url'), data, signature);
-      log.debug("Leaving VcDataIntegrity.verifyBytes(). ML-DSA " + ok);
+      log.debug("Leaving VcDataIntegrity.verifyBytes(). " + suite.pqAlg +
+                " " + ok);
       return !!ok;
     }
     const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
@@ -704,21 +744,52 @@ class VcDataIntegrity {
   async signPresentation(unsecuredVp: any, options: any): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.signPresentation().");
+    log.debug("Leaving VcDataIntegrity.signPresentation().");
+    return this.signDocument(unsecuredVp, options);
+  }
+
+  // -------------------------------------------------------------------------
+  // SIGNING ANY DOCUMENT — the create-proof algorithm of the suite named or
+  // implied by the key (EdDSA 3.3.1, ECDSA 3.3.1, Quantum-Resistant 3.3.1 and
+  // 3.4.1). `signPresentation()` is this with a presentation's defaults.
+  //
+  // `options.proofMembers` are members the caller's PROOF PURPOSE puts on the
+  // proof before it is signed — ZCAP-LD's `capabilityChain` (#43,
+  // `gnap/token_zcap.ts`) — and they are covered by the signature like every
+  // other proof option, because the proof configuration is the proof less
+  // its `proofValue`. They may not override the members this function sets
+  // (`type`, `cryptosuite`, `proofValue`, `@context`): a caller that could
+  // would be signing a proof of some other suite under this suite's name.
+  // -------------------------------------------------------------------------
+  async signDocument(unsecured: any, options: any): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering VcDataIntegrity.signDocument().");
     const o = options || {};
     const publicJwk = this.publicJwkOf(o.publicJwk);
     const suiteId = o.cryptosuite || this.cryptosuiteForJwk(publicJwk);
     const suite = SUITES[suiteId];
     if (!suite) {
-      log.debug("Leaving VcDataIntegrity.signPresentation(). No suite.");
+      log.debug("Leaving VcDataIntegrity.signDocument(). No suite.");
       throw new Error('no cryptosuite for this key: ' +
                       (this.unsupportedReason(publicJwk) || suiteId));
     }
     const mismatch = this.keyMismatch(suite, publicJwk);
     if (mismatch) {
-      log.debug("Leaving VcDataIntegrity.signPresentation(). Wrong key.");
+      log.debug("Leaving VcDataIntegrity.signDocument(). Wrong key.");
       throw new Error(mismatch);
     }
-    const document = Object.assign({}, unsecuredVp || {});
+    const extra = o.proofMembers && typeof o.proofMembers === 'object'
+      ? o.proofMembers : {};
+    const reserved = ['type', 'cryptosuite', 'proofValue', '@context']
+      .filter(function (name) {
+        return Object.prototype.hasOwnProperty.call(extra, name);
+      });
+    if (reserved.length) {
+      log.debug("Leaving VcDataIntegrity.signDocument(). Reserved member.");
+      throw new Error('proofMembers may not set ' + reserved.join(', ') +
+                      '; this function sets them.');
+    }
+    const document = Object.assign({}, unsecured || {});
     delete document.proof;
     const proof: any = {
       type: 'DataIntegrityProof',
@@ -738,6 +809,11 @@ class VcDataIntegrity {
     if (o.expires) {
       proof.expires = o.expires;
     }
+    Object.keys(extra).forEach(function (name) {
+      proof[name] = extra[name];
+    });
+    // Create step 2 of every suite here: the document's @context goes on the
+    // proof, so a verifier can check the document still starts with it.
     if (document['@context'] !== undefined) {
       proof['@context'] = document['@context'];
     }
@@ -747,7 +823,7 @@ class VcDataIntegrity {
     proof.proofValue = suite.multibase === 'z'
       ? 'z' + this.base58Encode(signature)
       : 'u' + signature.toString('base64url');
-    log.debug("Leaving VcDataIntegrity.signPresentation(). " + suite.id);
+    log.debug("Leaving VcDataIntegrity.signDocument(). " + suite.id);
     return Object.assign(document, { proof: proof });
   }
 
@@ -893,9 +969,15 @@ class VcDataIntegrity {
     }
 
     // --- the key ------------------------------------------------------------
+    // A caller that publishes its OWN keys under an https identifier (the
+    // GNAP zcap controller document, #43) passes `resolveVerificationMethod`,
+    // which answers { jwk, controller } from what it holds or throws; nothing
+    // is fetched either way. Without one, only did:jwk and did:key resolve.
     let resolved: { jwk: any; controller: string } = null;
     try {
-      resolved = this.resolveVerificationMethod(proof.verificationMethod);
+      resolved = typeof o.resolveVerificationMethod === 'function'
+        ? o.resolveVerificationMethod(proof.verificationMethod)
+        : this.resolveVerificationMethod(proof.verificationMethod);
     } catch (e) {
       log.debug("Caught in VcDataIntegrity.verifyProof(): " +
                 ((e && e.message) || e));
@@ -963,7 +1045,7 @@ class VcDataIntegrity {
     } else if (doc['@context'] !== undefined) {
       configs.push(Object.assign({}, config,
                                  { '@context': doc['@context'] }));
-      if (suite && suite.kind !== 'ml-dsa') {
+      if (suite && suite.kind !== 'pq') {
         configs.push(config);
       }
     } else {
@@ -1037,5 +1119,7 @@ export = {
   unsupportedReason: slot.forward('unsupportedReason'),
   hashData: slot.forward('hashData'),
   signPresentation: slot.forward('signPresentation'),
+  signDocument: slot.forward('signDocument'),
+  multikeyOf: slot.forward('multikeyOf'),
   verifyProof: slot.forward('verifyProof')
 };

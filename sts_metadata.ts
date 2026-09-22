@@ -669,11 +669,14 @@ const SPECS: Spec[] = [
                          '(ZCAP-LD) v0.3',
     where: 'W3C Credentials Community Group',
     url: 'https://w3c-ccg.github.io/zcap-spec/',
-    coverage: 'partial: root and delegated capabilities signed with ' +
-              'Ed25519Signature2020, verified against a controller document ' +
-              'this service publishes, with an offline document loader. ' +
-              'Capability invocation over HTTP is not implemented; the ' +
-              'capability is presented as a GNAP access token instead.' },
+    coverage: 'partial: root and delegated capabilities with a Data ' +
+              'Integrity delegation proof — eddsa-jcs-2022 by default, ' +
+              'mldsa44-jcs-2024 or slhdsa128-jcs-2024 (post-quantum), or ' +
+              'Ed25519Signature2020 for compatibility, per realm ' +
+              '(gnap.zcapCryptosuite) — verified against a controller ' +
+              'document this service publishes, with an offline document ' +
+              'loader. Capability invocation over HTTP is not implemented; ' +
+              'the capability is presented as a GNAP access token instead.' },
   { id: 'rfc7642', name: 'SCIM: Definitions, Overview, Concepts, and ' +
                          'Requirements (RFC 7642)',
     where: 'IETF',
@@ -1928,13 +1931,17 @@ const SPECS: Spec[] = [
     coverage: 'partial: the VC-JWT encoding of VCDM 1.1 (jwt_vc_json) and ' +
               'VCDM 2.0 credentials with an embedded proof (ldp_vc).' },
   { id: 'di-jcs', name: 'W3C Data Integrity — ecdsa-jcs-2019, ' +
-                        'eddsa-jcs-2022 and mldsa44-jcs-2024',
+                        'eddsa-jcs-2022, mldsa44-jcs-2024 and ' +
+                        'slhdsa128-jcs-2024',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-ecdsa/',
     coverage: 'partial: verification (and signing, for tests) of a ' +
               'holder\'s proof on a VerifiablePresentation — P-256 and ' +
-              'P-384, Ed25519, and ML-DSA-44 from the Quantum-Resistant ' +
-              'Cryptosuites draft — with did:jwk and did:key verification ' +
-              'methods. No RDF-canonicalized suites, no proof chains.' },
+              'P-384, Ed25519, and ML-DSA-44 and SLH-DSA-SHA2-128s from the ' +
+              'Quantum-Resistant Cryptosuites draft — with did:jwk and ' +
+              'did:key verification methods; and signing and verification ' +
+              'of a GNAP zcap token\'s delegation proof in Ed25519, ML-DSA-44 ' +
+              'or SLH-DSA-SHA2-128s against a Multikey controller document. ' +
+              'No RDF-canonicalized suites, no proof chains.' },
   { id: 'token-status-list',
     name: 'Token Status List (draft-ietf-oauth-status-list-21)',
     where: 'IETF',
@@ -2541,18 +2548,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'with existing_access_token.' },
   { path: '/gnap/keys', group: 'GNAP', name: 'Verification material for the ' +
                                              'token formats',
-    specs: ['rfc9767', 'biscuit', 'zcap-ld'],
+    specs: ['rfc9767', 'biscuit', 'zcap-ld', 'di-jcs'],
     what: 'NOT A SPECIFICATION ENDPOINT: the public keys a resource server ' +
           'needs to verify the self-contained formats without introspection ' +
-          '— the JWKS for jwt-signed, and the Ed25519 public key for biscuit ' +
-          'and zcap. Macaroons are symmetric and never appear here. Served ' +
-          'no-store.' },
+          '— the JWKS for jwt-signed, the Ed25519 public key for biscuit, ' +
+          'and for zcap the controller document\'s URL and the one proof ' +
+          'suite this realm signs and accepts. Macaroons are symmetric and ' +
+          'never appear here. Served no-store.' },
   { path: '/gnap/zcap/controller', group: 'GNAP', name: 'The ZCAP controller ' +
                                                         'document',
-    specs: ['zcap-ld'],
+    specs: ['zcap-ld', 'di-jcs'],
     what: 'NOT A GNAP ENDPOINT: the controller document a zcap access ' +
           'token\'s root capability names, carrying the verification method ' +
-          'its signature is checked against. Served no-store.' },
+          'its signature is checked against — a Multikey in a Controlled ' +
+          'Identifiers v1.0 document under the JCS suites, an ' +
+          'Ed25519VerificationKey2020 under Ed25519Signature2020. Served ' +
+          'no-store.' },
   { path: '/gnap/rs/resource', group: 'GNAP', name: 'The demonstration ' +
                                                     'resource server',
     specs: ['rfc9635', 'rfc9767', 'macaroons'],

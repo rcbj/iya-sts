@@ -774,6 +774,7 @@ trust realm. [docs/gnap.md](docs/gnap.md) says what each one changes on the wire
 | `gnap.enabled` | `STS_GNAP_ENABLED` | `true` | yes | Off makes every /gnap endpoint, the RS-facing discovery document and the resource-owner pages answer that GNAP is turned off in this realm. |
 | `gnap.accessTokenFormat` | `STS_GNAP_ACCESS_TOKEN_FORMAT` | `jwt-signed` | yes | The RFC 9767 token format issued when nothing more specific decides. |
 | `gnap.tokenFormats` | `STS_GNAP_TOKEN_FORMATS` | `jwt-signed,jwt-encrypted,macaroon,biscuit,zcap` | yes | RFC 9767 section 3.1's token_formats_supported. |
+| `gnap.zcapCryptosuite` | `STS_GNAP_ZCAP_CRYPTOSUITE` | `eddsa-jcs-2022` | yes | The Data Integrity proof a zcap token is signed with, and the only one accepted back: `eddsa-jcs-2022`, or the post-quantum `mldsa44-jcs-2024` / `slhdsa128-jcs-2024`. **Warning:** `Ed25519Signature2020` is for compatibility only — it signs the RDF canonicalization rather than the JSON, and cannot be verified without a JSON-LD processor ([docs/gnap.md](docs/gnap.md)). |
 | `gnap.accessTokenLifetimeS` | `STS_GNAP_ACCESS_TOKEN_LIFETIME_S` | `3600` | yes | The expires_in of every access token, and the exp of the formats that carry one. |
 | `gnap.interactionLifetimeS` | `STS_GNAP_INTERACTION_LIFETIME_S` | `600` | yes | How long the interaction start URIs and user codes of a pending grant stay usable (RFC 9635 section 3.3's expires_in). |
 | `gnap.continueWaitS` | `STS_GNAP_CONTINUE_WAIT_S` | `5` | yes | The wait of every continuation response. |

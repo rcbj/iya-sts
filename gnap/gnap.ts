@@ -647,7 +647,7 @@ class GnapRoutes {
         return;
       }
       const document = await zcap.controllerDocument(
-          tokens.zcapKeys(grants.realmBase(req)));
+          await tokens.zcapKeys(grants.realmBase(req)));
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(document, null, 2));

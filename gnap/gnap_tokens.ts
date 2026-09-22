@@ -53,7 +53,12 @@
 //                  (sealed) as `gnapMacaroonKey`.
 //   biscuit, zcap  the realm's Ed25519 key from `allSigningKeys()` — selected
 //                  by CURVE, because a realm holds an Ed448 EdDSA key beside it
-//                  and both formats are Ed25519-only.
+//                  and biscuit is Ed25519-only. A zcap token is signed with it
+//                  under `eddsa-jcs-2022` (the default) and
+//                  `Ed25519Signature2020`, and with the realm's ML-DSA-44 or
+//                  SLH-DSA-SHA2-128s key — two of the eleven post-quantum keys
+//                  it already holds — under the two post-quantum suites
+//                  `gnap.zcapCryptosuite` offers (#43).
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -208,23 +213,76 @@ class GnapTokens {
     return out;
   }
 
-  // The ZCAP controller document lives at the realm's own URL, so the
-  // controller is built from the base the caller hands in. `others` are the
-  // other live generations of the key, which the published document lists.
-  zcapKeys(base?: string) {
+  // The proof suite a zcap token is signed and verified with in this realm
+  // (#43, `gnap/token_zcap.ts`'s header).
+  zcapCryptosuite(): string {
     const { log } = this;
+    const { config, zcap } = this.deps;
+    log.debug("Entering GnapTokens.zcapCryptosuite().");
+    const value = String(config.value('gnap.zcapCryptosuite') ||
+                         zcap.DEFAULT_CRYPTOSUITE);
+    log.debug("Leaving GnapTokens.zcapCryptosuite(). " + value);
+    return value;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ZCAP KEYS, for the suite this realm is set to. The controller
+  // document lives at the realm's own URL, so the controller is built from
+  // the base the caller hands in. `others` are the other live generations of
+  // the key, which the published document lists.
+  //
+  // The two Ed25519 suites use the realm's Ed25519 unit, as biscuits do. The
+  // post-quantum ones use the realm's `jose:ML-DSA-44` or
+  // `jose:SLH-DSA-SHA2-128s` unit — keys the realm already makes, publishes
+  // in its JWKS and rotates (#42), brought into being in the worker pool by
+  // `allSigningKeysAsync()` on first use, which is why this is asynchronous.
+  // -------------------------------------------------------------------------
+  async zcapKeys(base?: string): Promise<any> {
+    const { log } = this;
+    const { helpers } = this.deps;
     log.debug("Entering GnapTokens.zcapKeys().");
-    const keys = this.ed25519Keys();
+    const cryptosuite = this.zcapCryptosuite();
     const controller = String(base || '') + '/gnap/zcap/controller';
-    const others = this.ed25519Generations().slice(1)
+    const pqAlg = cryptosuite === 'mldsa44-jcs-2024' ? 'ML-DSA-44'
+      : (cryptosuite === 'slhdsa128-jcs-2024' ? 'SLH-DSA-SHA2-128s' : '');
+    if (!pqAlg) {
+      const keys = this.ed25519Keys();
+      const others = this.ed25519Generations().slice(1)
+        .map(function (one: any): any {
+          return { publicKey: one.publicKey, publicJwk: one.publicJwk,
+                   keyId: controller + '#' + one.publicJwk.kid };
+        });
+      log.debug("Leaving GnapTokens.zcapKeys(). " + cryptosuite);
+      return { cryptosuite: cryptosuite, privateKey: keys.privateKey,
+               publicKey: keys.publicKey, publicJwk: keys.publicJwk,
+               controller: controller,
+               keyId: controller + '#' + keys.publicJwk.kid, others: others };
+    }
+    const all = await helpers.allSigningKeysAsync();
+    const found = all.filter(function (one: any): boolean {
+      return one.alg === pqAlg;
+    })[0];
+    if (!found) {
+      log.debug("Leaving GnapTokens.zcapKeys(). No " + pqAlg + " key.");
+      throw new Error('this realm holds no ' + pqAlg + ' signing key, ' +
+                      'which ' + cryptosuite + ' zcap tokens are signed ' +
+                      'with. That is a defect in the realm key set.');
+    }
+    const now = Date.now();
+    const others = helpers.standbyOf(helpers.stsKeysFor(), 'jose:' + pqAlg)
+      .filter(function (one: any): boolean {
+        return !!one.publicJwk &&
+               !(one.role === 'retired' && Number(one.retiredUntil) > 0 &&
+                 Number(one.retiredUntil) <= now);
+      })
       .map(function (one: any): any {
-        return { publicKey: one.publicKey,
+        return { publicJwk: one.publicJwk,
                  keyId: controller + '#' + one.publicJwk.kid };
       });
-    log.debug("Leaving GnapTokens.zcapKeys().");
-    return { privateKey: keys.privateKey, publicKey: keys.publicKey,
-             controller: controller,
-             keyId: controller + '#' + keys.publicJwk.kid, others: others };
+    log.debug("Leaving GnapTokens.zcapKeys(). " + cryptosuite);
+    return { cryptosuite: cryptosuite, privateKey: found.privateKey,
+             publicJwk: found.publicJwk, controller: controller,
+             keyId: controller + '#' + found.publicJwk.kid, others: others };
   }
 
   // -------------------------------------------------------------------------
@@ -405,7 +463,8 @@ class GnapTokens {
       return this.mintedOrThrow(format, minted);
     }
     if (format === 'zcap') {
-      const minted = await zcap.mint(model, this.zcapKeys(context.base));
+      const minted = await zcap.mint(model,
+                                     await this.zcapKeys(context.base));
       log.debug("Leaving GnapTokens.mint(). zcap.");
       return this.mintedOrThrow(format, minted);
     }
@@ -572,11 +631,12 @@ class GnapTokens {
       return first;
     }
     if (format === 'zcap') {
-      const current = this.zcapKeys(context.base);
+      const current = await this.zcapKeys(context.base);
       const generations = [current].concat(current.others.map(
         function (one: any): any {
-          return { publicKey: one.publicKey, keyId: one.keyId,
-                   controller: current.controller };
+          return { cryptosuite: current.cryptosuite,
+                   publicKey: one.publicKey, publicJwk: one.publicJwk,
+                   keyId: one.keyId, controller: current.controller };
         }));
       let first: any = null;
       for (let i = 0; i < generations.length; i++) {
@@ -626,7 +686,11 @@ class GnapTokens {
                                                      'base64url')
                        .toString('hex');
                    }) },
-      zcap: { controller: base + '/gnap/zcap/controller' },
+      // `cryptosuite` is the one proof suite this realm signs and accepts
+      // zcap tokens with (#43); the controller document publishes the key
+      // in the form that suite names.
+      zcap: { controller: base + '/gnap/zcap/controller',
+              cryptosuite: this.zcapCryptosuite() },
       macaroon: { root_key: 'per resource server; carried (sealed) on the ' +
                   'resource server\'s application entry as ' +
                   'gnapMacaroonKey' },

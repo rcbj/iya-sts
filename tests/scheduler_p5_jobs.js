@@ -176,7 +176,7 @@ function childMain() {
     note(published.biscuit.root_public_keys.length >= 2,
          'C3. /gnap/keys lists the retired key beside the current one',
          published.biscuit.root_public_keys.length);
-    const zc = tokens.zcapKeys('https://as.example');
+    const zc = await tokens.zcapKeys('https://as.example');
     note(zc.others.length >= 1 &&
          zc.others.some(function (o) { return /#/.test(o.keyId); }),
          'C4. and the ZCAP controller is handed the other generations',
