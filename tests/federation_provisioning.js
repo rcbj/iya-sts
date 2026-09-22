@@ -173,6 +173,9 @@ function childMain() {
       set('fedPeer', discovery.json.issuer);
       set('fedSsoUrl', discovery.json.authorization_endpoint);
       set('fedTokenUrl', discovery.json.token_endpoint);
+      // OIDC Core section 5.4 (#118): the code flow's ID Token carries no
+      // profile claims, so the name and address come from UserInfo.
+      set('fedUserinfoUrl', discovery.json.userinfo_endpoint);
       set('fedJwksUri', discovery.json.jwks_uri);
       set('fedClientId', 'fp-sp-client');
       set('fedScope', 'openid profile email');

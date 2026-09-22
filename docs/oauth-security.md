@@ -27,15 +27,17 @@ runs. On, the authorization flow is held to the whole of RFC 9700 section 2:
 
 * **Redirect URIs** are matched by exact string against what the client
   registered, or against `oauth2.redirectUris` for a client that registered
-  none. A loopback URI may use any port (RFC 8252 section 7.3). There is no open
+  none. (A client that registered its own is held to them in every mode since
+  #118; what this mode adds is the `oauth2.redirectUris` list for the others.) A loopback URI may use any port (RFC 8252 section 7.3). There is no open
   redirector at either redirecting endpoint, and no `http` redirect URI except
   on the loopback. A bad `redirect_uri` is answered with a 400 on this server,
   never redirected.
 * **PKCE** is required of every client not known to be confidential, `S256`
   only. A downgrade is refused, and so is a reused challenge or nonce.
-* A **nonce** is required with any `id_token`, and no response type that issues
-  an access token from the authorization endpoint (the implicit grant) is
-  accepted.
+* A **nonce** is required with any `id_token` — hybrid included; OpenID
+  Connect Core already requires one for the implicit flow in every mode — and
+  no response type that issues an access token from the authorization endpoint
+  (the implicit grant) is accepted.
 * **Authorization codes**: a repeated redemption is refused, and everything the
   code bought is revoked (section 4.5).
 * **Refresh tokens rotate** with replay detection. A replay revokes the whole

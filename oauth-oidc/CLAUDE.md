@@ -3073,3 +3073,96 @@ overlap, and `/admin/applications` marks each such entry. `verify()` reads
 these off the client's entry itself (the registry required lazily), so no
 caller threads them through. `tests/client_secret_rotation.js`.
 
+
+## OPENID CONNECT CORE, READ AGAINST THE CODE (2026-09-22, #118)
+
+The review on #45 found Core bugs that no test had asked about. What changed, and
+the decisions rcbj made on #118:
+
+* **`at_hash` / `c_hash` use the hash of the ID Token's own `alg`** (sections
+  3.1.3.6 and 3.3.2.11). It was SHA-256 whatever the alg, so a client that
+  registered RS384, PS512, ES512 or EdDSA got hashes it could not validate.
+  `idToken()` now fixes the alg first. The table lives in `common/crypto.js`'s
+  `idTokenHashFor()`, following the rule that crypto code lives there. Where Core
+  names no hash, the choice is the same security level: Ed25519 SHA-512;
+  ML-DSA-44/65/87 SHA-256/384/512; SLH-DSA-128s SHA-256; a composite uses its
+  traditional half (Ed448: SHAKE256/114).
+* **Errors go where the success would have gone.** `usesFragment()` is the one
+  answer for every redirect, `fail()` and the interstitial's link included: the
+  query for `code` alone, the fragment for every token-bearing type (Multiple
+  Response Types section 2.1). An explicit `query` for a token-bearing type is
+  overridden; refusing it instead, and `response_type=none`, are #125.
+* **`POST /oauth2/authorize`** (and `/:as/…`): a form body becomes `req.query`
+  before anything reads it. A non-form POST is a 400 (`STS-OAUTH-0564`).
+* **Core's request rules, in every mode**, in `vetAuthorizationRequest()` so that
+  PAR asks them too:
+  * `openid` is required for an ID Token (`invalid_scope`);
+  * no scope defaults to `openid` any more;
+  * `prompt=none` must be alone;
+  * implicit flow: `nonce` is required, and an `http` non-loopback redirect is
+    refused (a 400 on this server, never redirected).
+* **Development relaxations that were Core MUSTs are enforced in every mode**
+  (rcbj):
+  * the code is bound to its client, and `redirect_uri` is required at the token
+    endpoint (`checkCodeBinding()` in `oauth2_bcp.js`);
+  * exact redirect-URI matching applies to any client with redirect URIs **of
+    its own** (`STS-OAUTH-0569`);
+  * `token_endpoint_auth_signing_alg` is checked on the assertion's header before
+    anything else (`STS-OAUTH-0570`).
+
+  **A client_id with nothing registered keeps development's acceptance**:
+  rcbj's decision, because the debugger and the suite live on unregistered
+  clients, and product refuses those anyway.
+* **`id_token_hint`** is verified asynchronously in `withIdTokenHint()`, after
+  a request object is resolved. Its verdict is acted on once the redirect_uri
+  is vetted:
+  * a hint that does not verify: `invalid_request`;
+  * a different person signed in under `prompt=none`: `login_required`;
+  * a different person otherwise: the person signs in again, marked
+    `hint_prompted=1` so that a second mismatch refuses instead of looping.
+
+  An expired hint is still a hint. An encrypted one is refused by name.
+* **`select_account`** is the sign-in screen, where whoever signs in is the
+  account selected. **An essential `acr` in a claims request** is a step-up
+  requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
+* **`offline_access`** (section 11): `offlineAccessScope()` strips it without a
+  code, and without `prompt=consent` or a recorded consent to it. **A refresh
+  token without it is online**: it carries `sid` inside its JWE, and the refresh
+  grant refuses it once `authn.sessionEnded()` says that session has ended
+  (`STS-OAUTH-0568`).
+  * A recorded consent counts whether `oauth2.consentRequired` is on or not:
+    it is a fact about the grant, and the setting only decides whether a
+    missing one is asked for.
+  * **The hosted surfaces ask for it and hold it** through their seeded
+    `oauthGlobalConsent`. `oidc_rp.ts` keeps a console or portal session
+    alive after the sign-on session RUNS OUT, which is section 11's
+    definition. It is the register's consent, so an operator who removes the
+    value gets online tokens back.
+  * **A sign-out still revokes the surfaces' tokens.** It is the one exception
+    to the offline exemption in `authn.ts`'s sign-out revocation
+    (`applications.HOSTED_SURFACE_CLIENT_IDS`), because the relying-party
+    session holding each token ends in the same cascade.
+* **Scope claims (section 5.4)**:
+  * all four scopes are supported; `address` and `phone` are answered from the
+    directory by the claim catalogue;
+  * the ID Token carries them only for `response_type=id_token`
+    (`scopeClaimsOf()`);
+  * no more `typ: 'ID'` claim, and no invented `auth_time`.
+* **Pairwise subjects (section 8)**: `pairwise_subjects.ts`.
+  * The value is an HMAC under the `oidc-pairwise` cluster secret over realm,
+    sector and local `sub`.
+  * The sector is the host of `sector_identifier_uri`, or the one host all the
+    redirect URIs share.
+  * `sector_identifier_uri` is fetched at registration through
+    `federation_http.fetchPublished()`, and is the seventh outbound request.
+  * The ID Token, UserInfo and the Logout Tokens (`noteClient()`) all name the
+    pairwise `sub`. The access token keeps the public one, because UserInfo
+    looks the person up by it.
+* **UserInfo takes the token in a form body** (RFC 6750 section 2.2,
+  `presentedAccessToken(…, { formBody: true })`). Both places at once is refused.
+
+Left for their own tickets:
+* Session Management's `check_session_iframe`: #121.
+* Aggregated and distributed claims: #147.
+* Self-Issued OP: #129.
+* `value`/`values` enforcement for claims other than `acr`.

@@ -350,6 +350,9 @@ class ProtocolStack {
     this.build('oauth-oidc/id_token_encryption',
                require('../oauth-oidc/id_token_encryption'),
                'IdTokenEncryption');
+    this.build('oauth-oidc/pairwise_subjects',
+               require('../oauth-oidc/pairwise_subjects'),
+               'PairwiseSubjects');
     this.build('oauth-oidc/request_object',
                require('../oauth-oidc/request_object'),
                'RequestObject');

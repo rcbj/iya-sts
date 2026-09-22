@@ -273,6 +273,13 @@ const JOBS = [
   // /ssf/receive's typ, iss and aud checks. `local: true`: this repository's
   // own transmitter, in a throwaway realm it leaves behind.
   { file: 'sts_ssf_conformance.js',      browser: false, local: true },
+  // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
+  // hashes by its alg, errors in the fragment, POST at the authorization
+  // endpoint, openid/prompt/nonce rules, id_token_hint, section 5.4's claims,
+  // the code's bindings in every mode, pairwise subjects and offline_access.
+  // `local: true`: this repository's own authorization server, in a throwaway
+  // realm it leaves behind.
+  { file: 'sts_oidc_core.js',            browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader

@@ -244,12 +244,63 @@ class StepUp {
     const q = query || {};
     const acr = this.parseAcrValues(q.acr_values);
     const maxAge = this.parseMaxAge(q.max_age);
+    // OIDC CORE SECTION 5.5.1.1 (#118, 2026-09-22): an `acr` asked for
+    // through the claims parameter with `"essential": true` and a `value` or
+    // `values` is a requirement — "the Authorization Server MUST return an acr
+    // Claim Value that matches one of the requested values", and treat not
+    // being able to as an error. Only acr_values drove this before. A
+    // VOLUNTARY one is a preference the OP need not meet and is left alone.
+    // The values join acr_values' in their order, after them.
+    const values = acr.values.slice(0);
+    this.essentialAcrValuesOf(q.claims).forEach(function (one) {
+      if (values.indexOf(one) < 0) {
+        values.push(one);
+      }
+    });
     log.debug("Leaving StepUp.requirementOf().");
     return {
-      acrValues: acr.values,
+      acrValues: values,
       maxAge: maxAge,
-      present: acr.values.length > 0 || maxAge !== null
+      present: values.length > 0 || maxAge !== null
     };
+  }
+
+  // The acr values a claims request marks essential, from its id_token and
+  // userinfo members; [] for none or for a claims request that does not parse
+  // (the authorization endpoint refuses that separately, by name).
+  essentialAcrValuesOf(claims: Json): string[] {
+    const { log } = this.deps;
+    log.debug("Entering StepUp.essentialAcrValuesOf().");
+    let parsed: Json = claims;
+    if (typeof claims === 'string') {
+      try {
+        parsed = JSON.parse(claims);
+      } catch (e) {
+        log.debug("Caught in StepUp.essentialAcrValuesOf(): " +
+                  ((e && e.message) || e));
+        // Refused elsewhere as an invalid claims request.
+        parsed = null;
+      }
+    }
+    const out: string[] = [];
+    ['id_token', 'userinfo'].forEach((member) => {
+      const request = parsed && typeof parsed === 'object' && parsed[member]
+        ? parsed[member].acr : null;
+      if (!request || typeof request !== 'object' ||
+          request.essential !== true) {
+        return;
+      }
+      const asked = [].concat(request.values !== undefined ? request.values
+        : (request.value !== undefined ? [request.value] : []));
+      const usable = this.parseAcrValues(asked.map(String).join(' ')).values;
+      usable.forEach(function (one) {
+        if (out.indexOf(one) < 0) {
+          out.push(one);
+        }
+      });
+    });
+    log.debug("Leaving StepUp.essentialAcrValuesOf(). " + out.length + ".");
+    return out;
   }
 
   // What this service's OWN resource server requires, from the two settings.

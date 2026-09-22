@@ -1629,8 +1629,42 @@ function uriMatches(registered, presented) {
 function checkRedirectUri(opts) {
   log.debug("Entering checkRedirectUri(). redirect_uri=" + opts.redirectUri);
   if (!enabled()) {
-    log.debug("Leaving checkRedirectUri(). RFC 9700 mode is off.");
-    return { ok: true };
+    // -----------------------------------------------------------------------
+    // A CLIENT WITH REDIRECT URIs OF ITS OWN IS HELD TO THEM IN EVERY MODE
+    // (#118, 2026-09-22). OIDC Core section 3.1.2.1: the redirect_uri "MUST
+    // exactly match one of the Redirection URI values for the Client
+    // pre-registered at the OpenID Provider". Until this date only this mode
+    // compared, so a registered client could be sent anywhere in development.
+    //
+    // A client_id with NOTHING registered — the ordinary development case, a
+    // debugger or a test pointing a fresh client_id at this service — has no
+    // pre-registered value to match and keeps development's acceptance
+    // (rcbj's decision on #118); product mode refuses an unknown client
+    // anyway. The http rule of section 2.6 below stays this mode's.
+    // -----------------------------------------------------------------------
+    const own = (opts.client && Array.isArray(opts.client.redirect_uris))
+      ? opts.client.redirect_uris.map(String) : [];
+    if (!own.length) {
+      log.debug("Leaving checkRedirectUri(). RFC 9700 mode is off and the " +
+                "client registered no redirect URI.");
+      return { ok: true };
+    }
+    const presentedUri = String(opts.redirectUri || '');
+    for (let i = 0; i < own.length; i++) {
+      const result = uriMatches(own[i], presentedUri);
+      if (result.ok) {
+        log.debug("Leaving checkRedirectUri(). Matched a registered URI.");
+        return { ok: true, matched: own[i], how: result.how };
+      }
+    }
+    log.debug("Leaving checkRedirectUri(). Not one of the client's own.");
+    return { ok: false, errorCode: 'STS-OAUTH-0569', error: 'invalid_request',
+             requirement: 'redirect-exact-match',
+             description: 'OIDC Core section 3.1.2.1: redirect_uri must ' +
+                          'exactly match one of the redirect URIs registered ' +
+                          'for this client, and "' + presentedUri + '" ' +
+                          'matches none of its ' + own.length + ': ' +
+                          own.join(', ') + '. This holds in every mode.' };
   }
   const presented = String(opts.redirectUri || '');
   const parsed = parseUri(presented);
@@ -3532,13 +3566,29 @@ function corsForbidden(req) {
 // ---------------------------------------------------------------------------
 function checkTokenRequest(opts) {
   log.debug("Entering checkTokenRequest().");
+  const record = opts.record || {};
+  const body = opts.body || {};
+  const presentedClient = String((opts.client && opts.client.client_id) || '');
+
+  // THE TWO RFC 6749 SECTION 4.1.3 BINDINGS ARE CHECKED IN EVERY MODE SINCE
+  // #118 (2026-09-22). OpenID Connect Core section 3.1.3.2 has the
+  // authorization server "ensure the Authorization Code was issued to the
+  // authenticated Client" and "ensure that the redirect_uri parameter value is
+  // identical to the redirect_uri parameter value that was included in the
+  // initial Authorization Request" — neither is a compliance mode's option.
+  // They were this mode's alone, so in development a code could be redeemed
+  // by another client and without its redirect_uri. The PKCE downgrade
+  // refusal below stays this mode's: that is RFC 9700 section 4.8.2's rule
+  // rather than Core's.
+  const binding = checkCodeBinding(record, body, presentedClient);
+  if (!binding.ok) {
+    log.debug("Leaving checkTokenRequest(). " + binding.requirement + ".");
+    return binding;
+  }
   if (!enabled()) {
     log.debug("Leaving checkTokenRequest(). RFC 9700 mode is off.");
     return { ok: true };
   }
-  const record = opts.record || {};
-  const body = opts.body || {};
-  const presentedClient = String((opts.client && opts.client.client_id) || '');
 
   if (!record.code_challenge && body.code_verifier) {
     log.debug("Leaving checkTokenRequest(). A code_verifier arrived for a " +
@@ -3554,30 +3604,40 @@ function checkTokenRequest(opts) {
                           'here and be told nothing is wrong.' };
   }
 
-  if (record.client_id && presentedClient &&
-      record.client_id !== presentedClient) {
-    log.debug("Leaving checkTokenRequest(). A different client is redeeming " +
+  log.debug("Leaving checkTokenRequest(). Nothing refused.");
+  return { ok: true };
+}
+
+// The code's two bindings — the client it was issued to, and the redirect_uri
+// it was issued for — in every mode. See checkTokenRequest().
+function checkCodeBinding(record, body, presentedClient) {
+  log.debug("Entering checkCodeBinding().");
+  // THE CLIENT. `presentedClient` is who authenticated or, for a public
+  // client, who named itself in `client_id`; a code with no client on the
+  // request at all is refused too, because "the client it was issued to" is
+  // then a claim nobody made.
+  if (record.client_id && presentedClient !== record.client_id) {
+    log.debug("Leaving checkCodeBinding(). A different client is redeeming " +
               "the code.");
     return { ok: false, errorCode: 'STS-OAUTH-0146', error: 'invalid_grant',
              requirement: 'transaction-bound',
-             description: 'RFC 6749 section 4.1.3: this authorization code ' +
-                          'was issued to client ' +
-                          '"' + record.client_id + '" and is being redeemed ' +
-                                                   'by "' +
-                          presentedClient + '".' };
+             description: 'RFC 6749 section 4.1.3 and OIDC Core section ' +
+                          '3.1.3.2: this authorization code was issued to ' +
+                          'client "' + record.client_id + '" and is being ' +
+                          'redeemed by ' + (presentedClient
+                            ? '"' + presentedClient + '"'
+                            : 'a request that names no client') + '.' };
   }
-
   // RFC 6749 section 4.1.3 makes redirect_uri REQUIRED at the token endpoint
-  // when it was in the authorization request, which it always is here. Without
-  // the mode this service compares it only when the client bothered to send it.
+  // when it was in the authorization request, which it always is here.
   // OAUTH 2.1 REMOVED IT (section 10.2): PKCE binds the code instead, so a
   // client following 2.1 alone never sends one, and that mode asks for it only
   // of a code minted under the OpenID Connect nonce exemption — which has no
   // PKCE and for which this is still the binding. When it IS sent it must
-  // still be identical, which oauth2.js checks in every mode.
+  // still be identical, which oauth2.ts checks in every mode.
   if (record.redirect_uri && !body.redirect_uri &&
       oauth21.tokenRedirectUriRequired(record)) {
-    log.debug("Leaving checkTokenRequest(). No redirect_uri came with the " +
+    log.debug("Leaving checkCodeBinding(). No redirect_uri came with the " +
               "code.");
     return { ok: false, errorCode: 'STS-OAUTH-0147', error: 'invalid_grant',
              requirement: 'transaction-bound',
@@ -3586,8 +3646,7 @@ function checkTokenRequest(opts) {
                           'authorization request, and must be identical. It ' +
                           'is missing.' };
   }
-
-  log.debug("Leaving checkTokenRequest(). Nothing refused.");
+  log.debug("Leaving checkCodeBinding(). Bound.");
   return { ok: true };
 }
 

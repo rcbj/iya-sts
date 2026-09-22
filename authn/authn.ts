@@ -3583,11 +3583,27 @@ class Authn {
     // differently. bcp.revokeRefreshOnLogout() still returns false for
     // everything when RFC 9700 mode is off, so the shape of this is unchanged
     // when the mode is.
+    //
+    // EXCEPT A REFRESH TOKEN GRANTED `offline_access` (#118). OIDC Core
+    // section 11 defines that scope as access "even when the End-User is not
+    // present (not logged in)" — outliving the session is the whole of what
+    // it was granted for, and the person agreed to exactly that. The online
+    // ones this revokes are the ones the refresh grant would refuse after the
+    // sign-out anyway; a global sign-out (`/logout`) still disowns everything.
+    // This service's OWN surfaces are not excepted: the relying-party session
+    // that holds each of their tokens ends in this same sign-out's cascade,
+    // so an offline token of theirs would be a live credential nobody holds
+    // (`applications.HOSTED_SURFACE_CLIENT_IDS`).
     if (id) {
       const revoked = stats.revokeWhere(function (record) {
+        const clientId = String(record.client_id || '');
         return record.sessionId === id &&
                String(record.typ || '') === 'Refresh' &&
-               bcp.revokeRefreshOnLogout(String(record.client_id || ''));
+               (String(record.scope || '').split(/\s+/)
+                 .indexOf('offline_access') < 0 ||
+                applications.HOSTED_SURFACE_CLIENT_IDS
+                  .indexOf(clientId) >= 0) &&
+               bcp.revokeRefreshOnLogout(clientId);
       }, 'RFC 9700 section 2.2.2: the sign-on session it was issued on ended');
       if (revoked) {
         log.info('RFC 9700 section 2.2.2: signing out of session ' + id + ' ' +

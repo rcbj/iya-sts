@@ -5889,6 +5889,58 @@ const CODES = [
     summary: 'A client authenticated with an expired client_secret and was ' +
       'accepted, because the service is in development mode.',
     spec: 'none — logged; the request is answered' },
+  { code: 'STS-OAUTH-0560',
+    summary: 'An authorization request asked for an ID Token without the ' +
+      'openid scope (OIDC Core section 3.1.2.1).',
+    spec: 'redirect: error=invalid_scope' },
+  { code: 'STS-OAUTH-0561',
+    summary: 'An authorization request combined prompt=none with another ' +
+      'prompt value (OIDC Core section 3.1.2.1).',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0562',
+    summary: 'An implicit-flow authorization request carried no nonce, which ' +
+      'OIDC Core section 3.2.2.1 makes REQUIRED — in every mode.',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0563',
+    summary: 'An implicit-flow authorization request named an http ' +
+      'redirect_uri that is not a loopback address (OIDC Core section ' +
+      '3.2.2.1).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0564',
+    summary: 'An authorization request sent with POST was not ' +
+      'application/x-www-form-urlencoded (OIDC Core section 3.1.2.1).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0565',
+    summary: 'The authorization endpoint failed while reading an ' +
+      'id_token_hint.',
+    spec: 'HTTP 500 {error: server_error}' },
+  { code: 'STS-OAUTH-0566',
+    summary: 'An id_token_hint did not verify as an ID Token this ' +
+      'authorization server issued to this client.',
+    spec: 'redirect: error=invalid_request' },
+  { code: 'STS-OAUTH-0567',
+    summary: 'The person signed in is not the one the id_token_hint names, ' +
+      'and prompt=none (or the person signed in as somebody else ' +
+      'again).',
+    spec: 'redirect: error=login_required' },
+  { code: 'STS-OAUTH-0568',
+    summary: 'A refresh token granted without offline_access was presented ' +
+      'after the sign-on session it came from ended (OIDC Core ' +
+      'section 11).',
+    spec: 'HTTP 400 {error: invalid_grant}' },
+  { code: 'STS-OAUTH-0569',
+    summary: 'A redirect_uri matched none of the redirect URIs the client ' +
+      'registered (OIDC Core section 3.1.2.1), outside RFC 9700 mode.',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0570',
+    summary: 'A client assertion was not signed with the client\'s ' +
+      'registered token_endpoint_auth_signing_alg (OIDC Core section ' +
+      '9).',
+    spec: 'HTTP 401 {error: invalid_client}' },
+  { code: 'STS-OAUTH-0571',
+    summary: 'An access token was sent to the UserInfo endpoint in more than ' +
+      'one place (RFC 6750 section 2).',
+    spec: 'HTTP 400 {error: invalid_request}' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12753,6 +12805,21 @@ const CODES = [
       'job oauth2.client-secret-expiry.',
     spec: 'none — an audit row and a warning; rotate the secret on ' +
       '/admin/applications' },
+  { code: 'STS-REG-0167',
+    summary: 'A client registration named a subject_type, ' +
+      'sector_identifier_uri or token_endpoint_auth_signing_alg this ' +
+      'service cannot honour (OIDC Core sections 8 and 9).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0168',
+    summary: 'A console or /admin-api write set oauthSubjectType, ' +
+      'oauthSectorIdentifierUri or oauthTokenEndpointAuthSigningAlg ' +
+      'to a value this service cannot honour.',
+    spec: 'HTTP 400' },
+  { code: 'STS-REG-0169',
+    summary: 'A registered sector_identifier_uri could not be fetched, was ' +
+      'not a JSON array of URIs, or did not list every redirect_uri ' +
+      '(OIDC Core section 8.1).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

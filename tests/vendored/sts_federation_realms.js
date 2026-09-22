@@ -835,6 +835,10 @@ async function setUp() {
       fedClientId: "fs-code-" + STAMP, fedResponseType: "code",
       fedTokenUrl: partner.discovery.token_endpoint,
       fedJwksUri: partner.discovery.jwks_uri,
+      // OIDC Core section 5.4 (#118): a code-flow ID Token carries no
+      // profile claims, so preferred_username is UserInfo's to give — which
+      // is how a relying party of a conforming provider gets it.
+      fedUserinfoUrl: partner.discovery.userinfo_endpoint,
       fedClientSecret: CLIENT_SECRET }), true);
   // THE ATTACKER'S KEY UNDER EVERY ONE OF THE PARTNER'S kids: selection by kid
   // succeeds, so what refuses the token can only be the signature. An
