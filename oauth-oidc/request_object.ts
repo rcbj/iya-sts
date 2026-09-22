@@ -270,6 +270,12 @@ const requestUriCount = cacheRegistry.register({
         'realm; the oldest goes first when full.'
       : 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.';
   },
+  // A fetched Request Object past `until`, which `contentOf()` would fetch
+  // again (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, requestUriCache,
+    function (held: Json, key: unknown, now: number): boolean {
+      return !(held && Number(held.until) > now);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmRows(
       realms.list().map(function (r: { id: string }): string {

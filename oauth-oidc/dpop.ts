@@ -332,6 +332,13 @@ const seenJtisCount = cacheRegistry.register({
       2 * secondsSetting('oauth2.dpopIatSkewS', IAT_SKEW_SECONDS) +
       ' s) after the proof was seen.';
   },
+  // What `pruneJtis()` drops, in every realm (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, seenJtis,
+    function (seenS: unknown, jti: unknown, now: number): boolean {
+      const windowS = 2 * secondsSetting('oauth2.dpopIatSkewS',
+                                         IAT_SKEW_SECONDS);
+      return Number(seenS) < Math.floor(now / 1000) - windowS;
+    }),
   entries: function (): unknown[] {
     const windowS = 2 * secondsSetting('oauth2.dpopIatSkewS',
                                        IAT_SKEW_SECONDS);
@@ -364,6 +371,12 @@ const issuedNoncesCount = cacheRegistry.register({
       secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS) +
       ' s) after it was issued.';
   },
+  // What `pruneNonces()` drops, in every realm (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, issuedNonces,
+    function (issuedS: unknown, nonce: unknown, now: number): boolean {
+      const ttlS = secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS);
+      return Number(issuedS) < Math.floor(now / 1000) - ttlS;
+    }),
   entries: function (): unknown[] {
     const ttlS = secondsSetting('oauth2.dpopNonceTtlS', NONCE_TTL_SECONDS);
     return cacheRegistry.realmMapRows(realms, issuedNonces,

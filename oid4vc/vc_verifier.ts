@@ -340,6 +340,32 @@ const vpTransactionsCount = cacheRegistry.register({
     return 'oid4vp.presentationRequestTtlS, or oid4vp.signInTtlS for a ' +
       'sign-in; swept when the next request is built.';
   },
+  // What `sweepVpTransactions()` drops, in every realm, WITH the request
+  // each names in `vpRequests` — the two go together (#49 P5).
+  eject: function (now: number): number {
+    let total = 0;
+    realms.list().forEach(function (r: { id: string }): void {
+      const tx = vpTransactions.realmMap(r.id);
+      const reqs = vpRequests.realmMap(r.id);
+      if (!tx) {
+        return;
+      }
+      const gone: Array<[unknown, any]> = [];
+      tx.forEach(function (v: any, k: unknown): void {
+        if (v && v.expires < now) {
+          gone.push([k, v]);
+        }
+      });
+      gone.forEach(function (pair: [unknown, any]): void {
+        if (reqs && pair[1] && pair[1].id) {
+          reqs.delete(pair[1].id);
+        }
+        tx.delete(pair[0]);
+      });
+      total += gone.length;
+    });
+    return total;
+  },
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, vpTransactions,
       function (record: any, state: unknown): object {

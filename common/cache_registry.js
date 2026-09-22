@@ -133,6 +133,9 @@ function register(descriptor) {
   if (d.kind !== undefined && KINDS.indexOf(d.kind) < 0) {
     missing.push('kind');
   }
+  if (d.eject !== undefined && typeof d.eject !== 'function') {
+    missing.push('eject as a function');
+  }
   if (missing.length) {
     log.debug("Leaving register(). Incomplete.");
     throw new Error(errorCodes.tag('STS-CORE-0094') +
@@ -540,6 +543,103 @@ function realmMapRows(realmsModule, store, rowOf) {
   }, rowOf);
 }
 
+// ---------------------------------------------------------------------------
+// EJECTING WHAT HAS EXPIRED (#49 P5, rcbj's directive of 2026-09-21: "cache
+// and store clean-up is included"). A descriptor whose entries expire carries
+// `eject(nowMs)`, which deletes them and answers how many; the scheduler job
+// `caches.eject-expired` (`admin-ui/caches_admin.ts`) calls `ejectExpired()`
+// in every process, because every process holds its own copy.
+//
+// **IT IS HOUSEKEEPING AND NEVER CORRECTNESS.** Every owner still refuses an
+// expired entry where it READS it, whenever the job last ran, and still
+// bounds its store where it INSERTS (`makeRoom()`); ejection only stops an
+// idle store holding dead rows until its next lookup. So an ejector must
+// delete nothing its reader would still honour, and an entry exactly at its
+// boundary is left to the reader. The two helpers below take the owner's own
+// expiry test, the same one its reader applies.
+// ---------------------------------------------------------------------------
+function ejectExpired(now) {
+  log.debug("Entering ejectExpired().");
+  const at = Number(now) || Date.now();
+  const byCache = {};
+  const failed = [];
+  let total = 0;
+  descriptors.forEach(function (d, name) {
+    if (typeof d.eject !== 'function') {
+      return;
+    }
+    let n = 0;
+    try {
+      n = Number(d.eject(at)) || 0;
+    } catch (e) {
+      log.debug("Caught in ejectExpired(): " + ((e && e.message) || e));
+      failed.push(name + ': ' + ((e && e.message) || e));
+      return;
+    }
+    if (n > 0) {
+      byCache[name] = n;
+      total += n;
+      countsFor(name).evictions += n;
+    }
+  });
+  log.debug("Leaving ejectExpired(). " + total + " ejected.");
+  return { ejected: total, byCache: byCache, failed: failed };
+}
+
+// The names of the stores that eject, for the page and the test.
+function ejecting() {
+  log.debug("Entering ejecting().");
+  const out = [];
+  descriptors.forEach(function (d, name) {
+    if (typeof d.eject === 'function') {
+      out.push(name);
+    }
+  });
+  log.debug("Leaving ejecting().");
+  return out.sort();
+}
+
+// An `eject` for a plain Map: deletes each entry for which
+// `expired(value, key, now)` is true. Collected first and deleted after, so
+// the walk never sees a map it is changing.
+function mapEjector(map, expired) {
+  log.debug("Entering mapEjector().");
+  log.debug("Leaving mapEjector().");
+  return function (now) {
+    const gone = [];
+    map.forEach(function (value, key) {
+      if (expired(value, key, now)) {
+        gone.push(key);
+      }
+    });
+    gone.forEach(function (key) {
+      map.delete(key);
+    });
+    return gone.length;
+  };
+}
+
+// The same for a `realms.map()` store: every realm's partition, each deleted
+// through the store's own map so a persisted store records the deletion, and
+// each ASKED INSIDE ITS REALM (`realms.run()`), because an owner's lifetime is
+// usually a setting and a setting is the realm's.
+function realmMapEjector(realmsModule, store, expired) {
+  log.debug("Entering realmMapEjector().");
+  log.debug("Leaving realmMapEjector().");
+  return function (now) {
+    let total = 0;
+    realmsModule.list().forEach(function (r) {
+      const map = store.realmMap(r.id);
+      if (map) {
+        total += realmsModule.run(r, function () {
+          return mapEjector(map, expired)(now);
+        });
+      }
+    });
+    return total;
+  };
+}
+
 module.exports = {
   register: register,
   makeRoom: makeRoom,
@@ -548,6 +648,10 @@ module.exports = {
   digestKey: digestKey,
   realmMapRows: realmMapRows,
   realmRows: realmRows,
+  ejectExpired: ejectExpired,
+  ejecting: ejecting,
+  mapEjector: mapEjector,
+  realmMapEjector: realmMapEjector,
   counter: counter,
   names: names,
   has: has,

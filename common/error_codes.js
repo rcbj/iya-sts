@@ -729,6 +729,10 @@ const CODES = [
       'fixed when the realm is created.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WORKER ============================================================
+  { code: 'STS-CORE-0102',
+    summary: 'A cache or replay store could not eject its expired entries; ' +
+      'the store still refuses an expired entry where it reads it.',
+    spec: 'none — logged by the caches.eject-expired job' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',

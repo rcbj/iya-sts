@@ -84,6 +84,18 @@ open it.
 
 ---
 
+## Expired entries are cleared every minute
+
+Each store refuses an expired entry whenever it is asked for one, whatever
+else happens. On top of that, the scheduler job `caches.eject-expired`
+(`/admin/scheduler`) runs every minute in every process and deletes the
+expired entries of every store that has them, so an idle store does not hold
+dead rows until its next lookup. What it removed is counted in each store's
+**Evictions** on `/admin/caches`. Two stores are cleared by other means: the
+back-channel Logout Token deliveries (their own sweep, which dead-letters a
+delivery before removing it) and the decrypted signing keys (dropped
+`keys.plaintextTtlS` after their last use, to the second).
+
 ## Certificates and revocation
 
 When a client certificate or a signed assertion names a CRL, an OCSP responder

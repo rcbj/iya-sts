@@ -373,6 +373,30 @@ const digestNoncesCount = cacheRegistry.register({
       scimSeconds('scim.digestNonceSeconds') + ' s) after it was issued, ' +
       'then oldest first past the limit.';
   },
+  // What `issueDigestNonce()` drops before it issues one, in every realm,
+  // WITH the nonce's counts (`forgetDigestNonce()`'s pair) (#49 P5).
+  eject: function (now: number): number {
+    let total = 0;
+    realms.list().forEach(function (r: any): void {
+      realms.run(r, function (): void {
+        const ttl = scimSeconds('scim.digestNonceSeconds') * 1000;
+        const nonces = digestNonces.realmMap(r.id);
+        const counts = digestCounts.realmMap(r.id);
+        const gone: unknown[] = [];
+        nonces.forEach(function (record: any, key: unknown): void {
+          if (!record || now - Number(record.at) > ttl) {
+            gone.push(key);
+          }
+        });
+        gone.forEach(function (key: unknown): void {
+          nonces.delete(key);
+          counts.delete(key);
+        });
+        total += gone.length;
+      });
+    });
+    return total;
+  },
   entries: function (): unknown[] {
     const ttl = scimSeconds('scim.digestNonceSeconds') * 1000;
     return cacheRegistry.realmMapRows(realms, digestNonces,
@@ -404,6 +428,18 @@ const digestCountsCount = cacheRegistry.register({
     return 'Forgotten with its nonce. Persisted, so a restarted ' +
       'process still refuses a count it accepted; the claim a spend ' +
       'makes is what decides a replay across live nodes.';
+  },
+  // Counts whose nonce is gone — it can never be presented again (#49 P5).
+  eject: function (now: number): number {
+    let total = 0;
+    realms.list().forEach(function (r: any): void {
+      const nonces = digestNonces.realmMap(r.id);
+      total += cacheRegistry.mapEjector(digestCounts.realmMap(r.id),
+        function (counts: unknown, nonce: unknown): boolean {
+          return !nonces.has(nonce);
+        })(now);
+    });
+    return total;
   },
   entries: function (): unknown[] {
     const ttl = scimSeconds('scim.digestNonceSeconds') * 1000;
@@ -447,6 +483,11 @@ const hobaChallengesCount = cacheRegistry.register({
       scimSeconds('scim.hobaMaxAgeSeconds') + ' s) after it was issued, ' +
       'then oldest first past the limit.';
   },
+  // What `issueHobaChallenge()` drops before it issues one (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, hobaChallenges,
+    function (at: unknown, challenge: unknown, now: number): boolean {
+      return now - Number(at) > scimSeconds('scim.hobaMaxAgeSeconds') * 1000;
+    }),
   entries: function (): unknown[] {
     const ttl = scimSeconds('scim.hobaMaxAgeSeconds') * 1000;
     return cacheRegistry.realmMapRows(realms, hobaChallenges,
@@ -475,6 +516,19 @@ const hobaSeenCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'Until its challenge expires; past the limit, the oldest go ' +
       'with their challenge.';
+  },
+  // Triples whose challenge is gone: "their triples can never be presented
+  // again", the rule the bound already applies (#49 P5).
+  eject: function (now: number): number {
+    let total = 0;
+    realms.list().forEach(function (r: any): void {
+      const challenges = hobaChallenges.realmMap(r.id);
+      total += cacheRegistry.mapEjector(hobaSeen.realmMap(r.id),
+        function (challenge: unknown): boolean {
+          return !challenges.has(challenge);
+        })(now);
+    });
+    return total;
   },
   entries: function (): unknown[] {
     const ttl = scimSeconds('scim.hobaMaxAgeSeconds') * 1000;

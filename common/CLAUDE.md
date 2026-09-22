@@ -7657,3 +7657,28 @@ is a SNAPSHOT** (`snapshot()`, 2026-09-18): each front process puts its stores'
 sizes and counters — never a row — on its cluster membership row, refreshed
 every thirty seconds on a timer of its own, and `/admin/caches` draws every
 snapshot that is not its own process's. `cluster/CLAUDE.md` has the channel.
+
+### Ejecting expired entries (#49 P5, 2026-09-22)
+
+A descriptor whose entries expire carries `eject(nowMs)`, which deletes them
+and answers how many; `ejectExpired()` calls every one, counts what each
+removed as evictions on its row, and reports one that throws without stopping
+the rest. The scheduler job `caches.eject-expired` (quiet, per-process,
+every minute, registered by `admin-ui/caches_admin.ts` because this file is a
+leaf the parent project loads) is what calls it. **It is housekeeping, never
+correctness**: each owner still refuses an expired entry where it reads it
+and bounds its store where it inserts. So an ejector is the owner's OWN
+expiry test, the one its reader or its `makeRoom()` already applies, never a
+new one — `mapEjector()` and `realmMapEjector()` take that test, and the
+latter asks it inside each realm (`realms.run()`), because a lifetime is
+usually a realm's setting. Where a store has a companion (an OpenID4VP
+transaction's request, a SCIM digest nonce's counts, a HOBA triple's
+challenge), the ejector removes both, as the reader does.
+
+Twenty-four stores eject; `tests/cache_eject.js` holds the list. **Two that
+expire deliberately do not**: `oauth2.backchannelDeliveries`, whose sweep job
+dead-letters a pending delivery before its retention ends and would be
+bypassed; and `keys.plaintext`, whose decrypted key is dropped by a one-shot
+deadline re-armed at each use — to the second, where a minute-long job would
+leave it decrypted up to a minute longer than `keys.plaintextTtlS` says.
+

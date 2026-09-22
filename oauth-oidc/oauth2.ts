@@ -516,6 +516,12 @@ const signedMetadataCount = cacheRegistry.register({
       config.value('oauth2.signedMetadataCacheS') + ' s) after signing, ' +
       'per realm; the oldest goes first when full.';
   },
+  // A document past `until`, which `signedMetadata()` would sign again
+  // (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, signedMetadataCache,
+    function (held: Json, key: unknown, now: number): boolean {
+      return !(held && Number(held.until) > now);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmRows(
       realms.list().map(function (r: { id: string }): string {
@@ -618,6 +624,11 @@ const redeemedCodesCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'One code lifetime after the code would have expired.';
   },
+  // What `forgetStaleRedemptions()` drops, in every realm (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, redeemedCodes,
+    function (done: Json, code: unknown, now: number): boolean {
+      return Number(done && done.forget) < now;
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, redeemedCodes,
       function (done: Json, code: unknown): Json {

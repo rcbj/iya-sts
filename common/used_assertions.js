@@ -218,6 +218,16 @@ const historyCount = cacheRegistry.register({
       'when full rather than forgetting one. On a database store the rows ' +
       'are in the database and none is listed here.';
   },
+  // `sweep()`, for every partition this process holds (#49 P5): it never
+  // removes a live row, and marks a snapshot store's realm to be written.
+  eject: function (now) {
+    let removed = 0;
+    Array.from(partitions.keys()).forEach(function (id) {
+      const before = partitions.get(id).size;
+      removed += before - sweep(id, now);
+    });
+    return removed;
+  },
   entries: function () {
     const out = [];
     partitions.forEach(function (rows, id) {

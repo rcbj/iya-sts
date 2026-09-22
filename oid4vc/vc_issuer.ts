@@ -229,6 +229,11 @@ const vciNoncesCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'oid4vci.cNonceTtlS after it was issued, or when it is used.';
   },
+  // What the nonce endpoint drops before it issues one (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, vciNonces,
+    function (expires: unknown, nonce: unknown, now: number): boolean {
+      return Number(expires) < now;
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, vciNonces,
       function (expires: unknown, nonce: unknown): object {
