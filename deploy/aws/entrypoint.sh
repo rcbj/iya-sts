@@ -22,7 +22,7 @@
 #   TF_ENV       the environment's name, 2-12 [a-z0-9]           (dev)
 #   TF_REALM     spiffe-realm only: the realm id, or `default`
 #   TF_ACTION    init | validate | plan | apply | destroy | output
-#                | output-json | suite | ecr-password                          (plan)
+#                | output-json | ecr-password                                  (plan)
 #   AWS_REGION                                                   (us-west-2)
 #
 #   TF_VAR_image_tag      the service image tag (the commit), for plan/apply
@@ -31,14 +31,11 @@
 #                         realm's two SPIFFE ports (deploy/aws/CLAUDE.md)
 #   TF_VAR_image_tag      suite-callbacks plan/apply: the run's image tag
 #                         (run-suite.sh pushes runner-<tag> and pep-<tag>)
-#   STS_SUITE_EXCLUDE, STS_SUITE_ONLY, STS_SUITE_KEEP_REALMS,
-#   STS_SUITE_JOB_TIMEOUT_MS   passed through by the `suite` action
 #
-# THE TWO ACTIONS THE PARENT DOES NOT HAVE:
-#   suite         deploy/aws/run-suite-in-aws.sh against TF_ENV: start the
-#                 suite task in the environment's VPC, wait for it, and put its
-#                 report in /workspace/report (mount a directory there). Exits
-#                 with the suite's code.
+# THE ACTION THE PARENT DOES NOT HAVE (there were two until 2026-09-21: `suite`
+# ran deploy/aws/run-suite-in-aws.sh, the in-VPC runner, which was removed that
+# day — the suite runs from deploy/aws/run-suite.sh, through ./run-tests.sh's
+# AWS targets):
 #   ecr-password  prints `aws ecr get-login-password` for the credentials the
 #                 container ends up with, so a host that builds the images can
 #                 `docker login` without installing the AWS CLI.
@@ -340,13 +337,7 @@ case "${TF_ACTION}" in
   # The outputs as JSON on stdout and nothing else there, for a script
   # (run-suite.sh) to read.
   output-json) terraform output -json ;;
-  suite)
-    [ "${TF_STACK}" = "environment" ] || die "the suite runs against an environment."
-    export STS_SUITE_REPORT_DIR="${STS_SUITE_REPORT_DIR:-/workspace/report}"
-    cd /workspace
-    exec deploy/aws/run-suite-in-aws.sh "${TF_ENV}"
-    ;;
-  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | import | output | output-json | suite | ecr-password)." ;;
+  *) die "unknown TF_ACTION='${TF_ACTION}' (init | validate | plan | apply | destroy | import | output | output-json | ecr-password). The `suite` action was removed on 2026-09-21: run ./run-tests.sh --target=aws:<env>." ;;
 esac
 
 say "${TF_ACTION} complete."

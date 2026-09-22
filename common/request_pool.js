@@ -736,20 +736,19 @@ function peerOf(req) {
   // leaf alone has no issuer to verify it with. This is the path OpenSSL built
   // in the front process, anchor included, bounded because its shape is
   // somebody else's bytes. The register half of the check needs none of it.
+  //
+  // READ THROUGH `revocation_status.fromSocket()` SINCE 2026-09-21, not by a
+  // walk of this file's own: a RESUMED session gives node the leaf alone, and
+  // that function hands back the chain the full handshake showed this process
+  // (its header argues it). A second walk here lost it for every request
+  // after a client's first connection. Required lazily — this file loads
+  // before the stack.
   const chain = [];
   try {
-    let at = socket.getPeerCertificate(true);
-    at = at && at.issuerCertificate;
-    while (at && at.raw && chain.length < 8) {
-      if (at.raw.equals(cert.raw)) {
-        break;
-      }
-      chain.push(at.raw.toString('base64'));
-      if (!at.issuerCertificate || at.issuerCertificate === at) {
-        break;
-      }
-      at = at.issuerCertificate;
-    }
+    const input = require('./revocation_status').fromSocket(socket);
+    ((input && input.chain) || []).slice(0, 8).forEach(function (der) {
+      chain.push(der.toString('base64'));
+    });
   } catch (e) {
     log.debug("Caught in peerOf(): " + ((e && e.message) || e));
     // A socket that went away between the two reads. The leaf still goes; a

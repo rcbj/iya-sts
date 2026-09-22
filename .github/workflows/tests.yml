@@ -8,7 +8,8 @@
 # this workflow exists to use, and it is why the suite was made self-contained
 # on 2026-08-28 and why ./run-coverage.sh was containerized on 2026-08-29.
 #
-#   tests     ./run-tests.sh — builds docker-compose-run-tests.yml (the
+#   tests     ./run-tests.sh --modes=memory,single-node — builds
+#             docker-compose-run-tests.yml (the
 #             service from this repository's Dockerfile, and a test runner with
 #             node and a Chrome in it), runs every job against the
 #             service over the compose network, and always tears the stack down.
@@ -17,11 +18,11 @@
 #             measures as a child process in there, because V8 writes coverage
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
-#   cluster   ./run-tests.sh --modes=cluster — the fourth mode of
-#             tests/tools/modes.sh, which no bare run includes: two
-#             active-active nodes on one postgres and one OpenBao, behind an
-#             HAProxy in TCP mode, every job's requests alternating between
-#             them. tests/CLAUDE.md's *THE `cluster` MODE* argues it.
+#   cluster   ./run-tests.sh --modes=cluster — the third mode of
+#             tests/tools/modes.sh, which the `tests` job does not name: two
+#             production nodes (product mode, request workers) active-active
+#             on one postgres and one OpenBao, behind an HAProxy in TCP mode,
+#             every job's requests alternating between them. tests/CLAUDE.md's *THE `cluster` MODE* argues it.
 #
 # WHY THEY ARE TWO JOBS RATHER THAN TWO STEPS, which is the shape
 # ../id-proto-debugger/.github/workflows/tests.yml uses and the reason to copy
@@ -134,8 +135,11 @@ jobs:
       # The whole suite. The script resolves compose itself (and never prompts
       # for a sudo password), builds both images from this checkout, and exits
       # with the test container's status.
+      # `memory` and `single-node`, NAMED rather than bare (2026-09-21): a
+      # bare ./run-tests.sh runs `cluster` too, which is the `cluster` job's
+      # below, and all three in one job would outrun its 120 minutes.
       - name: Run the containerized test suite
-        run: ./run-tests.sh
+        run: ./run-tests.sh --modes=memory,single-node
 
       # The tests container writes tests/report as root through a bind mount;
       # hand it back to the runner user before the upload step reads it.
@@ -259,15 +263,17 @@ jobs:
   # one question neither job above can answer: whether two containers on one
   # store agree. The three default modes differ in what shares state INSIDE one
   # container; this is the only run in which the thing under test is BETWEEN
-  # containers. Red here and green in the `tests` job's `dispatch` mode (the
-  # other development mode on a shared store; it was `postgres` until that mode
-  # became `product` on 2026-09-21) is a CLUSTER defect, and that comparison is
-  # why both run on every push.
+  # containers. Red here and green in the `tests` job's `single-node` mode —
+  # the same production deployment on one node (product mode, postgres,
+  # request workers), which is what this mode runs on each of two since
+  # 2026-09-21 — is a CLUSTER defect, and that comparison is why both run on
+  # every push.
   #
-  # A JOB OF ITS OWN RATHER THAN `--modes=memory,product,dispatch,cluster` IN
-  # THE `tests` JOB, for three reasons. The time: three modes already take
-  # about 80 minutes of that job's 120, and a fourth would push it past the
-  # ceiling tests/teardown_bounds.js holds it to. The verdict: a cluster defect
+  # A JOB OF ITS OWN RATHER THAN A BARE ./run-tests.sh IN THE `tests` JOB —
+  # which since 2026-09-21 would run all three modes, `cluster` included — for
+  # three reasons. The time: a cluster of two production nodes is the longest
+  # mode, and beside the other two it would push that job past the ceiling
+  # tests/teardown_bounds.js holds it to. The verdict: a cluster defect
   # would turn the status that means "the tree is green" red for a reason that
   # says nothing about the single-node service, where a job of its own names
   # what broke. And the machine: two nodes, a balancer, postgres, OpenBao and a
@@ -297,8 +303,8 @@ jobs:
           docker --version
           docker compose version
 
-      # The same launcher as the tests job, asked for the one mode it never
-      # runs unless named. It builds both images, layers
+      # The same launcher as the tests job, asked for the one mode that job
+      # does not name. It builds both images, layers
       # tests/docker-compose-run-tests-cluster.yml over the usual file, and
       # exits with the runner's status.
       - name: Run the containerized test suite in the cluster mode

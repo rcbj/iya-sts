@@ -78,6 +78,17 @@ function childScript() {
     "  const queued = await Promise.all([pki.ensureScope(id), pki.buildScope(id, {})]);",
     "  out.queuedEnsureSaw = queued[0].scope.intermediate.serialHex;",
     "  out.rebuiltTo = pki.describeScope(id).intermediate.serialHex;",
+    // 2b. the Root replaced under that branch: two repairs at once, then the
+    //     one build-root's own rebuildEveryScope() makes after them
+    "  const replaced = await pki.buildRoot({});",
+    "  out.rootReplaced = !!replaced.ok;",
+    "  const repairs = await Promise.all([pki.repairBranch(id), pki.repairBranch(id)]);",
+    "  out.repairsOk = repairs.every(function (r) { return r.ok; });",
+    "  out.repairsBuilt = repairs.filter(function (r) { return !r.existing; }).length;",
+    "  out.repairedTo = pki.describeScope(id).intermediate.serialHex;",
+    "  const later = await pki.repairBranch(id, {});",
+    "  out.laterExisting = !!later.existing;",
+    "  out.afterLater = pki.describeScope(id).intermediate.serialHex;",
     // 3. the watcher
     "  await pki.start({});",
     "  const restoredId = 'scope-restored-' + Date.now().toString(36);",
@@ -163,6 +174,21 @@ function run(t) {
           'and the deliberate buildScope() behind it still REPLACES the ' +
           'branch, which is what it is for',
           JSON.stringify({ before: out.branchNow, after: out.rebuiltTo }));
+
+  t.log.info('=== 2b. a stale branch, repaired once ===');
+  t.check(out.rootReplaced, 'buildRoot() replaced the Root, leaving that ' +
+                            'branch hanging from the old one');
+  t.check(out.repairsOk && out.repairsBuilt === 1,
+          'two repairs asked at once build the stale branch ONCE',
+          JSON.stringify({ built: out.repairsBuilt }));
+  t.check(out.repairedTo && out.repairedTo !== out.rebuiltTo,
+          'and it is a new branch, under the new Root');
+  t.check(out.laterExisting && out.afterLater === out.repairedTo,
+          'and the repair build-root\'s own rebuild of every scope makes ' +
+          'after them ADOPTS it rather than making a second Intermediate of ' +
+          'one name — what `single-node` found, where another worker had ' +
+          'repaired the branch first',
+          JSON.stringify({ repaired: out.repairedTo, after: out.afterLater }));
 
   t.log.info('=== 3. the realm watcher ===');
   t.equal(out.createdBuilt, true, 'a realm created in this process gets its ' +

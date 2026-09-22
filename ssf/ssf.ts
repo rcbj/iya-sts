@@ -2492,9 +2492,12 @@ class SharedSignals {
       const sent = reports.filter((one) => {
         return one.ok;
       }).length;
-      log.info('caep: ' + due.uri.slice(events.CAEP_PREFIX.length) + ' for ' +
-               'session ' + due.row.sessionId + ' went to ' + sent + ' of ' +
-               candidates.length + ' stream(s).');
+      // AT debug (2026-09-21): one line per SESSION EVENT, and every SCIM
+      // request is a session — a bulk load wrote ten thousand of these. A
+      // stream that stops taking them is reported by the dead-letter summary.
+      log.debug('caep: ' + due.uri.slice(events.CAEP_PREFIX.length) + ' for ' +
+                'session ' + due.row.sessionId + ' went to ' + sent + ' of ' +
+                candidates.length + ' stream(s).');
       log.debug('Leaving SharedSignals.caepAutoEmit(). ' + sent + ' sent.');
       return { sent: sent, streams: candidates.length, reports: reports };
     }).catch((e) => {
@@ -2617,10 +2620,9 @@ class SharedSignals {
       const sent = reports.filter((one) => {
         return one.ok;
       }).length;
-      log.info('ssf: ' + row.name + ' from ' + protocol + ' went to ' + sent +
-          ' ' +
-          'of ' +
-               candidates.length + ' stream(s).');
+      // AT debug (2026-09-21), for the reason caepAutoEmit() gives.
+      log.debug('ssf: ' + row.name + ' from ' + protocol + ' went to ' + sent +
+                ' of ' + candidates.length + ' stream(s).');
       log.debug('Leaving SharedSignals.emitProtocolEvent(). ' +
                 '' + sent + ' sent.');
       return { sent: sent, streams: candidates.length, reports: reports };

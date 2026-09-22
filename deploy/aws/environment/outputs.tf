@@ -71,27 +71,12 @@ output "load_balancer_ports" {
   value       = local.published_ports
 }
 
-output "runner_task_definition" {
-  description = "The suite task's family (run-suite-in-aws.sh runs its latest revision)."
-  value       = var.suite_runner ? aws_ecs_task_definition.suite[0].family : ""
-}
-
-output "runner_subnet_id" {
-  description = "The subnet the suite task runs in."
-  value       = var.suite_runner ? aws_subnet.runner[0].id : ""
-}
-
-output "runner_security_group_id" {
-  description = "The suite task's security group."
-  value       = var.suite_runner ? aws_security_group.runner[0].id : ""
-}
-
-output "runner_egress_ip" {
-  description = "The NAT gateway address the suite task reaches the load balancer from."
-  value       = var.suite_runner ? aws_eip.runner[0].public_ip : ""
-}
-
 output "reports_bucket" {
   description = "Where the suite task uploads its report, under <environment>/<run id>/."
   value       = local.reports_bucket
+}
+
+output "image_tag" {
+  description = "The service image tag the nodes run. The workflow's suite job re-applies with it when it admits its own runner's address (allowed_cidrs), so admitting a runner never changes what is deployed."
+  value       = var.image_tag
 }

@@ -194,11 +194,66 @@ function claim(opts) {
     return { ok: false, reason: 'used',
              existing: (answer && answer.existing) || null };
   }, function (e) {
-    log.error(errorCodes.tag('STS-CLUSTER-0013') + 'cluster claims: the ' +
-              'store could not be asked about a "' + scope + '" value: ' +
-              ((e && e.message) || e) + '. It is refused.');
+    storeFailed(scope, e);
     return { ok: false, reason: 'store', why: (e && e.message) || String(e) };
   });
+}
+
+// ---------------------------------------------------------------------------
+// ONE LINE PER MINUTE, NOT ONE PER REFUSAL (2026-09-21). A store that cannot
+// be asked is a STATE — the pool saturated, the database away — and every
+// claim made while it lasts fails the same way. Logged per event it was 2,852
+// errors in one product-mode suite run, most of a CI log. So the first
+// failure in a minute is logged in full, the rest are counted, and the count
+// is flushed as one line when the minute is up. Every refusal is still at
+// debug, and the caller still gets `reason: 'store'` each time.
+// ---------------------------------------------------------------------------
+const STORE_FAILURE_WINDOW_MS = 60 * 1000;
+let storeFailureSince = 0;
+let storeFailuresQuiet = 0;
+let storeFailureScopes = {};
+let storeFailureTimer = null;
+
+function flushStoreFailures() {
+  log.debug("Entering flushStoreFailures().");
+  storeFailureTimer = null;
+  if (storeFailuresQuiet > 0) {
+    log.error(errorCodes.tag('STS-CLUSTER-0013') + 'cluster claims: ' +
+              storeFailuresQuiet + ' more claim(s) were refused in the last ' +
+              'minute because the store could not be asked (' +
+              Object.keys(storeFailureScopes).join(', ') + ').');
+  }
+  storeFailuresQuiet = 0;
+  storeFailureScopes = {};
+  storeFailureSince = 0;
+  log.debug("Leaving flushStoreFailures().");
+}
+
+function storeFailed(scope, e) {
+  log.debug("Entering storeFailed(). scope=" + scope);
+  const why = (e && e.message) || String(e);
+  const now = Date.now();
+  if (!storeFailureSince ||
+      now - storeFailureSince >= STORE_FAILURE_WINDOW_MS) {
+    storeFailureSince = now;
+    log.error(errorCodes.tag('STS-CLUSTER-0013') + 'cluster claims: the ' +
+              'store could not be asked about a "' + scope + '" value: ' +
+              why + '. It is refused. Further refusals in the next minute ' +
+              'are counted and reported together.');
+    if (!storeFailureTimer) {
+      storeFailureTimer = setTimeout(flushStoreFailures,
+                                     STORE_FAILURE_WINDOW_MS);
+      if (storeFailureTimer.unref) {
+        storeFailureTimer.unref();
+      }
+    }
+  } else {
+    storeFailuresQuiet++;
+    storeFailureScopes[scope] = true;
+    log.debug('cluster claims: the store could not be asked about a "' +
+              scope + '" value: ' + why + ' (counted, not logged).');
+  }
+  log.debug("Leaving storeFailed().");
 }
 
 // Gives a claim back: what it guarded did not happen. Never rejects.

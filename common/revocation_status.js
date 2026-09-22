@@ -408,6 +408,67 @@ const PARSE_MEMO_ENTRIES = 256;
 const NO_COUNT = { hit: function () {}, miss: function () {} };
 let parsedCount = NO_COUNT;
 let failuresCount = NO_COUNT;
+let presentedCount = NO_COUNT;
+
+// ---------------------------------------------------------------------------
+// THE CHAIN A RESUMED SESSION DOES NOT CARRY (2026-09-21).
+//
+// A TLS session RESUMED from a ticket or a session id hands node the peer's
+// LEAF and nothing above it: `getPeerCertificate(true)` has no
+// `issuerCertificate`, measured on node 22 and 24 with a TLS 1.2 client that
+// resumes — while `socket.authorized` is still true, because the session
+// carries the verdict of the full handshake that made it. So the walk below
+// saw a verified leaf whose issuer was "neither held here nor in the chain that
+// was presented", which is REFUSABLE, and under hard-fail — product mode's
+// default — a certificate that had verified was refused. The remote XACML PEP
+// reconnects every few seconds and resumes, so every request after its first
+// connection was an "unauthenticated caller": `sts_xacml_remote_pep` never
+// registered in the `single-node` mode, and the XACML jobs failed the same way
+// in `cluster`.
+//
+// The fix is to REMEMBER, not to re-derive. Every full handshake that verified
+// shows this process the whole path OpenSSL built, anchor included; it is kept
+// here keyed by the leaf's SHA-256, and a resumed session of that leaf is
+// handed it back. That is sound because a session can only be resumed on the
+// process that issued it (the ticket keys are this process's), so the full
+// handshake it resumes was seen HERE, and because the walk re-checks every
+// signature in whatever it is handed — a remembered chain can make a
+// certificate look no better than its own signatures make it.
+// ---------------------------------------------------------------------------
+/** @type {Map<string, Buffer[]>} */
+const presentedChains = new Map();
+const PRESENTED_CHAIN_ENTRIES = 1024;
+
+function leafKey(raw) {
+  log.debug("Entering leafKey().");
+  log.debug("Leaving leafKey().");
+  return nodeCrypto.createHash('sha256').update(raw).digest('hex');
+}
+
+// Remembered only for a VERIFIED chain, and the oldest dropped first when full:
+// a leaf that is gone costs its next resumed session one refusal-free full
+// handshake, which a client makes anyway when its ticket is refused.
+function rememberChain(raw, chain) {
+  log.debug("Entering rememberChain().");
+  const key = leafKey(raw);
+  presentedChains.delete(key);
+  cacheRegistry.makeRoom(presentedChains, PRESENTED_CHAIN_ENTRIES,
+                         { counter: presentedCount });
+  presentedChains.set(key, chain.slice());
+  log.debug("Leaving rememberChain().");
+}
+
+function rememberedChain(raw) {
+  log.debug("Entering rememberedChain().");
+  const found = presentedChains.get(leafKey(raw));
+  if (found) {
+    presentedCount.hit();
+  } else {
+    presentedCount.miss();
+  }
+  log.debug("Leaving rememberedChain(). " + (found ? found.length : 0));
+  return found ? found.slice() : [];
+}
 let pemFilesCount = NO_COUNT;
 
 function parsedTier(pem) {
@@ -2701,6 +2762,18 @@ function fromSocket(socket) {
       chain.push(Buffer.from(String(b64), 'base64'));
     });
   }
+  // A worker's shim has no `isSessionReused`, and its `issuerChain` was
+  // already filled by the front process through this same function.
+  const real = typeof socket.isSessionReused === 'function';
+  if (real && socket.authorized === true) {
+    if (chain.length) {
+      rememberChain(peer.raw, chain);
+    } else if (socket.isSessionReused()) {
+      rememberedChain(peer.raw).forEach(function (der) {
+        chain.push(der);
+      });
+    }
+  }
   log.debug('Leaving fromSocket(). ' + chain.length + ' above the leaf.');
   return { leaf: peer.raw, chain: chain, verified: socket.authorized === true };
 }
@@ -4201,6 +4274,34 @@ function registerCaches() {
       return out;
     }
   });
+  presentedCount = cacheRegistry.register({
+    name: 'revocation.presented-chains',
+    title: 'Client certificate chains, for resumed sessions',
+    description: 'The path a verified client certificate built on a full ' +
+      'TLS handshake, keyed by the leaf, handed back when that session is ' +
+      'RESUMED — node gives a resumed session the leaf alone, and without ' +
+      'this the revocation walk refuses a certificate that verified.',
+    owner: 'common/revocation_status.js',
+    scope: 'process',
+    maxEntries: function () {
+      return PRESENTED_CHAIN_ENTRIES;
+    },
+    bound: 'Enforced: ' + PRESENTED_CHAIN_ENTRIES + ' leaves; the oldest ' +
+      'is forgotten first.',
+    lifetime: function () {
+      return 'No expiry: keyed by the leaf, replaced on its next full ' +
+        'handshake, the oldest dropped when full.';
+    },
+    entries: function () {
+      const out = [];
+      presentedChains.forEach(function (chain, key) {
+        out.push({ key: 'leaf sha256 ' + key.slice(0, 16) + '… (' +
+                        chain.length + ' above it)',
+                   validUntil: null, basis: 'content-keyed' });
+      });
+      return out;
+    }
+  });
   pemFilesCount = cacheRegistry.register({
     name: 'revocation.pem-files',
     title: 'Trust files read from disk',
@@ -4246,6 +4347,7 @@ function resetCache() {
   failures.clear();
   inFlight.clear();
   parsed.clear();
+  presentedChains.clear();
   certCache.clear();
   pemFiles.clear();
   log.debug("Leaving resetCache().");

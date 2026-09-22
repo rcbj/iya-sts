@@ -585,8 +585,17 @@ async function test() {
   // The selectors a TCP caller of THIS port is seen by — the realm's own bind
   // address and port, not the address this job dialled (which, behind a load
   // balancer, is a different string entirely).
-  const tcpSelectors = "transport:tcp, endpoint:" + grpcHost + ":" +
-                       workloadPort;
+  //
+  // **UNLESS THE LAUNCHER NAMED THE SOCKET (2026-09-21).** In the `cluster`
+  // mode the settings are read through the balancer and may be node B's —
+  // its own `spiffe.grpcHost` — while the socket this job dials is node A's,
+  // which attests a caller by ITS bind address; the selector then named an
+  // endpoint no workload is at, and the Workload API answered no SVID. A named
+  // socket is the endpoint.
+  const tcpSelectors = "transport:tcp, endpoint:" +
+                       (process.env.STS_SPIFFE_WORKLOAD_URL
+                         ? workloadTarget
+                         : grpcHost + ":" + workloadPort);
   const W = tdId + "/sts-test/spiffe-grpc/" + RUN + "/workload";
   const A = tdId + "/sts-test/spiffe-grpc/" + RUN + "/admin";
   const N = tdId + "/sts-test/spiffe-grpc/" + RUN + "/unix-only";

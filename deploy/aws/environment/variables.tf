@@ -61,18 +61,6 @@ variable "pep_image_tag" {
   default     = ""
 }
 
-variable "suite_runner" {
-  description = <<-EOT
-    Whether to create what runs the protocol suite inside the VPC (runner.tf):
-    a subnet, a NAT gateway and its Elastic IP, a security group, a role and
-    the task definition. About $0.05 an hour while the environment exists,
-    whether or not a suite is running. Off, the suite can still be run from
-    outside with run-suite.sh, less sts_gnap_core and sts_xacml_remote_pep.
-  EOT
-  type        = bool
-  default     = true
-}
-
 variable "ldap_max_entries" {
   description = <<-EOT
     The directory's entry ceiling (LDAP_MAX_ENTRIES) on every node. The service

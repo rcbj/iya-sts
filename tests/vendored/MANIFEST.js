@@ -505,7 +505,13 @@ const JOBS = [
   { file: 'sts_roles.js',              browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
   { file: 'sts_saml11.js',               browser: false },
-  { file: 'sts_saml_encryption.js',      browser: false },
+  // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
+  // parent's: its no-certificate case had to stop registering a signing
+  // certificate in development (the service encrypts to one, so the in-clear
+  // check could not pass), and rcbj's rule that day moved the writing of
+  // protocol jobs here. The parent's copy is no longer the source of truth.
+  // The body is still in the parent's style, not this repository's.
+  { file: 'sts_saml_encryption.js',      browser: false, local: true },
   // Signs a UserInfo response and an ID Token with every advertised
   // algorithm, and one SLH-DSA-SHAKE-128s signature takes 190-310s under the
   // coverage run's instrumentation (2026-09-15). The job took 434s on a run

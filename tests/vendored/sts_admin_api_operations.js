@@ -4063,9 +4063,35 @@ async function theKerberosPrincipalsRoundTrip() {
                     mail: keyPerson + "@admin-api-operations.test" },
       credential: "password", password: MINT_PASSWORD
     }, "created " + keyPerson + " to hold (or not hold) Kerberos keys", true);
+    // READ BACK in the scope it was written in — the root — the way
+    // ensureTokenParties() reads its people back (2026-09-21). This create
+    // arrived on 2026-09-19 without one, and the ledger's last check
+    // (everyAcceptedWriteWasReadBack) failed the whole job in every mode.
+    const keyPersonBack = await get("/users?user=" +
+                                    encodeURIComponent(keyPerson), true);
+    assert.strictEqual(keyPersonBack.status, 200,
+      "GET /users?user=" + keyPerson + " should read the person just " +
+      "created; it answered " + keyPersonBack.status);
     const product = await facts.isProduct(rootApi);
-    const firstClear = await ok("/kerberos/principals/clear-person-keys",
+    // THE WINDOW (kerberos/krb5_person_keys.ts's header): a password set
+    // derives its keys AFTER the act — PBKDF2, up to 32768 iterations — so a
+    // clear sent the moment the create answers can find nothing yet. On
+    // 2026-09-21's first local product run the clear answered before .314
+    // and the keys landed at .328. A clear that finds nothing changes
+    // nothing, so in product mode it is asked again until the keys are there.
+    // (The service's own side of that race — a clear inside the window is
+    // undone by the derivation landing after it — is recorded, not fixed.)
+    const clearDeadline = Date.now() + 8000;
+    let firstClear = await ok("/kerberos/principals/clear-person-keys",
       { username: keyPerson }, "cleared the new person's keys", true);
+    while (product && firstClear.cleared === false &&
+           Date.now() < clearDeadline) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 100);
+      });
+      firstClear = await ok("/kerberos/principals/clear-person-keys",
+        { username: keyPerson }, "cleared the new person's keys", true);
+    }
     assert.strictEqual(firstClear.cleared, product,
       "a person just given a password holds derived Kerberos keys in " +
       "PRODUCT mode and none in development, so the first clear should " +

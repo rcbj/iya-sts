@@ -147,6 +147,12 @@ that up silently.
    the Workload API. Do not "fix" the asymmetry. (`spiffe.authRequired` used to
    be the name of it; `global.mode` replaced it on 2026-09-06 and the
    requirement became unconditional.)
+   **Its server certificate is RE-KEYED ON A NEW ROOT (2026-09-21)**:
+   `refreshServerCredentials()` re-mints each realm's server SVID and hands
+   it to grpc-js's `updateSecureContextOptions()` when `tls_server.js`
+   re-issues the listener certificate — until then a `build-root` left every
+   realm's API presenting a chain under the old Root until a restart
+   (`tls/CLAUDE.md`, *The sockets this module does not hold*).
 
    **NOTHING ATTESTS A WORKLOAD OR A NODE, WHICH IS A DIFFERENT CLAIM FROM
    "NOBODY IS AUTHENTICATED" AND THE TWO MUST STAY APART.** A real agent reads

@@ -998,12 +998,61 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // recorded, reported on every page — and not served, which is the most
   // convincing way for this to look finished and be wrong.
   applyAnchors();
+  // **AND THE SOCKETS THIS MODULE DOES NOT HOLD (2026-09-21).** LDAPS 636 and
+  // every realm's SPIRE Server API present a certificate built from this
+  // record or from the Root it chains to, and neither is a listener
+  // `applyAnchors()` reaches — both set their context ONCE, when they bound.
+  // So after `POST /admin-api/pki/build-root` they went on presenting a chain
+  // under a Root nothing held any more, and every client that re-fetched the
+  // anchor failed with `unable to get local issuer certificate` until the
+  // service restarted (tests/vendored/sts_ldaps.js and sts_spiffe_grpc.js,
+  // red in every mode). The log line below said "one anchor covers LDAPS 636"
+  // the whole time. The owners of those sockets re-key on this.
+  notifyCertificateObservers(record.algorithm);
   log.info('tls: the ' + record.algorithm + ' listener certificate is ' +
            'issued by this service\'s ' +
            'own TLS Issuing CA and chains to its Root — so one anchor ' +
            'covers LDAPS 636, the main port and every token ' +
            'this service signs.');
   log.debug("Leaving takeIssuedCertificate().");
+}
+
+// ---------------------------------------------------------------------------
+// WHO ELSE PRESENTS THIS CERTIFICATE, AND IS TOLD WHEN IT CHANGES (2026-09-21).
+//
+// An OBSERVER list and not a slot (rule 3e): the owners of those sockets —
+// `ldap/ldap_server.js` and `spiffe/spiffe_server.ts` — already require this
+// module in the ordinary direction and load after it, so registering adds no
+// require, closes no cycle and moves no route. It fires in whichever process
+// adopts a re-issued certificate, which is the process holding the sockets:
+// a build-root in one process, the front process reconciling after a worker's
+// build-root in `dispatch` mode, and a cluster node adopting a hierarchy
+// another node built.
+// ---------------------------------------------------------------------------
+const certificateObservers = [];
+
+function onServerCertificateChange(fn) {
+  log.debug("Entering onServerCertificateChange().");
+  if (typeof fn === 'function') {
+    certificateObservers.push(fn);
+  }
+  log.debug("Leaving onServerCertificateChange().");
+}
+
+function notifyCertificateObservers(algorithm) {
+  log.debug("Entering notifyCertificateObservers(). " + algorithm);
+  certificateObservers.forEach(function (fn) {
+    try {
+      fn(algorithm);
+    } catch (e) {
+      // One socket that could not be re-keyed must not stop the next, and
+      // the certificate is already issued and served on the main port.
+      log.error(errorCodes.tag('STS-TLS-0033') +
+                'tls: a socket could not take the re-issued listener ' +
+                'certificate: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving notifyCertificateObservers().");
 }
 
 // ---------------------------------------------------------------------------
@@ -3863,6 +3912,8 @@ module.exports = {
   // /tls/trust reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
+  // LDAPS 636 and the SPIRE Server API re-key themselves on this (2026-09-21).
+  onServerCertificateChange: onServerCertificateChange,
   // What secureContextOptions() would give a listener created elsewhere: the
   // certificates this service presents AND the anchors it verifies clients
   // against. Exported so that server.js and the debugger build their

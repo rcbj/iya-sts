@@ -8052,6 +8052,14 @@ const CODES = [
     summary: 'An agent asked for an SVID from a registration entry that is ' +
       'not beneath it (BatchNewX509SVID, NewJWTSVID).',
     spec: 'gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID)' },
+  // 0078-0113 are feature/40's (node and workload attestation), numbered
+  // there before this row; left free here so that merge reuses none.
+  { code: 'STS-SPIFFE-0114',
+    summary: 'A realm\'s SPIRE Server API could not take a new certificate ' +
+      'after the service Root was replaced, so it still presents a chain ' +
+      'under the old Root and a client holding the new bundle cannot ' +
+      'verify it until a restart.',
+    spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -8190,6 +8198,12 @@ const CODES = [
     summary: 'The file named by tls.certificateFile holds self-signed ' +
       'certificates, none of which signs the chain the listener presents, ' +
       'so no trust anchor is taken from it.',
+    spec: '' },
+  { code: 'STS-TLS-0033',
+    summary: 'A socket that presents the listener certificate (LDAPS, the ' +
+      'SPIRE Server API) threw while being told the certificate was ' +
+      're-issued; the others were still told, and the main port serves the ' +
+      'new one.',
     spec: '' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',

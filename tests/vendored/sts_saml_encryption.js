@@ -572,22 +572,43 @@ async function main() {
   }
 
   log.info('THE UNENCRYPTED FALLBACK, which is a decision and not an accident');
-  await provision(SP_NOKEY, { saml2EncryptAssertion: 'true' });
-  out = await signInTo(SP_NOKEY, USER);
   // A PRODUCT-mode service refuses instead (Responder, STS-SAML-0011): an
   // assertion somebody asked to have encrypted is not sent in clear to a real
   // service provider. Development sends it in clear and says so.
+  //
+  // THE MODE IS READ FIRST, BECAUSE IT DECIDES WHAT IS PROVISIONED (2026-09-21).
+  // provision() registers this run's signing certificate on every service
+  // provider (2026-09-18, so product mode accepts the signed AuthnRequests),
+  // and a registered RSA signing certificate is what an assertion is
+  // encrypted to when no encryption certificate is registered — so in
+  // development this case stopped being "no certificate anywhere", the
+  // service encrypted, and the in-clear check below failed in every mode.
+  // Development registers NONE here (it accepts a signed request it holds no
+  // certificate to check); product keeps it, and its branch asserts the
+  // encryption to it. This job became `local: true` that day to carry this.
   const modeRow = await request('GET', '/admin-api/config', null, {});
   let product = false;
   try {
     (JSON.parse(modeRow.body).groups || []).forEach(function (g) {
       (g.settings || []).forEach(function (row) {
-        if (row.key === 'global.mode' && String(row.value) === 'product') product = true;
+        if (row.key === 'global.mode' && String(row.value) === 'product') {
+          product = true;
+        }
       });
     });
   } catch (e) {
     // Not JSON: treated as development, and the check below says what it saw.
+    log.debug('Caught reading /admin-api/config: ' + ((e && e.message) || e));
   }
+  if (product) {
+    await provision(SP_NOKEY, { saml2EncryptAssertion: 'true' });
+  } else {
+    await api('/applications/create',
+              { identifier: SP_NOKEY, protocols: ['saml2'],
+                fields: { saml2EncryptAssertion: 'true',
+                          samlAssertionConsumerService: SP_NOKEY + '/acs' } });
+  }
+  out = await signInTo(SP_NOKEY, USER);
   check('a service provider asked for encryption with NO certificate anywhere is ' +
         'answered — a mock that sent nothing would be useless exactly when ' +
         'somebody is setting this up', !out.error, out.error || 'ok');

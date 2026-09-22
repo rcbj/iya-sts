@@ -8,11 +8,11 @@
 # (.github/workflows/aws-cluster.yml), so a plan that works on one works on the
 # other and neither needs Terraform or the AWS CLI installed.
 #
-# Beside that pair, node: deploy/aws/run-suite-in-aws.sh (the `suite` action)
-# builds its ECS overrides and reads the report's summary with it, and
-# reset-environment.js is node. The suite itself does NOT run here — it runs
-# as a task in the environment's VPC (environment/runner.tf); this image starts
-# it, waits for it and downloads its report.
+# Beside that pair, node: reset-environment.js is node. The suite does NOT run
+# in this image — it runs from deploy/aws/run-suite.sh on the host, through
+# ./run-tests.sh's AWS targets. (Until 2026-09-21 this image's `suite` action
+# ran deploy/aws/run-suite-in-aws.sh, which started the suite as a task in the
+# environment's VPC; that runner was removed that day.)
 #
 # Built from the repository root:
 #   docker build -t mock-sts-terraform -f deploy/aws/Dockerfile .
@@ -59,8 +59,7 @@ RUN curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
 
 # --- The two stacks, the scripts, and nothing else of the repository ---
 COPY deploy/aws/ /workspace/deploy/aws/
-RUN chmod +x /workspace/deploy/aws/entrypoint.sh \
-        /workspace/deploy/aws/run-suite-in-aws.sh
+RUN chmod +x /workspace/deploy/aws/entrypoint.sh
 
 # ---------------------------------------------------------------------------
 # NON-ROOT, as the parent's image is. /workspace is writable by that user

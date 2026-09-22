@@ -948,8 +948,15 @@ class SpiffeCa {
       return { pem: made.certificatePem, der: made.certificateDer,
                serialHex: made.serialHex,
                notBefore: made.notBefore, notAfter: made.notAfter,
-               chainPem: authority.chainPem.slice(),
-               chainDer: authority.chainDer.slice() };
+               // THE CHAIN OF THE CA THAT SIGNED, as issueUnder() read it
+               // AFTER any repair of a stale branch (2026-09-21) — not
+               // `authority`'s, read BEFORE it. After a replaced Root the two
+               // differ: the leaf was signed by the rebuilt SPIFFE Issuing CA
+               // and travelled with the old one, and every client failed with
+               // `unable to verify the first certificate`
+               // (tests/vendored/sts_spiffe_grpc.js section 7).
+               chainPem: made.issuerChainPem.slice(),
+               chainDer: made.issuerChainDer.slice() };
     }
     const type = this.keyTypeById(authority.keyType) || KEY_TYPES[0];
     const issued = await x509.issueCertificate({

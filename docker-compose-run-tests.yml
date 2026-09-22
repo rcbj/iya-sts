@@ -392,6 +392,24 @@ services:
       # run the development service and been reported as product mode passing.
       # `sts2` in the cluster layer `extends` this service, so it gets it too.
       - STS_MODE=${STS_MODE:-development}
+      # AND THE OTHER TWO tests/tools/modes.sh NAMED AND THIS FILE DROPPED
+      # (2026-09-21), found the same way: the `product` mode's
+      # STS_CLUSTER_MODE=off never arrived, `cluster.mode` stayed `auto`, and
+      # auto is ACTIVE-PASSIVE in product mode on postgres — so the mode ran
+      # the cluster's membership and fail-stop, and under the SCIM bulk load a
+      # starved heartbeat fenced a write and the node exited (STS-CLUSTER-0011).
+      # The fallbacks are the settings' own defaults, so a hand-run of this file
+      # is unchanged; the cluster layer sets its own values over these.
+      - STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-auto}
+      - STS_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}
+      # WHAT A PRODUCT-MODE STACK IS GIVEN AND A DEVELOPMENT ONE IS NOT
+      # (2026-09-21) — set by ./run-tests.sh for the `product` mode only; see
+      # its "THE `product` MODE" block. The base URL is empty (learnt from
+      # requests) unless set; the two Kerberos passwords are BARE, so a mode
+      # that does not set them passes nothing and keeps the fixture defaults.
+      - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-}
+      - KRB5_KRBTGT_PASSWORD
+      - KRB5_SERVICE_PASSWORD
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}

@@ -406,9 +406,13 @@ async function createThePeople(sendable, byLdap) {
       failures.push(person.username + " -> " + reply.status + " " +
                     String(reply.text).slice(0, 300));
     }
-    if (i % 500 === 0) {
+    if (i % bulk.PROGRESS_EVERY === 0) {
       const so_far = bulk.summaryOf(watch);
-      log.info("  " + i + "/" + SIZES.USERS + " created — mean " +
+      // ATTEMPTED AND LOADED, both: a refusal is collected in `failures`
+      // rather than stopping the loop, so a count of attempts alone would
+      // read as progress while nothing was being created.
+      log.info("  " + i + "/" + SIZES.USERS + " attempted, " +
+               (i - failures.length) + " created — mean " +
                bulk.ms(so_far.meanMs) + ", median " +
                bulk.ms(so_far.medianMs) + ", " +
                so_far.perSecond.toFixed(1) + "/s");

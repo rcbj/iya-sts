@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2800** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2802** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -70,8 +70,8 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 129
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 78
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 273
@@ -2081,6 +2081,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0075` | A join token at AttestAgent could not be proved unspent because the cluster store could not be asked, so the attestation was refused. | gRPC UNAVAILABLE |
 | `STS-SPIFFE-0076` | A realm's SPIFFE JWT authority or self-signed X.509 authority could not be established once for the cluster, so none was made. | the SPIFFE call fails as when no authority could be built |
 | `STS-SPIFFE-0077` | An agent asked for an SVID from a registration entry that is not beneath it (BatchNewX509SVID, NewJWTSVID). | gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID) |
+| `STS-SPIFFE-0114` | A realm's SPIRE Server API could not take a new certificate after the service Root was replaced, so it still presents a chain under the old Root and a client holding the new bundle cannot verify it until a restart. | — |
 
 ## STS-TLS
 
@@ -2122,6 +2123,7 @@ Raised from: tls/.
 | `STS-TLS-0030` | The stored trust anchors could not be read; the truststore was left as it was. | — |
 | `STS-TLS-0031` *(retired)* | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity. Retired 2026-09-16 with that listener: the same certificate is now refused where it is USED — no session at GET /tls/sign-in, no client authentication at the token endpoint — rather than at a socket | HTTP 403 with the connection report |
 | `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
+| `STS-TLS-0033` | A socket that presents the listener certificate (LDAPS, the SPIRE Server API) threw while being told the certificate was re-issued; the others were still told, and the main port serves the new one. | — |
 
 ## STS-VC
 

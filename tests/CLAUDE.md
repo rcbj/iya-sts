@@ -909,6 +909,7 @@ Two rules that are not optional here:
 | `worker_server_certificate.js` | **THE LISTENER CERTIFICATE BELONGS TO THE PROCESS HOLDING THE LISTENER** (2026-09-12), which is the SECOND thing in this service to be a socket rather than a row — the root CLAUDE.md said a second would need the argument made again rather than the mechanism copied, and this file is what the argument owes. `POST /admin-api/pki/build-root` is dispatched like any other request, so it lands on ONE request worker, and two processes then disagreed about a certificate neither could see the other holding: **the worker re-certified its own copy of the handed-in record** and pinned a leaf under the new Root while the socket it dials on the loopback still presented the old one, and **the front process adopted the new hierarchy and went on serving the old leaf**, so `trustAnchorPems()` correctly refused to publish an anchor at all and `GET /tls/server-certificate` answered a bundle terminating nowhere. Six jobs of the suite's dispatch mode, not one of whose failures mentions a certificate. **Section A runs in a CHILD PROCESS** and that is not fastidiousness: the environment has to be set before `tls/tls_server.js` loads, and a module loaded once per process cannot be asked the question twice — `tls_trust_anchor.js`'s first section forks for the same reason. It asserts that a handed-in process presents and pins what it was handed AFTER `pki.start()` has built it a hierarchy of its own — **and that it HAS one**, which is what makes the line above an assertion rather than a description of a process with no PKI — and that it takes a SECOND hand-off, since the first one travelled in `process.env` and is a snapshot. Section B is in process because only a caller inside one can replace a Root without its branches (`pki_anchor_drift.js`'s argument), and it pins that reconciling is FREE while the chain is good, repairs it when it is not, and that the bundle the pool sends out carries the anchor and the chain and **no private key** — a worker pins and reports this certificate and never presents it. Seven mutants, all caught |
 | `listener_branch_adoption.js` | **THE LISTENER IS RE-ISSUED UNDER THE PROCESS BRANCH THIS PROCESS HOLDS, AND A DISPATCHED FRONT PROCESS NEVER BUILDS THAT BRANCH BESIDE A WORKER** (2026-09-13). `sts_pki_distribution_points` failed in `dispatch` mode only — one CRL address named by two Intermediate CA (Process) certificates — because the socket chained to a branch the front process built itself after a worker's `build-root` published the Root ahead of the branch it was rebuilding, and the reconcile then called that listener current because the Root signs both. Five claims, in a CHILD PROCESS (it replaces the Root twice): a branch rebuilt elsewhere under the same Root re-issues the listener; a Root ahead of its branch is WAITED FOR — nothing built, listener untouched, `listenerAwaitsBranch()` true, and `certifyRegistered({ repairBranch: false })` refusing too; the branch arriving re-issues; the default reconcile still repairs; and through `request_pool.js`, the fallback armed and disarmed and ONE pass at a time with calls coalesced (the reconcile swapped for one that counts overlaps). Eight mutants, all caught, run through a require hook rather than by editing shared files |
 | `tls_trust_anchor.js` | **what a loopback caller PINS this service against, before and after its certificate acquired an issuer** (2026-09-11). The hour `pki.start()` began certifying the listener certificate, three callers broke together and not one of them said what had changed: `common/oidc_rp.ts`'s back channel — so the admin console answered *Signing in did not complete* with `unable to get local issuer certificate` under it — `ssf/ssf_http.ts`'s push to this service's own receivers, and `tests/tools/trust.js`, which hands every node-driven job in the protocol half its `NODE_EXTRA_CA_CERTS`, so that half could not open a connection at all. All three pinned `serverCertificate().certPem`, which OpenSSL takes as an anchor while it is SELF-SIGNED and refuses once it is certified — **so the pin does not weaken, it refuses everything**, which reads as a broken server. **Asserted as a HANDSHAKE on an ephemeral port and not as a comparison of subjects and issuers**: every version of this that compared fields passed on a truststore OpenSSL would reject, which is exactly the state the service was in. The invariant it holds is that the ANCHOR IS SELF-SIGNED — the Root when there is one, the leaf when there is not — rather than that it is any particular certificate, so `npm test` and a supplied `tls.certificateFile` keep working. **Section 1 runs in a CHILD PROCESS**, and that is not fastidiousness: `run.js` runs every file in one process and `pki_hierarchy.js` builds the hierarchy, so the before state is gone by the time this file runs — it passed alone and failed in the suite, which is the shape of flake that gets a test deleted rather than fixed. Section 4 is a SOURCE check, for `version.js`'s reason: what went wrong was the wrong FIELD being read, and a fourth caller added tomorrow would pass a behavioural one |
+| `tls_resumed_chain.js` | **A RESUMED TLS SESSION STILL HAS A CHAIN TO WALK** (2026-09-21). Node hands a server a resumed session's LEAF alone — no `issuerCertificate` — while `socket.authorized` stays true, so `common/revocation_status.js` found the leaf's issuer "neither held here nor in the chain that was presented" and product mode's hard-fail refused a certificate that had verified; the remote XACML PEP resumes on every reconnect, so in `single-node` it never registered and the XACML jobs failed the same way in `cluster`. On a real TLS 1.2 listener with a client that resumes: the control (the resumed session really has no chain), `fromSocket()` handing it the chain its full handshake showed and the walk then reaching the anchor, an UNVERIFIED leaf remembered for nobody, and — as source — `request_pool.js`'s `peerOf()` reading the chain through `fromSocket()` rather than a walk of its own. Two mutants (no hand-back; remembering unverified chains), both caught |
 | `truststore_admin.js` | **THE CLIENT-CERTIFICATE TRUSTSTORE'S GATED DOORS** (2026-09-12) — `/admin/tls/trust` and `/admin-api/tls/trust/{add,remove}`, the runtime door product mode did not have. Five claims: the primitives against the real `tls/tls_server.js` in THIS process (a strict add refused WHOLE on one unreadable block, a duplicate counted and not added, a remove under either fingerprint spelling, a fingerprint not held removing nothing), with every anchor it adds removed in a `finally` and the truststore asserted identical afterwards, because the array is process-wide; `admin.setTruststore()` refusing a partial object; the actions and the view through that slot, the house refusal sentence, paging and the audit row; the front-process pin in `NEVER_DISPATCHED`, realm prefix and query string included and `/admin/tls` and `/admin-api/tlsx` excluded; and product mode's 403 naming the new doors. **Claims 2, 3 and 5 run in a CHILD PROCESS**, because requiring `admin-ui/admin.ts` registers the whole console on the shared app in `run.js`'s one process. Ten mutants, all caught, **two only on the second round**: a remove that never called `applyAnchors()` survived a check on `clientTruststoreOptions().ca`, which rebuilds from the array on every call — replaced by a REAL HANDSHAKE on a registered listener — and a refusal that lost the console path from its sentence survived a search of the whole JSON body, which carries that path in a member of its own |
 | `pki_hierarchy.js` | **ONE ROOT FOR THE SERVICE, AN INTERMEDIATE PER SCOPE, AN ISSUING CA PER USE CASE** (2026-09-11), and four claims no running service can be asked. **THE BOUNDARY MOVED DOWN A TIER**: until that date every realm had a Root of its own, so "does this chain to our Root" WAS the realm boundary — one Root makes that test true of every certificate this service has ever issued, so it silently stopped being one, and what replaced it is that the path must pass through THIS realm's own Intermediate. Over HTTP the two are indistinguishable: both refuse the foreign certificate and only one of them refuses it for a reason that survives the next realm being created. **THE STARTUP ORDER** — the hierarchy must exist before a key is certified and before anything binds, and the only way to assert an ordering is to run it. **WHAT IS NOT A LEAF AND WHY** — this section is empty of families now: **the eleven post-quantum keys were the last, until 2026-09-13**, when they came UNDER the realm's JOSE Issuing CA and `tests/pq_key_certification.js` took the positive claim; **the SPIFFE authority was the second until 2026-09-11**, when it came UNDER the Root. What this file keeps of that section is the narrower claim that no SVID is in the certificate register, because `issueUnder()` records nothing, and `tests/spiffe_pki.js` asserts the chain that replaced the absence. **THE FOUR EDITING ACTS ARE FOUR DIFFERENT THINGS** — a renewal must leave every key verifying and a reissue must not, which is one assertion apart and a world apart. Eight mutants, all caught; **one survived the first round and the fixture was the bug**, which is this directory's standing lesson: the key-set section used a realm id nobody had created, so `stsKeysFor.of()` handed it the DEFAULT realm's keys and certificates were being written into a row those keys never read |
 | `pqc_support.js` | **THE POST-QUANTUM ICON ON `/admin/pki` AND `/admin/keys`** (2026-09-13): the classifier and the mark. **Every algorithm in every spelling** — each of `pq_jose.PQ_ALGS`, and each of the vendored registry's signature and KEM ids as its id, its lower-case key-material spelling and its OID, plus node's key types — comes out with the right kind (`pq`, `composite`, `kem`), and twenty-five classical spellings come out unmarked; a table, because a page shows only the keys it holds. **A certificate is classified by its KEY, not its signature**: an ML-DSA key under an RSA Issuing CA is marked, an EC key under an ML-DSA issuer is not, and an EC key whose certificate carries an alternative ML-DSA-65 key is a `hybrid` — the last two are certificates this service does not issue by itself, so they are built here. **The mark, in a child process** (the renderer requires the console): nothing for a classical key, one labelled image per kind with the sentence as `title` and `aria-label`, the hybrid dashed, no script or image request, a label escaped, and a legend drawn with the renderer itself. Three mutants — classify by the signature, ignore the alternative key, the hybrid drawn like the rest — all caught |
@@ -2451,26 +2452,27 @@ leaving the feature covered only on a developer's machine.
   half is gated on the report saying a key is present, the floor is per mode,
   and the run says which half it is doing.
 
-## THE `cluster` MODE: TWO NODES BEHIND A LOAD BALANCER (2026-09-14, issue #46)
+## THE `cluster` MODE: TWO PRODUCTION NODES BEHIND A LOAD BALANCER (2026-09-14, issue #46)
 
-`tests/tools/modes.sh` has a FOURTH mode, and it is **asked for by name**
-(`./run-tests.sh --modes=cluster`) rather than run by default — a fourth whole
-run of the suite and two services' worth of memory, on a bare run that is
-already an hour. The three default modes differ in what shares state INSIDE one
-container; this one is the first in which the thing under test is BETWEEN
-containers, which is what `cluster/` exists for and what nothing in the suite
-exercised until now (`cluster/CLAUDE.md` listed it as not done).
+**SINCE 2026-09-21 THE LOCAL MODES ARE `memory`, `single-node` AND `cluster`,
+AND A BARE `./run-tests.sh` RUNS ALL THREE** (`tests/tools/modes.sh` argues
+it). `single-node` is a production deployment on one node — product mode,
+postgres, request workers — replacing the `product` and `dispatch` modes;
+`cluster` is two such nodes, and it was a development-mode, one-process-per-node
+fourth mode asked for by name until that day. Single-node and multi-node are
+kept apart because they differ in too much to read one run's failure: the
+thing under test here is BETWEEN containers, which is what `cluster/` exists
+for.
 
 **CI RUNS IT ON EVERY PUSH SINCE 2026-09-15**, as a `cluster` job of its own in
-`.github/workflows/tests.yml` beside `tests` and `coverage` — not as a fourth
-mode of the `tests` job, whose 120 minutes three modes already mostly fill, and
-not in `STS_ALL_MODES`, so a bare local run is unchanged.
-`teardown_bounds.js` holds that job to the same arithmetic as the `tests` job,
-for one mode.
+`.github/workflows/tests.yml` beside `tests` (which names
+`--modes=memory,single-node`) and `coverage` — two production stacks in one
+job would outrun its 120 minutes. Both run `./run-tests.sh`.
+`teardown_bounds.js` holds each job to the same arithmetic.
 
 **THE STACK** is an override layered over the mode's usual compose files and
-read in no other mode, so `memory`, `postgres` and `dispatch` start exactly the
-stacks they started before:
+read in no other mode, so `memory` and `single-node` start exactly the stacks
+they would without it:
 
 | | What it is |
 |---|---|
@@ -2478,22 +2480,25 @@ stacks they started before:
 | node B | `sts2`, which `extends` node A — one definition, so nothing the override does not name can differ — started only once node A is HEALTHY, so a cold start's first key set is never a race the suite depends on |
 | the store | ONE postgres and ONE OpenBao, shared; the key-encryption key comes out of OpenBao (`STS_KEYS_SOURCE=persisted`), without which active-active refuses to start (`STS-CLUSTER-0008`) |
 | `sts-lb` | HAProxy (`haproxy:3.2.23-alpine`, pinned), `mode tcp`, round robin, **TLS passed through**, `send-proxy-v2` (below), on 8081, 8082, 389, 636, 88/tcp and 8444 (8443 and 9443 were there until 2026-09-16, when both listeners were deleted; mutual TLS rides 8081, which is why passthrough is still right), a TCP-connect health check on each. It owns every published port under the variables the service used to, so every address a launcher computes is the balancer's with no second set of names |
-| the files | `tests/docker-compose-run-tests-cluster.yml` (over `docker-compose-run-tests.yml`, `./run-tests.sh`), `tests/cluster/haproxy.cfg`, and `tests/docker-compose-cluster.yml` (over `docker-compose.yml` and the LDAP layer, for `./local-run-tests.sh`, which was removed on 2026-09-16; no launcher layers it now) |
+| the files | `tests/docker-compose-run-tests-cluster.yml` (over `docker-compose-run-tests.yml`, `./run-tests.sh`) and `tests/cluster/haproxy.cfg`. `tests/docker-compose-cluster.yml`, its twin for the removed `./local-run-tests.sh`, was deleted on 2026-09-21; the argument its header carried is in the live file's |
 
-Both nodes are **development mode** (the suite signs people in with no
-password — the `postgres` arm of `modes.sh` says why), **one process each**
-(request workers are `dispatch`'s axis, and two nodes of four processes is a
-stack this machine has been killed for memory running), on the balancer's
+Both nodes are **product mode with request workers** (three protocol workers
+and one surface worker each), by rcbj's decision on 2026-09-21 — they were
+development mode, one process each, until then, partly because two nodes of
+four processes had been killed for memory on this machine; if that recurs it is
+a finding, not a reason to shrink the mode. Both get the launcher's per-run
+product values (`sts2` extends `sts`), are on the balancer's
 `global.publicBaseUrl` and with `sts-lb` in `tls.hostnames`, and identical in
 every setting on `cluster/cluster.js`'s `AGREEMENT_SETTINGS` — a node that
 differed would refuse to join, which is a stack that does not start rather than
 a quiet difference. **`STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES` is not set**:
 the gate has to pass with nothing accepted, and a node that refuses is a finding.
 
-**WHAT A RESULT MEANS.** Red here and green in `postgres` is a CLUSTER defect —
-something one node holds that the other cannot see, or two nodes deciding one
-thing twice. The comparison is the point, and it is why a failure in this mode
-is not triaged until the same job has been run in `postgres`.
+**WHAT A RESULT MEANS.** Red here and green in `single-node` is a CLUSTER
+defect — something one node holds that the other cannot see, or two nodes
+deciding one thing twice. The comparison is the point, and it is why a failure
+in this mode is not triaged until the same job has been run in `single-node`
+(it was `postgres` until 2026-09-21).
 
 ### A new connection per request, or the mode tests one node
 
@@ -2557,8 +2562,8 @@ the one fetch it always was.
   (`cluster_counters.js`).
 * **Failure.** Nothing stops a node mid-run; takeover and fail-stop are verified
   by hand in `cluster/CLAUDE.md`.
-* **Workers inside a node, and product mode**, which are `dispatch`'s and the
-  in-process files' respectively.
+* (It listed **workers inside a node, and product mode** here until
+  2026-09-21; both are what each node runs now.)
 
 ### What its first runs found (2026-09-14)
 

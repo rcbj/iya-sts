@@ -752,14 +752,23 @@ async function fillAndPress(driver, formIndex, values, options) {
 // The button a person would press. `buttonText` picks one when a form draws
 // several — which the console does on /admin/tokens, where four buttons post
 // the same action with a different `kind` beside it.
+//
+// A BUTTON THE PAGE HIDES FROM PEOPLE IS NOT ONE THEY PRESS (2026-09-21).
+// /admin/applications/new draws an off-screen `aria-hidden` default button
+// FIRST in its form (2026-09-19), so that Enter creates rather than pressing
+// Generate Secret; it sits 10000px off the page, so a real click on it
+// answered `ElementNotInteractableError` and this job died there in every
+// mode. It is skipped by that attribute rather than by its words, because it
+// says the same words as the visible Create button at the foot of the form.
 async function submitButtonOf(driver, formIndex, buttonText) {
   log.debug("Entering submitButtonOf().");
   const buttons = await driver.executeScript(`
     const f = document.forms[arguments[0]];
     return Array.from(f.elements).map(function (e, i) {
-      return { i: i, type: e.type, text: (e.textContent || e.value || '').trim() };
+      return { i: i, type: e.type, text: (e.textContent || e.value || '').trim(),
+               hidden: e.getAttribute('aria-hidden') === 'true' };
     }).filter(function (e) {
-      return e.type === 'submit' || e.type === 'image';
+      return (e.type === 'submit' || e.type === 'image') && !e.hidden;
     });
   `, formIndex);
   assert.ok(buttons.length > 0,
@@ -2781,9 +2790,12 @@ async function theDirectoryPagesWork(driver) {
       "get right. It draws " + kinds.length);
   });
   const createApp = await formIndexPosting(driver, "create");
+  // By its words: the form draws Generate Secret (a `formaction` button that
+  // redraws the page and creates nothing) halfway down, BEFORE the Create
+  // button at its foot, so "the first visible submit" is the wrong one here.
   await fillAndPress(driver, createApp,
       { identifier: identifier, name: "Console UI application" },
-      { noTyping: false });
+      { noTyping: false, buttonText: "Create the application" });
 
   const apps = await apiJson("/realm/" + REALM +
       "/admin-api/applications?q=" + encodeURIComponent(identifier));
@@ -3935,8 +3947,23 @@ async function theDelegationPageDefinesAndGrants(driver) {
 // BUTTONS reach them, each from its own form, and that the page that drew them
 // stops drawing the row afterwards.
 // ---------------------------------------------------------------------------
+//
+// ON A PRODUCT-MODE SERVICE (2026-09-21) THERE IS NOTHING TO PRESS. The realm
+// this job creates carries no `global.mode` of its own, so it inherits the
+// process's; in product the shires below are refused (STS-SAML-0028) and no
+// mark is ever written, so no row draws either button. Switching the realm to
+// development for the test would loosen a check this job may not loosen —
+// sts_admin_api_operations.js's product branch makes the same argument and
+// asserts the refusal itself.
 async function theObservedAddressesArePressed(driver) {
   log.debug("Entering theObservedAddressesArePressed().");
+  if (await facts.isProduct(root("/admin-api"))) {
+    log.info("[observed addresses] SKIPPED — a product-mode service records " +
+             "no observed address, so there is no Confirm or Discard to " +
+             "press; sts_admin_api_operations.js asserts the refusal.");
+    log.debug("Leaving theObservedAddressesArePressed(). Product.");
+    return;
+  }
   const stamp = names.runStamp()
                      .toLowerCase()
                      .replace(/[^a-z0-9]/g, "")
@@ -5831,9 +5858,21 @@ async function theRolesArePressedAndEnforced(driver, created) {
   let reader = created.person;
 
   try {
-    // 1. GRANT TO OURSELVES FIRST, on the typed form, so this run holds
-    //    `write` on the roster itself rather than through the open window —
-    //    the session keeps working whatever the window does next.
+    // 1. GRANT TO OURSELVES, on the typed form.
+    //
+    //    **THIS RUN ALREADY HOLDS BOTH ROLES (2026-09-18)**: signIn() gives
+    //    CONSOLE_USER Admin Read and Admin Write through the API before its
+    //    first sign-in (grantTheWriter()), so a typed grant of either would be
+    //    "already a member" — accepted, nothing written — and the assertion
+    //    below could not tell a form that writes from one that does nothing.
+    //    `read` is taken away first, through the other door, and the form
+    //    puts it back. Never `write`: the session holding only `read` could
+    //    not post the form at all.
+    const taken = await apiPostJson(root("/admin-api") + "/rbac/revoke",
+                                    { username: CONSOLE_USER, role: "read" });
+    assert.strictEqual(taken.status, 200,
+      "taking Admin Read from " + CONSOLE_USER + " before the typed grant " +
+      "answered " + taken.status + " " + String(taken.raw).slice(0, 200));
     await open(driver, root("/admin/rbac"));
     const forms = await driver.executeScript(`
       const out = { finder: -1, typed: -1, select: false };
@@ -5863,18 +5902,20 @@ async function theRolesArePressedAndEnforced(driver, created) {
     });
 
     await fillAndPress(driver, forms.typed,
-        { username: CONSOLE_USER, role: "write" });
+        { username: CONSOLE_USER, role: "read" });
     const granted = await driver.getCurrentUrl();
     check("the typed grant was accepted", function () {
       assert.strictEqual(outcomeOf(granted, "error"), "",
-        "granting `write` to " + CONSOLE_USER + " on /admin/rbac's typed " +
+        "granting `read` to " + CONSOLE_USER + " on /admin/rbac's typed " +
         "form was refused: " + outcomeOf(granted, "error"));
     });
 
     const roster = await apiJson("/admin-api/rbac");
     check("the grant reached the default realm's roster", function () {
-      assert.deepStrictEqual(rolesHeldBy(roster.body, CONSOLE_USER), ["write"],
-        "after the console's own form granted `write` to " + CONSOLE_USER +
+      assert.deepStrictEqual(rolesHeldBy(roster.body, CONSOLE_USER),
+        ["read", "write"],
+        "after the console's own form granted `read` back to " +
+        CONSOLE_USER + ", who kept `write`" +
         ", the roster should hold them. The two console roles are ORDINARY " +
         "GROUPS in the DEFAULT realm's directory and four doors write one " +
         "membership; a grant the page reports and the roster does not hold " +
@@ -5902,7 +5943,21 @@ async function theRolesArePressedAndEnforced(driver, created) {
     //    this run created lives in the THROWAWAY REALM and is deliberately
     //    not among them, so the reader is chosen from what the picker really
     //    offers.
-    reader = await somebodyThePickerOffers(driver, CONSOLE_USER);
+    //
+    //    **ON A PRODUCT-MODE SERVICE THE READER IS CREATED (2026-09-21).**
+    //    Step 4 signs in AS the reader with CONSOLE_PASSWORD, which is only
+    //    true of somebody this job created: development checks no password,
+    //    so any name the picker offered would do, and product checks it —
+    //    its first run here picked an entry named by a DID, which no
+    //    account can be made for, and any other stranger's password is
+    //    unknown. So in product the reader is a person of this run's own, in
+    //    the default realm, and the picker still has to FIND them by name.
+    if (await facts.isProduct(root("/admin-api"))) {
+      reader = names.usernameFor("console-reader");
+      await ensurePerson(root("/admin-api"), reader);
+    } else {
+      reader = await somebodyThePickerOffers(driver, CONSOLE_USER);
+    }
     await grantOnThePicker(driver, reader, "read");
 
     // 4. THE ENFORCEMENT. Sign in AS the reader — who holds `read` and not

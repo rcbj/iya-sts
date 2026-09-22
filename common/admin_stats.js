@@ -2240,12 +2240,21 @@ function recordAuthentication(detail) {
     record.events.shift();
     record.eventsForgotten++;
   }
-  log.info('admin: ' + identity.key + ' authenticated through ' + protocol +
-      ' ' +
-      '(' + method +
-           '). ' + record.authentications + ' time(s) so far; ' + users.size +
-      ' ' +
-               'user(s) known.');
+  // AT info ON THE FIRST AUTHENTICATION AND EVERY HUNDREDTH (2026-09-21),
+  // at debug otherwise. It was info on every one, and a SCIM caller
+  // authenticates on every request: a bulk load of five thousand people wrote
+  // ten thousand of these lines into a CI log already too large to read. A
+  // new identity is a state change and the count is the summary; the rest is
+  // in the audit log and at debug.
+  const authLine = 'admin: ' + identity.key + ' authenticated through ' +
+                   protocol + ' (' + method + '). ' +
+                   record.authentications + ' time(s) so far; ' +
+                   users.size + ' user(s) known.';
+  if (record.authentications === 1 || record.authentications % 100 === 0) {
+    log.info(authLine);
+  } else {
+    log.debug(authLine);
+  }
   // The audit log's authentication event. Here rather than at every call site
   // for the reason given at the require above, and here rather than at
   // the TOP of this function because the row must mean "a credential was

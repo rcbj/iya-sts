@@ -1650,6 +1650,25 @@ async function theRealmIsLeftBehind() {
 // ---------------------------------------------------------------------------
 // THE RUN.
 // ---------------------------------------------------------------------------
+// THE CERTIFICATE'S ROLE, WRITTEN RATHER THAN SEEDED (2026-09-21) — product
+// mode seeds `xacml-users` empty, so the policy read-back was a 403 and the
+// repository's `root` came back undefined. sts_xacml_endpoints.js's admit()
+// argues the DN and why the write changes nothing in development.
+async function admitTheCertificate() {
+  log.debug("Entering admitTheCertificate().");
+  const where = await json(api("/groups"));
+  assert.ok(where.status === 200 && where.body && where.body.usersDn,
+    "GET /admin-api/groups in " + REALM + " answered " + where.status);
+  const member = "cn=xacml-user-1," + where.body.usersDn;
+  const joined = await apiPost("/realm/" + REALM +
+                               "/admin-api/groups/add-member",
+                               { group: "xacml-users", member: member });
+  assert.ok(joined.status === 200 && joined.body && joined.body.ok,
+    "adding " + member + " to xacml-users answered " + joined.status + " " +
+    String(joined.text).slice(0, 300));
+  log.debug("Leaving admitTheCertificate().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving the mock STS's XACML policy editor at " + base +
@@ -1676,6 +1695,7 @@ async function test() {
     await createTheRealm();
     try {
       await createThePeople();
+      await admitTheCertificate();
       await signIn(driver, CONSOLE_USER);
       // BEFORE ANY POLICY EXISTS — this is the only moment that page can be
       // seen, and creating the policies first would lose it for ever.

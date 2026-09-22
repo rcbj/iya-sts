@@ -3,12 +3,40 @@
 # THE CONTAINERIZED RUNNER, LAYERED OVER docker-compose-run-tests.yml BY
 # ./run-tests.sh (2026-09-14, issue #46).
 #
-# The twin of tests/docker-compose-cluster.yml, and its header is the argument
-# for both: node B extends node A, node B starts once node A is healthy, the
-# balancer (tests/cluster/haproxy.cfg) starts once both are, and node B adds
-# no SPIFFE addresses. What differs is only what differs between the two base
-# files: nothing is published here at all, because the runner is a container
-# on this network and dials the balancer by name.
+# TWO PRODUCTION NODES OF THIS SERVICE (product mode, request workers — since
+# 2026-09-21) AGAINST ONE POSTGRES AND ONE OPENBAO, ACTIVE-ACTIVE, BEHIND AN L4
+# LOAD BALANCER. What the mode proves and what it does not is in
+# tests/CLAUDE.md; the balancer's own decisions are in
+# tests/cluster/haproxy.cfg; the settings are in tests/tools/modes.sh, which is
+# still the one definition of a mode. **An override rather than an edit**: the
+# launcher layers this file only for `cluster`, so no other mode reads it.
+#
+# (It had a twin, tests/docker-compose-cluster.yml, layered over
+# docker-compose.yml by ./local-run-tests.sh. Nothing layered it once that
+# launcher was removed on 2026-09-16, and it was deleted on 2026-09-21; its
+# header was the argument for both, and what of it still applies is here.)
+#
+# FOUR THINGS ABOUT IT ARE DECISIONS RATHER THAN MECHANICS:
+#
+#   NODE A IS THE EXISTING `sts` SERVICE AND NODE B EXTENDS IT. One definition
+#   of the container, so the two nodes cannot drift in anything this file does
+#   not name — including everything the launcher generates per run for a
+#   product-mode mode (the Kerberos passwords, the pinned base URL) — and the
+#   cluster REFUSES a node whose must-agree settings differ
+#   (`cluster/cluster.js`, AGREEMENT_SETTINGS), so a drift would be a stack
+#   that does not start rather than a quiet difference.
+#
+#   NOTHING IS PUBLISHED. The runner is a container on this network and dials
+#   the balancer by name, so every address it is handed is the balancer's.
+#
+#   NODE B STARTS ONLY ONCE NODE A IS HEALTHY, and the balancer once both are.
+#   A simultaneous cold start is handled (the store arbitrates the first key
+#   set — `common/CLAUDE.md`), but a suite that depended on a race going
+#   either way would fail one run in N; the order makes startup deterministic.
+#
+#   NODE B ADDS NO SPIFFE ADDRESSES. A realm's SPIFFE listeners bind addresses
+#   of their own and two containers cannot hold one address; those sockets are
+#   node A's, and this mode says so rather than pretending to balance them.
 #
 # **THE ADDRESSES THE RUNNER IS HANDED ARE THE LAUNCHER'S**, as they are in
 # every mode: STS_TEST_SERVICE_URL, STS_LDAP_URL, STS_PUBLIC_BASE_URL and the
@@ -86,6 +114,14 @@ services:
       # names both (modes.sh); the base file has no line to carry them.
       - STS_TEST_FRESH_CONNECTIONS=${STS_TEST_FRESH_CONNECTIONS:-1}
       - STS_TEST_CLUSTER_NODES=${STS_TEST_CLUSTER_NODES:-2}
+      # THE DEFAULT REALM'S SPIFFE SOCKETS ARE NODE A'S (2026-09-21), for the
+      # reason in this file's header — node B adds no SPIFFE address, so the
+      # balancer carries neither port and sts_spiffe_grpc.js dialled
+      # sts-lb:8092 into a refused connection. It is handed node A's own
+      # address, the one the launcher pins as that node's gRPC host, on the
+      # two ports `spiffe.workloadPort` and `spiffe.serverPort` default to.
+      - STS_SPIFFE_WORKLOAD_URL=${STS_SPIFFE_GRPC_HOST:-172.30.0.10}:8092
+      - STS_SPIFFE_SERVER_URL=${STS_SPIFFE_GRPC_HOST:-172.30.0.10}:8181
     depends_on:
       sts-lb:
         condition: service_started

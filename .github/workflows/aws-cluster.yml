@@ -17,14 +17,24 @@ name: AWS cluster test
 #     assume one role), and the entrypoint exchanges them for the
 #     `mock-sts-deployer` role — the role ARN is derived from the account, so
 #     there is no third secret.
+#   * THE SUITE RUNS FROM THE GITHUB RUNNER (2026-09-21), through the same
+#     deploy/aws/run-suite.sh a developer's `./run-tests.sh --target=aws:<env>`
+#     runs; the in-VPC runner task (environment/runner.tf) and the Terraform
+#     image's `suite` action were deleted that day. A job runs on a runner of
+#     its own with an address of its own, so the suite job RE-APPLIES the
+#     environment with `allowed_cidrs` set to its address (rcbj's choice) — at
+#     the image tag already deployed, so the apply changes the load balancer's
+#     security-group rules and nothing else. The two jobs the service calls
+#     back still run in AWS, in run-suite.sh's own per-run suite-callbacks
+#     task.
 #   * ORDERED JOBS IN ONE WORKFLOW:
 #
-#       images     build and push the service, schema-init, suite runner and
-#                  remote PEP images, tagged with the commit
-#                  (apply, apply-and-test)
+#       images     build and push the service and schema-init images, tagged
+#                  with the commit                      (apply, apply-and-test)
 #       terraform  plan | apply | destroy the environment      (needs: images)
-#       suite      run the whole suite INSIDE the environment's VPC and upload
-#                  the report                                (needs: terraform)
+#       suite      admit THIS runner's address, run the whole suite against the
+#                  load balancer through ./run-tests.sh --target=aws:<env>, and
+#                  upload the report                         (needs: terraform)
 #       teardown   destroy it again                              (needs: suite)
 #                  (apply-and-test, unless `keep`)
 #
@@ -88,7 +98,9 @@ env:
   TF_IMAGE: mock-sts-terraform
 
 jobs:
-  # ---- The four images, tagged with the commit ----
+  # ---- The two images, tagged with the commit ----
+  # The tests, runner and PEP images are run-suite.sh's own to build, from the
+  # tree the suite job checks out.
   images:
     if: ${{ github.event.inputs.action == 'apply-and-test' || github.event.inputs.action == 'apply' }}
     runs-on: ubuntu-latest
@@ -135,13 +147,7 @@ jobs:
             --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
             --build-arg BUILD_NUMBER="${{ github.run_number }}" .
           docker build -t "${repo}:schema-${TAG}" -f deploy/aws/schema-init/Dockerfile .
-          docker build -t mock-sts-tests -f tests/Dockerfile .
-          docker build -t "${repo}:runner-${TAG}" --build-arg TESTS_IMAGE=mock-sts-tests \
-            -f deploy/aws/runner/Dockerfile deploy/aws/runner
-          docker build -t "${repo}:pep-${TAG}" -f xacml-pep/Dockerfile \
-            --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
-            --build-arg BUILD_NUMBER="${{ github.run_number }}" .
-          for image in "${TAG}" "schema-${TAG}" "runner-${TAG}" "pep-${TAG}"; do
+          for image in "${TAG}" "schema-${TAG}"; do
             docker push "${repo}:${image}"
           done
 
@@ -171,9 +177,8 @@ jobs:
         run: |
           set -euo pipefail
           tag="${IMAGE_TAG:-$(git rev-parse --short=12 HEAD)}"
-          # The load balancer admits this runner's address beside the suite
-          # runner's own NAT address, so a person debugging a kept environment
-          # from this job's logs is not refused.
+          # The load balancer admits this runner's address. The suite job runs
+          # on another runner and re-applies with ITS address before it starts.
           runner_ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
@@ -185,7 +190,7 @@ jobs:
             -e TF_VAR_allowed_cidrs="[\"${runner_ip}/32\"]" \
             "${TF_IMAGE}"
 
-  # ---- The whole suite, inside the environment's VPC ----
+  # ---- The whole suite, from this runner, against the load balancer ----
   suite:
     needs: terraform
     if: >-
@@ -197,43 +202,65 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
+        with:
+          # run-suite.sh builds the tests image from this tree, and the
+          # directory needs the node-ldapjs submodule.
+          submodules: recursive
 
       - name: Build terraform image
         run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
 
-      - name: Run the suite in ${{ env.TF_ENV }}
+      - name: Admit this runner to ${{ env.TF_ENV }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          STS_SUITE_EXCLUDE: ${{ github.event.inputs.exclude }}
         run: |
           set -euo pipefail
-          mkdir -p report
-          # The container runs as uid 10001.
-          chmod 0777 report
+          runner_ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          # The tag the nodes already run, so this apply moves the security
+          # group's rules and nothing else. An environment applied before the
+          # output existed has none, and is refused rather than redeployed at
+          # a guessed tag.
+          tag="$(docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION -e TF_ENV -e TF_ACTION=output-json "${TF_IMAGE}" |
+            node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+              const o=JSON.parse(s);process.stdout.write(
+                (o.image_tag&&o.image_tag.value)||"");});')"
+          if [ -z "${tag}" ]; then
+            echo "::error::${TF_ENV} reports no image_tag output; re-run with action=apply first."
+            exit 1
+          fi
+          echo "Admitting ${runner_ip}/32 to ${TF_ENV} (image ${tag})."
           docker run --rm \
             -e AWS_ACCESS_KEY_ID \
             -e AWS_SECRET_ACCESS_KEY \
             -e AWS_REGION \
             -e TF_ENV \
-            -e TF_ACTION=suite \
-            -e STS_SUITE_EXCLUDE \
-            -v "${GITHUB_WORKSPACE}/report:/workspace/report" \
+            -e TF_ACTION=apply \
+            -e TF_VAR_image_tag="${tag}" \
+            -e TF_VAR_allowed_cidrs="[\"${runner_ip}/32\"]" \
             "${TF_IMAGE}"
+
+      - name: Run the suite against ${{ env.TF_ENV }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          STS_SUITE_EXCLUDE: ${{ github.event.inputs.exclude }}
+        run: ./run-tests.sh --target=aws:"${TF_ENV}"
 
       - name: Upload the test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: aws-cluster-report-${{ env.TF_ENV }}-${{ github.run_number }}
-          path: report
+          path: tests/report/aws-${{ env.TF_ENV }}
           if-no-files-found: warn
           retention-days: 30
 
       - name: Summarise
         if: always()
         run: |
-          summary="$(ls -1d report/*/latest/summary.json 2>/dev/null | tail -1)"
+          summary="$(ls -1d "tests/report/aws-${TF_ENV}/latest/summary.json" 2>/dev/null | tail -1)"
           {
             echo "### AWS cluster suite — \`${TF_ENV}\`"
             if [ -n "${summary}" ]; then
@@ -251,7 +278,7 @@ jobs:
               echo "No report was downloaded."
             fi
             echo ""
-            echo "Container logs: CloudWatch \`/mock-sts/containers\`, streams \`${TF_ENV}-node-*\` and \`${TF_ENV}-suite/*\` (kept 14 days)."
+            echo "Container logs: CloudWatch \`/mock-sts/containers\`, streams \`${TF_ENV}-node-*\` and the callback task's \`${TF_ENV}-*\` (kept 14 days)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ---- Take a throwaway environment down again ----

@@ -84,6 +84,10 @@ import serverApi = require('./spiffe_api');
 // What is enforced, for the page and for the decision above about which
 // socket gets TLS. A library that registers nothing.
 import auth = require('./spiffe_auth');
+// For `onServerCertificateChange()` (2026-09-21). Already loaded by
+// `spiffe_auth.ts` just above, which is where it is first required and its
+// routes register, so this adds a cache hit and moves nothing.
+import tlsServer = require('../tls/tls_server');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
 // module — `common/protocol_stack.ts` requires admin.js first, and until
 // #50's R1 the require would have pulled the bundle endpoint and /spiffe into
@@ -900,6 +904,13 @@ class SpiffeServer {
         secure = null;
       }
     }
+    // KEPT, so a new Root can re-key this socket without rebinding it
+    // (refreshServerCredentials(), 2026-09-21). startRealm() registers the
+    // entry before it binds, so it is always there to hold them.
+    const heldEntry = listeners.get(String(realmId || ''));
+    if (heldEntry && secure) {
+      heldEntry.apiCredentials = secure;
+    }
     for (let i = 0; i < addresses.length; i++) {
       const entry = addresses[i];
       // ---------------------------------------------------------------------
@@ -1411,6 +1422,42 @@ class SpiffeServer {
     log.debug("Leaving SpiffeServer.registerRoutes().");
   }
 
+  // -------------------------------------------------------------------------
+  // A REPLACED ROOT RE-KEYS EVERY REALM'S SPIRE SERVER API (2026-09-21).
+  //
+  // Each realm's API socket presents an SVID minted at `listen()` under the
+  // realm's SPIFFE Issuing CA, which chains to the service Root. After
+  // `POST /admin-api/pki/build-root` that chain ends at a Root nothing holds,
+  // so every mutual-TLS caller holding the new bundle was refused with
+  // `unable to get local issuer certificate` until a restart. `tls_server.js`
+  // calls this whenever it adopts a re-issued listener certificate, which a
+  // Root replacement always causes; a realm branch rebuilt under the SAME
+  // Root re-keys too, harmlessly, since the old SVID would still verify.
+  // Per realm and never thrown: one realm that could not be re-keyed is
+  // reported and the others still are.
+  // -------------------------------------------------------------------------
+  refreshServerCredentials() {
+    const { log, rpc, errorCodes } = this.deps;
+    const self = this;
+    log.debug('Entering SpiffeServer.refreshServerCredentials().');
+    listeners.forEach(function (entry, realmId) {
+      if (!entry.apiCredentials) {
+        return;
+      }
+      Promise.resolve(self.inRealm(realmId, function () {
+        return rpc.refreshServerApiCredentials(entry.apiCredentials);
+      })).catch(function (e) {
+        log.error(errorCodes.tag('STS-SPIFFE-0114') +
+                  'spiffe: the "' + (realmId || 'default') + '" realm\'s ' +
+                  'SPIRE Server API kept its old certificate after the ' +
+                  'service Root changed, so a client holding the new bundle ' +
+                  'cannot verify it until a restart: ' +
+                  ((e && e.message) || e));
+      });
+    });
+    log.debug('Leaving SpiffeServer.refreshServerCredentials().');
+  }
+
   // THE WORK LOADING THIS MODULE USED TO DO WITH ITS OWN INSTANCE (#50, R2),
   // run by `common/instance_slot.ts` once for whichever instance is
   // installed, in the order the module used to do it: the realm-change
@@ -1433,6 +1480,14 @@ class SpiffeServer {
         });
       }
     });
+
+    // A re-issued listener certificate — a replaced Root — re-keys every
+    // realm's SPIRE Server API socket. See refreshServerCredentials().
+    if (typeof tlsServer.onServerCertificateChange === 'function') {
+      tlsServer.onServerCertificateChange(function () {
+        instance.refreshServerCredentials();
+      });
+    }
 
     admin.setSpiffeReader(function () {
       const now = instance.bindingsNow();

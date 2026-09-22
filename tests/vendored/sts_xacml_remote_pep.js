@@ -2791,6 +2791,25 @@ function cleanUpTheCertificates() {
 // ---------------------------------------------------------------------------
 // THE RUN.
 // ---------------------------------------------------------------------------
+// THE MEMBERSHIPS PRODUCT MODE DOES NOT SEED (2026-09-21): `xacml-user-1`
+// for section 3's askThePdp, and — when a launcher owns the container — its
+// `remote-pep-1`, which the self-started path provisions for itself
+// (provisionTheContainersIdentity()). sts_xacml_endpoints.js's admit()
+// argues the DN; in development both writes change nothing.
+async function admit(commonName, group) {
+  log.debug("Entering admit(). " + commonName + " " + group);
+  const where = await get(api("/groups"));
+  assert.ok(where.status === 200 && where.body && where.body.usersDn,
+    "GET /admin-api/groups in " + REALM + " answered " + where.status);
+  const member = "cn=" + commonName + "," + where.body.usersDn;
+  const joined = await postJson(api("/groups/add-member"),
+                                { group: group, member: member });
+  assert.ok(joined.status === 200 && joined.body && joined.body.ok,
+    "adding " + member + " to " + group + " answered " + joined.status +
+    " " + String(joined.text).slice(0, 300));
+  log.debug("Leaving admit().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving a REAL remote PEP CONTAINER against " + base);
@@ -2832,6 +2851,10 @@ async function test() {
   await createTheRealm();
   try {
     await createThePeople();
+    await admit("xacml-user-1", "xacml-users");
+    if (LAUNCHER_STARTED_IT) {
+      await admit(PEP_NAME, "remote-peps");
+    }
     // THE TWO THINGS THE CONTAINER NEEDS BEFORE IT CAN SETTLE, in this order
     // and both before anything is asserted about it.
     //

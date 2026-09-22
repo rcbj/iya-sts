@@ -1013,7 +1013,16 @@ where it was:
   before the cluster fence), so a process paused past its claim finds its
   writes refused rather than overwriting its successor's rows; outside a
   cluster it exits (`STS-STORE-0061`), inside one the cluster's fail-stop
-  does. The membership node id is still random per start: a node whose
+  does. **LAPSED IS NOT TAKEN (2026-09-21)**: ownership is the RESERVATION
+  on the row, which a process that takes the claim replaces — so the
+  renewal and the fence's `reassertOrigin()` extend a claim that still
+  carries this process's reservation even after it lapsed, and only a
+  reservation that is somebody else's is fenced. Until then both asked for
+  a LIVE claim, and the suite's first product-mode run killed its own
+  service: under the SCIM bulk load the pool (`max: 4`) had no connection
+  for two renewals, the claim lapsed with no other process anywhere, and
+  the process exited saying another one held it
+  (`tests/persistence_origin.js` section B2). The membership node id is still random per start: a node whose
   membership lapsed must not come back as itself. A platform that gives each
   container a random host name needs `cluster.nodeName` set for any of this
   to apply.

@@ -147,7 +147,15 @@ const PASSWORD = "Federation-Passw0rd!-" + String(Date.now()).slice(-6);
 const CLIENT_SECRET = "federation-realms-secret-" +
                       nodeCrypto.randomBytes(12).toString("hex");
 // Two mail domains, so which realm a value came from is visible on the entry.
-const IDP_MAIL = "idp.federation.test";
+// THE IDENTITY PROVIDER'S IS ITS REALM'S OWN DOMAIN (ensureRealm() creates it
+// as `<id>.example.net`), because that is the only address its ID Token can
+// carry in BOTH modes: development asserts the persona helpers.userFor()
+// invents — realms.inventedMailOf(), `<name>@<the ambient realm's domain>` —
+// and never reads the entry's `mail`, while product reads the entry, which
+// createPerson() writes with this same domain. `idp.federation.test`, until
+// 2026-09-21, was an address the partner never sent in development, so the
+// two checks comparing against it could not pass there.
+const IDP_MAIL = IDP + ".example.net";
 const SP_MAIL = "sp-local.federation.test";
 
 // The relationships in the SP realm. One relationship is one direction and

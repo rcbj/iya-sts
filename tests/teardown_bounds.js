@@ -366,8 +366,8 @@ function checkTheJobTimeoutIsAboveOurs(t) {
   const clusterAt = workflow.indexOf('\n  cluster:');
   t.check(clusterAt !== -1,
           'the workflow has a `cluster` job',
-          'the fourth mode is in no bare run, so without that job nothing in ' +
-          'CI runs two nodes behind a balancer at all');
+          'the `tests` job names memory and single-node only, so without ' +
+          'that job nothing in CI runs two nodes behind a balancer at all');
   if (clusterAt !== -1) {
     const clusterJob = workflow.slice(clusterAt);
     t.check(/run-tests\.sh --modes=cluster\b/.test(clusterJob),

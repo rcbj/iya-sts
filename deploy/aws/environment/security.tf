@@ -37,10 +37,10 @@ locals {
   # time: the NAT address is not, and a `for_each` key may not wait for an
   # apply. (The group's description still says 443: a description change
   # replaces a security group.)
-  nlb_sources = merge(
-    { for c in var.allowed_cidrs : c => c },
-    var.suite_runner ? { "suite-runner" = "${aws_eip.runner[0].public_ip}/32" } : {},
-  )
+  # (The suite runner's NAT address was a second source until 2026-09-21,
+  # when the in-VPC runner was removed: the suite runs from
+  # deploy/aws/run-suite.sh, from an address in `allowed_cidrs`.)
+  nlb_sources = { for c in var.allowed_cidrs : c => c }
   nlb_ingress = {
     for pair in setproduct(keys(local.published_ports), keys(local.nlb_sources)) :
     "${pair[0]}-${pair[1]}" => {
@@ -85,46 +85,6 @@ resource "aws_vpc_security_group_ingress_rule" "nodes_from_nlb" {
   ip_protocol                  = "tcp"
   from_port                    = each.value.container
   to_port                      = each.value.container
-}
-
-# The nodes call back to the suite runner: a GNAP push to the job's listener
-# and the PDP's nudge to the PEP container.
-resource "aws_vpc_security_group_egress_rule" "nodes_to_runner" {
-  count                        = var.suite_runner ? 1 : 0
-  security_group_id            = aws_security_group.nodes.id
-  description                  = "Call back to the suite runner (GNAP push, PEP notify)"
-  referenced_security_group_id = aws_security_group.runner[0].id
-  ip_protocol                  = "tcp"
-  from_port                    = 1
-  to_port                      = 65535
-}
-
-resource "aws_security_group" "runner" {
-  count       = var.suite_runner ? 1 : 0
-  name        = "${local.prefix}-runner"
-  description = "mock-sts ${var.environment}: the suite task, reachable from the nodes only"
-  vpc_id      = aws_vpc.main.id
-  tags        = { Name = "${local.prefix}-runner" }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "runner_from_nodes" {
-  count                        = var.suite_runner ? 1 : 0
-  security_group_id            = aws_security_group.runner[0].id
-  description                  = "Callbacks from the nodes (GNAP push, PEP notify)"
-  referenced_security_group_id = aws_security_group.nodes.id
-  ip_protocol                  = "tcp"
-  from_port                    = 1
-  to_port                      = 65535
-}
-
-# Out through the NAT gateway: the load balancer's public address, ECR, S3,
-# CloudWatch Logs and Chrome's own requests.
-resource "aws_vpc_security_group_egress_rule" "runner_out" {
-  count             = var.suite_runner ? 1 : 0
-  security_group_id = aws_security_group.runner[0].id
-  description       = "Anything, through the NAT gateway"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
 }
 
 # Outbound: the database, and HTTPS to ECR, Secrets Manager and CloudWatch.

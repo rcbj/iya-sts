@@ -76,7 +76,6 @@ workers_read_your_write = true
 task_cpu    = 2048
 task_memory = 8192
 
-suite_runner             = false
 delete_automated_backups = true
 vpc_cidr                 = "10.52.0.0/16"
 

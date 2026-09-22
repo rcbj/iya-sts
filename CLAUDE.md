@@ -349,6 +349,47 @@ the front process (`tls/CLAUDE.md`), and the client-certificate truststore took
 a pin (`tls/CLAUDE.md`). **Dispatch without coordination is refused and the
 service does not start**, because it answers WRONGLY rather than slowly.
 
+## Anything periodic is a scheduler job
+
+**rcbj's architectural directive, 2026-09-21: anything that has to be done
+periodically in the background is a job on the central scheduler** (#49,
+`cluster/scheduler.ts` once built), which runs each job on exactly one node, on
+the serving front process and never in a request worker, and hands it to
+another node when that one goes. **No new module may start a timer of its
+own** — no `setInterval`, no `setTimeout` chain, no sweep armed at require or
+wire time — for work that repeats.
+
+**Cache and store clean-up is included**, and today none of it is a job: a
+cache here drops an entry only when it is read and found expired, when a size
+cap evicts the oldest on an insert, or when a purge piggy-backs on the next
+request that uses the store (claims, used assertions, rate-limit windows and
+minted tombstones, each at most every 60 s or so). Ejecting expired entries is
+periodic work, so it becomes a job. **Two checks stay where they are, because
+they are correctness rather than housekeeping**: the expiry check at the read
+(an expired entry is never answered, whenever the sweep last ran) and the size
+cap at the insert (a bound cannot wait for a timer).
+
+**So a job is one of two kinds, and the owner says which.** A *cluster* job
+(the default) runs once, on the leader: a rotation, a CRL, a delivery. A
+*per-process* job runs in every process that holds the state it cleans,
+because that state is reachable from no other process (*One front process*,
+above): the ejection from an in-memory cache, a process's own change-log pull,
+its own decrypted-key purge. A per-process job takes no claim, and is still
+registered with, reported by and switched through the scheduler.
+
+What does NOT count: a per-request timeout, a debounce, a retry delay inside
+one operation, and the cluster heartbeat with its lease and origin-claim
+renewals, which are what the scheduler's own leadership stands on.
+
+**The existing timers are exceptions until they move**, and the inventory of
+them — the session sweep, the back-channel logout and SSF sweeps, the CRL
+directory refresh, the SAML metadata refresher, the change-log trim, the
+piggy-backed purges — is in the plan on #49. The CRL refresh moves first,
+because it is the one that runs in every process with no coordination at all.
+**The session-expiry sweep was named by rcbj on the same day** — the one that
+ends expired sessions and sends CAEP and the back-channel Logout Tokens to the
+applications concerned; what moves and what stays is in `authn/CLAUDE.md`.
+
 ## The require order and the route order
 
 **There are two orders, and until 2026-09-16 they were one.** Rule 1 made the
@@ -839,7 +880,7 @@ Those are two claims and keeping them apart is the whole of this section.
 ./docker-npm-test.sh                    # the in-process half, in the tests image (#50)
 ./run-tests.sh                          # EVERY job, every mode, in containers; what CI runs
 ./run-tests.sh --target=aws:testidp     # the protocol half against an AWS environment
-./run-tests.sh --target=aws-ephemeral   # apply `ci`, run the suite in its VPC, destroy it
+./run-tests.sh --target=aws-ephemeral   # apply `ci`, run the suite against it from here, destroy it
 ./run-coverage.sh                       # coverage, collected by a run of its own
 ```
 
@@ -847,11 +888,14 @@ Those are two claims and keeping them apart is the whole of this section.
 IS (2026-09-21).** It was `./docker-run-tests.sh`; `deploy/aws/run-suite.sh`
 and the apply-test-destroy of `aws-cluster.yml` were launchers of their own and
 are its AWS targets' machinery now. Its header argues the targets. **The local
-modes are `memory`, `product` and `dispatch`** — `product` REPLACED `postgres`
-that day, and `tests/tools/modes.sh` records why the old refusal stopped being
-true and what the swap costs. Every local mode runs every job, both halves; an
-AWS target runs the protocol half only, because the in-process files cannot be
-pointed at a URL.
+modes are `memory`, `single-node` and `cluster`, and a bare run runs all
+three** — the baseline, a single-node production deployment (product mode,
+postgres, request workers) and two such nodes behind a balancer, kept apart
+because single-node and multi-node differ in too much to read one failure;
+`tests/tools/modes.sh` argues it and what replaced what. CI runs
+`--modes=memory,single-node` and `--modes=cluster` as two jobs. Every local
+mode runs every job, both halves; an AWS target runs the protocol half only,
+because the in-process files cannot be pointed at a URL.
 
 **`npm test` refuses on a checkout since #50** (the TypeScript is compiled
 only inside an image), so `./docker-npm-test.sh` builds the tests image and

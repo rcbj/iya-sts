@@ -102,6 +102,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const ldapjs = require("ldapjs");
 const bulk = require("./bulk_load.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -178,9 +179,34 @@ var checks = bulk.checker(log);
 const check = checks.check;
 
 // Where the socket is. See the header: the launchers set this, and the fallback
-// is what a hand-run against `node server.js` gets.
+// is what a hand-run against `node server.js` gets. **LDAPS IN PRODUCT
+// (2026-09-21)**: a product-mode directory refuses a simple bind in the clear
+// ("Confidentiality Required"), so there the bind goes to 636 — STS_LDAPS_URL
+// if a launcher set one, otherwise the host STS_LDAP_URL (or the service)
+// names, so the cluster's balancer and the AWS load balancer need nothing
+// new. `SECURE` is asked once in test(), before the first connect().
+let SECURE = false;
+
 function ldapUrl() {
   log.debug("Entering ldapUrl().");
+  if (SECURE) {
+    if (process.env.STS_LDAPS_URL) {
+      log.debug("Leaving ldapUrl().");
+      return String(process.env.STS_LDAPS_URL);
+    }
+    let secureHost = "localhost";
+    try {
+      secureHost = new URL(process.env.STS_LDAP_URL || base).hostname ||
+                   "localhost";
+    } catch (e) {
+      log.debug("Caught in ldapUrl(): " + ((e && e.message) || e));
+      // The same typo guess as below; the bind failure names the URL.
+      secureHost = "localhost";
+    }
+    log.debug("Leaving ldapUrl().");
+    return "ldaps://" + secureHost + ":" +
+           (process.env.STS_LDAPS_PORT || 636);
+  }
   if (process.env.STS_LDAP_URL) {
     log.debug("Leaving ldapUrl().");
     return String(process.env.STS_LDAP_URL);
@@ -217,7 +243,10 @@ function connect() {
     // by silently reconnecting and carrying on with a gap in the numbers.
     reconnect: false,
     timeout: 30000,
-    connectTimeout: 15000
+    connectTimeout: 15000,
+    // VERIFIED when SECURE, against the runner's trust for the service
+    // (NODE_EXTRA_CA_CERTS), as sts_ldaps.js does. Ignored on ldap://.
+    tlsOptions: { rejectUnauthorized: true }
   });
   client.on("error", function (e) {
     // ldapjs emits on the client as well as calling back, and an unhandled
@@ -460,9 +489,13 @@ async function createThePeople(client, where, catalogue) {
       // wall nobody reads, and the interesting information is in the first one.
       failures.push(dn + " -> " + reply.error.slice(0, 300));
     }
-    if (i % 500 === 0) {
+    if (i % bulk.PROGRESS_EVERY === 0) {
       const so_far = bulk.summaryOf(watch);
-      log.info("  " + i + "/" + SIZES.USERS + " added — mean " +
+      // ATTEMPTED AND LOADED, both: a refusal is collected in `failures`
+      // rather than stopping the loop, so a count of attempts alone would
+      // read as progress while nothing was being added.
+      log.info("  " + i + "/" + SIZES.USERS + " attempted, " +
+               (i - failures.length) + " added — mean " +
                bulk.ms(so_far.meanMs) + ", median " +
                bulk.ms(so_far.medianMs) + ", " +
                so_far.perSecond.toFixed(1) + "/s");
@@ -801,8 +834,26 @@ async function test() {
 
   const ready = await bulk.preflight({ log: log, assert: assert, http: http,
                                        checks: checks });
+  SECURE = await facts.isProduct(http.api(""));
   const where = await containers();
   await createTheBinder(where);
+  // ADMIN WRITE FOR THE BINDER, IN PRODUCT ONLY (2026-09-21). A product-mode
+  // directory authorizes a write over its own socket: anonymous none, a person
+  // their own entry's permitted attributes, an administrator anything
+  // (ldap/CLAUDE.md, tests/directory_write_authorization.js). So its first run
+  // bound over LDAPS and then had 5000 of 5000 adds refused as Insufficient
+  // Access Rights. Development authorizes no write, so there it is not asked.
+  // Taken back in the `finally` below, so no run leaves an administrator.
+  if (SECURE) {
+    const granted = await http.postJson(http.api("/rbac/grant"),
+                                        { username: BIND_USER, role: "write" });
+    assert.ok(granted.status === 200 && granted.body &&
+              granted.body.ok !== false,
+      "POST /admin-api/rbac/grant should give " + BIND_USER + " Admin " +
+      "Write, which a product-mode directory asks of an LDAP add; it " +
+      "answered " + granted.status + " " +
+      JSON.stringify(granted.body).slice(0, 300));
+  }
 
   const client = connect();
   try {
@@ -822,9 +873,12 @@ async function test() {
       "STS_LDAP_PORT if the service is on this host. It is NOT skipped when " +
       "it cannot connect: the socket is the thing under test.");
   }
-  log.info("Bound to " + ldapUrl() + " as " + BIND_DN + ". This directory " +
-           "refuses no bind — any DN, any password, anonymous — so that name " +
-           "is what the audit log will say and not a credential.");
+  log.info("Bound to " + ldapUrl() + " as " + BIND_DN + ". " +
+           (SECURE ? "A product-mode directory checked that password, over " +
+                     "TLS." :
+                     "This directory refuses no bind in development — any " +
+                     "DN, any password, anonymous — so that name is what the " +
+                     "audit log will say and not a credential."));
 
   try {
     const people = await createThePeople(client, where, ready.catalogue);
@@ -853,6 +907,13 @@ async function test() {
       client.unbind(function () { resolve(true); });
     });
     log.debug("Unbound.");
+    if (SECURE) {
+      const revoked = await http.postJson(http.api("/rbac/revoke"),
+                                          { username: BIND_USER,
+                                            role: "write" });
+      log.info("Took Admin Write back from " + BIND_USER + ": " +
+               revoked.status + ".");
+    }
   }
 
   // ELEVEN UNCONDITIONALLY, AND A TWELFTH WHEN THE ONE-LEVEL SEARCH TRUNCATES —

@@ -1445,9 +1445,11 @@ class SpiffeGrpc {
     // HOUR.
     //
     // This is not a workload SVID. It is a LISTENER'S certificate, minted
-    // ONCE at `listen()` and handed to `grpc.ServerCredentials.createSsl()`,
-    // which holds it for the life of the process — there is no way to swap it
-    // afterwards without rebinding the socket. So with `spiffe.svidTtl` (an
+    // at `listen()` and handed to `grpc.ServerCredentials.createSsl()`, which
+    // holds it until `refreshServerApiCredentials()` below replaces it — and
+    // only a new Root does that (2026-09-21; this said "there is no way to
+    // swap it afterwards without rebinding", which grpc-js 1.14 disproves).
+    // Nothing else renews it, so with `spiffe.svidTtl` (an
     // hour by default) it expires while the listener is still up, and from
     // that moment every mutual-TLS client is refused with `certificate has
     // expired`.
@@ -1517,6 +1519,46 @@ class SpiffeGrpc {
              '/spiffe.');
     log.debug('Leaving SpiffeGrpc.serverApiCredentials().');
     return credentials;
+  }
+
+  // -------------------------------------------------------------------------
+  // A NEW CERTIFICATE ON A SOCKET ALREADY BOUND (2026-09-21).
+  //
+  // `POST /admin-api/pki/build-root` replaces the service Root, and with it
+  // the SPIFFE Issuing CA this listener's SVID and its trust anchors chain
+  // to. The socket set its context once, at `listen()`, so it went on
+  // presenting [SVID, old SPIFFE Issuing CA, old Intermediate] under a Root
+  // nothing held, and every mutual-TLS caller holding the new bundle was
+  // refused with `unable to get local issuer certificate` until a restart
+  // (tests/vendored/sts_spiffe_grpc.js section 7, red in every mode).
+  //
+  // grpc-js keeps a watcher on every bound server for its credentials and
+  // hands `updateSecureContextOptions()` to it as `setSecureContext()`, which
+  // applies to the NEXT handshake. The options are built in exactly the shape
+  // `createSsl()` builds — `ca` a Buffer, `cert` and `key` arrays of Buffers —
+  // because a context grpc-js cannot apply marks the credentials INVALID and
+  // the server then refuses every connection, which is worse than the stale
+  // chain this replaces. `rejectUnauthorized` is a CONSTRUCTOR option and is
+  // untouched by this, so request-but-not-require survives it.
+  // -------------------------------------------------------------------------
+  async refreshServerApiCredentials(credentials) {
+    const { log, ca, spiffeId, config } = this.deps;
+    log.debug('Entering SpiffeGrpc.refreshServerApiCredentials().');
+    await ca.ready();
+    const identity = spiffeId.serverId(ca.trustDomain());
+    const svid = await ca.mintX509Svid(identity,
+      { ttl: config.value('spiffe.caTtl') });
+    credentials.updateSecureContextOptions({
+      ca: Buffer.from(ca.state().trustAnchors.map(function (anchor) {
+        return anchor.certificatePem;
+      }).join('\n'), 'utf8'),
+      cert: [Buffer.from(svid.chainPem.join('\n'), 'utf8')],
+      key: [Buffer.from(svid.privateKeyPem, 'utf8')]
+    });
+    log.info('spiffe: the SPIRE Server API TCP listener took a new ' +
+             'certificate as ' + identity + ' (serial ' + svid.serialHex +
+             ') under the replaced Root.');
+    log.debug('Leaving SpiffeGrpc.refreshServerApiCredentials().');
   }
 }
 
@@ -1705,6 +1747,7 @@ export = {
   buildServer: slot.forward('buildServer'),
   bindOne: slot.forward('bindOne'),
   serverApiCredentials: slot.forward('serverApiCredentials'),
+  refreshServerApiCredentials: slot.forward('refreshServerApiCredentials'),
   // Exported for `tests/spire_api_access_policy.js`, which drives the two
   // decisions this function makes directly: the claim is about a DECISION and
   // not about an endpoint, so driving it over gRPC would mean standing up two

@@ -82,7 +82,13 @@ function fakeDatabase() {
     }
     if (/^UPDATE sts_cluster_claims SET expires_at/.test(text)) {
       const row = db.claims.get(keyOf(p[0], '', p[1]));
-      if (row && row.reservation === p[2] && row.expires > db.now) {
+      // The statement's own WHERE, not a copy of it: since 2026-09-21 the
+      // renewal and the fence's re-assertion match on the reservation alone,
+      // lapsed or not, and a fake that always demanded a live claim would
+      // pass the old SQL and the new one alike.
+      const needsLive = /expires_at\s*>/.test(text);
+      if (row && row.reservation === p[2] &&
+          (!needsLive || row.expires > db.now)) {
         row.expires = db.now + Number(p[3]);
         return Promise.resolve({ rowCount: 1, rows: [] });
       }
@@ -193,6 +199,60 @@ function claimA(t) {
             }).join(', '));
   });
   log.debug("Leaving claimA().");
+}
+
+// ---------------------------------------------------------------------------
+// B2. A LAPSE NOBODY TOOK IS NOT A LOSS (2026-09-21). The suite's first
+// product-mode run killed its own service: under the SCIM bulk load one
+// process could not get a pooled connection for two renewals, the claim
+// lapsed with no other process anywhere, and the next renewal — which asked
+// for a LIVE claim — and the next write — fenced on the same question — both
+// read "another process holds it", and the process exited (STS-STORE-0061).
+// What decides ownership is the RESERVATION, which a process that takes the
+// claim replaces. So: lapsed and untaken, the renewal succeeds and a write
+// goes through without the lost handler firing; lapsed and TAKEN is still
+// section B's fence, unchanged.
+// ---------------------------------------------------------------------------
+async function claimB2(t) {
+  log.debug("Entering claimB2().");
+  t.log.info('=== B2. a lapse nobody took is not a loss ===');
+  const db = fakeDatabase();
+  const only = driverOver(db);
+  const lost = [];
+  only.setOriginLost(function (err) {
+    lost.push(err);
+  });
+  const a = await only.adoptOrigin({ name: 'node-b:front', ttlMs: 30000 });
+  t.check(a.adopted, 'the only process takes its origin', JSON.stringify(a));
+
+  // Two renewals missed: the claim is 5 s past its expiry, and nobody else
+  // exists to take it.
+  db.now += 35000;
+  let fenced = null;
+  try {
+    await only.saveMinted([{ handle: 'test.x', realm: 'default', key: 'k',
+                             body: 'b' }], []);
+  } catch (e) {
+    fenced = e;
+  }
+  const wrote = db.statements.some(function (sql) {
+    return /INSERT INTO sts_minted/.test(sql);
+  });
+  t.check(!fenced && wrote && lost.length === 0,
+          'a write after the lapse re-asserts the claim and goes through, ' +
+          'and the process is NOT told it lost its origin',
+          (fenced && fenced.message) + ' wrote=' + wrote +
+          ' lost=' + lost.length);
+
+  db.now += 35000;
+  t.equal(await only.renewOrigin(30000), true,
+          'a renewal that arrives after the lapse extends the claim, because ' +
+          'the reservation on it is still this process\'s');
+  const row = db.claims.get('persistence.origin||n:node-b:front');
+  t.check(!!row && row.expires > db.now,
+          'and the claim is live again afterwards',
+          JSON.stringify(row || null));
+  log.debug("Leaving claimB2().");
 }
 
 async function claimB(t) {
@@ -348,6 +408,7 @@ async function run(t) {
   log.debug("Entering run().");
   claimA(t);
   await claimB(t);
+  await claimB2(t);
   claimC(t);
   claimD(t);
   log.debug("Leaving run().");

@@ -14,9 +14,8 @@ locals {
 
   public_cidrs  = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, i)]
   private_cidrs = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, 10 + i)]
-  # Not in public_cidrs, which is STS_TRUSTED_PROXIES: the runner is a client,
-  # and a client in a trusted-proxy range could name its own address.
-  runner_cidr = cidrsubnet(var.vpc_cidr, 8, 20)
+  # /24 number 20 was the in-VPC suite runner's until 2026-09-21 and is left
+  # unused; suite-callbacks/ takes number 21.
 
   nodes = { for i in range(var.node_count) : "node-${substr("abc", i, 1)}" => i }
 

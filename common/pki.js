@@ -1256,6 +1256,59 @@ async function buildScope(scopeId, opts) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A STALE BRANCH IS REPAIRED ONCE, NOT ONCE PER CALLER THAT NOTICED IT
+// (2026-09-21). `certify()` and `issueUnder()` rebuild a branch the Root no
+// longer signs, and both asked `buildScope()` — which queues behind a build
+// already running and then builds UNCONDITIONALLY. So a leaf requested in the
+// middle of build-root's rebuildEveryScope() (the SPIFFE server's re-key,
+// which fires when the listener certificate is re-issued, before the realm
+// branches are) queued a SECOND build of a branch the first had just made
+// current: the realm ended with two Intermediates of one name and one CRL
+// address, its signing keys certified under the first and everything else
+// under the second (tests/vendored/sts_pki_distribution_points.js). The
+// question is asked again INSIDE the queue, where it can no longer change
+// under the answer. Both callers reach this only for a branch that exists and
+// is stale, so "chains to the Root" here means another build got there first.
+//
+// **AND ACROSS PROCESSES TOO (the same day).** The question was asked of this
+// process's copy and the cluster claim was taken with no `existing` check, so
+// a second PROCESS that queued behind the claim built the branch again when it
+// got it. `single-node` (three request workers on one store) showed it: after
+// build-root in one worker, another worker certifying a key saw the new Root
+// before its branch, took the default branch's claim first and repaired it,
+// and then build-root's own rebuild of that branch made a second Intermediate
+// CA (default) — the realm's JWKS chained to one nobody listed any more. So
+// the claim now carries the same question (`existing` is asked after the
+// claim-holder's build is committed and re-read), and `rebuildEveryScope()`
+// repairs through here rather than building unconditionally: whichever
+// process reaches a stale branch first rebuilds it, and the other adopts it.
+// `opts` are `buildScopeNow()`'s.
+// ---------------------------------------------------------------------------
+async function repairBranch(scopeId, opts) {
+  log.debug("Entering repairBranch(). scope=" + scopeId);
+  const id = String(scopeId);
+  const already = function () {
+    log.debug("Entering already().");
+    const current = scopeChainsToRoot(id);
+    log.debug("Leaving already(). " + current);
+    return current ? { ok: true, existing: true } : null;
+  };
+  log.debug("Leaving repairBranch().");
+  return oneBuildAtATime(id, function () {
+    if (already()) {
+      log.info('pki: the "' + (id || 'default') + '" branch ' +
+               'was rebuilt by another caller while this repair waited, ' +
+               'so it is not rebuilt again.');
+      return { ok: true, existing: true };
+    }
+    return oneBuildInTheCluster(id, ['intermediate', 'issuing'], already,
+                                function () {
+                                  return buildScopeNow(scopeId, opts || {});
+                                });
+  });
+}
+
 async function buildScopeNow(scopeId, opts) {
   log.debug('Entering buildScope(). scope=' + scopeId);
   const id = String(scopeId);
@@ -3860,7 +3913,7 @@ async function certify(scopeId, useCaseId, spec) {
              'branches being rebuilt. Rebuilding the branch before issuing, ' +
              'because a leaf issued from it would carry a chain nothing can ' +
              'verify against the Root this service publishes.');
-    const rebuilt = await buildScope(id, {});
+    const rebuilt = await repairBranch(id);
     if (!rebuilt.ok) {
       log.error(errorCodes.tag('STS-PKI-0023') + 'pki: that branch could not ' +
                                                  'be rebuilt (' +
@@ -4355,7 +4408,7 @@ async function issueUnder(scopeId, useCaseId, spec) {
     log.warn('pki: the "' + (id || 'default') + '" branch does not chain to ' +
              'this service\'s Root CA, so it is being rebuilt before ' +
              'anything is issued from it.');
-    const rebuilt = await buildScope(id, {});
+    const rebuilt = await repairBranch(id);
     if (!rebuilt.ok) {
       log.debug('Leaving issueUnder(). The stale branch could not be rebuilt.');
       return errorCodes.mark({ ok: false, errors: rebuilt.errors },
@@ -6493,6 +6546,7 @@ module.exports = {
   buildRoot: buildRoot,
   ensureRoot: ensureRoot,
   buildScope: buildScope,
+  repairBranch: repairBranch,
   ensureScope: ensureScope,
   describeScope: describeScope,
   describeTree: describeTree,
