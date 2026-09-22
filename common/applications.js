@@ -4364,6 +4364,58 @@ function addressProblem(attribute, value) {
                    problem + '.' : null;
 }
 
+// ---------------------------------------------------------------------------
+// FRONT-CHANNEL LOGOUT 1.0 SECTION 2's ORIGIN RULE (#122, 2026-09-22): "The
+// domain, port, and scheme of this URL MUST be the same as that of a
+// registered Redirection URI value." The scheme rule above is about what a
+// sign-out page may frame; this one is about WHOSE page it frames — without
+// it a client could have a sign-out load an address on a host that is not
+// its own, in the person's browser, with the session's `sid` on it.
+//
+// Asked at every door, in every mode: RFC 7591 registration and update
+// (STS-REG-0170, through registrationUriProblem()), a console or /admin-api
+// write of the attribute (STS-REG-0171), and when a sign-out reads the stored
+// value (`frontchannel_logout.ts`, STS-OAUTH-0572), because `ldapmodify`
+// passes neither of the first two. Returns the sentence, or null.
+// ---------------------------------------------------------------------------
+function frontchannelOriginProblem(uri, redirectUris) {
+  log.debug("Entering frontchannelOriginProblem().");
+  let origin = '';
+  try {
+    origin = new URL(String(uri)).origin;
+  } catch (e) {
+    log.debug("Caught in frontchannelOriginProblem(): " +
+              ((e && e.message) || e));
+    // Not a URL: the scheme rule refuses it with a better sentence.
+    origin = '';
+  }
+  if (!origin || origin === 'null') {
+    log.debug("Leaving frontchannelOriginProblem(). Not a URL.");
+    return '"' + uri + '" is not a URL with a scheme, host and port.';
+  }
+  const origins = valuesOf(redirectUris).map(function (one) {
+    try {
+      return new URL(String(one)).origin;
+    } catch (e) {
+      log.debug("Caught in frontchannelOriginProblem(): " +
+                ((e && e.message) || e));
+      // A redirect URI that is not a URL has no origin to match.
+      return '';
+    }
+  });
+  if (origins.indexOf(origin) >= 0) {
+    log.debug("Leaving frontchannelOriginProblem(). Matched.");
+    return null;
+  }
+  log.debug("Leaving frontchannelOriginProblem(). No redirect URI there.");
+  return '"' + uri + '" is at ' + origin + ', and ' +
+    (origins.filter(function (one) { return !!one; }).length
+      ? 'no registered redirect URI is (the scheme, host and port must be ' +
+        'the same as one of them)'
+      : 'the client registers no redirect URI for it to match') +
+    ' — Front-Channel Logout 1.0 section 2.';
+}
+
 // The same question about an RFC 7591 document, before any of it is written.
 // Answers null or `{ errorCode, error, description }` in RFC 7591 section
 // 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
@@ -4389,6 +4441,17 @@ function registrationUriProblem(metadata) {
         return { errorCode: 'STS-REG-0070', error: members[i][2],
                  description: members[i][0] + ': ' + problem };
       }
+    }
+  }
+  const frontchannel = valuesOf(meta.frontchannel_logout_uri)[0];
+  if (frontchannel) {
+    const originProblem = frontchannelOriginProblem(frontchannel,
+                                                    meta.redirect_uris);
+    if (originProblem) {
+      log.debug("Leaving registrationUriProblem(). The front-channel " +
+                "origin.");
+      return { errorCode: 'STS-REG-0170', error: 'invalid_client_metadata',
+               description: 'frontchannel_logout_uri: ' + originProblem };
     }
   }
   log.debug("Leaving registrationUriProblem(). Nothing refused.");
@@ -5637,6 +5700,16 @@ function normaliseFields(value) {
         addressProblems.forEach(function (one) { errors.push(one); });
         code = code || 'STS-REG-0071';
         return;
+      }
+      // Front-Channel Logout section 2, against the create's redirect URIs.
+      if (name === 'oauthFrontchannelLogoutUri') {
+        const originProblem = frontchannelOriginProblem(values[0],
+                                                        asked.oauthRedirectUri);
+        if (originProblem) {
+          errors.push(originProblem);
+          code = code || 'STS-REG-0171';
+          return;
+        }
       }
     }
     // The CORS origins, every value, and STORED NORMALISED — see
@@ -7876,6 +7949,16 @@ function updateApplication(identifier, change) {
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable address.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0071');
+    }
+    // Front-Channel Logout section 2, against the entry's redirect URIs.
+    if (attribute === 'oauthFrontchannelLogoutUri') {
+      const originProblem = frontchannelOriginProblem(value,
+        loaded.record.fields.oauthRedirectUri);
+      if (originProblem) {
+        log.debug("Leaving updateApplication(). The front-channel origin.");
+        return errorCodes.mark({ ok: false, errors: [originProblem] },
+                               'STS-REG-0171');
+      }
     }
   }
   if ((attribute === 'oauthResourceMetadata' ||
@@ -10384,6 +10467,7 @@ function seedInternalApplications(options) {
 
 module.exports = {
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
+  frontchannelOriginProblem: frontchannelOriginProblem,
   requiredRolesOf: requiredRolesOf,
   requiresNarrowedRoles: requiresNarrowedRoles,
   KINDS: KINDS,

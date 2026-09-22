@@ -5183,6 +5183,24 @@ const SETTINGS = [
                  'issued before either feature existed. A client that ' +
                  'registers no logout URI is never notified either way, and ' +
                  '/logout says so on its row rather than leaving it out.' },
+  // SECTION 4's RETURN (#122, 2026-09-22). A sign-out that frames relying
+  // parties cannot answer with a 302, which would abandon the iframes, and
+  // these pages run no script (`script-src 'none'`), so the return is a
+  // `<meta http-equiv="refresh">` after this many seconds — time for the
+  // iframes to load, which no markup can observe. The link stays beside it.
+  { key: 'oauth2.frontchannelLogoutWaitS', group: 'OAuth 2.0 / OIDC',
+    label: 'Front-channel logout: seconds before returning',
+    env: 'STS_OAUTH2_FRONTCHANNEL_LOGOUT_WAIT_S', type: 'int', dflt: 3,
+    min: 0, max: 60, runtime: true,
+    description: 'After an /oauth2/logout that notified relying parties ' +
+                 'through Front-Channel Logout, how many seconds the ' +
+                 'sign-out page waits for their iframes to load before it ' +
+                 'returns the browser to the checked ' +
+                 'post_logout_redirect_uri (Front-Channel Logout 1.0 ' +
+                 'section 4). A <meta> refresh, because these pages run no ' +
+                 'script. 0 returns only when the person follows the ' +
+                 'link. With no post_logout_redirect_uri, or none that ' +
+                 'passes the check, the page stays.' },
 
   // ---------------------------------------------------------------------
   // OPENID CONNECT BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36), AND THE SAME

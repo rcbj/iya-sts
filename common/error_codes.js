@@ -5947,6 +5947,12 @@ const CODES = [
     summary: 'An access token was sent to the UserInfo endpoint in more than ' +
       'one place (RFC 6750 section 2).',
     spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0572',
+    summary: 'A client\'s stored frontchannel_logout_uri matches none of its ' +
+      'redirect URIs by scheme, host and port (Front-Channel Logout 1.0 ' +
+      'section 2), so a sign-out does not frame it.',
+    spec: 'none — the client is listed on the sign-out page as not ' +
+      'notified, with the reason' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12826,6 +12832,16 @@ const CODES = [
       'not a JSON array of URIs, or did not list every redirect_uri ' +
       '(OIDC Core section 8.1).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0170',
+    summary: 'A client registration named a frontchannel_logout_uri whose ' +
+      'scheme, host and port match none of its redirect_uris ' +
+      '(Front-Channel Logout 1.0 section 2).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0171',
+    summary: 'A console or /admin-api write set oauthFrontchannelLogoutUri ' +
+      'to a URI whose scheme, host and port match none of the entry\'s ' +
+      'oauthRedirectUri values (Front-Channel Logout 1.0 section 2).',
+    spec: 'HTTP 400' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

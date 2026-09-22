@@ -343,6 +343,7 @@ var config = {
     stepUpAcrValues: "",                         // Step-up: acr values this service's resource server requires
     stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
     frontchannelLogout: true,                    // OpenID Connect Front-Channel Logout
+    frontchannelLogoutWaitS: 3,                  // Front-channel logout: seconds before returning
     backchannelLogout: true,                     // OpenID Connect Back-Channel Logout
     backchannelLogoutOnExpiry: true,             // Back-channel logout on session expiry
     backchannelLogoutTokenTtlS: 120,             // Back-channel Logout Token lifetime (seconds)
