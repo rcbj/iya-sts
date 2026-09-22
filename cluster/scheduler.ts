@@ -130,6 +130,11 @@ interface JobSpec {
   everySettingUnit?: 's' | 'ms' | 'min' | 'h' | 'days';
   cron?: string;
   manualOnly?: boolean;
+  // A per-process job that runs OFTEN (#49 P5 — a process's change-log
+  // pull): its run is recorded in the store only when its outcome changes,
+  // or once a minute, rather than every time — a row per run would be a
+  // write per second per process, replicated to every other.
+  quiet?: boolean;
   // Why the job is off right now, or '' — asked per realm for a realm job.
   off?: (realmId: string) => string;
   // Whether an administrator may run it now.
@@ -237,6 +242,9 @@ const runStore = realms.map({
   }
 });
 
+// A quiet job's run is recorded at most this often while its outcome holds.
+const QUIET_RECORD_MS = 60000;
+
 class Scheduler {
   static readonly LEADER_LEASE = LEADER_LEASE;
   static readonly RUN_SCOPE = RUN_SCOPE;
@@ -255,6 +263,10 @@ class Scheduler {
   private readonly inFlight = new Map<string, Json>();
   // Per-process jobs: `jobId|realm` -> the last slot this process ran.
   private readonly processSlots = new Map<string, number>();
+  // A quiet job's last recorded outcome and when, per job and realm.
+  private readonly quietRecorded = new Map<string, Json>();
+  // When the leader's row was last written by a routine tick.
+  private leaderRowAt = 0;
   // The database clock's offset from this process's, at the last reading.
   private clockOffset = 0;
   private lastClockAt = 0;
@@ -399,6 +411,10 @@ class Scheduler {
     if (s.scope && ['service', 'realm'].indexOf(s.scope) < 0) {
       problems.push('a scope of service or realm');
     }
+    if (s.quiet && s.kind !== 'per-process') {
+      problems.push('no quiet flag: only a per-process job is recorded ' +
+                    'quietly, because a cluster job\'s run row is its fence');
+    }
     if (s.kind === 'per-process' && s.manualOnly) {
       problems.push('a schedule: a per-process job cannot be on demand ' +
                     'only, because nothing queues a run in every process');
@@ -478,6 +494,46 @@ class Scheduler {
     log.debug("Entering Scheduler.tickMs().");
     log.debug("Leaving Scheduler.tickMs().");
     return Math.max(1000, this.setting('scheduler.tickS') * 1000);
+  }
+
+  // -------------------------------------------------------------------------
+  // HOW LONG UNTIL THE NEXT TICK (#49 P5): until the earliest slot boundary
+  // of any job of that kind that is on, and never longer than
+  // scheduler.tickS — which is still how late a queued manual run can be,
+  // and how often the leader's own row is refreshed. A job whose interval is
+  // shorter than a tick (the back-channel logout sweep's ten seconds, a
+  // change-log pull's one) is therefore run on its own interval rather than
+  // rounded up to the tick. Floored at 100 ms so that a boundary crossed
+  // while a tick ran cannot spin.
+  // -------------------------------------------------------------------------
+  nextDelayMs(kind: string): number {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.nextDelayMs(). " + kind);
+    const at = this.nowMs();
+    let soonest = this.tickMs();
+    const self = this;
+    Array.from(this.jobs.values()).forEach(function (job: JobSpec): void {
+      const isPer = job.kind === 'per-process';
+      if ((kind === 'per-process') !== isPer || job.manualOnly) {
+        return;
+      }
+      if (self.offReason(job, realms.DEFAULT_ID) &&
+          job.scope !== 'realm') {
+        return;
+      }
+      const slot = self.slotAt(job, at);
+      if (!slot || !(Number(slot.nextAt) > 0)) {
+        return;
+      }
+      // A few milliseconds past the boundary, so the slot has moved on.
+      const wait = Number(slot.nextAt) - at + 5;
+      if (wait < soonest) {
+        soonest = wait;
+      }
+    });
+    const answer = Math.max(100, soonest);
+    log.debug("Leaving Scheduler.nextDelayMs(). " + answer + "ms.");
+    return answer;
   }
 
   // -------------------------------------------------------------------------
@@ -856,11 +912,11 @@ class Scheduler {
     this.timer = setTimer(function (): void {
       self.timer = null;
       self.tick().then(function (): void {
-        self.scheduleTick(self.tickMs());
+        self.scheduleTick(self.nextDelayMs('cluster'));
       }, function (e: Json): void {
         log.debug("Caught in Scheduler.scheduleTick(): " +
                   ((e && e.message) || e));
-        self.scheduleTick(self.tickMs());
+        self.scheduleTick(self.nextDelayMs('cluster'));
       });
     }, Math.max(0, delayMs));
     log.debug("Leaving Scheduler.scheduleTick().");
@@ -897,7 +953,13 @@ class Scheduler {
       return;
     }
     await this.refreshClock();
-    this.writeLeaderRow('tick');
+    // A tick can come sooner than scheduler.tickS now (the next due job
+    // decides), so the row the page and a takeover read is refreshed at most
+    // once a tick interval — which is the staleness they already allow.
+    if (this.deps.now() - this.leaderRowAt >= this.tickMs() - 50) {
+      this.leaderRowAt = this.deps.now();
+      this.writeLeaderRow('tick');
+    }
     if (await this.obeyCommands()) {
       log.debug("Leaving Scheduler.tickOnce(). Stood down.");
       return;
@@ -1162,11 +1224,11 @@ class Scheduler {
     this.processTimer = setTimer(function (): void {
       self.processTimer = null;
       self.processTick().then(function (): void {
-        self.scheduleProcessTick(self.tickMs());
+        self.scheduleProcessTick(self.nextDelayMs('per-process'));
       }, function (e: Json): void {
         log.debug("Caught in Scheduler.scheduleProcessTick(): " +
                   ((e && e.message) || e));
-        self.scheduleProcessTick(self.tickMs());
+        self.scheduleProcessTick(self.nextDelayMs('per-process'));
       });
     }, Math.max(0, delayMs));
     log.debug("Leaving Scheduler.scheduleProcessTick().");
@@ -1236,6 +1298,18 @@ class Scheduler {
                ((e && e.message) || e) + '.');
       outcome = { state: 'failed', errorCode: 'STS-SCHED-0015',
                   why: String((e && e.message) || e), result: null };
+    }
+    if (job.quiet) {
+      const recordKey = job.id + '|' + realmId;
+      const last = this.quietRecorded.get(recordKey);
+      if (last && last.state === outcome.state &&
+          this.deps.now() - last.at < QUIET_RECORD_MS) {
+        log.debug("Leaving Scheduler.runInThisProcess(). Quiet: not " +
+                  "recorded.");
+        return;
+      }
+      this.quietRecorded.set(recordKey, { state: outcome.state,
+                                          at: this.deps.now() });
     }
     this.writeRow(realms.DEFAULT_ID, Object.assign({
       runId: key, kind: 'process', jobId: job.id, realm: realmId,
@@ -1737,8 +1811,11 @@ class Scheduler {
         view.nextRunAt = row.nextAt ? new Date(row.nextAt).toISOString()
           : null;
         view.nextRunInMs = row.nextAt ? Math.max(0, row.nextAt - at) : null;
-        // A process that has not run since two slots ago has probably gone.
-        const every = self.intervalMs(job) || self.tickMs();
+        // A process that has not run since two slots ago has probably gone
+        // — or, for a QUIET job, which is recorded once a minute while its
+        // outcome holds, since two of those.
+        const every = job.quiet ? QUIET_RECORD_MS
+          : (self.intervalMs(job) || self.tickMs());
         view.stale = at - (Number(row.endedAt) || 0) > 2 * every +
                      2 * self.tickMs();
         out.push(view);

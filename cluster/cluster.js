@@ -448,7 +448,7 @@ function join() {
              'node(s). Heartbeat every ' + heartbeatMs() + 'ms, lifetime ' +
              ttlMs() + 'ms by the database clock.');
     scheduleHeartbeat();
-    scheduleCacheReport(CACHE_REPORT_FIRST_MS);
+    scheduleCacheReport();
   });
 }
 
@@ -529,17 +529,16 @@ function nodeInfo() {
 // `snapshot()`'s member list. No request crosses between nodes to get it,
 // which is why it needed no new plumbing.
 //
-// IT IS COMPUTED ON A TIMER OF ITS OWN, NOT ON THE HEARTBEAT. A snapshot
+// IT IS COMPUTED BY A JOB OF ITS OWN, NOT ON THE HEARTBEAT. A snapshot
 // walks every registered store's rows, and the heartbeat is what a node's
 // life depends on (the paragraph above `nodeInfo()`): so the heartbeat only
-// attaches the last one taken, and the walk happens every
-// CACHE_REPORT_MS, first shortly after joining. What another node shows is
+// attaches the last one taken, and the walk happens every CACHE_REPORT_MS
+// (the scheduler job below), first at the join. What another node shows is
 // therefore up to that old plus a heartbeat, and the page says how old.
 // ---------------------------------------------------------------------------
 const CACHE_REPORT_MS = 30000;
-const CACHE_REPORT_FIRST_MS = 5000;
+const CACHE_REPORT_JOB = 'cluster.cache-report';
 let cacheReport = null;
-let cacheReportTimer = null;
 
 function refreshCacheReport() {
   log.debug("Entering refreshCacheReport().");
@@ -553,29 +552,49 @@ function refreshCacheReport() {
   log.debug("Leaving refreshCacheReport().");
 }
 
-function scheduleCacheReport(delayMs) {
+// THE WALK IS A SCHEDULER JOB (#49 P5): `cluster.cache-report`, a QUIET
+// PER-PROCESS job every CACHE_REPORT_MS — it reads this process's own stores,
+// which no other process can — off everywhere but a front process that has
+// joined. The first snapshot is taken at the join itself, so a node's figures
+// are on its very first heartbeat. `scheduler.ts` requires this module, so
+// this requires it lazily, at the join, when both are loaded.
+function scheduleCacheReport() {
   log.debug("Entering scheduleCacheReport().");
-  if (cacheReportTimer || stopping || role !== 'front') {
+  if (stopping || role !== 'front') {
     log.debug("Leaving scheduleCacheReport(). Not reporting.");
     return;
   }
-  cacheReportTimer = setTimeout(function () {
-    cacheReportTimer = null;
-    refreshCacheReport();
-    scheduleCacheReport(CACHE_REPORT_MS);
-  }, delayMs);
-  if (cacheReportTimer.unref) {
-    cacheReportTimer.unref();
+  refreshCacheReport();
+  const scheduler = require('./scheduler');
+  if (scheduler.job(CACHE_REPORT_JOB)) {
+    log.debug("Leaving scheduleCacheReport(). Registered.");
+    return;
   }
-  log.debug("Leaving scheduleCacheReport().");
+  scheduler.register({
+    id: CACHE_REPORT_JOB,
+    title: 'Cluster cache report',
+    describe: 'Takes this node\'s cache and replay-store snapshot, which its ' +
+              'heartbeat carries to /admin/caches on every other node.',
+    owner: 'cluster/cluster.js',
+    kind: 'per-process', quiet: true,
+    everyMs: function () {
+      return CACHE_REPORT_MS;
+    },
+    off: function () {
+      return stopping || role !== 'front' || !nodeId
+        ? 'this process is not a joined front process' : '';
+    },
+    run: function () {
+      refreshCacheReport();
+      return { taken: !!cacheReport };
+    }
+  });
+  log.debug("Leaving scheduleCacheReport(). On the scheduler.");
 }
 
+// Nothing to stop: the job is off once this process is stopping.
 function stopCacheReport() {
   log.debug("Entering stopCacheReport().");
-  if (cacheReportTimer) {
-    clearTimeout(cacheReportTimer);
-    cacheReportTimer = null;
-  }
   log.debug("Leaving stopCacheReport().");
 }
 

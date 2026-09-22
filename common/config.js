@@ -5229,7 +5229,8 @@ const SETTINGS = [
     label: 'Back-channel logout sweep interval (seconds)',
     env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SWEEP_S', type: 'int', dflt: 10,
     min: 1, max: 3600, runtime: true,
-    description: 'How often every process looks for deliveries that are due ' +
+    description: 'How often the scheduler\'s oauth2.backchannel-logout-sweep ' +
+                 'job (on the leader) looks for deliveries that are due ' +
                  '— a retry whose backoff has passed, a lease that lapsed, a ' +
                  'row restored after a restart — and dead-letters any still ' +
                  'pending past the retention. The process that planned a ' +

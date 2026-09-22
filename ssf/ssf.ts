@@ -268,8 +268,8 @@ interface SharedSignalsDeps {
   loadCapabilities(): Capabilities;
 }
 
-// The dead-letter sweep's timer: one per process. See scheduleSweep().
-let sweepTimer = null;
+// The dead-letter sweep's scheduler job (#49 P5). See scheduleSweep().
+const SWEEP_JOB = 'ssf.dead-letter-sweep';
 
 class SharedSignals {
   // The well-known suffix RFC 8414's registry carries for this document. It
@@ -991,25 +991,40 @@ class SharedSignals {
     });
   }
 
+  // THE SWEEP IS A SCHEDULER JOB (#49 P5): `ssf.dead-letter-sweep`, a
+  // PER-PROCESS job every `ssf.deadLetterSweepS` — each process still sweeps,
+  // as it did on a timer of its own, because what it reports is its OWN: the
+  // SETs this process dead-lettered since its last sweep, and the monitoring
+  // page's sweep history. The part that must happen once — probing a dead
+  // stream — was already gated to one node (`ssfCluster.leadsProbes()`), and
+  // deleting an expired dead letter is idempotent. Registered by the wire
+  // step, once per process.
   scheduleSweep(): void {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug('Entering SharedSignals.scheduleSweep().');
-    const seconds = Math.max(5,
-                             Number(config.value('ssf.deadLetterSweepS')) ||
-                             60);
-    const again = () => {
-      this.scheduleSweep();
-    };
-    sweepTimer = setTimeout(() => {
-      this.sweepSignals().then(again, again);
-    }, seconds * 1000);
-    // A sweep must not keep a process that has finished everything else alive
-    // — `npm test` loads this file and would otherwise wait out the interval.
-    if (sweepTimer.unref) {
-      sweepTimer.unref();
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(SWEEP_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleSweep(). Registered.');
+      return;
     }
-    log.debug('Leaving SharedSignals.scheduleSweep(). ' + seconds + 's.');
+    scheduler.register({
+      id: SWEEP_JOB,
+      title: 'Shared Signals dead-letter sweep',
+      describe: 'Deletes this process\'s expired dead letters, probes dead ' +
+                'streams that are due (one node only) and logs the summary ' +
+                'of what was dead-lettered since the last sweep.',
+      owner: 'ssf/ssf.ts',
+      kind: 'per-process',
+      everySetting: 'ssf.deadLetterSweepS', everySettingUnit: 's',
+      run: () => {
+        return this.sweepSignals().then(function () {
+          return { swept: true };
+        });
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleSweep(). On the scheduler.');
   }
+
 
   // -------------------------------------------------------------------------
   // `ssf.delivery` (#46 section 6), AT REQUIRE TIME like every capability —

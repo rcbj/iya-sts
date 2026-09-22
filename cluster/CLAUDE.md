@@ -523,11 +523,41 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
 | `signing.retire` | cluster, realm; hourly | `common/signing_rotation.ts` (#42) |
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
+| `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
+| `ssf.dead-letter-sweep` | per-process; `ssf.deadLetterSweepS` — its summary and history are the process's own | `ssf/ssf.ts` (P5) |
+| `saml2.sp-metadata-refresh` | cluster, service; `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
+| `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
+| `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
+| `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
+| `cluster.cache-report` | per-process, quiet; front processes that joined | `cluster/cluster.js` (P5) |
+| `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
+| `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
+| `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
+| `ldap.connection-mirror-maintenance` | per-process, quiet; socket-holding processes | `ldap/ldap_cluster_connections.ts` (P5) |
+| `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
 
-**The timers still outside it** are listed, each with the job it becomes or
-the reason it stays, in `tests/no_periodic_timers.js`, which fails on a new
-one and on an entry whose timer has gone. **P5 of #49 empties the `becomes`
-half.**
+**The timers still outside it** are listed, each with the reason it stays, in
+`tests/no_periodic_timers.js`, which fails on a new one and on an entry whose
+timer has gone. **P5 of #49 emptied the `becomes` half (2026-09-22)**; what is
+left is `permanent`: the heartbeat and origin-claim renewal the scheduler
+stands on, and one-shot timeouts and debounces.
+
+**Two things P5 added to the scheduler for them:**
+
+* **A tick is scheduled at the next due job**, bounded by `scheduler.tickS`
+  and floored at 100 ms (`nextDelayMs()`), so a job whose interval is shorter
+  than a tick — the back-channel sweep's ten seconds, the change-log pull's
+  five — runs on its own interval rather than rounded up. The leader's row is
+  still refreshed at most once a tick interval.
+* **A `quiet` per-process job** records its run in the store only when its
+  outcome changes, or once a minute (`QUIET_RECORD_MS`): the change-log pull
+  would otherwise write a row per pull per process, which the next pull
+  fetches. The report allows a quiet job's row to be that old before calling
+  it stale.
+
+**A job registered at first use** (the four purges) requires the scheduler
+LAZILY, at that use: `scheduler.ts` requires `cluster_claims.js`, and
+`used_assertions.js` is in the parent project's Kerberos COPY closure.
 
 ## What is done and what is not (2026-09-14)
 

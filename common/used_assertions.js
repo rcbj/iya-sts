@@ -234,7 +234,9 @@ const historyCount = cacheRegistry.register({
 // Realms whose snapshot has changed since it was last written.
 const dirtyRealms = new Set();
 let writeTimer = null;
-let lastPurgeAt = 0;
+// The database sweep's scheduler job (#49 P5): see ensurePurgeJob().
+const PURGE_JOB = 'oauth2.used-assertion-purge';
+let purgeJobRegistered = false;
 // The last live count each realm's store reported, for the one synchronous
 // reader (`GET /oauth2/rfc9700`). A database store is asked on every claim.
 const lastKnownLive = new Map();
@@ -609,7 +611,7 @@ function claimInMemory(row, cap, now) {
 
 function claimInDatabase(row, cap, now) {
   log.debug("Entering claimInDatabase().");
-  maybePurge(now);
+  ensurePurgeJob();
   log.debug("Leaving claimInDatabase().");
   return Promise.resolve().then(function () {
     return store.driver.claimUsedAssertion(row, { cap: cap, now: now });
@@ -639,26 +641,54 @@ function claimInDatabase(row, cap, now) {
   });
 }
 
-function maybePurge(now) {
-  log.debug("Entering maybePurge().");
-  if (now - lastPurgeAt < PURGE_INTERVAL_MS) {
-    log.debug("Leaving maybePurge(). Not due.");
+// THE DATABASE SWEEP IS A SCHEDULER JOB (#49 P5):
+// `oauth2.used-assertion-purge`, a CLUSTER job every PURGE_INTERVAL_MS — one
+// table every process shares. It was piggy-backed on the next claim in every
+// process. Registered at the first claim against a database, lazily: this
+// file is in the parent project's Kerberos COPY closure and must not load the
+// scheduler there. An expired row is ignored by every read whenever the
+// sweep last ran.
+function ensurePurgeJob() {
+  log.debug("Entering ensurePurgeJob().");
+  if (purgeJobRegistered) {
+    log.debug("Leaving ensurePurgeJob(). Registered.");
     return;
   }
-  lastPurgeAt = now;
-  Promise.resolve().then(function () {
-    return store.driver.purgeUsedAssertions(now);
-  }).then(function (count) {
-    if (count) {
-      log.debug('used assertions: swept ' + count + ' expired row(s).');
+  purgeJobRegistered = true;
+  const scheduler = require('../cluster/scheduler');
+  if (scheduler.job(PURGE_JOB)) {
+    log.debug("Leaving ensurePurgeJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: PURGE_JOB,
+    title: 'Expired used-assertion sweep',
+    describe: 'Deletes the RFC 7523 and RFC 7522 assertions whose lifetime ' +
+              'has passed from the once-ever history every node shares.',
+    owner: 'common/used_assertions.js',
+    everyMs: function () {
+      return PURGE_INTERVAL_MS;
+    },
+    off: function () {
+      return store.driver &&
+             typeof store.driver.purgeUsedAssertions === 'function' ? ''
+        : 'the used-assertion history is not in a database here';
+    },
+    run: function () {
+      return Promise.resolve().then(function () {
+        return store.driver.purgeUsedAssertions(Date.now());
+      }).then(function (count) {
+        return { removed: Number(count) || 0 };
+      }, function (e) {
+        log.warn(errorCodes.tag('STS-STORE-0047') +
+                 'used assertions: sweeping expired rows failed: ' +
+                 ((e && e.message) || e) + '. They are ignored by every ' +
+                 'read and swept at the next run.');
+        throw e;
+      });
     }
-  }, function (e) {
-    log.warn(errorCodes.tag('STS-STORE-0047') +
-             'used assertions: sweeping expired rows failed: ' +
-             ((e && e.message) || e) + '. They are ignored by every read and ' +
-             'swept on the next attempt.');
   });
-  log.debug("Leaving maybePurge(). Started.");
+  log.debug("Leaving ensurePurgeJob().");
 }
 
 // What a caller holds: enough to settle this one row and nothing it could use

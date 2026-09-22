@@ -1115,3 +1115,16 @@ reads the partition back.
 
 **Left alone and said so**: the `x-sts-workload-selector` metadata key —
 renaming it breaks every client that sends it.
+
+## THE AUTHORITIES ROTATE ON THE SCHEDULER (2026-09-22, #49 P5, rcbj's D6)
+
+`spiffe.authority-rotation`, a realm-scoped cluster job, hourly: the X.509
+authority is rotated once it is past half its lifetime and the JWT authority
+once it is older than half `spiffe.caTtl` — the job decides from each
+authority's own age, never from being called, so a fresh start rotates
+nothing. **In both modes**, unlike the signing keys: a self-signed authority
+lives `spiffe.caTtl` (a day by default), so without it a development service
+up for a day would issue SVIDs under an expired authority. The rotation is
+`rotateX509Authority()` / `rotateJwtAuthority()`, the console's, which keeps
+`spiffe.retainedAuthorities` published — or, under the hierarchy, re-issues
+the SPIFFE Issuing CA under the Root, which leaves the bundle unchanged.

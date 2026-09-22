@@ -571,6 +571,61 @@ async function run(t) {
   }
 
   // -------------------------------------------------------------------------
+  t.log.info('=== L. a job shorter than a tick, and a quiet one (P5) ===');
+  {
+    const w = kit.world({ clustered: false,
+                          settings: { 'scheduler.tickS': 60 } });
+    const node = w.node('solo');
+    let fast = 0;
+    node.scheduler.register(baseJob({ id: 'test.fast',
+      everyMs: function () { return 2000; },
+      run: function () { fast++; } }));
+    let quietRuns = 0;
+    let failing = false;
+    node.scheduler.register(baseJob({ id: 'test.quiet', kind: 'per-process',
+      quiet: true, everyMs: function () { return 1000; },
+      run: function () {
+        quietRuns++;
+        if (failing) {
+          throw new Error('the pull failed');
+        }
+      } }));
+    node.scheduler.start('front');
+    await w.advance(20000);
+    t.check(fast >= 8 && fast <= 11,
+            'a cluster job every 2 s runs every 2 s under a 60 s tick — the ' +
+            'next tick is the next due job, not the tick interval',
+            String(fast));
+    t.check(quietRuns >= 17,
+            'and a per-process job every second runs every second',
+            String(quietRuns));
+    const rowOf = async function () {
+      const st = await node.scheduler.status();
+      const job = st.jobs.filter(function (j) {
+        return j.id === 'test.quiet';
+      })[0];
+      return job && job.processes[0];
+    };
+    const first = await rowOf();
+    t.check(first && first.state === 'succeeded' &&
+            w.db - Date.parse(first.endedAt || 0) >= 15000,
+            'a QUIET job\'s row is not rewritten while its outcome holds: ' +
+            'the one on the report is from its first run',
+            JSON.stringify(first && { state: first.state,
+                                      endedAt: first.endedAt }));
+    failing = true;
+    await w.advance(3000);
+    const failed = await rowOf();
+    t.check(failed && failed.state === 'failed',
+            'but a change of outcome is recorded at once',
+            JSON.stringify(failed && failed.state));
+    t.check(codeOfThrow(function () {
+      node.scheduler.register(baseJob({ id: 'test.loud', quiet: true }));
+    }) === 'STS-SCHED-0009',
+            'and only a per-process job may be quiet');
+  }
+
+  // -------------------------------------------------------------------------
   t.log.info('=== K. the real module ===');
   {
     const mod = require(ROOT + '/cluster/scheduler');

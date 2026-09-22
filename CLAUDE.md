@@ -383,12 +383,13 @@ What does NOT count: a per-request timeout, a debounce, a retry delay inside
 one operation, and the cluster heartbeat with its lease and origin-claim
 renewals, which are what the scheduler's own leadership stands on.
 
-**The existing timers are exceptions until they move**, and
-`tests/no_periodic_timers.js` holds the inventory — each with the job it
-becomes or the reason it stays — and fails on a new one. **The CRL directory
-refresh and the session-expiry sweep moved on 2026-09-22** (P1 of #49); the
-back-channel logout and SSF sweeps, the SAML metadata refresher, the change-log
-pull and trim and the piggy-backed purges are P5.
+**Every timer that existed has moved (#49 P1 and P5, 2026-09-22)** — the
+session sweep, the CRL directory refresh, the back-channel logout and SSF
+sweeps, the SAML metadata refresher, the change-log pull and trim, the cache
+report, the LDAP mirror's maintenance — and so have the purges piggy-backed on
+requests (claims, used assertions, rate-limit windows, minted tombstones).
+`cluster/CLAUDE.md` has the table of jobs; `tests/no_periodic_timers.js`
+holds that nothing else repeats, with the permanent exceptions and why.
 
 ## The require order and the route order
 

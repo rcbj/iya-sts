@@ -180,17 +180,51 @@ class GnapTokens {
              publicJwk: found.publicJwk };
   }
 
+  // EVERY GENERATION OF THE ED25519 KEY THAT STILL VERIFIES (#49 P5, D6):
+  // the current one first, then the realm unit's next key and its retired
+  // keys within their grace. The key is the realm's `jose:EdDSA:Ed25519`
+  // unit, so the signing rotation already rotates it; what a rotation needs
+  // here is only that a biscuit or a capability signed before it still
+  // verifies. Public halves only.
+  ed25519Generations(): Array<{ publicKey: any; publicJwk: any }> {
+    const { log } = this;
+    const { helpers } = this.deps;
+    log.debug("Entering GnapTokens.ed25519Generations().");
+    const current = this.ed25519Keys();
+    const out = [{ publicKey: current.publicKey,
+                   publicJwk: current.publicJwk }];
+    const now = Date.now();
+    helpers.standbyOf(helpers.stsKeysFor(), 'jose:EdDSA:Ed25519')
+      .forEach(function (one: any): void {
+        if (!one.publicJwk ||
+            (one.role === 'retired' && Number(one.retiredUntil) > 0 &&
+             Number(one.retiredUntil) <= now)) {
+          return;
+        }
+        out.push({ publicKey: nodeCrypto.createPublicKey({
+          key: one.publicJwk, format: 'jwk' }), publicJwk: one.publicJwk });
+      });
+    log.debug("Leaving GnapTokens.ed25519Generations(). " + out.length + ".");
+    return out;
+  }
+
   // The ZCAP controller document lives at the realm's own URL, so the
-  // controller is built from the base the caller hands in.
+  // controller is built from the base the caller hands in. `others` are the
+  // other live generations of the key, which the published document lists.
   zcapKeys(base?: string) {
     const { log } = this;
     log.debug("Entering GnapTokens.zcapKeys().");
     const keys = this.ed25519Keys();
     const controller = String(base || '') + '/gnap/zcap/controller';
+    const others = this.ed25519Generations().slice(1)
+      .map(function (one: any): any {
+        return { publicKey: one.publicKey,
+                 keyId: controller + '#' + one.publicJwk.kid };
+      });
     log.debug("Leaving GnapTokens.zcapKeys().");
     return { privateKey: keys.privateKey, publicKey: keys.publicKey,
              controller: controller,
-             keyId: controller + '#' + keys.publicJwk.kid };
+             keyId: controller + '#' + keys.publicJwk.kid, others: others };
   }
 
   // -------------------------------------------------------------------------
@@ -518,18 +552,44 @@ class GnapTokens {
       log.debug("Leaving GnapTokens.verify(). macaroon ok=" + out.ok);
       return out;
     }
+    // Against EVERY live generation of the Ed25519 key (#49 P5): the first
+    // that verifies answers, and the current key's answer is the one given
+    // when none does — the refusal every caller already reads.
     if (format === 'biscuit') {
-      const keys = this.ed25519Keys();
-      const out = await biscuit.verify(value, { publicKey: keys.publicKey },
-                                       context);
-      log.debug("Leaving GnapTokens.verify(). biscuit ok=" + out.ok);
-      return out;
+      const generations = this.ed25519Generations();
+      let first: any = null;
+      for (let i = 0; i < generations.length; i++) {
+        const key = { publicKey: generations[i].publicKey };
+        const out = await biscuit.verify(value, key, context);
+        if (out.ok) {
+          log.debug("Leaving GnapTokens.verify(). biscuit ok, generation " +
+                    i + ".");
+          return out;
+        }
+        first = first || out;
+      }
+      log.debug("Leaving GnapTokens.verify(). biscuit refused.");
+      return first;
     }
     if (format === 'zcap') {
-      const out = await zcap.verify(value, this.zcapKeys(context.base),
-                                    context);
-      log.debug("Leaving GnapTokens.verify(). zcap ok=" + out.ok);
-      return out;
+      const current = this.zcapKeys(context.base);
+      const generations = [current].concat(current.others.map(
+        function (one: any): any {
+          return { publicKey: one.publicKey, keyId: one.keyId,
+                   controller: current.controller };
+        }));
+      let first: any = null;
+      for (let i = 0; i < generations.length; i++) {
+        const out = await zcap.verify(value, generations[i], context);
+        if (out.ok) {
+          log.debug("Leaving GnapTokens.verify(). zcap ok, generation " + i +
+                    ".");
+          return out;
+        }
+        first = first || out;
+      }
+      log.debug("Leaving GnapTokens.verify(). zcap refused.");
+      return first;
     }
     log.debug("Leaving GnapTokens.verify(). Unknown format.");
     return this.refusal('STS-GNAP-0344',
@@ -555,7 +615,17 @@ class GnapTokens {
              kid: helpers.publishedKidFor(STS.kid), typ: JWT_TYP },
       biscuit: { algorithm: 'ed25519',
                  root_public_key: 'ed25519/' + raw.toString('hex'),
-                 jwk: keys.publicJwk },
+                 jwk: keys.publicJwk,
+                 // Every key a biscuit this realm minted may be signed with
+                 // (#49 P5): the current one first, then its next key and the
+                 // retired ones still verifying. Non-standard; a verifier
+                 // that knows only `root_public_key` sees the current one.
+                 root_public_keys: this.ed25519Generations()
+                   .map(function (one: any): string {
+                     return 'ed25519/' + Buffer.from(one.publicJwk.x,
+                                                     'base64url')
+                       .toString('hex');
+                   }) },
       zcap: { controller: base + '/gnap/zcap/controller' },
       macaroon: { root_key: 'per resource server; carried (sealed) on the ' +
                   'resource server\'s application entry as ' +

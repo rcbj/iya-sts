@@ -632,7 +632,8 @@ function claimEight(t) {
           html.indexOf('gone-host') < 0,
           'the page draws a folded table per other process and none for a ' +
           'node that left', html.replace(/<[^>]+>/g, ' ').slice(0, 300));
-  // cluster.js, as source: the snapshot rides on the row, on its own timer.
+  // cluster.js, as source: the snapshot rides on the row, taken by a
+  // scheduler job of its own.
   const src = fs.readFileSync(path.join(__dirname, '..', 'cluster',
                                         'cluster.js'), 'utf8');
   const info = /function nodeInfo\(\)[\s\S]*?\n}/.exec(src);
@@ -640,10 +641,12 @@ function claimEight(t) {
           !/snapshot\(/.test(info[0]),
           'nodeInfo() attaches the last snapshot and takes none itself — the ' +
           'walk is off the heartbeat\'s path');
-  t.check(/scheduleCacheReport\(CACHE_REPORT_FIRST_MS\)/.test(src) &&
+  t.check(/scheduleCacheReport\(\)/.test(src) &&
+          /CACHE_REPORT_JOB = 'cluster\.cache-report'/.test(src) &&
           /cacheReport = cacheRegistry\.snapshot\(\)/.test(src),
-          'a joined node schedules its report, and the report is the ' +
-          'registry\'s snapshot');
+          'a joined node puts its report on the scheduler (the job ' +
+          'cluster.cache-report, #49 P5), and the report is the registry\'s ' +
+          'snapshot');
   log.debug("Leaving claimEight().");
 }
 

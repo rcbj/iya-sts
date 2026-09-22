@@ -74,22 +74,7 @@ const ALLOWED = {
     'because start() is also a method name it calls' },
   'debugger/debugger_api_process.ts|fork|timeout': { permanent:
     'not periodic: the api child\'s start-up timeout; its restart is a ' +
-    'retry with back-off within supervising one child' },
-  'cluster/cluster.js|scheduleCacheReport|timeout': { becomes:
-    'a per-process job on the front process: the cache snapshot on the ' +
-    'membership row (P5)' },
-  'ldap/ldap_cluster_connections.ts|armMaintenance|interval': { becomes:
-    'a per-process job: the LDAP connection mirror\'s maintenance (P5)' },
-  'oauth-oidc/backchannel_logout.ts|scheduleSweep|timeout': { becomes:
-    'a cluster job: the back-channel logout delivery sweep (P5)' },
-  'persistence/persistence_replication.js|schedule|timeout': { becomes:
-    'a per-process job: this process\'s change-log pull (P5)' },
-  'persistence/persistence_replication.js|schedulePurge|timeout': { becomes:
-    'a cluster job: the change-log trim, ops.change-log-purge (P5)' },
-  'saml/sp_metadata.ts|tick|timeout': { becomes:
-    'a cluster job: the SAML service-provider metadata refresher (P5)' },
-  'ssf/ssf.ts|scheduleSweep|timeout': { becomes:
-    'a cluster job: the Shared Signals dead-letter and delivery sweep (P5)' }
+    'retry with back-off within supervising one child' }
 };
 
 function walk(dir, out) {

@@ -522,10 +522,18 @@ function childMain() {
            'E1. a process that starts reading the log reports where it ' +
            'starts, with no node id outside a cluster',
            JSON.stringify(calls.reports));
-      note(replication.status().retention.trimming === true,
-           'E2. outside a cluster a front process leads the trim itself ' +
-           '(cluster.lead() answers onGain at once)',
-           JSON.stringify(replication.status().retention));
+      // THE TRIM IS A SCHEDULER JOB since #49 P5: it runs where the
+      // scheduler leads, which a process that has not started one does not.
+      const purgeJob = require(ROOT + '/cluster/scheduler')
+        .job('persistence.change-log-purge');
+      note(purgeJob && purgeJob.kind !== 'per-process' &&
+           purgeJob.owner === 'persistence/persistence_replication.js' &&
+           replication.status().retention.trimming === false,
+           'E2. the trim is the cluster job persistence.change-log-purge, ' +
+           'and a process whose scheduler does not lead does not trim',
+           JSON.stringify({ job: !!purgeJob,
+                            trimming: replication.status().retention
+                              .trimming }));
       const trimmed = await replication.purgeOnce();
       note(trimmed && trimmed.trimmed === 3 &&
            calls.purges[0].retentionMs === 3600000 &&
