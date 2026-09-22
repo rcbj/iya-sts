@@ -1135,11 +1135,12 @@ the half a reader cannot discover from a protocol trace.
   those end in a refusal or a new sign-in and nothing was honoured. `tests/caep_presented_every_protocol.js`
   holds all four to it. `caep.autoEmit` puts the old behaviour back rather
   than leaving it only in the history of this file. `credential-change`
-  (2026-09-13) and `assurance-level-change` (2026-09-14) have automatic
-  triggers too, and `token-claims-change` goes out for a modified GNAP grant;
-  the other two describe things nothing here does — no device reports
-  compliance to this service and no risk engine talks to it — so those are
-  still emitted only when asked for.
+  (2026-09-13, every door since #145) and `assurance-level-change`
+  (2026-09-14) have automatic triggers too, and `token-claims-change` goes out
+  for a directory change to a claim somebody's live tokens carry (#145) and a
+  modified GNAP grant; the other two describe things nothing here does — no
+  device reports compliance to this service (#164) and no risk engine talks to
+  it (#62) — so those are still emitted only when asked for.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
 * **It is not a receiver of anybody else's transmitter** (#153). It discovers
@@ -1639,7 +1640,76 @@ key records no authenticator attachment, and the label goes out as
 `friendly_name` so two keys can be told apart. **The portal's own credential
 pages and the LDAP socket emit nothing**, which is the scope that was asked for
 (the admin user-page doors and the reset link), not a claim that nothing else
-changes a credential.
+changes a credential. *(Both superseded by #145, below.)*
+
+## EVERY DOOR, AND TOKEN-CLAIMS-CHANGE FROM THE DIRECTORY (#145, 2026-09-22)
+
+**`credential-change` now goes out wherever a person's credential changes.**
+Where one function is the only way to change a kind of credential, the event is
+sent THERE, so no door can miss it:
+* `common/person_assertions.js` `write()` and `clear()`, for signing key pairs;
+* `common/cert_enrollment.ts` `issue()` and `revokeEnrolled()`, for ACME, EST
+  and SCEP;
+* `common/tls_client_certificates.js` `issue()` and `revoke()`;
+* `oid4vc/vc_issued.ts` `record()` and `disown()`, as `verifiable-credential`.
+
+Passwords, security keys and authenticator apps are written through
+`common/credentials.ts` from many doors, and the admin doors already emitted
+with their own reasons. So those are sent PER DOOR: the portal (password change,
+activation, TOTP, keys), sign-in (a forced password change, MFA setup, a key
+registered), an LDAP add or modify of `userPassword` (`notePasswordWritten()`,
+where the bound DN decides `user` against `admin`), a person created with a
+password, and `/admin/pki`'s revoke of a person's certificate (the holder read
+from the authority's issued register). **A new door that changes a credential
+through `credentials.ts` owes its own call.** A central hook there would
+double-send every admin door.
+
+**Security keys record `attachment` and `aaguid` at enrolment** (they were
+handed to `addKey()` and dropped). `accountSignals.keyCredentialType(record)`
+makes `platform` into `fido2-platform` and anything else `fido2-roaming`. The
+AAGUID is kept as a UUID string (`Credentials.aaguidString()`), and all zeros
+means none. A key stored before this change has neither and reads as it always
+did; nothing is migrated.
+
+**A certificate goes out as `x509` with `x509_issuer` and `x509_serial`**,
+through `accountSignals.certificateChanged({ pem })`. That call uses
+`common/crypto.js`'s `certificateIdentifiers()`: the issuer as an RFC 4514
+string, and the serial as the lower-case hex the PKI registers use. Only a
+PERSON's certificate is sent; an application has no CAEP subject here.
+**Recovery codes have no CAEP type**, so the portal's confirm sends RISC's
+`recovery-information-changed`, as the console's clear does.
+
+**`token-claims-change` from the directory.** The observer `ldap_server.js`
+calls is `ssf.ts`'s `directoryChanged()` now:
+* a person's own write still goes to `riscAutoEmit()`;
+* both kinds go to `claimsAutoEmit()`.
+
+The directory also reports a group's membership change, per affected PERSON,
+as `kind: 'membership'` (`noteMembershipChange()`: `putEntry()`, the LDAP
+modify, delete and rename of a group, `deleteGroupEntry()`). RISC never sees
+that kind.
+
+`caep.claimsChangeFor()` reads which claims moved: catalogue attributes by
+their claim names, `null` for an emptied one, and the groups claim as the whole
+new list for a membership or `memberOf` change. `claimsAutoEmit()` asks the
+cheap questions first (SSF on, the act chosen, a stream that takes the type),
+decides the rest on a promise so a bulk group write returns at once, and sends
+only when `admin_stats.holdsLiveIssuance()` finds a valid access, ID or refresh
+token or an unexpired SAML assertion for the person. **That check comes BEFORE
+`claimsChangeFor()`**, because the groups claim rebuilds the group index every
+group write invalidates. With the order reversed a SCIM membership in the bulk
+load cost 21.8 ms against 11.6 ms before #145; in this order, 10.5 ms. The subject is the person
+(`iss_sub`): the change is to every token they hold. `caep.autoEmitTypes` names
+it by default.
+
+**`fp_ua`** on `session-established` and `session-presented` is
+`crypto.userAgentFingerprint()`, the base64url SHA-256 of `User-Agent`. It is a
+fingerprint, as CAEP defines the member, and not the header.
+
+**Not here:**
+* `device-compliance-change` has no source (#164) and `risk-level-change` none
+  (#62).
+* Acting on a RECEIVED event is #153 and #117.
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 

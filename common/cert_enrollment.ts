@@ -95,6 +95,10 @@ import mtls = require('../oauth-oidc/mtls');
 // capability table this file declares its row in. Both LIBRARIES that reach
 // `persistence.js` lazily, so neither can close a cycle from here.
 import claims = require('../cluster/cluster_claims');
+// CAEP credential-change for a person's certificate issued or revoked (#145).
+// A library that sends nothing where Shared Signals is not loaded; it
+// requires `helpers` and `crypto` and nothing of this file's.
+import accountSignals = require('../ssf/account_signals');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
 
@@ -1763,6 +1767,20 @@ class CertEnrollment {
                 keySource: record.keySource, via: record.via,
                 notAfter: record.notAfter }
     });
+    // A PERSON's certificate is one of their credentials, and CAEP says so
+    // with its issuer and serial (#145). An application's is not a person's
+    // and has no CAEP subject here.
+    if (kind === 'person') {
+      accountSignals.certificateChanged({ username: resolved.entry.id,
+        pem: issued.certificatePem, changeType: 'create',
+        friendlyName: profile.profile + ' certificate',
+        initiatingEntity: allowed.admin ? 'admin' : 'user',
+        via: FAMILY_LABELS[family],
+        reasonAdmin: 'A ' + profile.profile + ' certificate was issued to ' +
+                     resolved.entry.id + ' over ' + FAMILY_LABELS[family] +
+                     '.',
+        reasonUser: 'A certificate was issued to you.' });
+    }
     if (replacing) {
       await self.revokeEnrolled(replacing, 'superseded',
                                 asked.principal ? String(asked.principal.id)
@@ -1914,6 +1932,21 @@ class CertEnrollment {
       return JSON.stringify(one);
     });
     self.writeAttribute(found.entry, 'certificate', rewritten);
+    // Revoked, told to a person's receivers whether or not the audit row is
+    // quiet (#145): a certificate superseded by its renewal is still one the
+    // person no longer holds, and that act is the system's.
+    if (found.entry && found.entry.kind === 'person') {
+      accountSignals.certificateChanged({ username: found.entry.id,
+        pem: found.record.certificatePem, changeType: 'revoke',
+        friendlyName: String(found.record.profile || '') + ' certificate',
+        initiatingEntity: reason === 'superseded' ? 'system'
+          : String(by || '') === String(found.entry.id) ? 'user' : 'admin',
+        via: FAMILY_LABELS[found.family],
+        reasonAdmin: 'A certificate of ' + found.entry.id + ' issued over ' +
+                     FAMILY_LABELS[found.family] + ' was revoked (' +
+                     (reason || 'unspecified') + ').',
+        reasonUser: 'A certificate of yours was revoked.' });
+    }
     if (!opts.quiet) {
       audit.record({
         category: 'protocol', action: 'enrollment.revoke',

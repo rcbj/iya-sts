@@ -100,6 +100,10 @@ import pki = require('../common/pki');
 // (rule 3) that registers nothing — the HTTP endpoints are `pki/pki_service.ts`
 // at 17b — so requiring it here moves no route and closes no cycle.
 import pkiRevocation = require('../common/pki_revocation');
+// CAEP credential-change when a revoked certificate was a PERSON's (#145).
+// A library over `helpers` and `crypto`; the require moves nothing.
+import accountSignals = require('../ssf/account_signals');
+import stsCrypto = require('../common/crypto');
 // The pane's model: the field table, the six line grammars, the profile
 // defaults and what an issue does with all of it. A LIBRARY (rule 3) — it
 // registers nothing, so requiring it here moves no route.
@@ -1926,6 +1930,37 @@ class PkiAdmin {
       // asymmetry is the whole reason this line exists and the reason there is
       // no matching one for HTTP.
       pkiRevocation.publishSoon(scope, String(body.ca || '').trim());
+      // A PERSON'S CERTIFICATE REVOKED IS A CREDENTIAL CHANGE (#145). The
+      // authority's register says whose it was; the issuer is the authority's
+      // own subject, since that is what signed it. An application's, or one
+      // this register never recorded, has no person to tell.
+      if (!done.already) {
+        const caId = String(body.ca || '').trim();
+        const serial = pkiRevocation.normalSerial(done.entry.serialHex);
+        const held = pki.issuedKeyPairsFor(scope, caId).filter(function (one) {
+          return pkiRevocation.normalSerial(one.serialHex) === serial;
+        })[0];
+        if (held && held.subjectKind === 'person' && held.identifier) {
+          let authority = '';
+          try {
+            const issuer = pki.describeIssuer(scope, caId);
+            authority = stsCrypto.certificateIdentifiers(
+              issuer && issuer.certificatePem).subject;
+          } catch (e) {
+            log.debug('Caught in PkiAdmin.pkiAction(): ' +
+                      ((e && e.message) || e));
+            // No authority to name: the event goes with the serial alone.
+          }
+          accountSignals.credentialChanged({ username: held.identifier,
+            credentialType: 'x509', changeType: 'revoke',
+            x509Issuer: authority, x509Serial: serial,
+            initiatingEntity: 'admin', via: '/admin/pki',
+            reasonAdmin: 'An administrator revoked the certificate ' + serial +
+                         ' of ' + held.identifier + ' (' +
+                         done.entry.reason + ').',
+            reasonUser: 'A certificate of yours was revoked.' });
+        }
+      }
       log.debug('Leaving PkiAdmin.pkiAction(). Revoked.');
       return { ok: true, entry: done.entry, already: !!done.already,
                why: done.already

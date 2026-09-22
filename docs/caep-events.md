@@ -28,11 +28,11 @@ The short version:
 | `session-established` | **yes** — every sign-in, through every protocol that starts a session |
 | `session-presented` | **yes** — single sign-on, in four browser SSO profiles |
 | `session-revoked` | **yes** — every sign-out, and every expiry |
-| `token-claims-change` | only for a modified [GNAP](gnap.md) grant; otherwise by hand |
-| `credential-change` | **yes** — an administrator changing a person's credentials, or a password reset link spent (since 2026-09-13) |
+| `token-claims-change` | **yes** — a directory change that moves a claim of somebody holding live tokens or assertions (since 2026-09-22), and a modified [GNAP](gnap.md) grant |
+| `credential-change` | **yes** — any credential of a person created, changed, revoked or deleted, at every door that changes one (every door since 2026-09-22; administrators' changes since 2026-09-13) |
 | `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr` (since 2026-09-14) |
-| `device-compliance-change` | no — by hand only |
-| `risk-level-change` | no — by hand only |
+| `device-compliance-change` | no — by hand only, until [#164](https://github.com/rcbj/iya-sts/issues/164) gives it a source |
+| `risk-level-change` | no — by hand only, until [#62](https://github.com/rcbj/iya-sts/issues/62) gives it a source |
 
 ## Three gates every event passes, whatever fired it
 
@@ -45,10 +45,11 @@ arrived" are the third.
    receiver, and exactly the case a receiver ought to be tested against.
    `caep.eventsSupported` narrows the eight without turning the profile off.
 2. **Did something fire it.** For the automatic ones, `caep.autoEmit`
-   (default on) and `caep.autoEmitTypes` (default: all five — the three session
-   events, `credential-change`, and `assurance-level-change`, which goes out
+   (default on) and `caep.autoEmitTypes` (default: all six — the three session
+   events, `credential-change`, `assurance-level-change`, which goes out
    when the same person re-authenticates on a session they already hold and
-   its `acr` changes, on the `urn:sts:acr` scale). Naming any other type in
+   its `acr` changes, on the `urn:sts:acr` scale, and `token-claims-change`).
+   Naming any other type in
    `autoEmitTypes` is **dropped with a warning** rather than
    honoured — no code path here would ever fire it, and a setting that reads as
    configured and does nothing is worse than one that refuses.
@@ -159,8 +160,10 @@ from the session that exists.
 `ext_id` — this transmitter's own identifier for the session, so a receiver can
 correlate. `amr` is an **array**: a session authenticated by a password *and* a
 security key has two values, and a receiver that read a string would see one.
-`fp_ua` (a user-agent fingerprint) is a member of the event this service does not
-compute.
+`fp_ua` is the user agent's fingerprint: the base64url SHA-256 of the
+`User-Agent` header the sign-in arrived with (since 2026-09-22). It is a
+fingerprint and not the header, which is what CAEP asks for. A session
+established without a request to read one from goes without it.
 
 **Why it matters more than it looks:** it is what closes the loop. Without it a
 receiver only ever hears about sessions *ending*, so it cannot hold an inventory
@@ -225,8 +228,9 @@ Per-protocol edges:
 **What it carries beyond the common four:** `ext_id`, and `fp_ua` — *the user
 agent observed this time*, whose whole value is comparing it against the one on
 the `session-established` event. The same session presented from a different
-agent is the abnormality this event exists to make visible. This service
-computes neither.
+agent is the abnormality this event exists to make visible. Both events carry
+the same fingerprint of the `User-Agent` header (since 2026-09-22), so the
+comparison is a string match.
 
 **In the register:** sets the state to `presented` — **except** on a session the
 register holds as `revoked`, which is **the one hard refusal in the whole state
@@ -310,12 +314,12 @@ GNAP access token — hears only about people who approved a grant to it; see
 
 These five began as the ones this service had no way of observing, and all
 five can be emitted **by hand**. Three have since gained an automatic trigger
-as well — `credential-change` when an administrator changes a person's
-credentials or a reset link is spent, `assurance-level-change` when a
-re-authentication moves a session's `acr`, and `token-claims-change` for a
-modified GNAP grant (see the table at the top). **No device reports compliance
-to this service and no risk engine talks to it**, so the other two are by hand
-only. That is a feature rather than a gap: they are exactly the events a
+as well — `credential-change` when any credential of a person changes,
+`assurance-level-change` when a re-authentication moves a session's `acr`, and
+`token-claims-change` when a directory change moves a claim somebody's live
+tokens carry, or a GNAP grant is modified (see the table at the top). **No
+device reports compliance to this service and no risk engine talks to it**, so
+the other two are by hand only. That is a feature rather than a gap: they are exactly the events a
 receiver is hardest to test against, because in a real deployment they arrive
 from systems you do not control.
 
@@ -372,6 +376,19 @@ somebody left the group that authorises them.
   `revoked` is a warning: nothing is wrong with saying so and there is nothing
   left to apply it to, which is what makes it worth noticing.
 - **Default payload:** `{"groups": ["everyone"]}`.
+- **Sent by itself (since 2026-09-22)** when a directory write moves a claim of
+  a person who **holds something live** — a valid access, ID or refresh token,
+  or an unexpired SAML assertion — and a stream takes the type:
+  - an attribute the claim catalogue maps (`mail` is `email`, `l` is
+    `address.locality`, and so on): the claim, with its new value, or `null`
+    for one now empty;
+  - a group joined or left, or a group renamed, and a person's own `memberOf`:
+    the groups claim, with the whole list as it is now.
+  The door does not matter: the console, `/admin-api`, SCIM, an `ldapmodify` of
+  the person or of a group. A person with nothing live gets no event, because
+  it would be about tokens that do not exist. The subject names the person
+  (`iss_sub`), since the change is to every token they hold rather than to one
+  session.
 
 ## `credential-change`
 
@@ -396,6 +413,25 @@ session should be allowed to do next.
   (the last ten). It changes no state and produces no warning — nothing about
   this event contradicts anything.
 - **Default payload:** `credential_type: password`, `change_type: update`.
+- **Sent by itself** at every door that changes a person's credential (every
+  door since 2026-09-22):
+
+  | Credential | `credential_type` | Doors |
+  |---|---|---|
+  | Password | `password` | `/admin/users` and `/admin-api` (set, reset, reset link, a new person), the portal (change, account activation, reset link), a change forced at sign-in, an LDAP add or modify of `userPassword` |
+  | Security key | `fido2-platform` or `fido2-roaming`, with `fido2_aaguid` | enrolled at sign-in or on the portal, removed on the portal or the console |
+  | Authenticator app | `app` | set up at sign-in, on the portal or at activation; removed on the portal or the console |
+  | Certificate | `x509`, with `x509_issuer` and `x509_serial` | ACME, EST and SCEP issue and revoke, a TLS client certificate, an RFC 7523/7522 signing key pair, a person's certificate revoked on `/admin/pki` |
+  | Wallet credential | `verifiable-credential` | issued over OpenID4VCI, disowned by a global sign-out |
+
+  A security key is `fido2-platform` when the browser reported a platform
+  authenticator at enrolment, and `fido2-roaming` otherwise. A key enrolled
+  before 2026-09-22 has no attachment recorded and stays `fido2-roaming`, with
+  no AAGUID. Recovery codes have no CAEP type; they send RISC's
+  `recovery-information-changed`. `initiating_entity` is `user` when the person
+  did it themselves, `admin` when somebody else did, and `system` for a
+  certificate superseded by its renewal or a credential disowned by a
+  sign-out.
 
 ## `assurance-level-change`
 
@@ -479,8 +515,13 @@ to weigh it rather than act on it.
 ## What never produces a CAEP event
 
 Only a **browser sign-on session** creates a row in the register, so nothing
-below is ever the subject of one. That is not an omission — none of them is a
-session in CAEP's sense:
+below is ever the subject of a *session* event. That is not an omission — none
+of them is a session in CAEP's sense. The person-level events are different:
+an LDAP password write, a SCIM change to a claim, and an OpenID4VCI issuance do
+send `credential-change` or `token-claims-change` about the PERSON, as the
+sections above say.
+
+None of these is the subject of a session event:
 
 - a **Kerberos** AS-REQ, TGS-REQ or AP-REQ, and a ticket-granting ticket
   expiring;
@@ -526,7 +567,7 @@ session in CAEP's sense:
 |---|---|---|
 | `caep.enabled` | on | off drops all eight from `events_supported` |
 | `caep.autoEmit` | on | off leaves the register accurate and sends nothing by itself |
-| `caep.autoEmitTypes` | the five | which of the five observable acts emit; naming any other type is dropped with a warning |
+| `caep.autoEmitTypes` | the six | which of the six observable acts emit; naming any other type is dropped with a warning |
 | `caep.eventsSupported` | all eight | which types this transmitter will agree to deliver |
 | `caep.omitEventTimestamp` | off | on produces a conforming event with **no** `event_timestamp`, to break a receiver that assumes one |
 | `caep.includeReasons` | on | whether `reason_admin` / `reason_user` are sent |

@@ -1532,6 +1532,15 @@ const groupIndexes = realms.keyed(function () {
 
 const NO_GROUPS = new Map();
 
+// WHETHER THIS MODULE HAS FINISHED LOADING (#145), declared up here for the
+// group index's reason above: `putEntry()` runs during the seed, while this
+// file is still loading, and its membership note reads `groupRuleFor()`,
+// whose `GROUP_CLASSES` is declared further down — a temporal dead zone. The
+// seed has nobody to tell anyway (the account observer is installed by
+// `ssf.ts`, long after), so the note waits for the flag set at the end of
+// this file.
+let moduleLoaded = false;
+
 function groupIndexIsCurrent() {
   log.debug("Entering groupIndexIsCurrent().");
   const cache = groupIndexes();
@@ -2647,6 +2656,13 @@ function putEntry(dn, attributes, options) {
   touchDirectory(stored.dn);
   noteUsernameIndexPut(stored, hadNames, usernameIndexWasCurrent);
   noteGroupIndexPut(stored, groupIndexWasCurrent);
+  // A group's members, told per person (#145). `previous` is the entry this
+  // write replaced — putEntry() builds a fresh object, so it is a true before.
+  if (moduleLoaded &&
+      (groupRuleFor(stored) || (previous && groupRuleFor(previous)))) {
+    noteMembershipChange(stored.dn, previous ? previous.attributes : {},
+                         stored.attributes);
+  }
   log.debug('Leaving putEntry(). The directory now holds ' + entries.size +
             ' entry/entries.');
   return stored;
@@ -9836,6 +9852,35 @@ function ldapChannelOf(req) {
   return (req.connection && req.connection.encrypted) ? 'ldaps' : 'ldap';
 }
 
+// ---------------------------------------------------------------------------
+// A PASSWORD WRITTEN OVER THE SOCKET, told as CAEP credential-change (#145).
+// Every other door that sets a password sends one; an `ldapadd` or
+// `ldapmodify` of `userPassword` did not. Whoever is bound decides who
+// initiated it: the person themselves is `user`, anybody else `admin`.
+// LAZILY required, because `ssf/account_signals.ts` is a library this file
+// has no business loading at 21 for every process that never writes a
+// password — and a require that moved nothing would still read as if the
+// order mattered.
+// ---------------------------------------------------------------------------
+function notePasswordWritten(req, dn, username, changeType) {
+  log.debug('Entering notePasswordWritten(). ' + changeType + ' ' + dn);
+  const self = normalizeDn(boundDnOf(req)) === normalizeDn(dn);
+  try {
+    require('../ssf/account_signals').credentialChanged({
+      username: String(username || ''), credentialType: 'password',
+      changeType: changeType, initiatingEntity: self ? 'user' : 'admin',
+      via: ldapChannelOf(req),
+      reasonAdmin: 'A password was ' + (changeType === 'create' ? 'set' :
+                   'changed') + ' for ' + username + ' over LDAP.',
+      reasonUser: 'Your password was ' + (changeType === 'create' ? 'set' :
+                  'changed') + '.' });
+  } catch (e) {
+    log.debug('Caught in notePasswordWritten(): ' + ((e && e.message) || e));
+    // The write stands whether or not a receiver is told.
+  }
+  log.debug('Leaving notePasswordWritten().');
+}
+
 function boundDnOf(req) {
   log.debug("Entering boundDnOf().");
   const bound = req.connection && req.connection.ldap &&
@@ -11071,6 +11116,7 @@ server.add('', function (req, res, next) {
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
   if (addedPassword.password) {
     credentials.passwordWritten(addedPassword.name, addedPassword.password);
+    notePasswordWritten(req, addedEntry.dn, addedPassword.name, 'create');
   }
   if (isPersonEntry(addedEntry)) {
     noteAccountChange('created', addedEntry.dn, {},
@@ -11131,6 +11177,7 @@ server.del('', function (req, res, next) {
       new ldap.NotAllowedOnNonLeafError(dn), dn));
   }
   const deletedPerson = isPersonEntry(stored);
+  const deletedGroup = !!groupRuleFor(stored);
   const deletedAttributes = attributeSnapshot(stored);
   const deletedName = usernameOfEntry(stored);
   entries.delete(normalizeDn(dn));
@@ -11138,6 +11185,8 @@ server.del('', function (req, res, next) {
   if (deletedPerson) {
     noteAccountChange('deleted:' + deletedName, stored.dn, deletedAttributes,
                       {});
+  } else if (deletedGroup) {
+    noteMembershipChange(stored.dn, deletedAttributes, {});
   }
   // Note what is NOT done here: the DN is left in any group that lists it as a
   // member. See the header — referential integrity is a directory feature and
@@ -11324,10 +11373,13 @@ server.modify('', function (req, res, next) {
   if (modifiedPassword.password) {
     credentials.passwordWritten(modifiedPassword.name,
                                 modifiedPassword.password);
+    notePasswordWritten(req, stored.dn, modifiedPassword.name, 'update');
   }
   if (isPersonEntry(stored)) {
     noteAccountChange('updated', stored.dn, beforeModify,
                       attributeSnapshot(stored));
+  } else if (groupRuleFor(stored)) {
+    noteMembershipChange(stored.dn, beforeModify, stored.attributes);
   }
   log.info('ldap: modified ' + dn + '.');
   // Recorded AFTER the working copy has replaced the stored one, and that is
@@ -11486,6 +11538,10 @@ server.modifyDN('', function (req, res, next) {
       stats.renameIdentity(nameBefore, nameAfter);
     }
     noteAccountChange('updated', stored.dn, before, attributeSnapshot(stored));
+  } else if (groupRuleFor(stored)) {
+    // A group renamed: every member's claim names it by the name that moved.
+    noteMembershipChange(stored.dn, before, stored.attributes,
+                         { everyMember: true });
   }
   // The kind is taken from the NEW DN, because that is what the entry is now —
   // and a rename can move an entry between containers, which is exactly the
@@ -13894,6 +13950,75 @@ function noteAccountChange(kind, dn, before, after, options) {
   log.debug('Leaving noteAccountChange().');
 }
 
+// ---------------------------------------------------------------------------
+// A GROUP'S MEMBERS CHANGED (#145, 2026-09-22), told to the same observer as a
+// person's own write, once per PERSON whose groups it changed.
+//
+// A person's groups are not on their entry here: they are the `member`,
+// `uniqueMember` and `memberUid` values of the group entries, so a write that
+// adds somebody to a group never passes through noteAccountChange() — which
+// is only ever handed person entries — and the `groups` claim of every token
+// they hold changed with nobody told. CAEP's `token-claims-change` is the
+// event for exactly that, and `ssf/caep.ts` decides whether one is due; this
+// says only WHO, as `kind: 'membership'`. RISC has no reading of it, and
+// `ssf.ts` does not hand it RISC's way.
+//
+// `before` and `after` are the group's attribute maps, `{}` for a group that
+// did not exist or no longer does. A RENAME passes `everyMember`: nobody
+// joined or left, but every member's claim names the group by the name that
+// just moved. A person the observer throws on does not undo the write — the
+// rule noteAccountChange() keeps.
+// ---------------------------------------------------------------------------
+function memberDnsOf(attributes) {
+  log.debug('Entering memberDnsOf().');
+  const out = membersOf({ attributes: attributes || {} }).map(function (one) {
+    return normalizeDn(one.dn);
+  });
+  log.debug('Leaving memberDnsOf(). ' + out.length + ' member(s).');
+  return out;
+}
+
+function noteMembershipChange(groupDn, before, after, options) {
+  log.debug('Entering noteMembershipChange(). ' + groupDn);
+  if (!accountObserver) {
+    log.debug('Leaving noteMembershipChange(). Nobody is observing.');
+    return;
+  }
+  // Sets, because a group can hold thousands and a write that adds one member
+  // must not cost the square of that to find it.
+  const was = new Set(memberDnsOf(before));
+  const now = new Set(memberDnsOf(after));
+  const affected = (options && options.everyMember)
+    ? Array.from(was).concat(Array.from(now))
+    : Array.from(was).filter(function (dn) { return !now.has(dn); })
+        .concat(Array.from(now).filter(function (dn) {
+          return !was.has(dn);
+        }));
+  const seen = {};
+  affected.forEach(function (dn) {
+    if (seen[dn]) {
+      return;
+    }
+    seen[dn] = true;
+    const stored = getEntry(dn);
+    if (!stored || !isPersonEntry(stored)) {
+      // A dangling member, or a group nested in a group: nobody's claims.
+      return;
+    }
+    try {
+      accountObserver({ kind: 'membership', dn: String(stored.dn),
+        username: usernameOfEntry(stored), realm: realmFor(stored.dn).id,
+        group: String(groupDn) });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-LDAP-0032') +
+                'ldap: the account observer threw on a membership change ' +
+                'and the write stands: ' + ((e && e.message) || e));
+    }
+  });
+  log.debug('Leaving noteMembershipChange(). ' + Object.keys(seen).length +
+            ' member(s) affected.');
+}
+
 // The lock value on an attribute snapshot, or ''.
 function firstLockOf(attributes) {
   log.debug('Entering firstLockOf().');
@@ -14251,6 +14376,7 @@ function deleteGroupEntry(dn) {
   }
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
+  noteMembershipChange(stored.dn, stored.attributes, {});
   log.debug('Leaving deleteGroupEntry(). ' + entries.size + ' entry/entries ' +
       'left.');
   return { ok: true, dn: stored.dn };
@@ -16337,3 +16463,7 @@ module.exports = {
   // THIS REALM's entries, not the Map's. See realmEntryCount().
   entryCount: realmEntryCount
 };
+
+// Loaded: from here on a membership note can read what it needs (see
+// `moduleLoaded` above).
+moduleLoaded = true;

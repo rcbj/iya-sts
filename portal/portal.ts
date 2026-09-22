@@ -1538,6 +1538,26 @@ class Portal {
              (password ? 'password' : 'no password') + ', security key: ' +
              keyRole + ', authenticator app: ' + (withTotp ? 'yes' : 'no') +
              '). The activation link is now spent.');
+    // CAEP credential-change for what setup created (#145): the first
+    // password and the authenticator app, each a credential the person now
+    // holds. A security key is enrolled later, by its own door.
+    if (password) {
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: 'password', changeType: 'create',
+        initiatingEntity: 'user', via: 'portal activation',
+        reasonAdmin: username + ' set a password when activating their ' +
+                     'account.',
+        reasonUser: 'You set a password for your new account.' });
+    }
+    if (withTotp) {
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: self.deps.accountSignals.TOTP_CREDENTIAL_TYPE,
+        changeType: 'create', initiatingEntity: 'user',
+        via: 'portal activation',
+        reasonAdmin: username + ' set up an authenticator app when ' +
+                     'activating their account.',
+        reasonUser: 'You set up an authenticator app.' });
+    }
 
     // **THEY ARE SENT TO THE SIGN-IN SCREEN AND NOT SIGNED IN.** Spending an
     // activation link proves possession of a link, which is not the credential
@@ -4706,6 +4726,12 @@ class Portal {
           summary: username + ' removed their own authenticator app',
           detail: { address: websecurity.addressOf(req) }
         });
+        // CAEP credential-change (#145), as the console's clear-totp sends.
+        self.deps.accountSignals.credentialChanged({ username: username,
+          credentialType: self.deps.accountSignals.TOTP_CREDENTIAL_TYPE,
+          changeType: 'delete', initiatingEntity: 'user', via: 'portal',
+          reasonAdmin: username + ' removed their authenticator app.',
+          reasonUser: 'You removed your authenticator app.' });
         log.info('portal: ' + username + ' removed their authenticator app. ' +
                  'That account is down to one factor.');
         log.debug('Leaving POST ' + BASE + '/mfa. Removed.');
@@ -4780,6 +4806,11 @@ class Portal {
           summary: username + ' set up an authenticator app as a second factor',
           detail: { address: websecurity.addressOf(req) }
         });
+        self.deps.accountSignals.credentialChanged({ username: username,
+          credentialType: self.deps.accountSignals.TOTP_CREDENTIAL_TYPE,
+          changeType: 'create', initiatingEntity: 'user', via: 'portal',
+          reasonAdmin: username + ' set up an authenticator app.',
+          reasonUser: 'You set up an authenticator app.' });
         await websecurity.succeededShared('mfa-code', req, username);
         log.info('portal: ' + username + ' set up an authenticator app. A ' +
                  'password alone will no longer sign them in.');
@@ -4870,6 +4901,13 @@ class Portal {
       if (action === 'confirm-codes') {
         const stored = credentials.confirmBackupCodes(
           username, String(body.handle || ''));
+        // RECOVERY CODES ARE RECOVERY INFORMATION (#145): CAEP names no
+        // credential type for them, and RISC's recovery-information-changed
+        // is the event the console's clear already sends.
+        if (stored.ok) {
+          self.deps.accountSignals.recoveryInformationChanged({
+            username: username, via: 'portal' });
+        }
         audit.record({
           category: 'authentication',
           action: 'portal.mfa.backup-codes.confirmed',
@@ -5137,7 +5175,8 @@ class Portal {
       if (action === 'remove') {
         // ONE PROFILE AT A TIME: taking the RFC 7522 key pair off leaves the
         // RFC 7523 one working, and the reverse.
-        const removed = personAssertions.clear(username, profile.id);
+        const removed = personAssertions.clear(username, profile.id,
+          { initiatingEntity: 'user', via: 'portal' });
         if (!removed.ok) {
           log.debug('Leaving POST ' + BASE + '/signing-key. Nothing to ' +
                                              'remove.');
@@ -5225,7 +5264,7 @@ class Portal {
         }
         const record = issued.issued;
         const written = personAssertions.write(username, record,
-                                               { purpose: profile.id });
+          { purpose: profile.id, initiatingEntity: 'user', via: 'portal' });
         if (!written.ok) {
           // THE KEY PAIR IS GONE AND THE PAGE SAYS SO. `common/pki.js` hands
           // one over ONCE and keeps no copy, so a failed write is not a state
@@ -5378,6 +5417,12 @@ class Portal {
         detail: { address: websecurity.addressOf(req) }
       });
       log.info('portal: ' + username + ' changed their own password.');
+      // CAEP credential-change (#145), as the console's set-password sends.
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: 'password', changeType: 'update',
+        initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' changed their own password.',
+        reasonUser: 'You changed your password.' });
       log.debug('Leaving POST ' + BASE + '/password. Changed.');
       // BACK TO THE PAGE IT WAS POSTED FROM, and not to the overview. It used
       // to be the overview because the form was on it; now that the form has a
@@ -5534,6 +5579,19 @@ class Portal {
               (done.errors || ['The security key could not be registered.'])[0],
               base));
           }
+          // CAEP credential-change (#145), the key described by what its
+          // enrolment recorded: attachment and AAGUID.
+          const enrolled = credentials.keysOf(username).filter(function (one) {
+            return one.credentialId === String(done.credentialId || '');
+          })[0] || null;
+          self.deps.accountSignals.credentialChanged({ username: username,
+            credentialType: self.deps.accountSignals.keyCredentialType(
+              enrolled),
+            fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+            friendlyName: String((enrolled && enrolled.label) || ''),
+            changeType: 'create', initiatingEntity: 'user', via: 'portal',
+            reasonAdmin: username + ' enrolled a security key.',
+            reasonUser: 'You enrolled a security key.' });
           audit.record({
             category: 'authentication', action: 'portal.key.enrolled',
             actor: username, outcome: 'success',
@@ -5597,6 +5655,10 @@ class Portal {
       // among THIS PERSON'S keys, so an id belonging to somebody else matches
       // nothing. An implementation that took both from the request would be the
       // A01 vulnerability this file exists to avoid.
+      // The key as it was, read first: the event describes what was removed.
+      const going = credentials.keysOf(username).filter(function (one) {
+        return one.credentialId === String(body.credentialId || '');
+      })[0] || null;
       const removed = credentials.removeKey(username,
                                             String(body.credentialId || ''));
       if (!removed.ok) {
@@ -5606,6 +5668,13 @@ class Portal {
           (removed.errors || ['The key could not be removed.'])[0],
           baseUrlOf(req)));
       }
+      self.deps.accountSignals.credentialChanged({ username: username,
+        credentialType: self.deps.accountSignals.keyCredentialType(going),
+        fido2Aaguid: String((going && going.aaguid) || ''),
+        friendlyName: String((going && going.label) || ''),
+        changeType: 'delete', initiatingEntity: 'user', via: 'portal',
+        reasonAdmin: username + ' removed a security key.',
+        reasonUser: 'You removed a security key.' });
       audit.record({
         category: 'authentication', action: 'portal.key.removed',
         actor: username, outcome: 'success',

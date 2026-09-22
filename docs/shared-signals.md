@@ -402,7 +402,7 @@ types from what a stream may ask for.
 |---|---|---|---|---|
 | `caep.enabled` | `STS_CAEP_ENABLED` | `true` | yes | Offers CAEP's eight event types and keeps the session register. |
 | `caep.autoEmit` | `STS_CAEP_AUTO_EMIT` | `true` | yes | Sends CAEP events automatically for the session acts this service can observe. |
-| `caep.autoEmitTypes` | `STS_CAEP_AUTO_EMIT_TYPES` | `session-established,session-presented,session-revoked,credential-change,assurance-level-change` | yes | Which of those acts produce an event. A type nothing here can cause is dropped with a warning. |
+| `caep.autoEmitTypes` | `STS_CAEP_AUTO_EMIT_TYPES` | `session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change` | yes | Which of those acts produce an event. A type nothing here can cause is dropped with a warning. |
 | `caep.eventsSupported` | `STS_CAEP_EVENTS_SUPPORTED` | all eight | yes | Which CAEP types a stream may ask for. Short names are accepted. |
 | `caep.assuranceNamespace` | `STS_CAEP_ASSURANCE_NAMESPACE` | `NIST-AAL` | yes | The `namespace` of an `assurance-level-change` emitted by hand. Automatic ones use `urn:sts:acr`. |
 | `caep.defaultRiskLevel` | `STS_CAEP_DEFAULT_RISK_LEVEL` | `MEDIUM` | yes | What a `risk-level-change` says when the caller does not choose a level. |

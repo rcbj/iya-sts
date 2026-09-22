@@ -248,6 +248,23 @@ const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
                                  retain: 'age' });
 
 class Credentials {
+  // An AAGUID as the UUID string CAEP and the FIDO metadata service write
+  // (`01020304-0506-...`), from the 32 hex digits `authn/webauthn.js` parses
+  // out of the attested credential data. All zeros — an authenticator that
+  // declines to name its model, or attestation "none" — is no AAGUID, and ''
+  // is returned for it as for anything unparseable.
+  static aaguidString(value: unknown): string {
+    helpers.log.debug("Entering Credentials.aaguidString().");
+    const hex = String(value || '').toLowerCase().replace(/-/g, '');
+    if (!/^[0-9a-f]{32}$/.test(hex) || /^0+$/.test(hex)) {
+      helpers.log.debug("Leaving Credentials.aaguidString(). None.");
+      return '';
+    }
+    helpers.log.debug("Leaving Credentials.aaguidString().");
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' +
+      hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+  }
+
   constructor(private readonly deps: CredentialsDeps) {
     deps.log.debug("Entering Credentials.constructor().");
     deps.log.debug("Leaving Credentials.constructor().");
@@ -1550,7 +1567,16 @@ class Credentials {
       enrolledAt: Date.now(),
       // A label so a person with three keys can tell them apart on the portal.
       // Theirs to set; this is only the default.
-      label: String(credential.label || 'security key')
+      label: String(credential.label || 'security key'),
+      // WHAT KIND OF AUTHENTICATOR (#145, 2026-09-22), kept because CAEP's
+      // credential-change names it: the attachment the browser reported
+      // (`platform` or `cross-platform`, WebAuthn Level 3 section 5.1), which
+      // decides `fido2-platform` against `fido2-roaming`, and the AAGUID from
+      // the attested credential data, as a UUID string. Both were handed to
+      // this function and dropped until then; a key enrolled before has
+      // neither, and is reported as it always was.
+      attachment: String(credential.attachment || ''),
+      aaguid: Credentials.aaguidString(credential.aaguid)
     };
     let written = false;
     try {
