@@ -9027,23 +9027,27 @@ const SETTINGS = [
     label: 'Which acts emit automatically',
     env: 'STS_CAEP_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'session-established,session-presented,session-revoked,' +
-          'credential-change,assurance-level-change',
+          'credential-change,assurance-level-change,token-claims-change',
     runtime: true,
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
-                 'itself, out of the five acts it can actually observe: a ' +
+                 'itself, out of the six acts it can actually observe: a ' +
                  'session starting, a session being presented, a session ' +
                  'ending, a person re-authenticating on a session they ' +
                  'already hold with a different acr (a step-up or ' +
                  'step-down, since 2026-09-14, which emits ' +
-                 'assurance-level-change on the urn:sts:acr scale), and — ' +
-                 'since 2026-09-13 — an administrator changing ' +
-                 'a person\'s credentials on their /admin/users page or ' +
-                 'through /admin-api/users (a password set or reset, a ' +
-                 'security key, an authenticator app or every second factor ' +
-                 'removed), or the person spending a password reset link, ' +
-                 'which emits credential-change. The other three are things ' +
-                 'nothing here does — no device reports compliance to this ' +
-                 'service and no risk engine talks to it — so they are ' +
+                 'assurance-level-change on the urn:sts:acr scale), a ' +
+                 'credential of a person\'s created, changed, revoked or ' +
+                 'deleted at any door that changes one — the console and ' +
+                 '/admin-api, the portal, sign-in, an LDAP password write, ' +
+                 'a certificate enrolled or revoked, a signing key pair, a ' +
+                 'wallet credential (since 2026-09-22, #145) — which emits ' +
+                 'credential-change, and — since 2026-09-22 — a directory ' +
+                 'write that moves a claim of a person who holds live ' +
+                 'tokens or assertions (an attribute the claim catalogue ' +
+                 'maps, or a group joined, left or renamed), which emits ' +
+                 'token-claims-change. The other two are things nothing ' +
+                 'here does — no device reports compliance to this service ' +
+                 '(#164) and no risk engine talks to it (#62) — so they are ' +
                  'emitted BY HAND from /admin/caep or POST ' +
                  '/admin-api/caep/emit, and a row naming one of them here is ' +
                  'dropped with a warning rather than producing an event ' +
@@ -9201,26 +9205,55 @@ const SETTINGS = [
     label: 'Which acts emit automatically',
     env: 'STS_RISC_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'account-purged,account-disabled,account-enabled,' +
-          'identifier-changed,account-credential-change-required,' +
-          'recovery-information-changed',
+          'identifier-changed,identifier-recycled,' +
+          'account-credential-change-required,' +
+          'recovery-information-changed,recovery-activated,' +
+          'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
+          'opt-out-effective,opt-in',
     runtime: true,
     description: 'The SHORT NAMES of the RISC events this service emits by ' +
-                 'itself, out of the six acts it can actually observe: the ' +
-                 'four in its own directory, and — since 2026-09-13 — the ' +
-                 'two ' +
-                 'an administrator performs on a person\'s /admin/users page ' +
-                 'or through /admin-api/users. A password reset or a reset ' +
-                 'link emits account-credential-change-required, and ' +
-                 'clearing somebody\'s recovery codes (alone, or with every ' +
-                 'other second factor) emits recovery-information-changed. ' +
-                 'Four of the remaining eight — the opt-out set — are ' +
-                 'emitted by hand and CHANGE REAL STATE here when they are, ' +
-                 'because RISC defines each of them as "the account is in ' +
-                 'this state" rather than as a report that it moved. The ' +
-                 'other four describe things nothing here does: no breach ' +
-                 'corpus is searched by this service. A row naming one of ' +
-                 'the eight is dropped with a warning rather than producing ' +
-                 'an event nothing can cause.' },
+                 'itself, out of the thirteen acts it can observe (every ' +
+                 'one since 2026-09-22, #146). In its own directory: an ' +
+                 'account purged, disabled (with the reason an ' +
+                 'administrator gave, and none when none was given) or ' +
+                 'enabled, an identifier changed, and an identifier ' +
+                 'RECYCLED — given to an account after another released it ' +
+                 'within risc.recycleWindowDays. From an administrator: a ' +
+                 'password reset, a reset link or a required change emits ' +
+                 'account-credential-change-required, a reset link also ' +
+                 'emits recovery-activated, a reset marked as caused by a ' +
+                 'compromised credential emits credential-compromise, and ' +
+                 'clearing recovery codes emits ' +
+                 'recovery-information-changed (as does a person confirming ' +
+                 'new ones on the portal). From the account holder on ' +
+                 '/portal/signals: opt-out-initiated, opt-out-cancelled and ' +
+                 'opt-in, and opt-out-effective when risc.optOutDelayHours ' +
+                 'has passed. Only the deprecated sessions-revoked is never ' +
+                 'caused here; a row naming it is dropped with a warning ' +
+                 'rather than producing an event nothing can cause.' },
+
+  { key: 'risc.recycleWindowDays', group: 'RISC',
+    label: 'Recycled identifier window (days)',
+    env: 'STS_RISC_RECYCLE_WINDOW_DAYS', type: 'int', dflt: 365,
+    min: 0, max: 3650, runtime: true,
+    description: 'How long after an account released an email address or ' +
+                 'phone number — moved off it, or was purged holding it — ' +
+                 'another account taking it is reported as RISC ' +
+                 'identifier-recycled (section 2.6). The memory is the RISC ' +
+                 'register\'s, so it is also bounded by ' +
+                 'risc.maxAccountsTracked. 0 reports nothing.' },
+
+  { key: 'risc.optOutDelayHours', group: 'RISC',
+    label: 'Opt-out takes effect after (hours)',
+    env: 'STS_RISC_OPT_OUT_DELAY_HOURS', type: 'int', dflt: 24,
+    min: 0, max: 720, runtime: true,
+    description: 'How long an account holder\'s opt-out on /portal/signals ' +
+                 'stays in RISC section 2.8\'s opt-out-initiated state ' +
+                 'before it becomes effective (opt-out-effective, sent by ' +
+                 'the risc.opt-out-effective scheduler job). The delay is ' +
+                 'the section\'s point: receivers keep getting events, and ' +
+                 'the holder can cancel, until it passes. 0 makes it ' +
+                 'effective on the job\'s next run.' },
 
   { key: 'risc.eventsSupported', group: 'RISC',
     label: 'RISC event types offered', env: 'STS_RISC_EVENTS_SUPPORTED',

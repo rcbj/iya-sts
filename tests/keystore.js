@@ -189,6 +189,9 @@ async function run(t) {
 
     const keystore = require('../common/keystore');
     const helpers = require('../common/helpers');
+    // Required HERE with the two above it, and for their reason: the
+    // environment is set a few lines up and these modules read it at load.
+    const bbs2023 = require('../common/vendored/bbs2023.js');
 
     // **THE ENVIRONMENT LAYER AND NOT `setOverride()`**, and the reason is the
     // thing under test: all three of these are RESTART-ONLY, because the keys
@@ -310,6 +313,65 @@ async function run(t) {
     t.equal((firstPq.privateKey || '').length,
             ((warmed[0] || {}).privateKey || '').length,
             'the same number of bytes the generated key had');
+
+    // -------------------------------------------------------------------
+    // **AND THE BBS KEY, WHICH IS THE THIRD OF THIS FAMILY (#161,
+    // 2026-09-22).** The post-quantum half above was written and never read
+    // back; this one was read back WRONGLY. `keystore.js`'s
+    // serialiseBbsKey() stores the public half as a base64 STRING, and
+    // `helpers.js`'s lazyKeySet() read it with `Uint8Array.from(...)` — which
+    // over a string maps each CHARACTER through Number(), NaN for every
+    // base64 character, landing as 0. So a realm whose keys persist got a
+    // public half of ZEROS against a secret half that decodes correctly: a
+    // mismatched pair, silently, and one that GREW on every round trip (96
+    // real bytes, then 128 zeros, then 172) because the zeros were
+    // re-encoded.
+    //
+    // Nothing in the key set looked wrong — the kid is derived from the
+    // public half, so it was consistently wrong — and what failed was every
+    // ldp_vc credential, at the issuer's own self-check, only in the modes
+    // where keys persist. So this asserts the two things a name comparison
+    // cannot see: the LENGTH of the public half, and that the pair actually
+    // SIGNS AND VERIFIES.
+    // -------------------------------------------------------------------
+    const madeBbs = await helpers.bbsKeyPair();
+    t.equal(madeBbs.publicKey.length, 96,
+            'a fresh BLS12-381 G2 public key is 96 bytes');
+
+    keystore.reset();
+    keystore.setStore(store);
+    await keystore.start();
+    helpers.resetStsKeys();
+    // **READ OFF THE KEY SET ITSELF, NOT THROUGH `bbsKeyPair()`.** That
+    // function asks the keystore for the held pair first and REPLACES a
+    // differing one on the set — so it repairs this very corruption on the
+    // way past, and a test written through it passes with the bug in place
+    // (measured: the mutant survived). What every signer actually reads is
+    // the set's own property, which is the stored view.
+    const restoredBbs = helpers.stsKeysFor.of('').bbsKey;
+    t.equal(restoredBbs.publicKey.length, 96,
+            'THE RESTORED PUBLIC HALF IS 96 BYTES — it was the base64 string ' +
+            'read as an array, so it came back as that many ZEROS');
+    t.equal(Buffer.from(restoredBbs.publicKey).toString('base64'),
+            Buffer.from(madeBbs.publicKey).toString('base64'),
+            'and it is the same key that was generated');
+    const signed = await bbs2023.issue(
+      { '@context': ['https://www.w3.org/ns/credentials/v2'],
+        type: ['VerifiableCredential'], issuer: 'did:example:issuer',
+        credentialSubject: { id: 'did:example:subject' } },
+      { verificationMethod: 'did:example:issuer#bbs',
+        created: new Date().toISOString() },
+      restoredBbs.secretKey, restoredBbs.publicKey);
+    const verified = await bbs2023.verifyBase(signed.credential,
+                                              restoredBbs.publicKey);
+    t.check(!!(verified && verified.ok),
+            'AND THE RESTORED PAIR SIGNS AND VERIFIES — the halves come from ' +
+            'two different places (the blob for the public, ' +
+            'privateMaterialFor() for the secret), so only signing shows ' +
+            'they are still a pair',
+            JSON.stringify({ ok: verified && verified.ok,
+                             statements: (verified &&
+                                          verified.statements || []).length }));
 
     // -------------------------------------------------------------------
     // 3. ROTATION, which is destructive and has to be.

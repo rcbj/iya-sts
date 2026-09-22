@@ -12034,7 +12034,10 @@ class AdminConsole {
         this.note('Resetting a password, disabling a credential or requiring ' +
                   'a second factor needs <strong>Admin Write</strong>.');
     }
-    const form = function (action, label, title, danger) {
+    // `extra` is markup for the form's own fields (#146): the reset forms'
+    // "compromised" box and the disable form's RISC reason — the console half
+    // of what `/admin-api/users` takes, per rule 7.
+    const form = function (action, label, title, danger, extra?) {
       log.debug("Entering form(). " + action);
       log.debug("Leaving form().");
       return '<form method="post" action="/admin/users">' +
@@ -12042,9 +12045,13 @@ class AdminConsole {
         '<input type="hidden" name="user" value="' + self.esc(key) + '">' +
         '<input type="hidden" name="from" value="user">' +
         '<input type="hidden" name="back" value="' + self.esc(back) + '">' +
+        (extra || '') +
         '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
         ' title="' + self.esc(title) + '">' + label + '</button></div></form>';
     };
+    const compromisedBox = '<div class="formrow"><label><input ' +
+      'type="checkbox" name="compromised" value="true"> the password was ' +
+      'compromised (RISC <code>credential-compromise</code>)</label></div>';
     const reset = '<h3>Reset the password</h3>' +
       this.note('<strong>Reset password</strong> sets a generated password ' +
                 'and shows ' +
@@ -12055,12 +12062,16 @@ class AdminConsole {
       'link to send them, valid for ' +
       '<code>security.passwordResetTtlMinutes</code>; at it they choose a ' +
       'new password under this realm\'s password policy.') +
+      this.note('Tick <strong>the password was compromised</strong> when ' +
+                'that is WHY you are resetting it: RISC receivers are then ' +
+                'also told <code>credential-compromise</code>. A reset link ' +
+                'always tells them <code>recovery-activated</code>.') +
       form('reset-password', 'Reset password',
            'A generated password, shown once; they change it at next ' +
-           'sign-in; they are signed out everywhere.', true) +
+           'sign-in; they are signed out everywhere.', true, compromisedBox) +
       form('issue-password-reset', 'Generate a password reset link',
            'Removes their current password, signs them out everywhere, and ' +
-           'shows a single-use link to send them.', true);
+           'shows a single-use link to send them.', true, compromisedBox);
     const passkeys = '<h3>Passwordless sign-in</h3>' + (factors.primaryKeys > 0
       ? (factors.password
           ? this.note('Removes all ' + this.esc(String(factors.primaryKeys)) +
@@ -12128,7 +12139,13 @@ class AdminConsole {
                   'is the same act.') +
         form('disable', 'Disable the account',
              'Sets pwdAccountLockedTime and signs them out of everything.',
-             true));
+             true,
+             '<div class="formrow"><label>Reason for RISC receivers ' +
+             '<select name="riscReason"><option value="">none given' +
+             '</option><option value="hijacking">hijacking — the account ' +
+             'was taken over</option><option value="bulk-account">' +
+             'bulk-account — one of many created in bulk</option>' +
+             '</select></label></div>'));
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
     return heading + state + signalsNote + account + reset + passkeys + mfa;
   }

@@ -130,10 +130,17 @@ interface RiscRow {
   phone: string;
   subject?: string;
   formerIdentifiers: string[];
+  // Identifiers this account gave up, and when — an address it moved off, or
+  // everything it held when it was purged (#146). What `identifier-recycled`
+  // is detected against.
+  releasedIdentifiers: Array<{ value: string; format: string; at: string }>;
   createdAt: string;
   updatedAt: string;
   lifecycle: string;
   optOut: string;
+  // When the account entered opt-out-initiated (#146), for the job that makes
+  // it effective after risc.optOutDelayHours. '' in any other state.
+  optOutInitiatedAt?: string;
   credentialStanding: string;
   credentialChangeRequired: boolean;
   recoveryActivated: boolean;
@@ -210,8 +217,41 @@ const AUTO_ACTS: Record<string, string> = {
   // Neither is a write `actsFor()` could read off the attributes — a password
   // hash moving says nothing about who required what.
   credentialChangeRequired: 'account-credential-change-required',
-  recoveryChanged: 'recovery-information-changed'
+  recoveryChanged: 'recovery-information-changed',
+  // SEVEN MORE (#146, 2026-09-22).
+  //
+  //   * `recycled`: an address or number a purged account, or one that moved
+  //     off it, held within `risc.recycleWindowDays` now belongs to another
+  //     account. The directory SEES that — a create or a contact change — and
+  //     `recycledActs()` reads it off the register's own history.
+  //   * `recoveryActivated`: an administrator issued a password-reset link,
+  //     which is where account recovery starts here (#63 will add a person's
+  //     own start).
+  //   * `credentialCompromise`: an administrator said a reset was BECAUSE a
+  //     credential was compromised (#62 will add a detector).
+  //   * the four opt-out moves of section 2.8, which the PERSON makes on the
+  //     portal, and the scheduler job makes `optOutEffective` after the delay.
+  recycled: 'identifier-recycled',
+  recoveryActivated: 'recovery-activated',
+  credentialCompromise: 'credential-compromise',
+  optOutInitiated: 'opt-out-initiated',
+  optOutCancelled: 'opt-out-cancelled',
+  optOutEffective: 'opt-out-effective',
+  optIn: 'opt-in'
 };
+
+// The acts that ARE section 2.8's opt-out moves, and the state each leaves.
+const OPT_OUT_ACTS: Record<string, string> = {
+  optOutInitiated: 'opt-out-initiated',
+  optOutCancelled: 'opt-in',
+  optOutEffective: 'opt-out',
+  optIn: 'opt-in'
+};
+
+// Section 2.2's two values for account-disabled's `reason`. Anything else is
+// not sent: the member is optional, and an invented reason is a receiver told
+// something false about why an account stopped working.
+const DISABLE_REASONS = ['hijacking', 'bulk-account'];
 
 // The four events RISC section 2.8 defines as BEING a state rather than as
 // reporting one — "the account is in the opt-in state" — which is why emitting
@@ -533,6 +573,10 @@ class RiscRegister {
       candidate = String(body.sub || '');
     } else if (format === 'email') {
       candidate = String(body.email || '');
+    } else if (format === 'phone_number') {
+      // A phone subject was never read back until #146, so a transmitted
+      // identifier-changed about a number matched no account at all.
+      candidate = String(body.phone_number || '');
     } else if (format === 'opaque') {
       candidate = String(body.id || '');
     } else if (format === 'account') {
@@ -616,6 +660,7 @@ class RiscRegister {
       // `identifier-recycled` — the event that says an address now belongs to
       // SOMEBODY ELSE — from being filed under the person who used to hold it.
       formerIdentifiers: [],
+      releasedIdentifiers: [],
       createdAt: iso(),
       updatedAt: iso(),
       lifecycle: 'active',
@@ -882,11 +927,15 @@ class RiscRegister {
     return errors;
   }
 
+  // `subject` (#146) is the event's own, which says which identifier an
+  // identifier event is about: an email address or a phone number.
   applyToState(row: RiscRow, uri: string,
-               payload?: any): Record<string, any> {
+               payload?: any, subject?: any): Record<string, any> {
     const { log, iso } = this.deps;
     log.debug("Entering RiscRegister.applyToState(). " + uri);
     const body = (payload && typeof payload === 'object') ? payload : {};
+    const phoneSubject = !!(subject &&
+      (subject.format || subject.subject_type) === 'phone_number');
     const errors = [];
     const warnings = [];
     const short = this.shortNameOf(uri);
@@ -943,6 +992,10 @@ class RiscRegister {
         warnings.push('This account was already purged.');
       }
       row.lifecycle = 'purged';
+      // Everything a purged account held is free for somebody else now —
+      // what identifier-recycled is detected against (#146).
+      this.releaseIdentifier(row, row.email, 'email');
+      this.releaseIdentifier(row, row.phone, 'phone_number');
     } else if (short === 'account-credential-change-required') {
       row.credentialChangeRequired = true;
       warnings.push('This says a credential change was REQUIRED and not that ' +
@@ -970,13 +1023,21 @@ class RiscRegister {
                       '`new_value` is not the member RISC defines and is ' +
                       'silently ignored.');
       }
-      if (row.email && row.formerIdentifiers.indexOf(row.email) < 0) {
-        row.formerIdentifiers.push(row.email);
+      // WHICH identifier is the subject's format (#146): every change was
+      // filed as the email until then, so a changed phone number overwrote
+      // the address the row knew.
+      const old = phoneSubject ? row.phone : row.email;
+      if (old && row.formerIdentifiers.indexOf(old) < 0) {
+        row.formerIdentifiers.push(old);
       }
-      row.identifierChanges.unshift({ at: iso(), from: row.email, to: now });
+      this.releaseIdentifier(row, old,
+                             phoneSubject ? 'phone_number' : 'email');
+      row.identifierChanges.unshift({ at: iso(), from: old, to: now });
       row.identifierChanges =
         row.identifierChanges.slice(0, this.historyPerAccount());
-      if (now) {
+      if (now && phoneSubject) {
+        row.phone = now;
+      } else if (now) {
         row.email = now;
       }
     } else if (short === 'identifier-recycled') {
@@ -1045,6 +1106,8 @@ class RiscRegister {
           'account over and silencing the events that would report them.');
     }
     row.optOut = OPT_OUT_EVENTS[short];
+    row.optOutInitiatedAt = row.optOut === 'opt-out-initiated'
+      ? this.deps.iso() : '';
     log.debug("Leaving RiscRegister.applyOptOut(). " + from + ' -> ' +
               row.optOut);
   }
@@ -1081,7 +1144,8 @@ class RiscRegister {
     }
     const row = this.rowFor(accountId,
                             { iss: String((claims && claims.iss) || '') });
-    const verdict = this.applyToState(row, uri, (claims.events || {})[uri]);
+    const verdict = this.applyToState(row, uri, (claims.events || {})[uri],
+                                      claims && claims.sub_id);
     row.counts[uri] = (row.counts[uri] || 0) + 1;
     row.total += 1;
     row.events.unshift({
@@ -1196,7 +1260,23 @@ class RiscRegister {
     // for every deletion, which produced no event, no note and no state change,
     // and looked exactly like a service where nobody had been deleted.
     const acts = deleted ? [{ act: 'purged', values: {} }]
-      : this.actsFor(before, after);
+      : this.actsFor(before, after, asked).concat(
+          this.recycledActs(accountId, before, after));
+    // RELEASED WHEN THE DIRECTORY SAYS SO (#146), not when an event about it
+    // has been delivered: the next write can take the address before a push
+    // to somebody's endpoint has come back, and the register must already
+    // know the address is free. The state updates after delivery refresh the
+    // same entries.
+    if (deleted) {
+      this.releaseIdentifier(row, this.firstOf(before, EMAIL_ATTRIBUTES) ||
+                             row.email, 'email');
+      this.releaseIdentifier(row, this.firstOf(before, PHONE_ATTRIBUTES) ||
+                             row.phone, 'phone_number');
+    } else {
+      this.identifierMoves(before, after).forEach((move) => {
+        this.releaseIdentifier(row, move.from, move.format);
+      });
+    }
     if (!acts.length) {
       this.touch(row);
       log.debug("Leaving RiscRegister.observe(). Nothing RISC has a word for.");
@@ -1254,7 +1334,7 @@ class RiscRegister {
       // OLD address, and applying the act first would name the new one — an
       // event that is well-formed, delivers, and tells the receiver that an
       // address it has never heard of has become the one it already holds.
-      const subject = act.act === 'identifier'
+      const subject = act.act === 'identifier' || act.act === 'recycled'
         ? this.googleSubjectType(act.subject) : this.subjectFor(row, uri);
       const payload = this.buildPayload(uri, act.values || {}, {
         reasonAdmin: this.reasonFor(act, asked),
@@ -1309,7 +1389,8 @@ class RiscRegister {
       row.iss = String(asked.issuer);
     }
     row.updatedAt = iso();
-    const due = this.dueForActs(row, [{ act: act, values: {} }], asked);
+    const due = this.dueForActs(row, [{ act: act,
+      values: Object.assign({}, asked.values || {}) }], asked);
     this.touch(row);
     log.debug("Leaving RiscRegister.observeAct(). " + due.length +
               ' event(s) due.');
@@ -1340,26 +1421,72 @@ class RiscRegister {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.applyDue().");
     if (due && due.row && due.act) {
-      this.applyActLocally(due.row, { act: due.act, values: due.payload });
+      this.applyActLocally(due.row, { act: due.act, values: due.payload,
+                                      subject: due.subject || undefined });
     }
     log.debug("Leaving RiscRegister.applyDue().");
+  }
+
+  // An identifier this row gave up, with when (#146). The last twenty, newest
+  // last; one released again moves to the end rather than appearing twice.
+  private releaseIdentifier(row: RiscRow, value: string,
+                            format: string): void {
+    const { log, iso } = this.deps;
+    log.debug("Entering RiscRegister.releaseIdentifier(). " + format);
+    if (value) {
+      row.releasedIdentifiers = (row.releasedIdentifiers || [])
+        .filter((one) => {
+          return one.value !== value;
+        })
+        .concat([{ value: value, format: format, at: iso() }])
+        .slice(-20);
+    }
+    log.debug("Leaving RiscRegister.releaseIdentifier().");
   }
 
   private applyActLocally(row: RiscRow, act: RiscAct): void {
     const { log, iso } = this.deps;
     log.debug("Entering RiscRegister.applyActLocally(). " + act.act);
+    const release = (value: string, format: string) => {
+      this.releaseIdentifier(row, value, format);
+    };
     if (act.act === 'purged') {
       row.lifecycle = 'purged';
+      // Everything a purged account held is free for somebody else now.
+      release(row.email, 'email');
+      release(row.phone, 'phone_number');
     } else if (act.act === 'disabled') {
       row.lifecycle = 'disabled';
     } else if (act.act === 'enabled') {
       row.lifecycle = 'active';
     } else if (act.act === 'identifier' && act.values &&
                act.values['new-value']) {
-      if (row.email && row.formerIdentifiers.indexOf(row.email) < 0) {
-        row.formerIdentifiers.push(row.email);
+      // WHICH identifier moved is in the act's subject: an email or a phone
+      // number. Until #146 every move was filed as the email, so a changed
+      // phone number overwrote the address the row knew.
+      const phone = !!(act.subject &&
+        (act.subject.format || act.subject.subject_type) === 'phone_number');
+      const old = phone ? row.phone : row.email;
+      if (old && row.formerIdentifiers.indexOf(old) < 0) {
+        row.formerIdentifiers.push(old);
       }
-      row.email = String(act.values['new-value']);
+      release(old, phone ? 'phone_number' : 'email');
+      if (phone) {
+        row.phone = String(act.values['new-value']);
+      } else {
+        row.email = String(act.values['new-value']);
+      }
+    } else if (act.act === 'recycled') {
+      row.notes.push('An identifier this account now holds was recycled ' +
+                     'from another account.');
+      row.notes = row.notes.slice(-5);
+    } else if (act.act === 'recoveryActivated') {
+      row.recoveryActivated = true;
+    } else if (act.act === 'credentialCompromise') {
+      row.credentialStanding = 'compromised';
+    } else if (OPT_OUT_ACTS[act.act]) {
+      row.optOut = OPT_OUT_ACTS[act.act];
+      row.optOutInitiatedAt = row.optOut === 'opt-out-initiated' ? iso() : '';
     } else if (act.act === 'credentialChangeRequired') {
       row.credentialChangeRequired = true;
     } else if (act.act === 'recoveryChanged') {
@@ -1382,9 +1509,14 @@ class RiscRegister {
   // vocabulary would have had to undo it.
   // ---------------------------------------------------------------------------
   actsFor(before?: Record<string, any>,
-          after?: Record<string, any>): RiscAct[] {
+          after?: Record<string, any>,
+          notice?: Record<string, any>): RiscAct[] {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.actsFor().");
+    // THE REASON AN ADMINISTRATOR GAVE, AND ONLY THAT (#146). This sent
+    // `hijacking` for every disable until 2026-09-22, which told a receiver an
+    // account had been taken over when somebody had merely left.
+    const reason = String((notice || {}).reason || '');
     const out = [];
     const was = this.activeIn(before);
     const now = this.activeIn(after);
@@ -1393,7 +1525,9 @@ class RiscRegister {
     // `account-enabled` for every person ever created would be noise that
     // teaches a receiver to ignore the event.
     if (was !== now && now === false) {
-      out.push({ act: 'disabled', values: { reason: 'hijacking' } });
+      out.push({ act: 'disabled',
+        values: DISABLE_REASONS.indexOf(reason) >= 0 ? { reason: reason }
+                                                     : {} });
     }
     if (was === false && now === true) {
       out.push({ act: 'enabled', values: {} });
@@ -1450,6 +1584,58 @@ class RiscRegister {
     return found;
   }
 
+  // ---------------------------------------------------------------------------
+  // IDENTIFIER-RECYCLED (#146, RISC section 2.6): an address or number this
+  // write GAVE to an account — a create, or a contact change — that another
+  // account held and released within `risc.recycleWindowDays`: moved off it,
+  // or was purged holding it. The subject is the IDENTIFIER, in the email or
+  // phone_number format, because what a receiver learns is that the address
+  // it knew somebody by now belongs to somebody else. Read from the register's
+  // own history, so it is only as long as the register
+  // (`risc.maxAccountsTracked`) keeps the account that released it.
+  // ---------------------------------------------------------------------------
+  private recycledActs(accountId: string, before?: Record<string, any>,
+                       after?: Record<string, any>): RiscAct[] {
+    const { log, config } = this.deps;
+    log.debug("Entering RiscRegister.recycledActs().");
+    const days = Number(config.value('risc.recycleWindowDays'));
+    if (!(days > 0)) {
+      log.debug("Leaving RiscRegister.recycledActs(). The window is 0.");
+      return [];
+    }
+    const since = Date.now() - days * 86400000;
+    const taken: Array<{ value: string; format: string }> = [];
+    const mail = this.firstOf(after, EMAIL_ATTRIBUTES);
+    if (mail && mail !== this.firstOf(before, EMAIL_ATTRIBUTES)) {
+      taken.push({ value: mail, format: 'email' });
+    }
+    const phone = this.firstOf(after, PHONE_ATTRIBUTES);
+    if (phone && phone !== this.firstOf(before, PHONE_ATTRIBUTES)) {
+      taken.push({ value: phone, format: 'phone_number' });
+    }
+    const out: RiscAct[] = [];
+    taken.forEach((one) => {
+      let released = false;
+      register.forEach((held, id) => {
+        if (released || id === accountId) {
+          return;
+        }
+        released = (held.releasedIdentifiers || []).some((gone) => {
+          return gone.value === one.value &&
+                 new Date(gone.at).getTime() >= since;
+        });
+      });
+      if (released) {
+        out.push({ act: 'recycled', values: {},
+          subject: one.format === 'email'
+            ? { format: 'email', email: one.value }
+            : { format: 'phone_number', phone_number: one.value } });
+      }
+    });
+    log.debug("Leaving RiscRegister.recycledActs(). " + out.length + ".");
+    return out;
+  }
+
   // Every address or number that moved, as {from, to, format}. An identifier
   // that was ADDED where there was none is not a change and produces nothing:
   // `identifier-changed`'s subject has to carry the OLD value, and there is
@@ -1462,7 +1648,7 @@ class RiscRegister {
   }> {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.identifierMoves().");
-    const out = [];
+    const out: Array<{ from: string; to: string; format: string }> = [];
     const wasMail = this.firstOf(before, EMAIL_ATTRIBUTES);
     const nowMail = this.firstOf(after, EMAIL_ATTRIBUTES);
     if (wasMail && nowMail && wasMail !== nowMail) {
@@ -1505,6 +1691,19 @@ class RiscRegister {
     } else if (act.act === 'recoveryChanged') {
       text = String((notice || {}).reasonAdmin || '') ||
              'The recovery codes of ' + where + ' were cleared.';
+    } else if (act.act === 'recycled') {
+      text = 'An identifier another account released was given to ' + where +
+             '.';
+    } else if (act.act === 'recoveryActivated') {
+      text = String((notice || {}).reasonAdmin || '') ||
+             'Account recovery was started for ' + where + '.';
+    } else if (act.act === 'credentialCompromise') {
+      text = String((notice || {}).reasonAdmin || '') ||
+             'A credential of ' + where + ' was compromised.';
+    } else if (OPT_OUT_ACTS[act.act]) {
+      text = String((notice || {}).reasonAdmin || '') ||
+             'The account holder of ' + where + ' changed their RISC ' +
+             'participation.';
     } else {
       text = 'An identifier on ' + where + ' was changed.';
     }
@@ -1523,9 +1722,76 @@ class RiscRegister {
             ? 'Your password was reset and must be changed.'
             : (act.act === 'recoveryChanged'
               ? 'Your recovery codes were cleared.'
-              : 'One of your contact details was changed.'))));
+              : (act.act === 'recycled'
+                ? 'A contact detail you were given used to belong to ' +
+                  'another account.'
+                : (act.act === 'recoveryActivated'
+                  ? 'Recovery of your account was started.'
+                  : (act.act === 'credentialCompromise'
+                    ? 'A credential of yours was compromised.'
+                    : (OPT_OUT_ACTS[act.act]
+                      ? 'Your security-event sharing choice changed.'
+                      : 'One of your contact details was changed.'))))))));
     log.debug("Leaving RiscRegister.reasonForUser().");
     return text;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACCOUNT HOLDER'S OWN SECTION 2.8 CHOICE (#146), for `/portal/signals`.
+  //
+  // optOutOf(): the state, when an opt-out began, and the moves the state
+  // diagram allows from it — which is all the portal offers, so a person can
+  // never be shown a button that would put the register somewhere section 2.8
+  // does not go. opt-out-effective is not among them: the delay is the point,
+  // and only the job makes that move.
+  //
+  // optOutsDue(): the accounts whose opt-out has waited risc.optOutDelayHours,
+  // for that job — CLAIMED as they are returned, so each is made effective
+  // once.
+  // ---------------------------------------------------------------------------
+  optOutOf(accountId: unknown): { state: string; since: string;
+                                   moves: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.optOutOf().");
+    const row = register.get(String(accountId || ''));
+    const state = row ? row.optOut : 'opt-in';
+    const moves = state === 'opt-in' ? ['optOutInitiated']
+      : state === 'opt-out-initiated' ? ['optOutCancelled']
+      : ['optIn'];
+    log.debug("Leaving RiscRegister.optOutOf(). " + state);
+    return { state: state,
+             since: String((row && row.optOutInitiatedAt) || ''),
+             moves: moves };
+  }
+
+  // Whether `act` is a move the account holder may make now.
+  optOutMoveAllowed(accountId: unknown, act: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.optOutMoveAllowed(). " + act);
+    const allowed = this.optOutOf(accountId).moves.indexOf(act) >= 0;
+    log.debug("Leaving RiscRegister.optOutMoveAllowed(). " + allowed);
+    return allowed;
+  }
+
+  optOutsDue(): string[] {
+    const { log, config } = this.deps;
+    log.debug("Entering RiscRegister.optOutsDue().");
+    const hours = Number(config.value('risc.optOutDelayHours'));
+    const cutoff = Date.now() - hours * 3600000;
+    const out: string[] = [];
+    register.forEach((row, id) => {
+      if (row.optOut === 'opt-out-initiated' && row.optOutInitiatedAt &&
+          new Date(row.optOutInitiatedAt).getTime() <= cutoff) {
+        out.push(String(id));
+        // CLAIMED AS IT IS HANDED OVER: the state moves to opt-out only once
+        // the event has been delivered, and a run before that would find the
+        // account due again and send opt-out-effective twice (#146, seen).
+        row.optOutInitiatedAt = '';
+        this.touch(row);
+      }
+    });
+    log.debug("Leaving RiscRegister.optOutsDue(). " + out.length + ".");
+    return out;
   }
 
   // Put one row back to where a fresh account starts, keeping the row. It is a
@@ -1719,6 +1985,10 @@ export = {
   noteTransmitted: slot.forward('noteTransmitted'),
   observe: slot.forward('observe'),
   actsFor: slot.forward('actsFor'),
+  // The account holder's section 2.8 choice (#146).
+  optOutOf: slot.forward('optOutOf'),
+  optOutMoveAllowed: slot.forward('optOutMoveAllowed'),
+  optOutsDue: slot.forward('optOutsDue'),
   reset: slot.forward('reset'),
   clear: slot.forward('clear'),
   report: slot.forward('report')

@@ -11832,6 +11832,11 @@ const CODES = [
       'refusal carried no code of its own.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   // ===== API ===============================================================
+  { code: 'STS-ADMIN-0794',
+    summary: 'A disable named a riscReason that is not one of RISC ' +
+      'account-disabled\'s two (hijacking, bulk-account; RISC 1.0 ' +
+      'section 2.2).',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -12390,6 +12395,16 @@ const CODES = [
     summary: 'The realm chooser in front of /portal was asked for a realm ' +
       'that is not defined.',
     spec: 'HTTP 400 on /portal' },
+  { code: 'STS-PORTAL-0075',
+    summary: 'An account holder asked for a RISC opt-out move the section ' +
+      '2.8 state diagram does not allow from where their account is, or ' +
+      'RISC is off.',
+    spec: 'HTTP 409, the page redrawn saying so' },
+  { code: 'STS-PORTAL-0076',
+    summary: 'An account holder\'s RISC opt-out move was not recorded: ' +
+      'Shared Signals is not running in this process, so there was no ' +
+      'register to move.',
+    spec: 'HTTP 503, the page redrawn saying so' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

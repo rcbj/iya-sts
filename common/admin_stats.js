@@ -3304,6 +3304,58 @@ function tokenList() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// DOES THIS PERSON HOLD ANYTHING LIVE THAT CARRIES THEIR CLAIMS (#145)?
+//
+// Asked before a CAEP `token-claims-change` is sent: the event says the claims
+// in tokens already issued moved, and a person with none has no token whose
+// claims could be stale — sending it anyway would be noise every receiver has
+// to discard. An access, ID or refresh token that names them (by `username`,
+// by `preferred_username` on an older ID Token, or by `sub`) and is still
+// valid counts, and so does a SAML assertion whose subject is them and which
+// has neither expired nor been disowned. Read from the same register the
+// tokens page draws, in the ambient realm.
+// ---------------------------------------------------------------------------
+const CLAIM_BEARING_KINDS = ['access_token', 'id_token', 'refresh_token'];
+
+function holdsLiveIssuance(username, sub) {
+  log.debug("Entering holdsLiveIssuance(). user=" + username);
+  const name = String(username || '');
+  const subject = String(sub || '');
+  if (!name && !subject) {
+    log.debug("Leaving holdsLiveIssuance(). Nobody named.");
+    return false;
+  }
+  const nowMs = Date.now();
+  let live = false;
+  tokens.forEach(function (record) {
+    if (live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
+      return;
+    }
+    const theirs = (name && record.username === name) ||
+                   (subject && record.sub === subject);
+    const state = theirs ? tokenStateOf(record, nowMs) : '';
+    if (state === 'valid' || state === 'no expiry stated') {
+      live = true;
+    }
+  });
+  if (!live && name) {
+    live = allArtifacts().some(function (one) {
+      // recordAssertion()'s kind is 'SAML 2.0' or 'SAML 1.1'.
+      if (String(one.kind || '').indexOf('SAML') !== 0) {
+        return false;
+      }
+      if (String(one.subject || '') !== name) {
+        return false;
+      }
+      const state = artifactStateOf(withRevocation(one), nowMs);
+      return state !== 'revoked' && state !== 'expired';
+    });
+  }
+  log.debug("Leaving holdsLiveIssuance(). " + live);
+  return live;
+}
+
 // FOUR ANSWERS FOR AN ARTIFACT SINCE 2026-09-05, AND THE FOURTH REVERSED A
 // DOCUMENTED DECISION.
 //
@@ -4501,6 +4553,7 @@ module.exports = {
   applyClaimRelease: applyClaimRelease,
   expandValue: expandValue,
   tokenList: tokenList,
+  holdsLiveIssuance: holdsLiveIssuance,
   artifactList: artifactList,
   issuedList: issuedList,
   issuedSets: issuedSets,

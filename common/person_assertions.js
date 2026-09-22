@@ -140,6 +140,17 @@ const keystore = require('./keystore');
 // A leaf. The refusal objects below carry `errorCode` for the caller that
 // sends the response; it is never part of anything serialised.
 const errorCodes = require('./error_codes');
+// CAEP credential-change when this file changes a person's credential
+// (#145), through `ssf/account_signals.ts` — required LAZILY, when an event
+// is due. This file is loaded from `app.js`'s own chain, before the
+// composition root defers instance building
+// (`common/instance_slot.ts`), and requiring that module here at load time
+// built its default instance too early for the root to install its own.
+function accountSignals() {
+  log.debug('Entering accountSignals().');
+  log.debug('Leaving accountSignals().');
+  return require('../ssf/account_signals');
+}
 
 // The declaration, and the seven the issue writes. A LIST rather than seven
 // constants, because the console's *take the key pair off* control clears
@@ -537,6 +548,10 @@ function write(username, record, opts) {
                       PURPOSE_IDS.join(' and ') + '.'] };
   }
   const names = KEY_PAIR_ATTRIBUTES[purpose];
+  // Whether this REPLACES a key pair, read before the write: CAEP's
+  // change_type is `update` for a replacement and `create` for a first one.
+  const prior = recordFor(name);
+  const replacing = !!(prior && prior[names.certificate]);
   const values = [
     [names.privateKey, record.privateKeyPem || ''],
     [names.certificate, record.certificatePem],
@@ -591,6 +606,18 @@ function write(username, record, opts) {
            names.handleLabel + '=' + values[3][1] + ', valid until ' +
            record.notAfter + '. It signs assertions ABOUT THAT PERSON and ' +
            'about nobody else.');
+  // The certificate is what a receiver can name: its issuer and serial.
+  accountSignals().certificateChanged({ username: name,
+    pem: record.certificatePem, changeType: replacing ? 'update' : 'create',
+    friendlyName: (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') +
+                  ' assertion signing key',
+    initiatingEntity: String(options.initiatingEntity || 'admin'),
+    via: String(options.via || ''),
+    reasonAdmin: 'A signing key pair for ' + (purpose === 'saml' ? 'SAML' :
+                 'JWT') + ' assertions about ' + name + ' was ' +
+                 (replacing ? 'replaced' : 'issued') + '.',
+    reasonUser: 'A key that signs assertions about you was ' +
+                (replacing ? 'replaced' : 'issued') + '.' });
   log.debug('Leaving write(). ' + written.length + ' attribute(s).');
   return { ok: true, written: written, errors: [] };
 }
@@ -628,8 +655,10 @@ function generalizedTime(when) {
 // application arm's rule and for its reason. Absent means `jwt`, which is what
 // `/portal/signing-key`'s Remove and `/admin/pki`'s person arm meant when they
 // were written.
-function clear(username, purpose) {
+// `opts.initiatingEntity` and `opts.via` go on the CAEP event (#145).
+function clear(username, purpose, opts) {
   log.debug('Entering clear(). username=' + username + ' purpose=' + purpose);
+  const options = opts || {};
   const name = String(username || '');
   const id = purposeIdOf(purpose);
   if (!directory || !name || !id) {
@@ -655,6 +684,17 @@ function clear(username, purpose) {
       removed += 1;
     }
   });
+  if (removed > 0 && before[names.certificate]) {
+    accountSignals().certificateChanged({ username: name,
+      pem: before[names.certificate], changeType: 'delete',
+      friendlyName: (id === 'saml' ? 'RFC 7522' : 'RFC 7523') +
+                    ' assertion signing key',
+      initiatingEntity: String(options.initiatingEntity || 'admin'),
+      via: String(options.via || ''),
+      reasonAdmin: 'The ' + (id === 'saml' ? 'SAML' : 'JWT') + ' assertion ' +
+                   'signing key pair of ' + name + ' was taken off.',
+      reasonUser: 'A key that signed assertions about you was removed.' });
+  }
   log.debug('Leaving clear(). ' + removed + ' attribute(s).');
   return { ok: removed > 0, removed: removed };
 }

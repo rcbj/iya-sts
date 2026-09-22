@@ -101,6 +101,10 @@ import crypto = require('crypto');
 // The constant-time comparison a session handle is checked with. A LEAF that
 // never requires anything here back (rule 3r).
 import stsCrypto = require('../common/crypto');
+// CAEP credential-change for a credential set at sign-in (#145). A library
+// over `helpers` and `crypto` that sends nothing where Shared Signals is not
+// loaded: the require moves no route and closes no cycle.
+import accountSignals = require('../ssf/account_signals');
 // TRUST REALMS: the stores below are partitioned by realm. It requires only
 // config.js and error_codes.js here, so it cannot join a cycle and it
 // registers no route, so its position is not a position at all.
@@ -988,6 +992,7 @@ type AppModule = typeof app;
 type SessionRow = Record<string, any>;
 
 interface AuthnDeps {
+  accountSignals: typeof accountSignals;
   crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
@@ -1033,6 +1038,7 @@ class Authn {
     helpers.log.debug("Entering Authn.defaultDeps().");
     helpers.log.debug("Leaving Authn.defaultDeps().");
     return {
+      accountSignals: accountSignals,
       crypto: crypto,
       stsCrypto: stsCrypto,
       realms: realms,
@@ -7854,6 +7860,12 @@ class Authn {
       });
       log.info('authn: "' + step.username + '" chose a new password; the ' +
                'sign-in continues.');
+      this.deps.accountSignals.credentialChanged({ username: step.username,
+        credentialType: 'password', changeType: 'update',
+        initiatingEntity: 'user', via: 'sign-in',
+        reasonAdmin: step.username + ' changed a password they were ' +
+                     'required to change at sign-in.',
+        reasonUser: 'You changed your password.' });
       this.finishPasswordSignIn(req, res, base, step.authn, step.username,
                                 false,
                                 !!step.secondFactor);
@@ -8033,6 +8045,12 @@ class Authn {
       });
       log.info('authn: "' + step.username + '" enrolled an authenticator app ' +
                'at sign-in; signing them in with two factors.');
+      this.deps.accountSignals.credentialChanged({ username: step.username,
+        credentialType: this.deps.accountSignals.TOTP_CREDENTIAL_TYPE,
+        changeType: 'create', initiatingEntity: 'user', via: 'sign-in',
+        reasonAdmin: step.username + ' set up an authenticator app at ' +
+                     'sign-in.',
+        reasonUser: 'You set up an authenticator app.' });
       // Two factors really were presented: the password, and a code from the
       // app enrolled a moment ago. `otp` and `mfa`, as at `/authn/totp`.
       const started = this.startSession(res, step.username, this.firstAmrOf(step).concat(['otp']),
@@ -8449,6 +8467,21 @@ class Authn {
                                         why: (stored.errors || []).join(' ') },
                                       errorCodes.codeOf(stored) ||
                                       'STS-AUTHN-0068');
+          } else {
+            // A key registered during a sign-in is a credential created
+            // (#145), described by what the registration recorded.
+            self.deps.accountSignals.credentialChanged({
+              username: toRegister.username,
+              credentialType: self.deps.accountSignals.keyCredentialType(
+                toRegister.record),
+              fido2Aaguid: credentials.Credentials.aaguidString(
+                toRegister.record.aaguid),
+              friendlyName: String(toRegister.record.label || ''),
+              changeType: 'create', initiatingEntity: 'user',
+              via: 'sign-in',
+              reasonAdmin: toRegister.username + ' registered a security ' +
+                           'key while signing in.',
+              reasonUser: 'You registered a security key.' });
           }
           self.finishWebauthn(req, res, base, body, step, verdict);
         }).catch(function (e) {

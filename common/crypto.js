@@ -3243,6 +3243,72 @@ function decryptJweCompact(compact, opts) {
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
+// A USER AGENT'S FINGERPRINT, for CAEP's `fp_ua` (#145, 2026-09-22): "a
+// fingerprint of the user agent computed by the Transmitter". The
+// base64url SHA-256 of the `User-Agent` header as it arrived — stable for one
+// browser, so a receiver can see that a session was presented from a
+// different agent than it was established from, and not the header itself,
+// which would hand every receiver a string nobody asked it to hold. '' for no
+// header, which leaves the member out.
+// ---------------------------------------------------------------------------
+function userAgentFingerprint(userAgent) {
+  log.debug('Entering userAgentFingerprint().');
+  const text = String(userAgent || '');
+  if (!text) {
+    log.debug('Leaving userAgentFingerprint(). No user agent.');
+    return '';
+  }
+  log.debug('Leaving userAgentFingerprint().');
+  return nodeCrypto.createHash('sha256').update(text, 'utf8')
+    .digest('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// WHICH CERTIFICATE THIS IS, IN THE TWO STRINGS A RECEIVER MATCHES ON (#145,
+// 2026-09-22): the issuer's distinguished name and the serial number, the
+// pair RFC 5280 section 4.1.2.2 makes unique — a serial alone is unique only
+// per issuer. CAEP's credential-change carries them as `x509_issuer` and
+// `x509_serial` for any change to an X.509 credential.
+//
+// The issuer is an RFC 4514 string (most specific RDN first); node's
+// `X509Certificate#issuer` lists the RDNs, already escaped, one per line in
+// the order the certificate encodes them, which is the reverse. The
+// serial is lower-case hex with no separators, the form `common/pki.js`
+// records as `serialHex`, so an event and the register name one certificate
+// the same way. Answers empty strings for anything that is not
+// a certificate; it never throws, because every caller is reporting a change
+// that has already happened.
+// ---------------------------------------------------------------------------
+function certificateIdentifiers(pem) {
+  log.debug('Entering certificateIdentifiers().');
+  let cert = null;
+  try {
+    cert = new nodeCrypto.X509Certificate(String(pem || ''));
+  } catch (e) {
+    log.debug('Caught in certificateIdentifiers(): ' +
+              ((e && e.message) || e));
+    // Not a certificate: nothing to identify, and the event goes without.
+    log.debug('Leaving certificateIdentifiers(). Not a certificate.');
+    return { issuer: '', serial: '', subject: '' };
+  }
+  // Node writes each RDN already escaped (OpenSSL's RFC 2253 flags), so only
+  // the ORDER is changed here — escaping again would double every backslash.
+  const rfc4514 = function (text) {
+    return String(text || '').split('\n')
+      .filter(function (one) { return one !== ''; })
+      .reverse().join(',');
+  };
+  const issuer = rfc4514(cert.issuer);
+  const serial = String(cert.serialNumber || '').toLowerCase()
+    .replace(/^(00)+(?=[0-9a-f])/, '');
+  log.debug('Leaving certificateIdentifiers().');
+  // The SUBJECT too, the same way: for a CA's own certificate it is the
+  // issuer of everything that CA signs, which is what a caller holding only
+  // a leaf's serial needs.
+  return { issuer: issuer, serial: serial, subject: rfc4514(cert.subject) };
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE SERIAL NUMBER, AND WHY IT CANNOT BE THE CONSTANT IT WAS.
 //
 // Every certificate this service minted was — until every key pair became a
@@ -5015,6 +5081,8 @@ async function sha256OfFile(file, limit) {
 }
 
 module.exports = {
+  userAgentFingerprint: userAgentFingerprint,
+  certificateIdentifiers: certificateIdentifiers,
   // --- a credential several processes have to derive alike ---
   deriveSharedCredential: deriveSharedCredential,
   // --- XML digital signature ---

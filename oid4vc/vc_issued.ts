@@ -99,6 +99,11 @@ import InstanceSlot = require('../common/instance_slot');
 // is disowned. A library that requires nothing in this directory but its
 // codec.
 import vcStatus = require('./vc_status');
+// CAEP credential-change, `verifiable-credential`, for a credential this
+// realm issued a person and for one it disowned (#145). A library that sends
+// nothing where Shared Signals is not loaded; it requires `helpers` and
+// `crypto` and nothing of this family's.
+import accountSignals = require('../ssf/account_signals');
 
 // The parts of a `realms.map()` store this module uses.
 interface Store {
@@ -386,6 +391,16 @@ class VcIssued {
       disownedAt: before ? Number(before.disownedAt) || 0 : 0,
       disownedVia: before ? String(before.disownedVia || '') : ''
     });
+    const holder = this.deps.nameForSubject(String(entry.subject));
+    if (holder) {
+      accountSignals.credentialChanged({ username: holder,
+        credentialType: 'verifiable-credential', changeType: 'create',
+        friendlyName: String(entry.configId || format),
+        initiatingEntity: 'user', via: 'OpenID4VCI',
+        reasonAdmin: 'A ' + String(entry.configId || format) + ' credential ' +
+                     'was issued to ' + holder + '.',
+        reasonUser: 'A credential was issued to your wallet.' });
+    }
     log.debug("Leaving VcIssued.record(). Kept.");
     return key;
   }
@@ -552,6 +567,16 @@ class VcIssued {
     log.info('oid4vp-signin: the wallet credentials on row ' +
              cacheRegistry.digestKey(key) + ' were disowned (' +
              row.disownedVia + ').');
+    const holder = this.deps.nameForSubject(String(row.subject || ''));
+    if (holder) {
+      accountSignals.credentialChanged({ username: holder,
+        credentialType: 'verifiable-credential', changeType: 'revoke',
+        initiatingEntity: 'system', via: row.disownedVia,
+        reasonAdmin: 'The wallet credentials this realm issued ' + holder +
+                     ' were disowned (' + row.disownedVia + ').',
+        reasonUser: 'The credentials in your wallet from this service were ' +
+                    'revoked.' });
+    }
     log.debug("Leaving VcIssued.disown(). Disowned.");
     return true;
   }
