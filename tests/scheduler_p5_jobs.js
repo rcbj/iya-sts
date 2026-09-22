@@ -20,6 +20,9 @@
 //   C. GNAP'S ED25519 KEY (D6) is the realm's `jose:EdDSA:Ed25519` unit, so
 //      the signing rotation rotates it; a biscuit minted before the rotation
 //      still verifies after it, and `/gnap/keys` lists both keys.
+//   D. THE TRACKED TOKENS (the ticket's "cache clearing"): a revocation goes
+//      at its token's expiry, the record after oauth2.expiredTokenRetentionS,
+//      and a live token is untouched.
 //
 // In a child process, with the whole stack.
 // ===========================================================================
@@ -176,6 +179,41 @@ function childMain() {
          zc.others.some(function (o) { return /#/.test(o.keyId); }),
          'C4. and the ZCAP controller is handed the other generations',
          zc.others.length);
+
+    // --- D. the tracked tokens ---------------------------------------------
+    const stats = require(ROOT + '/common/admin_stats');
+    const nowS = Math.floor(Date.now() / 1000);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    const keepS = Number(config.value('oauth2.expiredTokenRetentionS'));
+    helpers.signJwt({ typ: 'Bearer', jti: 'p5-old', sub: 'a',
+                      iat: nowS - 10, exp: nowS - 5 });
+    helpers.signJwt({ typ: 'Bearer', jti: 'p5-live', sub: 'a',
+                      iat: nowS, exp: nowS + 3600 });
+    stats.revoke('p5-old', 'test');
+    stats.revoke('p5-live', 'test');
+    const purgeJob = scheduler.job('oauth2.expired-token-purge');
+    note(purgeJob && (purgeJob.kind || 'cluster') === 'cluster' &&
+         purgeJob.owner === 'common/admin_stats.js',
+         'D1. the tracked-token purge is a cluster job, registered at the ' +
+         'first token recorded');
+    const soon = stats.purgeExpiredTokens(Date.now() + (skewS + 1) * 1000);
+    const listed = function () {
+      return JSON.stringify(stats.tokenList ? stats.tokenList() : '');
+    };
+    note(soon.revocations === 1 && stats.isRevoked &&
+         stats.isRevoked('p5-live') && !stats.isRevoked('p5-old'),
+         'D2. at its expiry a token\'s REVOCATION goes — nothing accepts it ' +
+         'any more — and a live token\'s stays',
+         JSON.stringify(soon));
+    note(soon.records === 0 || keepS === 0,
+         'D3. but its record stays for oauth2.expiredTokenRetentionS, so ' +
+         '/admin/tokens can still show it expired', JSON.stringify(soon));
+    const pastKeep = stats.purgeExpiredTokens(Date.now() +
+                                              (skewS + keepS + 10) * 1000);
+    note(pastKeep.records >= 1 && listed().indexOf('p5-old') < 0 &&
+         listed().indexOf('p5-live') >= 0,
+         'D4. past the retention the record goes too, and the live token\'s ' +
+         'is untouched', JSON.stringify(pastKeep));
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

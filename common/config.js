@@ -4696,6 +4696,21 @@ const SETTINGS = [
   // client's machine and one is about this one — and a deployment that wants a
   // strict assertion check and a forgiving expiry reading, or the reverse, has
   // to be able to say so.
+  // THE TRACKED TOKENS' RETENTION (#49 P5): how long past its expiry a
+  // token stays on /admin/tokens before oauth2.expired-token-purge deletes
+  // its record.
+  { key: 'oauth2.expiredTokenRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'Keep an expired token on /admin/tokens for (seconds)',
+    env: 'STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S', type: 'int', dflt: 86400,
+    min: 0, max: 31536000, runtime: true,
+    description: 'How long a token this service issued stays in the ' +
+                 'register /admin/tokens and /admin-api/tokens read after it ' +
+                 'has expired (its exp plus oauth2.clockSkewS), before the ' +
+                 'hourly scheduler job oauth2.expired-token-purge deletes ' +
+                 'its record. The revocation of an expired token is deleted ' +
+                 'at its expiry, since no verifier accepts it any more. A ' +
+                 'day by default; 0 deletes a record as soon as it expires.' },
+
   { key: 'oauth2.clockSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'Token clock skew (s)',
     env: 'STS_OAUTH2_CLOCK_SKEW_S', type: 'int', dflt: 30,

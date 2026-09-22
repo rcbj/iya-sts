@@ -311,6 +311,7 @@ var config = {
     accessTokenTtlS: 3600,                       // Access token lifetime (s)
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
+    expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
     clockSkewS: 30,                              // Token clock skew (s)
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard
