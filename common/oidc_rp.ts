@@ -318,7 +318,7 @@ const SURFACES: Record<SurfaceId, Surface> = {
     cookie: 'sts_admin',
     flowRealm: 'ambient',
     sessionRealm: 'default',
-    scopes: ['openid', 'profile', 'email']
+    scopes: ['openid', 'profile', 'email', 'offline_access']
   },
   portal: {
     id: 'portal',
@@ -328,7 +328,7 @@ const SURFACES: Record<SurfaceId, Surface> = {
     cookie: 'sts_portal',
     flowRealm: 'ambient',
     sessionRealm: 'ambient',
-    scopes: ['openid', 'profile', 'email']
+    scopes: ['openid', 'profile', 'email', 'offline_access']
   },
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the first surface that
   // is NOT ON THIS SERVICE'S ORIGIN: it is served by
@@ -361,7 +361,8 @@ const SURFACES: Record<SurfaceId, Surface> = {
     cookie: 'sts_debugger',
     flowRealm: 'default',
     sessionRealm: 'default',
-    scopes: ['openid', 'profile', 'email', 'urn:sts:debugger-api:debugger']
+    scopes: ['openid', 'profile', 'email', 'offline_access',
+             'urn:sts:debugger-api:debugger']
   }
 };
 
@@ -1833,7 +1834,15 @@ class OidcRelyingParty {
       }
 
       const claims = verified.claims || {};
-      const username = String(claims.preferred_username || claims.sub || '');
+      // THE PERSON THE `sub` NAMES, looked up in the directory (#118). A
+      // code-flow ID Token carries no profile claims any more — OIDC Core
+      // section 5.4 puts them in UserInfo — so `preferred_username` is no
+      // longer there to read, and it was never the right thing to identify a
+      // session by anyway: `sub` is what an ID Token vouches for. These
+      // surfaces are public clients of this very service, so `sub` is the
+      // public `urn:uuid:<entryUUID>` and the directory names its person.
+      const username = String(helpers.nameForSubject(claims.sub) ||
+                              claims.preferred_username || claims.sub || '');
       if (!username) {
         return self.coded('STS-AUTHN-0135', { ok: false,
                  why: 'the ID Token names nobody: it carries neither ' +

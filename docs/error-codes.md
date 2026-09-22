@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2873** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2888** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 185
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 439
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 451
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 72
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 99
+* [Registries (`STS-REG`)](#sts-reg) — 102
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
@@ -1509,6 +1509,18 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0557` | An RFC 8693 subject_token or actor_token that verified was refused because this realm has revoked it. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0558` | A client authenticated with a client_secret past its expiry (oauthClientSecretExpiresAt, or the registration's client_secret_expires_at), in product mode. | invalid_client (RFC 6749 section 5.2) |
 | `STS-OAUTH-0559` | A client authenticated with an expired client_secret and was accepted, because the service is in development mode. | none — logged; the request is answered |
+| `STS-OAUTH-0560` | An authorization request asked for an ID Token without the openid scope (OIDC Core section 3.1.2.1). | redirect: error=invalid_scope |
+| `STS-OAUTH-0561` | An authorization request combined prompt=none with another prompt value (OIDC Core section 3.1.2.1). | redirect: error=invalid_request |
+| `STS-OAUTH-0562` | An implicit-flow authorization request carried no nonce, which OIDC Core section 3.2.2.1 makes REQUIRED — in every mode. | redirect: error=invalid_request |
+| `STS-OAUTH-0563` | An implicit-flow authorization request named an http redirect_uri that is not a loopback address (OIDC Core section 3.2.2.1). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0564` | An authorization request sent with POST was not application/x-www-form-urlencoded (OIDC Core section 3.1.2.1). | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0565` | The authorization endpoint failed while reading an id_token_hint. | HTTP 500 {error: server_error} |
+| `STS-OAUTH-0566` | An id_token_hint did not verify as an ID Token this authorization server issued to this client. | redirect: error=invalid_request |
+| `STS-OAUTH-0567` | The person signed in is not the one the id_token_hint names, and prompt=none (or the person signed in as somebody else again). | redirect: error=login_required |
+| `STS-OAUTH-0568` | A refresh token granted without offline_access was presented after the sign-on session it came from ended (OIDC Core section 11). | HTTP 400 {error: invalid_grant} |
+| `STS-OAUTH-0569` | A redirect_uri matched none of the redirect URIs the client registered (OIDC Core section 3.1.2.1), outside RFC 9700 mode. | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0570` | A client assertion was not signed with the client's registered token_endpoint_auth_signing_alg (OIDC Core section 9). | HTTP 401 {error: invalid_client} |
+| `STS-OAUTH-0571` | An access token was sent to the UserInfo endpoint in more than one place (RFC 6750 section 2). | HTTP 400 {error: invalid_request} |
 
 ## STS-SAML
 
@@ -3251,6 +3263,9 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0164` | An RFC 7591 registration or RFC 7592 update named an id_token_encrypted_response_alg or _enc this service cannot honour (a symmetric family, an unknown content encryption), or an enc with no alg. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0165` | A registration named id_token_encrypted_response_alg with no inline jwks key of the right type to encrypt to (a jwks_uri is never fetched). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0166` | An application's client secret has expired, or expires within oauth2.clientSecretExpiryWarningDays — found by the daily scheduler job oauth2.client-secret-expiry. | none — an audit row and a warning; rotate the secret on /admin/applications |
+| `STS-REG-0167` | A client registration named a subject_type, sector_identifier_uri or token_endpoint_auth_signing_alg this service cannot honour (OIDC Core sections 8 and 9). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0168` | A console or /admin-api write set oauthSubjectType, oauthSectorIdentifierUri or oauthTokenEndpointAuthSigningAlg to a value this service cannot honour. | HTTP 400 |
+| `STS-REG-0169` | A registered sector_identifier_uri could not be fetched, was not a JSON array of URIs, or did not list every redirect_uri (OIDC Core section 8.1). | HTTP 400 {error: invalid_client_metadata} |
 
 ## STS-DBG
 

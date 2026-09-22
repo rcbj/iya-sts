@@ -69,7 +69,10 @@ The five protocols, and where each differs:
   `fedResponseType: id_token` with `response_mode=form_post` needs **no back
   channel at all**, which is the way to federate with an OIDC partner from a
   deployment with no egress. The `nonce` is checked. Attributes come off the ID
-  Token and, when configured, UserInfo.
+  Token and, when configured, UserInfo. **With the code flow, configure
+  `fedUserinfoUrl`**: a provider that follows OpenID Connect Core section 5.4
+  (this service among them, since #118) puts profile claims such as
+  `preferred_username` and `email` in UserInfo, not in a code-flow ID Token.
 * **OAuth 2.0** — the authorization code flow with no ID Token; attributes come
   off the access token when it is a JWT and otherwise from a configured
   userinfo-shaped endpoint. It is a distinct protocol rather than OIDC with a

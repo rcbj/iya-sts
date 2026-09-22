@@ -446,6 +446,45 @@ async function signInAndAuthorize(meta, params, options) {
 // unauthenticated request has to authenticate the user before it issues
 // anything — and the username typed in is the identity every token describes.
 // ---------------------------------------------------------------------------
+// The profile claims of a sign-in: the ID Token's when it carries them, and
+// the UserInfo endpoint's for this access token when it does not (OpenID
+// Connect Core section 5.4 — see testLoginScreen()).
+async function profileClaims(meta, idTokenClaims, accessToken) {
+  log.debug("Entering profileClaims().");
+  if (idTokenClaims && idTokenClaims.preferred_username !== undefined) {
+    log.debug("Leaving profileClaims(). From the ID Token.");
+    return idTokenClaims;
+  }
+  // RFC 8414's document need not name the UserInfo endpoint, which is
+  // OpenID Connect's; the OpenID Provider's own discovery document does.
+  let userinfo = meta.userinfo_endpoint;
+  if (!userinfo) {
+    const discovery = await get(stsBase +
+        "/.well-known/openid-configuration");
+    userinfo = JSON.parse(await discovery.text()).userinfo_endpoint;
+  }
+  assert.ok(userinfo, "the OpenID Provider should name a UserInfo endpoint.");
+  const r = await get(userinfo,
+      { headers: { Authorization: "Bearer " + accessToken,
+                   Accept: "application/json" } });
+  const text = await r.text();
+  assert.strictEqual(r.status, 200,
+    "UserInfo should answer for the access token the sign-in issued. Got " +
+        "HTTP " + r.status + ": " + text);
+  let body = {};
+  try {
+    body = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in profileClaims(): " + ((e && e.message) || e));
+    // An encrypted or signed answer is a registration this client never made.
+    assert.fail("UserInfo answered with something other than JSON: " + text);
+  }
+  assert.strictEqual(body.sub, idTokenClaims.sub,
+    "UserInfo should describe the ID Token's subject.");
+  log.debug("Leaving profileClaims(). From UserInfo.");
+  return body;
+}
+
 async function testLoginScreen(meta, verify) {
   log.debug("Entering testLoginScreen().");
   log.info("=== The login screen ===");
@@ -541,13 +580,21 @@ async function testLoginScreen(meta, verify) {
         "the directory entry's urn:uuid: identifier. Got: " + at.sub);
   assert.strictEqual(it.sub, at.sub,
     "the ID Token and the access token should name the same subject.");
-  assert.strictEqual(it.preferred_username, username,
-                     "the ID token should name that user too.");
-  assert.strictEqual(it.given_name, username,
-                     "the ID token's claims should describe that user.");
-  assert.ok(String(it.email).indexOf(username) === 0,
-    "the ID token's email should be derived from the username. Got: " +
-        it.email);
+  // WHERE THE PROFILE CLAIMS ARE. OpenID Connect Core section 5.4 returns
+  // the profile and email scopes' claims from the UserInfo endpoint when an
+  // access token is issued, and in the ID Token only for
+  // response_type=id_token. The mock STS put them in every ID Token until
+  // iya-sts #118 (2026-09-22) and answers from UserInfo since, so the claims
+  // are read from the ID Token where it carries them (the pinned `sts/`
+  // gitlink) and from UserInfo otherwise (the vendored copy's current tree).
+  const described = await profileClaims(meta, it, set.access_token);
+  assert.strictEqual(described.preferred_username, username,
+                     "the ID token or UserInfo should name that user too.");
+  assert.strictEqual(described.given_name, username,
+                     "the claims should describe that user.");
+  assert.ok(String(described.email).indexOf(username) === 0,
+    "the email should be derived from the username. Got: " +
+        described.email);
   assert.strictEqual(it.nonce, signedInParams.nonce,
                      "the nonce must survive the login round trip.");
   assert.ok(it.auth_time > 0,
@@ -561,8 +608,9 @@ async function testLoginScreen(meta, verify) {
     grant_type: "refresh_token", refresh_token: set.refresh_token,
         client_id: CLIENT_ID
   });
-  assert.strictEqual(claimsOf(refreshed.body.id_token).preferred_username,
-                     username,
+  assert.strictEqual((await profileClaims(meta,
+      claimsOf(refreshed.body.id_token), refreshed.body.access_token))
+      .preferred_username, username,
     "refreshing should keep describing the user who signed in.");
   log.info('[login] OK — the tokens describe "' + username +
            '", the name that was typed in.');

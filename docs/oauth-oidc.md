@@ -55,13 +55,38 @@ response type or endpoint that would be refused.
   `id_token`, including `id_token token`.
 * **Response modes** `query`, `fragment` and `form_post`. `form_post` is
   answered with a self-submitting form that also has a real submit button.
+  Without an explicit mode, `code` alone answers in the query and every
+  response type that returns a token or an ID Token answers in the fragment
+  ([Multiple Response Type Encoding
+  Practices](https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html)
+  section 2.1). **An error goes where the success would have gone**, so an
+  implicit or hybrid request gets its error in the fragment. An explicit
+  `response_mode=query` is ignored for a response type that returns a token.
 * The **`iss` authorization response parameter**
   ([RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)) is on every
   authorization response, errors included.
-* `prompt=none` and `prompt=login`, and `prompt=consent` for the consent
-  screen (below).
+* `prompt=none`, `prompt=login`, `prompt=select_account` (the sign-in screen,
+  where whoever signs in is the account selected) and `prompt=consent` for the
+  consent screen (below). `none` combined with any other value is refused
+  `invalid_request`.
+* **OpenID Connect requests need `openid`.** A response type that returns an
+  ID Token is refused `invalid_scope` without the `openid` scope. A request
+  with no scope gets no scope; it is not given `openid`.
+* **The implicit flow** (`id_token`, `id_token token`) requires a `nonce` and
+  refuses an `http` redirect URI that is not a loopback address, in every mode
+  (OpenID Connect Core section 3.2.2.1).
+* **`id_token_hint`** is verified as an ID Token this authorization server
+  issued to the client, with any of its signing algorithms; an expired one is
+  still a valid hint, and an encrypted one is refused. If the person signed in
+  is not the one it names, `prompt=none` answers `login_required` and
+  otherwise the person is asked to sign in again.
+* **`display`** (`page`, `popup`, `touch`), **`ui_locales`** and
+  **`claims_locales`** are accepted. There is one sign-in page and it is in
+  English, so each is answered in English, which the specification permits.
 
-The authorization endpoint is `GET /oauth2/authorize`. When nobody is signed
+The authorization endpoint takes **`GET` and `POST`** `/oauth2/authorize`; a
+POST carries the request form-serialized (`application/x-www-form-urlencoded`,
+OpenID Connect Core section 3.1.2.1). When nobody is signed
 in, it hands the browser to the sign-in service
 ([Authentication](authentication.md)) and continues when the person comes back.
 Every protocol here shares that one session.
@@ -72,8 +97,8 @@ Every protocol here shares that one session.
 
 | Grant | Notes |
 |---|---|
-| `authorization_code` | PKCE, `redirect_uri`, DPoP and certificate binding are checked before the code is spent |
-| `refresh_token` | carries the scope, resources and authorization details it was granted, and never widens them |
+| `authorization_code` | PKCE, DPoP and certificate binding are checked before the code is spent. In every mode the code is redeemed only by the client it was issued to, and `redirect_uri` must be sent and identical to the authorization request's |
+| `refresh_token` | carries the scope, resources and authorization details it was granted, and never widens them. Without `offline_access` it is an **online** refresh token and is refused once the sign-on session it came from has ended |
 | `client_credentials` | for a client acting in its own name |
 | `password` | development mode only (see below) |
 | `urn:ietf:params:oauth:grant-type:token-exchange` | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) |
@@ -103,7 +128,15 @@ is something to verify against: `client_secret_basic`, `client_secret_post`,
 `client_secret_jwt`, `private_key_jwt`, `tls_client_auth`,
 `self_signed_tls_client_auth`, and `saml2_bearer` (this service's own name for
 RFC 7522 section 2.2, which registers none). `none` declares a public client.
-A method this service cannot verify is refused rather than waved through.
+A method this service cannot verify is refused rather than waved through. A
+client that registered **`token_endpoint_auth_signing_alg`** has an assertion
+signed with any other algorithm refused `invalid_client`, in every mode (OpenID
+Connect Core section 9).
+
+**Redirect URIs.** A client with redirect URIs of its own is held to an exact
+match against them in every mode (OpenID Connect Core section 3.1.2.1). A
+`client_id` with nothing registered is accepted with any redirect URI in
+development mode only; product mode refuses an unregistered client.
 
 A client's keys come from its registered JWKS, from key pairs this service's
 certificate authority issued it, or from an `x5c` chain to this realm's Root.
@@ -127,6 +160,20 @@ was agreed. `oauthGlobalConsent` on an application's entry consents a scope for
 everybody without recording anything about anybody. `prompt=consent` asks again,
 and `prompt=none` with something outstanding answers `consent_required`.
 
+**`offline_access`** (OpenID Connect Core section 11) is honoured only for a
+response type that returns a code, and only with `prompt=consent` or a recorded
+consent to `offline_access` for that client. Otherwise it is removed from the
+grant. A refresh token issued with it outlives the sign-on session; one issued
+without it is refused after the session ends. A recorded consent counts even
+with `oauth2.consentRequired` off.
+
+This service's own console, portal and embedded debugger ask for
+`offline_access`, and their seeded consent grants it. That is what lets a
+console stay signed in after the sign-on session times out (up to the refresh
+token's lifetime). Signing out still ends them and revokes their refresh
+tokens. Remove `offline_access` from an application's global consent on
+`/admin/applications` to turn this off.
+
 Consent is **on by default** (`oauth2.consentRequired`). Turning it off means
 nothing is asked and nothing is recorded; it does not mean everybody consented.
 The token endpoint never asks anything, so a grant that was already issued is
@@ -135,10 +182,23 @@ not judged again. `/admin/consent` is the register.
 ### ID Tokens
 
 An ID Token carries `nonce`, `at_hash` and `c_hash` in all three flows, plus
-`auth_time`, `amr` and `acr` where an authentication is behind it. A refreshed
-ID Token keeps the **original** `auth_time`, `amr` and `acr` (OpenID Connect
-Core section 12.2). An ID Token issued on a browser session carries `sid`
-while either logout notification is on.
+`auth_time`, `amr` and `acr` where an authentication is behind it; `auth_time`
+is left out when the time is not known rather than set to the issue time. A
+refreshed ID Token keeps the **original** `auth_time`, `amr` and `acr` (OpenID
+Connect Core section 12.2). An ID Token issued on a browser session carries
+`sid` while either logout notification is on.
+
+* **`at_hash` and `c_hash`** use the hash of the ID Token's own `alg`:
+  SHA-256 for the 256 algorithms, SHA-384 for the 384 ones and SHA-512 for the
+  512 ones. Where the specification names no hash, this service uses the hash
+  of the same security level: SHA-512 for EdDSA (Ed25519), SHA-256, SHA-384
+  and SHA-512 for ML-DSA-44, -65 and -87, SHA-256 for the SLH-DSA 128-bit sets,
+  and a composite algorithm's traditional half (SHAKE256 with a 114-byte output
+  for the Ed448 composite).
+* **Profile claims** (`name`, `email` and the rest of section 5.4's scopes) are
+  in the ID Token **only for `response_type=id_token`**, where there is no
+  access token to fetch them with. Every other flow gets them from UserInfo, or
+  in the ID Token by naming them in a `claims` request.
 
 * **Signing**: a client may register `id_token_signed_response_alg`. Every
   algorithm in this service's table is offered, the post-quantum ones included.
@@ -148,9 +208,18 @@ while either logout notification is on.
   is offered. A registration with no key to encrypt to is refused, and so is
   an issuance that cannot be encrypted. It is never sent in the clear.
 * **Subject**: `sub` is `urn:uuid:<entryUUID>` of the person's directory entry,
-  the same for every client (`subject_types_supported` is `public` only). A
-  renamed person keeps their `sub`. A person deleted and re-created under the
-  same name is a different subject.
+  the same for every `public` client. A renamed person keeps their `sub`. A
+  person deleted and re-created under the same name is a different subject.
+* **Pairwise subjects** (OpenID Connect Core section 8): a client registered
+  with `subject_type=pairwise` (the `oauthSubjectType` attribute) is given a
+  `sub` of its own, derived from the person, the client's **sector** and a
+  secret every node shares (`STS_OIDC_PAIRWISE_SECRET` pins it). The sector is
+  the host of `sector_identifier_uri` (`oauthSectorIdentifierUri`) or, without
+  one, the host all the client's redirect URIs share. A registration that
+  names a `sector_identifier_uri` has it fetched once, and it must serve a
+  JSON array listing every redirect URI; a value an administrator writes on
+  the console is not fetched. UserInfo and Logout Tokens name the same
+  pairwise `sub` as the ID Token.
 
 ### UserInfo and the claims request
 
@@ -158,7 +227,8 @@ while either logout notification is on.
 
 1. the configured **UserInfo claim set** (`/admin/userinfo-claims`),
 2. the scope-driven claims of OpenID Connect Core section 5.4 (`profile`,
-   `email`),
+   `email`, `address` and `phone`, each claim from the person object or the
+   directory entry, absent when neither holds it),
 3. the claims named individually in an OpenID Connect Core section 5.5
    **`claims` request**, read from the person's directory entry,
 4. `sub`, which is always set last.
@@ -166,9 +236,15 @@ while either logout notification is on.
 A `claims` request is parsed at the authorization endpoint (a malformed one is
 refused `invalid_request` there), carried **inside the access token** and
 honoured in the ID Token (`id_token` member) and at UserInfo (`userinfo`
-member). A refresh keeps it. `essential`, `value` and `values` are carried and
-**not enforced**: an unavailable claim is left out and logged, and a value that
-does not match is answered with the value this service holds.
+member). A refresh keeps it. An **`acr` marked `essential` with `value` or
+`values` is a requirement**, met or refused like `acr_values` (section
+5.5.1.1). For every other claim, `essential`, `value` and `values` are carried
+and **not enforced**: an unavailable claim is left out and logged, and a value
+that does not match is answered with the value this service holds.
+
+UserInfo takes the access token in the `Authorization` header or, on a
+form-encoded `POST`, as an `access_token` body parameter (RFC 6750 section
+2.2). Sending both is refused.
 
 As a debugging aid that no specification defines, UserInfo also accepts
 `?claims={json}` and repeated `?claim=name` on the request itself. These are a
@@ -374,9 +450,11 @@ what it reaches.
 ### Not implemented
 
 * The device authorization grant: there is no device authorization endpoint.
-* `pairwise` subjects, `display_values_supported` and `check_session_iframe`.
+* `check_session_iframe` (Session Management, #121).
+* Aggregated and distributed claims (#147) and a Self-Issued OP (#129).
 * Fetching any `jwks_uri`.
-* Enforcing `value`/`values` or `essential` in a claims request.
+* Enforcing `value`/`values` or `essential` in a claims request, other than
+  for `acr`.
 * Encrypted access tokens, and the RFC 9068 `roles` and `entitlements` claims.
 * An initial access token for registration.
 * `may_act` in token exchange, and a foreign `subject_token` issuer in product

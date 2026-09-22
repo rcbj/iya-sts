@@ -1847,6 +1847,69 @@ const JWS_ASYMMETRIC_ALGS = JWS_SIGNING_ALGS.filter(function (alg) {
   return JWS_ALGS[alg].family !== 'hmac';
 });
 
+// ---------------------------------------------------------------------------
+// THE HASH AN OPENID CONNECT ID TOKEN'S at_hash, c_hash AND s_hash USE
+// (2026-09-22, #118).
+//
+// OIDC Core sections 3.1.3.6 and 3.3.2.11: the left-most half of "the hash
+// algorithm used in the alg Header Parameter of the ID Token's JOSE Header" —
+// RS256 is SHA-256, RS384 SHA-384 and so on. Until this date it was SHA-256
+// whatever the alg, so a client that registered RS384, ES512, PS512 or EdDSA
+// was handed hashes it could not validate.
+//
+// **WHERE THE ALGORITHM NAMES NO HASH, THIS IS THIS SERVICE'S CHOICE**, and it
+// is the one decided on #118: the hash of the same security level.
+//
+//   EdDSA (Ed25519)          SHA-512 — the hash Ed25519 is built on, and what
+//                            deployed providers use.
+//   ML-DSA-44 / 65 / 87      SHA-256 / SHA-384 / SHA-512 — NIST security
+//                            categories 2, 3 and 5.
+//   SLH-DSA-*-128s           SHA-256 — its n is 128 bits (192 would be SHA-384
+//                            and 256 SHA-512; neither is offered).
+//   a composite              its TRADITIONAL component's hash: ES256 SHA-256,
+//                            ES384 SHA-384, Ed25519 SHA-512, Ed448 SHAKE256
+//                            with a 114-byte output (Ed448's own construction).
+//
+// Returns `{ name, outputLength }`: `outputLength` is set only for SHAKE256.
+// An unknown algorithm is SHA-256, the value every client has always been
+// able to check, and the caller refuses an unknown algorithm before signing
+// anyway.
+// ---------------------------------------------------------------------------
+const PQ_ID_TOKEN_HASH = {
+  'ML-DSA-44': 'sha256', 'ML-DSA-65': 'sha384', 'ML-DSA-87': 'sha512',
+  'SLH-DSA-SHA2-128s': 'sha256', 'SLH-DSA-SHAKE-128s': 'sha256',
+  'ML-DSA-44-ES256': 'sha256', 'ML-DSA-65-ES256': 'sha256',
+  'ML-DSA-87-ES384': 'sha384', 'ML-DSA-44-Ed25519': 'sha512',
+  'ML-DSA-65-Ed25519': 'sha512', 'ML-DSA-87-Ed448': 'shake256-114'
+};
+
+function idTokenHashFor(alg) {
+  log.debug('Entering idTokenHashFor(). alg=' + alg);
+  const name = String(alg || '');
+  const spec = JWS_ALGS[name];
+  let chosen = spec && spec.hash ? spec.hash
+    : (name === 'EdDSA' ? 'sha512' : (PQ_ID_TOKEN_HASH[name] || 'sha256'));
+  if (chosen === 'shake256-114') {
+    log.debug('Leaving idTokenHashFor(). SHAKE256/114.');
+    return { name: 'shake256', outputLength: 114 };
+  }
+  log.debug('Leaving idTokenHashFor(). ' + chosen);
+  return { name: chosen };
+}
+
+// The base64url of the left-most half of that hash of the ASCII octets of
+// `value` — at_hash, c_hash and s_hash alike.
+function idTokenHalfHash(value, alg) {
+  log.debug('Entering idTokenHalfHash(). alg=' + alg);
+  const hash = idTokenHashFor(alg);
+  const digest = (hash.outputLength
+    ? nodeCrypto.createHash(hash.name, { outputLength: hash.outputLength })
+    : nodeCrypto.createHash(hash.name))
+    .update(String(value), 'ascii').digest();
+  log.debug('Leaving idTokenHalfHash().');
+  return digest.subarray(0, digest.length / 2).toString('base64url');
+}
+
 function jwsSpec(alg) {
   log.debug('Entering jwsSpec(). alg=' + alg);
   const spec = JWS_ALGS[alg];
@@ -4992,6 +5055,8 @@ module.exports = {
   b64u: b64u,
   JWS_ALGS: JWS_ALGS,
   JWS_SIGNING_ALGS: JWS_SIGNING_ALGS,
+  idTokenHashFor: idTokenHashFor,
+  idTokenHalfHash: idTokenHalfHash,
   JWS_ASYMMETRIC_ALGS: JWS_ASYMMETRIC_ALGS,
   jwsSpec: jwsSpec,
   protectedHeaderFor: protectedHeaderFor,

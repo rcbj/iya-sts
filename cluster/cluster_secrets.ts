@@ -138,7 +138,12 @@ const DECLARED: Record<string, DeclaredSecret> = {
           '(acme/acme_jws.ts).' },
   'ssf-receiver': { bytes: 32, env: 'STS_SSF_RECEIVER_SECRET',
     what: 'The secret the console\'s and the portal\'s own SSF receivers ' +
-          'authenticate pushes with (ssf/ssf_receivers.ts).' }
+          'authenticate pushes with (ssf/ssf_receivers.ts).' },
+  // #118: a pairwise `sub` must be the same on every node and across
+  // restarts, or a client would see one person as several.
+  'oidc-pairwise': { bytes: 32, env: 'STS_OIDC_PAIRWISE_SECRET',
+    what: 'The key an OpenID Connect pairwise subject identifier is derived ' +
+          'with (oauth-oidc/pairwise_subjects.ts, OIDC Core section 8.1).' }
 };
 
 // name -> { text, source: 'process'|'store'|'environment'|'node' }. The TEXT is

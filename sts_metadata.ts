@@ -1257,8 +1257,11 @@ const SPECS: Spec[] = [
   { id: 'rfc6750', name: 'RFC 6750 — Bearer Token Usage',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6750',
     coverage: 'partial: bearer tokens are read from the Authorization ' +
-              'header. Credential endpoints check that a token is PRESENT ' +
-              'but cannot validate one issued by a separate authorization ' +
+              'header (section 2.1) everywhere, and from a form-encoded body ' +
+              '(section 2.2) at the UserInfo endpoint, never both in one ' +
+              'request; the query form (section 2.3) is refused in RFC 9700 ' +
+              'mode. Credential endpoints check that a token is PRESENT but ' +
+              'cannot validate one issued by a separate authorization ' +
               'server.' },
   { id: 'rfc7009', name: 'RFC 7009 — Token Revocation',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7009',
@@ -1530,6 +1533,20 @@ const SPECS: Spec[] = [
               'service issued. Not implemented: encrypted access tokens, and ' +
               'the roles and entitlements claims; a foreign token at the ' +
               'credential endpoints is still accepted unverified.' },
+  { id: 'oauth-multiple-response-types',
+    name: 'OAuth 2.0 Multiple Response Type Encoding Practices',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html',
+    coverage: 'partial: the combined response types code id_token, code ' +
+              'token, code id_token token and id_token token, and section ' +
+              '2.1\'s default response modes — the query for code alone and ' +
+              'the fragment for every type that returns a token — for a ' +
+              'successful response AND an error (#118; errors went in the ' +
+              'query until then). An explicit response_mode=fragment is ' +
+              'honoured for any type; an explicit query is honoured only ' +
+              'for code alone. NOT covered: response_type=none, and refusing ' +
+              'rather than overriding an explicit query for a token-bearing ' +
+              'type (#125).' },
   { id: 'oauth-form-post', name: 'OAuth 2.0 Form Post Response Mode',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html',
@@ -1805,25 +1822,40 @@ const SPECS: Spec[] = [
   { id: 'oidc', name: 'OpenID Connect Core 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-core-1_0.html',
-    coverage: 'partial: id_token with nonce, at_hash and c_hash, the three ' +
-              'authentication flows, the section 5.3 UserInfo endpoint — ' +
-              'which is the one place a scope changes what comes back, since ' +
-              'the id_token carries every claim whatever was asked for — ' +
-              'and, since 2026-08-26, SECTION 5.5\'s claims request: both ' +
-              'members, parsed, refused by name at the authorization ' +
-              'endpoint when malformed, carried inside the access token, and ' +
-              'answered off the person\'s entry under ou=users, with section ' +
-              '5.2 language tags. What it does NOT do there is enforce ' +
-              '`value`/`values` or treat `essential` as more than a hint, ' +
-              'which section 5.5.1 permits and /admin/userinfo-claims states ' +
-              'out loud. Section 10.2\'s ENCRYPTED ID Token (2026-09-17): a ' +
-              'client that registered id_token_encrypted_response_alg (and ' +
-              '_enc, A128CBC-HS256 by default) with a key in an inline jwks ' +
-              'gets a Nested JWT — signed as registered, then encrypted with ' +
-              'RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW); the symmetric ' +
-              'families and a jwks_uri alone are refused at registration, ' +
-              'and no ML-KEM key encapsulation is offered. Section 6\'s ' +
-              'request object and request_uri are RFC 9101\'s row.' },
+    coverage: 'partial: the three flows (code, implicit, hybrid) at an ' +
+              'authorization endpoint that takes GET and POST; an ID Token ' +
+              'with nonce, auth_time only when it is known, amr, acr, sid, ' +
+              'and at_hash and c_hash hashed with the hash of the ID ' +
+              'Token\'s own alg (SHA-384 for RS384 and so on; where the ' +
+              'specification names none — EdDSA, ML-DSA, SLH-DSA, the ' +
+              'composites — the hash of the same security level, documented ' +
+              'in common/crypto.js). openid is required for any response ' +
+              'returning an ID Token; prompt none, login, consent and ' +
+              'select_account (none alone); id_token_hint verified and ' +
+              'honoured; max_age, acr_values and an essential acr claims ' +
+              'request as requirements (RFC 9470); nonce REQUIRED for the ' +
+              'implicit flow in every mode; errors returned in the fragment ' +
+              'for implicit and hybrid requests. Section 5.4\'s four scopes ' +
+              '(profile, email, address, phone) at the UserInfo endpoint, ' +
+              'which also takes the access token in a form body, and in the ' +
+              'ID Token only for response_type id_token. Section 5.5\'s ' +
+              'claims request with section 5.2 language tags; claims_locales ' +
+              'and ui_locales accepted, answered in English. Section 8\'s ' +
+              'pairwise subject identifiers with a validated ' +
+              'sector_identifier_uri. Section 9\'s client authentication ' +
+              'with token_endpoint_auth_signing_alg enforced; a code bound ' +
+              'to its client and redirect_uri and exact redirect_uri ' +
+              'matching for a registered client in every mode. Section ' +
+              '10.2\'s encrypted ID Token. Section 11\'s offline_access: ' +
+              'ignored without a code and without prompt=consent or a ' +
+              'recorded consent, and a refresh token without it ends with ' +
+              'the sign-on session. Section 12\'s refresh keeps auth_time, ' +
+              'amr and acr. Section 6\'s request object is RFC 9101\'s row. ' +
+              'NOT covered: aggregated and distributed claims (section ' +
+              '5.6.2, #147), a Self-Issued OP (section 7, #129), ' +
+              '`value`/`values` on a claims request other than acr, and a ' +
+              'client in development mode that registered no redirect URI is ' +
+              'not held to one.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -1884,10 +1916,30 @@ const SPECS: Spec[] = [
               'document so the two cannot disagree about the twenty members ' +
               'they share. Served at the well-known path, at the section 4 ' +
               'issuer-with-path form, and at the RFC 8414 inserted-path ' +
-              'form. The acr, display and encryption members are ABSENT ' +
-              'because none of them is implemented, and an invented value ' +
-              'would be worse than the silence. WebFinger issuer discovery ' +
-              '(section 2) is not implemented.' },
+              'form. Since #118 it publishes subject_types_supported public ' +
+              'and pairwise, all four prompt values, ' +
+              'display_values_supported, ' +
+              'claims_locales_supported, the address and phone scopes and ' +
+              'every claim they name. check_session_iframe is absent (#121); ' +
+              'WebFinger issuer discovery (section 2) is not implemented ' +
+              '(#119).' },
+  { id: 'oidc-registration',
+    name: 'OpenID Connect Dynamic Client Registration 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-registration-1_0.html',
+    coverage: 'partial: /oauth2/register and RFC 7592 management accept and ' +
+              'honour the OpenID Connect client metadata this service ' +
+              'implements — subject_type and sector_identifier_uri (fetched ' +
+              'and required to list every redirect_uri; section 5), ' +
+              'token_endpoint_auth_signing_alg, ' +
+              'id_token_signed_response_alg, ' +
+              'id_token_encrypted_response_alg/enc, ' +
+              'userinfo_signed_response_alg and its encryption members, the ' +
+              'request object members, and the front- and back-channel ' +
+              'logout members. NOT covered (#120): default_max_age, ' +
+              'require_auth_time, default_acr_values, initiate_login_uri, ' +
+              'enforcing grant_types and response_types, and RFC 7592\'s ' +
+              '401 for an unknown client.' },
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
@@ -7879,10 +7931,13 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization ' +
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
-            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470'], effect: 'needs ' +
+            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470',
+            'oauth-multiple-response-types'], effect: 'needs ' +
         'client_id and redirect_uri — answers 400 when followed bare, then ' +
         'redirects to the sign-in screen once they are supplied',
-    what: 'Redirects to the authentication service when there is no ' +
+    what: 'GET, or POST with the request form-serialized (OIDC Core ' +
+          'section 3.1.2.1, since #118). ' +
+          'Redirects to the authentication service when there is no ' +
           'session — or, since RFC 9470, when the session does not meet the ' +
           'request\'s acr_values or max_age, refusing ' +
           'unmet_authentication_requirements if the sign-in did not meet ' +
@@ -8571,7 +8626,7 @@ const ENDPOINTS: EndpointEntry[] = [
                               'then reports inactive.' },
   { path: '/oauth2/register', group: 'OAuth 2.0 / OIDC', name: 'Dynamic ' +
       'client registration',
-    specs: ['rfc7591', 'rfc9700'],
+    specs: ['rfc7591', 'rfc9700', 'oidc-registration'],
     what: 'Registers a client and returns its credentials plus a ' +
           'registration access token. The registration IS the application ' +
           'entry under ou=applications — there is no second store — so ' +

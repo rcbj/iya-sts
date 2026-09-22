@@ -240,6 +240,9 @@ import introspectionJwt = require('./introspection_jwt');
 // token, and the registration endpoint asks it whether a client that
 // registered `id_token_encrypted_response_alg` gave a key to encrypt to.
 import idTokenEncryption = require('./id_token_encryption');
+// OIDC Core section 8's pairwise subjects (#118). A LIBRARY that requires
+// nothing here back.
+import pairwiseSubjects = require('./pairwise_subjects');
 // RFC 9470 (2026-09-13): step-up authentication. A library (rule 3) — what an
 // authorization request's acr_values and max_age ask of a session, what meets
 // them, and the refusal when nothing can. See `step_up.ts`.
@@ -412,6 +415,7 @@ interface OAuth2ServerDeps {
   jwtAccessToken: typeof jwtAccessToken;
   introspectionJwt: typeof introspectionJwt;
   idTokenEncryption: typeof idTokenEncryption;
+  pairwiseSubjects: typeof pairwiseSubjects;
   stepUp: typeof stepUp;
   requestObject: typeof requestObject;
   richAuthorization: typeof richAuthorization;
@@ -934,6 +938,8 @@ const AUTHORIZE_QUERY = vz.looseObject({
   display: vz.string().max(64).optional(),
   max_age: vt.opt(vt.integer(0, 315360000)),
   ui_locales: vz.string().max(256).optional(),
+  // Section 5.2 (#118): accepted and recorded; see claims_locales_supported.
+  claims_locales: vz.string().max(256).optional(),
   id_token_hint: vz.string().max(validation.CAP.TOKEN).optional(),
   login_hint: vt.opt(vt.name),
   acr_values: vz.string().max(512).optional(),
@@ -1054,9 +1060,13 @@ const AUTHORIZE_QUERY = vz.looseObject({
 // looking.
 // ---------------------------------------------------------------------------
 
-// Which claims each scope asks for (section 5.4), restricted to the ones
-// userFor() actually mints — `address` and `phone` are not in scopes_supported
-// for exactly that reason, so they are not here either.
+// Which claims each scope asks for — OIDC Core section 5.4, every one of them
+// (#118, 2026-09-22). It named four `profile` claims and left `address` and
+// `phone` out because `userFor()` mints neither; what is not on the person
+// object is now answered from the directory entry through the one claim
+// catalogue (`claimAttributes.requestedClaimsFor()`), so all four scopes are
+// honoured and advertised. A claim nobody holds is absent, never invented
+// beyond what that catalogue already does in development.
 //
 // **THEY ARE NO LONGER THE WHOLE ANSWER, AND HAVE NOT BEEN SINCE 2026-08-26.**
 // Two things reach this response beside them, and both are argued at the merge
@@ -1066,8 +1076,12 @@ const AUTHORIZE_QUERY = vz.looseObject({
 // asked about this person this time. A reader who takes this table for the
 // response has the picture this service had before either existed.
 const USERINFO_SCOPE_CLAIMS = {
-  profile: ['name', 'given_name', 'family_name', 'preferred_username'],
-  email: ['email', 'email_verified']
+  profile: ['name', 'family_name', 'given_name', 'middle_name', 'nickname',
+            'preferred_username', 'profile', 'picture', 'website', 'gender',
+            'birthdate', 'zoneinfo', 'locale', 'updated_at'],
+  email: ['email', 'email_verified'],
+  address: ['address'],
+  phone: ['phone_number', 'phone_number_verified']
 };
 
 // ---------------------------------------------------------------------------
@@ -1438,6 +1452,7 @@ class OAuth2Server {
       jwtAccessToken: jwtAccessToken,
       introspectionJwt: introspectionJwt,
       idTokenEncryption: idTokenEncryption,
+      pairwiseSubjects: pairwiseSubjects,
       stepUp: stepUp,
       requestObject: requestObject,
       richAuthorization: richAuthorization,
@@ -1617,7 +1632,10 @@ class OAuth2Server {
       // NAMES come from config.js rather than being written here, so that
       // changing `scim.scopeRead` moves the advertisement and the check
       // together.
-      scopes_supported: ['openid', 'profile', 'email', 'offline_access'].concat(
+      // `address` and `phone` since #118: section 5.4's two scopes the
+      // UserInfo endpoint answers from the directory entry.
+      scopes_supported: ['openid', 'profile', 'email', 'address', 'phone',
+                         'offline_access'].concat(
         config.value('scim.enabled') !== false
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
@@ -1718,9 +1736,11 @@ class OAuth2Server {
         stsCrypto.JWS_SIGNING_ALGS,
       service_documentation: base + '/docs',
       // One locale, because there is one: the login screen is the only UI this
-      // server renders and it is written in English, and nothing here reads the
-      // ui_locales request parameter. The list used to name four, which a
-      // client is entitled to read as "ask for fr-CA and you will get it".
+      // server renders and it is written in English. A request's ui_locales
+      // is accepted and answered in English, which section 3.1.2.1 permits
+      // ("An error SHOULD NOT result if some or all of the requested locales
+      // are not supported"). The list used to name four, which a client is
+      // entitled to read as "ask for fr-CA and you will get it".
       ui_locales_supported: ['en-US'],
       op_policy_uri: base + '/policy',
       op_tos_uri: base + '/tos',
@@ -2159,8 +2179,7 @@ class OAuth2Server {
   // What is DELIBERATELY ABSENT, since a discovery document is read as a
   // promise:
   //
-  //   * `display_values_supported`, the id_token and userinfo ENCRYPTION
-  //     members, `check_session_iframe`: none are implemented, and an empty or
+  //   * `check_session_iframe`: not implemented (#121), and an empty or
   //     invented value for any of them is worse than the member's absence,
   //     which says exactly the right thing. (`acr_values_supported` left this
   //     list on 2026-09-13, when RFC 9470 made acr_values something the
@@ -2170,11 +2189,10 @@ class OAuth2Server {
   //     have one; the issuer is expected to be known already.
   //
   // One honesty note that has no metadata member to live in, so it lives here:
-  // claims_supported below is the exact set idToken() emits, not a menu, and
-  // the id_token carries all of it whatever scope was asked for. The UserInfo
-  // endpoint is the one place a scope changes the answer (section 5.4), so the
-  // two can return different subsets of the same list — which is what that
-  // section describes rather than a disagreement between them.
+  // since #118 the ID Token carries the scope claims only for
+  // response_type=id_token, where no access token exists to fetch them with
+  // (section 5.4); every other flow's ID Token carries the protocol claims and
+  // what a claims request named, and the UserInfo endpoint answers the scopes.
   // ---------------------------------------------------------------------------
   private oidcMetadata(req: Req, issuer?: string): Json {
     const { stsCrypto, log, baseUrlOf, authorizationServers, config,
@@ -2233,10 +2251,11 @@ class OAuth2Server {
       userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
       //
       // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
-      // since 2026-09-14 — is the same value for every client that asks, which
-      // is what public MEANS. Claiming `pairwise` would be a claim about a
-      // calculation this server does not perform.
-      subject_types_supported: ['public'],
+      // since 2026-09-14 — the same value for every client that asks. And
+      // `pairwise` since #118 (OIDC Core section 8): a client that registers
+      // subject_type=pairwise is told a sub of its own sector's, computed by
+      // `pairwise_subjects.ts`.
+      subject_types_supported: ['public', 'pairwise'],
       // OIDC Core section 10.2 (2026-09-17): an ID Token is encrypted — signed
       // first, then encrypted to the key in the client's inline `jwks` — when
       // the client registered `id_token_encrypted_response_alg`. The lists
@@ -2263,11 +2282,16 @@ class OAuth2Server {
       // would be stale in every cache the moment somebody ticked a box. `GET
       // /admin-api/userinfo-claims` is the live answer, and it names every
       // claim a request may ask for.
+      // The protocol's own claims, then every claim section 5.4's four scopes
+      // name (#118) — an ID Token carries those only for response_type
+      // id_token, and the UserInfo endpoint for the scopes granted.
       claims_supported: ['iss', 'sub', 'aud', 'exp', 'iat', 'nbf', 'auth_time',
-                         'nonce', 'azp',
-                         'jti', 'at_hash', 'c_hash', 'name', 'given_name',
-                         'family_name',
-                         'preferred_username', 'email', 'email_verified'],
+                         'nonce', 'azp', 'jti', 'at_hash', 'c_hash', 'amr',
+                         'acr', 'sid'].concat(
+                           USERINFO_SCOPE_CLAIMS.profile,
+                           USERINFO_SCOPE_CLAIMS.email,
+                           USERINFO_SCOPE_CLAIMS.address,
+                           USERINFO_SCOPE_CLAIMS.phone),
       claim_types_supported: ['normal'],
       // Three parameters this server reads and two it does not, stated as the
       // booleans the specification defines rather than left to a client to
@@ -2287,7 +2311,19 @@ class OAuth2Server {
       // require_request_uri_registration and the algorithm lists — are RFC 8414
       // members too, so they are set in asMetadata() and this document inherits
       // them rather than overwriting.
-      prompt_values_supported: ['none', 'login'],
+      // Every value OIDC Core section 3.1.2.1 defines (#118): `consent` was
+      // honoured and not listed, and `select_account` — the sign-in screen,
+      // where whoever signs in is the account selected — was ignored.
+      prompt_values_supported: ['none', 'login', 'consent', 'select_account'],
+      // Section 3.1.2.1's `display` (#118): the sign-in screen is one page that
+      // renders at any width, so it is what `page`, `popup` and `touch` all
+      // get. `wap` is not claimed.
+      display_values_supported: ['page', 'popup', 'touch'],
+      // Section 5.2's `claims_locales` (#118): the directory holds claim
+      // values without a language tag, so every claim is answered in the one
+      // language it has; the parameter is accepted and an unsupported locale
+      // is, as the section says, not an error.
+      claims_locales_supported: ['en-US'],
       claims_parameter_supported: true,
       // OpenID Connect RP-Initiated Logout 1.0. /oauth2/logout drops the
       // session cookie and returns to post_logout_redirect_uri — but it neither
@@ -3063,7 +3099,12 @@ class OAuth2Server {
       // behind it.
       auth_time: opts.auth_time || undefined,
       amr: opts.amr || undefined,
-      acr: opts.acr || undefined
+      acr: opts.acr || undefined,
+      // THE SIGN-ON SESSION THIS GRANT CAME FROM (#118), inside the JWE where
+      // no client reads it. A refresh token whose scope lacks
+      // `offline_access` is an ONLINE one (OIDC Core section 11) and the
+      // refresh grant refuses it once this session has ended.
+      sid: opts.session_id || undefined
     };
     if (opts.request) {
       payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
@@ -3098,15 +3139,139 @@ class OAuth2Server {
     return token;
   }
 
-  // OIDC section 3.1.3.6: at_hash / c_hash are the base64url of the left half
-  // of the SHA-256 of the ASCII of the token.
-  private halfHash(value: Json): Json {
-    const { crypto, log, b64u } = this.deps;
-    log.debug("Entering OAuth2Server.halfHash().");
-    const h = crypto.createHash('sha256').update(String(value), 'ascii')
-      .digest();
+  // OIDC Core sections 3.1.3.6 and 3.3.2.11: at_hash and c_hash are the
+  // base64url of the left-most half of the hash of the ASCII of the value,
+  // with the hash of the ID Token's own `alg`. It was SHA-256 for every alg
+  // until #118. The table of which hash an algorithm uses — and this
+  // service's choice where the specification names none — is
+  // `common/crypto.js`'s `idTokenHashFor()`.
+  private halfHash(value: Json, alg?: Json): Json {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.halfHash(). alg=" + (alg || 'RS256'));
     log.debug("Leaving OAuth2Server.halfHash().");
-    return b64u(h.subarray(0, h.length / 2));
+    return stsCrypto.idTokenHalfHash(String(value), String(alg || 'RS256'));
+  }
+
+  // The `sub` this client is told for a person whose public subject is
+  // `localSub` — itself, or OIDC Core section 8's pairwise value. The one
+  // place every reader of a CLIENT-facing subject asks: the ID Token, the
+  // UserInfo response and the Logout Tokens that must name what the ID Token
+  // named. `pairwise_subjects.ts` decides.
+  subjectFor(clientId: Json, localSub: Json): Json {
+    const { log, pairwiseSubjects } = this.deps;
+    log.debug("Entering OAuth2Server.subjectFor().");
+    log.debug("Leaving OAuth2Server.subjectFor().");
+    return pairwiseSubjects.subjectFor(clientId, localSub);
+  }
+
+  // -------------------------------------------------------------------------
+  // `offline_access`, AS OIDC CORE SECTION 11 ALLOWS IT (#118, 2026-09-22).
+  //
+  // "The Authorization Server MUST ignore the offline_access request unless
+  // the Client is using a response_type value that would result in an
+  // Authorization Code being returned", and it "MUST ensure that the prompt
+  // parameter contains consent unless other conditions for processing the
+  // request permitting offline access to the requested resources are in
+  // place". The other condition here is the CONSENT REGISTER: a person who
+  // agreed to `offline_access` for this client on the consent screen — which
+  // is where prompt=consent sends them, and which the sign-in hop's return
+  // trip no longer carries the prompt past — has consented to exactly this.
+  // Where neither holds, the scope comes off the grant, so the refresh token
+  // issued for it is ONLINE: it ends with the sign-on session (see the
+  // refresh grant). It was advertised and ignored until this date.
+  // -------------------------------------------------------------------------
+  offlineAccessScope(scope: Json, query: Json, types: Json, user: Json): Json {
+    const { log, hasScope, consent } = this.deps;
+    log.debug("Entering OAuth2Server.offlineAccessScope().");
+    if (!hasScope(scope, 'offline_access')) {
+      log.debug("Leaving OAuth2Server.offlineAccessScope(). Not asked.");
+      return scope;
+    }
+    const without = String(scope).split(/\s+/).filter(function (one) {
+      return one && one !== 'offline_access';
+    }).join(' ');
+    if ((types || []).indexOf('code') < 0) {
+      log.info('oauth2: offline_access was asked for by "' +
+               (query.client_id || '') + '" with a response_type that ' +
+               'returns no authorization code, and is ignored (OIDC Core ' +
+               'section 11).');
+      log.debug("Leaving OAuth2Server.offlineAccessScope(). No code.");
+      return without;
+    }
+    const prompted = String(query.prompt || '').split(/\s+/)
+      .indexOf('consent') >= 0;
+    // A RECORDED consent — the person's own, or the register's global one
+    // an application carries (`oauthGlobalConsent`, which is how this
+    // service's own surfaces hold it) — counts whether or not
+    // `oauth2.consentRequired` is on: it is a fact about the grant, and the
+    // setting only decides whether a missing one is ASKED for.
+    let consented = false;
+    if (!prompted) {
+      const asked = consent.outstanding({
+        username: (user || {}).username, clientId: query.client_id,
+        scope: 'offline_access', all: false });
+      consented = asked.outstanding.length === 0;
+    }
+    if (!prompted && !consented) {
+      log.info('oauth2: offline_access was asked for by "' +
+               (query.client_id || '') + '" without prompt=consent and ' +
+               'without a recorded consent to it, and is ignored (OIDC Core ' +
+               'section 11); the refresh token issued is an online one.');
+      log.debug("Leaving OAuth2Server.offlineAccessScope(). No consent.");
+      return without;
+    }
+    log.debug("Leaving OAuth2Server.offlineAccessScope(). Granted.");
+    return scope;
+  }
+
+  // -------------------------------------------------------------------------
+  // SECTION 5.4's CLAIMS FOR THE SCOPES GRANTED (#118). What the person object
+  // holds first, then the directory entry through the claim catalogue for the
+  // rest — the same order UserInfo has always used for `profile` and `email`,
+  // now for every claim of all four scopes. A claim neither holds is absent.
+  // -------------------------------------------------------------------------
+  scopeClaimsOf(user: Json, scope: Json): Json {
+    const { log, hasScope, claimAttributes, errorCodes } = this.deps;
+    log.debug("Entering OAuth2Server.scopeClaimsOf().");
+    const out: Json = {};
+    const wanted: string[] = [];
+    Object.keys(USERINFO_SCOPE_CLAIMS).forEach(function (name) {
+      if (hasScope(scope, name)) {
+        USERINFO_SCOPE_CLAIMS[name].forEach(function (claim) {
+          wanted.push(claim);
+        });
+      }
+    });
+    const missing: string[] = [];
+    wanted.forEach(function (claim) {
+      if (user && user[claim] !== undefined && user[claim] !== null &&
+          user[claim] !== '') {
+        out[claim] = user[claim];
+      } else {
+        missing.push(claim);
+      }
+    });
+    if (missing.length && user && user.username) {
+      try {
+        const built = claimAttributes.requestedClaimsFor(user.username,
+                                                         missing);
+        missing.forEach(function (claim) {
+          if (built.claims[claim] !== undefined &&
+              built.claims[claim] !== '') {
+            out[claim] = built.claims[claim];
+          }
+        });
+      } catch (e) {
+        // The rule personFromDirectory() follows: a directory that threw must
+        // not fail an issuance, and the claims are simply absent.
+        log.error(errorCodes.tag('STS-OAUTH-0181') + 'scopeClaimsOf(): the ' +
+                  'directory threw while being read for ' + user.username +
+                  '\'s scope claims and they are omitted: ' + e.message);
+      }
+    }
+    log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
+              Object.keys(out).length + " claim(s).");
+    return out;
   }
 
   // ASYNCHRONOUS, AND THIS IS THE SECOND OF THE TWO SIGNING CALL SITES A CLIENT
@@ -3131,18 +3296,39 @@ class OAuth2Server {
     // entry, and `definedOnly()` then keeps an absent one ABSENT — see
     // both, beside PERSONA_CLAIMS.
     const user = self.personFromDirectory(opts.user || userFor(opts.username));
-    const payload = self.definedOnly({
-      iss: self.issuerOf(base), sub: opts.sub || user.sub, aud: opts.client_id,
-      typ: 'ID',
+    // THE ALGORITHM FIRST (#118): at_hash and c_hash below are hashed with the
+    // hash of the algorithm this token is SIGNED with (OIDC Core 3.1.3.6 and
+    // 3.3.2.11), so it has to be known before they are. The refusal of an
+    // unsupported one stays where it was, below.
+    const registered = applications.registrationOf(opts.client_id) || {};
+    const idAlg = String(registered.id_token_signed_response_alg || 'RS256');
+    // -----------------------------------------------------------------------
+    // WHAT THE PAYLOAD CARRIES, AND WHAT IT STOPPED CARRYING ON 2026-09-22
+    // (#118).
+    //
+    //   * NO `typ` CLAIM. It said `typ: 'ID'`, a member no specification
+    //     defines for an ID Token and one a JOSE-aware reader can confuse with
+    //     the header's `typ`.
+    //   * NO INVENTED `auth_time`. When the time the person authenticated is
+    //     unknown the claim is ABSENT; it used to be `iat`, which asserts an
+    //     authentication at the moment of issue that did not happen then.
+    //   * THE PROFILE CLAIMS ONLY WHERE SECTION 5.4 PUTS THEM. Scope-requested
+    //     claims are returned by the UserInfo endpoint, and in the ID Token
+    //     only "when using a response_type value that results in no Access
+    //     Token being issued" — `response_type=id_token`. They used to be in
+    //     every ID Token whatever was granted. `opts.scopeClaims` is set by
+    //     the implicit branch that issues no access token; a claim a client
+    //     asked for by name through section 5.5 still arrives, below.
+    // -----------------------------------------------------------------------
+    const payload = self.definedOnly(Object.assign({
+      iss: self.issuerOf(base),
+      sub: opts.sub || self.subjectFor(opts.client_id, user.sub),
+      aud: opts.client_id,
       iat: iat, nbf: iat, exp: iat +
                                self.idTokenTtl(opts.client_id),
-      auth_time: opts.auth_time || iat,
-      azp: opts.client_id, jti: randomId(16),
-      name: user.name, given_name: user.given_name,
-      family_name: user.family_name,
-      preferred_username: user.preferred_username, email: user.email,
-      email_verified: user.email_verified
-    });
+      auth_time: opts.auth_time || undefined,
+      azp: opts.client_id, jti: randomId(16)
+    }, opts.scopeClaims ? self.scopeClaimsOf(user, opts.scope) : {}));
     // How the End-User authenticated, and to what level. RFC 8176 for amr;
     // `hwk` is proof of possession of a hardware key, which is what a WebAuthn
     // assertion demonstrates. A relying party that asked for a second factor
@@ -3200,8 +3386,10 @@ class OAuth2Server {
     if (opts.session_id && (frontchannel.enabled() || backchannel.enabled())) {
       payload.sid = opts.session_id;
     }
-    if (opts.access_token) payload.at_hash = self.halfHash(opts.access_token);
-    if (opts.code) payload.c_hash = self.halfHash(opts.code);
+    if (opts.access_token) {
+      payload.at_hash = self.halfHash(opts.access_token, idAlg);
+    }
+    if (opts.code) payload.c_hash = self.halfHash(opts.code, idAlg);
     // The ID Token's own custom claim set, separate from the access token's:
     // the two go to different readers (a client reads the ID Token, a resource
     // server reads the access token) and configuring them together would mean
@@ -3255,8 +3443,6 @@ class OAuth2Server {
     // Refused rather than downgraded, for the reason the UserInfo endpoint
     // refuses: a client that registered an algorithm and got RS256 has no way
     // to notice, and would verify against a key that was never going to match.
-    const registered = applications.registrationOf(opts.client_id) || {};
-    const idAlg = String(registered.id_token_signed_response_alg || 'RS256');
     if (ID_TOKEN_SIGNING_ALGS.indexOf(idAlg) === -1) {
       log.debug("Leaving OAuth2Server.idToken(). Unsupported " +
                 "id_token_signed_response_alg.");
@@ -4886,7 +5072,12 @@ class OAuth2Server {
     // The debugger permission comes off here for anybody who may not hold it,
     // before a code carries it — see `debugger/debugger_access.ts`, and the
     // backstop in tokenSet().
-    const scope = debuggerAccess.narrowScope(String(query.scope || 'openid'),
+    // NO SCOPE IS NO SCOPE (#118): a missing one used to be `openid`, which
+    // made a plain OAuth request an OpenID Connect one it had not asked to be.
+    // And `offline_access` is kept only where OIDC Core section 11 allows it —
+    // see offlineAccessScope().
+    const scope = debuggerAccess.narrowScope(
+      self.offlineAccessScope(String(query.scope || ''), query, types, user),
       { kind: 'user', name: user.username,
         authenticated: !authInfo || authInfo.authenticated !== false },
       { clientId: query.client_id, grant: 'authorization_code' });
@@ -4902,7 +5093,8 @@ class OAuth2Server {
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: 'invalid_authorization_details',
           error_description: parsedDetails.error },
-        types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
     const authorizationDetails = parsedDetails.details;
     if (authorizationDetails) {
@@ -4923,7 +5115,8 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: 'invalid_target', error_description: parsedResources.error },
-        types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
     const resources = parsedResources.resources;
     if (resources.length) {
@@ -4947,7 +5140,8 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: 'invalid_scope', error_description: permissionProblem },
-        types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
 
     // RFC 9068 SECTION 3, refused here for the reason the two blocks above are:
@@ -4967,7 +5161,8 @@ class OAuth2Server {
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: audiencePlan.refusal.error,
           error_description: audiencePlan.refusal.description },
-        types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
 
     // THE ROLE GATE, and it is asked HERE for the same reason as the two blocks
@@ -5011,7 +5206,8 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: 'access_denied', error_description: roleAnswer.why },
-        types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
 
     // OpenID Connect Core section 5.5 — the claims request. Refused HERE for
@@ -5030,7 +5226,8 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: 'invalid_request', error_description: parsedClaims.error },
-        types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
     const claimsRequest = parsedClaims.claims;
     if (claimsRequest) {
@@ -5058,7 +5255,8 @@ class OAuth2Server {
       return self.redirectBack(res, base, redirectUri, query.state,
         { error: transactionCheck.error,
           error_description: transactionCheck.description },
-        types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
 
     // RFC 9126: A PUSHED REQUEST_URI IS SPENT HERE, where something is issued
@@ -5180,8 +5378,12 @@ class OAuth2Server {
     // With the issuer and the subject the ID Token is issued under (2026-09-17,
     // #36), which is what a Logout Token for this client has to name — see
     // `noteClient()`.
+    // The `sub` is the one the ID Token names — pairwise where the client
+    // registered for it (#118) — because a Logout Token must match it.
     frontchannel.noteClient(authInfo, String(query.client_id),
-                            { iss: self.issuerOf(base), sub: user.sub });
+                            { iss: self.issuerOf(base),
+                              sub: self.subjectFor(query.client_id,
+                                                   user.sub) });
 
     if (types.indexOf('code') >= 0) {
       const code = randomId(24);
@@ -5301,7 +5503,12 @@ class OAuth2Server {
         auth_time: authTime,
         amr: amr, acr: acr, session_id: sessionId, grant: flow, set_id: setId,
         access_token: out.access_token, code: out.code,
-        claims: claimsRequest
+        claims: claimsRequest,
+        // OIDC Core section 5.4: the scope-requested claims go in the ID
+        // Token only when NO access token is issued — response_type=id_token
+        // alone. See idToken().
+        scope: scope,
+        scopeClaims: types.length === 1
       });
     }
     // Remembered now that they have been spent, so the NEXT authorization
@@ -5317,7 +5524,8 @@ class OAuth2Server {
     // fragment, per OAuth 2.0 / OIDC.
     logArtifact('Authorization response', 'as returned to the client', out);
     self.redirectBack(res, base, redirectUri, query.state, out,
-      types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+      self.usesFragment(types, query.response_mode),
+        query.response_mode);
     log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
     log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
   }
@@ -5379,10 +5587,11 @@ class OAuth2Server {
 
   // The URL a redirect WOULD have gone to, built by the same rules
   // `redirectBack()` follows so the interstitial's link and the automatic
-  // redirect cannot differ. Errors are always in the query — never the fragment
-  // — because an error carries no token.
-  redirectTarget(base: Json, redirectUri: Json, state: Json, params: Json)
-    : Json {
+  // redirect cannot differ — including WHERE the parameters go (#118): an
+  // error from an implicit or hybrid request is in the fragment, as its
+  // success would have been, and the link used to put it in the query.
+  redirectTarget(base: Json, redirectUri: Json, state: Json, params: Json,
+                 fragment?: Json): Json {
     const { log, oauth21 } = this.deps;
     log.debug("Entering OAuth2Server.redirectTarget().");
     const usp = new URLSearchParams();
@@ -5397,7 +5606,7 @@ class OAuth2Server {
       usp.set('state', state);
     }
     usp.set('iss', base);
-    const sep = redirectUri.indexOf('?') >= 0 ? '&' : '?';
+    const sep = fragment ? '#' : (redirectUri.indexOf('?') >= 0 ? '&' : '?');
     log.debug("Leaving OAuth2Server.redirectTarget().");
     return redirectUri + sep + usp.toString();
   }
@@ -5458,6 +5667,37 @@ class OAuth2Server {
     res.status(400).type('text/html').set('Cache-Control', 'no-store')
        .send(html);
     log.debug("Leaving OAuth2Server.sendRedirectInterstitial().");
+  }
+
+  // -------------------------------------------------------------------------
+  // QUERY OR FRAGMENT, FOR A SUCCESS AND AN ERROR ALIKE (#118, 2026-09-22).
+  //
+  // OAuth 2.0 Multiple Response Type Encoding Practices section 2.1 gives
+  // each response type a DEFAULT response mode — `query` for `code` alone and
+  // `fragment` for every type that returns a token or an ID Token — and OIDC
+  // Core sections 3.2.2.6 and 3.3.2.6 send an ERROR the same way the
+  // successful response would have gone. Until this date an error from an
+  // implicit or hybrid request went in the query, where the client's
+  // fragment-reading code never saw it. An explicit `fragment` is honoured
+  // for any type; an explicit `query` only where nothing in the response can
+  // be a token (section 2.1 of that document: "MUST NOT use the query
+  // encoding" for those) — so it is ignored for the rest rather than obeyed.
+  // `form_post` is redirectBack()'s own branch and never reaches here.
+  // -------------------------------------------------------------------------
+  usesFragment(types: Json, responseMode?: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.usesFragment().");
+    const list: string[] = (Array.isArray(types) ? types
+      : String(types || '').split(/\s+/)).filter(Boolean);
+    const tokenBearing = list.some(function (one) {
+      return one !== 'code' && one !== 'none';
+    });
+    const asked = String(responseMode || '');
+    log.debug("Leaving OAuth2Server.usesFragment().");
+    if (asked === 'fragment') {
+      return true;
+    }
+    return tokenBearing;
   }
 
   redirectBack(res: Res, base: Json, redirectUri: Json, state: Json,
@@ -5540,6 +5780,42 @@ class OAuth2Server {
 } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.authorizeEndpoint().");
+    // -----------------------------------------------------------------------
+    // POST (#118, OIDC Core section 3.1.2.1: "Authorization Servers MUST
+    // support the use of the HTTP GET and POST methods"). Only GET was
+    // registered until 2026-09-22. A POST carries the request as
+    // application/x-www-form-urlencoded form serialization, and it is turned
+    // into the query every check below reads — repeated names as arrays, the
+    // way the query parser keeps them, so OAuth 2.1's repeated-parameter
+    // refusal sees them too. Only the body counts: a POST whose URL also
+    // carries parameters is answered from the body alone.
+    // -----------------------------------------------------------------------
+    if (req.method === 'POST') {
+      const type = String((req.headers || {})['content-type'] || '')
+        .split(';')[0].trim().toLowerCase();
+      if (type !== 'application/x-www-form-urlencoded') {
+        errorCodes.mark(res, 'STS-OAUTH-0564');
+        log.debug("Leaving OAuth2Server.authorizeEndpoint(). A POST that is " +
+                  "not a form.");
+        return self.oauthError(res, 400, 'invalid_request',
+          'An authorization request sent with POST is form-serialized — ' +
+          'Content-Type application/x-www-form-urlencoded (OIDC Core section ' +
+          '3.1.2.1, section 13.2). This one is "' + (type || '(none)') + '".');
+      }
+      const raw = typeof req.body === 'string' ? req.body
+        : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '');
+      const fromBody: Json = {};
+      new URLSearchParams(raw).forEach(function (value, name) {
+        if (fromBody[name] === undefined) {
+          fromBody[name] = value;
+        } else {
+          fromBody[name] = [].concat(fromBody[name], value);
+        }
+      });
+      Object.defineProperty(req, 'query', { value: fromBody, writable: true,
+                                            configurable: true,
+                                            enumerable: true });
+    }
     const outer = Object.assign({}, req.query || {});
     const client = applications.clientConfigOf(outer.client_id);
     const jwtSecured = (outer.request !== undefined && outer.request !== '') ||
@@ -5550,7 +5826,7 @@ class OAuth2Server {
         self.capabilitiesFor(req).require_signed_request_object !== true) {
       log.debug("Leaving OAuth2Server.authorizeEndpoint(). Not a " +
                 "JWT-secured request.");
-      return self.authorizeRequest(req, res);
+      return self.withIdTokenHint(req, res);
     }
     const base = self.asBaseOf(req);
     requestObject.resolve({
@@ -5579,7 +5855,7 @@ class OAuth2Server {
                                               enumerable: true });
       }
       log.debug("Leaving OAuth2Server.authorizeEndpoint(). Resolved.");
-      return self.authorizeRequest(req, res);
+      return self.withIdTokenHint(req, res);
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-OAUTH-0373') + 'the authorization ' +
                 'endpoint failed while resolving a request object: ' +
@@ -5710,8 +5986,8 @@ class OAuth2Server {
   // ok: false, redirect: true, error, description, code, q, redirectUri }`.
   // ---------------------------------------------------------------------------
   private vetAuthorizationRequest(req: Req, options?: Json): Json {
-    const { log, STS, mode, bcp, oauth21, applications, validation, stepUp
-} = this.deps;
+    const { log, STS, mode, bcp, oauth21, applications, validation, stepUp,
+            hasScope } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.vetAuthorizationRequest().");
     const opts = options || {};
@@ -6051,6 +6327,76 @@ class OAuth2Server {
         ' cannot be an acr value — a value is printable ASCII ' +
         'with no double quote or backslash.');
     }
+    // -----------------------------------------------------------------------
+    // OPENID CONNECT CORE'S OWN RULES ABOUT THE REQUEST, IN EVERY MODE (#118,
+    // 2026-09-22). Redirected: the redirect_uri is validated above.
+    //
+    //   * An ID Token is an OpenID Connect response, and OpenID Connect
+    //     requests "MUST contain the openid scope value" (section 3.1.2.1).
+    //     A response_type naming id_token without it used to be answered, and
+    //     a request with no scope at all was given `openid` it had not asked
+    //     for (both gone).
+    //   * `prompt=none` MUST NOT be combined with another value (section
+    //     3.1.2.1: "If this parameter contains none with any other value, an
+    //     error is returned").
+    //   * THE IMPLICIT FLOW (response_type `id_token` or `id_token token`):
+    //     section 3.2.2.1 makes `nonce` REQUIRED and forbids an http
+    //     redirect_uri unless it is a native client's loopback. Both were RFC
+    //     9700 mode's alone; they are Core's in every mode now. The hybrid flow
+    //     keeps nonce optional, as section 3.3.2.1 does, and RFC 9700 mode
+    //     still requires it for any id_token.
+    // -----------------------------------------------------------------------
+    const idTokenAsked = types.indexOf('id_token') >= 0;
+    if (idTokenAsked && !hasScope(q.scope, 'openid')) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). An id_token " +
+                "without the openid scope.");
+      return redirectable('STS-OAUTH-0560', 'invalid_scope',
+        'response_type "' + q.response_type + '" asks for an ID Token, and ' +
+        'an ' +
+        'OpenID Connect request MUST carry the openid scope (OIDC Core ' +
+        'section 3.1.2.1). Add openid to scope.');
+    }
+    const promptValues = String(q.prompt || '').split(/\s+/).filter(Boolean);
+    if (promptValues.indexOf('none') >= 0 && promptValues.length > 1) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). prompt=none " +
+                "with another value.");
+      return redirectable('STS-OAUTH-0561', 'invalid_request',
+        'prompt "' + q.prompt + '" combines none with another value, and ' +
+        'OIDC Core section 3.1.2.1 says that is an error: none forbids every ' +
+        'prompt the others ask for.');
+    }
+    const implicit = idTokenAsked && types.indexOf('code') < 0;
+    if (implicit && !q.nonce) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). The " +
+                "implicit " +
+                "flow with no nonce.");
+      return redirectable('STS-OAUTH-0562', 'invalid_request',
+        'response_type "' + q.response_type + '" is the implicit flow, and ' +
+        'OIDC Core section 3.2.2.1 makes nonce REQUIRED for it — it is what ' +
+        'the client checks the ID Token against to detect a replay.');
+    }
+    if (implicit) {
+      let parsedRedirect: Json = null;
+      try {
+        parsedRedirect = new URL(redirectUri);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.vetAuthorizationRequest(): " +
+                  ((e && e.message) || e));
+        // Refused above for its shape; nothing more to judge here.
+        parsedRedirect = null;
+      }
+      if (parsedRedirect && parsedRedirect.protocol === 'http:' &&
+          ['localhost', '127.0.0.1', '[::1]']
+            .indexOf(parsedRedirect.hostname) < 0) {
+        log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). The " +
+                  "implicit flow to an http redirect_uri.");
+        return refuse('STS-OAUTH-0563', 'invalid_request',
+          'OIDC Core section 3.2.2.1: the implicit flow MUST NOT use an http ' +
+          'redirect_uri unless the client is a native application ' +
+          'redirecting to localhost, 127.0.0.1 or [::1]. "' + redirectUri +
+          '" is neither, and the tokens would cross the network in clear.');
+      }
+    }
     // The rest of what RFC 9700 mode has to say about this request: no response
     // type that issues an access token here (section 2.1.2), PKCE from any
     // client this server cannot see to be confidential and S256 when there is
@@ -6164,10 +6510,140 @@ class OAuth2Server {
     return relaxed;
   }
 
+  // -------------------------------------------------------------------------
+  // THE id_token_hint (OIDC Core section 3.1.2.1, #118, 2026-09-22).
+  //
+  // "ID Token previously issued by the Authorization Server being passed as a
+  // hint about the End-User's current or past authenticated session with the
+  // Client." It was declared in the schema and never read. Now it is
+  // VERIFIED as an ID Token this service issued — its signature with the key
+  // of the algorithm it names (this realm's own RSA generations for RS256,
+  // the client's secret for HS*, the published key whose kid it names for the
+  // rest, post-quantum included), its `iss` this authorization server's and
+  // its `aud` naming this client — and an EXPIRED one is still a hint: it
+  // describes a past session, which is what the member is for. An encrypted
+  // hint (a JWE the client re-encrypted to this server, which section
+  // 3.1.2.1 says it MAY send) is refused by name: this service does not
+  // decrypt one.
+  //
+  // It runs here, asynchronously, after a request object is resolved (the
+  // hint may be inside one), and leaves its verdict on `req.stsIdTokenHint`
+  // for `authorizeRequest()` to act on once the redirect_uri is vetted — so
+  // a bad hint is reported to the client rather than on this server.
+  // -------------------------------------------------------------------------
+  private withIdTokenHint(req: Req, res: Res): Json {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.withIdTokenHint().");
+    const hint = String((req.query || {}).id_token_hint || '');
+    if (!hint) {
+      log.debug("Leaving OAuth2Server.withIdTokenHint(). None.");
+      return self.authorizeRequest(req, res);
+    }
+    log.debug("Leaving OAuth2Server.withIdTokenHint(). Verifying.");
+    return self.verifyIdTokenHint(req, hint,
+                                  String((req.query || {}).client_id || ''))
+      .then(function (verdict: Json) {
+        req.stsIdTokenHint = verdict;
+        return self.authorizeRequest(req, res);
+      }).catch(function (e: Json) {
+        log.error(errorCodes.tag('STS-OAUTH-0565') + 'the authorization ' +
+                  'endpoint failed while reading an id_token_hint: ' +
+                  ((e && e.stack) || e));
+        if (!res.headersSent) {
+          errorCodes.mark(res, 'STS-OAUTH-0565');
+          self.oauthError(res, 500, 'server_error',
+                          String((e && e.message) || e));
+        }
+      });
+  }
+
+  // `{ ok: true, sub, claims }` or `{ ok: false, why }`. Never rejects for a
+  // bad token — only for a failure to ask at all.
+  private async verifyIdTokenHint(req: Req, hint: Json,
+                                  clientId: Json): Promise<Json> {
+    const { log, stsCrypto, allSigningKeysAsync, applications } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.verifyIdTokenHint().");
+    const parts = String(hint).split('.');
+    if (parts.length === 5) {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Encrypted.");
+      return { ok: false, why: 'the id_token_hint is encrypted (a JWE), and ' +
+               'this service reads only the signed ID Token it issued — send ' +
+               'that, as section 3.1.2.1 has the client do.' };
+    }
+    let header: Json = null;
+    try {
+      header = JSON.parse(Buffer.from(parts[0], 'base64url')
+                                .toString('utf8'));
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.verifyIdTokenHint(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Unreadable.");
+      return { ok: false, why: 'the id_token_hint is not a JWT.' };
+    }
+    const alg = String((header && header.alg) || '');
+    let verified: Json = null;
+    try {
+      if (alg === 'RS256') {
+        verified = helpers.verifyOwnCompactJws(hint, { algorithms: ['RS256'] });
+      } else if (/^HS(256|384|512)$/.test(alg)) {
+        const registered = applications.registrationOf(clientId) || {};
+        if (!registered.client_secret) {
+          log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No secret.");
+          return { ok: false, why: 'the id_token_hint is signed with ' + alg +
+                   ' and client "' + clientId + '" has no client_secret to ' +
+                   'verify it with.' };
+        }
+        verified = stsCrypto.verifyCompactJws(hint,
+          Buffer.from(String(registered.client_secret), 'utf8'),
+          { algorithms: [alg] });
+      } else {
+        const keys: Json[] = await allSigningKeysAsync();
+        const entry = keys.filter(function (one: Json) {
+          return one.publicJwk && one.publicJwk.kid === header.kid &&
+                 (!one.publicJwk.alg || one.publicJwk.alg === alg);
+        })[0];
+        if (!entry) {
+          log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No such key.");
+          return { ok: false, why: 'the id_token_hint names key "' +
+                   (header.kid || '') + '" for ' + alg + ', and this service ' +
+                   'holds no such key.' };
+        }
+        verified = await stsCrypto.verifyCompactJwsAsync(hint,
+          entry.publicJwk, { algorithms: [alg] });
+      }
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.verifyIdTokenHint(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). It did not " +
+                "verify.");
+      return { ok: false, why: 'the id_token_hint did not verify as an ID ' +
+               'Token this service issued: ' + ((e && e.message) || e) + '.' };
+    }
+    const claims = (verified && verified.claims) || verified || {};
+    const issuer = self.issuerOf(self.asBaseOf(req));
+    const audiences = [].concat(claims.aud || []).map(String);
+    if (String(claims.iss || '') !== issuer) {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another issuer.");
+      return { ok: false, why: 'the id_token_hint was issued by "' +
+               (claims.iss || '') + '", and this authorization server is "' +
+               issuer + '".' };
+    }
+    if (audiences.indexOf(String(clientId)) < 0) {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another client.");
+      return { ok: false, why: 'the id_token_hint was issued to ' +
+               JSON.stringify(claims.aud) + ', not to client "' + clientId +
+               '".' };
+    }
+    log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Verified.");
+    return { ok: true, sub: String(claims.sub || ''), claims: claims };
+  }
+
   private authorizeRequest(req: Req, res: Res): Json {
     const { log, STS, hasScope, issuerStates, authn, bcp, applications,
             errorCodes, stepUp, richAuthorization, consent, consentScreen,
-            sessionOf } = this.deps;
+            sessionOf, nameForSubject } = this.deps;
     const self = this;
     log.debug("Entering the authorization endpoint.");
     // This authorization server's own base, so the RFC 9207 `iss` on the
@@ -6233,7 +6709,9 @@ class OAuth2Server {
           // point is to make the redirect a DECISION rather than to change it.
           target: self.redirectTarget(base, redirectUri, q.state,
                                       { error: error,
-                                        error_description: description })
+                                        error_description: description },
+                                      self.usesFragment(q.response_type,
+                                                        q.response_mode))
         });
       }
       log.debug("Leaving the authorization endpoint. Reporting " + error + " " +
@@ -6243,10 +6721,12 @@ class OAuth2Server {
       // that asked for form_post and got a 302 carrying `error` in a query
       // string has had the failure put in its browser history, which is the one
       // place section 4.3 is asking for it not to be.
-      // error-code: none — every caller of fail() marks its own condition
-      // first
+      // IN THE FRAGMENT FOR AN IMPLICIT OR HYBRID REQUEST (#118): where its
+      // success would have gone. See usesFragment().
+      // error-code: none — every caller of fail() marks its own code first
       self.redirectBack(res, base, redirectUri, q.state,
-                        { error: error, error_description: description }, false,
+                        { error: error, error_description: description },
+                        self.usesFragment(q.response_type, q.response_mode),
                         q.response_mode);
       log.debug("Leaving fail().");
     };
@@ -6258,6 +6738,15 @@ class OAuth2Server {
       // error-code: none — the code is vetAuthorizationRequest()'s, marked
       // above
       return fail(vetted.error, vetted.description);
+    }
+    // An id_token_hint that did not verify (#118) — see withIdTokenHint().
+    const idTokenHint = req.stsIdTokenHint || null;
+    if (idTokenHint && !idTokenHint.ok) {
+      log.debug("Leaving the authorization endpoint. The id_token_hint was " +
+                "refused.");
+      errorCodes.mark(res, 'STS-OAUTH-0566');
+      log.debug("Leaving OAuth2Server.authorizeRequest().");
+      return fail('invalid_request', 'id_token_hint: ' + idTokenHint.why);
     }
 
     // issuer_state (OID4VCI section 4.1.1): if this request came from a
@@ -6331,8 +6820,33 @@ class OAuth2Server {
     // authentication service, or a later request on the same session — and the
     // response goes out now.
     const session = sessionOf(req);
-    const forcePrompt =
-      String(q.prompt || '').split(/\s+/).indexOf('login') >= 0;
+    const promptList = String(q.prompt || '').split(/\s+/);
+    // `select_account` (#118): "The Authorization Server SHOULD prompt the
+    // End-User to select a user account" — which, with one session per
+    // browser here, is the sign-in screen: whoever signs in is the account
+    // selected. It was silently ignored.
+    // AND A SESSION FOR SOMEBODY OTHER THAN THE id_token_hint NAMES is not an
+    // answer to this request (section 3.1.2.1): with prompt=none it is
+    // login_required, and otherwise the person signs in again.
+    const hintMismatch = !!(idTokenHint && idTokenHint.ok && session &&
+      self.subjectFor(q.client_id, (session.user || {}).sub) !==
+        idTokenHint.sub);
+    // THE SECOND PASS: the person was sent to sign in because of the hint and
+    // came back as somebody else again. Refused rather than sent round again,
+    // which would loop for as long as they kept choosing that account.
+    const hintPrompted = String(((req.stsJar && req.stsJar.outer) || q)
+      .hint_prompted || '') === '1';
+    if (hintMismatch && (promptList.indexOf('none') >= 0 || hintPrompted)) {
+      log.debug("Leaving the authorization endpoint. The session is not the " +
+                "id_token_hint's person, and prompt=none.");
+      errorCodes.mark(res, 'STS-OAUTH-0567');
+      return fail('login_required', 'The id_token_hint names a different ' +
+        'person from the one signed in here, and prompt=none forbids asking ' +
+        'them to sign in (OIDC Core section 3.1.2.1).');
+    }
+    const forcePrompt = promptList.indexOf('login') >= 0 ||
+                        promptList.indexOf('select_account') >= 0 ||
+                        hintMismatch;
     // -------------------------------------------------------------------------
     // RFC 9470 AND OPENID CONNECT CORE 3.1.2.1: A SESSION IS NOT AN ANSWER TO A
     // REQUEST IT DOES NOT MEET (2026-09-13).
@@ -6591,7 +7105,8 @@ class OAuth2Server {
     // through and the code came out belonging to somebody else, which is the
     // kind of bug that only shows up as a refusal two steps later.
     const returnTo = self.asPathOf(req) + '/oauth2/authorize?' +
-                     self.authorizationReturnQuery(req, q);
+                     self.authorizationReturnQuery(req, q) +
+                     (hintMismatch ? '&hint_prompted=1' : '');
     // acr_values is how a relying party demands a second factor. A request
     // whose every producible value needs two — `mfa`, or a hardware key named
     // by its RFC 8176 method — forces the second-factor step and disables the
@@ -6631,7 +7146,12 @@ class OAuth2Server {
                        ? 'from a Credential Offer this issuer made' : '' });
     }
     res.redirect(302, authn.beginAuthentication({
-      returnTo: returnTo, details: details, hint: q.login_hint || '',
+      returnTo: returnTo, details: details,
+      // The login_hint, or the person a verified id_token_hint names where
+      // that subject is one this directory can name (#118).
+      hint: q.login_hint ||
+            (idTokenHint && idTokenHint.ok
+              ? (nameForSubject(idTokenHint.sub) || '') : ''),
       forceMfa: forceMfa, forceKey: !!screen.forceKey,
       protocol: 'OAuth 2.0 / OIDC',
       // WHICH APPLICATION this is, so that an entry naming a federation
@@ -7127,8 +7647,11 @@ class OAuth2Server {
     // answers the request itself and returns null when the token is missing, is
     // bound and presented as Bearer, or comes with a proof that does not hold
     // up.
+    // `formBody` (#118): RFC 6750 section 2.2's form-encoded body parameter,
+    // which OIDC Core section 5.3.1 has this endpoint accept.
     const presented = dpop.presentedAccessToken(req, res,
-                                                'the userinfo endpoint');
+                                                'the userinfo endpoint',
+                                                { formBody: true });
     if (!presented) {
       log.debug("Leaving OAuth2Server.userinfoResponse(). No usable access " +
                 "token was " +
@@ -7279,16 +7802,10 @@ class OAuth2Server {
                 " claim(s) from the configured UserInfo set.");
     }
 
-    Object.keys(USERINFO_SCOPE_CLAIMS).forEach(function (scope) {
-      if (!hasScope(claims.scope, scope)) return;
-      // A claim the person object does not hold is SKIPPED rather than assigned
-      // `undefined`, which would erase a layer-1 claim of the same name. In
-      // development every one of these is defined and nothing changes; in a
-      // realm that invents nothing, `email_verified` is the one that never is.
-      USERINFO_SCOPE_CLAIMS[scope].forEach(function (name) {
-        if (user[name] !== undefined) body[name] = user[name];
-      });
-    });
+    // A claim nobody holds is SKIPPED rather than assigned `undefined`, which
+    // would erase a layer-1 claim of the same name. All four section 5.4
+    // scopes since #118 — see scopeClaimsOf().
+    Object.assign(body, self.scopeClaimsOf(user, claims.scope));
 
     const request = self.mergedUserinfoRequest(claims.claims, direct.request);
     const asked = self.requestedClaimsOf(request, 'userinfo', username, user);
@@ -7312,7 +7829,11 @@ class OAuth2Server {
         'requested claim(s)'));
     }
 
-    body.sub = claims.sub || user.sub;
+    // THE CLIENT'S SUBJECT (#118): pairwise when it registered for it, so
+    // that section 5.3.2's rule — it MUST match the ID Token's `sub` — holds
+    // for a pairwise client too. The access token keeps the public subject,
+    // because it is what this endpoint looks the person up by.
+    body.sub = self.subjectFor(claims.client_id, claims.sub || user.sub);
     logArtifact('UserInfo response', 'as returned', body);
 
     // Section 5.3.2: the response is JSON unless the client registered a
@@ -8008,7 +8529,7 @@ class OAuth2Server {
             spendPreAuthorizedCode, config, bcp, oauth21, senderConstraints,
             applications, validation, errorCodes, refreshTokenCrypto,
             richAuthorization, delegation, credentials, websecurity,
-            clusterClaims } = this.deps;
+            clusterClaims, hasScope, authn } = this.deps;
     const self = this;
     log.debug("Entering the token endpoint.");
     const base = self.asBaseOf(req);
@@ -8464,6 +8985,42 @@ class OAuth2Server {
     // synchronous and this is a signature check; and once rather than per
     // grant, because it is a fact about the REQUEST and six grants recomputing
     // it is five that would agree and a sixth added later that would not.
+    // -----------------------------------------------------------------------
+    // `token_endpoint_auth_signing_alg`, IN EVERY MODE (#118, OIDC Core
+    // section 9 and RFC 7591 section 2): a client that registered one must
+    // sign its private_key_jwt or client_secret_jwt assertion with it, and
+    // "Servers SHOULD reject tokens signed with any other algorithm". It was
+    // never read. Checked on the assertion's header before anything else about
+    // it, so development — which does not verify the signature — refuses the
+    // wrong algorithm too.
+    // -----------------------------------------------------------------------
+    const pinnedAlg = String((registeredClient || {})
+      .token_endpoint_auth_signing_alg || '');
+    if (pinnedAlg && client.assertion) {
+      let assertionAlg = '';
+      try {
+        assertionAlg = String(JSON.parse(Buffer.from(
+          String(client.assertion).split('.')[0], 'base64url')
+          .toString('utf8')).alg || '');
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                  ((e && e.message) || e));
+        // An unreadable header is refused below as not the registered alg.
+        assertionAlg = '';
+      }
+      if (assertionAlg !== pinnedAlg) {
+        log.debug("Leaving the token endpoint. The assertion is not signed " +
+                  "with the registered algorithm.");
+        errorCodes.mark(res, 'STS-OAUTH-0570');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 401, 'invalid_client',
+          'Client "' + (client.client_id || '') + '" registered ' +
+          'token_endpoint_auth_signing_alg "' + pinnedAlg + '", and its ' +
+          'client_assertion is signed with "' + (assertionAlg || '(none)') +
+          '". OIDC Core section 9: an assertion signed with any other ' +
+          'algorithm is rejected.');
+      }
+    }
     const clientObservation = await bcp.observeClientAuthentication({
       clientId: String(client.client_id || ''),
       clientSecret: client.client_secret,
@@ -9268,6 +9825,32 @@ class OAuth2Server {
                                'The refresh token was ' +
                                'revoked.');
       }
+      // -------------------------------------------------------------------
+      // AN ONLINE REFRESH TOKEN ENDS WITH ITS SESSION (#118, OIDC Core
+      // section 11). Only `offline_access` asks for access "even when the
+      // End-User is not present"; a refresh token granted without it is
+      // tied to the sign-on session it came from, and once that session has
+      // been signed out of, expired or gone idle it is refused. A refresh
+      // token from a grant with no person behind it names no session and is
+      // not affected.
+      // -------------------------------------------------------------------
+      const grantSession = String(claims.sid || '');
+      if (grantSession && !hasScope(claims.scope, 'offline_access')) {
+        const held = authn.sessionById(grantSession);
+        const ended = held ? authn.sessionEnded(held) : 'ended';
+        if (ended) {
+          log.debug("Leaving the token endpoint. An online refresh token " +
+                    "whose session has " + ended + ".");
+          errorCodes.mark(res, 'STS-OAUTH-0568');
+          log.debug("Leaving OAuth2Server.tokenGrant().");
+          return self.oauthError(res, 400, 'invalid_grant',
+            'This refresh token was granted without offline_access, so it ' +
+            'lasts only as long as the sign-on session it came from, and ' +
+            'that session has ' + (ended === 'ended' ? 'ended' : ended) +
+            '. Ask for offline_access with prompt=consent for access while ' +
+            'the person is not signed in (OIDC Core section 11).');
+        }
+      }
       // RFC 9449 section 5: a bound refresh token may only be redeemed by its
       // own key. Without this the refresh token would be a bearer credential
       // that mints bound access tokens for whoever holds it — which is worse
@@ -9489,7 +10072,8 @@ class OAuth2Server {
         // names no session — so without this every second-generation token
         // would show as sessionless and a session's token list would stop
         // growing the moment a client refreshed.
-        session_id: stats.sessionIdOfJti(claims.jti),
+        session_id: String(claims.sid || '') ||
+                    stats.sessionIdOfJti(claims.jti),
         // Off the REGISTRY, by the same jti the session id comes from, and for
         // the identical reason: a refresh carries no cookie and no session
         // identifier, so what this grant can say about the person is what was
@@ -11745,7 +12329,8 @@ class OAuth2Server {
   private async registerClient(req: Req, res: Res): Promise<Json> {
     const { log, baseUrlOf, randomId, parseBody,
             softwareStatement, config, bcp, applications,
-            validation, errorCodes, idTokenEncryption } = this.deps;
+            validation, errorCodes, idTokenEncryption,
+            pairwiseSubjects } = this.deps;
     const self = this;
     log.debug("Entering the client registration endpoint.");
     const base = baseUrlOf(req);
@@ -11863,6 +12448,7 @@ class OAuth2Server {
       idTokenEncryption.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
+      applications.oidcSubjectMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
       applications.authorizationDetailsMetadataProblem(metadata);
@@ -11873,6 +12459,19 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.registerClient().");
       return self.oauthError(res, 400, addressProblem.error,
                         addressProblem.description);
+    }
+    // OIDC CORE SECTION 8.1 (#118): a sector_identifier_uri is FETCHED and must
+    // list every redirect URI — the one outbound request registration makes.
+    // See `pairwise_subjects.ts`.
+    const sectorProblem = await pairwiseSubjects.sectorIdentifierProblem(
+      metadata);
+    if (sectorProblem) {
+      log.debug("Leaving the client registration endpoint. The " +
+                "sector_identifier_uri was refused.");
+      errorCodes.mark(res, sectorProblem.errorCode || 'STS-REG-0169');
+      log.debug("Leaving OAuth2Server.registerClient().");
+      return self.oauthError(res, 400, sectorProblem.error,
+                             sectorProblem.description);
     }
     // RFC 9700 mode: this endpoint will not register a client for something the
     // other endpoints refuse. A registration is a document the client keeps and
@@ -11972,7 +12571,7 @@ class OAuth2Server {
   private async updateClient(req: Req, res: Res, record: Json): Promise<Json> {
     const { log, baseUrlOf, parseBody, softwareStatement, bcp,
             applications, validation, errorCodes,
-            idTokenEncryption } = this.deps;
+            idTokenEncryption, pairwiseSubjects } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.updateClient(). client_id=" +
               record.client_id);
@@ -12028,6 +12627,7 @@ class OAuth2Server {
       idTokenEncryption.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
+      applications.oidcSubjectMetadataProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
       applications.authorizationDetailsMetadataProblem(metadata);
@@ -12037,6 +12637,17 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.updateClient().");
       return self.oauthError(res, 400, addressProblem.error,
                         addressProblem.description);
+    }
+    // OIDC Core section 8.1, as at registration (#118).
+    const sectorProblem = await pairwiseSubjects.sectorIdentifierProblem(
+      metadata);
+    if (sectorProblem) {
+      log.debug("Leaving the client update endpoint. The " +
+                "sector_identifier_uri was refused.");
+      errorCodes.mark(res, sectorProblem.errorCode || 'STS-REG-0169');
+      log.debug("Leaving OAuth2Server.updateClient().");
+      return self.oauthError(res, 400, sectorProblem.error,
+                             sectorProblem.description);
     }
     const registrationCheck = bcp.checkClientRegistration(metadata);
     if (!registrationCheck.ok) {
@@ -12182,6 +12793,8 @@ class OAuth2Server {
     });
 
     app.get('/oauth2/authorize', self.authorizeEndpoint.bind(self));
+    // OIDC Core section 3.1.2.1: GET and POST (#118).
+    app.post('/oauth2/authorize', self.authorizeEndpoint.bind(self));
 
     // -------------------------------------------------------------------------
     // GET /oauth2/rfc9700 — what this mode is, and whether it is on.
@@ -12392,6 +13005,7 @@ class OAuth2Server {
     // being one block is what makes a missing member visible.
     [
       ['get', '/:as/oauth2/authorize', self.authorizeEndpoint.bind(self)],
+      ['post', '/:as/oauth2/authorize', self.authorizeEndpoint.bind(self)],
       ['post', '/:as/oauth2/token', self.tokenEndpoint.bind(self)],
       ['post', '/:as/oauth2/par', self.parEndpoint.bind(self)],
       ['get', '/:as/oauth2/logout', self.logoutEndpoint.bind(self)],
