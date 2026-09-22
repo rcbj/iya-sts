@@ -1456,12 +1456,11 @@ function subjectAdvice(uri, subject) {
     return warnings;
   }
   const format = String((subject || {}).format || '');
-  if (!format) {
+  if (format === 'complex') {
     warnings.push('"' + uri + '" wants a subject in one of these formats: ' +
-        row.subjectFormats.join(', ') + '. This one is a COMPLEX subject — ' +
-        'it has no `format` of its own — which names a person and possibly ' +
-        'a session, and this event is about an IDENTIFIER rather than about ' +
-        'either.');
+        row.subjectFormats.join(', ') + '. This one is a COMPLEX subject, ' +
+        'which names a person and possibly a session, and this event is ' +
+        'about an IDENTIFIER rather than about either.');
     log.debug('Leaving subjectAdvice(). Complex subject.');
     return warnings;
   }

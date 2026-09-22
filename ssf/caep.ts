@@ -146,7 +146,9 @@ interface CaepRegisterDeps {
     CAEP_EVENTS: any[];
     EVENT_BY_URI: Record<string, any>;
   };
-  subjects: { describeSubject(subject: unknown): string };
+  subjects: { describeSubject(subject: unknown): string;
+              complexSubject(members: Record<string, any>):
+                Record<string, any> };
   stepUp: { LEVELS: string[] };
 }
 
@@ -357,17 +359,16 @@ class CaepRegister {
   subjectFor(row: Partial<CaepRow>): Record<string, any> {
     const { helpers: { log }, subjects } = this.deps;
     log.debug("Entering CaepRegister.subjectFor().");
-    const subject: Record<string, any> = {
-      user: { format: 'issuer_subject_id', iss: String(row.iss || ''),
+    // `complexSubject()` adds the `"format": "complex"` SSF 1.0 final
+    // requires, and drops a member with no value.
+    const subject: Record<string, any> = subjects.complexSubject({
+      user: { format: 'iss_sub', iss: String(row.iss || ''),
         sub: String(row.sub || '') },
-      session: { format: 'opaque', id: String(row.sessionId || '') }
-    };
-    if (row.deviceId) {
-      subject.device = { format: 'opaque', id: String(row.deviceId) };
-    }
-    if (row.tenant) {
-      subject.tenant = { format: 'opaque', id: String(row.tenant) };
-    }
+      session: { format: 'opaque', id: String(row.sessionId || '') },
+      device: row.deviceId
+        ? { format: 'opaque', id: String(row.deviceId) } : null,
+      tenant: row.tenant ? { format: 'opaque', id: String(row.tenant) } : null
+    });
     log.debug("Leaving CaepRegister.subjectFor(). " +
               subjects.describeSubject(subject));
     return subject;

@@ -154,8 +154,8 @@ const SURFACES = [
     label: 'Admin console',
     // The seeded client entry's identifier, and the stream's `aud`. It is a
     // name this service really knows the surface by rather than one invented
-    // here — `ssf_streams.ts` refuses to default an audience at all, and
-    // inventing one for ourselves would be the same mistake made privately.
+    // here: the audience of a stream is the identity of its receiver
+    // (`ssf_streams.ts`, assignAudience()), and this is the surface's.
     audience: 'sts-admin-console',
     receivePath: '/admin/signals/receive',
     inboxPath: '/admin/signals',
@@ -553,7 +553,6 @@ class SsfReceivers {
       }
       const endpoint = this.endpointFor(surface);
       const created = streams.createStream({
-        aud: surface.audience,
         events_requested: wanted,
         description: surface.label + ' (this service\'s own ' +
                      surface.inboxPath + ')',
@@ -577,8 +576,15 @@ class SsfReceivers {
       }, { issuer: this.issuerForSeeding(), principal: 'internal',
            // ON THE CONTEXT AND NOT IN THE BODY ABOVE — see createStream(). The
            // body is what a remote receiver sends at POST /ssf/stream, so an id
-           // read from there would let one name another's stream.
-           streamId: this.internalStreamId(surface) });
+           // read from there would let one name another's stream. The same
+           // goes for the other two (#144): `aud` is Transmitter-Supplied and
+           // a remote receiver is given the identifier it authenticated as,
+           // and `internalSurface` is what makes this stream nobody's to
+           // manage over /ssf/stream — `createdBy` alone would not, since a
+           // Basic caller in development can call itself "internal".
+           streamId: this.internalStreamId(surface),
+           audience: surface.audience,
+           internalSurface: surface.id });
       if (!created.ok) {
         audit.failure('STS-SSF-0072', {
           action: 'service.failure', protocol: 'SSF', channel: 'internal',
@@ -593,11 +599,12 @@ class SsfReceivers {
                  surface.inboxPath + '.');
         return;
       }
-      // NOT AN SSF MEMBER, and that is why it is set here rather than passed to
-      // `createStream()`. `streamConfiguration()` sends a receiver the members
-      // SSF 1.0 defines and no others, so this one is invisible on the wire and
-      // is only ever read by `streamFor()` above.
-      created.stream.internalSurface = surface.id;
+      // `internalSurface` is NOT AN SSF MEMBER: `streamConfiguration()` sends a
+      // receiver the members SSF 1.0 defines and no others, so it is invisible
+      // on the wire. It is set by `createStream()` from the context (#144) —
+      // before then it was set here, after the stream already existed, and a
+      // stream that exists unmarked for one line is one a remote caller could
+      // have been matched against.
       streams.note(created.stream, 'created',
         'This is one of this service\'s own two receivers. It was seeded at ' +
         'startup and is an ORDINARY stream: pause it, narrow it or delete it ' +
@@ -812,12 +819,31 @@ class SsfReceivers {
     // -------------------------------------------------------------------------
     entry.audienceOk =
         this.audienceNames(claims.aud).indexOf(surface.audience) >= 0;
+    // -------------------------------------------------------------------------
+    // AND THE TWO CHECKS SSF 1.0 ITSELF REQUIRES OF A RECEIVER (#144).
+    //
+    //   * Section 4.1.6: "Receivers MUST validate that [iss] matches the iss
+    //     in the Stream Configuration data". A SET claiming another issuer is
+    //     not about this stream whatever key signed it.
+    //   * Section 4.1.1: SSF events "MUST use explicit typing" — `typ`
+    //     `secevent+jwt` (RFC 8417 section 2.3; the `application/` prefix is
+    //     the same media type, RFC 7515 section 4.1.9). A JWT without it is
+    //     exactly the confusion the rule exists to prevent.
+    //
+    // Recorded either way, like the audience, and refused.
+    // -------------------------------------------------------------------------
+    entry.issuerOk = !read.problem && String(claims.iss || '') ===
+                     String(record.iss || '');
+    entry.typOk = !read.problem && SsfReceivers.isSetTyp(read.header);
     this.record_(surface.id, entry);
     audit.audit({ action: 'ssf.event.receive', category: 'signals',
       protocol: 'SSF', channel: 'http',
-      outcome: (read.problem || !entry.audienceOk) ? 'failure' : 'success',
+      outcome: (read.problem || !entry.audienceOk || !entry.issuerOk ||
+                !entry.typOk) ? 'failure' : 'success',
       errorCode: read.problem ? 'STS-SSF-0069'
-        : (entry.audienceOk ? '' : 'STS-SSF-0070'),
+        : (!entry.typOk ? 'STS-SSF-0104'
+          : (!entry.issuerOk ? 'STS-SSF-0105'
+            : (entry.audienceOk ? '' : 'STS-SSF-0070'))),
       target: entry.jti,
       summary: 'A Security Event Token was delivered to the ' + surface.label +
                (entry.verified ? ' and verified' : ''),
@@ -835,6 +861,27 @@ class SsfReceivers {
             ' It has been recorded anyway and is on ' + surface.inboxPath +
             ', because what arrived is the question ' +
             'being asked.' } };
+    }
+    if (!entry.typOk) {
+      log.debug("Leaving SsfReceivers.accept(). Not explicitly typed.");
+      errorCodes.mark(req.res, 'STS-SSF-0104');
+      return { status: 400, entry: entry,
+        body: { err: 'invalid_request',
+          description: 'This Security Event Token\'s header has typ ' +
+            JSON.stringify((read.header || {}).typ || null) + '. SSF 1.0 ' +
+            'section 4.1.1 requires "secevent+jwt". It has been recorded ' +
+            'and is on ' + surface.inboxPath + '.' } };
+    }
+    if (!entry.issuerOk) {
+      log.debug("Leaving SsfReceivers.accept(). Wrong issuer.");
+      errorCodes.mark(req.res, 'STS-SSF-0105');
+      return { status: 400, entry: entry,
+        body: { err: 'invalid_issuer',
+          description: 'This Security Event Token\'s iss is ' +
+            JSON.stringify(claims.iss || null) + ' and the stream it arrived ' +
+            'on is ' + JSON.stringify(record.iss) + '. SSF 1.0 section 4.1.6 ' +
+            'requires them to be the same. It has been recorded and is on ' +
+            surface.inboxPath + '.' } };
     }
     if (!entry.audienceOk) {
       log.warn('ssf: the ' + surface.label + ' was delivered ' + entry.jti +
@@ -864,9 +911,19 @@ class SsfReceivers {
     return { status: 202, entry: entry, body: null };
   }
 
+  // Whether a JOSE header carries SSF's explicit type (section 4.1.1), with
+  // or without the `application/` prefix RFC 7515 section 4.1.9 lets a
+  // producer drop. Shared with `/ssf/receive`.
+  static isSetTyp(header?: any): boolean {
+    helpers.log.debug("Entering SsfReceivers.isSetTyp().");
+    const typ = String((header || {}).typ || '').toLowerCase();
+    helpers.log.debug("Leaving SsfReceivers.isSetTyp().");
+    return typ === 'secevent+jwt' || typ === 'application/secevent+jwt';
+  }
+
   // `aud` is a string or an array of them — RFC 8417 leaves it as JWT's own
   // member — so both shapes are read rather than one being assumed.
-  private audienceNames(value?) {
+  audienceNames(value?) {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.audienceNames().");
     const out = Array.isArray(value) ? value.map(String)
@@ -1027,9 +1084,9 @@ class SsfReceivers {
     }
     // `format` or RISC section 3.1's `subject_type` — see the header.
     const format = String(subject.format || subject.subject_type || '');
-    if (!format) {
-      // A COMPLEX SUBJECT. One level only.
-      const hit = subjects.COMPLEX_MEMBER_NAMES.some((name) => {
+    if (subjects.isComplex(subject)) {
+      // A COMPLEX SUBJECT (SSF 1.0 section 3.3). One level only.
+      const hit = subjects.complexMembers(subject).some((name) => {
         const member = subject[name];
         return member && typeof member === 'object' &&
                this.matchesSubject(member, person);
@@ -1046,10 +1103,9 @@ class SsfReceivers {
       log.debug("Leaving SsfReceivers.matchesSubject(). Aliases: " + hit);
       return hit;
     }
-    if (format === 'issuer_subject_id') {
+    if (format === 'iss_sub') {
       const hit = this.namesPerson(subject.sub, person);
-      log.debug("Leaving SsfReceivers.matchesSubject(). issuer_subject_id: " +
-                hit);
+      log.debug("Leaving SsfReceivers.matchesSubject(). iss_sub: " + hit);
       return hit;
     }
     if (format === 'opaque') {
@@ -1078,7 +1134,7 @@ class SsfReceivers {
       log.debug("Leaving SsfReceivers.matchesSubject(). uri: " + hit);
       return hit;
     }
-    if (format === 'decentralized_identifier') {
+    if (format === 'did') {
       const tail = String(subject.url || '').split(':').pop() || '';
       const hit = tail ? this.namesPerson(tail, person) : false;
       log.debug("Leaving SsfReceivers.matchesSubject(). did: " + hit);
@@ -1394,6 +1450,8 @@ export = {
   accept: slot.forward('accept'),
   listFor: slot.forward('listFor'),
   isAbout: slot.forward('isAbout'),
+  isSetTyp: SsfReceivers.isSetTyp,
+  audienceNames: slot.forward('audienceNames'),
   status: slot.forward('status'),
   describeEntry: slot.forward('describeEntry'),
   view: slot.forward('view'),

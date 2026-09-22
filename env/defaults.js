@@ -737,7 +737,11 @@ var config = {
     deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
     internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
-    maxStreams: 25,                                                                                                                                       // Streams per realm
+    maxStreams: 25,                                                                                                                                       // Streams per receiver
+    inactivityTimeoutS: 0,                                                                                                                                // Stream inactivity timeout (s)
+    inactivityAction: "pause",                                                                                                                            // What an inactive stream becomes
+    verificationEveryS: 0,                                                                                                                                // Transmitter-initiated verification (s)
+    streamMaintenanceSweepS: 60,                                                                                                                          // Stream maintenance sweep interval (s)
     maxSubjectsPerStream: 100,                                                                                                                            // Subjects per stream
     maxQueuedEvents: 200,                                                                                                                                 // Queued events per stream
     pollMaxEvents: 20,                                                                                                                                    // Events per poll
@@ -746,6 +750,8 @@ var config = {
     authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
     authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
     receiveEnabled: true,                                                                                                                                 // Accept pushed events
+    receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
+    receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim
     breakSetSignature: false                                                                                                                              // Sign every SET badly

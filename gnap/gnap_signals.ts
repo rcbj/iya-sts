@@ -155,8 +155,10 @@ class GnapSignals {
     log.debug("Entering GnapSignals.subjectFor().");
     const transport = loadSsfHttp();
     log.debug("Leaving GnapSignals.subjectFor().");
+    // SSF 1.0 final's complex subject, `"format": "complex"` included.
     return {
-      user: { format: 'issuer_subject_id',
+      format: 'complex',
+      user: { format: 'iss_sub',
               iss: transport.transmitterIssuer(req),
               sub: userFor(username).sub },
       session: { format: 'opaque', id: sessionId }
@@ -250,7 +252,8 @@ class GnapSignals {
       log.debug("Leaving GnapSignals.usernameOf().");
       return null;
     }
-    const one = subjectValue.format ? subjectValue : subjectValue.user;
+    const one = subjectValue.format === 'complex' ? subjectValue.user
+                                                  : subjectValue;
     if (!one) {
       log.debug("Leaving GnapSignals.usernameOf().");
       return null;

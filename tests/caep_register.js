@@ -142,10 +142,11 @@ function run(t) {
   t.log.info('C. the subject is COMPLEX — the person is not revoked, one ' +
              'session of theirs is');
   // -----------------------------------------------------------------------
-  t.equal(due.subject.format, undefined,
-          'a complex subject is told from a plain one by the ABSENCE of ' +
-          '`format`, which is SSF section 4\'s own discriminator');
-  t.equal(due.subject.user.format, 'issuer_subject_id',
+  t.equal(due.subject.format, 'complex',
+          'a complex subject carries "format": "complex" — SSF 1.0 final ' +
+          'section 3.3; the drafts told it apart by the ABSENCE of `format`, ' +
+          'and this service did too until #144');
+  t.equal(due.subject.user.format, 'iss_sub',
           'the person is named by the identifier a receiver already holds — ' +
           'an ID Token\'s iss and sub');
   t.equal(due.subject.session.id, 'sess-a',

@@ -8952,7 +8952,8 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0014',
     summary: 'An SSF request named a stream_id this transmitter does not ' +
-      'hold.',
+      'hold for the authenticated receiver — one that does not exist, or ' +
+      'another receiver\'s, which answers identically (#144).',
     spec: 'HTTP 404 {err: invalid_request}' },
   { code: 'STS-SSF-0015',
     summary: 'A stream update (PUT or PATCH) was refused because the ' +
@@ -8977,9 +8978,9 @@ const CODES = [
       'on.',
     spec: 'HTTP 429 {err: invalid_request} with Retry-After' },
   { code: 'STS-SSF-0020',
-    summary: 'A verification request was answered with a refusal because the ' +
-      'verification event could not be transmitted or delivered; the ' +
-      'transmission\'s own audit row names the cause.',
+    summary: 'A verification request was refused because its stream is ' +
+      'disabled. (Until #144 it also meant a push that failed; delivery is ' +
+      'asynchronous now and a failed one is a dead letter.)',
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0021',
     summary: 'A poll request named a stream that delivers by push, so there ' +
@@ -9302,6 +9303,38 @@ const CODES = [
     summary: 'The signing-key-rotated event (this service\'s own) could not ' +
       'be transmitted after a rotation; the rotation itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0101',
+    summary: 'A receiver asked to create a stream and already holds ' +
+      'ssf.maxStreams streams — the limit is per receiver (SSF 1.0 section ' +
+      '8.1.1.1, "not allowed to create a stream").',
+    spec: 'HTTP 403 {err: access_denied}' },
+  { code: 'STS-SSF-0102',
+    summary: 'A transmitter-initiated verification event (the console\'s ' +
+      'Verify, or POST /admin-api/ssf/verify) could not be sent on the ' +
+      'stream.',
+    spec: 'HTTP 400 on /admin-api/ssf/verify' },
+  { code: 'STS-SSF-0103',
+    summary: 'The inserted-path form of the transmitter configuration ' +
+      'document was asked for a path no transmitter\'s issuer has (SSF 1.0 ' +
+      'section 7.2).',
+    spec: 'HTTP 404 {err: invalid_request}' },
+  { code: 'STS-SSF-0104',
+    summary: 'A Security Event Token delivered to one of this service\'s ' +
+      'receivers is not explicitly typed secevent+jwt (SSF 1.0 section ' +
+      '4.1.1); it was recorded and refused.',
+    spec: 'HTTP 400 {err: invalid_request}' },
+  { code: 'STS-SSF-0105',
+    summary: 'A Security Event Token delivered to one of this service\'s ' +
+      'receivers carries an iss other than its stream\'s, or one ' +
+      'ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was ' +
+      'recorded and refused.',
+    spec: 'HTTP 400 {err: invalid_issuer}' },
+  { code: 'STS-SSF-0106',
+    summary: 'A Security Event Token pushed at POST /ssf/receive is ' +
+      'addressed to no audience ssf.receiveAudiences lists; it was recorded ' +
+      'and ' +
+      'refused.',
+    spec: 'HTTP 400 {err: invalid_audience}' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

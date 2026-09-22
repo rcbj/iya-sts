@@ -117,11 +117,11 @@ function childMain() {
       config.setOverride('risc.enabled', 'true');
       const made = streams.createStream(
         { delivery: { method: streams.DELIVERY_POLL },
-          aud: 'https://receiver.test/credentials',
           events_requested: [CAEP + 'credential-change',
                              RISC + 'account-credential-change-required',
                              RISC + 'recovery-information-changed'] },
-        { issuer: 'https://sts.test', principal: 'credential-probe' });
+        { issuer: 'https://sts.test', principal: 'credential-probe',
+          audience: 'https://receiver.test/credentials' });
       note(made.ok, '0. a poll stream asking for the three types is created',
            JSON.stringify(made.errors));
       const streamId = made.stream && made.stream.stream_id;
@@ -129,7 +129,7 @@ function childMain() {
       // Every SET queued on the stream about one person so far — named in
       // `sub_id` by their NAME (an email or account subject) or by their
       // SUBJECT, which since 2026-09-14 is `urn:uuid:<entryUUID>` and is what
-      // an issuer_subject_id carries.
+      // an iss_sub carries.
       const helpersC = require(ROOT + '/common/helpers');
       const setsAbout = function (username) {
         const record = streams.getStream(streamId);

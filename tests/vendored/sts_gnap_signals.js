@@ -223,9 +223,10 @@ async function test() {
   const ssfGrant = await h.redirectGrant(web, OWNER,
     { access_token: { access: ["ssf:read", "ssf:write"] } });
   const ssfToken = ssfGrant.released.access_token.value;
+  // No `aud`: it is Transmitter-Supplied (SSF 1.0 section 8.1.1, #144) and
+  // a stream is addressed to the identity that created it.
   const streamBody = { delivery: { method: POLL },
-                       events_requested: [REVOKED, CLAIMS],
-                       aud: "https://web.gnap.test/signals" };
+                       events_requested: [REVOKED, CLAIMS] };
   let r = await web.send("POST", h.realmBase + "/ssf/stream",
                          { token: ssfToken, json: streamBody });
   check("POST /ssf/stream with the GNAP scheme and an HTTP signature creates " +

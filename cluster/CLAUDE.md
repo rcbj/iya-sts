@@ -544,6 +544,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
 | `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
 | `ssf.dead-letter-sweep` | per-process; `ssf.deadLetterSweepS` — its summary and history are the process's own | `ssf/ssf.ts` (P5) |
+| `ssf.stream-maintenance` | cluster, realm; `ssf.streamMaintenanceSweepS`, off while `ssf.inactivityTimeoutS` and `ssf.verificationEveryS` are both 0 — SSF 1.0's inactivity timeout and transmitter-initiated verification | `ssf/ssf.ts` (#144) |
 | `saml2.sp-metadata-refresh` | cluster, service; `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |

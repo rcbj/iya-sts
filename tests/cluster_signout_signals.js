@@ -499,9 +499,9 @@ function childMain() {
     const realm = realms.create({ id: 'css-poll', name: 'p' }).realm;
     realms.run(realm, function () {
       const made = streams.createStream(
-        { delivery: { method: streams.DELIVERY_POLL },
-          aud: 'https://receiver.test/css' },
-        { issuer: 'https://sts.test/realm/css-poll', principal: 'css' });
+        { delivery: { method: streams.DELIVERY_POLL } },
+        { issuer: 'https://sts.test/realm/css-poll', principal: 'css',
+          audience: 'https://receiver.test/css' });
       const record = made.stream;
       const entry = function (jti) {
         return { jti: jti, token: 't-' + jti, claims: { jti: jti },

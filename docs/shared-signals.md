@@ -66,6 +66,7 @@ metadata and discovers every endpoint from it:
 | Path | What it is |
 |---|---|
 | `GET /.well-known/ssf-configuration` | the transmitter configuration metadata. **Never gated**, and still answers while `ssf.enabled` is off |
+| `GET /.well-known/ssf-configuration/realm/{id}` | the same document for a trust realm's transmitter, at the path SSF 1.0 section 7.2 builds from an issuer with a path |
 | `/ssf/stream` | stream management: `POST` creates, `GET` reads, `PUT` and `PATCH` update, `DELETE` deletes |
 | `/ssf/status` | read (`GET`) or change (`POST`) a stream's status |
 | `POST /ssf/subjects/add`, `POST /ssf/subjects/remove` | add or remove a subject |
@@ -74,27 +75,57 @@ metadata and discovers every endpoint from it:
 | `POST /ssf/receive`, `GET /ssf/received` | this service as a **receiver** (below) |
 | `GET /ssf` | a description of the family; `?format=json` returns the same as data |
 
-In a trust realm every path is under `/realm/{id}`. The subject paths use a
-slash where SSF's own examples use a colon (`/subjects:add`). A receiver reads
-`add_subject_endpoint` from the metadata, so it never sees the difference.
+In a trust realm every path is under `/realm/{id}`. A realm's metadata is at
+both `/realm/{id}/.well-known/ssf-configuration` and the section 7.2 form above,
+which inserts the well-known name between the host and the issuer's path. The
+subject paths use a slash where SSF's own examples use a colon
+(`/subjects:add`). A receiver reads `add_subject_endpoint` from the metadata,
+so it never sees the difference. `spec_version` is `1_0`.
 
 A receiver picks its event types in `events_requested`. The transmitter
 answers with `events_delivered`, which is the overlap with what it offers
 (`ssf.eventsSupported`, `caep.eventsSupported` and `risc.eventsSupported`,
-combined). **`aud` is required on a new stream and is never filled in from the
-caller's identity.** A receiver that was given a default would never learn
-that the member is required, and the first real transmitter it met would
-refuse every stream it created.
+combined).
+
+### Each stream belongs to its receiver
+
+SSF 1.0 section 8 has the transmitter associate each receiver with its streams
+and its `aud` values. Here, a stream belongs to the identity that created it:
+a client's `client_id`, a person's `sub`, a GNAP client instance, or a Basic
+username.
+
+* **Another receiver's stream answers 404**, word for word as for a stream that
+  does not exist, on every endpoint that takes a `stream_id`. That is the
+  specification's own wording ("no Event Stream with the given stream_id for
+  this Event Receiver"), and a different answer would reveal which ids exist.
+* **`GET /ssf/stream` with no `stream_id` lists only the caller's own
+  streams**, and an empty list when it has none.
+* **`aud` is set by the transmitter** (section 8.1.1 lists it as
+  Transmitter-Supplied). A new stream's `aud` is the identifier the receiver
+  authenticated as. A receiver may instead send `aud` naming one or more of the
+  names it is associated with: that identifier, plus the application
+  identifier and every `ssfReceiverId` on its registered application entry. Any
+  other value is refused. An update may carry `aud`, or any other
+  Transmitter-Supplied member (`iss`, `events_supported`, `events_delivered`,
+  `min_verification_interval`, `inactivity_timeout`), only unchanged.
+* **`ssf.maxStreams` is per receiver.** Creating a stream past it answers 403.
+* **The console's and portal's own streams belong to no remote receiver** and
+  are managed only on `/admin/ssf` and through `/admin-api`.
 
 ### Subjects
 
-A subject can be in any of the eight RFC 9493 formats, or be SSF's **complex
-subject**. The complex subject's `user`, `device` and `session` members are
-what make *this session was revoked* possible to say at all. Each format has a
-**closed** member set. A subject carrying a member that its format does not
-define is refused, and the refusal names the member, because a conforming
-receiver has to reject one. Nesting a complex subject inside another is
-refused as well.
+A subject can be in any of the eight RFC 9493 formats under their registered
+names (`account`, `email`, `iss_sub`, `opaque`, `phone_number`, `did`, `uri`,
+`aliases`), in one of SSF 1.0 section 3.5's three (`jwt_id`,
+`saml_assertion_id`, `ip-addresses`), or be SSF's **complex subject**, which
+carries `"format": "complex"`. The complex subject's members (`user`,
+`device`, `session`, `application`, `tenant`, `org_unit` and `group`, plus any
+additional name section 3.3 allows) are what make *this session was revoked*
+possible to say at all. Each format has a **closed** member set. A subject
+carrying a member that its format does not define is refused, and the refusal
+names the member, because a conforming receiver has to reject one. Nesting a
+complex subject inside another is refused as well. The pre-RFC names
+`issuer_subject_id` and `decentralized_identifier` are not accepted.
 
 A stream that names a **person** covers a complex subject naming one of that
 person's sessions. `ssf.defaultSubjects` controls what a stream with no
@@ -127,15 +158,50 @@ lists only poll.
 SSF 1.0 section 7.1.2 defines three statuses:
 
 * **enabled**: events are delivered.
-* **paused**: events **keep queueing** and arrive when the stream is enabled
-  again.
+* **paused**: nothing is delivered and events **keep queueing**. On a push
+  stream they are pushed, in the order they happened, when the stream is
+  enabled again.
 * **disabled**: the queue is **dropped**, and the stream's log records how many
   events went.
 
-A status change sends a `stream-updated` event on the stream, if the receiver
-agreed to that type. A new stream starts as `ssf.streamStatusOnCreate`
-(`enabled` by default). Set it to `paused` to test a receiver that has to
-enable its own stream first.
+Every status change sends a `stream-updated` event on the stream, whether or
+not the receiver asked for that type (section 8.1.5 allows it, and requires it
+when the transmitter changes the status). It goes **before** the stream stops
+when it is paused or disabled, and after it starts again when it is enabled. On
+a poll stream that has been paused or disabled, `POST /ssf/poll` still hands out
+the `stream-updated` event and nothing else. Setting the status a stream
+already has sends nothing.
+
+A new stream starts as `ssf.streamStatusOnCreate` (`enabled` by default). Set
+it to `paused` to test a receiver that has to enable its own stream first.
+
+### Inactivity and transmitter-initiated verification
+
+* **`ssf.inactivityTimeoutS`** (section 8.1.1's `inactivity_timeout`, 0 by
+  default, meaning none): a stream whose receiver has made no management call
+  about it, and on a poll stream no poll either, for that long is paused,
+  disabled or deleted, as `ssf.inactivityAction` says. A pause or disable is
+  announced with `stream-updated` first. The value is published on every stream
+  configuration while it is set. It is off by default because a push receiver
+  never needs to call back after creating its stream.
+* **`ssf.verificationEveryS`** (0 by default): every enabled stream is sent a
+  verification event, with no `state`, when this transmitter has sent it none
+  for that long. **Send a verification event** on `/admin/ssf` does the same
+  once.
+
+Both run as the `ssf.stream-maintenance` scheduler job every
+`ssf.streamMaintenanceSweepS`. The console's and portal's own streams are left
+alone.
+
+### Verification
+
+`POST /ssf/verify` answers **204 as soon as the event is queued**. Section
+8.1.4.2 says a receiver must not depend on the event arriving synchronously,
+so a failed delivery is not reported in the response: it goes to the stream's
+dead-letter queue and log, like any other failed push. A paused stream holds
+the event until it is enabled, and a disabled stream refuses the request with
+400. The verification event is sent even if the stream did not agree to the
+type.
 
 ### Signing
 
@@ -189,10 +255,13 @@ with the reason, the error code and the receiver's HTTP status. That happens
 when a push fails for good, when the push backlog is full, and when the stream
 is dead. A push stream whose pushes have all failed for
 `ssf.deadStreamTimeoutS` is declared **dead**. Nothing more is pushed to it,
-and once per timeout the oldest dead letter is pushed as a probe. If the probe
-succeeds, the stream comes back. A dead stream keeps its SSF status
-(`enabled`), because `paused` and `disabled` are words the receiver and the
-operator use. Nothing resends a dead letter except a probe.
+and once per timeout the oldest dead letter is pushed as a probe. A dead
+stream is also **paused**, with a `stream-updated` event attempted first,
+because stopping delivery is a status change the receiver must be told about
+(section 8.1.2). When a probe succeeds, or an operator revives the stream, it
+is enabled again and announced, and whatever it held is pushed. A stream that
+the receiver or an operator paused is never enabled by a revival. Nothing
+resends a dead letter except a probe.
 
 Failures are logged once per stream (when it dies and when it revives) and
 once per sweep as a summary, never once per SET.
@@ -205,6 +274,16 @@ find a key. A SET that another party signed is reported as *not verifiable
 here*, not as invalid. `GET /ssf/received` lists what arrived.
 `ssf.receiveRequireSignature` makes it refuse a SET whose signature fails, the
 way a strict receiver would.
+
+Every SET that arrives is recorded, and it is then refused if its header's
+`typ` is not `secevent+jwt` (section 4.1.1), if its `iss` is not one
+`ssf.receiveIssuers` lists (`invalid_issuer`, section 4.1.6), or if its `aud`
+names nothing `ssf.receiveAudiences` lists (`invalid_audience`). Left empty,
+the first means this realm's own transmitter issuer and the second means the
+endpoint's own URL, for example `https://host/ssf/receive`. The console's and
+portal's receivers make the same `typ` and `iss` checks against their own
+streams. This service cannot yet be a receiver of another transmitter's
+streams ([#153](https://github.com/rcbj/iya-sts/issues/153)).
 
 ### The console and the portal are registered receivers
 
@@ -237,6 +316,10 @@ so each of these switches produces a known mistake:
 * **There is no console or API control that creates a stream.** A stream
   holds a delivery endpoint that this service will call, and that address may
   only come from a receiver that authenticated at `POST /ssf/stream`.
+* **This service is not a receiver of another transmitter.** It does not
+  discover a foreign transmitter, create a stream there or poll it, and it
+  fetches no foreign `jwks_uri`, so a SET another party signed is never
+  verified here ([#153](https://github.com/rcbj/iya-sts/issues/153)).
 
 ## Development and product mode
 
@@ -293,7 +376,13 @@ types from what a stream may ask for.
 | `ssf.deadLetterSweepS` | `STS_SSF_DEAD_LETTER_SWEEP_S` | `60` | yes | How often expired dead letters are deleted, due probes are sent and the summary is logged. |
 | `ssf.authBasic` | `STS_SSF_AUTH_BASIC` | `true` | yes | Whether HTTP Basic is accepted and advertised. |
 | `ssf.internalReceivers` | `STS_SSF_INTERNAL_RECEIVERS` | `true` | **no** | Seeds the console's and the portal's own receiver streams. |
-| `ssf.maxStreams` | `STS_SSF_MAX_STREAMS` | `25` | yes | Streams per realm. A create past the limit is refused, and the refusal names this setting. |
+| `ssf.maxStreams` | `STS_SSF_MAX_STREAMS` | `25` | yes | Streams per receiver in a realm. A create past the limit is refused with 403, and the refusal names this setting. The console's and portal's own streams do not count. |
+| `ssf.inactivityTimeoutS` | `STS_SSF_INACTIVITY_TIMEOUT_S` | `0` | yes | SSF 1.0 section 8.1.1's `inactivity_timeout`: a stream whose receiver has made no management call about it (and, for a poll stream, no poll) for this long is dealt with as `ssf.inactivityAction` says. `0`, the default, is no timeout. It is off by default because a push receiver never calls back. |
+| `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |
+| `ssf.verificationEveryS` | `STS_SSF_VERIFICATION_EVERY_S` | `0` | yes | Sends every enabled stream a transmitter-initiated verification event (no `state`) when it has had none for this long. `0` sends none on a schedule. |
+| `ssf.streamMaintenanceSweepS` | `STS_SSF_STREAM_MAINTENANCE_SWEEP_S` | `60` | yes | How often the `ssf.stream-maintenance` scheduler job applies the two settings above. |
+| `ssf.receiveAudiences` | `STS_SSF_RECEIVE_AUDIENCES` | *(empty)* | yes | The `aud` values `POST /ssf/receive` accepts. Empty means the endpoint's own URL. Anything else is recorded and refused with `invalid_audience`. |
+| `ssf.receiveIssuers` | `STS_SSF_RECEIVE_ISSUERS` | *(empty)* | yes | The `iss` values `POST /ssf/receive` accepts. Empty means this realm's own transmitter issuer. Anything else is recorded and refused with `invalid_issuer`. |
 | `ssf.maxSubjectsPerStream` | `STS_SSF_MAX_SUBJECTS_PER_STREAM` | `100` | yes | How many subjects one stream may name. |
 | `ssf.maxQueuedEvents` | `STS_SSF_MAX_QUEUED_EVENTS` | `200` | yes | How many undelivered SETs one stream holds. The oldest is dropped first. |
 | `ssf.pollMaxEvents` | `STS_SSF_POLL_MAX_EVENTS` | `20` | yes | The most SETs one poll returns, whatever the receiver asks for. |
@@ -391,9 +480,8 @@ changed with `POST /admin-api/config/set`.
   per sweep. Signing a SET that nothing will receive is skipped.
 * **The metadata document is always open.** A receiver has to read which
   schemes the endpoints take before it can authenticate to them.
-* **`aud` is required and never defaulted.** Credentials here are permissive,
-  but protocol members are not. A made-up audience would teach a receiver
-  something false about SSF.
+* **`aud` is the transmitter's to assign.** It comes from the receiver's own
+  identity, so a receiver cannot have its events addressed to another receiver.
 * **The console's and portal's signals come through a real push.** Passing
   events to those pages internally would skip the body, media type,
   authorization header and signature, which is everything a receiver does.
@@ -407,8 +495,8 @@ changed with `POST /admin-api/config/set`.
 * **Protocols → Shared Signals** (`/admin/ssf`): the `ssf.*` settings, and
   every stream this realm's transmitter holds, with its subjects, queue,
   counters, log and dead letters. A dead stream is marked. Each stream has
-  controls to change its status, delete it, send it a SET, **Revive** it and
-  **Drop its dead letters**. What `POST /ssf/receive` received is listed too.
+  controls to change its status, delete it, send it a SET, **Send a
+  verification event**, **Revive** it and **Drop its dead letters**. What `POST /ssf/receive` received is listed too.
   There is no control to create a stream (see *Not implemented*).
 * **Protocols → CAEP** (`/admin/caep`): the `caep.*` settings, the catalogue
   of the eight event types and their members, and the form for sending one by
@@ -425,7 +513,7 @@ changed with `POST /admin-api/config/set`.
   not their tokens.
 * **The management API** mirrors all of these: `GET /admin-api/ssf` and
   `POST /admin-api/ssf/{action}` (`status`, `delete`, `transmit`,
-  `clear-received`, `revive`, `clear-dead-letters`),
+  `clear-received`, `revive`, `clear-dead-letters`, `verify`),
   `GET /admin-api/ssf/dead-letters`, `GET /admin-api/caep`,
   `GET /admin-api/caep/sessions` and `POST /admin-api/caep/{action}` (`emit`,
   `reset-session`, `clear`), `GET /admin-api/risc`,
@@ -435,7 +523,7 @@ changed with `POST /admin-api/config/set`.
 * **`GET /ssf`** describes the family, its gate and what it deliberately does
   not do. Every endpoint is listed live on `/admin/sts-metadata`.
 * **Monitoring → Scheduler** (`/admin/scheduler`) lists the dead-letter sweep
-  job.
+  and the stream-maintenance jobs.
 
 Every failure is recorded under an `STS-SSF-NNNN` code. See
 [error codes](error-codes.md).
