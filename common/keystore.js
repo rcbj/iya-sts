@@ -605,6 +605,15 @@ function serialiseGenerations(held) {
                                                     format: 'pem' });
       }
       return row;
+    }),
+    // THE RETIRED REFRESH-TOKEN ENCRYPTION KEYS (#42, D7): a set replaced by
+    // a rotation, kept only to DECRYPT the refresh tokens sealed under it
+    // until the longest of them expires. A member of its own rather than
+    // standby entries, which every reader of those takes for a signing key.
+    retiredRefresh: (held.retiredRefresh || []).map(function (one) {
+      return { kid: one.kid, retiredAt: one.retiredAt,
+               retiredUntil: one.retiredUntil,
+               keys: serialiseRefreshTokenKeys(one.keys) };
     })
   };
   log.debug("Leaving serialiseGenerations(). " + out.standby.length +
@@ -645,6 +654,13 @@ function deserialiseGenerations(blob, nodeCryptoModule) {
     rotated: Object.assign({}, blob.rotated || {}),
     standby: (blob.standby || []).map(function (row) {
       return deserialiseStandbyEntry(row, nodeCryptoModule);
+    }),
+    retiredRefresh: (blob.retiredRefresh || []).map(function (row) {
+      return { kid: row.kid, retiredAt: row.retiredAt,
+               retiredUntil: row.retiredUntil,
+               keys: deserialiseRefreshTokenKeys(row.keys, nodeCryptoModule) };
+    }).filter(function (one) {
+      return !!one.keys;
     })
   };
 }
@@ -1492,6 +1508,13 @@ function privateMaterialFor(realmId) {
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
       parsed.standby.set(row.kid, deserialiseStandbyEntry(row, nodeCrypto));
+    });
+  parsed.retiredRefresh = new Map();
+  ((blob.generations && blob.generations.retiredRefresh) || []).forEach(
+    function (row) {
+      parsed.retiredRefresh.set(row.kid,
+                                deserialiseRefreshTokenKeys(row.keys,
+                                                            nodeCrypto));
     });
   (blob.extraKeys || []).forEach(function (one) {
     parsed.extra.set(one.publicJwk && one.publicJwk.kid,

@@ -1642,6 +1642,12 @@ const CODES = [
       'DigestMethod) and saml.allowSha1Signatures is off (the default), so ' +
       'it was refused before any cryptography, on every XML signature path.',
     spec: 'refusal by the calling protocol' },
+  { code: 'STS-KEYS-0063',
+    summary: 'A signing key rotation was refused: the realm\'s key set ' +
+      'could not be replaced (a newer generation was already held, or the ' +
+      'store refused the write).',
+    spec: 'the scheduler run fails with this code; /admin/keys and ' +
+      '/admin-api report it' },
   // ===== PKI ===============================================================
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -9241,6 +9247,10 @@ const CODES = [
       'confirmed unused across the cluster, so the token was refused.',
     spec: 'HTTP 401 {err: invalid_token}' },
   // ===== GNAP ==============================================================
+  { code: 'STS-SSF-0100',
+    summary: 'The signing-key-rotated event (this service\'s own) could not ' +
+      'be transmitted after a rotation; the rotation itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

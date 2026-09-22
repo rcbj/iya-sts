@@ -87,6 +87,9 @@ interface Choice {
 interface RefreshTokenCryptoDeps {
   log: typeof helpers.log;
   refreshTokenKeysFor: typeof helpers.refreshTokenKeysFor;
+  // The retired sets still within their grace (#42, D7). Optional, for a
+  // test's stand-in deps written before rotation.
+  retiredRefreshTokenKeysFor?: (keySet?: Json) => Json[];
   config: typeof config;
   stsCrypto: typeof stsCrypto;
   errorCodes: typeof errorCodes;
@@ -116,6 +119,7 @@ class RefreshTokenCrypto {
     return {
       log: helpers.log,
       refreshTokenKeysFor: helpers.refreshTokenKeysFor,
+      retiredRefreshTokenKeysFor: helpers.retiredRefreshTokenKeysFor,
       config: config,
       stsCrypto: stsCrypto,
       errorCodes: errorCodes
@@ -333,12 +337,35 @@ class RefreshTokenCrypto {
       throw errorCodes.mark(e, 'STS-OAUTH-0240');
     }
     const kind = this.kindOf(alg);
-    const expectedKid = kind === 'secret' ? keys.secretKid :
-                        keys[kind].publicJwk.kid;
+    const kidOf = function (set: Json): string {
+      return kind === 'secret' ? set.secretKid : set[kind].publicJwk.kid;
+    };
+    let expectedKid = kidOf(keys);
+    // A token sealed before a ROTATION of these keys (#42, D7) names a
+    // retired set's kid, and is opened with that set while it is within its
+    // grace — the longest refresh-token lifetime — and never sealed under.
+    if (header.kid !== expectedKid &&
+        typeof this.deps.retiredRefreshTokenKeysFor === 'function') {
+      let retired: Json[] = [];
+      try {
+        retired = this.deps.retiredRefreshTokenKeysFor(keySet);
+      } catch (e) {
+        log.debug("Caught in RefreshTokenCrypto.open(): " +
+                  ((e && e.message) || e));
+        retired = [];
+      }
+      const match = retired.filter(function (set: Json): boolean {
+        return !!set && kidOf(set) === header.kid;
+      })[0];
+      if (match) {
+        keys = match;
+        expectedKid = header.kid;
+      }
+    }
     // A token sealed under a DIFFERENT key names a different kid, and that is
     // the commonest real cause — another realm's token, or one issued before
-    // this realm's keys were rotated — so it gets its own sentence rather than
-    // the tag failure the decrypt would otherwise report.
+    // this realm's keys were rotated and past its grace — so it gets its own
+    // sentence rather than the tag failure the decrypt would otherwise report.
     if (header.kid !== expectedKid) {
       log.debug('Leaving RefreshTokenCrypto.open(). Another key.');
       throw this.refusal('STS-OAUTH-0238', 'the refresh token was not ' +

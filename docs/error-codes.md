@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2855** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2857** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 62
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 63
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 174
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 114
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 92
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 273
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -447,6 +447,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0060` | A detached HTTP Redirect binding signature could not be checked: no certificate, no Signature, an unreadable certificate, a Signature that is not base64, or an unreadable certificate. (An algorithm this service does not verify is STS-KEYS-0061 since 2026-09-17; SHA-1 refused by policy is STS-KEYS-0062.) | the caller's own refusal |
 | `STS-KEYS-0061` | An XML signature (enveloped, or an HTTP binding's detached one) names a SignatureMethod or DigestMethod this service does not verify — MD5, a MAC, Whirlpool, ESIGN, pre-hashed EdDSA, HSS/LMS or an unknown URI — or RSASSA-PSS parameters node cannot express. Refused as not checkable, on every XML signature path. | refusal by the calling protocol |
 | `STS-KEYS-0062` | An XML signature uses SHA-1 (its SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is off (the default), so it was refused before any cryptography, on every XML signature path. | refusal by the calling protocol |
+| `STS-KEYS-0063` | A signing key rotation was refused: the realm's key set could not be replaced (a newer generation was already held, or the store refused the write). | the scheduler run fails with this code; /admin/keys and /admin-api report it |
 
 ## STS-PKI
 
@@ -2383,6 +2384,7 @@ Raised from: ssf/.
 | `STS-SSF-0097` | The dead-letter sweep failed in a realm; it is tried again at the next interval. | — |
 | `STS-SSF-0098` | Whether another process had already reported a stream as dead or revived could not be asked, so it was reported here and may be reported twice. | none — logged |
 | `STS-SSF-0099` | A GNAP key proof on a Shared Signals endpoint could not be confirmed unused across the cluster, so the token was refused. | HTTP 401 {err: invalid_token} |
+| `STS-SSF-0100` | The signing-key-rotated event (this service's own) could not be transmitted after a rotation; the rotation itself stands. | none — logged; nothing is sent to a receiver |
 
 ## STS-GNAP
 

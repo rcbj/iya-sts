@@ -8750,6 +8750,27 @@ function list() {
 // The setting's own value is used and the log names the entry, the attribute
 // and the reason, which is the only way somebody finds out that the exception
 // they typed is not in force.
+// THE LARGEST VALUE a per-application setting takes across this realm's
+// entries, or the setting's own value when no entry overrides it higher —
+// for a question about EVERY client at once, such as how long the longest
+// token a key signed can live (`common/signing_rotation.ts`, #42).
+function largestSetting(settingKey, config) {
+  log.debug("Entering largestSetting(). setting=" + settingKey);
+  let most = Number(config.value(settingKey)) || 0;
+  if (!OVERRIDE_ATTRIBUTES[settingKey]) {
+    log.debug("Leaving largestSetting(). Not per-application.");
+    return most;
+  }
+  list().forEach(function (record) {
+    const v = Number(settingFor(record.identifier, settingKey, config)) || 0;
+    if (v > most) {
+      most = v;
+    }
+  });
+  log.debug("Leaving largestSetting(). " + most);
+  return most;
+}
+
 function settingFor(identifier, settingKey, config) {
   log.debug("Entering settingFor(). identifier=" + (identifier || '(none)') +
             ", setting=" + settingKey);
@@ -10097,6 +10118,7 @@ module.exports = {
   list: list,
   get: get,
   settingFor: settingFor,
+  largestSetting: largestSetting,
   overridableSettings: overridableSettings,
   // The audience lookup, exported for the token endpoint. See its header for
   // why it is a lookup and not a check.

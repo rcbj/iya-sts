@@ -999,6 +999,20 @@ subtree clock — moves: 2,400 expiries with 300 applications registered take
 344ms. `tests/ssf_allowed_events_cache.js` asserts every change is seen at once,
 the LDAP modify handler's unlocated touch included; two mutants caught.
 
+## A FOURTH VOCABULARY OF ONE EVENT: THIS SERVICE'S OWN (2026-09-22, #42)
+
+`urn:iya:sts:secevent:event-type:signing-key-rotated`, `family: 'sts'`, no
+subject — rcbj's D4. `common/signing_rotation.ts` calls
+`ssf.signingKeyRotated()` after a rotation has happened, and every stream that
+asked for the type gets one SET naming the realm, the units rotated (`<unit>
+<previous kid> -> <kid>`), the reason (`scheduled`, `requested`,
+`emergency`) and the JWKS and crypto metadata addresses. It is a URN of this
+service's own because no specification defines the event; a receiver that
+does not know it ignores it, as SSF says. The refresh-token encryption keys
+rotate in the same act and are never named: they are published nowhere. An
+emergency rotation also sends CAEP `session-revoked` and RISC
+`sessions-revoked` (#48, P4) — those are about PEOPLE, and this is not.
+
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO
 
 Each of these is on `GET /ssf` in the same words, because a mock's omissions are

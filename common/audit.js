@@ -392,6 +392,12 @@ const ACTIONS = [
     label: 'A scheduled job ran, was queued by hand, or was taken over' },
   { action: 'scheduler.step-down', category: 'service',
     label: 'The scheduler\'s leader was asked to stand down' },
+  // SIGNING KEY ROTATION (2026-09-22, #42). One row per act, however many
+  // units it moved: `common/signing_rotation.ts`.
+  { action: 'keys.rotate', category: 'service',
+    label: 'A realm\'s signing keys were rotated' },
+  { action: 'keys.retire', category: 'service',
+    label: 'Retired signing keys past their grace were dropped' },
 
   // The four the request that started this feature named, plus the two that
   // fall out of the same operations on something that is not a person. The

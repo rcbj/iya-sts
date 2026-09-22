@@ -1059,6 +1059,11 @@ class ProtocolStack {
     this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
     this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
+    // 23b-ii. SIGNING KEY ROTATION (#42, 2026-09-22): a library that registers
+    // its two scheduler jobs when built and no route. After `ssf/ssf`, whose
+    // signingKeyRotated() it calls (lazily, so the order is for a reader).
+    this.build('common/signing_rotation', require('./signing_rotation'),
+               'SigningRotation');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.

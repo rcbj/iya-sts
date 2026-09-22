@@ -11164,6 +11164,25 @@ const SETTINGS = [
                  'scheduled rotation off; a rotation by hand (/admin/keys) ' +
                  'still works. Product mode only.' },
 
+  // THE CREDENTIAL SIGNER'S OWN INTERVAL (#42, D3). A credential outlives
+  // every token, so the unit `oid4vci.credentialSigningAlgorithm` names is
+  // given a longer life of its own — when no token setting signs with it;
+  // the RSA unit and any unit a token setting names keep the token interval.
+  { key: 'signing.credentialRotationIntervalDays', group: 'Signing keys',
+    label: 'Rotate the credential signing key every (days)',
+    env: 'STS_SIGNING_CREDENTIAL_ROTATION_INTERVAL_DAYS', type: 'int',
+    dflt: 365, min: 0, max: 3650, runtime: true,
+    description: 'How long the key verifiable credentials are signed with ' +
+                 '(oid4vci.credentialSigningAlgorithm) works before its next ' +
+                 'key is promoted, in product mode. It applies only when ' +
+                 'that key signs no tokens: RS256, the default, and any ' +
+                 'algorithm oauth2.signedMetadataAlgorithm, ' +
+                 'ssf.signingAlgorithm or wstrust.jwtAlgorithm names rotate ' +
+                 'on signing.rotationIntervalDays instead. Its retired keys ' +
+                 'go on verifying until the longest credential lifetime has ' +
+                 'passed, whichever interval applies. 0 turns its rotation ' +
+                 'off.' },
+
   { key: 'signing.retiredKeyGraceDays', group: 'Signing keys',
     label: 'Keep a retired key verifying for (days)',
     env: 'STS_SIGNING_RETIRED_KEY_GRACE_DAYS', type: 'int', dflt: 0, min: 0,

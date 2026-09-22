@@ -1192,10 +1192,38 @@ function generationsView(realmId, stored, privateOf) {
     }
     return entry;
   });
+  // The retired refresh-token key sets (D7): the same rule — the keys
+  // themselves through the decrypt-on-demand door where there is one.
+  const retiredRefresh = (stored.retiredRefresh || []).map(function (one) {
+    const entry = /** @type {any} */ ({ kid: one.kid, retiredAt: one.retiredAt,
+                                        retiredUntil: one.retiredUntil });
+    const kid = one.kid;
+    if (typeof privateOf === 'function') {
+      Object.defineProperty(entry, 'keys', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          const held = privateOf();
+          const own = held && held.retiredRefresh &&
+                      held.retiredRefresh.get(kid);
+          if (!own) {
+            throw new Error('the "' + realmId + '" realm\'s retired ' +
+              'refresh-token keys ' + kid + ' are held encrypted and could ' +
+              'not be decrypted; see the keystore errors above.');
+          }
+          log.debug("Leaving get().");
+          return own;
+        }
+      });
+    } else {
+      entry.keys = one.keys;
+    }
+    return entry;
+  });
   log.debug("Leaving generationsView(). " + standby.length + " standby.");
   return { generation: Number(stored.generation) || 0,
            rotated: Object.assign({}, stored.rotated || {}),
-           standby: standby };
+           standby: standby, retiredRefresh: retiredRefresh };
 }
 
 // ---------------------------------------------------------------------------
@@ -2311,9 +2339,9 @@ const STS = /** @type {any} */ (new Proxy({}, {
 // KEY GENERATIONS (2026-09-22, #42 and #48; the plan on #49, Part 3).
 //
 // A realm's signing keys ROTATE: each is replaced every
-// `signing.rotationIntervalDays` (product mode only — `mode.rotatesSigningKeys()`
-// — because a development process makes new keys at every start anyway), and
-// on demand. What rotates is a UNIT — (realm, use case, algorithm), rcbj's D2
+// `signing.rotationIntervalDays` (product mode only —
+// `mode.rotatesSigningKeys()` — because a development process makes new keys
+// at every start anyway), and on demand. What rotates is a UNIT — (realm, use case, algorithm), rcbj's D2
 // — which is exactly one of `pki.js`'s certificate slots: `jose:RS256`,
 // `xml:RS256`, `jose:ES256:P-256`, `jose:EdDSA:Ed448`, `jose:ML-DSA-65`, …
 //
@@ -2778,7 +2806,9 @@ function plainCopyOf(keys, overrides) {
           copy.privateKeyPem = one.privateKeyPem;
         }
         return copy;
-      })
+      }),
+      retiredRefresh: ((keys.generations && keys.generations.retiredRefresh) ||
+                       []).slice()
     }
   };
   log.debug("Leaving plainCopyOf().");
@@ -2999,7 +3029,13 @@ function retireExpiredGenerations(realmId, nowMs) {
   const expired = standbyOf(keys).filter(function (one) {
     return one.role === 'retired' && !standbyLive(one, now);
   });
-  if (!expired.length) {
+  // And the retired refresh-token encryption keys past theirs (D7).
+  const refreshGone = ((keys.generations &&
+                        keys.generations.retiredRefresh) || [])
+    .filter(function (one) {
+      return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
+    });
+  if (!expired.length && !refreshGone.length) {
     log.debug("Leaving retireExpiredGenerations(). Nothing due.");
     return { ok: true, dropped: [],
              generation: Number(keys.generations &&
@@ -3009,18 +3045,73 @@ function retireExpiredGenerations(realmId, nowMs) {
   const gone = expired.map(function (one) {
     return one.kid;
   });
+  const refreshKids = refreshGone.map(function (one) {
+    return one.kid;
+  });
   copy.generations.standby = copy.generations.standby.filter(function (one) {
     return gone.indexOf(one.kid) < 0;
   });
-  const answer = replaceGeneration(id, copy, gone.length + ' retired key(s) ' +
-                                   'past their grace dropped');
+  copy.generations.retiredRefresh = copy.generations.retiredRefresh
+    .filter(function (one) {
+      return refreshKids.indexOf(one.kid) < 0;
+    });
+  const answer = replaceGeneration(id, copy, (gone.length +
+    refreshKids.length) + ' retired key(s) past their grace dropped');
   log.debug("Leaving retireExpiredGenerations(). " + gone.length +
-            " dropped.");
+            " signing and " + refreshKids.length + " refresh set(s) dropped.");
   return { ok: answer.ok, generation: answer.generation, why: answer.reason,
            dropped: answer.ok ? expired.map(function (one) {
              return { unit: one.unit, kid: one.kid, useCase: one.useCase,
                       slot: one.slot, role: 'retired' };
-           }) : [] };
+           }).concat(refreshGone.map(function (one) {
+             return { unit: 'refresh:enc', kid: one.kid, useCase: 'refresh',
+                      slot: '', role: 'retired' };
+           })) : [] };
+}
+
+// ---------------------------------------------------------------------------
+// ROTATE THE REFRESH-TOKEN ENCRYPTION KEYS (#42, rcbj's D7). A new set of
+// every kind `oauth-oidc/refresh_token_crypto.ts` seals under, made by the one
+// maker; the set it replaces is RETIRED, kept only to open the refresh tokens
+// already in clients' hands until `graceMs` has passed, and never sealed
+// under again. `generations.rotated['refresh:enc']` records when.
+// ---------------------------------------------------------------------------
+function rotateRefreshTokenKeys(realmId, graceMs, why) {
+  log.debug("Entering rotateRefreshTokenKeys(). realm=" + realmId);
+  const id = String(realmId || '');
+  const keys = stsKeysFor.of(id);
+  const old = refreshTokenKeysFor(keys);
+  const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
+  const made = realms.run(realm, makeRefreshTokenEncryptionKeys);
+  const now = Date.now();
+  const copy = plainCopyOf(keys, { refreshTokenEncKeys: made });
+  copy.generations.retiredRefresh = copy.generations.retiredRefresh.concat([
+    { kid: old.secretKid, retiredAt: now,
+      retiredUntil: now + Math.max(0, Number(graceMs) || 0), keys: old }]);
+  copy.generations.rotated['refresh:enc'] = now;
+  const answer = replaceGeneration(id, copy, why ||
+                                   'a rotation of the refresh-token keys');
+  log.debug("Leaving rotateRefreshTokenKeys(). " + JSON.stringify(answer));
+  return { ok: answer.ok, why: answer.reason, generation: answer.generation,
+           from: old.secretKid, to: made.secretKid };
+}
+
+// The retired refresh-token key sets still within their grace, newest first.
+function retiredRefreshTokenKeysFor(keySet) {
+  log.debug("Entering retiredRefreshTokenKeysFor().");
+  const keys = keySet || stsKeysFor();
+  const now = Date.now();
+  const out = ((keys.generations && keys.generations.retiredRefresh) || [])
+    .filter(function (one) {
+      return one.keys && !(Number(one.retiredUntil) > 0 &&
+                           Number(one.retiredUntil) <= now);
+    }).sort(function (a, b) {
+      return (Number(b.retiredAt) || 0) - (Number(a.retiredAt) || 0);
+    }).map(function (one) {
+      return one.keys;
+    });
+  log.debug("Leaving retiredRefreshTokenKeysFor(). " + out.length + ".");
+  return out;
 }
 
 // Every document that carries or describes this key is served `Cache-Control:
@@ -4695,6 +4786,8 @@ module.exports = {
   // a key read back from a blob publishes exactly what a generated one does.
   requestEncryptionKeyFor: requestEncryptionKeyFor,
   refreshTokenKeysFor: refreshTokenKeysFor,
+  rotateRefreshTokenKeys: rotateRefreshTokenKeys,
+  retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
   requestObjectKeysFor: requestObjectKeysFor,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
   requestEncryptionJwkOf: requestEncryptionJwkOf,

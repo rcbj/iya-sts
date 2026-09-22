@@ -513,6 +513,17 @@ says so; it is never read with `|| n`.
 heartbeats — without the hold-off it would take the lease straight back on its
 next beat. It is the one addition this feature made to `cluster.js`.
 
+**The jobs registered today**, and where each is argued:
+
+| Job | Kind, scope | Owner and argument |
+|---|---|---|
+| `authn.session-expiry` | cluster, service | `authn/authn.ts`, `authn/CLAUDE.md` |
+| `pki.crl-directory-refresh` | cluster, service | `common/pki_revocation.js` |
+| `scheduler.history` | cluster, service | `cluster/scheduler.ts` |
+| `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
+| `signing.retire` | cluster, realm; hourly | `common/signing_rotation.ts` (#42) |
+| `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
+
 **The timers still outside it** are listed, each with the job it becomes or
 the reason it stays, in `tests/no_periodic_timers.js`, which fails on a new
 one and on an entry whose timer has gone. **P5 of #49 empties the `becomes`

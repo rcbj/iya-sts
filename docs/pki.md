@@ -781,9 +781,28 @@ OpenID Connect discovery links to it as `crypto_metadata_uri`, and the SAML
 2.0 metadata in an `md:Extensions` element (`cm:CryptoMetadataLocation`). No
 specification defines this document.
 
-In development mode keys are made anew at every start and are not rotated;
-in product mode they are rotated every `signing.rotationIntervalDays` (the
-Signing keys settings on `/admin/keys`).
+In development mode keys are made anew at every start and are not rotated.
+In product mode two scheduler jobs, per realm, do it (`/admin/scheduler`):
+
+* **`signing.rotate`**, hourly: a unit with no next key is given one, and a
+  unit whose next key has been published for a whole
+  `signing.rotationIntervalDays` is promoted. The refresh-token encryption
+  keys rotate on the same interval; the set they replace goes on opening the
+  refresh tokens sealed under it until the longest of them expires.
+* **`signing.retire`**, hourly: drops each retired key past its grace and
+  puts its certificate on its Issuing CA's CRL as `superseded`.
+
+The key verifiable credentials are signed with
+(`oid4vci.credentialSigningAlgorithm`) keeps its retired keys verifying until
+the longest credential lifetime has passed, and rotates on
+`signing.credentialRotationIntervalDays` — when no token is signed with the
+same key. RS256, the default, is the token signer's key, so it rotates on the
+token interval; choose an algorithm of its own (for example ES256K) to give
+credentials a longer-lived key.
+
+After each rotation a Shared Signals event of this service's own,
+`urn:iya:sts:secevent:event-type:signing-key-rotated`, goes to every stream
+that asked for it. The settings are the Signing keys group on `/admin/keys`.
 
 ## Where the CA private keys live
 

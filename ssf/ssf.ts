@@ -2515,6 +2515,69 @@ class SharedSignals {
   }
 
   // ---------------------------------------------------------------------------
+  // A REALM'S SIGNING KEYS ROTATED (#42, rcbj's D4) — this service's own event,
+  // to every stream that delivers it, from `common/signing_rotation.ts` after
+  // the rotation has happened. It has no subject, so every stream that asked
+  // for the type gets it. Never throws: the rotation stands whatever happens
+  // to the notice of it.
+  // ---------------------------------------------------------------------------
+  signingKeyRotated(notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes, helpers } = this.deps;
+    log.debug('Entering SharedSignals.signingKeyRotated().');
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.signingKeyRotated(). SSF is off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = events.SIGNING_KEY_ROTATED;
+    let base = '';
+    try {
+      base = helpers.baseUrlOf(null);
+    } catch (e) {
+      // No public base URL outside a request: the two links are optional
+      // members, and the event goes without them.
+      log.debug('Caught in SharedSignals.signingKeyRotated(): ' +
+                ((e && e.message) || e));
+      base = '';
+    }
+    const payload = events.EVENT_BY_URI[uri].generate({
+      realm: n.realm, reason: n.reason,
+      rotated: (n.rotated || []).map(function (r: Json): string {
+        return r.unit + ' ' + r.from + ' -> ' + r.to;
+      }).join(', '),
+      jwks_uri: base ? base + '/oauth2/jwks' : '',
+      crypto_metadata_uri: base ? base + '/crypto/metadata.json' : ''
+    });
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.signingKeyRotated(). No stream ' +
+                'takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.signingKeyRotated().');
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: signing-key-rotated for the "' + payload.realm + '" ' +
+               'realm went to ' + sent + ' of ' + candidates.length +
+               ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.signingKeyRotated(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0100') + 'ssf: the ' +
+                'signing-key-rotated event could not be sent: ' + e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // A CAEP EVENT A PROTOCOL FAMILY OBSERVED ABOUT SOMETHING THAT IS NOT A
   // SIGN-ON SESSION.
   //
@@ -3919,6 +3982,7 @@ export = {
   consoleAction: slot.forward('consoleAction'),
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
+  signingKeyRotated: slot.forward('signingKeyRotated'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),
