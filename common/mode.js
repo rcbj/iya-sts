@@ -286,6 +286,17 @@ function rotatesSigningKeys() {
   return isProduct();
 }
 
+// Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
+// it at the token endpoint wherever a secret is checked; development accepts
+// it and says so, because a test fixture registered with a short
+// oauth2.registeredSecretLifetimeS must not stop working half-way through a
+// run nobody meant to be about secrets.
+function refusesExpiredClientSecrets() {
+  log.debug("Entering refusesExpiredClientSecrets().");
+  log.debug("Leaving refusesExpiredClientSecrets().");
+  return isProduct();
+}
+
 // Does the realm chooser in front of `/admin` and `/portal` LIST the realms?
 // (2026-09-14, #32.) A person arriving at either surface with no session, on a
 // service with realms defined, chooses which realm to sign in through.
@@ -1159,6 +1170,17 @@ const REQUIREMENTS = [
              'debugger.allowedDestinations — and refuses every other ' +
              'destination, raw sockets included.',
     where: 'debugger/debugger_server.ts, debugger/debugger_api_process.ts' },
+  // 2026-09-22 (#49 P5).
+  { id: 'client-secret-expiry',
+    what: 'An expired client secret',
+    development: 'ACCEPTED where a secret is checked, with an audit row ' +
+                 'saying it had expired.',
+    product: 'REFUSED at the token endpoint (invalid_client, ' +
+             'STS-OAUTH-0558) once oauthClientSecretExpiresAt — or the ' +
+             'registration\'s client_secret_expires_at — has passed. A ' +
+             'rotated secret\'s predecessor is accepted in both modes until ' +
+             'oauth2.clientSecretOverlapS has passed.',
+    where: 'oauth-oidc/client_auth.js, common/applications.js' },
   // 2026-09-22 (#42). It was NOT_YET's `key-overlap` — "a rotation has NO
   // OVERLAP" — until key GENERATIONS gave every unit a next key published
   // before it signs and retired keys that verify through their grace.
@@ -1368,6 +1390,7 @@ module.exports = {
   gatesManagementApi: gatesManagementApi,
   seedsDemoData: seedsDemoData,
   rotatesSigningKeys: rotatesSigningKeys,
+  refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,

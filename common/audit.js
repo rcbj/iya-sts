@@ -399,6 +399,11 @@ const ACTIONS = [
   { action: 'keys.rotate.emergency', category: 'service',
     label: 'A realm\'s signing keys were rotated in an EMERGENCY: ' +
            'certificates revoked for keyCompromise, sessions ended' },
+  // CLIENT-SECRET EXPIRY (#49 P5): the daily sweep's two warnings.
+  { action: 'application.secret-expiring', category: 'admin',
+    label: 'An application\'s client secret expires soon' },
+  { action: 'application.secret-expired', category: 'admin',
+    label: 'An application\'s client secret has expired' },
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
 

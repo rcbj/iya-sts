@@ -5218,7 +5218,11 @@ class AdminViews {
         authMethod: one('oauthTokenEndpointAuthMethod'),
         registered: !!row.registered,
         registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
-        registrationAccessToken: one('appRegistrationAccessToken')
+        registrationAccessToken: one('appRegistrationAccessToken'),
+        // ROTATION AND EXPIRY (#49 P5): until when a rotated-out secret still
+        // works (ms), and when the current one expires (seconds, 0 never).
+        previousUntil: Number(one('oauthClientSecretPreviousUntil')) || 0,
+        expiresAt: applications.secretExpiryOf(row.fields || {})
       },
       purposes: purposes,
       ca: {
@@ -5235,7 +5239,9 @@ class AdminViews {
                       authMethod: state.clientSecret.authMethod,
                       registered: state.clientSecret.registered,
                       registrationAccessTokenHeld:
-                        state.clientSecret.registrationAccessTokenHeld },
+                        state.clientSecret.registrationAccessTokenHeld,
+                      previousUntil: state.clientSecret.previousUntil,
+                      expiresAt: state.clientSecret.expiresAt },
       keyPairs: purposes.map(function (p) {
         return { purpose: p.id, label: p.label, held: p.held, source: p.source,
                  privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,

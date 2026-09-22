@@ -5870,6 +5870,15 @@ const CODES = [
       'refused because this realm has revoked it.',
     spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
   // ===== SAML ==============================================================
+  { code: 'STS-OAUTH-0558',
+    summary: 'A client authenticated with a client_secret past its ' +
+      'expiry (oauthClientSecretExpiresAt, or the registration\'s ' +
+      'client_secret_expires_at), in product mode.',
+    spec: 'invalid_client (RFC 6749 section 5.2)' },
+  { code: 'STS-OAUTH-0559',
+    summary: 'A client authenticated with an expired client_secret and was ' +
+      'accepted, because the service is in development mode.',
+    spec: 'none — logged; the request is answered' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12680,6 +12689,12 @@ const CODES = [
       'inline jwks key of the right type to encrypt to (a jwks_uri is ' +
       'never fetched).',
     spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0166',
+    summary: 'An application\'s client secret has expired, or expires within ' +
+      'oauth2.clientSecretExpiryWarningDays — found by the daily scheduler ' +
+      'job oauth2.client-secret-expiry.',
+    spec: 'none — an audit row and a warning; rotate the secret on ' +
+      '/admin/applications' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

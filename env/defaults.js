@@ -288,6 +288,8 @@ var config = {
     softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint
     softwareStatementRequired: false,            // Require a software statement on every registration
     softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
+    clientSecretOverlapS: 604800,                // Keep a rotated client secret working for (seconds)
+    clientSecretExpiryWarningDays: 14,           // Warn about an expiring client secret this many days ahead
     registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
     registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes

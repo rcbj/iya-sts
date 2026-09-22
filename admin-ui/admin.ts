@@ -14282,7 +14282,8 @@ class AdminConsole {
     const back = named
       ? '/admin/applications' + queryWith(listView, { application: named }) +
         // Back to the section the button was in, which is four screens down.
-        (String(body.action || '') === 'regenerate-secret' ? '#credentials'
+        (String(body.action || '') === 'regenerate-secret' ||
+         String(body.action || '') === 'rotate-secret' ? '#credentials'
           : (String(body.action || '') === 'issue-software-statement'
             ? '#software-statements'
             : (String(body.action || '') === 'revoke-tls-client-certificate' ||
@@ -14505,6 +14506,33 @@ class AdminConsole {
                    'application is seen.' };
   }
 
+  // THE LIST'S EXPIRING-SECRET MARK (#49 P5): a client secret that has
+  // expired, or expires within oauth2.clientSecretExpiryWarningDays — the
+  // same two the daily job oauth2.client-secret-expiry warns about.
+  secretExpiryMark(row) {
+    const { log, applications, config } = this.deps;
+    log.debug("Entering AdminConsole.secretExpiryMark().");
+    const record = applications.get(row.identifier);
+    const fields = (record && record.fields) || {};
+    const expiresAt = fields.oauthClientSecret
+      ? applications.secretExpiryOf(fields) : 0;
+    if (!expiresAt) {
+      log.debug("Leaving AdminConsole.secretExpiryMark(). None.");
+      return '';
+    }
+    const nowS = Math.floor(Date.now() / 1000);
+    const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
+                  86400;
+    log.debug("Leaving AdminConsole.secretExpiryMark().");
+    return expiresAt <= nowS
+      ? '<div class="sub warn">Client secret EXPIRED ' +
+        this.esc(new Date(expiresAt * 1000).toISOString()) + '</div>'
+      : expiresAt - nowS <= warnS
+        ? '<div class="sub warn">Client secret expires ' +
+          this.esc(new Date(expiresAt * 1000).toISOString()) + '</div>'
+        : '';
+  }
+
   applicationsListPage(req) {
     const { log, adminViews, queryWith, applications } = this.deps;
     const self = this;
@@ -14540,7 +14568,8 @@ class AdminConsole {
           (row.identifier === row.dnLabel ? '' :
             ' &mdash; the identifier is too long for a readable RDN, so the ' +
             '<code>cn</code> is a digest of it') + '</div>' : '') +
-        '</td><td>' + self.esc(row.name) + '</td>' +
+        '</td><td>' + self.esc(row.name) + self.secretExpiryMark(row) +
+        '</td>' +
         '<td>' + self.applicationKindCells(row) + '</td>' +
         // BOTH PROTOCOL LISTS IN ONE CELL, and the declared half is labelled
         // rather than run in with the other. An application created by hand has
@@ -15307,7 +15336,25 @@ class AdminConsole {
                    : 'Generate a client secret') + '</button>' +
       '<span class="sub">' + (secret.held
         ? 'The current secret stops working immediately.'
-        : 'This application holds none yet.') + '</span></div></form>';
+        : 'This application holds none yet.') + '</span></div></form>' +
+      // ROTATION WITH AN OVERLAP (#49 P5): the one to use for a client in
+      // service — the old secret keeps working while it changes over.
+      (secret.held
+        ? '<form method="post" action="/admin/applications">' + carryBack +
+          '<div class="formrow">' + hidden('action', 'rotate-secret') +
+          hidden('application', id) +
+          '<button type="submit">Rotate the client secret</button>' +
+          '<span class="sub">A new secret; the current one goes on working ' +
+          'for oauth2.clientSecretOverlapS so the client can change over.' +
+          (secret.previousUntil
+            ? ' The secret an earlier rotation replaced works until ' +
+              this.esc(new Date(secret.previousUntil).toISOString()) + '.'
+            : '') +
+          (secret.expiresAt
+            ? ' The current secret expires at ' +
+              this.esc(new Date(secret.expiresAt * 1000).toISOString()) + '.'
+            : '') + '</span></div></form>'
+        : '');
 
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.label) +

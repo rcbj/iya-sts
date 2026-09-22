@@ -3683,6 +3683,28 @@ const SETTINGS = [
                  'permits. Changing this does not move a statement already ' +
                  'issued; its `exp` is inside its signature.' },
 
+  // CLIENT-SECRET ROTATION AND EXPIRY (2026-09-22, #49 P5).
+  { key: 'oauth2.clientSecretOverlapS', group: 'OAuth 2.0 / OIDC',
+    label: 'Keep a rotated client secret working for (seconds)',
+    env: 'STS_OAUTH2_CLIENT_SECRET_OVERLAP_S', type: 'int', dflt: 604800,
+    min: 0, max: 31536000, runtime: true,
+    description: 'How long the secret a ROTATION replaced (Rotate secret on ' +
+                 '/admin/applications, or rotate-secret on /admin-api) goes ' +
+                 'on authenticating at the token endpoint beside the new ' +
+                 'one, so a client can change over without an outage. A ' +
+                 'week by default; 0 makes a rotation a regeneration, which ' +
+                 'ends the old secret at once.' },
+  { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Warn about an expiring client secret this many days ahead',
+    env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
+    dflt: 14, min: 0, max: 365, runtime: true,
+    description: 'The daily scheduler job oauth2.client-secret-expiry ' +
+                 'writes an audit row and a warning for every application ' +
+                 'whose secret expires within this many days (its ' +
+                 'oauthClientSecretExpiresAt, or its registration\'s ' +
+                 'client_secret_expires_at), and /admin/applications marks ' +
+                 'it. 0 warns only once it has expired.' },
+
   { key: 'oauth2.registeredSecretLifetimeS', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered secret lifetime (s)',
     env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S', type: 'int', dflt: 0,

@@ -71,6 +71,7 @@ type Json = any;
 const ROTATE_JOB = 'signing.rotate';
 const ROTATE_NOW_JOB = 'signing.rotate-now';
 const RETIRE_JOB = 'signing.retire';
+const SECRET_EXPIRY_JOB = 'oauth2.client-secret-expiry';
 const CHECK_EVERY_MS = 3600000;
 const DAY_MS = 86400000;
 // The clock skew every verifier here allows, added to the grace so that a
@@ -835,6 +836,30 @@ class SigningRotation {
       manual: true,
       run: function (ctx: Json): Json {
         return self.retireDue(ctx.realm, ctx);
+      }
+    });
+    // CLIENT SECRETS (#49 P5, rcbj's answer): the daily warning of secrets
+    // expiring within oauth2.clientSecretExpiryWarningDays and of those that
+    // have, and the clearing of every rotated-out secret whose overlap has
+    // passed. The act is `applications.sweepClientSecrets()`'s; this is when.
+    s.register({
+      id: SECRET_EXPIRY_JOB,
+      title: 'Client secret expiry',
+      describe: 'Warns, with an audit row, about every client secret that ' +
+                'expires within oauth2.clientSecretExpiryWarningDays or has ' +
+                'expired, and clears the secret a rotation replaced once ' +
+                'oauth2.clientSecretOverlapS has passed.',
+      owner: 'common/signing_rotation.ts',
+      kind: 'cluster', scope: 'realm',
+      everyMs: function (): number {
+        return DAY_MS;
+      },
+      manual: true,
+      run: function (ctx: Json): Json {
+        const done = self.deps.applications().sweepClientSecrets(ctx.nowMs());
+        return { expiring: done.expiring.length,
+                 expired: done.expired.length,
+                 cleared: done.cleared.length };
       }
     });
     log.debug("Leaving SigningRotation.registerJobs().");

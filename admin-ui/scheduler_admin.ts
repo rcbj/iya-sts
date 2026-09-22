@@ -217,8 +217,13 @@ class SchedulerAdmin {
     }
     if (action !== 'run') {
       log.debug("Leaving SchedulerAdmin.schedulerAction(). Unknown action.");
+      // THE SENTENCE IS THE SHAPE THE SUITE READS (`Unknown action "x".
+      // <phrase>: <list>.`): `admin_api.js` checks every console action has
+      // an operation from it, and `sts_admin_api_operations.js` compares the
+      // list with the OpenAPI document.
       return { ok: false, errorCode: 'STS-ADMIN-0012', errors: [
-        'The action "' + action + '" is not one of run and step-down.'] };
+        'Unknown action "' + action + '". The actions here are: run, ' +
+        'step-down.'] };
     }
     const jobId = String(b.job || '').trim();
     const job = scheduler.job(jobId);

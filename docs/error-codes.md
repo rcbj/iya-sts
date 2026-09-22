@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2860** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2863** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 185
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 437
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 439
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 72
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 98
+* [Registries (`STS-REG`)](#sts-reg) — 99
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
@@ -1505,6 +1505,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0555` | Product mode: an RFC 8693 subject_token that did not verify against this realm's signing key (a forged, foreign, expired or unreadable token) was refused. Development exchanges it unverified (mode.exchangesUnverifiedTokens()). | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0556` | Product mode: an RFC 8693 actor_token that did not verify against this realm's signing key was refused. Development reads its sub unverified into the act claim. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0557` | An RFC 8693 subject_token or actor_token that verified was refused because this realm has revoked it. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0558` | A client authenticated with a client_secret past its expiry (oauthClientSecretExpiresAt, or the registration's client_secret_expires_at), in product mode. | invalid_client (RFC 6749 section 5.2) |
+| `STS-OAUTH-0559` | A client authenticated with an expired client_secret and was accepted, because the service is in development mode. | none — logged; the request is answered |
 
 ## STS-SAML
 
@@ -3238,6 +3240,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0163` | A confirm or discard of a SAML service provider's observed signing certificate found none on the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0164` | An RFC 7591 registration or RFC 7592 update named an id_token_encrypted_response_alg or _enc this service cannot honour (a symmetric family, an unknown content encryption), or an enc with no alg. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0165` | A registration named id_token_encrypted_response_alg with no inline jwks key of the right type to encrypt to (a jwks_uri is never fetched). | invalid_client_metadata (HTTP 400) |
+| `STS-REG-0166` | An application's client secret has expired, or expires within oauth2.clientSecretExpiryWarningDays — found by the daily scheduler job oauth2.client-secret-expiry. | none — an audit row and a warning; rotate the secret on /admin/applications |
 
 ## STS-DBG
 

@@ -531,6 +531,7 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token | `common/admin_stats.js` (P5; the ticket's "tracked tokens") |
+| `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or expired, and clears a rotated-out secret past `oauth2.clientSecretOverlapS` | `common/signing_rotation.ts`, `common/applications.js` (P5) |
 
 **The timers still outside it** are listed, each with the reason it stays, in
 `tests/no_periodic_timers.js`, which fails on a new one and on an entry whose

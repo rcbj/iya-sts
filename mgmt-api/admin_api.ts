@@ -2460,7 +2460,57 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The exported files.',
-            responseSchema: { $ref: '#/components/schemas/KeyExport' } }
+            responseSchema: { $ref: '#/components/schemas/KeyExport' } },
+          // ROTATE AND EMERGENCY (#48, 2026-09-22): /admin/keys/rotate's two
+          // forms. NO EXAMPLE, deliberately: an example is what
+          // `sts_admin_api_operations.js` drives, and an emergency signs a
+          // realm out; `sts_key_rotation.js` drives both, in a realm of its
+          // own, and the operations job's NOT_DRIVEN_HERE says so.
+          { action: 'rotate', operationId: 'rotateSigningKeys',
+            summary: 'Rotate the realm\'s signing keys now',
+            description: 'Queues a run of the scheduler job ' +
+                         '`signing.rotate-now` and answers **202** with its ' +
+                         '`runId` (follow it at `/admin-api/scheduler?run=`). ' +
+                         'Each named unit — or every unit and the ' +
+                         'refresh-token keys, for `units` empty or `"all"` — ' +
+                         'has its next key promoted; the key it replaces goes ' +
+                         'on verifying through its grace. An unknown unit is ' +
+                         '400 (STS-KEYS-0065).',
+            requestBody: {
+              type: 'object',
+              properties: {
+                units: { type: 'array', items: { type: 'string' },
+                         description: 'Units from GET /admin-api/keys ' +
+                                      '`rotation.units`, e.g. `jose:RS256`.' }
+              },
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run: `runId`, `units`, and ' +
+                                 '`run`, the address to follow it at.' },
+          { action: 'emergency', operationId: 'rotateSigningKeysEmergency',
+            summary: 'Rotate the realm\'s signing keys in an EMERGENCY',
+            description: 'For keys presumed compromised. Queues ' +
+                         '`signing.rotate-now` with the emergency flag and ' +
+                         'answers **202**: every key of every named unit ' +
+                         '(or all) is replaced with a NEW key — not the ' +
+                         'published next one — with no grace; their ' +
+                         'certificates are revoked for keyCompromise; the ' +
+                         'refresh-token keys are replaced; and every session ' +
+                         'of the realm is ended, with CAEP session-revoked ' +
+                         'and RISC sessions-revoked. Everything signed before ' +
+                         'it stops verifying at once. `confirm` must be ' +
+                         '`compromised` (STS-KEYS-0066 otherwise).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                confirm: { type: 'string', enum: ['compromised'] },
+                units: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['confirm'],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run, as for `rotate`.' }
         ] },
 
       // ---------------------------------------------------------------------
@@ -8164,6 +8214,34 @@ class AdminApi {
             responseDescription: 'The new secret in `clientSecret`, whether ' +
                                  'one was replaced, and the application as ' +
                                  'it now stands.' },
+
+          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22).
+          { action: 'rotate-secret',
+            operationId: 'rotateApplicationClientSecret',
+            summary: 'Mint a new client secret, keeping the old one working ' +
+                     'for an overlap',
+            description: 'Exactly `regenerate-secret`, except that the ' +
+                         'secret it replaces goes on authenticating at the ' +
+                         'token endpoint until ' +
+                         '`oauth2.clientSecretOverlapS` has passed (a week ' +
+                         'by default) — kept on the entry as ' +
+                         '`oauthClientSecretPrevious` and ' +
+                         '`oauthClientSecretPreviousUntil`, and cleared by ' +
+                         'the scheduler job `oauth2.client-secret-expiry` ' +
+                         'after it — so the client can change over without ' +
+                         'an outage. With the overlap at 0 it is a ' +
+                         'regeneration.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'my-web-app' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new secret in `clientSecret`, and ' +
+                                 '`overlapUntil`: when the old one stops ' +
+                                 'working (ms).' },
 
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
