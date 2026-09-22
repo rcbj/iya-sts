@@ -8468,8 +8468,10 @@ class AdminConsole {
       'rule a scope naming another application\'s <code>client_id</code> ' +
       'already follows, one step more precise.') +
 
-      this.note('<strong>A grant REFUSES nothing by default, and that is the ' +
-      'setting at the foot of this page.</strong> With ' +
+      this.note('<strong>In product mode an ungranted permission is refused ' +
+      '<code>invalid_scope</code>, always. In development a grant refuses ' +
+      'nothing by default, and that is the setting at the foot of this ' +
+      'page.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off &mdash; which it ' +
       'is unless somebody turned it on &mdash; an ungranted permission is ' +
       'honoured exactly as a granted one is, logged as ungranted, and marked ' +
@@ -9465,9 +9467,10 @@ class AdminConsole {
                 'what was ISSUED and not what was GRANTED — <a ' +
                 'href="/admin/delegation/allowed">the configured ' +
                 'register</a> is the other question, and ' +
-                '<code>oauth2.delegatedPermissionsEnforced</code> is off by ' +
-                'default, so a token can carry a permission its client was ' +
-                'never granted.' });
+                'in development <code>oauth2.delegatedPermissionsEnforced' +
+                '</code> is off by default, so a token can carry a ' +
+                'permission its client was never granted (product mode ' +
+                'refuses one).' });
     }
     log.debug("Leaving AdminConsole.delegationMapKey().");
     return '<table class="key"><tr><th>Shape</th><th>What it means</th></tr>' +
@@ -15054,7 +15057,8 @@ class AdminConsole {
       '<code>https://example.com/</code> carrying <code>scope: openid ' +
       'write</code> — the base becomes the <code>aud</code> and the name ' +
       'becomes the scope, which is what a resource server wants: check the ' +
-      'audience once, then read bare permission names. <strong>It REFUSES ' +
+      'audience once, then read bare permission names. <strong>In product ' +
+      'mode an ungranted permission is refused; in development it REFUSES ' +
       'nothing by default.</strong> With ' +
       '<code>oauth2.delegatedPermissionsEnforced</code> off — which it is ' +
       'unless somebody turned it on, at the foot of the Delegation page — an ' +
@@ -19072,7 +19076,7 @@ class AdminConsole {
                                                           'exposed by <code>' +
           this.esc(one.resource) + '</code>' +
           (one.granted ? '' : '<br><span class="state-none">and this client ' +
-            'has NOT been granted it &mdash; with ' +
+            'has NOT been granted it &mdash; in product mode, or with ' +
             '<code>oauth2.delegatedPermissionsEnforced</code> on, the ' +
             'request is refused anyway, consented or not</span>')
         : '<span class="state-none">an ordinary scope &mdash; no application ' +
@@ -28873,7 +28877,8 @@ class AdminConsole {
         'rather than quietly editing. What IS still true is the sentence ' +
         'underneath it: <strong>Kerberos is the one family here that polices ' +
         'delegation IN THE ACT</strong>. The permissions above are policy ' +
-        'this service was configured with and refuses on only when ' +
+        'this service was configured with and refuses on in product mode, ' +
+        'and in development only when ' +
         '<code>oauth2.delegatedPermissionsEnforced</code> is set; these two ' +
         'attributes are a KDC decision that has always been made, on every ' +
         'S4U request, whatever anything is set to. WS-Trust puts no ' +

@@ -212,7 +212,7 @@ async function run(t) {
                                                 'oauth2.ts'), 'utf8');
   const tokenSetBody = oauthSource.slice(oauthSource.indexOf(
     'async tokenSet('), oauthSource.indexOf(
-    'async tokenSet(') + 4000);
+    'async tokenSet(') + 6000);
   t.check(/debuggerAccess\.narrowScope\(\s*opts\.scope/.test(tokenSetBody) &&
           tokenSetBody.indexOf('debuggerAccess.narrowScope') <
             tokenSetBody.indexOf('accessTokenPlan('),

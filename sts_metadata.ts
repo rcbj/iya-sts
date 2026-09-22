@@ -480,8 +480,9 @@ const SPECS: Spec[] = [
               'critical_subject_members, and section 3.5\'s jwt_id, ' +
               'saml_assertion_id and ip-addresses formats are implemented. ' +
               'Section 8 authorization is three schemes — an OAuth 2.0 ' +
-              'access token with ssf:read or ssf:write, HTTP Basic and ' +
-              'GNAP — ' +
+              'access token with ssf:read or ssf:write (issued only to a ' +
+              'client that declares them, and honoured only while it still ' +
+              'does), HTTP Basic and GNAP — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
               'dead-lettered, and streams are persisted in product mode. NOT ' +
@@ -735,13 +736,15 @@ const SPECS: Spec[] = [
               'HOBA, the session cookie and a TLS client certificate), its ' +
               'SHALL about WWW-Authenticate is on every 401, and its MUST ' +
               'about an access control policy is two OAuth scopes — ' +
-              'scim:read and scim:write — with every other scheme granting ' +
-              'both. Section 3.11 (/Me) is covered too, as an alias onto the ' +
+              'scim:read and scim:write, issued only to a client that ' +
+              'declares them and honoured only while it still does — with ' +
+              'every other scheme granting both. Section 3.11 (/Me) is ' +
+              'covered too, as an alias onto the ' +
               'same User handlers, and still answers 501 where there is ' +
               'genuinely no subject. NOT covered, each on purpose and each ' +
               'said on /scim: NOTHING IS REALLY CHECKED ABOUT A CREDENTIAL ' +
-              'IN DEVELOPMENT MODE — anybody can get a token with either ' +
-              'scope, any password but "invalid" passes Basic, anybody can ' +
+              'IN DEVELOPMENT MODE — any password but "invalid" passes ' +
+              'Basic, anybody can ' +
               'register a HOBA key (in product mode Basic is verified, ' +
               'Digest is not offered, and a HOBA key needs its owner signed ' +
               'in) — so it is a turnstile rather than a lock there, and what ' +
@@ -1253,7 +1256,13 @@ const SPECS: Spec[] = [
               'client_secret this service issued it (section 2.5, the one ' +
               'credential checked anywhere in this service). That mode also ' +
               'refuses the password and implicit grants outright and rotates ' +
-              'refresh tokens.' },
+              'refresh tokens. Section 3.3: a scope is tied to the client ' +
+              '(#110) — this service\'s own protected scopes (admin:*, the ' +
+              'SCIM and Shared Signals scopes, the debugger permission) are ' +
+              'issued only to a client whose oauthAllowedScope declares ' +
+              'them, in every mode, and in product mode every scope is held ' +
+              'to that list or to a documented default set; a request ' +
+              'outside it is invalid_scope.' },
   { id: 'rfc6750', name: 'RFC 6750 — Bearer Token Usage',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6750',
     coverage: 'partial: bearer tokens are read from the Authorization ' +
@@ -1302,7 +1311,10 @@ const SPECS: Spec[] = [
               'publisher\'s, its claims take precedence and it is returned ' +
               'unmodified, both section 3.2.2 statement errors are ' +
               'returned, and the console and /admin-api issue statements ' +
-              'as this realm. An initial access token (section 3) is not ' +
+              'as this realm. The registered scope (section 2) is the list ' +
+              'the client may be issued (oauthAllowedScope) and is returned; ' +
+              'a registration may not declare this service\'s own protected ' +
+              'scopes. An initial access token (section 3) is not ' +
               'issued; a trusted software statement is this service\'s ' +
               'answer to a closed endpoint.' },
   { id: 'rfc9728', name: 'RFC 9728 — OAuth 2.0 Protected Resource Metadata',
@@ -4880,8 +4892,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'permission must be DEFINED before it can be GRANTED, which is ' +
           'checked in applications.js so that this form, the management API ' +
           'and the attribute editor on /admin/applications cannot disagree. ' +
-          'IT REFUSES NOTHING BY DEFAULT — an ungranted permission is ' +
-          'honoured, logged and marked here, and only ' +
+          'IN PRODUCT MODE AN UNGRANTED PERMISSION IS invalid_scope; in ' +
+          'development it is honoured, logged and marked here, and only ' +
           'oauth2.delegatedPermissionsEnforced turns it into invalid_scope. ' +
           'A grant naming a permission nobody defines is shown as DANGLING ' +
           'rather than treated as an error, because ldapmodify reaches these ' +
@@ -6843,10 +6855,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'BE DEFINED BEFORE IT CAN BE GRANTED, which is the one ordering ' +
           'rule here and is checked in applications.updateApplication() so ' +
           'that these five, the generic POST /admin-api/applications/update ' +
-          'and the console agree about it. NONE OF IT REFUSES A TOKEN ' +
-          'REQUEST unless oauth2.delegatedPermissionsEnforced is on, which ' +
-          'is off by default: an ungranted permission is honoured, logged ' +
-          'and marked rather than turned away. Removing a permission does ' +
+          'and the console agree about it. An ungranted permission is ' +
+          'refused invalid_scope in product mode; in development it is ' +
+          'honoured, logged and marked unless ' +
+          'oauth2.delegatedPermissionsEnforced is on. Removing a permission ' +
+          'does ' +
           'not revoke the grants naming it — they become dangling, because ' +
           'tidying them would be one call writing to entries it did not ' +
           'name.' },

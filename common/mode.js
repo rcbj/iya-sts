@@ -525,6 +525,38 @@ function exchangesUnverifiedTokens() {
   return !isProduct();
 }
 
+// Does the authorization server issue a scope the client never DECLARED
+// (#110, 2026-09-22)? Development says yes: a client under test asks for
+// whatever word it likes and is given it, which is what lets it be driven with
+// no registration at all. Product says no. RFC 6749 section 3.3 lets an
+// authorization server hold a request to its own policy, and RFC 7591 section
+// 2 names the policy — `scope` is the list "that the client can use when
+// requesting access tokens" — so a client is issued only what its
+// `oauthAllowedScope` lists, or, where it lists nothing, the documented
+// default set (OpenID Connect's six and this realm's OpenID4VCI scopes). A
+// scope naming an application or a delegated permission keeps its own rules.
+// **This service's own protected scopes are NOT behind this predicate**:
+// `admin:*`, the SCIM and Shared Signals scopes and the debugger permission
+// are held to the declaration in both modes (`common/scope_policy.ts`).
+function grantsUndeclaredScopes() {
+  log.debug("Entering grantsUndeclaredScopes().");
+  log.debug("Leaving grantsUndeclaredScopes().");
+  return !isProduct();
+}
+
+// Is a delegated permission the client has NOT been granted honoured anyway
+// (#110, 2026-09-22)? Development says yes unless
+// `oauth2.delegatedPermissionsEnforced` is set, because a client is exercised
+// by both answers. Product says no whatever the setting says: a permission is
+// a statement that one application may act on another's API, and issuing it to
+// a client nobody granted it makes the grant decorative. The setting now only
+// turns enforcement ON in development.
+function honoursUngrantedPermissions() {
+  log.debug("Entering honoursUngrantedPermissions().");
+  log.debug("Leaving honoursUngrantedPermissions().");
+  return !isProduct();
+}
+
 // Does the sign-in screen ENROL a security key for a passwordless sign-in that
 // names somebody holding none (2026-09-21)? Development says yes — "enrol on
 // first use", so a tester can reach a passkey sign-in with no set-up — and the
@@ -777,6 +809,34 @@ const REQUIREMENTS = [
              'unexpired and not revoked, or the exchange is refused ' +
              'invalid_request (HTTP 400, RFC 8693 section 2.2.2).',
     where: 'oauth-oidc/oauth2.ts' },
+  // #110 (2026-09-22). The protected scopes are not a row: they are held to
+  // the declaration in both modes, which is what a mode does not change.
+  { id: 'declared-scopes',
+    what: 'A client is issued only the scopes it declared',
+    development: 'Any scope a client asks for is issued, whatever its ' +
+                 '`oauthAllowedScope` lists. In BOTH modes admin:read, ' +
+                 'admin:write, the SCIM and Shared Signals scopes and the ' +
+                 'debugger permission are issued only to a client whose ' +
+                 '`oauthAllowedScope` lists them.',
+    product: 'A scope outside the client\'s `oauthAllowedScope` is refused ' +
+             'invalid_scope at the authorization, pushed authorization and ' +
+             'token endpoints (STS-OAUTH-0578) and taken off a refresh or an ' +
+             'exchange. A client that lists nothing gets the documented ' +
+             'default: openid, profile, email, address, phone, ' +
+             'offline_access and this realm\'s OpenID4VCI scopes. A scope ' +
+             'naming an application or a delegated permission keeps its own ' +
+             'rules.',
+    where: 'common/scope_policy.ts, oauth-oidc/oauth2.ts, ' +
+           'gnap/gnap_grants.ts' },
+  { id: 'delegated-permissions',
+    what: 'A delegated permission is issued only to a client granted it',
+    development: 'An ungranted permission is honoured and recorded as ' +
+                 'ungranted, unless oauth2.delegatedPermissionsEnforced is ' +
+                 'on.',
+    product: 'Refused invalid_scope (STS-OAUTH-0155) whatever ' +
+             'oauth2.delegatedPermissionsEnforced says: the grant is ' +
+             '`oauthDelegatedPermission` on the client\'s entry.',
+    where: 'oauth-oidc/oauth2.ts, common/app_permissions.ts' },
   { id: 'passkey-first-use',
     what: 'The sign-in screen does not enrol a security key for somebody ' +
           'who has not proved who they are',
@@ -1407,6 +1467,8 @@ module.exports = {
   opensIntrospection: opensIntrospection,
   acceptsUnverifiedIssuerTokens: acceptsUnverifiedIssuerTokens,
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
+  grantsUndeclaredScopes: grantsUndeclaredScopes,
+  honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,

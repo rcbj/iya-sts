@@ -465,6 +465,11 @@ function childMain() {
         });
       });
     }
+    // The GNAP client DECLARES the Shared Signals scopes (#110): the SSF gate
+    // asks the application a token was issued to on every call.
+    require(ROOT + '/common/applications').createApplication({
+      identifier: 'gnap-instance-1', protocols: ['gnap', 'ssf'],
+      fields: { oauthAllowedScope: ['ssf:read', 'ssf:write'] } });
     store = null;
     claims.reset();
     const sync1 = ssfAuth.authenticate(gnapRequest(), 'read');

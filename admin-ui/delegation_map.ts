@@ -2183,7 +2183,8 @@ class DelegationMap {
                    'its scope claim. Whether ' +
                    'the client was GRANTED it is the configured register\'s ' +
                    'question and is at /admin/delegation/allowed — this line ' +
-                   'is what was issued, and ' +
+                   'is what was issued; product mode refuses an ungranted ' +
+                   'permission, and in development ' +
                    'oauth2.delegatedPermissionsEnforced is off by default.');
       } else if (edge.permissions) {
         parts.push('DEFAULT PERMISSIONS: the token names this resource and ' +

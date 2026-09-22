@@ -697,10 +697,14 @@ address a caller chose, and these are the four bounds:
 
 **One thing is NOT a bound and must not be mistaken for one.** The management
 API is gated unconditionally — `mode.gatesSharedSignals()`, where this was
-`ssf.authRequired` until 2026-09-06 — but every credential this
-service accepts is a turnstile in development: anybody can get a token with
-either SSF scope, and any username with any password but `invalid` passes Basic
-(in product mode the Basic password is verified — see *Three schemes* below).
+`ssf.authRequired` until 2026-09-06 — but Basic is a turnstile in
+development: any username with any password but `invalid` passes it (in product
+mode the Basic password is verified — see *Three schemes* below). **A token's
+scope is tied to its client in both modes since #110 (2026-09-22)**: the token
+endpoint and GNAP issue `ssf:read`/`ssf:write` only to a client whose
+`oauthAllowedScope` declares them, and `undeclaredRefusal()` asks every OAuth
+and GNAP token whether its client still does (`STS-SSF-0107`), so withdrawing
+the declaration cuts off tokens already issued (`common/scope_policy.ts`).
 "A receiver created the stream" is therefore not evidence of much.
 
 ---

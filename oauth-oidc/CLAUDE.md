@@ -2540,9 +2540,10 @@ check in `oauth2_bcp.js` cites a section of a published Best Current Practice; a
 delegated permission cites nothing, because no RFC says an authorization server
 must have one. It is a product's design rather than a standard, and putting it
 behind `oauth2.rfc9700` would make `GET /oauth2/rfc9700` advertise a requirement
-no document contains. It has a setting of its own —
-`oauth2.delegatedPermissionsEnforced`, off by default, runtime, and settable on
-a realm.
+no document contains. **Product mode always enforces it (#110, 2026-09-22,
+`mode.honoursUngrantedPermissions()`)**; in development it has a setting of its
+own — `oauth2.delegatedPermissionsEnforced`, off by default, runtime, and
+settable on a realm — which now only turns enforcement ON there.
 
 **IT IS SEPARATE FROM `audienceScopes()` FOR THE REASON THAT KEEPS `bcp.js` OUT
 OF THE MINTING PATH.** That function TRANSLATES and is called from six grants; a
@@ -2564,7 +2565,48 @@ reads `body.scope` and nothing else. An authorization code carries what was
 authorized and was judged at the authorization endpoint; a refresh with no
 `scope` carries its grant's. That is the same rule federation follows about not
 re-checking a person after the session exists, and it is what makes the setting
-safe to turn on while something is running.
+safe to turn on while something is running. **3au below does the opposite, on
+purpose**: a permission is a relationship the client was granted, a protected
+scope is a key to this service's own API.
+
+### 3au. `scopeRefusal()` — the scopes a client may be issued (#110, 2026-09-22)
+
+The policy is `common/scope_policy.ts`'s and `common/CLAUDE.md` argues it (three
+kinds of scope; `oauthAllowedScope` as the declared twin of the sighted
+`oauthScope`). What belongs here is where this server asks it.
+
+**REFUSED WHERE `permissionRefusal()` REFUSES, AND IN THE SAME SHAPE.** The
+authorization endpoint (redirected `invalid_scope`), the pushed authorization
+request endpoint and the token endpoint (reading `body.scope`), each straight
+after the permission check: `STS-OAUTH-0577` for one of this service's protected
+scopes, in every mode, and `STS-OAUTH-0578` for any other undeclared scope, in
+product. Refusing rather than silently dropping is the decision: RFC 6749
+section 3.3 allows either, and a misconfigured client fails loudly at the
+request that was wrong rather than at a resource server three calls later.
+`scopeRefusal()` is a function of its own beside `permissionRefusal()` for that
+one's reason — a translation (`audienceScopes()`) must not also be a policy — and
+it adds only this server's DEFAULT SET to the library's: `credentialScopes()`,
+this realm's OpenID4VCI configuration scopes, beside OIDC's six.
+
+**`tokenSet()` NARROWS, AS THE BACKSTOP, AND THAT IS WHERE THE TWO POLICIES
+PART.** A grant carrying its scope from earlier — a refresh, an exchange's `body.scope ||
+subject.scope`, an assertion grant — is re-judged here, and a value the client
+may no longer have is taken off with an audit row (`STS-OAUTH-0579`), the
+`scope` member reporting what was issued (section 5.1). Unlike a delegated
+permission, removing a protected scope from a client must stop the next refresh
+minting it again; the resource servers' own `declares()` check stops the tokens
+already out. It runs before the debugger narrowing, which keeps its role rule.
+
+**RFC 7591'S `scope` IS THE DECLARATION** (`applyRegistrationFields()` writes it
+to `oauthAllowedScope`; `registrationOf()` returns it), so a registration naming
+a protected scope would be a client granting itself Admin Write:
+`registeredScopeProblem()` refuses it `invalid_client_metadata`
+(`STS-REG-0173`), in both modes and whatever the software statement says. An
+RFC 7592 update may KEEP one an administrator already declared on the entry and
+may not add one. The seeded rows are this service's own and declare theirs
+through the same registration document: `sts-management-api` and
+`sts-admin-console` `admin:read admin:write` (the explorer mints its token as the
+console), `sts-debugger-ui` the debugger permission.
 
 ### The token endpoint now records `oauthScope`, and that is not cosmetic
 

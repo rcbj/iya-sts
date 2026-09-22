@@ -95,7 +95,8 @@ any of them would be a broken implementation rather than a lenient one:
 | Decrypt an assertion a federation partner encrypted, or consume a federated sign-out | Neither: an encrypted assertion is refused naming "no assertion" (`STS-FED-0011`), and a sign-out request arriving at the federation endpoint is refused (`STS-FED-0024`). Nothing re-checks a federated person with the partner once the session exists | The same |
 | ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP is still not attested** — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, and `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
-| Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. `oauth2.delegatedPermissionsEnforced` (off) turns an ungranted delegated permission into `invalid_scope`. See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all |
+| Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on |
+| ~~Tie a scope to a client~~ — **reversed 2026-09-22 (#110)** | A client is issued only the scopes its `oauthAllowedScope` declares — or, declaring none, the default set: `openid`, `profile`, `email`, `address`, `phone`, `offline_access` and the realm's OpenID4VCI scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`); a scope naming an application or a delegated permission keeps its own rules. See [Scopes](#a-scope-is-tied-to-the-client) | Any scope is issued — except this service's own protected scopes (`admin:read`, `admin:write`, the SCIM and Shared Signals scopes, the debugger permission), which are held to the declaration in both modes (`STS-OAUTH-0577`) |
 
 **Recorded is not the same claim as authenticated, and the two are kept apart
 everywhere.** A verified TLS client certificate, a presentation at the
@@ -472,16 +473,19 @@ offered and is refused (`STS-SCIM-0056`), and a HOBA key can be registered only
 by the account's own signed-in owner (`STS-SCIM-0069`) — registration never
 creates an account.
 
-**In development it is a turnstile rather than a lock**: anybody can get a token
-with either scope, any password but `invalid` passes Basic, any username passes
+**In development it is a turnstile rather than a lock**: any password but
+`invalid` passes Basic, any username passes
 Digest with the one shared password, and anybody can register a HOBA key for any
 name. Digest and HOBA still genuinely verify the exchange, because a server that
 accepted anything would not be performing it — a replayed nonce count is refused
 **without** `stale=true`, because `stale` means "your credential was fine, try
 again".
 
-In both modes a scope is not tied to a client, so any client that can obtain a
-token can ask for `scim:write`. The discovery endpoints are open unless
+In both modes the SCIM scopes are issued only to a client whose
+`oauthAllowedScope` declares them, and a token is honoured only while its client
+still does — withdrawing the declaration cuts off tokens already issued
+(`STS-SCIM-0079`). See [Scopes](#a-scope-is-tied-to-the-client). The discovery
+endpoints are open unless
 `scim.authDiscovery` is on. A credential that was presented and failed is always
 a refusal.
 
@@ -541,6 +545,11 @@ An OAuth 2.0 access token audienced to the API, carrying `admin:read` to read an
 `admin:write` to change anything, obtained with the client-credentials grant as
 the seeded `sts-management-api` client and the secret in
 `adminApi.clientSecret` (one is generated at each start when that is empty).
+Those scopes are issued only to a client whose `oauthAllowedScope` declares
+them, in both modes, and the API asks again on every call: a token whose client
+no longer declares the scope an operation needs is refused 403
+(`STS-API-0123`). The seeded `sts-management-api` and `sts-admin-console` declare
+both, in every realm.
 
 `adminApi.authRequired=false` behaves differently by mode. **In development** it
 opens the API to anybody who can reach the port. **In product** it falls back to
@@ -571,6 +580,37 @@ because in GNAP the key IS the client.
   refusing any `@context` but its own, and a resource server cannot check the
   signature without a JSON-LD processor. Set it only for a verifier that knows
   nothing newer — see [zcap proof suites](gnap.md#zcap-proof-suites).
+
+## A scope is tied to the client
+
+Since 2026-09-22 (#110) a client is issued only the scopes it declared.
+`oauthAllowedScope` on its application entry is the list — RFC 7591 section 2's
+`scope`, written there by a registration and returned by it, and editable on the
+console and through `/admin-api/applications/add` and `remove`.
+
+* **This service's own protected scopes**, in both modes: `admin:read` and
+  `admin:write`, the SCIM scopes (`scim.scopeRead`, `scim.scopeWrite`), the
+  Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`) and the
+  embedded debugger's permission. A client that does not list one is refused
+  `invalid_scope` (`STS-OAUTH-0577`). `/admin-api`, SCIM and Shared Signals ask
+  again on every call, so withdrawing a declaration cuts off tokens already
+  issued. A dynamic registration may not declare one
+  (`invalid_client_metadata`); an administrator does. GNAP's `ssf` access
+  rights are held to the same attribute (`STS-GNAP-0719`).
+* **Every other scope, in product**: a client with a list gets what the list
+  names; a client with no list gets the default set — `openid`, `profile`,
+  `email`, `address`, `phone`, `offline_access` and this realm's OpenID4VCI
+  scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`). In development
+  any scope is issued.
+* **A scope naming an application or a delegated permission** keeps its own
+  rules: the first becomes the token's audience, the second needs a grant.
+  Product mode refuses an ungranted delegated permission whatever
+  `oauth2.delegatedPermissionsEnforced` says.
+
+The authorization, pushed authorization and token endpoints refuse. A grant that
+carries its scope from earlier — a refresh, a token exchange's inherited scope,
+an assertion grant — is issued without the scope instead, the token response's
+`scope` says what was issued, and an audit row records it (`STS-OAUTH-0579`).
 
 ## A logout cannot recall what has already been issued
 
@@ -718,8 +758,6 @@ These are true in a product deployment today, and are tracked as issues:
 * **A Workload API caller over TCP is not attested** — only one on the Unix
   socket is, since #40 made node attestation verified or refused
   ([#40](https://github.com/rcbj/iya-sts/issues/40)).
-* **A scope is not tied to a client**: any client that can obtain a token may ask
-  for `scim:write` or `ssf:write` ([#110](https://github.com/rcbj/iya-sts/issues/110)).
 * **The KDC's sign-out mark is cleared by the person's next AS-REQ**, after
   which a ticket-granting ticket from before the sign-out is accepted again
   ([#111](https://github.com/rcbj/iya-sts/issues/111)).

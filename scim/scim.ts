@@ -2570,9 +2570,11 @@ class Scim {
           'turned off here, so right now they do not') +
         ', and almost nothing is checked about it.</strong> They create and ' +
         'DELETE accounts, which is why this is the one surface in this ' +
-        'service that asks at all. Every scheme below is permissive: any ' +
-        'caller can get an access token with either scope from <a ' +
-        'href="/oauth2/token">the token endpoint</a> with any grant, any ' +
+        'service that asks at all. The schemes below are permissive, bar ' +
+        'one: an access token carries a SCIM scope only when <a ' +
+        'href="/oauth2/token">the token endpoint</a> issued it to a client ' +
+        'whose <code>oauthAllowedScope</code> declares it, and only while ' +
+        'the client still does. Beside that, any ' +
         'username with any password but <code>invalid</code> passes Basic, ' +
         'any username passes Digest with one shared password, and anybody ' +
         'can register a HOBA key for any name. A turnstile, not a lock — ' +

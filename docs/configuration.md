@@ -274,7 +274,9 @@ dressed up as a refusal.
 
 ### `oauth2.delegatedPermissionsEnforced` — the OTHER mode, and not part of the first
 
-Off by default, runtime, and settable on a trust realm.
+Off by default, runtime, and settable on a trust realm. **It matters in
+development only**: product mode refuses an ungranted permission whatever it
+says (#110, 2026-09-22).
 
 It refuses an authorization or token request that asks for a **delegated
 permission** the client has not been granted. A resource application exposes an
@@ -292,7 +294,7 @@ cites nothing, because no RFC says an authorization server must have one — it 
 a product's design rather than a standard — so folding it in would make
 `GET /oauth2/rfc9700` advertise a requirement no document contains.
 
-**Off changes nothing about what is issued**, which is what makes the register
+**Off, in development, changes nothing about what is issued**, which is what makes the register
 usable before anybody enforces anything: a permission scope still becomes the
 token's audience and its scope claim, and the console still marks which requests
 were not backed by a grant. On, the same request is `invalid_scope` at the

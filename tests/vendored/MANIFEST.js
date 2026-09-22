@@ -235,6 +235,12 @@ const JOBS = [
   { file: 'sts_realm_administrators.js', browser: false, local: true },
   { file: 'sts_consent.js',              browser: false, local: true },
   { file: 'sts_delegated_permissions_example.js', browser: false, local: true },
+  // A SCOPE IS TIED TO THE CLIENT (#110, 2026-09-22): the protected scopes
+  // refused at issuance and re-checked by SCIM, Shared Signals and
+  // /admin-api, registration's `scope` as the declaration, and product mode
+  // holding every other scope to it. `local: true`: the policy is ours. Its
+  // realm is left standing.
+  { file: 'sts_scope_policy.js',         browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no

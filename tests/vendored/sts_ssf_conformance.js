@@ -115,7 +115,11 @@ function application(identifier, fields) {
   log.debug("Leaving application().");
   return { identifier: identifier, kind: "oauth2-client", name: identifier,
            protocols: ["oauth2", "ssf"],
+           // The Shared Signals scopes are issued only to a client that
+           // declares them (#110).
            fields: Object.assign({ oauthClientId: [identifier],
+                                   oauthAllowedScope: ["ssf:read",
+                                                       "ssf:write"],
                                    oauthClientSecret: SECRET,
                                    oauthTokenEndpointAuthMethod:
                                      "client_secret_post" }, fields || {}) };
