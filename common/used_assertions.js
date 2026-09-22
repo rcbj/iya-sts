@@ -658,14 +658,29 @@ function claimInDatabase(row, cap, now) {
 // file is in the parent project's Kerberos COPY closure and must not load the
 // scheduler there. An expired row is ignored by every read whenever the
 // sweep last ran.
-function ensurePurgeJob() {
+function ensurePurgeJob(schedulerInstance) {
   log.debug("Entering ensurePurgeJob().");
   if (purgeJobRegistered) {
     log.debug("Leaving ensurePurgeJob(). Registered.");
     return;
   }
+  // **REGISTERED WHEN THE SCHEDULER LOADS, IN EVERY PROCESS (2026-09-22)**,
+  // for `cluster/cluster_claims.js`'s reason: it was registered at a
+  // process's first CLAIM, so a process that had claimed nothing did not
+  // list it and the console's two doors — answered by different workers —
+  // disagreed about the job list. `cluster/scheduler.ts` calls this with
+  // ITSELF at the end of its own module; this call stays for a process that
+  // reaches a claim first and finds the job already there.
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  // NOT LATCHED BEFORE THE REGISTRATION HAPPENS — see the same guard in
+  // `cluster/cluster_counters.js`: a half-built scheduler reached through the
+  // require above would otherwise mark the job registered while registering
+  // nothing.
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensurePurgeJob(). No scheduler yet.");
+    return;
+  }
   purgeJobRegistered = true;
-  const scheduler = require('../cluster/scheduler');
   if (scheduler.job(PURGE_JOB)) {
     log.debug("Leaving ensurePurgeJob(). Registered elsewhere.");
     return;
@@ -936,6 +951,9 @@ module.exports = {
   DATABASE_GROUP: DATABASE_GROUP,
   SNAPSHOT_GROUP: SNAPSHOT_GROUP,
   keyOf: keyOf,
+  // Exported for `cluster/scheduler.ts`, which registers this job at its own
+  // load so that every process lists it — see the function's own comment.
+  ensurePurgeJob: ensurePurgeJob,
   setStore: setStore,
   clearStore: clearStore,
   flush: flush,

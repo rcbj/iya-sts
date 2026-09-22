@@ -244,14 +244,32 @@ function sharesWindows() {
 // every process shares. It was piggy-backed on the next count in every
 // process. Registered at the first count against a shared store, lazily for
 // `cluster_claims.js`'s reason.
-function ensureWindowPurgeJob() {
+function ensureWindowPurgeJob(schedulerInstance) {
   log.debug("Entering ensureWindowPurgeJob().");
   if (windowJobRegistered) {
     log.debug("Leaving ensureWindowPurgeJob(). Registered.");
     return;
   }
+  // **REGISTERED WHEN THE SCHEDULER LOADS, IN EVERY PROCESS (2026-09-22)**,
+  // for `cluster_claims.js`'s reason and by the same route: it was registered
+  // at a process's first COUNT against a shared store, so a process that had
+  // counted nothing did not list it — and `/admin/scheduler` (a surface
+  // worker) and `GET /admin-api/scheduler` (a protocol worker) answered with
+  // different job lists, which `sts_scheduler` found in `single-node` twice,
+  // once per lazily-registered job. `cluster/scheduler.ts` calls this with
+  // ITSELF at the end of its own module; the first-count call stays and finds
+  // the job registered.
+  const scheduler = schedulerInstance || require('./scheduler');
+  // NOT LATCHED BEFORE THE REGISTRATION HAPPENS. The guard used to be set on
+  // the way in, so a call that reached a half-built scheduler through the
+  // require above — this module and that one can be loaded in either order —
+  // marked the job registered while registering nothing, and no later call
+  // could put it right.
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureWindowPurgeJob(). No scheduler yet.");
+    return;
+  }
   windowJobRegistered = true;
-  const scheduler = require('./scheduler');
   if (scheduler.job(WINDOW_PURGE_JOB)) {
     log.debug("Leaving ensureWindowPurgeJob(). Registered elsewhere.");
     return;
@@ -407,5 +425,8 @@ module.exports = {
   peekWindow: peekWindow,
   clearWindow: clearWindow,
   digestOf: digestOf,
+  // Exported for `cluster/scheduler.ts`, which registers this job at its own
+  // load so that every process lists it — see the function's own comment.
+  ensureWindowPurgeJob: ensureWindowPurgeJob,
   reset: reset
 };

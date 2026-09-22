@@ -206,6 +206,10 @@ import spiffeAuth = require('../spiffe/spiffe_auth');
 // is a thing an action has no business consulting.
 // ---------------------------------------------------------------------------
 import adminActions = require('./admin_actions');
+// The signing-key history (#42's follow-up). A LIBRARY over `realms` and
+// `error_codes` that reaches `helpers` and `pki` lazily, so requiring it here
+// closes no cycle and moves no route.
+import signingHistory = require('../common/signing_history');
 const SAML2_SP_KIND = adminActions.SAML2_SP_KIND;
 const SAML11_RP_KIND = adminActions.SAML11_RP_KIND;
 const SAML_ASSERTION_KEYS = adminActions.SAML_ASSERTION_KEYS;
@@ -434,6 +438,7 @@ interface AdminViewsDeps {
   spiffeCa: typeof spiffeCa;
   spiffeAuth: typeof spiffeAuth;
   adminActions: typeof adminActions;
+  signingHistory: typeof signingHistory;
   configSettingFor: typeof adminActions.configSettingFor;
   noXacml: typeof adminActions.noXacml;
   samlAssertionRowFor: typeof adminActions.samlAssertionRowFor;
@@ -505,6 +510,7 @@ class AdminViews {
       spiffeCa: spiffeCa,
       spiffeAuth: spiffeAuth,
       adminActions: adminActions,
+      signingHistory: signingHistory,
       configSettingFor: adminActions.configSettingFor,
       noXacml: adminActions.noXacml,
       samlAssertionRowFor: adminActions.samlAssertionRowFor
@@ -2096,6 +2102,55 @@ class AdminViews {
   // The slice, with the paging that produced it. Written once because seven
   // lists across the two drill-downs do exactly this and a hand-written eighth
   // would be the one that forgets to slice.
+  // ---------------------------------------------------------------------------
+  // THE SIGNING-KEY HISTORY, FOR BOTH DOORS (2026-09-22, #42's follow-up).
+  //
+  // `/admin/keys/history` and `GET /admin-api/keys/history` answer out of
+  // this one function, for `schedulerView()`'s reason: the console's table
+  // and a caller's JSON reporting different generations of the same key would
+  // be two answers to a question with one.
+  //
+  // **IT OBSERVES BEFORE IT READS, so a READ may write.** The history is a
+  // projection of the realm's key set (`common/signing_history.ts`), so a
+  // node that has just restarted, or a development-mode service whose keys
+  // are new this start and whose rotation jobs are off, holds keys no row
+  // describes yet — and a door that read the store alone would report a realm
+  // as having NO history when what it has is no observation. `observe()` sets
+  // a row only where one is missing or has changed, so in the steady state
+  // neither door writes anything.
+  // ---------------------------------------------------------------------------
+  signingHistoryView(query, realmId?) {
+    const { log, realms, signingHistory: history } = this.deps;
+    log.debug("Entering AdminViews.signingHistoryView().");
+    const q = query || {};
+    const id = String(realmId || realms.currentId());
+    const raw = q.unit;
+    const unit = String((Array.isArray(raw) ? raw[0] : raw) || '').trim();
+    let view: any = { realm: id, unit: unit, units: [], rows: [], total: 0,
+                      found: false, observed: false, paging: null };
+    try {
+      history.observe(id, { reason: 'observed' });
+      view = Object.assign(view, history.historyView(id, { unit: unit }),
+                           { observed: true });
+    } catch (e) {
+      // No history in this process: both doors say so rather than drawing an
+      // empty table, which reads as a realm that has never held a key.
+      log.debug("Caught in AdminViews.signingHistoryView(): " +
+                ((e && e.message) || e));
+    }
+    // ONE PAGER, over the named unit's generations. The index has a row per
+    // UNIT and a realm has tens of those at most — it is bounded by the key
+    // set — so what is paged is the list that is not.
+    const paged = this.pagedRows(q, view.rows, { noun: 'generations' });
+    view.rows = paged.shown;
+    view.paging = this.pagingJson(paged.paging);
+    Object.defineProperty(view, 'pagingRaw',
+                          { value: paged.paging, enumerable: false });
+    log.debug("Leaving AdminViews.signingHistoryView(). " + view.rows.length +
+              " of " + view.total + ".");
+    return view;
+  }
+
   pagedRows(query, rows, options?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pagedRows().");
@@ -6875,6 +6930,7 @@ export = {
   permissionsView: slot.forward('permissionsView'),
   cryptoView: slot.forward('cryptoView'),
   keysView: slot.forward('keysView'),
+  signingHistoryView: slot.forward('signingHistoryView'),
   keysExport: slot.forward('keysExport'),
   xacmlView: slot.forward('xacmlView'),
   xacmlPoliciesView: slot.forward('xacmlPoliciesView'),

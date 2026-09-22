@@ -640,11 +640,22 @@ function run(t) {
                                     '--docs'
                                   : 'missing — run: node ' +
                                     'common/error_codes.js --docs');
-  const config = fs.readFileSync(path.join(ROOT, 'docs', '_config.yml'),
-                                 'utf8');
-  t.check(config.indexOf('error-codes.md') >= 0,
-          'the page is in the site navigation',
-          'docs/_config.yml header_pages');
+  // THE SITE NAVIGATION MOVED AND THIS READ FOLLOWED IT (2026-09-22). It was
+  // `docs/_config.yml`'s `header_pages`, which listed every page across the
+  // top until there were twenty-six of them; the docs site draws a SIDEBAR
+  // from `docs/_data/navigation.yml` now and that key is gone, so this check
+  // failed on a documentation page that is in the navigation. What it asks
+  // is unchanged — a generated page nothing links to is a page nobody finds —
+  // so it reads WHEREVER the navigation is, and passes if either names it.
+  const navigation = ['_data/navigation.yml', '_config.yml']
+    .map(function (one) {
+      const at = path.join(ROOT, 'docs', one);
+      return fs.existsSync(at) ? fs.readFileSync(at, 'utf8') : '';
+    });
+  t.check(navigation.some(function (one) {
+    return one.indexOf('error-codes') >= 0;
+  }), 'the page is in the site navigation',
+          'docs/_data/navigation.yml, or _config.yml\'s header_pages');
 
   log.debug("Leaving run().");
   return checkOffTheWire(t);

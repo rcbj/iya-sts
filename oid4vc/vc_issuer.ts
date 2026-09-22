@@ -1410,6 +1410,36 @@ class VcIssuer {
     // issuer that cannot verify its own output has no business emitting it.
     const check = await bbs2023.verifyBase(issued.credential, keys.publicKey);
     if (!check.ok) {
+      // WHY IT DID NOT VERIFY, because the two causes need different fixes
+      // and the refusal alone names neither (2026-09-22). `verifyBase()`
+      // re-derives the canonical statements and the header from the SIGNED
+      // document and swallows the library's own error, so a failure is either
+      // the document canonicalising differently than it did at signing — the
+      // statements or the header differ — or the key: same statements, same
+      // header, and a signature that does not verify under this public key.
+      // Both halves are here rather than in the vendored module, which may
+      // not be edited in this repository.
+      const signedStatements = (issued.statements || []) as string[];
+      const checkedStatements = (check.statements || []) as string[];
+      const differing = signedStatements.filter(function (one, i) {
+        return checkedStatements[i] !== one;
+      });
+      const headerSame = Buffer.from(issued.header || []).equals(
+        Buffer.from(check.header || []));
+      log.error(errorCodes.tag('STS-VC-0079') +
+                'vc_issuer: the ldp_vc credential this issuer just built ' +
+                'does not verify under the key that signed it (' + bbsKid +
+                '). ' + signedStatements.length + ' statement(s) signed, ' +
+                checkedStatements.length + ' re-derived, ' + differing.length +
+                ' differing; the proof header is ' +
+                (headerSame ? 'the same' : 'DIFFERENT') + '. ' +
+                (differing.length || !headerSame
+                  ? 'The document does not canonicalise the way it did when ' +
+                    'it was signed: ' +
+                    JSON.stringify(differing.slice(0, 3))
+                  : 'The document is identical, so the signature does not ' +
+                    'match this public key — the key set\'s public and ' +
+                    'secret halves are not a pair.'));
       log.debug("Leaving VcIssuer.buildLdpVc(). It does not verify.");
       throw new Error('the ldp_vc credential this issuer just ' +
                       'built does not verify');

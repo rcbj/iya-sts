@@ -109,18 +109,36 @@ function sweepMemory(now) {
 // THE DATABASE SWEEP IS A SCHEDULER JOB (#49 P5): `cluster.claims-purge`,
 // a CLUSTER job every PURGE_INTERVAL_MS — the claims are one table every
 // process shares, so one sweep for the cluster is enough. It was a purge
-// piggy-backed on the next claim in every process. Registered at the first
-// claim against a database, LAZILY: `cluster/scheduler.ts` requires this
-// module. An expired claim is still refused at the claim itself, whenever
-// the sweep last ran — that check is correctness, not housekeeping.
-function ensurePurgeJob() {
+// piggy-backed on the next claim in every process. An expired claim is still
+// refused at the claim itself, whenever the sweep last ran — that check is
+// correctness, not housekeeping.
+//
+// **REGISTERED WHEN THE SCHEDULER LOADS, IN EVERY PROCESS (2026-09-22).** It
+// was registered at a process's first claim against a database, so a process
+// that had not claimed anything yet did not list it — and `/admin/scheduler`
+// (the surface worker) and `GET /admin-api/scheduler` (a protocol worker)
+// answered with different job lists, which `sts_scheduler` found in
+// `single-node`. `cluster/scheduler.ts` now calls this with ITSELF, at the
+// end of its own module: it requires this module, so this one cannot require
+// it back while it is still loading. The first-claim call stays, and finds the
+// job registered. `off` says why it does not run where there is no table.
+function ensurePurgeJob(schedulerInstance) {
   log.debug("Entering ensurePurgeJob().");
   if (purgeJobRegistered) {
     log.debug("Leaving ensurePurgeJob(). Registered.");
     return;
   }
+  const scheduler = schedulerInstance || require('./scheduler');
+  // NOT LATCHED BEFORE THE REGISTRATION HAPPENS (2026-09-22). The guard was
+  // set on the way in, so a call that reached a HALF-BUILT scheduler through
+  // the require above — this module and that one require each other, so
+  // either can be loaded first — marked the job registered while registering
+  // nothing, and no later call could put it right.
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensurePurgeJob(). No scheduler yet.");
+    return;
+  }
   purgeJobRegistered = true;
-  const scheduler = require('./scheduler');
   if (scheduler.job(PURGE_JOB)) {
     log.debug("Leaving ensurePurgeJob(). Registered elsewhere.");
     return;
@@ -387,5 +405,6 @@ module.exports = {
   releaseUnlessSucceeded: releaseUnlessSucceeded,
   isClaimed: isClaimed,
   digestOf: digestOf,
+  ensurePurgeJob: ensurePurgeJob,
   reset: reset
 };

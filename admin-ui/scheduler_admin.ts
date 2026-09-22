@@ -177,6 +177,28 @@ class SchedulerAdmin {
     report.runsPaging = adminViews.pagingJson(paged.paging);
     Object.defineProperty(report, 'paging', { value: paged.paging,
                                               enumerable: false });
+    // THE JOBS ARE PAGED TOO (2026-09-22, rcbj), on `jobsPage`, because the
+    // list grows without a bound anybody sets: every owner registers its
+    // jobs, and a REALM job has a row per realm — a service with fifty realms
+    // has fifty rows of each. The runs list beside it has been paged since
+    // it was written. Its own parameter, so the two move independently and
+    // each keeps the other where the reader left it (`pageParamsOf()`).
+    // EVERY job's id, before the page narrows the list: the runs filter's
+    // menu is built from it, and a menu offering only the jobs on the
+    // current page could not filter by any other.
+    const everyJobId: string[] = [];
+    (report.jobs as Json[]).forEach(function (job: Json): void {
+      if (everyJobId.indexOf(String(job.id)) < 0) {
+        everyJobId.push(String(job.id));
+      }
+    });
+    const pagedJobs = adminViews.pagedRows(q, report.jobs, { noun: 'jobs',
+                                                            name: 'jobs' });
+    report.jobs = pagedJobs.shown;
+    report.jobsPaging = adminViews.pagingJson(pagedJobs.paging);
+    report.jobIds = everyJobId;
+    Object.defineProperty(report, 'jobsPagingRaw', {
+      value: pagedJobs.paging, enumerable: false });
     log.debug("Leaving SchedulerAdmin.schedulerView(). " +
               report.jobs.length + " job row(s).");
     return report;
@@ -390,10 +412,12 @@ class SchedulerAdmin {
       admin.esc(job.realm) + '">Run now</button></form>';
   }
 
-  private jobsTable(json: Json, canWrite: boolean): string {
-    const { log, admin } = this.deps;
+  private jobsTable(json: Json, canWrite: boolean, query: Json): string {
+    const { log, admin, adminViews } = this.deps;
     const self = this;
     log.debug("Entering SchedulerAdmin.jobsTable().");
+    const nav = admin.pageNavPair(PAGE, adminViews.pageParamsOf(query),
+                                  json.jobsPagingRaw);
     const rows = json.jobs.map(function (job: Json): string {
       const state = job.state === 'off'
         ? '<strong>off</strong><br><small>' + admin.esc(job.offReason) +
@@ -436,12 +460,12 @@ class SchedulerAdmin {
     }).join('');
     log.debug("Leaving SchedulerAdmin.jobsTable(). " + json.jobs.length +
               " row(s).");
-    return '<table class="grid"><thead><tr><th>Job</th>' +
+    return nav.head + '<table class="grid"><thead><tr><th>Job</th>' +
       '<th>Kind and scope</th><th>Schedule</th><th>State</th>' +
       '<th>Last run</th><th>Time to next run</th><th>Run now</th>' +
       '</tr></thead><tbody>' +
       (rows || '<tr><td colspan="7">No job is registered.</td></tr>') +
-      '</tbody></table>';
+      '</tbody></table>' + nav.foot;
   }
 
   private leaderBlock(json: Json, canWrite: boolean): string {
@@ -494,11 +518,7 @@ class SchedulerAdmin {
     });
     const nav = admin.pageNavPair(PAGE, params, json.paging);
     const jobOptions = ['<option value="">every job</option>'].concat(
-      json.jobs.map(function (j: Json): string {
-        return j.id;
-      }).filter(function (id: string, i: number, all: string[]): boolean {
-        return all.indexOf(id) === i;
-      }).map(function (id: string): string {
+      ((json.jobIds || []) as string[]).map(function (id: string): string {
         return '<option value="' + admin.esc(id) + '"' +
           (json.filters.job === id ? ' selected' : '') + '>' +
           admin.esc(id) + '</option>';
@@ -599,7 +619,8 @@ class SchedulerAdmin {
     log.debug("Leaving SchedulerAdmin.listHtml().");
     return admin.messagesOf(req) + tiles + asOf + disabled + unknown + what +
       this.leaderBlock(json, canWrite) + '<h3>Jobs</h3>' +
-      this.jobsTable(json, canWrite) + this.runsTable(json, req.query || {}) +
+      this.jobsTable(json, canWrite, req.query || {}) +
+      this.runsTable(json, req.query || {}) +
       commands + (json.confinedToRealm ? ''
         : '<h2>Settings</h2>' + admin.configFormsFor(PAGE));
   }

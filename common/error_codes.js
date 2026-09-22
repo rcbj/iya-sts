@@ -1668,6 +1668,16 @@ const CODES = [
       '(confirm: "compromised").',
     spec: 'HTTP 400 from POST /admin-api/keys/emergency; a refusal on ' +
       '/admin/keys' },
+  { code: 'STS-KEYS-0067',
+    summary: 'A realm\'s signing-key history could not be recorded; the ' +
+      'rotation or retirement itself succeeded.',
+    spec: 'none — logged. The next observation writes the rows, because the ' +
+      'history is derived from the key set rather than from the event' },
+  { code: 'STS-KEYS-0068',
+    summary: 'The signing-key history was asked for a unit this realm has ' +
+      'no record of.',
+    spec: 'HTTP 400 from GET /admin-api/keys/history; a refusal on ' +
+      '/admin/keys/history' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

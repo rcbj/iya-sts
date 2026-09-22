@@ -3576,6 +3576,37 @@ const ENDPOINTS: EndpointEntry[] = [
           'ready" would be a page with nothing on it. A REFUSAL is still a ' +
           'page, so a bad password or an impossible format reads like every ' +
           'other refusal here. Needs Admin Write.' },
+  { path: '/admin/keys/history', group: 'Admin',
+    name: 'The signing-key history',
+    specs: [],
+    what: 'NON-SPEC (#42\'s follow-up). EVERY SIGNING KEY THIS REALM HAS ' +
+          'EVER HELD, kept for ever: when each was minted, promoted, retired ' +
+          'and dropped, and the certificate that vouched for it. The ' +
+          'PRIVATE half is still thrown away when a retired key passes its ' +
+          'grace — this is the record that it existed, and the public ' +
+          'certificate, so a signature captured months ago can still be ' +
+          'read back. With no `unit` it is the index of units; with one it ' +
+          'is that unit\'s generations, newest first, PAGED. Needs Admin ' +
+          'Read. It also OBSERVES: the history is derived from the realm\'s ' +
+          'key set, so opening the page records any key no row describes ' +
+          'yet — idempotent, so in the steady state it writes nothing.' },
+  { path: '/admin/keys/history/certificate', group: 'Admin',
+    name: 'A recorded certificate',
+    specs: [],
+    what: 'NON-SPEC (#42\'s follow-up). One generation\'s certificate and ' +
+          'its chain, leaf first, as PEM — `unit` and `kid` name it, and it ' +
+          'is served INLINE like /pki/chain/{scope}/{sha256}.pem rather ' +
+          'than as an attachment, because the console crawl navigates every ' +
+          'link this console draws and a browser told to download does not ' +
+          'navigate. '  +
+          'Unlike /admin/keys/export this needs only Admin Read, because a ' +
+          'certificate is a PUBLIC document: it is what the JWKS and the ' +
+          'metadata documents published while that key was live, which is ' +
+          'exactly what makes it the half of a retired key worth keeping. ' +
+          'Asked with no `unit` and `kid` — which is how the link on this ' +
+          'page reaches it — it answers 303 to the history index rather ' +
+          'than a refusal; a key NAMED and not held is 404 with ' +
+          'STS-KEYS-0068.' },
   { path: '/admin/keys/rotate', group: 'Admin',
     name: 'Rotate signing keys, or rotate them in an emergency',
     specs: [],
@@ -5869,6 +5900,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'the process, what it is used for, and which keystore formats it ' +
           'can be exported as. A LIST AND NEVER KEY MATERIAL. Mirrors GET ' +
           '/admin/keys.' },
+  { path: '/admin-api/keys/history', group: 'Management API',
+    name: 'The signing-key history',
+    specs: [],
+    what: 'NON-SPEC (#42\'s follow-up). Mirrors /admin/keys/history: every ' +
+          'signing key this realm has ever held — when each was minted, ' +
+          'promoted, retired and dropped, why, and the certificate that ' +
+          'vouched for it. A retired key\'s PRIVATE half is still dropped ' +
+          'at its grace; this is the record that it existed, and nothing ' +
+          'here can produce a signature. `unit` names one signing unit and ' +
+          'the answer is its generations, newest first and PAGED (`page`, ' +
+          '`per`); with none it is the index of units and their counts. 400 ' +
+          'with STS-KEYS-0068 for a unit this realm has no record of.' },
   { path: '/admin-api/keys/:action', group: 'Management API',
     name: 'Export a key pair, or rotate the signing keys', specs: [],
     what: 'NON-SPEC. `rotate` and `emergency` (#48) are /admin/keys/rotate\'s ' +

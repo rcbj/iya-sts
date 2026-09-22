@@ -17,6 +17,7 @@ more than one family needs it, not because it felt general.
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
 | `error_codes.js` | **THE ONE TABLE OF EVERY FAILURE CONDITION (2026-09-12)** — `STS-<SUBSYSTEM>-<NNNN>`, by subsystem, with what the client sees beside each. `mark()`, `tag()`, and the generator for `docs/error-codes.md`. A LEAF that requires nothing. See below. |
 | `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
+| `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
 | `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
@@ -6462,6 +6463,87 @@ Not a contradiction: an object class MAY-list NAMES attributes, it does not
 define them. The twenty-seven are defined across five documents, and the
 citation on each row is the document that DEFINES the attribute rather than the
 one whose MAY list it is met in — because the citation is there to be followed.
+
+## `signing_history.ts`: THE RECORD THAT OUTLIVES THE KEY (2026-09-22)
+
+#42 gave a realm's signing keys GENERATIONS and #42's `signing.retire` job
+DROPS a retired key once it passes its grace — which is the security rule and
+is not negotiable. What nothing did was remember that the key had existed, so
+*which key signed the token in this log line, and when was it live?* had no
+answer a minute after the grace elapsed.
+
+**rcbj chose option B (2026-09-22): go on throwing the private key away, and
+keep the certificates for later inspection.** So a row here says a key
+existed, which unit it belonged to, when it was minted, promoted, retired and
+dropped, why, and — because a certificate is a PUBLIC document, the one this
+service published in its JWKS and its metadata while that key was live — the
+certificate that vouched for it. **Nothing in a row can produce a signature**,
+and `tests/signing_history.js` searches every row and every view for the PEM,
+the `KeyObject` and the BBS secret key at every stage.
+
+### It is a PROJECTION of the key set, and that is the whole design
+
+The obvious implementation records at each site that changes a key — mint,
+promote, retire, drop — which is four call sites in two files and a fifth the
+day somebody adds a rotation path. **A site that forgets leaves a hole nothing
+can see**, because a missing row and a key that never existed look identical.
+
+So `observe(realmId, { reason })` walks the realm's CURRENT set and its
+standby entries, writes what it finds, and marks DROPPED every row of that
+realm whose key the set no longer holds. It is idempotent — a row is written
+only where one is missing or has changed — so a caller that forgets to call it
+loses only the PROMPTNESS of the record.
+
+Three consequences are decisions rather than mechanics:
+
+* **A READ OBSERVES, so a GET may write.** `/admin/keys/history` and
+  `GET /admin-api/keys/history` both go through
+  `admin-core/admin_views.ts`'s `signingHistoryView()`, which observes first:
+  a node that has just restarted, or a development-mode service whose keys are
+  new this start and whose rotation jobs are off (`mode.rotatesSigningKeys()`),
+  holds keys no row describes yet, and a door that read the store alone would
+  report a realm as having no history when what it has is no OBSERVATION. In
+  the steady state neither door writes anything.
+* **A PROCESS HOLDING NO KEY SET FOR THE REALM MARKS NOTHING DROPPED.** It
+  asks `helpers.stsKeysFor.existing()` and never `.of()`, which GENERATES —
+  the key-agreement storm of 2026-09-12 (*THE REALM WATCHER ASKS AND DOES NOT
+  TAKE*, above) was one caller reading keys through a factory that makes them,
+  and a history page must never be the thing that mints a realm's signing
+  keys. Not holding a realm's keys is the ordinary state of a node that has
+  never answered a request in it, and is no evidence that its keys are gone.
+* **THE ONE WINDOW THE RULE CANNOT CLOSE IS AN EMERGENCY ROTATION**, which
+  drops a unit's retired keys and its `next` outright (#48) — so
+  `signing_rotation.ts` observes BEFORE it revokes as well as after.
+
+### What is kept, and what is never restamped
+
+The timestamps only ever move FORWARD from absent to set: an observation that
+sees a key in a role it was already in must not restamp it, or every read
+would report the key as promoted a moment ago. The certificate is captured
+ONCE and never replaced — a re-certification issues a new certificate over the
+same key, and what the row is for is what vouched for that key WHILE IT WAS
+LIVE. A unit with no certificate at all (the BBS key: bbs-2023 keys are not
+X.509 subjects) records none, and is still a row.
+
+**THE STORE IS NEVER SWEPT.** `realms.map({ persist: 'signing.history' })`
+takes `retain`'s default of `keep`, which is the one store here whose whole
+point is to outlive what it describes. It grows by a row per unit per
+rotation — twelve a year per unit at a thirty-day interval — which is why both
+doors PAGE it (`admin-ui/CLAUDE.md`, *every list that can grow without a bound
+is paged*). Two codes: `STS-KEYS-0067` (a row could not be recorded — logged,
+and the rotation still stands, because the next observation writes it) and
+`STS-KEYS-0068` (a unit this realm has no record of).
+
+**Eight mutants, seven caught**; the eighth is recorded as equivalent AT ITS
+LAYER and is worth knowing about — a standby entry's private fields carried
+into `keysOfSet()` never reach a row, because `rowFor()` builds from a FIXED
+FIELD LIST rather than spreading what it was handed. The combined mutant that
+IS observable — the entry copied wholesale at both layers — is caught by the
+leak assertions. Two more survived the first round and both were the FIXTURE,
+this directory's standing lesson: a fake `signingUnitsOf()` that threw on a
+null set made the held-keys guard unreachable, and the re-certification check
+ran after the key had been dropped, where a dropped key is never looked at
+again.
 
 ## `mode.js`: WHERE `development` AND `product` ARE TOLD APART (2026-09-06)
 

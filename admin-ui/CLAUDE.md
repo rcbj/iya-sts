@@ -1812,6 +1812,74 @@ matches a presented `<ds:KeyInfo>` against what is registered is a thumbprint.
 attributes each profile writes; `oauth-oidc/CLAUDE.md` 3z argues why the two
 sets may never be merged.
 
+### EVERY LIST THAT CAN GROW WITHOUT A BOUND IS PAGED (rcbj, 2026-09-22)
+
+**A new table on this console pages unless something in the service caps its
+length.** Not "pages when it looks long": the rule is about what the list is OF.
+A list of realms, of jobs, of runs, of applications, of people, of tokens, of
+entries in a store — anything a deployment, an operator or time can add to —
+grows until the page is unusable, and the run that discovers it is the run on a
+service with fifty realms rather than the one on a developer's machine. A list
+with a fixed set of members (the nine leaf profiles, the two console roles, the
+six built-in roles) does not need it.
+
+Use what is already here rather than a new mechanism: `adminViews.pagedRows(
+query, rows, { noun, name })` for the slice, `adminViews.pagingJson()` for the
+reply, `adminViews.pageParamsOf(query)` for the links' other parameters, and
+`admin.pageNavPair(path, params, paging)` for the control above and below the
+table. Two lists on one page take a `name` each — `pagedRows(..., { name:
+'jobs' })` moves on `jobsPage` — so each keeps its place while the other moves,
+and every other control's `back` carries both (`/admin/consent` and
+`/admin/scheduler` are the worked examples; `tests/consent_paging.js` and
+`tests/scheduler_paging.js` pin them). **The JSON and the page show the same
+slice**, because they are one view model: a reply that carried every row while
+the table showed fifty would be two answers to one question, and rule 7's
+parity check reads the reply.
+
+**And a filter menu is built from the WHOLE list, never from the page** — the
+scheduler's runs filter offers every job id, which is why the view model keeps
+`jobIds` beside the paged rows. A menu built from `shown` can only filter by
+what is already on the screen.
+
+### THE KEY-PAIR HISTORY IS A SUB-PAGE, AND IT IS PAGED (2026-09-22)
+
+`/admin/keys/history` — reached from a *History* link on every row of the
+Rotation table on `/admin/keys`, and from an index of its own — is **every
+signing key this realm has ever held**: when each was minted, promoted,
+retired and dropped, why, and the certificate that vouched for it.
+`common/CLAUDE.md`'s *the record that outlives the key* argues the store; what
+is this file's:
+
+* **IT IS A SUB-PAGE AND NOT A SECTION**, because the list it draws is the one
+  thing on that page with no bound: the Rotation table has a row per unit, and
+  a unit has a row here per rotation, for ever. It takes one pager over the
+  named unit's generations (`per`, `page`) and none over the INDEX of units,
+  which the key set bounds.
+* **THE CERTIFICATE IS A RESOURCE, NOT A CELL.** `/admin/keys/history/
+  certificate?unit=&kid=` sends the leaf and its chain as PEM, INLINE (no
+  `Content-Disposition`): a PEM in a table makes every other column
+  unreadable, and an attachment cannot be linked — `sts_admin_console`
+  navigates every link this console draws, and a browser told to download does
+  not navigate. **Asked with no `unit` and `kid` it answers 303 to the
+  index**, because `/admin/sts-metadata` links every described endpoint and
+  reaches this one bare; a key NAMED and not held is still 404. **And it
+  OBSERVES before it reads**, like the page: the rows are a persisted store,
+  so with request workers the page and the link it drew are answered by
+  different processes, and the second would otherwise 404 until replication
+  caught up.
+* **BOTH READS NEED ONLY ADMIN READ**, where `/admin/keys` itself needs Admin
+  Write because *there reading IS taking*. Nothing here is key material: a
+  certificate is the public document this service already published in its
+  JWKS and its metadata while that key was live, which is exactly what makes
+  it the half of a retired key worth keeping.
+* **THE MODEL IS `admin-core/admin_views.ts`'s `signingHistoryView()`**, which
+  `GET /admin-api/keys/history` answers out of as well — `schedulerView()`'s
+  arrangement, so the table and a caller's JSON cannot report different
+  generations of one key. It OBSERVES before it reads, so this GET may write;
+  the module's header argues why, and why in the steady state it does not.
+
+`tests/signing_history.js` pins the store and the model.
+
 ### THE TWO KEY-PAIR TABLES ARE PAGED (2026-09-13)
 
 *Applications* and *People* drew every row they had. They page now, separately,

@@ -89,6 +89,12 @@ import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import cluster = require('./cluster');
 import clusterClaims = require('./cluster_claims');
+// The other two lazily-registered sweeps (2026-09-22). Both are LEAVES over
+// config, realms and error_codes, so requiring them here closes no cycle —
+// and registering their jobs at this module's load is what makes every
+// process list the same jobs. See the block at the foot of this file.
+import clusterCounters = require('./cluster_counters');
+import usedAssertions = require('../common/used_assertions');
 
 type Json = any;
 
@@ -1944,6 +1950,24 @@ scheduler.register({
     return { removed: scheduler.prune() };
   }
 });
+
+// ---------------------------------------------------------------------------
+// THE THREE SHARED-TABLE SWEEPS, REGISTERED HERE SO EVERY PROCESS LISTS THEM
+// FROM THE START (2026-09-22) rather than from its first claim, count or
+// assertion. Each owner still has its own lazy call for the process that
+// reaches the store first; this is what makes the job list the SAME in every
+// process, which is what `/admin/scheduler` and `GET /admin-api/scheduler`
+// are compared on — they are answered by different workers, so a job
+// registered on first use appeared on one door and not the other
+// (`sts_scheduler`, in `single-node`, once per job).
+//
+// Registered from HERE rather than at each owner's own load because two of
+// the three require this module back; calling them with the instance is what
+// keeps that from being a cycle.
+// ---------------------------------------------------------------------------
+clusterClaims.ensurePurgeJob(scheduler);
+clusterCounters.ensureWindowPurgeJob(scheduler);
+usedAssertions.ensurePurgeJob(scheduler);
 
 export = {
   Scheduler: Scheduler,

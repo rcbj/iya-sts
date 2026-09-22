@@ -3310,12 +3310,27 @@ function bbsKidOf(publicKey) {
 
 function bbsKeyFor(keys) {
   log.debug("Entering bbsKeyFor().");
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.bbsKeyHeldFor(realmId);
   if (keys.bbsKey && keys.bbsKey.publicKey) {
+    // THE HELD KEY WINS OVER ONE THIS PROCESS MADE (2026-09-22), for the
+    // reason the generator below adopts: the key a process generated is its
+    // own until the keystore says otherwise, and without this a process that
+    // made one before another process's key arrived went on signing with it
+    // for the life of the process. Asking here costs a base64 decode of a
+    // blob this process already holds.
+    if (held && held.publicKey &&
+        !Buffer.from(held.publicKey).equals(
+          Buffer.from(keys.bbsKey.publicKey))) {
+      log.info('The "' + realmId + '" realm\'s BBS key is now ' +
+               bbsKidOf(held.publicKey) + ', which another process ' +
+               'published; the one this process made (' +
+               bbsKidOf(keys.bbsKey.publicKey) + ') is dropped.');
+      keys.bbsKey = held;
+    }
     log.debug("Leaving bbsKeyFor(). On the set.");
     return Promise.resolve(keys.bbsKey);
   }
-  const realmId = String(keys.realm || realms.currentId());
-  const held = keystore.bbsKeyHeldFor(realmId);
   if (held) {
     keys.bbsKey = held;
     log.debug("Leaving bbsKeyFor(). Already made by this service.");
@@ -3333,8 +3348,34 @@ function bbsKeyFor(keys) {
       if (took !== false) {
         keystore.remember(realmId, keys);
       }
-      log.info('A BBS key was made for the "' + realmId + '" realm: ' +
-               bbsKidOf(keys.bbsKey.publicKey) + '.');
+      // ---------------------------------------------------------------
+      // AND THE WINNER IS ADOPTED (2026-09-22). Every other key in the set
+      // is arbitrated — first writer wins, the losers adopt — and this one
+      // generated, published and then went on using its OWN pair whatever
+      // the answer was. Two processes reaching this at once therefore kept
+      // two BBS keys for one realm: measured in `single-node`, where the
+      // front process and a request worker each made one, so a credential
+      // signed under one was verified against the other (`ldp_vc_refresh`,
+      // `vc_did`) and `/bbs/keys/<kid>` answered "this realm holds no BBS
+      // key" for a kid this service had just signed with
+      // (`ldp_vc_issuance`, in `cluster`, across nodes). Asking the
+      // keystore again is what makes the race decidable: whatever is held
+      // now is what every process must sign with, and a pair this process
+      // made and lost with is dropped.
+      const winner = keystore.bbsKeyHeldFor(realmId);
+      if (winner && winner.publicKey &&
+          !Buffer.from(winner.publicKey).equals(
+            Buffer.from(keys.bbsKey.publicKey))) {
+        log.info('The BBS key this process made for the "' + realmId +
+                 '" realm (' + bbsKidOf(keys.bbsKey.publicKey) + ') lost to ' +
+                 'one another process had already published (' +
+                 bbsKidOf(winner.publicKey) + '); that one is adopted and ' +
+                 'this one is dropped.');
+        keys.bbsKey = winner;
+      } else {
+        log.info('A BBS key was made for the "' + realmId + '" realm: ' +
+                 bbsKidOf(keys.bbsKey.publicKey) + '.');
+      }
     }
     keys.bbsKeyPromise = null;
     return keys.bbsKey;

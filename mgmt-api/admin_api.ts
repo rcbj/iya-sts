@@ -2316,6 +2316,59 @@ class AdminApi {
           log.debug("Leaving the management API key list endpoint.");
         } },
 
+      { method: 'GET', path: BASE + '/keys/history', tag: 'Service',
+        operationId: 'getKeyHistory',
+        summary: 'Every signing key this realm has ever held',
+        description: 'THE RECORD THAT OUTLIVES THE KEY (#42\'s follow-up). ' +
+                     'A retired signing key is DROPPED once it passes its ' +
+                     'grace and its private half is gone — this is what ' +
+                     'survives: when each key of each unit was minted, ' +
+                     'promoted, retired and dropped, why, and the ' +
+                     'certificate that vouched for it, with its serial, ' +
+                     'subject and validity window. Nothing here is key ' +
+                     'material, and nothing here can produce a ' +
+                     'signature.\n\nWith no `unit` the answer is the index ' +
+                     'of units and their counts; with one it is that ' +
+                     'unit\'s generations, newest first and PAGED (`page`, ' +
+                     '`per`). The history is derived from the realm\'s key ' +
+                     'set, so this read also OBSERVES — idempotent, so in ' +
+                     'the steady state it writes nothing.',
+        mirrors: 'GET /admin/keys/history',
+        parameters: [
+          { name: 'unit', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One signing unit (`jose:RS256`, `xml:RS256`, ' +
+                         '`jose:ES256:P-256`, `bbs:BBS`, …). Omitted, the ' +
+                         'answer is the index of units and their counts.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The units, and one unit\'s generations.',
+        handler: function (req, res) {
+          log.debug("Entering the management API key history endpoint.");
+          const view = adminViews.signingHistoryView(req.query || {});
+          if (!view.observed) {
+            errorCodes.mark(res, 'STS-API-0011');
+            self.sendJson(res, 503, { ok: false, errors: [
+              'The signing-key history is not available in this process.'] });
+            log.debug("Leaving the management API key history endpoint. " +
+                      "No history.");
+            return;
+          }
+          if (view.unit && !view.found) {
+            errorCodes.mark(res, 'STS-KEYS-0068');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'This realm has no record of a signing unit called "' +
+              view.unit + '".'], units: view.units.map(function (one) {
+                return one.unit;
+              }) });
+            log.debug("Leaving the management API key history endpoint. " +
+                      "Unknown unit.");
+            return;
+          }
+          self.sendJson(res, 200, view);
+          log.debug("Leaving the management API key history endpoint. " +
+                    view.rows.length + " row(s).");
+        } },
+
       // AN ACTION RESOURCE RATHER THAN A BARE POST, and the suite is why. Every
       // other POST here is `/<resource>/:action`, and
       // `sts_admin_api_operations.js` probes each of them with an action nobody
@@ -2324,7 +2377,12 @@ class AdminApi {
       // got a 404 — the route pattern simply did not match. One `export` action
       // today; a second (an import, a rotation) goes in the same list.
       { method: 'POST', route: BASE + '/keys/:action', tag: 'Service',
-        mirrors: 'POST /admin/keys/export',
+        // BOTH console paths (2026-09-22): the rotate and emergency actions
+        // (#48) came in through this handler and the declaration still named
+        // only the export form, so `/admin/keys`'s two Rotate forms mirrored
+        // no operation and `sts_admin_console` reported their POST target as
+        // a route that does not exist (rule 7).
+        mirrors: 'POST /admin/keys/export and POST /admin/keys/rotate',
         handler: function (req, res) {
           log.debug("Entering the management API key export endpoint.");
           const body = self.withAction(req, parseBody(req));

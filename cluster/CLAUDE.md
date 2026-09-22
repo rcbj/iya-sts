@@ -477,6 +477,31 @@ A registration missing a member is refused WHOLE and thrown
 (`STS-SCHED-0009`). A setting of 0 for an interval means OFF, and the page
 says so; it is never read with `|| n`.
 
+**EVERY PROCESS MUST REGISTER THE SAME JOBS (2026-09-22).** A registration is
+the owner's load-time call, so a job registered LAZILY — at a process's first
+claim, first count, first assertion — is listed by the processes that have
+done that thing and by no others. With request workers that is visible from
+outside: `/admin/scheduler` is answered by a SURFACE worker and
+`GET /admin-api/scheduler` by a PROTOCOL worker, so the two doors reported
+different job lists and `sts_scheduler`'s *the page and the API agree* failed
+in `single-node` — once for `cluster.claims-purge`, then again for
+`cluster.rate-window-purge`, which is the same defect in the next owner.
+
+The three shared-table sweeps — `cluster/cluster_claims.js`,
+`cluster/cluster_counters.js` and `common/used_assertions.js` — are therefore
+registered at the foot of `scheduler.ts`, which calls each `ensure…Job()` with
+the scheduler INSTANCE. It is done from here rather than at each owner's own
+load because two of the three require this module back, and passing the
+instance is what keeps that from being a cycle. Each owner keeps its lazy call
+for the process that reaches the store first; it finds the job already there.
+
+**And the `…Registered` guard is set AFTER the registration, never before.**
+It was set on the way in, so a call that reached a HALF-BUILT scheduler
+through the cycle marked the job registered while registering nothing, and no
+later call could put it right — a job missing from one process for the life of
+that process. A guard that latches before the work is done is a guard that
+remembers a failure as a success.
+
 **Four things that are easy to get wrong:**
 
 * **A run is idempotent per SLOT, and only the current slot is ever due.**

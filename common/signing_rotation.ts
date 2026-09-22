@@ -111,6 +111,10 @@ interface SigningRotationDeps {
   ssf: () => Json;
   applications: () => Json;
   authn: () => Json;
+  // The signing-key history (#42's follow-up). Lazy like the rest, and
+  // OBSERVED rather than told: it derives its rows from the key set, so
+  // every path that changes a key is covered by a call at the end of it.
+  history: () => Json;
   now: () => number;
 }
 
@@ -156,6 +160,9 @@ class SigningRotation {
       },
       authn: function (): Json {
         return require('../authn/authn');
+      },
+      history: function (): Json {
+        return require('./signing_history');
       },
       now: function (): number {
         return Date.now();
@@ -356,6 +363,30 @@ class SigningRotation {
   // one, and every unit whose next key has been published for a whole
   // interval promoted. Resolves `{ minted, rotated, generation }`.
   // ---------------------------------------------------------------------------
+  // THE HISTORY (#42's follow-up, 2026-09-22). Every path that changes a key
+  // ends here, and what is written is DERIVED from the key set rather than
+  // from the act — see `common/signing_history.ts`'s header for why, and why
+  // a caller that forgot would lose only the promptness of the record.
+  //
+  // It never throws and its answer is not read: a rotation that has already
+  // happened must not be reported as failed because a record of it could not
+  // be written, and the module logs STS-KEYS-0067 where it could not.
+  // ---------------------------------------------------------------------------
+  private noteHistory(realmId: string, reason: string): void {
+    const { log, history } = this.deps;
+    log.debug("Entering SigningRotation.noteHistory(). realm=" + realmId);
+    try {
+      history().observe(realmId, { reason: reason });
+    } catch (e) {
+      // No history module in this process, or a store that refused: the keys
+      // are what they are either way.
+      log.debug("Caught in SigningRotation.noteHistory(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving SigningRotation.noteHistory().");
+  }
+
+  // ---------------------------------------------------------------------------
   async rotateDue(realmId: string, ctx?: Json): Promise<Json> {
     const { log, helpers } = this.deps;
     log.debug("Entering SigningRotation.rotateDue(). realm=" + realmId);
@@ -389,6 +420,9 @@ class SigningRotation {
       due.push('refresh:enc');
     }
     if (!due.length) {
+      // The next keys minted above are new generations even though nothing
+      // rotated, so they are recorded here rather than only at a promotion.
+      this.noteHistory(realmId, 'a next key minted');
       log.debug("Leaving SigningRotation.rotateDue(). Nothing due.");
       return { minted: minted.minted, rotated: [],
                generation: minted.generation };
@@ -420,6 +454,11 @@ class SigningRotation {
     // the units rotate with no grace, and every session of the realm ends.
     let compromised: Json[] = [];
     if (o.emergency) {
+      // BEFORE the keys go. An emergency drops a unit's retired keys and its
+      // `next` outright (#48), so a history written only afterwards would
+      // have no row for them at all — the one window `observe()`'s
+      // derive-from-the-set rule cannot close by itself.
+      this.noteHistory(realmId, 'an emergency rotation');
       compromised = this.revokeCompromised(realmId, keys, wanted);
     }
     // One promotion per distinct grace, so each unit keeps its own; almost
@@ -492,6 +531,8 @@ class SigningRotation {
              rotated.map(function (r: Json): string {
                return r.unit + ' ' + r.from + ' -> ' + r.to;
              }).join(', ') + ' (generation ' + generation + ').');
+    this.noteHistory(realmId, o.emergency ? 'an emergency rotation'
+      : 'a rotation (' + String(o.reason || 'scheduled') + ')');
     log.debug("Leaving SigningRotation.rotate(). " + rotated.length + ".");
     return { rotated: rotated, generation: generation,
              revoked: compromised.length, sessionsEnded: signedOut.length };
@@ -760,6 +801,9 @@ class SigningRotation {
                  realmId + '" realm dropped after their grace',
         detail: { dropped: done.dropped, superseded: superseded }
       });
+    }
+    if ((done.dropped || []).length) {
+      this.noteHistory(realmId, 'dropped past its grace');
     }
     log.debug("Leaving SigningRotation.retireDue(). " +
               (done.dropped || []).length + " dropped.");
