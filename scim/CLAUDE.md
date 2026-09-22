@@ -309,11 +309,17 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   offered, and the OAuth ones must carry `scim:read` or `scim:write` — the first
   scope requirement anywhere in this service. **It is still a turnstile rather
   than a lock** IN DEVELOPMENT MODE, which is a different sentence and the one
-  that matters: anybody can get a token with either scope from any grant, any
-  password but `invalid` passes Basic, any username passes Digest with the one
-  shared password, and anybody can register a HOBA key for any name. **In
-  product mode none of those four halves holds** — see the audit section at the
-  foot of this file. What it buys is that a client's
+  that matters: any password but `invalid` passes Basic, any username passes
+  Digest with the one shared password, and anybody can register a HOBA key for
+  any name. **In product mode none of those three halves holds** — see the audit
+  section at the foot of this file. **A TOKEN'S SCOPE IS TIED TO ITS CLIENT IN
+  BOTH MODES (#110, 2026-09-22)**: until then anybody could get a token with
+  either scope from any grant. The token endpoint now issues the SCIM scopes
+  only to a client whose `oauthAllowedScope` declares them, and
+  `settleDecision()` asks every token whether its client still declares the
+  scope the operation needs (`STS-SCIM-0079`, 403 `insufficient_scope`), so
+  withdrawing the declaration cuts off tokens already issued. The policy is
+  `common/scope_policy.ts`'s (`common/CLAUDE.md`). What it buys is that a client's
   401, 403, challenge-response and scope handling can be exercised at all — none
   of which an open endpoint can produce. See rule 6a-ii and `scim_auth.ts`.
   **A BASIC PASSWORD IS VERIFIED IN THE WORKER POOL since 2026-09-21**: product

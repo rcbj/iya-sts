@@ -304,8 +304,12 @@ async function test() {
     "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
+    // The Shared Signals and SCIM scopes are issued only to a client that
+    // declares them (#110).
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthAllowedScope: ["ssf:read", "ssf:write", "scim:read",
+                                  "scim:write"],
               oauthGrantType: ["client_credentials"] } },
     "created the receiver's application");
   const token = await tokenFor("ssf:read ssf:write");

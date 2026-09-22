@@ -237,6 +237,8 @@ import audit = require('../common/audit');
 // active-active mode is held to. Both LIBRARIES; `cluster_claims.js` requires
 // `persistence.js` lazily, so neither closes a cycle.
 import clusterClaims = require('../cluster/cluster_claims');
+// WHICH CLIENTS MAY HOLD THE SCIM SCOPES (#110), asked again of every token.
+import scopePolicy = require('../common/scope_policy');
 import capabilities = require('../cluster/cluster_capabilities');
 
 // `mtls.js` is required for its place in the require order and nothing of it
@@ -607,6 +609,7 @@ interface ScimAuthDeps {
   errorCodes: typeof errorCodes;
   audit: typeof audit;
   clusterClaims: typeof clusterClaims;
+  scopePolicy: typeof scopePolicy;
   // `common/tls_client_certificates.js`, required when first asked for — see
   // attemptClientCertificate().
   loadTlsClientCertificates(): { checkSocket(socket: any): any };
@@ -672,6 +675,7 @@ class ScimAuth {
       errorCodes: errorCodes,
       audit: audit,
       clusterClaims: clusterClaims,
+      scopePolicy: scopePolicy,
       loadTlsClientCertificates: function loadTlsClientCertificates() {
         helpers.log.debug("Entering loadTlsClientCertificates().");
         helpers.log.debug("Leaving loadTlsClientCertificates().");
@@ -863,10 +867,11 @@ class ScimAuth {
           'An access token issued by this service\'s own authorization ' +
           'server, presented as "Authorization: Bearer <token>". Any grant ' +
           'will do — authorization code, client credentials, password, ' +
-          'refresh, device, token exchange — and the scope is whatever was ' +
-          'asked for, because this authorization server grants what it is ' +
-          'asked. The token must carry the read scope to read and the write ' +
-          'scope to write, must be one THIS service signed, must not have ' +
+          'refresh, device, token exchange — but the SCIM scopes are issued ' +
+          'only to a client whose oauthAllowedScope declares them, in every ' +
+          'mode. The token must carry the read scope to read and the write ' +
+          'scope to write, its client must still declare that scope, it ' +
+          'must be one THIS service signed, must not have ' +
           'been revoked, and must not have been narrowed by RFC 8707 to a ' +
           'different resource.',
         attempt: this.attemptBearer.bind(this),
@@ -2909,7 +2914,7 @@ class ScimAuth {
   // THE SECOND HALF: the scope, the funnel, the session and the policy, for a
   // credential that was accepted.
   private settleDecision(req, wanted?, decision?) {
-    const { log, hasScope, accessGate, errorCodes } = this.deps;
+    const { log, hasScope, accessGate, errorCodes, scopePolicy } = this.deps;
     log.debug("Entering ScimAuth.settleDecision().");
 
     // Accepted. The access control policy, which is two lines and is published
@@ -2937,14 +2942,37 @@ class ScimAuth {
                   (decision.scopes ? '"' + decision.scopes + '"' : 'no ' +
                   'scope at ' +
                   'all') + '. Ask for it at the authorization or token ' +
-                  'endpoint — this authorization server grants what it is ' +
-                  'asked, so any grant will do. Reads need ' +
+                  'endpoint, as a client whose oauthAllowedScope declares ' +
+                  'it. Reads need ' +
                   '"' + this.scopeRead() + '" and writes need "' +
                   this.scopeWrite() +
                   '"; one does not imply the other, deliberately, so that a ' +
                   'client\'s handling of a read-only credential is something ' +
                   'you can actually produce here.',
           headers: { 'WWW-Authenticate': [challenge] }
+        });
+      }
+      // AND THE CLIENT STILL DECLARES IT (#110, 2026-09-22). The token
+      // endpoint issues a SCIM scope only to a client whose
+      // `oauthAllowedScope` lists it; asked again here, on every call, so an
+      // allowance removed from a client stops the tokens it already holds
+      // rather than waiting for them to expire.
+      if (!scopePolicy.declares(decision.clientId, required)) {
+        log.debug("Leaving ScimAuth.settleDecision(). The client no longer " +
+                  "declares " + required + ".");
+        const withdrawn = (decision.scheme === 'dpop' ? 'DPoP' : 'Bearer') +
+          ' realm="' + this.realm() + '", error="insufficient_scope", ' +
+          'error_description="the client does not declare ' + required +
+          '", scope="' + required + '"';
+        return this.coded('STS-SCIM-0079', {
+          ok: false, status: 403, scimType: null,
+          detail: 'This access token carries "' + required + '", and the ' +
+                  'client it was issued to, "' + (decision.clientId || '') +
+                  '", does not declare that scope in its oauthAllowedScope. ' +
+                  'A SCIM scope is honoured only while the client declares ' +
+                  'it, so removing it from the application cuts off tokens ' +
+                  'already issued.',
+          headers: { 'WWW-Authenticate': [withdrawn] }
         });
       }
     }
@@ -3273,11 +3301,11 @@ class ScimAuth {
         'policy. It is two lines because this service authenticates nobody ' +
         'in the sense that matters — it is a turnstile, not a lock.',
 
-        'AUTHORIZATION IS NOT AUTHENTICATION HERE EITHER. Any caller can get ' +
-        'any scope: this authorization server grants what it is asked, from ' +
-        'any grant, to any client_id. What the scope requirement exercises ' +
-        'is the CLIENT\'s handling of one, which is the thing a permissive ' +
-        'server otherwise makes untestable.'
+        'A SCOPE IS TIED TO A CLIENT (#110). The SCIM scopes are issued only ' +
+        'to a client whose oauthAllowedScope declares them, in both modes, ' +
+        'and a token is honoured only while its client still declares the ' +
+        'scope it uses — so removing the declaration cuts off tokens ' +
+        'already issued (STS-SCIM-0079).'
       ]
     };
     log.debug("Leaving ScimAuth.describe(). " + out.schemes.length +

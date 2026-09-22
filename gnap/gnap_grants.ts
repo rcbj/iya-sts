@@ -101,6 +101,9 @@ import transport = require('./gnap_http');
 import monitor = require('./gnap_monitor');
 import signals = require('./gnap_signals');
 import accessRights = require('./gnap_access');
+// WHICH CLIENTS MAY HOLD THIS SERVICE'S PROTECTED SCOPES (#110), the same
+// question the OAuth token endpoint asks. A library.
+import scopePolicy = require('../common/scope_policy');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
@@ -169,6 +172,7 @@ interface GnapGrantsDeps {
   monitor: typeof monitor;
   signals: typeof signals;
   accessRights: typeof accessRights;
+  scopePolicy: typeof scopePolicy;
   // oauth2.js, required when it is needed and not before (it registers
   // routes, and was a lazy require before the conversion).
   loadOauth2(): typeof import('../oauth-oidc/oauth2');
@@ -633,6 +637,62 @@ class GnapGrants {
     return 'gnap:' + nodeCrypto.createHash('sha256')
         .update(this.canonicalJson(right), 'utf8').digest('base64url').slice(0,
         22);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THIS SERVICE'S OWN PROTECTED SCOPES, AS GNAP ACCESS RIGHTS (#110,
+  // 2026-09-22). `ssf/ssf_auth.ts` accepts a GNAP token whose access names
+  // `ssf:read` / `ssf:write` — as a reference string, or an object of type
+  // `ssf` with those actions — so those rights are the Shared Signals scopes
+  // by another spelling, and they are held to the rule the OAuth token
+  // endpoint holds them to: issued only to a client whose application entry
+  // DECLARES them in `oauthAllowedScope`. The same attribute, deliberately:
+  // one declared vocabulary per application, whatever protocol it asks in.
+  // In every mode, as at the token endpoint. `gnapAllowedAccess` beside it is
+  // a narrowing an operator may add; this is not optional.
+  //
+  // '' when allowed, and the sentence to refuse with otherwise.
+  // ---------------------------------------------------------------------------
+  private protectedAccessProblem(app, access) {
+    const { log, config, scopePolicy } = this.deps;
+    log.debug("Entering GnapGrants.protectedAccessProblem().");
+    const identifier = String((app && app.identifier) || '');
+    const read = String(config.value('ssf.authScopeRead') || 'ssf:read');
+    const write = String(config.value('ssf.authScopeWrite') || 'ssf:write');
+    const wanted: string[] = [];
+    (access || []).forEach(function (right) {
+      const name = typeof right === 'string' ? right :
+        String((right && right.type) || '');
+      if (scopePolicy.isProtected(name)) {
+        wanted.push(name);
+        return;
+      }
+      if (typeof right !== 'string' && name === 'ssf') {
+        const actions = Array.isArray(right.actions) && right.actions.length
+          ? right.actions.map(String) : ['read', 'write'];
+        if (actions.indexOf('read') >= 0) {
+          wanted.push(read);
+        }
+        if (actions.indexOf('write') >= 0) {
+          wanted.push(write);
+        }
+      }
+    });
+    const missing = wanted.filter(function (one, index) {
+      return wanted.indexOf(one) === index &&
+             !scopePolicy.declares(identifier, one);
+    });
+    if (missing.length) {
+      log.debug("Leaving GnapGrants.protectedAccessProblem(). Undeclared.");
+      return 'the access ' + missing.map(function (one) {
+        return '"' + one + '"';
+      }).join(', ') + ' is this service\'s own protected scope, and the ' +
+        'application "' + identifier + '" does not declare it in its ' +
+        'oauthAllowedScope — an administrator declares it on the ' +
+        'application (POST /admin-api/applications/add)';
+    }
+    log.debug("Leaving GnapGrants.protectedAccessProblem().");
+    return '';
   }
 
   // What a client may ask for (`gnapAllowedAccess`: types and reference
@@ -1178,6 +1238,13 @@ class GnapGrants {
         return this.refusal('STS-GNAP-0111', 'this client instance may not ' +
             'be issued bearer tokens (RFC 9635 section 2.1.1).',
                             'invalid_flag');
+      }
+      const withheld = this.protectedAccessProblem(app,
+                                                   asked.tokens[i].access);
+      if (withheld) {
+        log.debug("Leaving GnapGrants.createGrant(). A protected scope.");
+        return this.refusal('STS-GNAP-0719', withheld + '.', 'request_denied',
+                            403);
       }
       const problem = this.accessProblem(app, asked.tokens[i].access);
       if (problem) {
@@ -1840,6 +1907,13 @@ class GnapGrants {
     const app = applications.get(grant.client.identifier);
     if (asked.tokens) {
       for (let i = 0; i < asked.tokens.length; i++) {
+        const withheld = this.protectedAccessProblem(app,
+                                                     asked.tokens[i].access);
+        if (withheld) {
+          log.debug("Leaving GnapGrants.modifyGrant(). A protected scope.");
+          return this.refusal('STS-GNAP-0719', withheld + '.',
+                              'request_denied', 403);
+        }
         const problem = this.accessProblem(app, asked.tokens[i].access);
         if (problem) {
           log.debug("Leaving GnapGrants.modifyGrant(). Access refused.");
@@ -2238,6 +2312,7 @@ class GnapGrants {
       monitor: monitor,
       signals: signals,
       accessRights: accessRights,
+      scopePolicy: scopePolicy,
       loadOauth2: function loadOauth2() {
         helpers.log.debug("Entering loadOauth2().");
         helpers.log.debug("Leaving loadOauth2().");

@@ -4572,7 +4572,8 @@ const CODES = [
       'endpoint)' },
   { code: 'STS-OAUTH-0155',
     summary: 'A scope named a delegated permission the client has not been ' +
-      'granted, and oauth2.delegatedPermissionsEnforced is on.',
+      'granted — in product mode always, in development when ' +
+      'oauth2.delegatedPermissionsEnforced is on.',
     spec: 'invalid_scope (redirected error, or HTTP 400 at the token ' +
       'endpoint)' },
   { code: 'STS-OAUTH-0156',
@@ -5953,6 +5954,26 @@ const CODES = [
       'section 2), so a sign-out does not frame it.',
     spec: 'none — the client is listed on the sign-out page as not ' +
       'notified, with the reason' },
+  // #110 (2026-09-22): a scope tied to the client that asks for it.
+  { code: 'STS-OAUTH-0577',
+    summary: 'A client asked for one of this service\'s own protected ' +
+      'scopes (admin:read, admin:write, the SCIM or Shared Signals scopes, ' +
+      'the debugger permission) that its oauthAllowedScope does not list. ' +
+      'Held in every mode.',
+    spec: 'invalid_scope (redirected error, or HTTP 400 at the token and ' +
+      'pushed authorization request endpoints)' },
+  { code: 'STS-OAUTH-0578',
+    summary: 'In product mode, a client asked for a scope outside its ' +
+      'oauthAllowedScope — or, declaring none, outside the default set ' +
+      '(OpenID Connect\'s six and the OpenID4VCI credential scopes).',
+    spec: 'invalid_scope (redirected error, or HTTP 400 at the token and ' +
+      'pushed authorization request endpoints)' },
+  { code: 'STS-OAUTH-0579',
+    summary: 'A grant carrying its scope from earlier (a refresh, a token ' +
+      'exchange, an assertion grant) named a scope the client may no longer ' +
+      'be issued; it was taken off the tokens and recorded.',
+    spec: 'none — the token response\'s scope says what was issued (RFC ' +
+      '6749 section 5.1)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -7936,6 +7957,11 @@ const CODES = [
       'the store that records spent credentials could not be asked; it was ' +
       'refused (fail closed).',
     spec: 'HTTP 500 (SCIM Error)' },
+  { code: 'STS-SCIM-0079',
+    summary: 'An access token carried the SCIM scope an operation needs, and ' +
+      'the client it was issued to no longer declares that scope in its ' +
+      'oauthAllowedScope.',
+    spec: 'HTTP 403 insufficient_scope (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
@@ -9399,6 +9425,11 @@ const CODES = [
       'and ' +
       'refused.',
     spec: 'HTTP 400 {err: invalid_audience}' },
+  { code: 'STS-SSF-0107',
+    summary: 'An access token (OAuth or GNAP) carried the Shared Signals ' +
+      'scope an operation needs, and the client it was issued to no longer ' +
+      'declares that scope in its oauthAllowedScope.',
+    spec: 'HTTP 403 {err: access_denied}' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -10615,6 +10646,12 @@ const CODES = [
       'forgetting one would let that signature be replayed, so the request ' +
       'is refused instead until entries age out.',
     spec: 'RFC 9635 section 7.3 (invalid_request)' },
+  { code: 'STS-GNAP-0719',
+    summary: 'A GNAP client asked for an access right naming one of this ' +
+      'service\'s own protected scopes (ssf:read, ssf:write, as a ' +
+      'reference string or an object of type ssf) that its application\'s ' +
+      'oauthAllowedScope does not list.',
+    spec: 'RFC 9635 section 3.6 (request_denied)' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
@@ -12109,10 +12146,12 @@ const CODES = [
     spec: 'invalid_token (HTTP 401)' },
   // ===== PORTAL ============================================================
   // PER-REALM ADMINISTRATORS (2026-09-14, #32).
+  // RETIRED 2026-09-22 (#110): the rule is STS-API-0123 now, one rule for
+  // both realms — any client whose oauthAllowedScope declares the scope.
   { code: 'STS-API-0111',
     summary: 'A trust realm\'s own access token was presented at /admin-api by ' +
       'a client other than that realm\'s sts-management-api.',
-    spec: 'HTTP 403 forbidden' },
+    spec: 'HTTP 403 forbidden', retired: true },
   { code: 'STS-API-0112',
     summary: 'A trust realm\'s own token or administrator reached a ' +
       'service-wide /admin-api operation, or another realm\'s.',
@@ -12136,6 +12175,11 @@ const CODES = [
       'service has revoked or disowned it, or the person it was issued to ' +
       'has a disabled account.',
     spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-API-0123',
+    summary: 'A management API access token carried the admin scope an ' +
+      'operation needs, and the client it was issued to does not declare ' +
+      'that scope in its oauthAllowedScope (in the realm that issued it).',
+    spec: 'HTTP 403 forbidden' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -12857,6 +12901,15 @@ const CODES = [
       'to a URI whose scheme, host and port match none of the entry\'s ' +
       'oauthRedirectUri values (Front-Channel Logout 1.0 section 2).',
     spec: 'HTTP 400' },
+  { code: 'STS-REG-0172',
+    summary: 'A console or /admin-api write put a value on ' +
+      'oauthAllowedScope that is not an RFC 6749 section 3.3 scope token.',
+    spec: 'HTTP 400' },
+  { code: 'STS-REG-0173',
+    summary: 'An RFC 7591 registration or RFC 7592 update named one of this ' +
+      'service\'s own protected scopes in `scope` (or sent a scope that is ' +
+      'not a string); only an administrator declares those.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

@@ -3097,10 +3097,13 @@ const SETTINGS = [
   // a requirement no document contains, which is the one thing that page must
   // never do.
   //
-  // OFF BY DEFAULT, for the reason every refusal in this service is off by
-  // default: it exists to exercise clients, and a client is exercised by both
-  // answers. With it off a permission scope still becomes an audience and a
-  // scope claim and the console still says which requests were not backed by a
+  // OFF BY DEFAULT, and it matters only in DEVELOPMENT since #110
+  // (2026-09-22): product mode enforces delegated permissions whatever this
+  // says (`mode.honoursUngrantedPermissions()`). In development it is off for
+  // the reason development's refusals are: it exists to exercise clients, and a
+  // client is exercised by both answers. With it off a permission scope still
+  // becomes an audience and a scope claim and the console still says which
+  // requests were not backed by a
   // grant — so the register is fully usable, and readable, before anybody turns
   // this on. `runtime: true` and settable on a realm, so one realm can enforce
   // while another does not: there is no listener and no key involved, which is
@@ -3110,12 +3113,15 @@ const SETTINGS = [
     env: 'STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED', type: 'bool', dflt: false,
     runtime: true,
     description: 'REFUSE an authorization or token request that asks for a ' +
-                 'permission the client has not been granted. A permission ' +
+                 'permission the client has not been granted, IN ' +
+                 'DEVELOPMENT MODE — product mode always refuses one, ' +
+                 'whatever this says. A permission ' +
                  'is defined on a resource application — a base URI and a ' +
                  'name, joined into `https://example.com/write` — and ' +
                  'granted to a client application on its own entry; ' +
                  '/admin/delegation is the register and defines both. With ' +
-                 'this OFF (the default) an ungranted permission is still ' +
+                 'this OFF (the default) in development an ungranted ' +
+                 'permission is still ' +
                  'honoured: the token is audienced to the base URI and ' +
                  'carries the permission name on its scope claim exactly as ' +
                  'a granted one would, the request is logged as ungranted ' +

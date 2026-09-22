@@ -207,13 +207,17 @@ async function test() {
   const OTHER_ID = "gnap-other-" + h.realm;
   await h.ok(h.realmApi + "/applications/create", {
     identifier: WEB_ID, kind: "gnap-client", protocols: ["gnap"],
+    // The ssf access rights are this service's own protected scopes, granted
+    // only to an application that declares them (#110).
     fields: { gnapKey: JSON.stringify(web.keyObject()),
-              gnapFinishUri: h.FINISH } },
+              gnapFinishUri: h.FINISH,
+              oauthAllowedScope: ["ssf:read", "ssf:write"] } },
     "registered the web application that will own a stream");
   await h.ok(h.realmApi + "/applications/create", {
     identifier: OTHER_ID, kind: "gnap-client", protocols: ["gnap"],
     fields: { gnapKey: JSON.stringify(other.keyObject()),
-              gnapFinishUri: h.FINISH } },
+              gnapFinishUri: h.FINISH,
+              oauthAllowedScope: ["ssf:read", "ssf:write"] } },
     "registered a second web application");
 
   // =========================================================================

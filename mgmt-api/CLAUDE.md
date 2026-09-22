@@ -1595,12 +1595,23 @@ keeps the SERVICE credential exactly as it was and adds a second, narrower one:
   `realmAudienceAccepted()` wants `<base>/realm/<id>/admin-api` — what
   `resource=` at that realm's token endpoint gives. `adminApi.audience` pins the
   service's audience and is not consulted.
-* **ONLY FROM THAT REALM'S `sts-management-api`** (`STS-API-0111`). The token
-  endpoint does not restrict who may ask for `admin:*`, so without this any
-  client registered in the realm — dynamic registration included — could mint
-  itself Admin Write over the realm. **This is narrower than the service token,
-  which accepts a token issued to any client carrying the scopes**; that wider
-  gap is not changed here.
+* **~~ONLY FROM THAT REALM'S `sts-management-api`~~ (`STS-API-0111`, RETIRED
+  2026-09-22, #110) — NOW ONE RULE FOR BOTH REALMS: THE CLIENT DECLARES THE
+  SCOPE.** The token endpoint did not restrict who could ask for `admin:*`, so
+  this check stood in for the realm while the SERVICE token was accepted from
+  ANY client carrying the scopes — any client that could use
+  `client_credentials` in the default realm minted Admin Write, and in
+  development, where a client credential is not verified, that was any
+  `client_id`. Since #110 the token endpoint issues `admin:*` only to a client
+  whose `oauthAllowedScope` lists it (`common/CLAUDE.md`, `scope_policy.ts`), a
+  registration cannot declare it, and `declaredAdminScopes()` asks every token,
+  in the realm that ISSUED it, whether its client still declares the scope the
+  operation needs: 403 `STS-API-0123` if not, and an undeclared scope the
+  operation does not need is dropped before the roles are read. Removing a
+  declaration therefore cuts off tokens already issued. The seeded
+  `sts-management-api` and `sts-admin-console` (the API explorer mints as the
+  console) declare both in every realm; an administrator may declare them on
+  any other client, which is then a door too.
 * **THE CONSOLE'S SCOPE, READ OFF THE OPERATION** (`STS-API-0112`).
   `consoleOperationOf()` maps the request to the console path and action it
   mirrors — `POST /admin-api/pki/build-root` is `build-root` on `/admin/pki` —

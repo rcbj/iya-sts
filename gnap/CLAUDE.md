@@ -130,6 +130,18 @@ approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
 and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
 itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision.
 
+**THE `ssf` ACCESS RIGHTS ARE THIS SERVICE'S OWN PROTECTED SCOPES (#110,
+2026-09-22).** `ssf:read`/`ssf:write` as reference strings, or an object of type
+`ssf` with those actions (no actions means both), are granted only to a client
+whose APPLICATION ENTRY declares them in `oauthAllowedScope` — the attribute the
+OAuth token endpoint reads, reused rather than twinned (`gnapAllowedAccess`
+already exists and is a narrowing an operator may add; this is not optional),
+so there is one declared vocabulary per application whatever protocol it asks
+in. `protectedAccessProblem()` refuses at grant creation and modification with
+`request_denied` (`STS-GNAP-0719`), in both modes, before `accessProblem()`; the
+transmitter asks again on every call (`ssf/CLAUDE.md`). The policy is
+`common/scope_policy.ts`'s. Nothing else in a GNAP access right is held to it.
+
 ## A person's opaque identifier is over their subject (2026-09-14)
 
 `gnap_subject.ts`'s `opaqueIdFor()` HMACs the person's `urn:uuid:` subject where the

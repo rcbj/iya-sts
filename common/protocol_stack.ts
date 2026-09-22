@@ -229,6 +229,11 @@ class ProtocolStack {
     this.build('common/credentials', require('./credentials'), 'Credentials');
     this.build('common/account_state', require('./account_state'),
                'AccountState');
+    // #110: which scopes a client may be issued. A library, asked at request
+    // time by the authorization server, GNAP and the three resource servers
+    // behind this service's own protected scopes.
+    this.build('common/scope_policy', require('./scope_policy'),
+               'ScopePolicy');
     this.build('cluster/cluster_secrets', require('../cluster/cluster_secrets'),
                'ClusterSecrets');
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');

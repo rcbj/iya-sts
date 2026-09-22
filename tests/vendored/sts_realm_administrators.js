@@ -24,7 +24,9 @@
 //   5. A REALM'S OWN TOKEN. Minted at the realm's token endpoint by its
 //      `sts-management-api` client it reaches the realm's operations, is
 //      refused everywhere else and refused the service-wide operations, and
-//      the same scopes from any other client in the realm are refused.
+//      the same scopes are not issued to any other client in the realm unless
+//      an administrator declares them on it (#110) — and withdrawing that
+//      declaration cuts off the token it already holds.
 //
 // **IT IS `local: true` FOR THE OWNERSHIP REASON.** Everything here is
 // asserted over HTTP and could run from the parent's suite; the tree that GAVE
@@ -516,18 +518,53 @@ async function aRealmTokenStaysInItsRealm() {
             " answered " + made.status + " " + made.text.slice(0, 200));
   const rogueSecret = await api("POST", R +
     "/admin-api/applications/regenerate-secret", { application: rogueId });
-  const rogue = await tokenFor(REALM, rogueId, rogueSecret.body &&
-                                                rogueSecret.body.clientSecret);
+  const secretOfRogue = rogueSecret.body && rogueSecret.body.clientSecret;
+  const refusedAtIssuance = await tokenFor(REALM, rogueId, secretOfRogue);
+  check("THE SAME SCOPES FROM ANY OTHER CLIENT IN THE REALM ARE NOT ISSUED " +
+        "(#110) — invalid_scope, because it does not declare them",
+        function () {
+    assert.strictEqual(refusedAtIssuance.status, 400,
+      "it answered " + refusedAtIssuance.status + " " +
+      refusedAtIssuance.text.slice(0, 200));
+    assert.strictEqual(refusedAtIssuance.body &&
+                       refusedAtIssuance.body.error, "invalid_scope");
+  });
+  // DECLARED BY AN ADMINISTRATOR, the other client is a door too: ONE RULE
+  // for every realm since #110 — the client declares the scope — where it was
+  // "only the realm's sts-management-api" (STS-API-0111, retired).
+  for (const scope of ["admin:read", "admin:write"]) {
+    const declared = await api("POST", R + "/admin-api/applications/add",
+      { application: rogueId, attribute: "oauthAllowedScope",
+        value: scope });
+    assert.ok(declared.status === 200, "precondition: declaring " + scope +
+              " answered " + declared.status + " " +
+              declared.text.slice(0, 200));
+  }
+  const rogue = await tokenFor(REALM, rogueId, secretOfRogue);
   const rogueToken = rogue.body && rogue.body.access_token;
-  assert.ok(rogueToken, "precondition: the token endpoint does not restrict " +
-            "who may ask for admin:*, which is why the gate does; it " +
-            "answered " + rogue.status + " " + rogue.text.slice(0, 200));
+  assert.ok(rogueToken, "precondition: a client declaring admin:* is issued " +
+            "them; it answered " + rogue.status + " " +
+            rogue.text.slice(0, 200));
   const rogueRead = await apiAs(rogueToken, "GET",
                                 R + "/admin-api/users?per=1");
-  check("THE SAME SCOPES FROM ANY OTHER CLIENT IN THE REALM ARE REFUSED — " +
-        "only the realm's sts-management-api is its door", function () {
-    assert.strictEqual(rogueRead.status, 403,
-                       "it answered " + rogueRead.status);
+  check("a client an administrator declared admin:* for reaches the " +
+        "realm's operations", function () {
+    assert.strictEqual(rogueRead.status, 200,
+                       "it answered " + rogueRead.status + " " +
+                       rogueRead.text.slice(0, 200));
+  });
+  const withdrawn = await api("POST", R + "/admin-api/applications/remove",
+    { application: rogueId, attribute: "oauthAllowedScope",
+      value: "admin:read" });
+  assert.ok(withdrawn.status === 200, "precondition: withdrawing admin:read " +
+            "answered " + withdrawn.status);
+  const afterWithdrawal = await apiAs(rogueToken, "GET",
+                                      R + "/admin-api/users?per=1");
+  check("and withdrawing the declaration cuts off the token it already " +
+        "holds: 403", function () {
+    assert.strictEqual(afterWithdrawal.status, 403,
+                       "it answered " + afterWithdrawal.status + " " +
+                       afterWithdrawal.text.slice(0, 200));
   });
   log.debug("Leaving aRealmTokenStaysInItsRealm().");
 }

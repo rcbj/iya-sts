@@ -186,6 +186,9 @@ function childMain() {
                 oauthRedirectUri: [REDIRECT],
                 oauthGrantType: ['authorization_code', 'refresh_token',
                                  'password'],
+                // G. asks for an /admin-api token, and admin:read is issued
+                // only to a client that declares it (#110).
+                oauthAllowedScope: ['openid', 'admin:read'],
                 oauthTokenEndpointAuthMethod: 'client_secret_basic',
                 oauthBackchannelLogoutUri: rpBase + '/bc' } });
     const ALICE = 'ad-alice';

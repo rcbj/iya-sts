@@ -143,7 +143,7 @@ the exceptions, and each is argued where it lives.
 | `/authn/spnego` | a Kerberos ticket verified against a real long-term key — **not a refusal at all** | `kerberos/CLAUDE.md` |
 | `/xacml/pep/*`, `POST /xacml/pip` | a verified client certificate whose subject DN resolves to an entry holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | the same chain, holding `XACML_USER` | `xacml/CLAUDE.md` |
-| `/admin-api` | an OAuth 2.0 access token audienced to it, with `admin:read` / `admin:write`; `adminApi.authRequired` restores the open API | `mgmt-api/CLAUDE.md` |
+| `/admin-api` | an OAuth 2.0 access token audienced to it, with `admin:read` / `admin:write`, issued to a client that declares them (#110); `adminApi.authRequired` restores the open API | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication — for an RFC 9701 JWT response in every mode, for RFC 7662 JSON in product mode only | `oauth-oidc/CLAUDE.md` (3ai) |
 | the debugger listener (`debugger.port`) | an access token audienced to `urn:sts:debugger-api:` carrying the debugger permission — issued to console administrators only — or the debugger client's session holding one; four landing paths excepted. **Cannot be turned off** | `debugger/CLAUDE.md` |
 
@@ -537,6 +537,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3aq | `backchannel_logout.ts`, OpenID Connect Back-Channel Logout 1.0: triggered where a session ends OR EXPIRES, each delivery a persisted row sent once through a claimed lease whose time is the fence, retried by any node across restarts, dead-lettered and retried by hand | `oauth-oidc/CLAUDE.md` |
 | 3as | `id_token_encryption.ts`, OIDC Core 10.2's encrypted ID Token — and the Logout Token encrypted the same way | `oauth-oidc/CLAUDE.md` |
 | 3at | `account_state.ts`, a DISABLED account: the one place `pwdAccountLockedTime` is written, what ending everything it holds means, and the doors that ask | `common/CLAUDE.md`, `authn/CLAUDE.md` |
+| 3au | `scope_policy.ts` and `scopeRefusal()`, #110: a scope tied to the client that declares it (`oauthAllowedScope`) — this service's protected scopes in both modes, every other scope in product, refused at the endpoints, narrowed in `tokenSet()`, re-checked by `/admin-api`, SCIM and Shared Signals | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
