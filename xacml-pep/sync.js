@@ -396,6 +396,7 @@ async function pull(options) {
     // `stale` is about — and a 304 answers it exactly as well as a 200.
     held.lastPullAt = new Date().toISOString();
     held.lastPullOk = true;
+    lastKeptWhy = '';
     held.lastPullWhy = 'Unchanged; this copy is current.';
     log.debug('Leaving pull(). Unchanged.');
     return state().held;
@@ -462,6 +463,7 @@ async function pull(options) {
       root = null;
     }
   }
+  lastKeptWhy = '';
   held = {
     loaded: !!root,
     syncToken: String(said.syncToken || ''),
@@ -499,6 +501,10 @@ async function pull(options) {
 // `prefix` is the caller's error-code tag, which goes on the LOG LINE only —
 // `lastPullWhy` is drawn on `GET /` and a code is never put in front of a
 // caller.
+// The reason the last failed pull gave, so a repeat is not warned twice;
+// cleared by a pull that works.
+let lastKeptWhy = '';
+
 function keep(why, prefix) {
   log.debug("Entering keep().");
   // `lastPullAt` IS DELIBERATELY NOT TOUCHED. It means "when did this PEP last
@@ -517,7 +523,16 @@ function keep(why, prefix) {
     : ' NOTHING IS HELD, so there is no policy to enforce: every decision is ' +
       'NotApplicable and the bias decides. That is a different state from a ' +
       'stale copy and is reported as loaded: false.');
-  log.warn((prefix || '') + 'xacml-pep: ' + held.lastPullWhy);
+  // A STATE CHANGE IS A WARNING AND A REPEAT IS NOT (2026-09-21): a PDP that
+  // answers 404 for twenty minutes said so once, and the backoff in
+  // `pep.js` makes the repeats rarer still. `GET /` carries the reason
+  // whenever anybody asks.
+  if (why !== lastKeptWhy) {
+    lastKeptWhy = why;
+    log.warn((prefix || '') + 'xacml-pep: ' + held.lastPullWhy);
+  } else {
+    log.debug((prefix || '') + 'xacml-pep: still ' + why);
+  }
   log.debug("Leaving keep().");
   return state().held;
 }

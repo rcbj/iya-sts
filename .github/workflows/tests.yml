@@ -285,12 +285,14 @@ jobs:
   # ---------------------------------------------------------------------------
   cluster:
     runs-on: ubuntu-latest
-    # The `tests` job's argument, for ONE mode: above the launcher's mode bound
-    # (STS_MODE_TIMEOUT, 50m) plus its teardowns (STS_TEARDOWN_TIMEOUT, 5m
-    # each), so the bound that fires is the one that can explain itself —
-    # tests/teardown_bounds.js asserts it — and the image builds on top. The
-    # mode took 24.7 minutes on a developer machine on 2026-09-15.
-    timeout-minutes: 90
+    # The `tests` job's argument, for ONE mode: above the cluster mode's own
+    # bound (STS_CLUSTER_MODE_TIMEOUT, 100m — tests/tools/modes.sh) plus its
+    # teardowns (STS_TEARDOWN_TIMEOUT, 5m each), so the bound that fires is the
+    # one that can explain itself — tests/teardown_bounds.js asserts it. The
+    # mode took 24.7 minutes on 2026-09-15 in development mode with one process
+    # per node; as two production nodes (2026-09-21) its bulk loads alone
+    # outran the shared 50-minute bound.
+    timeout-minutes: 115
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out

@@ -1357,8 +1357,12 @@ class ScimAuth {
     // exactly what the branch it replaced did — refuse the reserved string,
     // accept everything else including an empty password — and in product mode
     // it verifies against the hashed `userPassword` on the person's entry.
-    const checked = credentials.verify(username, password,
-                                       { via: 'SCIM HTTP Basic' });
+    const early = req[ScimAuth.BASIC_VERDICT];
+    const checked = (early && early.username === username &&
+                     early.digest === crypto.createHash('sha256')
+                       .update(password).digest('hex'))
+      ? early.checked
+      : credentials.verify(username, password, { via: 'SCIM HTTP Basic' });
     if (!checked.ok) {
       log.debug("Leaving ScimAuth.attemptBasic(). The credential was " +
                 "refused: " +
@@ -2683,17 +2687,81 @@ class ScimAuth {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.authenticateSpent(). need=" + need);
     const wanted = String(need || 'none');
-    const first = this.presentedDecision(req, wanted);
-    if (first.final) {
-      log.debug("Leaving ScimAuth.authenticateSpent(). Decided on what was " +
-                "presented.");
-      return Promise.resolve(first.final);
-    }
-    log.debug("Leaving ScimAuth.authenticateSpent(). Spending what was " +
-              "presented.");
-    return this.spendPresented(req, first.decision).then((refused) => {
-      return refused || this.settleDecision(req, wanted, first.decision);
+    log.debug("Leaving ScimAuth.authenticateSpent(). Verifying a Basic " +
+              "password off the thread first, if one was presented.");
+    return this.verifyBasicOffThread(req).then(() => {
+      const first = this.presentedDecision(req, wanted);
+      if (first.final) {
+        return first.final;
+      }
+      return this.spendPresented(req, first.decision).then((refused) => {
+        return refused || this.settleDecision(req, wanted, first.decision);
+      });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A BASIC PASSWORD, VERIFIED IN THE WORKER POOL (2026-09-21).
+  //
+  // `attemptBasic()` is synchronous, so in product mode it hashed the password
+  // with scrypt ON THE REQUEST THREAD — about 70ms at the default cost, in
+  // which this worker answered nothing else. The asynchronous path
+  // (`authenticateSpent()`, which `scim.ts` takes) now asks
+  // `credentials.verifyAsync()` first, which is the same check with the hash
+  // done in the worker pool, and leaves the verdict on the request for
+  // `attemptBasic()` to use. It keeps the username and a SHA-256 of the
+  // password beside the verdict — never the password — so a verdict is only
+  // used for the credential it was reached for. Only when the Basic scheme is
+  // enabled: a disabled scheme must cost nothing and record nothing, exactly
+  // as before. The synchronous `authenticate()` is unchanged.
+  // ---------------------------------------------------------------------------
+  static readonly BASIC_VERDICT: unique symbol = Symbol('scim.basicVerdict');
+
+  private basicPairOf(req) {
+    const { log } = this.deps;
+    log.debug("Entering ScimAuth.basicPairOf().");
+    const header = String(req.headers['authorization'] || '');
+    const decoded = Buffer.from(header.replace(/^\s*Basic\s+/i, '').trim(),
+                                'base64').toString('utf8');
+    const cut = decoded.indexOf(':');
+    const username = cut < 0 ? '' : decoded.slice(0, cut).trim();
+    log.debug("Leaving ScimAuth.basicPairOf().");
+    return username ? { username: username,
+                        password: decoded.slice(cut + 1) } : null;
+  }
+
+  private verifyBasicOffThread(req) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering ScimAuth.verifyBasicOffThread().");
+    if (this.authorizationScheme(req) !== 'basic' ||
+        !this.enabledSchemes().some((row) => { return row.id === 'basic'; })) {
+      log.debug("Leaving ScimAuth.verifyBasicOffThread(). Not Basic.");
+      return Promise.resolve(null);
+    }
+    const pair = this.basicPairOf(req);
+    if (!pair) {
+      log.debug("Leaving ScimAuth.verifyBasicOffThread(). Malformed; " +
+                "attemptBasic() says why.");
+      return Promise.resolve(null);
+    }
+    log.debug("Leaving ScimAuth.verifyBasicOffThread(). Handed to the pool.");
+    return credentials.verifyAsync(pair.username, pair.password,
+                                   { via: 'SCIM HTTP Basic' })
+      .then((checked) => {
+        Object.defineProperty(req, ScimAuth.BASIC_VERDICT, {
+          value: { username: pair.username,
+                   digest: crypto.createHash('sha256').update(pair.password)
+                     .digest('hex'),
+                   checked: checked },
+          enumerable: false });
+        return null;
+      }, (error) => {
+        // THE POOL FAILED, not the password: leave no verdict, and
+        // `attemptBasic()` verifies on the thread exactly as it always did.
+        log.debug("Caught in ScimAuth.verifyBasicOffThread(): " +
+                  ((error && error.message) || error));
+        return null;
+      });
   }
 
   // The spend a decision carries. NON-ENUMERABLE, under a Symbol, for the

@@ -316,6 +316,15 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   foot of this file. What it buys is that a client's
   401, 403, challenge-response and scope handling can be exercised at all — none
   of which an open endpoint can produce. See rule 6a-ii and `scim_auth.ts`.
+  **A BASIC PASSWORD IS VERIFIED IN THE WORKER POOL since 2026-09-21**: product
+  mode checks it against a scrypt hash, about 70ms at the default cost, and
+  `attemptBasic()` did that on the request thread. `authenticateSpent()` —
+  what `scim.ts` calls — now asks `credentials.verifyAsync()` first and hands
+  `attemptBasic()` the verdict, matched to the username and a digest of the
+  password; the synchronous `authenticate()` still hashes on the thread
+  (`tests/scim_basic_off_thread.js`). It is still ~70ms of CPU per request: a
+  client provisioning in bulk should hold a `scim:write` access token, which
+  is what `sts_directory_bulk_load_scim` does since the same day.
   **`active: false` DISABLES THE ACCOUNT since 2026-09-17** — see the section
   below; this row said *deactivates nobody* until then, and it was the one
   non-goal here most likely to let somebody ship a deprovisioning path that had

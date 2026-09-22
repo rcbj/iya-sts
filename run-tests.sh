@@ -208,7 +208,10 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # container logs, keep the report and give the mode the verdict the suite
 # actually reached.
 #
-#   STS_MODE_TIMEOUT      the suite, once, for one mode. The slowest mode ever
+#   STS_MODE_TIMEOUT      the suite, once, for one mode — every mode but
+#                         `cluster`, which has a bound of its own
+#                         (STS_CLUSTER_MODE_TIMEOUT, 100m; tests/tools/modes.sh,
+#                         stsModeTimeout(), says why). The slowest mode ever
 #                         measured here was `dispatch` at 16m when this was
 #                         25m; the suite has grown to 225 jobs since, and on
 #                         2026-09-14 `dispatch` was killed at 25m at job 203
@@ -222,6 +225,9 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # CI runner is a machine somebody will run this on.
 # ---------------------------------------------------------------------------
 STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-3000}"
+# The bound a mode gets unless modes.sh names one of its own; each mode's is
+# set at the top of the loop below.
+STS_BASE_MODE_TIMEOUT="${STS_MODE_TIMEOUT}"
 STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 
 BUILD=1
@@ -1356,6 +1362,7 @@ BASE_COMPOSE_ENV=(${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"})
 for MODE in "${RUN_MODES[@]}";
 do
   MODE_INDEX=$((MODE_INDEX + 1))
+  STS_MODE_TIMEOUT="$(stsModeTimeout "${MODE}")"
   echo ""
   echo "==========================================================="
   echo " MODE ${MODE_INDEX} of ${MODE_COUNT}: ${MODE}"
