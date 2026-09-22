@@ -545,6 +545,37 @@ function serialiseXmlKey(held) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE BBS KEY (2026-09-22, #49 P5, rcbj's D6 answer): a MEMBER of the realm's
+// key set, where it was one pair for the whole service in a cluster secret.
+// A realm's own, so it has generations like every signing key and travels
+// the way the set does — the sibling channel, the store, the enrichment
+// rule. The two halves are raw BLS12-381 bytes, stored base64.
+// ---------------------------------------------------------------------------
+function serialiseBbsKey(held) {
+  log.debug("Entering serialiseBbsKey().");
+  if (!held || !held.secretKey || !held.publicKey) {
+    log.debug("Leaving serialiseBbsKey(). None.");
+    return null;
+  }
+  log.debug("Leaving serialiseBbsKey().");
+  return { secretKey: Buffer.from(held.secretKey).toString('base64'),
+           publicKey: Buffer.from(held.publicKey).toString('base64') };
+}
+
+function deserialiseBbsKey(blob) {
+  log.debug("Entering deserialiseBbsKey().");
+  if (!blob || !blob.secretKey || !blob.publicKey) {
+    log.debug("Leaving deserialiseBbsKey(). None.");
+    return null;
+  }
+  log.debug("Leaving deserialiseBbsKey().");
+  return {
+    secretKey: Uint8Array.from(Buffer.from(String(blob.secretKey), 'base64')),
+    publicKey: Uint8Array.from(Buffer.from(String(blob.publicKey), 'base64'))
+  };
+}
+
 function deserialiseXmlKey(blob, nodeCryptoModule) {
   log.debug("Entering deserialiseXmlKey().");
   if (!blob || !blob.privateKeyPem || !blob.certB64) {
@@ -578,7 +609,8 @@ function deserialiseXmlKey(blob, nodeCryptoModule) {
 // ---------------------------------------------------------------------------
 const STANDBY_META = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                       'slot', 'createdAt', 'retiredAt', 'retiredUntil',
-                      'reason', 'publicJwk', 'certPem', 'certB64'];
+                      'reason', 'publicJwk', 'certPem', 'certB64',
+                      'publicKeyB64'];
 
 function serialiseGenerations(held) {
   log.debug("Entering serialiseGenerations().");
@@ -596,7 +628,7 @@ function serialiseGenerations(held) {
           row[k] = one[k];
         }
       });
-      if (one.kind === 'pq') {
+      if (one.kind === 'pq' || one.kind === 'bbs') {
         row.privateKey = Buffer.from(one.privateKey).toString('base64');
       } else if (one.kind === 'rsa') {
         row.privateKeyPem = one.privateKeyPem;
@@ -629,7 +661,7 @@ function deserialiseStandbyEntry(row, nodeCryptoModule) {
       one[k] = row[k];
     }
   });
-  if (row.kind === 'pq') {
+  if (row.kind === 'pq' || row.kind === 'bbs') {
     one.privateKey = Buffer.isBuffer(row.privateKey) ? row.privateKey
       : Buffer.from(String(row.privateKey), 'base64');
   } else {
@@ -775,6 +807,8 @@ function serialise(keys) {
     // THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42) — see
     // serialiseXmlKey() and serialiseGenerations() above.
     xmlKey: serialiseXmlKey(keys.xmlKey),
+    // THE BBS KEY (2026-09-22, #49 P5) — see serialiseBbsKey() above.
+    bbsKey: serialiseBbsKey(keys.bbsKey),
     generations: serialiseGenerations(keys.generations)
   };
   log.debug('Leaving serialise(). ' + out.extraKeys.length + ' extra key(s).');
@@ -822,6 +856,7 @@ function deserialise(blob, nodeCrypto) {
     requestObjectEncKeys: deserialiseRequestObjectKeys(
         blob.requestObjectEncKeys, nodeCrypto),
     xmlKey: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
+    bbsKey: deserialiseBbsKey(blob.bbsKey),
     generations: deserialiseGenerations(blob.generations, nodeCrypto)
   };
   log.debug('Leaving deserialise(). ' + out.extraKeys.length +
@@ -1239,14 +1274,17 @@ function enriches(candidate, held) {
   // And the XML signing key, the FIFTH (2026-09-22, #42).
   const xmlHere = candidate.xmlKey ? 1 : 0;
   const xmlThere = held.xmlKey ? 1 : 0;
+  // And the BBS key, the SIXTH (2026-09-22, #49 P5).
+  const bbsHere = candidate.bbsKey ? 1 : 0;
+  const bbsThere = held.bbsKey ? 1 : 0;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
-      roHere < roThere || xmlHere < xmlThere) {
+      roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
-         roHere > roThere || xmlHere > xmlThere;
+         roHere > roThere || xmlHere > xmlThere || bbsHere > bbsThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -1322,6 +1360,18 @@ function xmlKeyHeldFor(realmId) {
   const blob = (fromStore && fromStore.xmlKey) ? fromStore : shared.get(id);
   log.debug("Leaving xmlKeyHeldFor().");
   return deserialiseXmlKey(blob && blob.xmlKey, nodeCrypto);
+}
+
+// The BBS key some process of this service already made for this realm
+// (2026-09-22, #49 P5), or null — `xmlKeyHeldFor()`'s question, for
+// `helpers.js`'s bbsKeyPair() backfill.
+function bbsKeyHeldFor(realmId) {
+  log.debug("Entering bbsKeyHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && fromStore.bbsKey) ? fromStore : shared.get(id);
+  log.debug("Leaving bbsKeyHeldFor().");
+  return deserialiseBbsKey(blob && blob.bbsKey);
 }
 
 // The raw blob a realm is held under, for request_pool.js's enrichment test.
@@ -1503,6 +1553,7 @@ function privateMaterialFor(realmId) {
     // its kid: a `next` key signs nothing until it is promoted, and a retired
     // one only decrypts.
     xml: deserialiseXmlKey(blob.xmlKey, nodeCrypto),
+    bbs: deserialiseBbsKey(blob.bbsKey),
     standby: new Map()
   };
   ((blob.generations && blob.generations.standby) || []).forEach(
@@ -2380,7 +2431,7 @@ function pkiSettled(scopeId) {
 // `serialise()`), and the MEMBERS are the parts made lazily and independently.
 // ---------------------------------------------------------------------------
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
-                         'requestObjectEncKeys', 'xmlKey'];
+                         'requestObjectEncKeys', 'xmlKey', 'bbsKey'];
 
 function hasMember(blob, member) {
   log.debug("Entering hasMember().");
@@ -2873,6 +2924,7 @@ module.exports = {
   refreshTokenKeysHeldFor: refreshTokenKeysHeldFor,
   requestObjectKeysHeldFor: requestObjectKeysHeldFor,
   xmlKeyHeldFor: xmlKeyHeldFor,
+  bbsKeyHeldFor: bbsKeyHeldFor,
   reset: reset,
   setStore: setStore,
   persists: persists,

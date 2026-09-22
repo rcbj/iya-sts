@@ -211,6 +211,11 @@ class CryptoMetadataDocument {
           .export({ format: 'jwk' }), { kid: row.kid, use: 'sig' });
       } else if (row.unit === 'xml:RS256') {
         currentPem = xml.selfSignedCertPem;
+      } else if (row.kind === 'bbs') {
+        // A BBS key has no JWK; it is published as a Multikey (#49 P5).
+        current.jwk = null;
+        current.publicKeyMultibase = 'u' + Buffer.from(keys.bbsKey.publicKey)
+          .toString('base64url');
       } else {
         const list = row.kind === 'pq' ? keys.pqKeys : keys.extraKeys;
         current.jwk = (list[row.index] || {}).publicJwk || null;
@@ -230,7 +235,11 @@ class CryptoMetadataDocument {
               ? new Date(Number(one.retiredAt)).toISOString() : null,
             retiredUntil: one.retiredUntil
               ? new Date(Number(one.retiredUntil)).toISOString() : null,
-            jwk: row.useCase === 'xml' ? null : one.publicJwk,
+            jwk: row.useCase === 'xml' || row.kind === 'bbs' ? null
+              : one.publicJwk,
+            publicKeyMultibase: one.publicKeyB64
+              ? 'u' + Buffer.from(one.publicKeyB64, 'base64')
+                .toString('base64url') : undefined,
             certificate: self.certificateOf(scope, row.useCase, row.slot,
                                             one.kid, one.certPem || '')
           };

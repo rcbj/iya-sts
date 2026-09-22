@@ -167,6 +167,7 @@ interface VcVerifierDeps {
   randomId: typeof helpers.randomId;
   xmlEscape: typeof helpers.xmlEscape;
   bbsKeyPair: typeof helpers.bbsKeyPair;
+  bbsGenerations?: typeof helpers.bbsGenerations;
   parseBody: typeof helpers.parseBody;
   oauthError: typeof helpers.oauthError;
   signJwt: typeof helpers.signJwt;
@@ -434,6 +435,7 @@ class VcVerifier {
       randomId: helpers.randomId,
       xmlEscape: helpers.xmlEscape,
       bbsKeyPair: helpers.bbsKeyPair,
+      bbsGenerations: helpers.bbsGenerations,
       parseBody: helpers.parseBody,
       oauthError: helpers.oauthError,
       signJwt: helpers.signJwt,
@@ -1343,7 +1345,18 @@ class VcVerifier {
       'canonical statement(s)' + (vp ? ', inside a VerifiablePresentation.' :
                                        ', with no presentation around it.'));
 
-    const keys = await bbsKeyPair();
+    // EVERY LIVE GENERATION OF THE REALM'S BBS KEY (#49 P5): the one the
+    // proof options name first, then the rest — a credential issued before a
+    // rotation still verifies through its grace.
+    const generations = this.deps.bbsGenerations
+      ? await this.deps.bbsGenerations()
+      : [{ kid: '', publicKey: (await bbsKeyPair()).publicKey }];
+    const named = String((envelope.proofOptions || {}).verificationMethod ||
+                         '');
+    generations.sort(function (a: any, b: any): number {
+      return (named && named.indexOf(b.kid) >= 0 ? 1 : 0) -
+             (named && named.indexOf(a.kid) >= 0 ? 1 : 0);
+    });
     let header;
     try {
       header = await bbs2023.headerFor(envelope.proofOptions || {});
@@ -1358,8 +1371,12 @@ class VcVerifier {
     this.vpCheck(checks, 'Proof options', true, 'canonicalized to the ' +
                  'header the base proof was bound to.');
 
-    const ok = await bbs2023.verifyDerived(keys.publicKey, proofBytes, header,
-      Buffer.from(String(record.nonce), 'utf8'), statements, indexes);
+    let ok = false;
+    for (let g = 0; g < generations.length && !ok; g++) {
+      ok = await bbs2023.verifyDerived(generations[g].publicKey, proofBytes,
+        header, Buffer.from(String(record.nonce), 'utf8'), statements,
+        indexes);
+    }
     this.vpCheck(checks, 'Derived proof', ok, ok
       ? "verifies against this issuer's BBS key over exactly the statements " +
         "disclosed, and against this request's nonce — so it was derived for " +

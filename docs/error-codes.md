@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2861** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2860** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -73,7 +73,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 114
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 86
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 92
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 273
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
@@ -162,7 +162,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0022` | Two persisted stores were declared under one handle; the second is not persisted. | — |
 | `STS-CORE-0023` | A persisted store could not report a write to persistence; the write stands in memory and may not be written down. | — |
 | `STS-CORE-0024` | A trust realm's signing keys could not be certified under its Issuing CAs; they still sign, with a self-signed certificate. | — |
-| `STS-CORE-0025` | The BBS key pair handed down from the front process could not be read, so this process generated its own. | — |
+| `STS-CORE-0025` *(retired)* | The BBS key pair handed down from the front process could not be read, so this process generated its own. | — |
 | `STS-CORE-0026` | A request declared a JSON body that does not parse; it is read as empty. | whatever the endpoint answers for an empty body |
 | `STS-CORE-0027` | The token recorder behind the statistics threw while a JWT was being signed; the token is unaffected and is missing from /admin/tokens. | — |
 | `STS-CORE-0028` | A trust realm's post-quantum keys could not be generated ahead of time; the first JWKS fetch in that realm makes them instead. | — |
@@ -171,7 +171,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0031` | The SPIFFE gRPC listeners could not start; the rest of the service runs. | — |
 | `STS-CORE-0032` *(retired)* | The 8443/9443 TLS endpoints could not start. Retired 2026-09-16: both listeners were deleted and this module binds nothing, so there is no bind here to fail | — |
 | `STS-CORE-0033` | The last flush at shutdown failed, so the process exited non-zero and a change made just before it may not have been written down. | — |
-| `STS-CORE-0034` | The BBS key pair could not be shared with the request workers; each generates its own and a did:web document may name a key its siblings did not sign with. | — |
+| `STS-CORE-0034` *(retired)* | The BBS key pair could not be shared with the request workers; each generates its own and a did:web document may name a key its siblings did not sign with. | — |
 | `STS-CORE-0035` | The service refused to start because its signing key material (or the key-encryption key that opens it) could not be read. | — |
 | `STS-CORE-0036` | The service refused to start because the configured persistence store could not be opened or read. | — |
 | `STS-CORE-0037` | The front page's logo could not be read from disk at startup; the page is drawn without it. | — |
@@ -2288,6 +2288,7 @@ Raised from: oid4vc/.
 | `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 page at /authn/wallet/wait |
 | `STS-VC-0085` | A certificate in oid4vci.keyAttestationTrustedCertificates could not be read and was ignored. | — |
 | `STS-VC-0086` | An access token this realm revoked was presented at an OpenID4VCI endpoint (credential, deferred credential or notification) in product mode. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
+| `STS-VC-0087` | A BBS key was asked for at /bbs/keys/<kid> that is not a live generation of this realm's BBS key (current, next, or retired within its grace). | HTTP 404 not_found |
 
 ## STS-SSF
 

@@ -389,24 +389,18 @@ open) leaves one value per container, as before. The DPoP server nonce is NOT a
 shared secret: it is a persisted store of issued nonces, which the barrier makes
 current on every node.
 
-**The BBS key pair is the fourth, and the one whose offer is not random bytes
-(2026-09-14, capability `vc.keys-agreement`).** `helpers.bbsKeyPair()` made one
-per process and handed it only to its own workers through `STS_BBS_KEYPAIR`, so
-`/bbs/keys/1` answered a different `publicKeyMultibase` on each node and a
-bbs-2023 proof issued through one did not verify against the did:web document
-resolved through the other (`ldp_vc_issuance`, `ldp_vc_refresh`, `vc_did` in the
-suite's `cluster` mode). Its row in `DECLARED` carries a `generate` — an async
-function making the encoded pair — and `start()` offers what it makes; the
-store keeps the first offer and every front process writes the kept one into
-that same variable before it forks, which is the channel `bbsKeyPair()` and the
-worker IPC already used. **This table and not the keystore's sealed `sts_keys`
-rows**, because that family is a REALM's key set — enriched, backfilled,
-rotated, certified — and this pair is one per service and none of those things;
-what it needs is exactly what the CSRF key has. **Where nothing is shared** a
-generated secret has no per-process value here at all (`text()` answers '') and
-`bbsKeyPair()` makes its own asynchronously, so one process and one container
-are unchanged. `bbsKeyPair()` compares the variable on every call, so a pair
-made before the store's value arrived is replaced rather than held.
+**The BBS key pair WAS the fourth (2026-09-14 to 2026-09-22, capability
+`vc.keys-agreement`)** — one per service, offered by a `generate` on its row
+and handed to workers in `STS_BBS_KEYPAIR` — so that `/bbs/keys/1` answered
+one `publicKeyMultibase` on every node. **It left this table on 2026-09-22
+(#49 P5, rcbj's D6 answer)** to become a member of each REALM's key set — the
+unit `bbs:BBS`, with generations, rotated with the realm's signing keys —
+because a secret made once for the store can never change while the service
+runs. It is agreed across nodes and workers the way every member is (the
+store's first writer, the sibling channel's enrichment rule), which is what
+`vc.keys-agreement` still stands for; `/bbs/keys/<kid>` and the DID document
+publish every live generation, and a realm no longer shares its BBS key with
+another.
 
 **The rest of the per-process key material was checked the same day and has
 not got this shape:** the did:web document's JOSE keys are the realm's key set

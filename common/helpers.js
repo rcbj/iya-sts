@@ -828,6 +828,12 @@ function plainKeySet(realmId, stored) {
   if (stored.xmlKey) {
     set.xmlKey = xmlKeyView(realmId, stored.xmlKey, null);
   }
+  // AND THE BBS KEY (2026-09-22, #49 P5), for the same reason: dropped here,
+  // this process would sign ldp_vc proofs with a key its siblings' DID
+  // documents do not publish.
+  if (stored.bbsKey) {
+    set.bbsKey = stored.bbsKey;
+  }
   set.generations = generationsView(realmId, stored.generations, null);
   log.debug("Leaving plainKeySet(). kid=" + set.kid);
   return set;
@@ -1145,7 +1151,8 @@ function xmlKeyView(realmId, stored, privateOf) {
 // ---------------------------------------------------------------------------
 const STANDBY_PUBLIC = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                         'slot', 'createdAt', 'retiredAt', 'retiredUntil',
-                        'reason', 'publicJwk', 'certPem', 'certB64'];
+                        'reason', 'publicJwk', 'certPem', 'certB64',
+                        'publicKeyB64'];
 
 function generationsView(realmId, stored, privateOf) {
   log.debug("Entering generationsView(). realm=" + realmId);
@@ -1592,6 +1599,39 @@ function lazyKeySet(realmId, stored) {
     set: function (made) {
       log.debug("Entering set().");
       xmlGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // THE BBS KEY (2026-09-22, #49 P5): its public half resident, its secret
+  // half the keystore's door, and a setter for bbsKeyPair()'s backfill.
+  const bbsPublic = stored.bbsKey && stored.bbsKey.publicKey
+    ? Uint8Array.from(stored.bbsKey.publicKey) : null;
+  let bbsGenerated = null;
+  const bbsStoredView = bbsPublic ? Object.defineProperty(
+    { publicKey: bbsPublic }, 'secretKey', {
+      enumerable: true, configurable: true,
+      get: function () {
+        log.debug("Entering the BBS key's private door.");
+        const held = keystore.privateMaterialFor(realmId);
+        if (!held || !held.bbs) {
+          throw new Error('the "' + realmId + '" realm\'s BBS key is held ' +
+                          'encrypted and could not be decrypted; see the ' +
+                          'keystore errors above.');
+        }
+        log.debug("Leaving the BBS key's private door.");
+        return held.bbs.secretKey;
+      }
+    }) : null;
+  Object.defineProperty(set, 'bbsKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return bbsGenerated || bbsStoredView || undefined;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      bbsGenerated = made || null;
       log.debug("Leaving set().");
     }
   });
@@ -2397,6 +2437,13 @@ function signingUnitsOf(keys) {
                  alg: one.alg, kind: 'pq', kid: one.publicJwk.kid, index: i });
     });
   }
+  // THE BBS KEY (2026-09-22, #49 P5): a unit of its own, once the realm has
+  // made one (bbsKeyPair()). It has no certificate — bbs-2023 keys are not
+  // X.509 subjects — so the PKI passes it by.
+  if (keys.bbsKey && keys.bbsKey.publicKey) {
+    out.push({ unit: BBS_UNIT, useCase: 'bbs', slot: 'BBS', alg: 'BBS',
+               kind: 'bbs', kid: bbsKidOf(keys.bbsKey.publicKey) });
+  }
   log.debug("Leaving signingUnitsOf(). " + out.length + " unit(s).");
   return out;
 }
@@ -2662,7 +2709,10 @@ function allVerificationKeys() {
   const keys = stsKeysFor();
   const now = Date.now();
   const out = allSigningKeys().concat(standbyOf(keys).filter(function (one) {
-    return one.kind !== 'rsa' && standbyLive(one, now);
+    // The JWK-shaped generations only: a BBS key (#49 P5) has no JWK and is
+    // looked up through bbsGenerations().
+    return (one.kind === 'curve' || one.kind === 'pq') &&
+           standbyLive(one, now);
   }).map(function (one) {
     return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
   }));
@@ -2677,7 +2727,8 @@ function allVerificationKeysAsync() {
   return allSigningKeysAsync().then(function (current) {
     const now = Date.now();
     return current.concat(standbyOf(keys).filter(function (one) {
-      return one.kind !== 'rsa' && standbyLive(one, now);
+      return (one.kind === 'curve' || one.kind === 'pq') &&
+             standbyLive(one, now);
     }).map(function (one) {
       return { alg: one.alg, publicJwk: one.publicJwk, role: one.role };
     }));
@@ -2757,6 +2808,14 @@ async function mintStandbyKey(unitRow, role) {
                                  privateKey: entry.privateKey,
                                  publicJwk: entry.publicJwk });
   }
+  if (unitRow.kind === 'bbs') {
+    const pair = await bbs2023.generateKeyPair();
+    const kid = bbsKidOf(pair.publicKey);
+    log.debug("Leaving mintStandbyKey(). BBS " + kid);
+    return Object.assign(base, {
+      kid: kid, privateKey: Buffer.from(pair.secretKey),
+      publicKeyB64: Buffer.from(pair.publicKey).toString('base64') });
+  }
   const pq = pqKeyFrom(unitRow.alg, await pqJose.generateAsync(unitRow.alg));
   log.debug("Leaving mintStandbyKey(). Post-quantum " + pq.publicJwk.kid);
   return Object.assign(base, { kid: pq.publicJwk.kid,
@@ -2790,6 +2849,8 @@ function plainCopyOf(keys, overrides) {
       selfSignedCertPem: keys.xmlKey.selfSignedCertPem,
       selfSignedCertB64: keys.xmlKey.selfSignedCertB64
     } : null,
+    bbsKey: keys.bbsKey ? { secretKey: keys.bbsKey.secretKey,
+                            publicKey: keys.bbsKey.publicKey } : null,
     generations: {
       generation: Number(keys.generations && keys.generations.generation) || 0,
       rotated: Object.assign({}, (keys.generations &&
@@ -2975,6 +3036,14 @@ async function promoteGenerations(realmId, options) {
       copy.xmlKey = { privateKeyPem: nextEntry.privateKeyPem,
                       selfSignedCertPem: nextEntry.certPem,
                       selfSignedCertB64: nextEntry.certB64 };
+    } else if (row.kind === 'bbs') {
+      Object.assign(retiredFrom, {
+        privateKey: Buffer.from(copy.bbsKey.secretKey),
+        publicKeyB64: Buffer.from(copy.bbsKey.publicKey).toString('base64') });
+      copy.bbsKey = {
+        secretKey: Uint8Array.from(Buffer.from(nextEntry.privateKey)),
+        publicKey: Uint8Array.from(Buffer.from(nextEntry.publicKeyB64,
+                                               'base64')) };
     } else {
       const list = row.kind === 'pq' ? copy.pqKeys : copy.extraKeys;
       const old = list[row.index];
@@ -3212,137 +3281,100 @@ function randomId(bytes) {
   return b64u(crypto.randomBytes(bytes || 24));
 }
 
-// One BBS key pair per start, like the RSA one. Generated lazily because key
-// generation is async and the module loads synchronously.
-let bbsKeys = null;
-// The encoded text `bbsKeys` was read from, or made as. `bbsKeyPair()` compares
-// it with the environment variable on every call — see below.
-let bbsKeysText = '';
-// A handed-down text that would not read, so it is refused once and logged
-// once rather than on every proof.
-let bbsRefusedText = '';
+// ---------------------------------------------------------------------------
+// THE REALM'S BBS KEY (2026-09-22, #49 P5, rcbj's answer to D6). The key a
+// bbs-2023 Data Integrity proof is signed with, and the one the realm's DID
+// document and `/bbs/keys/<kid>` publish. It was ONE pair for the whole
+// service — made in the front process, handed down the fork in
+// `STS_BBS_KEYPAIR`, shared across nodes as the cluster secret `bbs-keypair`
+// — which is what made it impossible to rotate while the service ran. It is
+// a member of the REALM's key set now, so it travels exactly as the set does
+// (the sibling channel, the store, the enrichment rule), and it is the unit
+// `bbs:BBS` with generations like every signing key.
+//
+// **MADE ON FIRST USE, THE POST-QUANTUM KEYS' WAY** (`pqKeysForAsync()`): key
+// generation is asynchronous and the set is built synchronously, so the pair
+// is made when a realm first issues, verifies or publishes an ldp_vc — one
+// generation in flight per realm, first writer wins, offered to every other
+// process, and written down only by the process whose set is the realm's. A
+// pair some other process already made for this realm is adopted first.
+// ---------------------------------------------------------------------------
+const BBS_UNIT = 'bbs:BBS';
 
-// ---------------------------------------------------------------------------
-// ONE BBS PAIR ACROSS EVERY PROCESS IN THIS SERVICE (2026-09-07).
-//
-// This is the key a Data Integrity proof is signed with and the key the did:web
-// document PUBLISHES as its verification method. One per process was invisible
-// until the request worker pool existed; with four processes, the document
-// served by one names a key another signed with, and the proof does not verify
-// — which is exactly what `ldp_vc_issuance`, `ldp_vc_refresh` and `vc_did`
-// measured.
-//
-// It travels the way the TLS certificate and the signing keys do: generated
-// once in the front process and handed down the fork's IPC channel, into the
-// environment before this module is loaded. Absent — a service with no pool,
-// which is every ordinary run — one is generated here exactly as before.
-//
-// **IT IS NOT ON `keystore`'s SHARED CHANNEL**, which carries a REALM's key set
-// and is keyed by realm. This pair is one per service and not one per realm, so
-// putting it there would have meant inventing a realm for it.
-//
-// **AND ACROSS NODES SINCE 2026-09-14 (#46 section 1).** The same three jobs
-// failed again in the suite's `cluster` mode, one level up: each CONTAINER
-// generated its own pair, so `/bbs/keys/1` answered a different key on each
-// node. `cluster/cluster_secrets.ts` now declares the pair (`bbs-keypair`):
-// the store keeps the first node's, sealed, and every front process puts it in
-// `STS_BBS_KEYPAIR` before anything issues — the variable this function
-// already read. Its argument for being there rather than in `sts_keys` is at
-// that row.
-//
-// **THE VARIABLE IS COMPARED ON EVERY CALL, NOT ONLY THE FIRST.** A pair this
-// process made before the store's arrived — nothing issues before start(),
-// but "nothing" is a claim about every caller, now and later — would otherwise
-// be held for the life of the process, which is the divergence this exists to
-// remove. One string comparison per proof is the price.
-// ---------------------------------------------------------------------------
+function bbsKidOf(publicKey) {
+  log.debug("Entering bbsKidOf().");
+  log.debug("Leaving bbsKidOf().");
+  return 'bbs-' + crypto.createHash('sha256')
+    .update(Buffer.from(publicKey)).digest('base64url').slice(0, 22);
+}
+
+function bbsKeyFor(keys) {
+  log.debug("Entering bbsKeyFor().");
+  if (keys.bbsKey && keys.bbsKey.publicKey) {
+    log.debug("Leaving bbsKeyFor(). On the set.");
+    return Promise.resolve(keys.bbsKey);
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.bbsKeyHeldFor(realmId);
+  if (held) {
+    keys.bbsKey = held;
+    log.debug("Leaving bbsKeyFor(). Already made by this service.");
+    return Promise.resolve(keys.bbsKey);
+  }
+  if (keys.bbsKeyPromise) {
+    log.debug("Leaving bbsKeyFor(). One is already in flight.");
+    return keys.bbsKeyPromise;
+  }
+  keys.bbsKeyPromise = bbs2023.generateKeyPair().then(function (made) {
+    if (!keys.bbsKey) {
+      keys.bbsKey = { secretKey: Uint8Array.from(made.secretKey),
+                      publicKey: Uint8Array.from(made.publicKey) };
+      const took = keystore.publishShared(realmId, keys);
+      if (took !== false) {
+        keystore.remember(realmId, keys);
+      }
+      log.info('A BBS key was made for the "' + realmId + '" realm: ' +
+               bbsKidOf(keys.bbsKey.publicKey) + '.');
+    }
+    keys.bbsKeyPromise = null;
+    return keys.bbsKey;
+  }, function (e) {
+    keys.bbsKeyPromise = null;
+    throw e;
+  });
+  log.debug("Leaving bbsKeyFor(). Generating.");
+  return keys.bbsKeyPromise;
+}
+
+// The ambient realm's current BBS pair, `{ secretKey, publicKey }`.
 async function bbsKeyPair() {
   log.debug("Entering bbsKeyPair().");
-  const handed = process.env.STS_BBS_KEYPAIR || '';
-  if (bbsKeys && (!handed || handed === bbsKeysText ||
-                  handed === bbsRefusedText)) {
-    log.debug("Leaving bbsKeyPair().");
-    return bbsKeys;
-  }
-  if (handed && handed !== bbsRefusedText) {
-    try {
-      bbsKeys = bbsKeyPairFromText(handed);
-      bbsKeysText = handed;
-      log.info('The BBS key pair came from another process in this service, ' +
-               'so every process signs and publishes the same one.');
-      log.debug("Leaving bbsKeyPair().");
-      return bbsKeys;
-    } catch (e) {
-      bbsRefusedText = handed;
-      log.error(errorCodes.tag('STS-CORE-0025') +
-                'The handed-down BBS key pair could not be read (' + e.message +
-                '); generating one, which means this process publishes a ' +
-                'different verification method from its siblings.');
-      if (bbsKeys) {
-        log.debug("Leaving bbsKeyPair(). Keeping the pair already held.");
-        return bbsKeys;
-      }
-    }
-  }
-  const made = await bbs2023.generateKeyPair();
-  // A concurrent caller may have finished first; the first pair held wins, so
-  // one process never signs with two.
-  if (!bbsKeys) {
-    bbsKeys = made;
-    bbsKeysText = bbsKeyPairText(made);
-  }
+  const pair = await bbsKeyFor(stsKeysFor());
   log.debug("Leaving bbsKeyPair().");
-  return bbsKeys;
+  return pair;
 }
 
-// The pair as the text the fork's IPC channel, the environment variable and
-// the cluster's sealed secret all carry: base64 of a JSON object of two base64
-// members. One encoding for all three, so a value any of them carries is one
-// the other two can read.
-function bbsKeyPairText(pair) {
-  log.debug("Entering bbsKeyPairText().");
-  log.debug("Leaving bbsKeyPairText().");
-  return Buffer.from(JSON.stringify({
-    secret: Buffer.from(pair.secretKey).toString('base64'),
-    public: Buffer.from(pair.publicKey).toString('base64')
-  }), 'utf8').toString('base64');
-}
-
-// The inverse. Throws on anything that is not that shape.
-function bbsKeyPairFromText(text) {
-  log.debug("Entering bbsKeyPairFromText().");
-  const held = JSON.parse(Buffer.from(String(text), 'base64')
-    .toString('utf8'));
-  if (!held || !held.secret || !held.public) {
-    log.debug("Leaving bbsKeyPairFromText(). Not a pair.");
-    throw new Error('the text does not carry a secret and a public key');
-  }
-  log.debug("Leaving bbsKeyPairFromText().");
-  return {
-    secretKey: Uint8Array.from(Buffer.from(held.secret, 'base64')),
-    publicKey: Uint8Array.from(Buffer.from(held.public, 'base64'))
-  };
-}
-
-// A FRESH pair as that text, held by nobody — the OFFER `cluster_secrets.js`
-// makes to the store. Deliberately not `bbsKeyPairForSharing()`: that one
-// caches the pair it makes as this process's, and an offer that loses the
-// race must be thrown away rather than kept.
-async function newBbsKeyPairText() {
-  log.debug("Entering newBbsKeyPairText().");
-  const pair = await bbs2023.generateKeyPair();
-  log.debug("Leaving newBbsKeyPairText().");
-  return bbsKeyPairText(pair);
-}
-
-// The pair as a string the fork's IPC channel can carry. Generates it if this
-// process has not needed one yet, which is the front process's ordinary case:
-// nothing has issued a credential when the pool starts.
-async function bbsKeyPairForSharing() {
-  log.debug("Entering bbsKeyPairForSharing().");
-  const pair = await bbsKeyPair();
-  log.debug("Leaving bbsKeyPairForSharing().");
-  return bbsKeyPairText(pair);
+// EVERY GENERATION OF THE REALM'S BBS KEY THAT STILL VERIFIES, current first,
+// then the next key and the retired ones within their grace, each
+// `{ kid, publicKey, role }` — for the Verifier, the DID document and
+// `/bbs/keys/<kid>`. Public halves only.
+async function bbsGenerations() {
+  log.debug("Entering bbsGenerations().");
+  const keys = stsKeysFor();
+  const current = await bbsKeyFor(keys);
+  const now = Date.now();
+  const out = [{ kid: bbsKidOf(current.publicKey), publicKey: current.publicKey,
+                 role: 'current' }];
+  standbyOf(keys, BBS_UNIT).forEach(function (one) {
+    if (!one.publicKeyB64 || !standbyLive(one, now)) {
+      return;
+    }
+    out.push({ kid: one.kid, role: one.role,
+               publicKey: Uint8Array.from(Buffer.from(one.publicKeyB64,
+                                                      'base64')) });
+  });
+  log.debug("Leaving bbsGenerations(). " + out.length + ".");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -4757,10 +4789,10 @@ module.exports = {
   jsonFromB64u: jsonFromB64u,
   nowSec: nowSec,
   randomId: randomId,
-  bbsKeyPairForSharing: bbsKeyPairForSharing,
-  newBbsKeyPairText: newBbsKeyPairText,
-  bbsKeyPairFromText: bbsKeyPairFromText,
   bbsKeyPair: bbsKeyPair,
+  bbsGenerations: bbsGenerations,
+  bbsKidOf: bbsKidOf,
+  BBS_UNIT: BBS_UNIT,
   walletBaseUrl: walletBaseUrl,
   parseBody: parseBody,
   multipartParts: multipartParts,

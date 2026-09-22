@@ -8609,11 +8609,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'renders a QR code. ?mode=cross-device (H.2) and ?mode=deferred ' +
           '(H.3) select the pre-authorized code grant with a Transaction ' +
           'Code.' },
-  { path: '/bbs/keys/1', group: 'VC Issuance (OID4VCI)', name: 'BBS public key',
+  { path: '/bbs/keys/:id', group: 'VC Issuance (OID4VCI)',
+    name: 'BBS public key',
     specs: ['di-bbs'],
     what: 'The BLS12-381 key an ldp_vc proof is verified with, as a ' +
-          'Multikey. This is what a plain ldp_vc credential\'s ' +
-          'verificationMethod dereferences to.' },
+          'Multikey. `/bbs/keys/<kid>` is what a plain ldp_vc credential\'s ' +
+          'verificationMethod dereferences to, for every live generation of ' +
+          'the realm\'s BBS key (current, next, and retired ones within ' +
+          'their grace — the key rotates with the realm\'s signing keys, ' +
+          '#49); `/bbs/keys/1` is the current one. 404 for any other.' },
 
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',

@@ -595,7 +595,7 @@ const CODES = [
   { code: 'STS-CORE-0025',
     summary: 'The BBS key pair handed down from the front process could not ' +
       'be read, so this process generated its own.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-CORE-0026',
     summary: 'A request declared a JSON body that does not parse; it is read ' +
       'as empty.',
@@ -635,7 +635,7 @@ const CODES = [
     summary: 'The BBS key pair could not be shared with the request workers; ' +
       'each generates its own and a did:web document may name a key ' +
       'its siblings did not sign with.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-CORE-0035',
     summary: 'The service refused to start because its signing key material ' +
       '(or the key-encryption key that opens it) could not be read.',
@@ -8860,6 +8860,11 @@ const CODES = [
       'notification) in product mode.',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   // ===== SSF ===============================================================
+  { code: 'STS-VC-0087',
+    summary: 'A BBS key was asked for at /bbs/keys/<kid> that is not a live ' +
+      'generation of this realm\'s BBS key (current, next, or retired within ' +
+      'its grace).',
+    spec: 'HTTP 404 not_found' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

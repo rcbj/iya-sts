@@ -23,6 +23,8 @@
 //   D. THE TRACKED TOKENS (the ticket's "cache clearing"): a revocation goes
 //      at its token's expiry, the record after oauth2.expiredTokenRetentionS,
 //      and a live token is untouched.
+//   E. THE BBS KEY (rcbj's D6 answer): a unit of the realm's key set, with a
+//      next key, promotion and a retired key still listed.
 //
 // In a child process, with the whole stack.
 // ===========================================================================
@@ -214,6 +216,42 @@ function childMain() {
          listed().indexOf('p5-live') >= 0,
          'D4. past the retention the record goes too, and the live token\'s ' +
          'is untouched', JSON.stringify(pastKeep));
+
+    // --- E. the BBS key, a unit of the realm's key set ---------------------
+    const bbsBefore = await helpers.bbsKeyPair();
+    const bbsKid0 = helpers.bbsKidOf(bbsBefore.publicKey);
+    const unitsNow = helpers.signingUnitsOf(helpers.stsKeysFor.of(REALM));
+    note(unitsNow.some(function (u) {
+      return u.unit === 'bbs:BBS' && u.kid === bbsKid0 && u.kind === 'bbs';
+    }), 'E1. once made, the realm\'s BBS key is the unit bbs:BBS',
+         bbsKid0);
+    const bbsNext = await helpers.ensureNextGenerations(REALM,
+      { units: ['bbs:BBS'] });
+    const gens1 = await helpers.bbsGenerations();
+    note(bbsNext.minted.indexOf('bbs:BBS') >= 0 && gens1.length === 2 &&
+         gens1[0].kid === bbsKid0 && gens1[1].role === 'next',
+         'E2. it gets a next key like any unit, listed by bbsGenerations()',
+         JSON.stringify(gens1.map(function (g) { return [g.kid, g.role]; })));
+    const bbsRot = await helpers.promoteGenerations(REALM,
+      { units: ['bbs:BBS'], graceMs: 3600000 });
+    const bbsAfter = await helpers.bbsKeyPair();
+    const gens2 = await helpers.bbsGenerations();
+    note(bbsRot.ok && helpers.bbsKidOf(bbsAfter.publicKey) === gens1[1].kid &&
+         gens2.some(function (g) {
+           return g.kid === bbsKid0 && g.role === 'retired';
+         }),
+         'E3. promoted, the next key signs and the old one is RETIRED, ' +
+         'still listed — so the DID document and /bbs/keys/<kid> go on ' +
+         'publishing it through its grace',
+         JSON.stringify(gens2.map(function (g) { return [g.kid, g.role]; })));
+    const rotation = require(ROOT + '/common/signing_rotation');
+    note(rotation.graceMs('bbs:BBS') >=
+           Number(config.value('oid4vci.credentialLifetimeS')) * 1000 &&
+         rotation.intervalMs('bbs:BBS') ===
+           Number(config.value('signing.credentialRotationIntervalDays')) *
+           86400000,
+         'E4. and as a credential signer it has the credential interval and ' +
+         'a grace that outlasts every credential');
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

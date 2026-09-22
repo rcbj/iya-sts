@@ -62,6 +62,7 @@ interface VcDidDeps {
   STS: typeof helpers.STS;
   baseUrlOf: typeof helpers.baseUrlOf;
   bbsKeyPair: typeof helpers.bbsKeyPair;
+  bbsGenerations: typeof helpers.bbsGenerations;
   signingKeyFor: typeof helpers.signingKeyFor;
   signingKeyForAsync: typeof helpers.signingKeyForAsync;
   stsKeysFor: typeof helpers.stsKeysFor;
@@ -145,6 +146,7 @@ class VcDid {
       STS: helpers.STS,
       baseUrlOf: helpers.baseUrlOf,
       bbsKeyPair: helpers.bbsKeyPair,
+      bbsGenerations: helpers.bbsGenerations,
       signingKeyFor: helpers.signingKeyFor,
       signingKeyForAsync: helpers.signingKeyForAsync,
       stsKeysFor: helpers.stsKeysFor,
@@ -336,15 +338,22 @@ class VcDid {
       }
     }
     try {
-      const keys = await bbsKeyPair();
-      methods.push({
-        id: did + '#bbs-1',
-        type: 'Multikey',
-        controller: did,
-        // Same encoding as /bbs/keys/1: multibase base64url, which is "u" and
-        // then the raw compressed bytes. A BBS key has no registered JOSE kty,
-        // so it cannot be a publicKeyJwk however convenient that would be.
-        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(keys.publicKey)
+      // EVERY LIVE GENERATION OF THE REALM'S BBS KEY (#49 P5), each named by
+      // its kid — the verification method an ldp_vc names — so a credential
+      // issued before a rotation still resolves here.
+      void bbsKeyPair;
+      const generations = await this.deps.bbsGenerations();
+      generations.forEach(function (one: any): void {
+        methods.push({
+          id: did + '#' + one.kid,
+          type: 'Multikey',
+          controller: did,
+          // Same encoding as /bbs/keys/<kid>: multibase base64url, which is
+          // "u" and then the raw compressed bytes. A BBS key has no
+          // registered JOSE kty, so it cannot be a publicKeyJwk however
+          // convenient that would be.
+          publicKeyMultibase: 'u' + bbs2023.bytesToB64u(one.publicKey)
+        });
       });
     } catch (e) {
       log.debug("Caught in VcDid.stsDidDocument(): " +

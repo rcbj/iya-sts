@@ -83,8 +83,7 @@ const app = require('./common/app');
 // below; `realms` for the id of the realm it warms. Both modules are already
 // loaded by this line — app.js requires realms, and helpers is this line —
 // so neither adds a require to the order.
-const { log, PORT, HOST, warmPqKeys, bbsKeyPairForSharing } =
-  require('./common/helpers');
+const { log, PORT, HOST, warmPqKeys } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
 // A LIBRARY, rule 3's shape: it registers no route and its position in the
@@ -763,24 +762,12 @@ serviceState.start().then(function (both) {
                                      chainPem: tlsMaterial.chainPem,
                                      trustAnchorPem:
                                        tlsMaterial.trustAnchorPem });
-  // AND THE BBS PAIR, for the same reason and on the same channel. Awaited here
-  // because generating one is asynchronous and the pool's start() is not the
-  // place to wait — see request_pool.js's setBbsKeyPair(). A failure is logged
-  // and not fatal: each process then makes its own, which is what it did
-  // before, and only Data Integrity proofs are affected.
-  // The bootstrap first, OUTSIDE the BBS pair's catch: a bootstrap that
-  // throws is fatal at startup, as it was when it ran synchronously above.
+  // THE BBS PAIR IS NOT HANDED OVER HERE ANY MORE (2026-09-22, #49 P5): it is
+  // a member of each realm's key set, so it reaches the workers in the key
+  // sets the pool already sends (`keystore.sharedAll()`), and was made per
+  // realm on first use. The bootstrap is still awaited first — a bootstrap
+  // that throws is fatal at startup.
   return bootstrapped.then(function () {
-    return bbsKeyPairForSharing().then(function (encoded) {
-      requestPool.setBbsKeyPair(encoded);
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-CORE-0034') +
-                'sts: the BBS key pair could not be shared with the request ' +
-                'workers (' + e.message + '); each will generate its own and ' +
-                'a did:web document may name a key its siblings did not ' +
-                'sign with.');
-    });
-  }).then(function () {
     return requestPool.start().then(function (pool) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +

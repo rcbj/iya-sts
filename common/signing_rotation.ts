@@ -258,6 +258,15 @@ class SigningRotation {
     log.debug("Entering SigningRotation.intervalMs(). " + unit);
     const tokens = Number(config.value('signing.rotationIntervalDays')) *
                    DAY_MS;
+    // The BBS key signs ldp_vc credentials and nothing else (#49 P5): the
+    // credential interval, never shared with a token signer.
+    if (unit === 'bbs:BBS') {
+      const bbsEvery = Number(config.value(
+        'signing.credentialRotationIntervalDays')) * DAY_MS;
+      log.debug("Leaving SigningRotation.intervalMs(). " + bbsEvery +
+                "ms (the BBS credential signer).");
+      return bbsEvery;
+    }
     if (unit !== this.credentialUnit(keys)) {
       log.debug("Leaving SigningRotation.intervalMs(). " + tokens + "ms.");
       return tokens;
@@ -282,7 +291,7 @@ class SigningRotation {
     const setting = Number(config.value('signing.retiredKeyGraceDays')) *
                     DAY_MS;
     let derived = this.longest(TOKEN_LIFETIMES);
-    if (unit === this.credentialUnit(keys)) {
+    if (unit === this.credentialUnit(keys) || unit === 'bbs:BBS') {
       derived = Math.max(derived, this.longest(CREDENTIAL_LIFETIMES));
     }
     const answer = Math.max(setting, derived + SKEW_MS);

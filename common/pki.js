@@ -5296,6 +5296,10 @@ async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
   const failed = [];
   for (let i = 0; i < standby.length; i++) {
     const one = standby[i];
+    // A BBS key (#49 P5) is not an X.509 subject: nothing to certify.
+    if (one.kind === 'bbs') {
+      continue;
+    }
     let publicPem = '';
     try {
       publicPem = one.kind === 'pq'

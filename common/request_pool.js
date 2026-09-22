@@ -130,7 +130,6 @@ let tlsMaterial = null;
 // the fork beside the certificate. It is a member of each realm's key set since
 // 2026-09-12 and travels on the key channel with the rest of it — see
 // `common/helpers.js`'s makeRequestEncryptionKey().)
-let bbsKeyPairB64 = '';
 // Workers announce their own commits (see receiveCommitted()), so proxy()
 // must NOT bump the generation when a response goes out — doing both would
 // move it twice per write and make every worker permanently one behind.
@@ -567,20 +566,6 @@ function awaitCommitConfirmations(servedBy) {
   });
 }
 
-
-// THE BBS PAIR, handed over before the pool forks for setServerCertificate()'s
-// reason: it is one per SERVICE, it is what a did:web document publishes, and a
-// worker that made its own would publish a verification method nothing it
-// signed can be verified against. Generated in server.js because making one is
-// asynchronous and this file's start() is not the place to await.
-function setBbsKeyPair(encoded) {
-  log.debug("Entering setBbsKeyPair().");
-  bbsKeyPairB64 = String(encoded || '');
-  if (bbsKeyPairB64) {
-    process.env.STS_BBS_KEYPAIR = bbsKeyPairB64;
-  }
-  log.debug("Leaving setBbsKeyPair().");
-}
 
 function setServerCertificate(material) {
   log.debug("Entering setServerCertificate().");
@@ -2267,7 +2252,6 @@ function fork(pool, slot) {
                  // assertions its siblings accept.
                  pki: keystore.pkiAll(),
                  kek: keystore.ephemeralKek(),
-                 bbsKeyPair: bbsKeyPairB64,
                  // WHAT IS BOUND ON THE DIRECTORY RIGHT NOW. A worker that
                  // started with an empty list and was never told otherwise
                  // would answer a sign-out for a connection made before it
@@ -4620,7 +4604,6 @@ module.exports = {
   reset: reset,
   middleware: middleware,
   setServerCertificate: setServerCertificate,
-  setBbsKeyPair: setBbsKeyPair,
   runOperation: runOperation,
   operationDispatched: operationDispatched,
   operationKinds: operationKinds,
