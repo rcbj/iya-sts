@@ -15,6 +15,7 @@
     - { title: Trust realms, url: /trust-realms.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
     - { title: Accepted tokens, url: /accepted-tokens.html }
+    - { title: Token samples, url: /token-samples.html }
     - { title: Error codes, url: /error-codes.html }
 
 - section: OAuth 2.0 and OpenID Connect

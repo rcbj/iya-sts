@@ -37,6 +37,7 @@ each.
 [Trust realms](trust-realms.md) ·
 [What is not checked](what-is-not-checked.md) ·
 [Accepted tokens](accepted-tokens.md) ·
+[Token samples](token-samples.md) ·
 [Error codes](error-codes.md)
 
 **Administration** — [Management API](management-api.md): `/admin-api`, every
