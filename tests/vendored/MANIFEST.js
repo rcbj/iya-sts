@@ -280,6 +280,13 @@ const JOBS = [
   // `local: true`: this repository's own authorization server, in a throwaway
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
+  // OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE (#122, 2026-09-22):
+  // the discovery member, section 2's origin rule at registration, at
+  // /admin-api and when a sign-out reads a stored URI, the iss of a named
+  // authorization server on the iframe, frame-src, and section 4's return.
+  // `local: true`: this repository's own authorization server, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_frontchannel_logout.js',  browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader

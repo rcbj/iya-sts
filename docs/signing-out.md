@@ -146,7 +146,23 @@ only way to see which happened.
 
 `iss` and `sid` are sent only to a client that registered
 `frontchannel_logout_session_required`; the specification says they are otherwise
-omitted.
+omitted. The discovery document says `frontchannel_logout_session_supported:
+true`. `iss` is the issuer that client's ID Token named. For a client of a
+named authorization server (`/tenant1/oauth2/…`), that is the named server's
+issuer, even when you sign out somewhere else.
+
+**The `frontchannel_logout_uri` must be on a redirect URI's origin**: the same
+scheme, host and port as one of the client's `redirect_uris` (section 2). In
+the example above, both are on `http://localhost:3000`. A registration, a
+console edit or an `/admin-api` write that breaks the rule is refused. A stored
+URI that breaks it, for example after the matching redirect URI was removed,
+is not framed, and the sign-out page lists that client with the reason.
+
+**Returning to the application.** After `/oauth2/logout` with a
+`post_logout_redirect_uri`, a page that notifies relying parties returns to
+that address by itself after `oauth2.frontchannelLogoutWaitS` seconds (default
+3). That gives the iframes time to load. The page also shows the address as a
+link. Set the wait to `0` to return only when the link is followed.
 
 ## Back-channel logout
 

@@ -283,11 +283,12 @@ const tokens = realms.map({ persist: 'admin_stats.tokens' });
 
 
 // What `typ` means, in the vocabulary the console and RFC 7009 use. Every token
-// this server issues is a JWT signed with the realm's own keys, so `typ` is the
-// only thing that tells them apart — the same fact UserInfo relies on.
+// this server issues is a JWT signed with the realm's own keys, so `typ` is
+// what tells them apart — the same fact UserInfo relies on. An ID Token is
+// not in it: it carries no `typ` claim since #118 (2026-09-22), and names its
+// kind in the signing context instead (recordJwt()).
 const KIND_BY_TYP = {
   'Bearer': 'access_token',
-  'ID': 'id_token',
   'Refresh': 'refresh_token',
   'UserInfo': 'userinfo_response',
   'oauth-authz-req+jwt': 'request_object',
@@ -306,8 +307,9 @@ const REVOCABLE_KINDS = ['access_token', 'id_token', 'refresh_token',
 // written out again — the tokens page's filter offers exactly these, and a
 // filter listing a kind that can no longer be issued (or missing one that can)
 // is a filter that quietly returns nothing.
-const TOKEN_KINDS = Object.keys(KIND_BY_TYP)
-                          .map(function (typ) { return KIND_BY_TYP[typ]; });
+// `id_token` is the one kind that no `typ` names (see above).
+const TOKEN_KINDS = ['id_token'].concat(Object.keys(KIND_BY_TYP)
+  .map(function (typ) { return KIND_BY_TYP[typ]; }));
 
 function kindOfTyp(typ) {
   log.debug("Entering kindOfTyp().");
@@ -332,7 +334,12 @@ function kindOfTyp(typ) {
 function recordJwt(payload, signed, context) {
   log.debug("Entering recordJwt(). typ=" + (payload.typ || '(none)'));
   const issuedUnder = context || {};
-  const kind = kindOfTyp(payload.typ);
+  // THE ISSUER'S WORD FIRST, then `typ` (#118, 2026-09-22). An ID Token
+  // carries no `typ` claim since that date — `typ: 'ID'` was defined by no
+  // specification — so `oauth2.ts`'s idToken() states the kind in `context`,
+  // and only a kind this table knows is taken from it.
+  const kind = TOKEN_KINDS.indexOf(String(issuedUnder.kind || '')) >= 0
+    ? String(issuedUnder.kind) : kindOfTyp(payload.typ);
   // A token with no jti cannot be revoked and cannot be looked up, so it gets a
   // synthetic key that sorts with the others and is marked unrevocable on the
   // page. The signed UserInfo response is the one that arrives this way.

@@ -1860,23 +1860,30 @@ const SPECS: Spec[] = [
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
     coverage: 'full for the provider\'s side of a specification that is ' +
-              'mostly the relying party\'s: the two discovery members, the ' +
-              'two per-client registration members, the `sid` claim on an ID ' +
-              'Token issued on a browser session, and the sign-out page ' +
-              'loading each registered frontchannel_logout_uri in a hidden ' +
-              'iframe with iss and sid where the client asked for them. ' +
+              'mostly the relying party\'s (#122, 2026-09-22). Discovery ' +
+              'publishes section 3\'s frontchannel_logout_supported and ' +
+              'frontchannel_logout_session_supported, and sid is in ' +
+              'claims_supported. The two per-client registration members ' +
+              'are stored, and section 2\'s rule that the URI\'s scheme, ' +
+              'host and port be a registered redirect URI\'s is held at ' +
+              'registration, on the console and at /admin-api, and again ' +
+              'when a sign-out reads the stored value. The sign-out page ' +
+              'loads each frontchannel_logout_uri in a hidden iframe, with ' +
+              'iss and sid where the client asked for them — iss being the ' +
+              'issuer that client\'s ID Token named, which for a client of ' +
+              'a named authorization server or a realm is not the ' +
+              'sign-out\'s own — under a frame-src naming exactly those ' +
+              'origins. Section 4\'s return to post_logout_redirect_uri is ' +
+              'a <meta> refresh after oauth2.frontchannelLogoutWaitS ' +
+              'seconds, beside a link, because these pages run no script. ' +
               'Three sign-outs render it — /oauth2/logout, /logout and the ' +
               'OIDC half of a global logout — through one function, so they ' +
-              'cannot notify different sets. What the specification says ' +
-              'CANNOT be known is not pretended to here either: section 5 ' +
-              'states the provider cannot tell whether a notification ' +
-              'succeeded, so every URL is printed as a link beside its ' +
-              'iframe rather than reported as sent. ' +
-              'oauth2.frontchannelLogout turns all of it off, including the ' +
-              'advertisement, which is the only honest way to switch it — a ' +
-              'document advertising a capability that is off would be a ' +
-              'document that lies; the sid claim stays while back-channel ' +
-              'logout, which needs it too, is on.' },
+              'cannot notify different sets. Section 5 says the provider ' +
+              'cannot tell whether a notification succeeded, so every URL ' +
+              'is printed as a link beside its iframe rather than reported ' +
+              'as sent. oauth2.frontchannelLogout turns all of it off, the ' +
+              'advertisement included; the sid claim stays while ' +
+              'back-channel logout, which needs it too, is on.' },
   { id: 'oidc-bclogout', name: 'OpenID Connect Back-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-backchannel-1_0.html',

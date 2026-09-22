@@ -2346,11 +2346,12 @@ class OAuth2Server {
       // turns it off, and this member follows it — a document advertising a
       // capability whose claim is switched off would be a document that lies.
       //
-      // `frontchannel_logout_session_required` here is the PROVIDER's half of
-      // the member and means "this provider can send a sid", which it can for
-      // every token issued on a browser session. It is not a demand on the
-      // client: the per-client member of the same name is what decides whether
-      // a given RP is sent one.
+      // `frontchannel_logout_session_supported` is section 3's PROVIDER
+      // member: "this provider can send iss and sid", which it can for every
+      // token issued on a browser session. Until #122 (2026-09-22) this
+      // document published `frontchannel_logout_session_required` instead —
+      // the per-client REGISTRATION member, which a conforming relying party
+      // does not read here, so it concluded that sessions were not supported.
       //
       // BACK-CHANNEL LOGOUT 1.0 (2026-09-17, #36; this member read `false`
       // until then): a signed Logout Token POSTed server-to-server to every
@@ -2361,7 +2362,7 @@ class OAuth2Server {
       // "the OP can pass a sid", which it can whenever the feature is on:
       // every Logout Token here carries one.
       frontchannel_logout_supported: frontchannel.enabled(),
-      frontchannel_logout_session_required: frontchannel.enabled(),
+      frontchannel_logout_session_supported: frontchannel.enabled(),
       backchannel_logout_supported: backchannel.enabled(),
       backchannel_logout_session_supported: backchannel.enabled()
     });
@@ -3454,7 +3455,11 @@ class OAuth2Server {
     const token = idAlg === 'RS256'
       // The default keeps going through signJwt(), which is what records the
       // token in the admin console's count — see the note on that function.
-      ? signJwt(payloadWithCustom, self.issuanceContext(opts),
+      // The KIND goes with it (#118): an ID Token carries no `typ` claim for
+      // the register to read it off, so the one place that knows says so.
+      ? signJwt(payloadWithCustom,
+                Object.assign({}, self.issuanceContext(opts),
+                              { kind: 'id_token' }),
                 { certificateHeader: 'id-token' })
       // `session` is the pool's routing hint — this person's `sub`, so that one
       // session's signatures queue behind each other rather than across the
@@ -7171,14 +7176,17 @@ class OAuth2Server {
   // markup). Deliberately tiny and local: this module is an authorization
   // server and not a web site, `admin.js` owns the console's shell, and
   // requiring that module from here would invert rule 5.
-  private logoutPage(inner: Json): Json {
+  // `head` is markup for the <head>, already escaped — the one caller that
+  // passes it is the front-channel return's <meta> refresh (#122).
+  private logoutPage(inner: Json, head?: string): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.logoutPage().");
     log.debug("Leaving OAuth2Server.logoutPage().");
     return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta ' +
       'name="viewport" content="width=device-width, ' +
       'initial-scale=1"><title>Signed ' +
-      'out</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+      'out</title>' + (head || '') +
+      '<style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;' +
       'line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;' +
       'margin-top:1.6rem}.sub{color:#555;font-size:.9rem}' +
@@ -7218,7 +7226,8 @@ class OAuth2Server {
   // Ends the session, so the next authorization request prompts again.
   private logoutEndpoint(req: Req, res: Res): Json {
     const { log, STS, xmlEscape, mode, bcp, frontchannel, backchannel,
-            applications, validation, errorCodes, endSession } = this.deps;
+            applications, validation, errorCodes, endSession,
+            config } = this.deps;
     const self = this;
     log.debug("Entering the logout endpoint.");
     // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -7270,6 +7279,7 @@ class OAuth2Server {
     }
     const target = askedLogout.value.post_logout_redirect_uri;
     if (notifiable.length) {
+      const waitS = Number(config.value('oauth2.frontchannelLogoutWaitS'));
       let checked = self.logoutTargetConsidered(target) ? String(target) : '';
       if (checked) {
         // The same check the redirect below makes, made before the URL is drawn
@@ -7298,16 +7308,32 @@ class OAuth2Server {
         (checked
           ? '<h2>Return to the relying party</h2><p><a href="' +
             xmlEscape(checked) + '">' +
-            xmlEscape(checked) + '</a></p><p class="sub">A link and not a ' +
-            'redirect: the notifications above load with this page, and a ' +
-            '302 would abandon them before they were sent.</p>'
+            xmlEscape(checked) + '</a></p><p class="sub">' +
+            (waitS > 0
+              ? 'This page returns there by itself after ' + waitS +
+                ' second' + (waitS === 1 ? '' : 's') + ', once the ' +
+                'notifications above have had time to load; the link is ' +
+                'for a browser that does not follow a refresh.'
+              : 'A link and not a redirect: the notifications above load ' +
+                'with this page, and a 302 would abandon them before they ' +
+                'were sent.') + '</p>'
           : '');
+      // SECTION 4's RETURN (#122, 2026-09-22). The specification has the
+      // provider send the browser on to post_logout_redirect_uri once the
+      // iframes have loaded. No markup can observe an iframe loading and this
+      // page runs no script, so the return is a <meta> refresh after
+      // `oauth2.frontchannelLogoutWaitS` seconds, to the address that passed
+      // the same check a redirect would. 0 keeps the link alone.
+      const refresh = checked && waitS > 0
+        ? '<meta http-equiv="refresh" content="' + waitS + ';url=' +
+          xmlEscape(checked) + '">'
+        : '';
       res.set('Content-Security-Policy',
               frontchannel.contentSecurityPolicyFor(notifications));
       res.status(200)
          .type('text/html')
          .set('Cache-Control', 'no-store')
-         .send(self.logoutPage(inner));
+         .send(self.logoutPage(inner, refresh));
       log.debug("Leaving the logout endpoint. " + notifiable.length + " " +
                 "relying part" +
                 (notifiable.length === 1 ? 'y was' : 'ies were') +

@@ -216,18 +216,30 @@ function frontchannelRead(t) {
   const bad = 'rus-fc-bad-' + suffix;
   const good = 'rus-fc-good-' + suffix;
   withMode(config, 'development', function () {
+    // A redirect URI on the front-channel URI's origin, which Front-Channel
+    // Logout section 2 requires of it (#122).
     [bad, good].forEach(function (id) {
       applications.createApplication({ identifier: id, kind: 'oauth2-client',
-        fields: { oauthClientId: id } });
+        fields: { oauthClientId: id,
+                  oauthRedirectUri: 'https://rp.example/cb' } });
     });
     // Planted past every write check, as an ldapmodify would.
     applications.seen({ identifier: bad, kind: 'oauth2-client', counts: false,
                         fields: { oauthFrontchannelLogoutUri:
                                   'javascript:alert(1)' } });
   });
-  applications.updateApplication(good,
+  const offOrigin = applications.updateApplication(good,
+    { attribute: 'oauthFrontchannelLogoutUri', mode: 'set',
+      value: 'https://elsewhere.example/fc' });
+  t.check(!offOrigin.ok &&
+          require('../common/error_codes').codeOf(offOrigin) ===
+            'STS-REG-0171',
+          'a front-channel URI on no redirect URI\'s origin is refused ' +
+          '(Front-Channel Logout section 2, #122)', offOrigin);
+  const goodSet = applications.updateApplication(good,
     { attribute: 'oauthFrontchannelLogoutUri', mode: 'set',
       value: 'https://rp.example/fc' });
+  t.check(goodSet.ok, 'fixture: the usable value is written', goodSet);
   const stored = ((applications.get(bad) || {}).fields || {})
                    .oauthFrontchannelLogoutUri;
   t.check(String(stored || '').indexOf('javascript:') === 0,

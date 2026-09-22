@@ -20,6 +20,9 @@
 //      depends on (Core section 11).
 //   F. GNAP's `id_token` subject assertion recognises an ID Token by what it
 //      carries now — no `typ` member — and still refuses an access token.
+//   G. The token register files an ID Token as `id_token` from the kind its
+//      issuer states, since the token names none, and ignores a kind it
+//      does not know.
 //
 // `sts_oidc_core.js` holds the same behaviours over the wire; this is what
 // a mistake in one of these functions looks like with nothing else in the way.
@@ -188,6 +191,29 @@ function childMain() {
     note(!asAccess.ok,
          'F. while an access token presented as one is refused',
          JSON.stringify(asAccess));
+
+    // --- G ----------------------------------------------------------------
+    const adminStats = require(ROOT + '/common/admin_stats');
+    const kindOf = function (jti) {
+      const row = adminStats.tokenList().filter(function (one) {
+        return one.key === jti;
+      })[0];
+      return row ? row.kind : '(not recorded)';
+    };
+    helpers.signJwt({ iss: 'https://sts.example', sub: 'urn:uuid:g',
+      aud: 'client-g', jti: 'g-id-token', iat: helpers.nowSec(),
+      exp: helpers.nowSec() + 60 }, { kind: 'id_token' });
+    eq(kindOf('g-id-token'), 'id_token',
+       'G. an ID Token is recorded as id_token from the kind its issuer ' +
+       'states');
+    helpers.signJwt({ iss: 'https://sts.example', sub: 'urn:uuid:g',
+      aud: 'client-g', jti: 'g-bogus', typ: 'Bearer', iat: helpers.nowSec(),
+      exp: helpers.nowSec() + 60 }, { kind: 'not-a-kind' });
+    eq(kindOf('g-bogus'), 'access_token',
+       'G. a kind the register does not know is ignored for the typ');
+    note(adminStats.TOKEN_KINDS.indexOf('id_token') >= 0,
+         'G. id_token is still one of the kinds the tokens page filters by',
+         JSON.stringify(adminStats.TOKEN_KINDS));
   } catch (e) {
     note(false, 'the test itself threw', e && e.stack);
   }

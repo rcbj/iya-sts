@@ -2240,7 +2240,41 @@ produced is one good for a day and renewable.
    **`noteClient()` records the issuer and the subject too (2026-09-17)**, as a
    third argument — `issueAuthorizationResponse()` is the only place that knows
    which named authorization server the client's ID Token is issued under, and
-   a Logout Token must name that `iss`.
+   a Logout Token must name that `iss`. **Since #122 (2026-09-22) the
+   front-channel `iss` is that recorded one too.** It had been the issuer of
+   the SIGN-OUT request, so a client of `/{id}/oauth2/…` or of another realm
+   was sent an issuer it does not know when the person signed out anywhere
+   else. The caller's issuer is now only the fallback for a row recorded
+   before 2026-09-17.
+
+   **Section 2's origin rule (#122):** a `frontchannel_logout_uri` must share
+   its scheme, host and port with one of the client's redirect URIs.
+   `applications.frontchannelOriginProblem()` is the one statement of it, and
+   it is asked at three places, in every mode:
+   * at RFC 7591 registration and update, through `registrationUriProblem()`
+     (STS-REG-0170);
+   * on a console or `/admin-api` write of `oauthFrontchannelLogoutUri`, against
+     the entry's `oauthRedirectUri` (STS-REG-0171);
+   * in `notificationsFor()` when a sign-out reads the stored value
+     (STS-OAUTH-0572). A value that fails is skipped and its row says why,
+     exactly as a stored `javascript:` is. This catches `ldapmodify`, and a
+     redirect URI removed after the front-channel URI was written.
+
+   Without the rule, a client could have a sign-out frame a page on a host
+   that is not its own, in the person's browser, with the session's `sid` on
+   it.
+
+   **Discovery publishes `frontchannel_logout_session_supported`** (section
+   3's provider member). Until #122 it published
+   `frontchannel_logout_session_required`, the per-client REGISTRATION
+   member. A conforming relying party does not look for that one here, so it
+   concluded sessions were unsupported.
+
+   **Section 4's return is a `<meta>` refresh** to the checked
+   `post_logout_redirect_uri` after `oauth2.frontchannelLogoutWaitS` seconds
+   (default 3; 0 keeps the link alone). A 302 would abandon the iframes, and
+   the page runs no script, so nothing can observe them loading. The wait is
+   the stand-in for that, and the link stays beside it.
 
    **THE IFRAMES ARE A CSP RELAXATION (THE SIXTH WHEN WRITTEN) AND THE
    NARROWEST.** `frame-src`
