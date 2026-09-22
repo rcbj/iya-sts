@@ -18,6 +18,8 @@
 //      HOSTED_SURFACE_CLIENT_IDS is `oidc_rp.ts`'s SURFACES, and every
 //      surface asks for the scope its session outliving the sign-on session
 //      depends on (Core section 11).
+//   F. GNAP's `id_token` subject assertion recognises an ID Token by what it
+//      carries now — no `typ` member — and still refuses an access token.
 //
 // `sts_oidc_core.js` holds the same behaviours over the wire; this is what
 // a mistake in one of these functions looks like with nothing else in the way.
@@ -164,6 +166,28 @@ function childMain() {
       note(one.scopes.indexOf('offline_access') >= 0,
            'E. ' + one.id + ' asks for offline_access');
     });
+
+    // --- F ----------------------------------------------------------------
+    const helpers = require(ROOT + '/common/helpers');
+    const gnapSubject = require(ROOT + '/gnap/gnap_subject');
+    const idToken = helpers.signJwt({ iss: 'https://sts.example',
+      sub: 'urn:uuid:00000000-0000-4000-8000-000000000001', aud: 'client-f',
+      iat: helpers.nowSec(), exp: helpers.nowSec() + 60,
+      preferred_username: 'alice' }, {});
+    const asId = gnapSubject.resolveUser({ assertions: [
+      { format: 'id_token', value: idToken }] }, {});
+    note(asId.ok && asId.username === 'alice',
+         'F. an ID Token as issued since #118 is a GNAP subject assertion',
+         JSON.stringify(asId));
+    const accessToken = helpers.signJwt({ iss: 'https://sts.example',
+      sub: 'urn:uuid:00000000-0000-4000-8000-000000000001', aud: 'client-f',
+      typ: 'Bearer', iat: helpers.nowSec(), exp: helpers.nowSec() + 60,
+      preferred_username: 'alice' }, {});
+    const asAccess = gnapSubject.resolveUser({ assertions: [
+      { format: 'id_token', value: accessToken }] }, {});
+    note(!asAccess.ok,
+         'F. while an access token presented as one is refused',
+         JSON.stringify(asAccess));
   } catch (e) {
     note(false, 'the test itself threw', e && e.stack);
   }
