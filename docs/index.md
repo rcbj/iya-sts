@@ -33,6 +33,7 @@ Every page on this site, grouped by what a reader is looking for.
 - [Endpoints](endpoints.md) — how to find out, rather than a list that goes stale
 - [Trust realms](trust-realms.md) — several logical identity services in one process, told apart by a path segment: what each one separates, and what every realm shares
 - [What is not checked](what-is-not-checked.md) — what development and product mode each check, what neither does, and the features that refuse in both
+- [Accepted tokens](accepted-tokens.md) — every door that takes a token from a caller, what the token must be, and the one place a token from another issuer still gets through
 - [Error codes](error-codes.md) — every way this service can fail or refuse, by subsystem: the `STS-…` code recorded on the audit row and in the log, and what the client is told instead (a code is never sent to a client)
 
 **Sessions and signals**

@@ -1211,6 +1211,36 @@ Three things about it are decisions:
   Running in the realm is also what makes the event right rather than merely
   present, since the observer builds a subject from the realm's own issuer.
 
+**THE SWEEP BECOMES A SCHEDULER JOB — rcbj, 2026-09-21** (root `CLAUDE.md`,
+*Anything periodic is a scheduler job*; the plan is on #49, and this job is
+in its first phase, P1, beside the CRL refresh). Not built yet;
+until it is, the `setInterval` in `armSessionSweep()` is one of the recorded
+exceptions. What moves and what does not:
+
+* **What moves:** the periodic half. `authn.session-expiry` is a *cluster* job:
+  it runs on the scheduler leader, walks every realm inside `realms.run()` as
+  the sweep does now, and ends what has expired through `expireSession()`.
+  That is what reaches the applications and sessions concerned — the
+  `session.end` audit row, CAEP's `session-revoked` through the observer, and
+  the back-channel Logout Tokens (`oauth2.backchannelLogoutOnExpiry`). The job
+  adds no path of its own to any of them. The 30-second `SESSION_SWEEP_MS`
+  becomes a setting, read without the `|| n` trap.
+* **What stays:** the two lazy lookups and their synchronous local delete. A
+  process that finds a session expired stops honouring it at once, whenever the
+  job last ran — that is correctness, not housekeeping. The `authn.session-end`
+  claim stays too, because a lazy lookup, a sign-out and the job can still
+  meet on one session. So does its fail-OPEN reporting (a notice that must not
+  be lost).
+* **What the first-session arming decision becomes:** the scheduler starts
+  only from `service_state.start()` on a serving front process, so the
+  processes that header protects — in-process Kerberos jobs, `npm test`,
+  `generate_defaults.js` — still never run it.
+* **To confirm when it is built:** a job that runs on ONE node is enough only
+  because every configuration with more than one process has the sessions in a
+  shared store — clustering requires `persistence.minted`, and dispatch without
+  coordination is refused. If any configuration is found where a process holds
+  sessions nobody else can see, the job is *per-process* there instead.
+
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
 neither — a lifetime this service configured ran out, which is what CAEP section

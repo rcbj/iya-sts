@@ -54,6 +54,7 @@ header_pages:
   - aws-cluster.md
   - remote-pep.md
   - what-is-not-checked.md
+  - accepted-tokens.md
   - error-codes.md
   - layout.md
   - parent-project-migration.md
