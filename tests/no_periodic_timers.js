@@ -72,6 +72,10 @@ const ALLOWED = {
   'common/request_worker.ts|start|timeout': { permanent:
     'not periodic: a one-shot start-up timeout, caught by the recursion rule ' +
     'because start() is also a method name it calls' },
+  'spiffe/spiffe_server.ts|look|timeout': { permanent:
+    'not periodic: a bounded wait (30 s) inside one re-key for the realm\'s ' +
+    'certificate branch to arrive under a new Root — a delay inside one ' +
+    'operation, which the directive leaves where it is' },
   'debugger/debugger_api_process.ts|fork|timeout': { permanent:
     'not periodic: the api child\'s start-up timeout; its restart is a ' +
     'retry with back-off within supervising one child' }
