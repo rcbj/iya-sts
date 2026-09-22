@@ -376,7 +376,18 @@ function checkTheJobTimeoutIsAboveOurs(t) {
             'as unrun as having no job');
     const clusterMinutes = Number(
       (/timeout-minutes:\s*(\d+)/.exec(clusterJob) || [])[1]);
-    const clusterWorst = modeBound + teardownBound * 2;
+    // THE CLUSTER MODE'S OWN BOUND since 2026-09-21, read off modes.sh's
+    // stsModeTimeout() rather than the launcher's shared default, which that
+    // mode no longer uses.
+    const clusterBound = Number(
+      (/cluster\)\s*echo "\$\{STS_CLUSTER_MODE_TIMEOUT:-(\d+)\}"/
+        .exec(modes) || [])[1]);
+    t.check(clusterBound > 0,
+            'modes.sh gives the `cluster` mode a bound of its own (' +
+              clusterBound + 's)',
+            'the arithmetic below would otherwise be about a number the ' +
+            'cluster mode does not use');
+    const clusterWorst = (clusterBound || modeBound) + teardownBound * 2;
     t.check(clusterMinutes * 60 > clusterWorst,
             'the `cluster` job timeout (' + clusterMinutes + 'm) is above ' +
               'its one mode plus its teardowns (' +

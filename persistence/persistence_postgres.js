@@ -1148,9 +1148,12 @@ function create(options) {
       [ORIGIN_SCOPE, held.key, held.reservation,
        Math.max(1000, Number(held.ttlMs) || 30000)]
     ).then(function (r) {
+      // DEBUG, by rcbj's rule (2026-09-21): it is only reached for a claim
+      // that really lapsed, which says renewals are running late — worth
+      // having when somebody asks for the whole record, not at info.
       if (r.rowCount) {
-        log.info('persistence: the claim on origin ' + held.key +
-                 ' had lapsed with nobody else taking it, and was extended.');
+        log.debug('persistence: the claim on origin ' + held.key +
+                  ' had lapsed with nobody else taking it, and was extended.');
       }
       return r.rowCount > 0;
     });
@@ -2672,9 +2675,24 @@ function create(options) {
       // checkOriginFence(). It asked `AND expires_at > now()` until then, so
       // one late renewal read as "another process holds it" and the process
       // exited in a single-process stack.
-      return reassertOrigin(pool, {
-        key: originClaim.key, reservation: originClaim.reservation,
-        ttlMs: ttlMs
+      //
+      // **THE LIVE CLAIM FIRST, AND QUIETLY (the same day).** A renewal went
+      // straight to `reassertOrigin()`, whose "had lapsed with nobody else
+      // taking it" line is only true when the claim HAD lapsed — so every
+      // routine renewal logged it: every request worker, every ten seconds,
+      // about a lapse that never happened. The ordinary renewal is the update
+      // that needs the claim still live; only when that matches nothing is
+      // the claim extended by its reservation, and said so.
+      const held = { key: originClaim.key,
+                     reservation: originClaim.reservation, ttlMs: ttlMs };
+      return pool.query(
+        'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
+        'WHERE scope = $1 AND realm = \'\' AND key = $2 AND reservation = $3 ' +
+        'AND expires_at > ' + DB_NOW,
+        [ORIGIN_SCOPE, held.key, held.reservation,
+         Math.max(1000, Number(ttlMs) || 30000)]
+      ).then(function (r) {
+        return r.rowCount > 0 ? true : reassertOrigin(pool, held);
       });
     },
 

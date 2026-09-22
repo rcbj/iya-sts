@@ -639,6 +639,12 @@ services:
       # would make that comparison a minute of waiting.
       - PEP_POLL_INTERVAL_MS=${XACML_PEP_POLL_INTERVAL_MS:-5000}
       - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-2000}
+      # THE BACKOFF CAP (2026-09-21): the PEP starts minutes before its job
+      # creates the realm it polls, and that job leaves the realm's remote-PEP
+      # endpoints off, so it is refused (404, then 501) for most of a run. It
+      # backs off while refused; the cap is well under the forty seconds the
+      # job waits for the PEP to find its realm once it exists.
+      - PEP_BACKOFF_MAX_MS=${XACML_PEP_BACKOFF_MAX_MS:-15000}
       - PEP_LOG_LEVEL
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9090,path:'/healthcheck'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]

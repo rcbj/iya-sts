@@ -238,6 +238,26 @@ stsModeNeedsPostgres()
 }
 
 # ---------------------------------------------------------------------------
+# How long the launcher lets a mode run before it stops the stack
+# (STS_MODE_TIMEOUT, run-tests.sh), in seconds, per mode (2026-09-21).
+#
+# `cluster` has a bound of its own because a write there is two production
+# nodes coordinating through one postgres, and the three bulk loads are 15,000
+# of them: on 2026-09-21 the SCIM load alone took 22 minutes, and the mode was
+# stopped at job 289 of 290 by the 50-minute bound every mode shared, with
+# nothing failing. 100 minutes is that run's pace (about 80) with room;
+# STS_CLUSTER_MODE_TIMEOUT overrides it, as STS_MODE_TIMEOUT does the others.
+# The CI cluster job's own timeout is held above it by tests/teardown_bounds.js.
+# ---------------------------------------------------------------------------
+stsModeTimeout()
+{
+  case "$1" in
+    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-6000}" ;;
+    *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # Whether a mode is the TWO-NODE stack (2026-09-14). Asked by both launchers
 # at every place the answer changes what they do — which compose files are
 # layered, which containers come up and are logged, and which address the

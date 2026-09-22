@@ -244,10 +244,35 @@ async function claimB2(t) {
           (fenced && fenced.message) + ' wrote=' + wrote +
           ' lost=' + lost.length);
 
+  // A ROUTINE RENEWAL of a live claim (2026-09-21): the live-only update and
+  // nothing else. It went straight to the reservation update, whose log line
+  // says the claim HAD lapsed — so every request worker announced a lapse
+  // every ten seconds. The reservation update is now the fallback only.
+  const renewals = function () {
+    return db.statements.filter(function (sql) {
+      return /^UPDATE sts_cluster_claims SET expires_at/.test(sql);
+    });
+  };
+  const before = renewals().length;
+  t.equal(await only.renewOrigin(30000), true,
+          'a routine renewal of a live claim succeeds');
+  const routine = renewals().slice(before);
+  t.check(routine.length === 1 && /expires_at\s*>/.test(routine[0]),
+          'with ONE update that needs the claim live — not the lapsed-claim ' +
+          'fallback, which is the one that says it lapsed',
+          JSON.stringify(routine));
+
   db.now += 35000;
+  const beforeLapse = renewals().length;
   t.equal(await only.renewOrigin(30000), true,
           'a renewal that arrives after the lapse extends the claim, because ' +
           'the reservation on it is still this process\'s');
+  const afterLapse = renewals().slice(beforeLapse);
+  t.check(afterLapse.length === 2 && /expires_at\s*>/.test(afterLapse[0]) &&
+          !/expires_at\s*>/.test(afterLapse[1]),
+          'the live update matched nothing, so it fell back to the ' +
+          'reservation update — the one path that logs a lapse',
+          JSON.stringify(afterLapse));
   const row = db.claims.get('persistence.origin||n:node-b:front');
   t.check(!!row && row.expires > db.now,
           'and the claim is live again afterwards',

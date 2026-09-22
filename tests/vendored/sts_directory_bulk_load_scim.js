@@ -170,35 +170,42 @@ const SIZES = bulk.SIZES;
 const STAMP = bulk.stampFor("scim");
 
 // SCIM needs a credential (RFC 7644 section 2 — `scim/CLAUDE.md` argues it).
-// In development mode any username and any password but one is accepted, so
-// this is a turnstile rather than a lock and the name is what it authenticates.
 //
-// **THE CALLER IS A PERSON THIS JOB CREATES FIRST, WITH A REAL PASSWORD
-// (2026-09-12)**, in `createTheCaller()`, because product mode verifies a SCIM
-// Basic credential against the named person's own `userPassword` — so a name
-// nobody created, with a word nothing checks, is a credential only development
-// accepts. It is one entry, made after the preflight has raised the ceiling and
-// before anything is timed.
-const SCIM_USER = "bulk-load-" + STAMP.run;
-const SCIM_PASSWORD = "bulk-load-scim-Passw0rd!-" + STAMP.run;
-const SCIM_AUTH = "Basic " +
-    Buffer.from(SCIM_USER + ":" + SCIM_PASSWORD).toString("base64");
+// **AN ACCESS TOKEN, SINCE 2026-09-21, AND NOT HTTP BASIC.** This job was a
+// person it created with a real password, presented as Basic on every
+// request — and product mode verifies a Basic credential against the stored
+// scrypt hash on EVERY request, about 70ms of CPU each at the default cost.
+// Ten thousand requests made that the whole of what `single-node` and
+// `cluster` measured: SCIM creates were 9ms in development and 88–130ms in the
+// two production modes, and the cluster mode ran out of time in the bulk
+// loads. The job measures the SCIM DOOR, so its credential is now the one a
+// provisioning client actually holds: a client_credentials token from this
+// service's own token endpoint, with `scim:read scim:write`, addressed to
+// this service's resource server (RFC 9068 section 4). Verifying it is a
+// signature check. Basic is still exercised, and verified in product mode, by
+// the SCIM jobs whose subject is authentication.
+//
+// Minted by `tests/tools/admin-api-token.js`, which is the ONE place the
+// seeded client, its grant and its form are written down — the launchers
+// hand its secret over as ADMIN_API_CLIENT_SECRET (the local stack) or
+// STS_ADMIN_API_CLIENT_SECRET (an AWS target).
+const adminApiToken = require("../tools/admin-api-token");
+let SCIM_AUTH = "";
 
-async function createTheCaller() {
-  log.debug("Entering createTheCaller().");
-  const made = await http.postJson(http.api("/users/create"), {
-    username: SCIM_USER, invent: false,
-    attributes: { cn: "Bulk Load SCIM Caller", givenName: "Bulk",
-                  sn: "SCIM Caller", displayName: "Bulk Load SCIM Caller",
-                  mail: SCIM_USER + "@bulk-load.test" },
-    credential: "password", password: SCIM_PASSWORD
+async function mintTheScimToken() {
+  log.debug("Entering mintTheScimToken().");
+  const secret = process.env.STS_ADMIN_API_CLIENT_SECRET ||
+                 process.env.ADMIN_API_CLIENT_SECRET || "";
+  assert.ok(secret,
+    "neither STS_ADMIN_API_CLIENT_SECRET nor ADMIN_API_CLIENT_SECRET is set, " +
+    "so this job cannot mint the SCIM access token it provisions with. " +
+    "Every launcher sets one; a hand run has to as well.");
+  const token = await adminApiToken.mint(base, secret, {
+    scope: "scim:read scim:write",
+    audience: base.replace(/\/+$/, "") + "/resource"
   });
-  assert.ok(made.status === 200 && made.body && made.body.ok &&
-            made.body.passwordSet,
-    "POST /admin-api/users/create should create the SCIM caller " + SCIM_USER +
-    " with a password; it answered " + made.status + " " +
-    JSON.stringify(made.body).slice(0, 300));
-  log.debug("Leaving createTheCaller().");
+  SCIM_AUTH = "Bearer " + token;
+  log.debug("Leaving mintTheScimToken().");
 }
 
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
@@ -748,7 +755,7 @@ async function test() {
 
   const ready = await bulk.preflight({ log: log, assert: assert, http: http,
                                        checks: checks });
-  await createTheCaller();
+  await mintTheScimToken();
   const mapping = await readTheMapping(ready.catalogue);
   const people = await createThePeople(mapping.sendable, mapping.byLdap);
   const groups = await createTheGroups();
