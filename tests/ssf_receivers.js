@@ -259,7 +259,6 @@ function run(t) {
   // holds several per surface, with random ids, all delivering to the same
   // loopback path — and every event went to all of them.
   const legacy = streams.createStream({
-    aud: consoleSurface.audience,
     events_requested: [events.CAEP_EVENT_URIS[0]],
     description: 'a duplicate from before the id was derived',
     delivery: { method: streams.DELIVERY_PUSH,
@@ -267,7 +266,8 @@ function run(t) {
                               realms.currentPrefix() +
                               consoleSurface.receivePath,
                 authorization_header: 'Bearer whatever' }
-  }, { issuer: 'https://example.test', principal: 'internal' });
+  }, { issuer: 'https://example.test', principal: 'internal',
+       audience: consoleSurface.audience });
   t.check(legacy.ok, 'a legacy duplicate can be created for the test to sweep',
           legacy.ok ? 'made ' + legacy.stream.stream_id
                     : legacy.errors.join(' '));
@@ -325,7 +325,6 @@ function run(t) {
   t.log.info('B3. another realm\'s receiver stream in this realm is swept');
   const leakedId = 'ssf-internal-some-other-realm-admin-console';
   const leaked = streams.createStream({
-    aud: consoleSurface.audience,
     events_requested: [events.CAEP_EVENT_URIS[0]],
     description: 'another realm\'s receiver, put here by a replicated row',
     delivery: { method: streams.DELIVERY_PUSH,
@@ -334,9 +333,8 @@ function run(t) {
                               consoleSurface.receivePath,
                 authorization_header: 'Bearer whatever' }
   }, { issuer: 'https://example.test', principal: 'internal',
-       streamId: leakedId });
+       streamId: leakedId, audience: consoleSurface.audience });
   const ordinary = streams.createStream({
-    aud: 'https://receiver.example/ordinary',
     events_requested: [events.CAEP_EVENT_URIS[0]],
     delivery: { method: streams.DELIVERY_POLL }
   }, { issuer: 'https://example.test', principal: 'a-receiver' });
@@ -385,7 +383,7 @@ function run(t) {
 
   // CAEP: SSF's complex subject, whose `user` member names the person and
   // whose `session` member names one session of theirs.
-  const complex = { user: { format: 'issuer_subject_id',
+  const complex = { format: 'complex', user: { format: 'iss_sub',
       iss: 'https://sts.example.com', sub: 'urn:sts:user:alice' },
     session: { format: 'opaque', id: 'sess-1' } };
   t.check(receivers.isAbout(delivered(complex), ALICE),
@@ -399,9 +397,9 @@ function run(t) {
           'disclosure, and it is the case a running service cannot be asked ' +
           'about without two browsers');
 
-  t.check(receivers.isAbout(delivered({ format: 'issuer_subject_id',
+  t.check(receivers.isAbout(delivered({ format: 'iss_sub',
       iss: 'x', sub: 'alice' }), ALICE),
-          'a plain issuer_subject_id naming the username matches — RISC\'s ' +
+          'a plain iss_sub naming the username matches — RISC\'s ' +
           'default format');
   t.check(receivers.isAbout(delivered({ format: 'opaque', id: 'alice' }),
                             ALICE),
@@ -425,7 +423,7 @@ function run(t) {
           'issuer a seeded stream carries is computed at startup, and a ' +
           'deployment behind a proxy legitimately has a different one on the ' +
           'event');
-  t.check(receivers.isAbout(delivered({ format: 'decentralized_identifier',
+  t.check(receivers.isAbout(delivered({ format: 'did',
       url: 'did:example:alice' }), ALICE),
           'and a DID composed the way subjectForUser() composes one');
   t.check(receivers.isAbout(delivered({ format: 'aliases', identifiers: [
@@ -435,7 +433,7 @@ function run(t) {
           'is what that format means');
 
   // RISC section 3.1's rename.
-  t.check(receivers.isAbout(delivered({ subject_type: 'issuer_subject_id',
+  t.check(receivers.isAbout(delivered({ subject_type: 'iss_sub',
       iss: 'x', sub: 'alice' }), ALICE),
           'AND `subject_type` IS READ AS WELL AS `format`. ' +
           'risc.googleSubjectType renames that member on every RISC subject ' +
@@ -479,7 +477,7 @@ function run(t) {
           'AND AN EVENT WITH NO SUBJECT IS NOBODY\'S. SSF\'s own two are ' +
           'about the STREAM — a verification and a stream-updated go to the ' +
           'console, which sees everything, and appear on no person\'s page');
-  t.check(!receivers.isAbout(delivered({ format: 'issuer_subject_id',
+  t.check(!receivers.isAbout(delivered({ format: 'iss_sub',
       iss: 'x', sub: '' }), ALICE),
           'an empty identifier matches nobody, rather than matching ' +
           'everybody whose own value happens to be empty');
@@ -550,7 +548,8 @@ function run(t) {
     issuer: consoleStream.iss, audience: 'somebody-else',
     uri: events.CAEP_EVENT_URIS[0],
     payload: { event_timestamp: Math.floor(Date.now() / 1000) },
-    subject: { user: { format: 'issuer_subject_id', iss: 'x', sub: 'alice' },
+    subject: { format: 'complex',
+      user: { format: 'iss_sub', iss: 'x', sub: 'alice' },
       session: { format: 'opaque', id: 's' } } }));
   const wrongAud = receivers.accept(receivers.ADMIN,
     { headers: { authorization: bearer.admin,
@@ -565,6 +564,49 @@ function run(t) {
   t.check(wrongAud.entry && wrongAud.entry.audienceOk === false,
           'and it is recorded with audienceOk false, so the page can show a ' +
           'misaddressed event rather than showing nothing');
+
+  // -----------------------------------------------------------------------
+  t.log.info('H2. the issuer and the explicit type (#144, SSF 1.0 sections ' +
+             '4.1.6 and 4.1.1)');
+  // -----------------------------------------------------------------------
+  const foreignIssuer = events.signSetSync(events.buildSet({
+    issuer: 'https://another-transmitter.example', audience:
+      consoleSurface.audience,
+    uri: events.CAEP_EVENT_URIS[0],
+    payload: { event_timestamp: Math.floor(Date.now() / 1000) },
+    subject: { format: 'complex',
+      user: { format: 'iss_sub', iss: 'x', sub: 'alice' },
+      session: { format: 'opaque', id: 's' } } }));
+  const wrongIss = receivers.accept(receivers.ADMIN,
+    { headers: { authorization: bearer.admin,
+      'content-type': 'application/secevent+jwt' }, body: foreignIssuer });
+  t.check(wrongIss.status === 400 && wrongIss.body.err === 'invalid_issuer',
+          'A SET WHOSE iss IS NOT THE STREAM\'S IS REFUSED with ' +
+          'invalid_issuer: section 4.1.6 says a receiver MUST check it, and ' +
+          'this one did not until #144',
+          JSON.stringify(wrongIss.body));
+  t.check(wrongIss.entry && wrongIss.entry.issuerOk === false,
+          'and it is recorded with issuerOk false');
+  // An UNtyped token: the right issuer, audience and signature key, and no
+  // `typ` in its header.
+  const signer = require('../common/helpers');
+  const untypedClaims = events.buildSet({
+    issuer: consoleStream.iss, audience: consoleSurface.audience,
+    uri: events.CAEP_EVENT_URIS[0],
+    payload: { event_timestamp: Math.floor(Date.now() / 1000) },
+    subject: { format: 'complex',
+      user: { format: 'iss_sub', iss: 'x', sub: 'alice' },
+      session: { format: 'opaque', id: 's' } } });
+  // `signJwt()` writes no `typ` at all — the untyped case.
+  const untyped = signer.signJwt(untypedClaims);
+  const noTyp = receivers.accept(receivers.ADMIN,
+    { headers: { authorization: bearer.admin,
+      'content-type': 'application/secevent+jwt' }, body: untyped });
+  t.check(noTyp.status === 400 && noTyp.body.err === 'invalid_request' &&
+          /secevent\+jwt/.test(noTyp.body.description),
+          'AND A TOKEN THAT IS NOT typ secevent+jwt IS REFUSED (section ' +
+          '4.1.1: SSF events MUST be explicitly typed)',
+          JSON.stringify(noTyp.body));
 
   // -----------------------------------------------------------------------
   t.log.info('I. status(), which is what an empty page has to say');
@@ -616,12 +658,14 @@ function run(t) {
 // cap test is holding — a row that failed to verify is still a row.
 function deliverSigned(t, surface, bearer, person, quiet) {
   log.debug("Entering deliverSigned().");
+  // The stream's own issuer: SSF 1.0 section 4.1.6 has the receiver refuse
+  // any other (#144), which section H2 below asserts.
   const claims = events.buildSet({
-    issuer: 'https://sts.example.com',
+    issuer: receivers.streamFor(surface).iss,
     audience: receivers.surfaceOf(surface).audience,
     uri: events.CAEP_EVENT_URIS[0],
     payload: { event_timestamp: Math.floor(Date.now() / 1000) },
-    subject: { user: { format: 'issuer_subject_id',
+    subject: { format: 'complex', user: { format: 'iss_sub',
         iss: 'https://sts.example.com', sub: person.sub },
       session: { format: 'opaque', id: 's-' + Math.random() } } });
   const token = events.signSetSync(claims);

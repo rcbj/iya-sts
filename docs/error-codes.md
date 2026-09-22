@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2865** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2871** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 115
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 92
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 98
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 274
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -2314,13 +2314,13 @@ Raised from: ssf/.
 | `STS-SSF-0011` | The body of an SSF management, subject, verification or poll request is not JSON. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0012` | A push stream was refused at creation because its delivery endpoint cannot be dialled by this transmitter (not a URL, wrong scheme, plain http with ssf.pushAllowInsecure off, or a host outside ssf.pushAllowedHosts). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0013` | A Stream Configuration was refused at creation (a missing aud, an unsupported delivery method, a malformed member). | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0014` | An SSF request named a stream_id this transmitter does not hold. | HTTP 404 {err: invalid_request} |
+| `STS-SSF-0014` | An SSF request named a stream_id this transmitter does not hold for the authenticated receiver — one that does not exist, or another receiver's, which answers identically (#144). | HTTP 404 {err: invalid_request} |
 | `STS-SSF-0015` | A stream update (PUT or PATCH) was refused because the configuration it would produce is invalid. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0016` | A stream status change was refused (an unknown status value or a malformed request). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0017` | An Add Subject request was refused because the subject identifier is invalid (RFC 9493 format or member rules, or a missing critical member). | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0018` | A Remove Subject request was refused because the subject identifier is invalid. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0019` | A verification request came sooner than the stream's min_verification_interval while ssf.verificationRateLimit is on. | HTTP 429 {err: invalid_request} with Retry-After |
-| `STS-SSF-0020` | A verification request was answered with a refusal because the verification event could not be transmitted or delivered; the transmission's own audit row names the cause. | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0020` | A verification request was refused because its stream is disabled. (Until #144 it also meant a push that failed; delivery is asynchronous now and a failed one is a dead letter.) | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0021` | A poll request named a stream that delivers by push, so there is nothing to collect. | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0022` | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). | HTTP 501 {err: invalid_request} |
 | `STS-SSF-0023` | A push at /ssf/receive carried an empty body. | HTTP 400 {err: invalid_request} |
@@ -2393,6 +2393,12 @@ Raised from: ssf/.
 | `STS-SSF-0098` | Whether another process had already reported a stream as dead or revived could not be asked, so it was reported here and may be reported twice. | none — logged |
 | `STS-SSF-0099` | A GNAP key proof on a Shared Signals endpoint could not be confirmed unused across the cluster, so the token was refused. | HTTP 401 {err: invalid_token} |
 | `STS-SSF-0100` | The signing-key-rotated event (this service's own) could not be transmitted after a rotation; the rotation itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0101` | A receiver asked to create a stream and already holds ssf.maxStreams streams — the limit is per receiver (SSF 1.0 section 8.1.1.1, "not allowed to create a stream"). | HTTP 403 {err: access_denied} |
+| `STS-SSF-0102` | A transmitter-initiated verification event (the console's Verify, or POST /admin-api/ssf/verify) could not be sent on the stream. | HTTP 400 on /admin-api/ssf/verify |
+| `STS-SSF-0103` | The inserted-path form of the transmitter configuration document was asked for a path no transmitter's issuer has (SSF 1.0 section 7.2). | HTTP 404 {err: invalid_request} |
+| `STS-SSF-0104` | A Security Event Token delivered to one of this service's receivers is not explicitly typed secevent+jwt (SSF 1.0 section 4.1.1); it was recorded and refused. | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
+| `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
 
 ## STS-GNAP
 

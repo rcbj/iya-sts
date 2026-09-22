@@ -8,13 +8,13 @@
 // SUBJECT THE SHARED SIGNALS FRAMEWORK LAYERS ON TOP OF THEM.
 //
 // A Security Event Token says that something happened; a Subject Identifier is
-// the part that says WHO it happened to. RFC 9493 gives eight formats and the
-// whole of the specification's substance is that each one has a CLOSED set of
-// members and every one of them is REQUIRED. That sounds like a formality and
-// it is the thing implementations get wrong: a subject with an extra member is
-// not a subject with an extra member, it is a subject a conforming receiver
-// MUST reject, because the receiver cannot tell whether the member it does not
-// recognise narrows the identifier.
+// the part that says WHO it happened to. RFC 9493 gives eight formats, SSF 1.0
+// section 3.5 adds three more, and the whole of the substance is that each one
+// has a CLOSED set of members and every one of them is REQUIRED. That sounds
+// like a formality and it is the thing implementations get wrong: a subject
+// with an extra member is not a subject with an extra member, it is a subject
+// a conforming receiver MUST reject, because the receiver cannot tell whether
+// the member it does not recognise narrows the identifier.
 //
 // So this module refuses, by name, and says which member was the problem. A
 // mock that accepted a loose subject would let somebody ship a transmitter
@@ -50,6 +50,7 @@
 // join a cycle and a test can drive it with plain objects.
 // ---------------------------------------------------------------------------
 
+const net = require('net');
 const { log, subjectForName } = require('../common/helpers');
 // For `inventsClaimValues()`: whether an address may be made up for somebody
 // whose entry carries none. A leaf requiring only config, so this file stays a
@@ -58,18 +59,28 @@ const mode = require('../common/mode');
 const realms = require('../common/realms');
 
 // ---------------------------------------------------------------------------
-// THE EIGHT FORMATS OF RFC 9493 SECTION 3, EACH WITH ITS CLOSED MEMBER SET.
+// THE ELEVEN FORMATS: RFC 9493 SECTION 3.2'S EIGHT AND SSF 1.0 SECTION 3.5'S
+// THREE, EACH WITH ITS CLOSED MEMBER SET.
 //
 // `members` is what the format defines; `required` is which of them a
-// conforming subject MUST carry. For seven of the eight those two lists are
-// the same, which is the specification's own shape rather than a shortcut
-// here: RFC 9493 defines no optional member on any format except the
-// `Aliases` one, whose `identifiers` is required and whose CONTENTS are the
-// variable part.
+// conforming subject MUST carry. For every row those two lists are the same,
+// which is the specifications' own shape rather than a shortcut here: neither
+// RFC 9493 nor SSF defines an optional member on any of them.
 //
-// `what` is prose for the console and for `GET /ssf`; `example` is a real
-// value of that format, used by the page and by the test as a fixture. Neither
-// is read by the validator.
+// **THE NAMES ARE THE REGISTRY'S, AND UNTIL 2026-09-22 TWO OF THEM WERE NOT.**
+// This table said `issuer_subject_id` and `decentralized_identifier` — the
+// names from the drafts before RFC 9493 — where the RFC and the IANA "Security
+// Event Identifier Formats" registry say `iss_sub` and `did`. So every CAEP
+// event this service sent named its user in a format no conforming receiver
+// knows, a receiver that sent a correct `iss_sub` to subjects/add was refused,
+// and `risc.subjectFormat`'s documented default of `iss_sub` silently fell back
+// to the wrong name (#144). No old spelling is accepted on input: a receiver
+// that learnt it here learnt something no other transmitter will take.
+//
+// `section` is where the row is defined, for the page. `what` is prose for the
+// console and for `GET /ssf`; `example` is a real value of that format, used
+// by the page and by the test as a fixture. None of the three is read by the
+// validator.
 // ---------------------------------------------------------------------------
 const FORMATS = [
   { format: 'account',
@@ -83,12 +94,12 @@ const FORMATS = [
           'practice and the one most likely to be RECYCLED, which is why ' +
           'RISC has an event type about exactly that.',
     example: { format: 'email', email: 'alice@example.com' } },
-  { format: 'issuer_subject_id',
+  { format: 'iss_sub',
     members: ['iss', 'sub'], required: ['iss', 'sub'],
     what: 'The pair an OpenID Connect ID Token is identified by — the ' +
           'issuer and the subject within it. The only format that is ' +
           'globally unique by construction rather than by convention.',
-    example: { format: 'issuer_subject_id',
+    example: { format: 'iss_sub',
                iss: 'https://issuer.example.com/', sub: '145234573' } },
   { format: 'opaque',
     members: ['id'], required: ['id'],
@@ -101,11 +112,11 @@ const FORMATS = [
     what: 'A phone number in E.164 form. RFC 9493 requires the leading "+" ' +
           'and digits only — no spaces, no punctuation, no extension.',
     example: { format: 'phone_number', phone_number: '+12065550100' } },
-  { format: 'decentralized_identifier',
+  { format: 'did',
     members: ['url'], required: ['url'],
     what: 'A DID or a DID URL (W3C DID Core). The identifier resolves to a ' +
           'document rather than to a record at the transmitter.',
-    example: { format: 'decentralized_identifier',
+    example: { format: 'did',
                url: 'did:example:123456789abcdefghi' } },
   { format: 'uri',
     members: ['uri'], required: ['uri'],
@@ -124,7 +135,33 @@ const FORMATS = [
     example: { format: 'aliases', identifiers: [
       { format: 'email', email: 'alice@example.com' },
       { format: 'phone_number', phone_number: '+12065550100' }
-    ] } }
+    ] } },
+  // SSF 1.0 SECTION 3.5's THREE. Not in RFC 9493's registry; SSF defines them
+  // for its own events, and CAEP's session and token events use the first two.
+  { format: 'jwt_id', section: 'SSF 1.0 section 3.5.1',
+    members: ['iss', 'jti'], required: ['iss', 'jti'],
+    what: 'One JWT, by the issuer that minted it and its "jti" — which is ' +
+          'how an event can be about a single token rather than about a ' +
+          'person or a session.',
+    example: { format: 'jwt_id', iss: 'https://idp.example.com/123456789/',
+               jti: 'B70BA622-9515-4353-A866-823539EECBC8' } },
+  { format: 'saml_assertion_id', section: 'SSF 1.0 section 3.5.2',
+    members: ['issuer', 'assertion_id'], required: ['issuer', 'assertion_id'],
+    what: 'One SAML 2.0 assertion, by its Issuer and its ID. The SAML ' +
+          'counterpart of jwt_id; note the members are "issuer" and ' +
+          '"assertion_id", not "iss" and "id".',
+    example: { format: 'saml_assertion_id',
+               issuer: 'https://idp.example.com/123456789/',
+               assertion_id: '_8e8dc5f69a98cc4c1ff3427e5ce34606fd672f91e6' } },
+  { format: 'ip-addresses', section: 'SSF 1.0 section 3.5.3',
+    members: ['ip-addresses'], required: ['ip-addresses'],
+    what: 'The IP addresses the transmitter observed the subject at, as a ' +
+          'non-empty array of RFC 4001 strings. The only format whose value ' +
+          'is an array, and the only one whose name and member are the same ' +
+          'hyphenated word.',
+    example: { format: 'ip-addresses',
+               'ip-addresses': ['10.29.37.75',
+                                '2001:0db8:0000:0000:0000:8a2e:0370:7334'] } }
 ];
 
 const FORMAT_BY_NAME = {};
@@ -140,24 +177,33 @@ const FORMAT_NAMES = FORMATS.map(function (row) {
 // THE COMPLEX SUBJECT, which is the Shared Signals Framework's own addition
 // and not RFC 9493's.
 //
-// SSF 1.0 section 4 lets the `sub_id` of a SET be an object whose members are
-// each themselves a Subject Identifier, so one event can name the person AND
-// the device AND the session it is about. That is what makes "this session was
-// revoked" expressible at all: the person is not revoked, one session of
-// theirs is.
+// SSF 1.0 section 3.3 lets a subject member of a SET be an object whose
+// members are each themselves a Subject Identifier, so one event can name the
+// person AND the device AND the session it is about. That is what makes "this
+// session was revoked" expressible at all: the person is not revoked, one
+// session of theirs is.
 //
-// THE SIX NAMES ARE CLOSED and there is no ninth. A member this service does
-// not recognise is refused for the same reason an unrecognised member of a
-// simple identifier is: a receiver cannot know whether it narrows the subject.
+// **IT CARRIES `"format": "complex"` (SSF 1.0 final, section 3.3).** The drafts
+// told a complex subject from a simple one by the ABSENCE of `format`, and this
+// file did the same — sending complex subjects with no `format` and refusing
+// one that carried it — until 2026-09-22 (#144). The final text gives it a
+// format like every other subject, so the discriminator is now that value and
+// a subject with no `format` at all is simply malformed.
 //
-// `critical_subject_members` in the transmitter's metadata names the ones a
-// receiver is REQUIRED to understand, which is a different list and is
-// configuration rather than grammar — see `ssf.criticalSubjectMembers`.
+// **SEVEN NAMES ARE DEFINED, AND OTHERS ARE ALLOWED.** `application` is the
+// seventh the final text added. "Additional Subject Member names MAY be used",
+// so a member this service does not know is no longer refused — it is read as
+// a Subject Identifier like the rest, and refused only if it is not one. What
+// a receiver MUST understand is a different list and is configuration rather
+// than grammar: `critical_subject_members`, from `ssf.criticalSubjectMembers`.
 // ---------------------------------------------------------------------------
+const COMPLEX_FORMAT = 'complex';
+
 const COMPLEX_MEMBERS = [
   { name: 'user', what: 'The person.' },
   { name: 'device', what: 'The device they are on.' },
   { name: 'session', what: 'The one session, of possibly many.' },
+  { name: 'application', what: 'The application the event concerns.' },
   { name: 'tenant', what: 'The tenant, in a multi-tenant service.' },
   { name: 'org_unit', what: 'The organizational unit within the tenant.' },
   { name: 'group', what: 'The group membership the event is about.' }
@@ -166,6 +212,19 @@ const COMPLEX_MEMBERS = [
 const COMPLEX_MEMBER_NAMES = COMPLEX_MEMBERS.map(function (row) {
   return row.name;
 });
+
+// An additional member's NAME. The specification puts no grammar on it; this
+// is the shape a JSON member name has to have to be one a receiver can refer
+// to in `critical_subject_members` and a person can type, and it keeps out the
+// empty string and `format`, which is the discriminator and not a member.
+const MEMBER_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+
+function isComplex(subject) {
+  log.debug('Entering isComplex().');
+  log.debug('Leaving isComplex().');
+  return !!subject && typeof subject === 'object' && !Array.isArray(subject) &&
+         subject.format === COMPLEX_FORMAT;
+}
 
 // E.164: a plus and between 1 and 15 digits. Deliberately no punctuation and
 // no extension — RFC 9493 section 3.2.5 says the value is the number in that
@@ -224,9 +283,9 @@ const VALUE_CHECKS = {
         '"+" and digits only, so "+1 206 555 0100" is a DIFFERENT subject ' +
         'from "+12065550100" to any receiver that compares them';
   },
-  'decentralized_identifier.url': function (value) {
-    log.debug("Entering decentralized_identifier.url().");
-    log.debug("Leaving decentralized_identifier.url().");
+  'did.url': function (value) {
+    log.debug("Entering did.url().");
+    log.debug("Leaving did.url().");
     return DID_URL.test(value)
       ? null
       : 'is not a DID or a DID URL — it has to begin "did:", name a method ' +
@@ -239,21 +298,58 @@ const VALUE_CHECKS = {
       ? null
       : 'is not an absolute URI — it needs a scheme and a colon';
   },
-  'issuer_subject_id.iss': function (value) {
-    log.debug("Entering issuer_subject_id.iss().");
-    log.debug("Leaving issuer_subject_id.iss().");
+  'iss_sub.iss': function (value) {
+    log.debug("Entering iss_sub.iss().");
+    log.debug("Leaving iss_sub.iss().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI. An issuer identifier is one, always — it ' +
         'is the same string the ID Token carries';
+  },
+  // RFC 7519's `iss` is a StringOrURI, so a jwt_id's issuer is checked the way
+  // an iss_sub's is: it is the same member of the same kind of token.
+  'jwt_id.iss': function (value) {
+    log.debug("Entering jwt_id.iss().");
+    log.debug("Leaving jwt_id.iss().");
+    return ABSOLUTE_URI.test(value)
+      ? null
+      : 'is not an absolute URI — it is the "iss" claim of the JWT being ' +
+        'identified';
   }
 };
+
+// An `ip-addresses` value: a non-empty array of RFC 4001 strings. `net.isIP()`
+// is node's own reading of both families, which is the check a comparison
+// depends on; it refuses a CIDR, a port and a bracketed IPv6 literal, none of
+// which is an address.
+function checkIpAddresses(value) {
+  log.debug('Entering checkIpAddresses().');
+  if (!Array.isArray(value) || !value.length) {
+    log.debug('Leaving checkIpAddresses(). Not a non-empty array.');
+    return 'must be a non-empty array of IP address strings (SSF 1.0 ' +
+           'section 3.5.3)';
+  }
+  const bad = value.filter(function (one) {
+    return typeof one !== 'string' || net.isIP(one) === 0;
+  });
+  log.debug('Leaving checkIpAddresses(). ' + bad.length + ' bad.');
+  return bad.length
+    ? 'holds ' + bad.map(function (one) {
+        return JSON.stringify(one);
+      }).join(', ') + ', which ' + (bad.length === 1 ? 'is' : 'are') +
+      ' not the RFC 4001 string form of an IPv4 or IPv6 address'
+    : null;
+}
 
 // Every member that has no check of its own is a non-empty string and nothing
 // more. `opaque.id` is the case that matters: it is opaque BY DEFINITION, so a
 // check on its shape would be this service inventing a rule.
 function checkMemberValue(format, member, value) {
   log.debug('Entering checkMemberValue(). ' + format + '.' + member);
+  if (format === 'ip-addresses') {
+    log.debug('Leaving checkMemberValue(). An array of addresses.');
+    return checkIpAddresses(value);
+  }
   if (typeof value !== 'string' || value === '') {
     log.debug('Leaving checkMemberValue(). Not a non-empty string.');
     return 'must be a non-empty string';
@@ -294,15 +390,18 @@ function validateSubject(subject, path, options) {
   if (typeof format !== 'string' || format === '') {
     errors.push(where + ' has no "format" member. RFC 9493 makes it ' +
         'REQUIRED on every Subject Identifier — without it a receiver ' +
-        'cannot know which members to read. The eight formats are: ' +
+        'cannot know which members to read. The formats are: ' +
         FORMAT_NAMES.join(', ') + '.');
     log.debug('Leaving validateSubject(). No format.');
     return { ok: false, format: '', errors: errors };
   }
   const row = FORMAT_BY_NAME[format];
   if (!row) {
-    errors.push(where + ' names the format "' + format + '", which RFC 9493 ' +
-        'does not define. The eight are: ' + FORMAT_NAMES.join(', ') + '.');
+    errors.push(where + ' names the format "' + format + '", which neither ' +
+        'RFC 9493 nor SSF 1.0 section 3.5 defines. The formats are: ' +
+        FORMAT_NAMES.join(', ') + (format === COMPLEX_FORMAT
+          ? ' — "complex" is a sub_id of its own and cannot sit inside one'
+          : '') + '.');
     log.debug('Leaving validateSubject(). Unknown format.');
     return { ok: false, format: format, errors: errors };
   }
@@ -387,11 +486,10 @@ function validateAliases(subject, where, errors, options) {
 // ---------------------------------------------------------------------------
 // VALIDATE A `sub_id`, WHICH MAY BE SIMPLE OR COMPLEX.
 //
-// The two are told apart by the presence of `format`: SSF 1.0 section 4 says a
-// complex subject has no `format` member and simple one always does. That is
-// the whole discriminator and it is worth being explicit about, because the
-// obvious alternative — "does it have a member named `user`?" — is wrong for
-// an `opaque` subject whose id happens to be spelt that way.
+// The two are told apart by `format`: `"complex"` is a complex subject (SSF
+// 1.0 section 3.3) and any other value is a simple Subject Identifier. A
+// subject with no `format` is neither and is refused as a simple one missing
+// its format — which it is, since the final text gives every subject one.
 //
 // `criticalMembers` is the transmitter's `critical_subject_members`: names a
 // RECEIVER must understand. A complex subject that carries none of them is
@@ -408,31 +506,49 @@ function validateSubjectId(subject, options) {
     return { ok: false, complex: false, format: '',
       errors: [where + ' must be a JSON object.'] };
   }
-  if (Object.prototype.hasOwnProperty.call(subject, 'format')) {
+  if (!isComplex(subject)) {
     const simple = validateSubject(subject, where, settings);
+    if (!Object.prototype.hasOwnProperty.call(subject, 'format') &&
+        Object.keys(subject).some(function (name) {
+          return COMPLEX_MEMBER_NAMES.indexOf(name) >= 0;
+        })) {
+      simple.errors.push(where + ' looks like a complex subject without its ' +
+          'format. SSF 1.0 final (section 3.3) gives a complex subject ' +
+          '"format": "complex"; the drafts before it left the member out, ' +
+          'and that shape is not accepted here.');
+    }
     log.debug('Leaving validateSubjectId(). Simple.');
-    return { ok: simple.ok, complex: false, format: simple.format,
-      errors: simple.errors };
+    return { ok: simple.ok && simple.errors.length === 0, complex: false,
+      format: simple.format, errors: simple.errors };
   }
 
   const errors = [];
-  const names = Object.keys(subject);
+  const names = Object.keys(subject).filter(function (name) {
+    return name !== 'format';
+  });
   if (!names.length) {
-    errors.push(where + ' is an empty object. A complex subject with no ' +
-        'members names nobody, and a SIMPLE one would have carried a ' +
-        '"format".');
+    errors.push(where + ' is a complex subject with no members. SSF 1.0 ' +
+        'section 3.3 requires one or more Simple Subject Members.');
   }
   names.forEach(function (name) {
-    if (COMPLEX_MEMBER_NAMES.indexOf(name) < 0) {
-      errors.push(where + ' carries "' + name + '", which is neither one of ' +
-          'the six complex subject members SSF 1.0 section 4 defines (' +
-          COMPLEX_MEMBER_NAMES.join(', ') + ') nor the "format" member a ' +
-          'SIMPLE Subject Identifier would carry. If this was meant to be a ' +
-          'simple identifier, it is missing its "format".');
+    // ADDITIONAL NAMES ARE ALLOWED (section 3.3); a name that could not be one
+    // is not. Each member is still a Subject Identifier and is read as one.
+    if (COMPLEX_MEMBER_NAMES.indexOf(name) < 0 && !MEMBER_NAME.test(name)) {
+      errors.push(where + ' carries a member named ' + JSON.stringify(name) +
+          ', which is not a name a receiver could refer to. The seven SSF ' +
+          'defines are ' + COMPLEX_MEMBER_NAMES.join(', ') + ', and an ' +
+          'additional one is a letter followed by letters, digits, "_", "." ' +
+          'or "-".');
       return;
     }
-    const verdict = validateSubject(subject[name], where + '.' + name,
-                                    settings);
+    const value = subject[name];
+    if (isComplex(value)) {
+      errors.push(where + '.' + name + ' is itself a complex subject. Each ' +
+          'member of a complex subject is a SIMPLE Subject Identifier (SSF ' +
+          '1.0 section 3.3).');
+      return;
+    }
+    const verdict = validateSubject(value, where + '.' + name, settings);
     verdict.errors.forEach(function (message) {
       errors.push(message);
     });
@@ -451,8 +567,35 @@ function validateSubjectId(subject, options) {
 
   log.debug('Leaving validateSubjectId(). Complex, ' + errors.length +
             ' problem(s).');
-  return { ok: errors.length === 0, complex: true, format: '',
+  return { ok: errors.length === 0, complex: true, format: COMPLEX_FORMAT,
     errors: errors };
+}
+
+// A complex subject from its members, with the format member the final text
+// requires. Every place this service BUILDS one goes through here, so none of
+// them can forget it the way all four did until 2026-09-22.
+function complexSubject(members) {
+  log.debug('Entering complexSubject().');
+  const out = { format: COMPLEX_FORMAT };
+  Object.keys(members || {}).forEach(function (name) {
+    if (members[name]) {
+      out[name] = members[name];
+    }
+  });
+  log.debug('Leaving complexSubject(). ' + (Object.keys(out).length - 1) +
+            ' member(s).');
+  return out;
+}
+
+// The members of a complex subject, without its format — what a matcher walks.
+function complexMembers(subject) {
+  log.debug('Entering complexMembers().');
+  const names = isComplex(subject) ? Object.keys(subject).filter(
+    function (name) {
+      return name !== 'format';
+    }) : [];
+  log.debug('Leaving complexMembers(). ' + names.length + '.');
+  return names;
 }
 
 // ---------------------------------------------------------------------------
@@ -471,7 +614,7 @@ function subjectKey(subject) {
     log.debug('Leaving subjectKey(). Not an object.');
     return '';
   }
-  if (Object.prototype.hasOwnProperty.call(subject, 'format')) {
+  if (!isComplex(subject)) {
     if (subject.format === 'aliases' && Array.isArray(subject.identifiers)) {
       const parts = subject.identifiers.map(subjectKey).sort();
       log.debug('Leaving subjectKey(). Aliases.');
@@ -488,7 +631,7 @@ function subjectKey(subject) {
     log.debug('Leaving subjectKey(). Simple.');
     return subject.format + '{' + body + '}';
   }
-  const complex = Object.keys(subject).slice().sort().map(function (name) {
+  const complex = complexMembers(subject).sort().map(function (name) {
     return name + '=' + subjectKey(subject[name]);
   }).join(';');
   log.debug('Leaving subjectKey(). Complex.');
@@ -503,8 +646,8 @@ function describeSubject(subject) {
     log.debug('Leaving describeSubject(). Nothing.');
     return '(no subject)';
   }
-  if (!Object.prototype.hasOwnProperty.call(subject, 'format')) {
-    const parts = Object.keys(subject).map(function (name) {
+  if (isComplex(subject)) {
+    const parts = complexMembers(subject).map(function (name) {
       return name + ': ' + describeSubject(subject[name]);
     });
     log.debug('Leaving describeSubject(). Complex.');
@@ -519,7 +662,9 @@ function describeSubject(subject) {
   }
   const row = FORMAT_BY_NAME[subject.format];
   const values = (row ? row.members : []).map(function (name) {
-    return String(subject[name] == null ? '' : subject[name]);
+    const value = subject[name];
+    return Array.isArray(value) ? value.join(', ')
+      : String(value == null ? '' : value);
   }).filter(Boolean);
   log.debug('Leaving describeSubject(). Simple.');
   return values.join(' / ') || subject.format;
@@ -547,6 +692,11 @@ function describeSubject(subject) {
 // has. An invented fact a receiver acts on is worse than a different format it
 // can handle. A username that is itself an address is a real value in both.
 // ---------------------------------------------------------------------------
+// The formats a PERSON can be named in — every one but SSF 1.0 section 3.5's
+// three, which are about a token, an assertion and an address.
+const PERSON_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
+                        'phone_number', 'did', 'uri', 'aliases'];
+
 function realOrInventedMail(name, facts) {
   log.debug("Entering realOrInventedMail().");
   const mail = String((facts || {}).mail || '').trim();
@@ -566,27 +716,31 @@ function subjectForUser(userid, format, issuer, facts) {
   log.debug('Entering subjectForUser(). ' + format);
   const name = String(userid || '');
   const known = facts || {};
-  const chosen = FORMAT_BY_NAME[format] ? format : 'issuer_subject_id';
+  // A PERSON's formats. jwt_id, saml_assertion_id and ip-addresses name a
+  // token, an assertion and a network location, never somebody by name, so a
+  // stream whose default format is one of them gets the issuer/subject pair.
+  const chosen = FORMAT_BY_NAME[format] && PERSON_FORMATS.indexOf(format) >= 0
+    ? format : 'iss_sub';
   // THE `sub` EVERY TOKEN THIS ISSUER HANDED OUT CARRIES (2026-09-14): the
-  // person's `urn:uuid:<entryUUID>`. An issuer_subject_id is RFC 9493's
+  // person's `urn:uuid:<entryUUID>`. An iss_sub is RFC 9493's
   // "subject as the issuer knows it", and a receiver joins it to the tokens it
   // already holds — so a bare name here named a subject no token had. A caller
   // that knows the subject (an event about an entry already deleted) passes it
   // as `facts.subject`; somebody the directory does not hold keeps the name.
   const issuerSubject = String(known.subject || '') ||
                         subjectForName(name) || name;
-  const fallback = { format: 'issuer_subject_id', iss: String(issuer || ''),
+  const fallback = { format: 'iss_sub', iss: String(issuer || ''),
     sub: issuerSubject };
   if (chosen === 'email') {
     const mail = realOrInventedMail(name, known);
     log.debug('Leaving subjectForUser(). email' + (mail ? '.' : ': none, ' +
-              'and none is invented here; issuer_subject_id.'));
+              'and none is invented here; iss_sub.'));
     return mail ? { format: 'email', email: mail } : fallback;
   }
   if (chosen === 'account') {
     const mail = realOrInventedMail(name, known);
     log.debug('Leaving subjectForUser(). account' + (mail ? '.' : ': none; ' +
-              'issuer_subject_id.'));
+              'iss_sub.'));
     return mail ? { format: 'account', uri: 'acct:' + mail } : fallback;
   }
   if (chosen === 'opaque') {
@@ -597,18 +751,17 @@ function subjectForUser(userid, format, issuer, facts) {
     log.debug('Leaving subjectForUser(). uri.');
     return { format: 'uri', uri: String(issuer || '') + '/users/' + name };
   }
-  if (chosen === 'decentralized_identifier') {
+  if (chosen === 'did') {
     const did = String(known.did || '').trim();
     if (did) {
       log.debug('Leaving subjectForUser(). did, a real one.');
-      return { format: 'decentralized_identifier', url: did };
+      return { format: 'did', url: did };
     }
     if (mode.inventsClaimValues()) {
       log.debug('Leaving subjectForUser(). did, invented.');
-      return { format: 'decentralized_identifier',
-        url: 'did:example:' + name };
+      return { format: 'did', url: 'did:example:' + name };
     }
-    log.debug('Leaving subjectForUser(). No DID; issuer_subject_id.');
+    log.debug('Leaving subjectForUser(). No DID; iss_sub.');
     return fallback;
   }
   if (chosen === 'phone_number') {
@@ -622,15 +775,14 @@ function subjectForUser(userid, format, issuer, facts) {
     }
     // A stream that asked for this format gets the issuer/subject pair
     // instead; the subject's own `format` member says which was sent.
-    log.debug('Leaving subjectForUser(). No number; issuer_subject_id.');
+    log.debug('Leaving subjectForUser(). No number; iss_sub.');
     return fallback;
   }
   if (chosen === 'aliases') {
     const mail = realOrInventedMail(name, known);
     /** @type {any[]} */
     const identifiers = [
-      { format: 'issuer_subject_id', iss: String(issuer || ''),
-        sub: issuerSubject }
+      { format: 'iss_sub', iss: String(issuer || ''), sub: issuerSubject }
     ];
     if (mail) {
       identifiers.push({ format: 'email', email: mail });
@@ -638,15 +790,21 @@ function subjectForUser(userid, format, issuer, facts) {
     log.debug('Leaving subjectForUser(). aliases, ' + identifiers.length + '.');
     return { format: 'aliases', identifiers: identifiers };
   }
-  log.debug('Leaving subjectForUser(). issuer_subject_id.');
+  log.debug('Leaving subjectForUser(). iss_sub.');
   return fallback;
 }
 
 module.exports = {
   FORMATS: FORMATS,
   FORMAT_NAMES: FORMAT_NAMES,
+  PERSON_FORMATS: PERSON_FORMATS,
+  COMPLEX_FORMAT: COMPLEX_FORMAT,
   COMPLEX_MEMBERS: COMPLEX_MEMBERS,
   COMPLEX_MEMBER_NAMES: COMPLEX_MEMBER_NAMES,
+  MEMBER_NAME: MEMBER_NAME,
+  isComplex: isComplex,
+  complexSubject: complexSubject,
+  complexMembers: complexMembers,
   validateSubject: validateSubject,
   validateSubjectId: validateSubjectId,
   subjectKey: subjectKey,

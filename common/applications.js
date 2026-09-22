@@ -3952,9 +3952,12 @@ function findSsfOwner(backing, wanted) {
   log.debug("Entering findSsfOwner().");
   const answer = function (entry) {
     const indexed = byLowerName(entry.attributes);
+    // `receiverIds` (#144): the other names the receiver is associated
+    // with, which `ssf_streams.ts` offers as a stream's `aud`.
     return { identifier: firstValue(indexed, 'appIdentifier') ||
                          firstValue(indexed, 'cn') || wanted,
-             values: valuesOf(indexed.ssfallowedevents) };
+             values: valuesOf(indexed.ssfallowedevents),
+             receiverIds: valuesOf(indexed.ssfreceiverid) };
   };
   const direct = backing.readApplication(wanted);
   if (direct) {

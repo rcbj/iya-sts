@@ -457,22 +457,37 @@ const SPECS: Spec[] = [
     url:
       'https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html',
     coverage: 'partial: the transmitter half in full — the configuration ' +
-              'metadata at /.well-known/ssf-configuration, the stream ' +
+              'metadata at /.well-known/ssf-configuration and at the ' +
+              'section 7.2 inserted-path form for a realm issuer, the stream ' +
               'management API (create, read, replace, merge, delete), the ' +
               'status endpoint with all three statuses, add and remove ' +
-              'subject, the verification endpoint, both delivery methods, ' +
-              'and both of the two event types SSF defines of its own ' +
-              '(verification and stream updated). Complex subjects and ' +
-              'critical_subject_members are implemented. Section 8 ' +
-              'authorization is two schemes rather than an open list — an ' +
-              'OAuth 2.0 access token with ssf:read or ssf:write, and HTTP ' +
-              'Basic — published in authorization_schemes. NOT covered, each ' +
-              'deliberately and each on /ssf: a failed push is never ' +
-              'retried, because a client that answers 500 then 202 would ' +
-              'look from its own logs like a client that works; streams are ' +
-              'in memory and die with the process; and nothing is verified ' +
-              'about a subject, so a stream may name somebody who has never ' +
-              'been here.' },
+              'subject, the verification endpoint (answering 204 and ' +
+              'delivering asynchronously, section 8.1.4.2), both delivery ' +
+              'methods, and both of SSF\'s own event types — verification, ' +
+              'also sent on the transmitter\'s own initiative ' +
+              '(ssf.verificationEveryS, or Verify on /admin/ssf), and stream ' +
+              'updated, sent before a stream stops and after it starts again ' +
+              'on every change of status. Every stream belongs to the ' +
+              'receiver that created it (section 8): another receiver\'s ' +
+              'stream answers 404, a list is the caller\'s own streams, aud ' +
+              'is Transmitter-Supplied from the receiver\'s identity, and ' +
+              'ssf.maxStreams is per receiver. A paused push stream holds ' +
+              'its ' +
+              'SETs and pushes them in order when enabled; a dead one is ' +
+              'paused and announced. inactivity_timeout (off by default), ' +
+              'txn on every SET, complex subjects with "format": "complex" ' +
+              'and the seven section 3.3 members plus additional ones, ' +
+              'critical_subject_members, and section 3.5\'s jwt_id, ' +
+              'saml_assertion_id and ip-addresses formats are implemented. ' +
+              'Section 8 authorization is three schemes — an OAuth 2.0 ' +
+              'access token with ssf:read or ssf:write, HTTP Basic and ' +
+              'GNAP — ' +
+              'published in authorization_schemes. Failed pushes are retried ' +
+              'ssf.pushRetries times (0 by default, deliberately) and then ' +
+              'dead-lettered, and streams are persisted in product mode. NOT ' +
+              'covered: this service as a RECEIVER of a foreign transmitter ' +
+              '(#153), and nothing is verified about a subject, so a stream ' +
+              'may name somebody who has never been here.' },
   { id: 'rfc8417', name: 'RFC 8417 — Security Event Token (SET)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc8417',
@@ -490,8 +505,8 @@ const SPECS: Spec[] = [
                          'Tokens',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9493',
-    coverage: 'full: all eight formats — account, email, issuer_subject_id, ' +
-              'opaque, phone_number, decentralized_identifier, uri and ' +
+    coverage: 'full: all eight formats under their registered names — ' +
+              'account, email, iss_sub, opaque, phone_number, did, uri and ' +
               'aliases — with each format\'s CLOSED member set enforced, ' +
               'which is the half implementations get wrong: a subject ' +
               'carrying an extra member is one a conforming receiver MUST ' +
@@ -508,8 +523,11 @@ const SPECS: Spec[] = [
               '{err, description} as the receiver REFUSING — which is a ' +
               'different outcome from a network failure and is recorded as ' +
               'one. It also RECEIVES on that profile at POST /ssf/receive, ' +
-              'the roles reversed, so a client can be the transmitter. NOT ' +
-              'covered: retries, deliberately — see ssf/ssf_http.ts.' },
+              'the roles reversed, so a client can be the transmitter, ' +
+              'checking the typ, iss and aud of what arrives. A failed push ' +
+              'is retried ssf.pushRetries times — 0 by default, ' +
+              'deliberately, see ssf/ssf_http.ts — and then goes to the ' +
+              'stream\'s dead-letter queue.' },
   { id: 'caep', name: 'OpenID Continuous Access Evaluation Profile 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-caep-1_0-final.html',
@@ -3027,6 +3045,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'bootstrap against. It also answers while ssf.enabled is OFF, so a ' +
           'receiver can tell "this service does not speak SSF" from "the ' +
           'path is wrong".' },
+  { path: '/.well-known/ssf-configuration/*', group: 'Shared Signals',
+    name: 'Transmitter configuration metadata, inserted-path form',
+    specs: ['ssf'],
+    what: 'The same document for an issuer WITH A PATH, at the place SSF ' +
+          '1.0 section 7.2 puts it: "/.well-known/ssf-configuration" ' +
+          'inserted between the host and the issuer\'s path — so a trust ' +
+          'realm\'s transmitter, whose issuer is https://host/realm/acme, is ' +
+          'discovered at /.well-known/ssf-configuration/realm/acme. The ' +
+          'realm is found by asking each one for its issuer, so an ' +
+          'ssf.issuer configured with a path of its own is found too; a path ' +
+          'no issuer has answers 404. Never gated, like the other form.' },
   { path: '/ssf', group: 'Shared Signals', name: 'What the Shared Signals ' +
                                                  'surface is',
     specs: ['ssf', 'rfc8417', 'rfc9493', 'rfc8935', 'rfc8936'],

@@ -38,8 +38,11 @@ and left the part that merely looks run.
 So the delivery is a real HTTP request. This service dials itself, on the
 loopback interface, with its own TLS certificate pinned, carrying the bearer
 token that receiver's stream told the transmitter to use — and the receiver
-checks that token, checks the audience, and verifies the signature, exactly as a
-receiver you wrote would have to.
+checks that token, checks that the SET is typed `secevent+jwt`, that its issuer
+is the stream's and that its audience names the receiver, and verifies the
+signature, exactly as a receiver you wrote would have to (SSF 1.0 sections
+4.1.1 and 4.1.6). A SET that fails one of those is still listed, marked as
+refused.
 
 **The consequence worth knowing:** these two pages are the only surfaces here
 that go EMPTY when delivery is broken. `/admin/ssf` will still show the streams,

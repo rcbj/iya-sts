@@ -22127,6 +22127,18 @@ class AdminConsole {
           '<button class="secondary">Drop its dead letters</button>' +
           '</div></form>'
         : '') +
+      // A TRANSMITTER-INITIATED VERIFICATION EVENT (#144, SSF 1.0 section
+      // 8.1.4), with no state — the receiver did not ask, so there is none to
+      // echo. The same act as POST /admin-api/ssf/verify.
+      (row.status !== 'disabled'
+        ? '<form method="post" action="/admin/ssf"><div class="formrow">' +
+          '<input type="hidden" name="stream_id" value="' +
+          this.esc(row.stream_id) +
+          '">' +
+          '<input type="hidden" name="action" value="verify">' +
+          '<button class="secondary">Send a verification event</button>' +
+          '</div></form>'
+        : '') +
       '<form method="post" action="/admin/ssf"><div class="formrow">' +
       '<input type="hidden" name="stream_id" value="' +
       this.esc(row.stream_id) +

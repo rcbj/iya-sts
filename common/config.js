@@ -8548,8 +8548,10 @@ const SETTINGS = [
     runtime: true,
     description: 'Published as critical_subject_members: the members of a ' +
                  'COMPLEX subject a receiver of this transmitter\'s events ' +
-                 'MUST understand. The six SSF defines are user, device, ' +
-                 'session, tenant, org_unit and group. Naming one here is a ' +
+                 'MUST understand. The seven SSF 1.0 section 3.3 defines are ' +
+                 'user, device, session, application, tenant, org_unit and ' +
+                 'group, and an additional member name may be listed too. ' +
+                 'Naming one here is a ' +
                  'promise, so this service also refuses to ADD a complex ' +
                  'subject that omits it — a transmitter that published a ' +
                  'critical member and then left it out would be producing ' +
@@ -8763,13 +8765,65 @@ const SETTINGS = [
                  'with it off the events queue on the two streams and reach ' +
                  'neither page.' },
 
-  { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per realm',
+  { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per receiver',
     env: 'STS_SSF_MAX_STREAMS', type: 'int', dflt: 25, min: 1, max: 1000,
     runtime: true,
-    description: 'How many streams one trust realm may hold. A create past ' +
-                 'it is refused NAMING THIS SETTING, which is the point of ' +
-                 'having a limit on a mock at all: every ceiling here is a ' +
-                 'reachable negative a receiver cannot otherwise exercise.' },
+    description: 'How many streams one RECEIVER — one authenticated owner — ' +
+                 'may hold in a trust realm. It was per realm until ' +
+                 '2026-09-22 (#144), which let one receiver use up every ' +
+                 'other receiver\'s allowance. A create past it is refused ' +
+                 'NAMING THIS SETTING, which is the point of having a limit ' +
+                 'on a mock at all: every ceiling here is a reachable ' +
+                 'negative a receiver cannot otherwise exercise. This ' +
+                 'service\'s own two receiver streams are not counted.' },
+
+  { key: 'ssf.inactivityTimeoutS', group: 'SSF',
+    label: 'Stream inactivity timeout (s)',
+    env: 'STS_SSF_INACTIVITY_TIMEOUT_S', type: 'int', dflt: 0, min: 0,
+    max: 31536000, runtime: true,
+    description: 'SSF 1.0 section 8.1.1\'s inactivity_timeout: after this ' +
+                 'many seconds with no activity from a receiver — any ' +
+                 'management call naming its stream, or a poll of a poll ' +
+                 'stream — the stream is dealt with as ' +
+                 'ssf.inactivityAction says, and the value is published on ' +
+                 'every stream configuration. ZERO, the default, is no ' +
+                 'timeout and publishes nothing: a PUSH receiver never has ' +
+                 'to call back after it creates its stream, so a timeout on ' +
+                 'by default would pause every healthy push stream. This ' +
+                 'service\'s own two receiver streams are never timed out.' },
+
+  { key: 'ssf.inactivityAction', group: 'SSF',
+    label: 'What an inactive stream becomes',
+    env: 'STS_SSF_INACTIVITY_ACTION', type: 'enum',
+    enumValues: ['pause', 'disable', 'delete'], dflt: 'pause', runtime: true,
+    description: 'The three things section 8.1.1 allows. Pause and disable ' +
+                 'send the receiver a stream-updated event BEFORE the ' +
+                 'stream stops, which the specification requires; a paused ' +
+                 'stream keeps queueing and a disabled one drops what is ' +
+                 'waiting. Delete removes the stream and sends nothing, ' +
+                 'because there is no stream left to send it on.' },
+
+  { key: 'ssf.verificationEveryS', group: 'SSF',
+    label: 'Transmitter-initiated verification (s)',
+    env: 'STS_SSF_VERIFICATION_EVERY_S', type: 'int', dflt: 0, min: 0,
+    max: 31536000, runtime: true,
+    description: 'SSF 1.0 section 8.1.4: a transmitter MAY send a ' +
+                 'verification event at any time. With this above zero ' +
+                 'every ENABLED stream is sent one, with no state (section ' +
+                 '8.1.4.2 forbids a state the receiver did not supply), ' +
+                 'when it has had none for this many seconds. Zero, the ' +
+                 'default, sends one only when a receiver asks or an ' +
+                 'operator presses Verify on /admin/ssf.' },
+
+  { key: 'ssf.streamMaintenanceSweepS', group: 'SSF',
+    label: 'Stream maintenance sweep interval (s)',
+    env: 'STS_SSF_STREAM_MAINTENANCE_SWEEP_S', type: 'int', dflt: 60,
+    min: 5, max: 86400, runtime: true,
+    description: 'How often the ssf.stream-maintenance scheduler job looks ' +
+                 'for inactive streams and for streams due a ' +
+                 'transmitter-initiated verification event. It runs on one ' +
+                 'node for the cluster and does nothing while both ' +
+                 'ssf.inactivityTimeoutS and ssf.verificationEveryS are 0.' },
 
   { key: 'ssf.maxSubjectsPerStream', group: 'SSF', label: 'Subjects per stream',
     env: 'STS_SSF_MAX_SUBJECTS_PER_STREAM', type: 'int', dflt: 100, min: 1,
@@ -8840,6 +8894,26 @@ const SETTINGS = [
                  'way, because a receiver that refused an unverifiable ' +
                  'event would be unable to show a person WHY it was ' +
                  'unverifiable. Off answers 501.' },
+
+  { key: 'ssf.receiveAudiences', group: 'SSF',
+    label: 'Audiences POST /ssf/receive answers to',
+    env: 'STS_SSF_RECEIVE_AUDIENCES', type: 'csv', dflt: '', runtime: true,
+    description: 'The `aud` values the debugger-facing receiver at ' +
+                 'POST /ssf/receive accepts. A SET addressed to none of ' +
+                 'them is recorded and refused with invalid_audience, as a ' +
+                 'real receiver refuses it. EMPTY means the endpoint\'s own ' +
+                 'URL in this realm, which is the name a transmitter can ' +
+                 'discover without being told one.' },
+
+  { key: 'ssf.receiveIssuers', group: 'SSF',
+    label: 'Issuers POST /ssf/receive accepts',
+    env: 'STS_SSF_RECEIVE_ISSUERS', type: 'csv', dflt: '', runtime: true,
+    description: 'The `iss` values POST /ssf/receive accepts (SSF 1.0 ' +
+                 'section 4.1.6: a receiver MUST check the issuer). A SET ' +
+                 'from any other issuer is recorded and refused with ' +
+                 'invalid_issuer. EMPTY means this realm\'s own transmitter ' +
+                 'issuer — the only issuer whose SETs this receiver can ' +
+                 'verify, since it holds no other key.' },
 
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',

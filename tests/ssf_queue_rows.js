@@ -91,10 +91,9 @@ function child() {
 
     realms.run(realm, function () {
       const made = streams.createStream(
-        { delivery: { method: streams.DELIVERY_POLL },
-          aud: 'https://receiver.test/q' },
+        { delivery: { method: streams.DELIVERY_POLL } },
         { issuer: 'https://sts.test/realm/ssf-queue-rows',
-          principal: 'queue-probe' });
+          principal: 'queue-probe', audience: 'https://receiver.test/q' });
       note(made.ok, 'a poll stream is created', JSON.stringify(made.errors));
       const record = made.stream;
       const id = record.stream_id;

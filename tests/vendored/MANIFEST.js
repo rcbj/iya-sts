@@ -266,6 +266,13 @@ const JOBS = [
   // attribute is this repository's own and the assertion spans an /admin-api
   // write and a protocol delivery.
   { file: 'sts_ssf_allowed_events.js',   browser: false, local: true },
+  // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
+  // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
+  // aud, the RFC 9493 names and the final complex subject, the inserted-path
+  // discovery form, verification, status in section 8.1.5's order, and
+  // /ssf/receive's typ, iss and aud checks. `local: true`: this repository's
+  // own transmitter, in a throwaway realm it leaves behind.
+  { file: 'sts_ssf_conformance.js',      browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader

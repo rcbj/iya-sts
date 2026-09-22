@@ -253,7 +253,7 @@ function run(t) {
   const disabled = both.filter(function (one) {
     return one.uri === P + 'account-disabled';
   })[0];
-  t.equal(disabled.subject.format, 'issuer_subject_id',
+  t.equal(disabled.subject.format, 'iss_sub',
           'while account-disabled uses the configured format — the ' +
           'identifier a receiver already holds, because an ID Token\'s iss ' +
           'and sub said it');
@@ -452,11 +452,13 @@ function run(t) {
   t.log.info('L. RISC section 3.1: the defect the specification asks for');
   // -----------------------------------------------------------------------
   const ordinary = risc.subjectFor(moved, P + 'account-disabled');
-  t.equal(ordinary.format, 'issuer_subject_id',
-          'ordinarily the discriminator is `format`, as RFC 9493 says');
+  t.equal(ordinary.format, 'iss_sub',
+          'ordinarily the discriminator is `format`, as RFC 9493 says, and ' +
+          'the risc.subjectFormat default of iss_sub is honoured — it fell ' +
+          'back to the pre-RFC name until #144');
   config.setOverride('risc.googleSubjectType', 'true');
   const google = risc.subjectFor(moved, P + 'account-disabled');
-  t.equal(google.subject_type, 'issuer_subject_id',
+  t.equal(google.subject_type, 'iss_sub',
           'with risc.googleSubjectType on it is `subject_type` — which RISC ' +
           'section 3.1 records as a production transmitter\'s spelling, ' +
           'says new services MUST NOT use, and then tells relying parties ' +

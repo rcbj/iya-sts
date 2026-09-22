@@ -10870,11 +10870,16 @@ class AdminApi {
                          'and "it did not happen", and it is the whole ' +
                          'reason ' +
                          'a ' +
-                         'Shared Signals receiver has a pause.\n\nA change ' +
-                         'here also emits a **stream updated** event ON the ' +
-                         'stream, if the receiver agreed that type — the one ' +
-                         'event a receiver gets without asking for it, and ' +
-                         'the one whose absence is hardest to notice.',
+                         'Shared Signals receiver has a pause. A paused PUSH ' +
+                         'stream holds its SETs and pushes them, in order, ' +
+                         'when it is enabled again.\n\nA change here also ' +
+                         'emits a **stream-updated** event ON the stream ' +
+                         'whether or not the receiver agreed that type (SSF ' +
+                         '1.0 section 8.1.5), in the order that section ' +
+                         'requires: BEFORE the stream stops when it is ' +
+                         'paused or disabled, and after it starts again when ' +
+                         'it is enabled. Setting the status a stream already ' +
+                         'has announces nothing.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -11009,6 +11014,31 @@ class AdminApi {
             },
             responseDescription: 'Confirmation, or a refusal naming the ' +
                                  'stream_id or saying it is not dead.' },
+
+          { action: 'verify', operationId: 'verifySsfStream',
+            summary: 'Send a transmitter-initiated verification event',
+            description: 'SSF 1.0 section 8.1.4: a transmitter MAY send a ' +
+                         'verification event at any time. This sends one on ' +
+                         'the stream with NO `state` — section 8.1.4.2 ' +
+                         'forbids a state the receiver did not supply — ' +
+                         'whether or not the stream agreed the type. A ' +
+                         'paused push stream holds it until it is enabled; ' +
+                         'a disabled stream refuses it. ' +
+                         '`ssf.verificationEveryS` does the same on a ' +
+                         'schedule.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                stream_id: { type: 'string', description: 'The stream.' }
+              },
+              required: ['stream_id'],
+              examples: [{ stream_id: 'ssf-0123456789ab' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether the event was delivered, queued ' +
+                                 'for polling or held, or a refusal naming ' +
+                                 'the stream_id or why it was not sent.' },
 
           { action: 'clear-dead-letters', operationId: 'clearSsfDeadLetters',
             summary: 'Drop a stream\'s dead letters',
