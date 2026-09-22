@@ -1604,8 +1604,25 @@ function lazyKeySet(realmId, stored) {
   });
   // THE BBS KEY (2026-09-22, #49 P5): its public half resident, its secret
   // half the keystore's door, and a setter for bbsKeyPair()'s backfill.
+  // **THE BLOB HOLDS BASE64, SO IT IS DECODED (2026-09-22, #161).** This read
+  // was `Uint8Array.from(stored.bbsKey.publicKey)`, and `keystore.js`'s
+  // serialiseBbsKey() writes the public half as a base64 STRING — and
+  // `Uint8Array.from` over a string maps each CHARACTER through Number(),
+  // which is NaN for every base64 character and lands as 0. So a realm whose
+  // keys persist got a public half of ZEROS the length of the string, against
+  // a secret half that `privateMaterialFor()` decodes correctly: a mismatched
+  // pair, silently. Every ldp_vc credential then failed the issuer's own
+  // self-check (`oid4vc/vc_issuer.ts`), which is why `vc_did` and the two
+  // ldp_vc jobs failed in the single-node and cluster modes and passed in
+  // memory mode, where the key is generated in the process and never read
+  // back through this path. It also GREW on each round trip — 96 real bytes,
+  // then 128 zeros, then 172 — because the zeros were re-encoded.
+  //
+  // `Buffer.from(x, 'base64')` IGNORES the encoding when `x` is a typed array
+  // and copies it, so this is right for both shapes: the stored string, and a
+  // blob that already carries bytes.
   const bbsPublic = stored.bbsKey && stored.bbsKey.publicKey
-    ? Uint8Array.from(stored.bbsKey.publicKey) : null;
+    ? Uint8Array.from(Buffer.from(stored.bbsKey.publicKey, 'base64')) : null;
   let bbsGenerated = null;
   const bbsStoredView = bbsPublic ? Object.defineProperty(
     { publicKey: bbsPublic }, 'secretKey', {
