@@ -1849,7 +1849,8 @@ class AdminActions {
       }
       result.removed.forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+          credentialType: accountSignals.keyCredentialType(one),
+          fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
           reasonAdmin: 'An administrator disabled passwordless sign-in for ' +
                        who + '.',
@@ -1890,7 +1891,8 @@ class AdminActions {
       }
       removed.keys.forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+          credentialType: accountSignals.keyCredentialType(one),
+          fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
           reasonAdmin: 'An administrator disabled every second factor of ' +
                        who + '.',
@@ -2198,7 +2200,8 @@ class AdminActions {
                                                        ''));
       if (result.ok) {
         accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+          credentialType: accountSignals.keyCredentialType(going),
+          fido2Aaguid: String((going && going.aaguid) || ''),
           changeType: 'delete', via: ctx.via,
           friendlyName: going ? String(going.label || '') : '',
           reasonAdmin: 'An administrator removed a ' +
@@ -2391,6 +2394,13 @@ class AdminActions {
                        ' as they were created',
               detail: { generated: generated }
             });
+            // CAEP credential-change (#145): the person's first password.
+            accountSignals.credentialChanged({ username: result.username,
+              credentialType: 'password', changeType: 'create',
+              initiatingEntity: 'admin', via: ctx.via,
+              reasonAdmin: 'An administrator set a password for ' +
+                           result.username + ' as they were created.',
+              reasonUser: 'A password was set for your new account.' });
             answer.passwordSet = true;
             answer.generated = generated;
             if (generated) {

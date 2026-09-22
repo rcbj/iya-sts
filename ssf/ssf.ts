@@ -3723,6 +3723,104 @@ class SharedSignals {
   // an `ldapmodify` that blocked on a receiver's TCP timeout would be a
   // directory whose writes depend on a third party being up.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // WHAT THE DIRECTORY'S ACCOUNT OBSERVER IS HANDED, AND WHO READS IT (#145).
+  // A person's own write goes to RISC, which reads it for its account events,
+  // as it always did; a MEMBERSHIP change (`ldap_server.js`'s
+  // noteMembershipChange()) has no RISC reading and does not go there. Both go
+  // to claimsAutoEmit(), which decides whether CAEP's token-claims-change is
+  // due. Nothing here is awaited — the rule riscAutoEmit()'s header gives.
+  // ---------------------------------------------------------------------------
+  directoryChanged(notice?: Json): void {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.directoryChanged().');
+    const asked = notice || {};
+    if (asked.kind !== 'membership') {
+      this.riscAutoEmit(asked);
+    }
+    this.claimsAutoEmit(asked);
+    log.debug('Leaving SharedSignals.directoryChanged().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // CAEP token-claims-change FROM A DIRECTORY WRITE (#145, 2026-09-22).
+  //
+  // The claims in tokens already issued are stale when an attribute that
+  // feeds one, or a group, changes. This sends the event to every stream that
+  // takes it and covers the person, naming the claims that moved and their
+  // new values — and only when the person HOLDS something live that carries
+  // them (`admin_stats.holdsLiveIssuance()`): an event about tokens that do
+  // not exist is noise every receiver has to discard.
+  //
+  // **CHEAPEST QUESTION FIRST**, because this is called for every person a
+  // bulk group write touches: SSF on, the act chosen in caep.autoEmitTypes, a
+  // stream that delivers the type at all — each answered without reading the
+  // directory — and only then which claims moved and whether anything live
+  // carries them. The work after those checks runs on a promise, so a write
+  // that affected a thousand members returns before any of it.
+  // ---------------------------------------------------------------------------
+  claimsAutoEmit(notice?: Json): Promise<EmitResult> {
+    const { log, caep, events, streams, stats, subjects } = this.deps;
+    const { subjectForName } = this.deps.helpers;
+    log.debug('Entering SharedSignals.claimsAutoEmit().');
+    const asked = notice || {};
+    const username = String(asked.username || '');
+    if (!this.enabled() || !username ||
+        String(asked.kind || '').indexOf('deleted') === 0) {
+      log.debug('Leaving SharedSignals.claimsAutoEmit(). SSF is off, ' +
+                'nobody is named, or the person is gone.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    if (caep.autoEmitActs().indexOf('claims') < 0) {
+      log.debug('Leaving SharedSignals.claimsAutoEmit(). Not an emitted act.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+    }
+    const uri = events.CAEP_PREFIX + 'token-claims-change';
+    if (!streams.listStreams().some(function (record) {
+      return streams.deliversEvent(record, uri);
+    })) {
+      log.debug('Leaving SharedSignals.claimsAutoEmit(). No stream takes ' +
+                'token-claims-change.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'no stream' });
+    }
+    log.debug('Leaving SharedSignals.claimsAutoEmit(). Deciding.');
+    return Promise.resolve().then(() => {
+      // THE REGISTER BEFORE THE DIRECTORY: whether anything live carries the
+      // person's claims is a scan of what was issued, while which claims
+      // moved can need their groups — and the group index this very write
+      // invalidated. A bulk load's people hold nothing, so asking in this
+      // order keeps a group write at the cost it had before (#145, measured
+      // over 5,000 SCIM memberships: 11.6 ms each without this feature,
+      // 21.8 ms with the order reversed, 10.5 ms in this one).
+      const sub = subjectForName(username) || username;
+      if (!stats.holdsLiveIssuance(username, sub)) {
+        log.debug('caep: ' + username + ' holds nothing live, so no ' +
+                  'token-claims-change is considered.');
+        return { sent: 0, streams: 0, why: 'nothing live' };
+      }
+      const change: Json = caep.claimsChangeFor(asked);
+      if (!change) {
+        return { sent: 0, streams: 0, why: 'no claim moved' };
+      }
+      const which = Object.keys(change.claims).join(', ');
+      return this.emitProtocolEvent({
+        req: null, protocol: 'Directory', type: 'token-claims-change',
+        subject: subjects.complexSubject({ user: { format: 'iss_sub',
+          iss: this.issuerFor(null), sub: sub } }),
+        values: change, initiatingEntity: 'admin',
+        reasonAdmin: 'The directory entry of ' + username + ' changed ' +
+                     which + ', which tokens already issued carry.',
+        reasonUser: 'Information about you in tokens already issued ' +
+                    'changed.' });
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.claimsAutoEmit(): ' +
+                ((e && e.message) || e));
+      log.warn('caep: a token-claims-change for ' + username + ' could not ' +
+               'be decided: ' + ((e && e.message) || e));
+      return { sent: 0, streams: 0, why: String((e && e.message) || e) };
+    });
+  }
+
   riscAutoEmit(notice?: Json): Promise<EmitResult> {
     const { log, risc, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.riscAutoEmit().');
@@ -3917,7 +4015,12 @@ class SharedSignals {
       payload = caep.buildPayload(uri, {
         credential_type: String(options.credentialType || 'password'),
         change_type: String(options.changeType || 'update'),
-        friendly_name: String(options.friendlyName || '')
+        friendly_name: String(options.friendlyName || ''),
+        // #145: the certificate, or the security key's model, where the door
+        // that changed it knows — empty is left out by the builder.
+        x509_issuer: String(options.x509Issuer || ''),
+        x509_serial: String(options.x509Serial || ''),
+        fido2_aaguid: String(options.fido2Aaguid || '')
       }, {
         initiatingEntity: String(options.initiatingEntity || 'admin'),
         reasonAdmin: String(options.reasonAdmin || ''),
@@ -4480,7 +4583,7 @@ class SharedSignals {
     // in the require order and this module is 23b, so the require above goes
     // the ordinary way and only the FUNCTION travels back — see
     // setAccountObserver() over there.
-    directory.setAccountObserver(this.riscAutoEmit.bind(this));
+    directory.setAccountObserver(this.directoryChanged.bind(this));
 
     adminConsole.setRiscReporter({
       report: this.riscReport.bind(this),

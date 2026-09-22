@@ -9021,23 +9021,27 @@ const SETTINGS = [
     label: 'Which acts emit automatically',
     env: 'STS_CAEP_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'session-established,session-presented,session-revoked,' +
-          'credential-change,assurance-level-change',
+          'credential-change,assurance-level-change,token-claims-change',
     runtime: true,
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
-                 'itself, out of the five acts it can actually observe: a ' +
+                 'itself, out of the six acts it can actually observe: a ' +
                  'session starting, a session being presented, a session ' +
                  'ending, a person re-authenticating on a session they ' +
                  'already hold with a different acr (a step-up or ' +
                  'step-down, since 2026-09-14, which emits ' +
-                 'assurance-level-change on the urn:sts:acr scale), and — ' +
-                 'since 2026-09-13 — an administrator changing ' +
-                 'a person\'s credentials on their /admin/users page or ' +
-                 'through /admin-api/users (a password set or reset, a ' +
-                 'security key, an authenticator app or every second factor ' +
-                 'removed), or the person spending a password reset link, ' +
-                 'which emits credential-change. The other three are things ' +
-                 'nothing here does — no device reports compliance to this ' +
-                 'service and no risk engine talks to it — so they are ' +
+                 'assurance-level-change on the urn:sts:acr scale), a ' +
+                 'credential of a person\'s created, changed, revoked or ' +
+                 'deleted at any door that changes one — the console and ' +
+                 '/admin-api, the portal, sign-in, an LDAP password write, ' +
+                 'a certificate enrolled or revoked, a signing key pair, a ' +
+                 'wallet credential (since 2026-09-22, #145) — which emits ' +
+                 'credential-change, and — since 2026-09-22 — a directory ' +
+                 'write that moves a claim of a person who holds live ' +
+                 'tokens or assertions (an attribute the claim catalogue ' +
+                 'maps, or a group joined, left or renamed), which emits ' +
+                 'token-claims-change. The other two are things nothing ' +
+                 'here does — no device reports compliance to this service ' +
+                 '(#164) and no risk engine talks to it (#62) — so they are ' +
                  'emitted BY HAND from /admin/caep or POST ' +
                  '/admin-api/caep/emit, and a row naming one of them here is ' +
                  'dropped with a warning rather than producing an event ' +

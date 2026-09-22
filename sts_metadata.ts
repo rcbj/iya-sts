@@ -547,15 +547,22 @@ const SPECS: Spec[] = [
               'subject naming the person AND the session, because the person ' +
               'is not revoked and one session of theirs is, and an event ' +
               'that arrives without a subject is refused rather than sent. ' +
-              'THREE OF THE EIGHT FIRE ON THEIR OWN — a sign-in, a single ' +
-              'sign-on and a sign-out — which is the one place in this ' +
-              'service where an endpoint is not what starts the work, and ' +
-              'caep.autoEmit turns it off. NOT covered: the other five have ' +
-              'no act here that could cause them (no device reports ' +
-              'compliance to this service and no risk engine talks to it), ' +
-              'so they are emitted by hand from /admin/caep or POST ' +
-              '/admin-api/caep/emit; and the CAEP Interoperability Profile ' +
-              'is a draft and nothing here claims it.' },
+              'SIX OF THE EIGHT FIRE ON THEIR OWN, and caep.autoEmit turns ' +
+              'them off: a sign-in, a single sign-on and a sign-out, the ' +
+              'first two carrying fp_ua as a fingerprint of the User-Agent; ' +
+              'assurance-level-change when a re-authentication moves acr; ' +
+              'credential-change at every door that changes a person\'s ' +
+              'credential (passwords, security keys as fido2-platform or ' +
+              'fido2-roaming with their AAGUID, authenticator apps, x509 ' +
+              'certificates with issuer and serial, wallet credentials); ' +
+              'and token-claims-change when a directory write moves a claim ' +
+              'of somebody holding live tokens or assertions (#145). NOT ' +
+              'covered: device-compliance-change and risk-level-change have ' +
+              'no source here (#164 and #62), so they are emitted by hand ' +
+              'from /admin/caep or POST /admin-api/caep/emit; a received ' +
+              'event is not acted on (#153, #117); and the CAEP ' +
+              'Interoperability Profile is a draft and nothing here claims ' +
+              'it.' },
 
   { id: 'risc', name: 'OpenID RISC Profile Specification 1.0',
     where: 'OpenID Foundation',

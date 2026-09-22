@@ -287,6 +287,12 @@ const JOBS = [
   // `local: true`: this repository's own authorization server, in a
   // throwaway realm it leaves behind.
   { file: 'sts_frontchannel_logout.js',  browser: false, local: true },
+  // CAEP FROM EVERY DOOR (#145, 2026-09-22): credential-change for a person
+  // created with a password and for a signing key pair (x509 with issuer and
+  // serial), fp_ua on session-established, and token-claims-change for a
+  // SCIM change and a group joined — only for a person holding live tokens.
+  // `local: true`: this repository's own transmitter, in a throwaway realm.
+  { file: 'sts_caep_credential_changes.js', browser: false, local: true },
   // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
   // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
   // token is confined, and in the `cluster` mode both nodes name one leader
