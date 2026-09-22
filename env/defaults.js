@@ -146,6 +146,7 @@ var config = {
 
   // --- Web security ----------------------------------------------------
   authn: {
+    sessionSweepS: 30,              // How often expired sessions are ended (seconds)
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
@@ -950,6 +951,16 @@ var config = {
     heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
     nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
     acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+  },
+
+  // --- Scheduler -------------------------------------------------------
+  scheduler: {
+    enabled: true,    // Run scheduled jobs
+    tickS: 15,        // How often the leader looks for due jobs (seconds)
+    historyDays: 30,  // How long a finished run is kept (days)
+    maxRuns: 5000,    // Most runs kept per realm
+    disabledJobs: "", // Jobs switched off
+    runTimeoutS: 600  // The longest a run may take (seconds)
   },
 };
 

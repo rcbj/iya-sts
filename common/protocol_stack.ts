@@ -787,6 +787,18 @@ class ProtocolStack {
                require('../admin-ui/vc_status_admin'), 'VcStatusAdmin');
     this.register(app, require('../admin-ui/vc_status_admin'),
                   'admin-ui/vc_status_admin');
+    // 18i. THE SCHEDULER'S PAGE (#49, 2026-09-22). `/admin/scheduler` —
+    // every job `cluster/scheduler.ts` knows, its last run and its next.
+    // 18a's placement and 18a's reason: the console's shell and the
+    // scheduler (a library, loaded by the job owners above) already here,
+    // and `mgmt-api/admin_api` requires it in the ordinary direction. A job
+    // registered later still appears: the page asks the scheduler when it
+    // is drawn.
+    require('../admin-ui/scheduler_admin');
+    this.build('admin-ui/scheduler_admin',
+               require('../admin-ui/scheduler_admin'), 'SchedulerAdmin');
+    this.register(app, require('../admin-ui/scheduler_admin'),
+                  'admin-ui/scheduler_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

@@ -753,12 +753,18 @@ function beat() {
   });
 }
 
-// Asks for every role some module wants led and this node does not hold.
+// Asks for every role some module wants led and this node does not hold —
+// except one this node STOOD DOWN from a moment ago (`stepDown()`), which it
+// does not ask for again until its hold-off has passed.
 function campaign() {
   log.debug("Entering campaign().");
   let chain = Promise.resolve();
+  const nowMono = monotonicMs();
   roles.forEach(function (handlers, name) {
     if (held.has(name)) {
+      return;
+    }
+    if ((standingDownUntil.get(name) || 0) > nowMono) {
       return;
     }
     chain = chain.then(function () {
@@ -861,6 +867,62 @@ function holds(name) {
   log.debug("Entering holds().");
   log.debug("Leaving holds().");
   return !enabled() || held.has(name);
+}
+
+// ---------------------------------------------------------------------------
+// STANDING DOWN FROM A ROLE (2026-09-22, #49): a planned handover, which is
+// what `POST /admin-api/scheduler/step-down` asks of the scheduler's leader.
+//
+// The lease is EXPIRED in the store at the token this node holds it at (the
+// driver's `releaseLease()`, which a lease that already changed hands does
+// not touch), `onLose()` is called as a lost lease's is, and this node does
+// not campaign for the role again for `holdOffMs` — without that it would
+// take the lease straight back on its next heartbeat, before any other node
+// had asked. The hold-off defaults to three heartbeats: every other node
+// campaigns once a heartbeat, so one of them has asked at least twice.
+//
+// Resolves `{ ok: true, token }` or `{ ok: false, reason }`, never rejects.
+// A service that is not clustered has no other node to hand to, and says so.
+// ---------------------------------------------------------------------------
+const standingDownUntil = new Map();
+
+function stepDown(name, holdOffMs) {
+  log.debug("Entering stepDown(). name=" + name);
+  if (!enabled()) {
+    log.debug("Leaving stepDown(). Not clustered.");
+    return Promise.resolve({ ok: false, reason: 'not-clustered' });
+  }
+  if (!held.has(name)) {
+    log.debug("Leaving stepDown(). Not held here.");
+    return Promise.resolve({ ok: false, reason: 'not-held' });
+  }
+  const token = held.get(name);
+  const hold = Math.max(heartbeatMs(),
+                        Number(holdOffMs) > 0 ? Number(holdOffMs)
+                          : 3 * heartbeatMs());
+  standingDownUntil.set(name, monotonicMs() + hold);
+  held.delete(name);
+  const wanted = roles.get(name);
+  if (wanted && typeof wanted.onLose === 'function') {
+    try {
+      wanted.onLose();
+    } catch (e) {
+      log.debug("Caught in stepDown(): " + ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving stepDown(). Releasing token " + token + ".");
+  return driver.releaseLease(name, nodeId, token).then(function (released) {
+    log.info('cluster: node ' + nodeId + ' stood down from the "' + name +
+             '" lease (token ' + token + '); it will not ask for it again ' +
+             'for ' + hold + 'ms.');
+    return { ok: true, token: token, released: !!released, holdOffMs: hold };
+  }, function (err) {
+    log.warn(errorCodes.tag('STS-CLUSTER-0041') + 'cluster: standing down ' +
+             'from the "' + name + '" lease failed (' + err.message + '); ' +
+             'it expires on its own within ' + ttlMs() + 'ms, and this node ' +
+             'does not renew it.');
+    return { ok: false, reason: 'store', why: err.message };
+  });
 }
 
 // Runs `fn` with `name` held, and every transaction it opens fenced by that
@@ -1089,6 +1151,7 @@ function reset(options) {
   refreshing = null;
   held.clear();
   roles.clear();
+  standingDownUntil.clear();
   [ENV_NODE, ENV_MODE, ENV_SERVICE_TOKEN].forEach(function (name) {
     delete process.env[name];
   });
@@ -1118,6 +1181,7 @@ module.exports = {
   acquire: acquire,
   lead: lead,
   holds: holds,
+  stepDown: stepDown,
   withLease: withLease,
   leave: leave,
   status: status,

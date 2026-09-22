@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2837** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2854** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -54,7 +54,8 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 55
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 16
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 62
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 173
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
@@ -349,6 +350,32 @@ Raised from: cluster/.
 | `STS-CLUSTER-0025` | A node's heartbeat ran late by a heartbeat or more because its event loop was busy; a stall past the membership lifetime costs the node its membership. | — |
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
+| `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
+
+## STS-SCHED
+
+**Scheduler.** The one scheduler every periodic job in this service runs on: who leads it, the claim and fence that make a job run once per slot in the whole cluster, the runs it records, manual runs and the planned handover of its leadership.
+
+Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SCHED-0001` | A scheduled job's run threw or rejected; the run is recorded as failed with the reason, and the job runs again at its next slot. | — |
+| `STS-SCHED-0002` | A job's run took longer than its time limit; it is recorded as failed, its claim is given back, and anything it still does is fenced out. | — |
+| `STS-SCHED-0003` | A run's outcome was fenced out: another attempt took the run over after this one's claim lapsed, so this one's result is not written. | — |
+| `STS-SCHED-0004` | A manual run was refused: no job by that id is registered. | — |
+| `STS-SCHED-0005` | A manual run was refused: the job runs on its schedule only. | — |
+| `STS-SCHED-0006` | A manual run was refused: the job is off (its setting, scheduler.enabled, or a development-mode predicate), and says why. | — |
+| `STS-SCHED-0007` | A manual run was refused to a realm administrator: the job is service-scoped, or names another realm. | — |
+| `STS-SCHED-0008` | The claim store could not be asked whether a run was already taken; the run is not started until it can be, so it never runs twice. | — |
+| `STS-SCHED-0009` | A job registration was refused whole: a member is missing or malformed, or the id is taken. | — |
+| `STS-SCHED-0010` | A step-down was refused: this service is not clustered, so there is no other node to hand the scheduler to. | — |
+| `STS-SCHED-0011` | A run was abandoned: the node running it stopped holding its claim before it finished, and another attempt took it over. | — |
+| `STS-SCHED-0012` | A manual run was refused: the realm it names does not exist. | — |
+| `STS-SCHED-0013` | The scheduler's tick failed unexpectedly; it is tried again at the next tick. | — |
+| `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
+| `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
+| `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
 
 ## STS-KEYS
 

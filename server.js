@@ -517,6 +517,10 @@ function shutdown(signal) {
   // ---------------------------------------------------------------------
   // The debugger's api child first: it is not a worker of either pool and
   // holds nothing worth draining, and an orphan would keep its socket.
+  // The scheduler first of all: no job may start while the process drains.
+  // A run in progress is left to finish or be fenced out; its claim lapses
+  // and the next leader takes it over.
+  require('./cluster/scheduler').stop();
   debuggerServer.close().catch(function (e) {
     log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
   }).then(function () {
@@ -796,6 +800,18 @@ serviceState.start().then(function (both) {
                    : '. NOTHING IS DISPATCHED TO THEM — workers.dispatch is ' +
                      'empty, so every request is still handled here') + '.');
       }
+      // -------------------------------------------------------------------
+      // THE SCHEDULER (2026-09-22, #49), AND IT STARTS HERE AND NOWHERE
+      // EARLIER. Every periodic job in this service — the session-expiry
+      // sweep, the CRL directory refresh — is registered with it when its
+      // module loads, and nothing runs until this line: after the store, the
+      // keys, the minted rows, coordination and the certificate authority are
+      // restored, which is the whole of an active-passive standby's reason to
+      // wait, and never in a request worker, which starts it in per-process
+      // mode for itself. A front process campaigns for `ops.scheduler`; with
+      // clustering off it leads at once. See cluster/scheduler.ts.
+      // -------------------------------------------------------------------
+      require('./cluster/scheduler').start('front');
       bind();
     });
   });

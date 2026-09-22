@@ -19,6 +19,7 @@ the barrier that makes one node see what another committed.
 | `cluster_counters.js` | `advance()`: a value that may only go UP, agreed by every node — a WebAuthn signature counter, the last RFC 6238 step spent. One conditional upsert in the store. Memory on a store that cannot be shared. And `countInWindow()`: a rate-limit bucket's count inside a fixed window, one budget for every node. |
 | `cluster_secrets.ts` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
 | `cluster_barrier.js` | The middleware that makes a request wait for other nodes' commits, and holds a writing response until its own commit lands. Active-active only. |
+| `scheduler.ts` | **The one scheduler every periodic job runs on** (#49, 2026-09-22): a leader on the `ops.scheduler` lease, a claim and a fence per run, slots by the database clock, manual runs and a step-down as command rows in the store, cluster and per-process jobs. `/admin/scheduler` draws it. See *The scheduler*, below. |
 
 The SQL is `persistence/persistence_postgres.js`'s — the driver owns every
 statement, as it does for `/admin/database` — and the six tables
@@ -452,6 +453,70 @@ Finished rows are swept at most once a minute by whichever process counts next
 (`STS-CLUSTER-0024` if that fails). Measured against a real postgres: a hundred
 concurrent counts of one bucket from two driver instances returned the counts
 1 to 100 once each, and a count after the window passed returned 1.
+
+## The scheduler (2026-09-22, #49)
+
+rcbj's directive of 2026-09-21 (root `CLAUDE.md`, *Anything periodic is a
+scheduler job*) made this the place every periodic job in the service runs;
+the plan and rcbj's answers D1–D10 are on #49. `scheduler.ts`'s header is the
+argument; what a maintainer needs to find quickly is this.
+
+**Registering a job** is one call at the owner's load time, and starts
+nothing:
+
+```js
+scheduler.register({
+  id: 'authn.session-expiry',        // dot/hyphen words; the page's key
+  title: 'Session expiry', describe: '…', owner: 'authn/authn.ts',
+  kind: 'cluster',                    // default; or 'per-process'
+  scope: 'service',                   // default; or 'realm' (one run per realm)
+  everySetting: 'authn.sessionSweepS', everySettingUnit: 's',
+  // or everyMs: () => n, or cron: '0 3 * * *' (UTC, croner), or manualOnly
+  off: (realmId) => '',               // why it is off now, or ''
+  manual: true,                       // may an administrator Run now
+  timeoutS: 600,                      // default scheduler.runTimeoutS
+  run: async (ctx) => ({ summary })   // ctx.stillOwner(), ctx.nowMs(), …
+});
+```
+
+A registration missing a member is refused WHOLE and thrown
+(`STS-SCHED-0009`). A setting of 0 for an interval means OFF, and the page
+says so; it is never read with `|| n`.
+
+**Four things that are easy to get wrong:**
+
+* **A run is idempotent per SLOT, and only the current slot is ever due.**
+  An interval job's slots are multiples of its interval on the database clock
+  (so every node agrees on the next time); a cron job's slot is its most
+  recent occurrence. A slot missed while nobody led runs ONCE. So a job that
+  must not run at a fresh start — a signer rotation — decides from its own
+  state (the key's age), not from being called.
+* **The claim is the fence, not the lease.** The leader claims
+  `scheduler.run` for the run's id for its time limit, writes the claim's
+  database time on the row as `fenceAt`, and writes the outcome only while
+  the row still carries it. A run whose claim lapsed and was re-taken is
+  recorded `abandoned` (`STS-SCHED-0011`), and the late outcome is fenced out
+  (`STS-SCHED-0003`). `ctx.stillOwner()` is the question a job asks before a
+  step it cannot take back.
+* **It never starts at require time, in a standby or — for a cluster job — in
+  a request worker.** `server.js` calls `start('front')` after the state is
+  restored and before it binds; `common/request_worker.ts` calls
+  `start('per-process')`.
+* **Everything the page draws is in the store** (`scheduler.runs`, a
+  persisted per-realm `realms.map`): runs, the leader's row, each process's
+  latest per-process run, and the command rows. A manual run or a step-down
+  asked of any node is a row the leader obeys at its next tick.
+
+**The step-down** (`POST /admin-api/scheduler/step-down`, D10) is
+`cluster.stepDown('ops.scheduler')`: the lease is expired at the token held,
+`onLose()` fires, and this node does not campaign for the role again for three
+heartbeats — without the hold-off it would take the lease straight back on its
+next beat. It is the one addition this feature made to `cluster.js`.
+
+**The timers still outside it** are listed, each with the job it becomes or
+the reason it stays, in `tests/no_periodic_timers.js`, which fails on a new
+one and on an entry whose timer has gone. **P5 of #49 empties the `becomes`
+half.**
 
 ## What is done and what is not (2026-09-14)
 

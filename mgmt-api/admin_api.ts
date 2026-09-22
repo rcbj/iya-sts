@@ -203,6 +203,8 @@ import secretsAdmin = require('../admin-ui/secrets_admin');
 import cachesAdmin = require('../admin-ui/caches_admin');
 // THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
+// The scheduler's page (#49): its view and its two actions, rule 7.
+import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -1839,6 +1841,149 @@ class AdminApi {
             responseDescription: 'The index and its new status.'
           };
         })
+      },
+
+      // ---------------------------------------------------------------------
+      // THE SCHEDULER (#49, 2026-09-22). `schedulerAdmin.schedulerView()` —
+      // the function the page's `?format=json` answers — and
+      // `schedulerAdmin.schedulerAction()`, the function its two forms post
+      // to. Nothing here reads the scheduler a second way.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/scheduler', tag: 'Service',
+        operationId: 'getScheduler',
+        summary: 'Every scheduled job, its last run and its next, or one run',
+        description: 'Without `run`: the scheduler\'s `leader` (`node`, ' +
+                     '`nodeName`, `host`, `pid`, `since`, `token`, ' +
+                     '`lastTickAt`, `live`, `clustered`, `thisProcess`), ' +
+                     'and one row in `jobs` for EVERY registered job, ' +
+                     'including one that is off — `id`, `title`, ' +
+                     '`describe`, `owner`, `kind` (`cluster` or ' +
+                     '`per-process`), `scope` (`service` or `realm`) and ' +
+                     '`realm`, `schedule` (`text`, `everyMs`, `setting`, ' +
+                     '`cron`, `manualOnly`), `state` (`enabled` or `off`) ' +
+                     'and `offReason`, `manual` (whether it may be run now), ' +
+                     '`lastRun` and `running` (a run: `runId`, `state`, ' +
+                     '`attempt`, `fenceAt`, `node`, `pid`, `startedAt`, ' +
+                     '`endedAt`, `durationMs`, `errorCode`, `why`), ' +
+                     '`queued` manual runs, `nextRunAt` (absolute, UTC), ' +
+                     '`nextRunInMs` (by the DATABASE\'s clock at the time of ' +
+                     'the request, so every node answers the same figure) ' +
+                     'and `nextRunState` (`scheduled`, `due`, `overdue`, ' +
+                     '`running`, `queued`, `manual-only` or `off`), and for ' +
+                     'a per-process job `processes[]`, one per node and ' +
+                     'process. Then the recent `runs`, newest first, ' +
+                     'filtered by `job` and `outcome` and answered in ' +
+                     '`runsPaging`, and the queued `commands`. With `run`: ' +
+                     'that run, as `detail`, or `found: false`. Everything is ' +
+                     'read from the store, so any node answers the same. A ' +
+                     'realm\'s own administrator sees the service jobs ' +
+                     'read-only and their own realm\'s rows only.',
+        mirrors: 'GET /admin/scheduler',
+        parameters: [
+          { name: 'run', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A run id, to answer that run.' },
+          { name: 'job', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only the runs of this job.' },
+          { name: 'outcome', in: 'query', required: false,
+            schema: { type: 'string', enum: ['succeeded', 'failed',
+                                             'abandoned', 'running',
+                                             'queued'] },
+            description: 'Only the runs in this state.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The scheduler\'s report, or one run.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `nowMs`, `clock`, `answeredBy`, ' +
+                       '`leader`, `tickS`, `enabled`, ' +
+                       '`unknownDisabledIds`, `jobs`, `runs`, ' +
+                       '`runsPaging` and `commands`; or `run`, `found` and ' +
+                       '`detail`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API scheduler endpoint.");
+          // Awaited, and the handler catches: Express 4 does not look at
+          // what a handler returns (the database report's reason).
+          schedulerAdmin.schedulerView(req, req.query).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API scheduler endpoint.");
+          }).catch(function (e) {
+            errorCodes.mark(res, 'STS-SCHED-0013');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The scheduler report could not be built: ' +
+              (e && e.message ? e.message : String(e))] });
+            log.debug("Leaving the management API scheduler endpoint. It " +
+                      "threw.");
+          });
+          log.debug("Leaving handler().");
+        } },
+
+      { method: 'POST', route: BASE + '/scheduler/:action', tag: 'Service',
+        mirrors: 'POST /admin/scheduler',
+        handler: function (req, res) {
+          log.debug("Entering the management API scheduler action.");
+          const result = schedulerAdmin.schedulerAction(req,
+            self.withAction(req, parseBody(req)),
+            'the management API at /admin-api/scheduler');
+          if (!result.ok) {
+            errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0012');
+            self.sendJson(res, result.status || 400,
+                          { ok: false, errors: result.errors });
+            log.debug("Leaving the management API scheduler action. " +
+                      "Refused.");
+            return;
+          }
+          self.sendJson(res, 202, result);
+          log.debug("Leaving the management API scheduler action.");
+        },
+        actions: [
+          { action: 'run', operationId: 'runSchedulerJob',
+            summary: 'Queue a run of one job now',
+            description: 'Writes a queued run of `job` (in `realm`, for a ' +
+                         'realm-scoped job) that the scheduler\'s leader ' +
+                         'starts at its next tick, wherever this request ' +
+                         'was answered — 202 with its `runId` and `href`. A ' +
+                         'second request while one is queued answers the ' +
+                         'same run (`alreadyQueued`). Refused 404 for an ' +
+                         'unknown job, 400 for a job that runs on its ' +
+                         'schedule only, is off (with the reason: its ' +
+                         'setting, scheduler.enabled, or development mode), ' +
+                         'or names a realm that does not exist; 403 to a ' +
+                         'realm administrator for a service job or another ' +
+                         'realm.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                job: { type: 'string',
+                       description: 'The job `id`, as GET ' +
+                                    '/admin-api/scheduler lists it.' },
+                realm: { type: 'string',
+                         description: 'The realm, for a realm-scoped job; ' +
+                                      'the one the request is in otherwise.' },
+                params: { type: 'object',
+                          description: 'Parameters the job reads, where it ' +
+                                       'reads any.' }
+              },
+              required: ['job'],
+              examples: [{ job: 'pki.crl-directory-refresh' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run.' },
+          { action: 'step-down', operationId: 'stepDownScheduler',
+            summary: 'Ask the scheduler\'s leader to hand over',
+            description: 'Writes a command the leader obeys at its next ' +
+                         'tick: it gives up the `ops.scheduler` lease and ' +
+                         'does not ask for it again for three heartbeats, ' +
+                         'so another node takes the lead. A planned ' +
+                         'handover, and a way to drain a node. 202; 400 ' +
+                         'when the service is not clustered ' +
+                         '(STS-SCHED-0010). A service operation.',
+            requestBodyRequired: false,
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false, examples: [{}] },
+            responseDescription: 'The command, and who led when it was ' +
+                                 'asked.' }
+        ]
       },
 
       { method: 'GET', path: BASE + '/caches', tag: 'Service',
@@ -15986,6 +16131,11 @@ class AdminApi {
             return self.sendJson(res, 403, { error: 'forbidden',
                                              errors: [realmRefusal.detail] });
           }
+          // SAID ON THE RESPONSE (#49): a realm's own token is that realm's
+          // administrator, and a view that shows several realms' rows — the
+          // scheduler's — confines itself by this, as it does by a realm
+          // administrator's console session.
+          res.locals.realmTokenOf = tokenRealm;
         }
         const held = roles.rolesOf({ kind: 'application', name: who,
                                      authenticated: true, scopes: scopes });

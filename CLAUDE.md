@@ -70,7 +70,7 @@ files did not change; the paths did.
 | `federation/` | Federation relationships in either direction, in five protocols; `ou=federations` is the register, and it holds the first and strongest of the outbound requests. `federation/CLAUDE.md`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO (the negotiation, the page, and the sign-in that turns a ticket into a session), and eight codec modules **VENDORED from the parent project and not editable here**, despite not being under `common/vendored/`. `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory — the store for people, groups, applications and the SPIFFE registry — and the eight `/admin/ldap/*` console pages that show it. `ldap/CLAUDE.md`. |
-| `cluster/` | **Several containers against one postgres store** (#46, 2026-09-14): membership and leases with a fencing token every write transaction checks, the gate in front of `cluster.mode` (active-passive by default in product mode on postgres; active-active refused while a capability is missing), atomic claims, the secrets every node shares, and the cross-node read barrier. Libraries — no route but `/admin/cluster`'s status block. `cluster/CLAUDE.md`. |
+| `cluster/` | **Several containers against one postgres store** (#46, 2026-09-14): membership and leases with a fencing token every write transaction checks, the gate in front of `cluster.mode` (active-passive by default in product mode on postgres; active-active refused while a capability is missing), atomic claims, the secrets every node shares, and the cross-node read barrier — and **the scheduler every periodic job runs on** (#49, `scheduler.ts`). Libraries — no route but `/admin/cluster`'s status block; `/admin/scheduler` is `admin-ui/scheduler_admin.ts`. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down (`memory`, `ldif`, `postgres`), and the coordination of several processes through one change log — state, not sockets. `persistence/CLAUDE.md`. |
 | `scim/` | `/scim/v2`, its authentication and attribute mapping, and two console pages (`/admin/scim`, `/admin/scim/monitor`). `scim/CLAUDE.md`. |
 | `ssf/` | The Shared Signals Framework — the one family here that TALKS BACK — with CAEP and RISC as the two vocabularies over it and this service's own console and portal as registered receivers. `ssf/CLAUDE.md`. |
@@ -354,13 +354,14 @@ service does not start**, because it answers WRONGLY rather than slowly.
 
 **rcbj's architectural directive, 2026-09-21: anything that has to be done
 periodically in the background is a job on the central scheduler** (#49,
-`cluster/scheduler.ts` once built), which runs each job on exactly one node, on
-the serving front process and never in a request worker, and hands it to
-another node when that one goes. **No new module may start a timer of its
+`cluster/scheduler.ts`, built 2026-09-22 — `cluster/CLAUDE.md`, *The
+scheduler*), which runs each job on exactly one node, on the serving front
+process and never in a request worker, and hands it to another node when that
+one goes. Monitoring → Scheduler (`/admin/scheduler`) lists every job. **No new module may start a timer of its
 own** — no `setInterval`, no `setTimeout` chain, no sweep armed at require or
 wire time — for work that repeats.
 
-**Cache and store clean-up is included**, and today none of it is a job: a
+**Cache and store clean-up is included**, and none of it is a job yet: a
 cache here drops an entry only when it is read and found expired, when a size
 cap evicts the oldest on an insert, or when a purge piggy-backs on the next
 request that uses the store (claims, used assertions, rate-limit windows and
@@ -382,14 +383,12 @@ What does NOT count: a per-request timeout, a debounce, a retry delay inside
 one operation, and the cluster heartbeat with its lease and origin-claim
 renewals, which are what the scheduler's own leadership stands on.
 
-**The existing timers are exceptions until they move**, and the inventory of
-them — the session sweep, the back-channel logout and SSF sweeps, the CRL
-directory refresh, the SAML metadata refresher, the change-log trim, the
-piggy-backed purges — is in the plan on #49. The CRL refresh moves first,
-because it is the one that runs in every process with no coordination at all.
-**The session-expiry sweep was named by rcbj on the same day** — the one that
-ends expired sessions and sends CAEP and the back-channel Logout Tokens to the
-applications concerned; what moves and what stays is in `authn/CLAUDE.md`.
+**The existing timers are exceptions until they move**, and
+`tests/no_periodic_timers.js` holds the inventory — each with the job it
+becomes or the reason it stays — and fails on a new one. **The CRL directory
+refresh and the session-expiry sweep moved on 2026-09-22** (P1 of #49); the
+back-channel logout and SSF sweeps, the SAML metadata refresher, the change-log
+pull and trim and the piggy-backed purges are P5.
 
 ## The require order and the route order
 
@@ -458,6 +457,7 @@ is and the named file says why.
 | 18f | `oauth-oidc/oauth2_monitor_admin` | Beside the other report pages and for 18a's reason: it requires the console's shell and libraries already loaded, and `oauth2.ts` (9) cannot require it without closing a cycle through the console. | `oauth-oidc/CLAUDE.md` |
 | 18g | `admin-ui/caches_admin` | 18a's placement and 18a's reason (#74): the console's shell and libraries already loaded, and `mgmt-api/admin_api` requires it. It reads `common/cache_registry.js` when drawn, so an owner registered later still appears. | `admin-ui/CLAUDE.md` |
 | 18h | `admin-ui/vc_status_admin` | 18a's placement and 18a's reason (2026-09-17): the console's shell and `oid4vc/vc_status` already loaded, and `mgmt-api/admin_api` requires it. | `admin-ui/CLAUDE.md` |
+| 18i | `admin-ui/scheduler_admin` | 18a's placement and 18a's reason (#49): the console's shell and `cluster/scheduler` (a library the job owners above already loaded), and `mgmt-api/admin_api` requires it. A job registered later still appears: the page asks the scheduler when it is drawn. | `cluster/CLAUDE.md` |
 | 19 | `mgmt-api/admin_api` | After `admin-ui/admin` (rule 7). | `mgmt-api/CLAUDE.md` |
 | 19a | `admin-ui/api_explorer` | After `admin-ui/admin` (the shell and gate) and `mgmt-api/admin_api` (the route table its OpenAPI document is built from); a file of its own so `admin.ts` never requires the API. | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 20 | `tls/tls_server` | JavaScript: registers its `/tls*` views at this require. Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |

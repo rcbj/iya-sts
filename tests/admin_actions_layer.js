@@ -435,6 +435,11 @@ function checkNothingRequiresItEarly(t) {
                    // credentials. Required at 18h, after the console, so the
                    // require is a cache hit and moves no route.
                    'admin-ui/vc_status_admin.ts',
+                   // The scheduler page (#49, 2026-09-22), for `adminViews`'
+                   // paging and the gate state only — the recent runs, and
+                   // who is asking. Required at 18i, after the console, so
+                   // the require is a cache hit and moves no route.
+                   'admin-ui/scheduler_admin.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

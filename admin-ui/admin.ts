@@ -2385,6 +2385,21 @@ const SECTIONS = [
                'and no control: a cache is emptied by the settings that ' +
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
+      // THE SCHEDULER (2026-09-22, #49), after the caches and before the
+      // audit log: the last page whose subject is the process itself, and the
+      // one that says whether the background work is being DONE. Drawn by
+      // `admin-ui/scheduler_admin.ts` out of `cluster/scheduler.ts`.
+      { path: '/admin/scheduler', label: 'Scheduler',
+        blurb: 'Every periodic job this service runs &mdash; the ' +
+               'session-expiry sweep, the CRL directory refresh, and every ' +
+               'job registered after them &mdash; with its schedule, its ' +
+               'last run and how it ended, and the time to its next run as ' +
+               'a duration and an absolute time in UTC by the database\'s ' +
+               'clock. <strong>A cluster job runs once for the whole ' +
+               'service</strong>, on the scheduler\'s leader, which the ' +
+               'page names; a per-process job has a row per process. ' +
+               'Admin Write may run a job now, and on a cluster may ask ' +
+               'the leader to hand the scheduler to another node.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -37510,6 +37525,9 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // THE SCHEDULER'S SETTINGS (2026-09-22, #49), on the page that shows the
+  // jobs they switch and the ticks they time.
+  { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another

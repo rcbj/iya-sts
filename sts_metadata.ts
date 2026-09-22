@@ -5085,6 +5085,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'and status — computed from what was set here, an administrator\'s ' +
           'revocation on /admin/tokens and a global sign-out\'s disown — ' +
           'with Suspend, Reinstate and Revoke. Add ?format=json.' },
+  { path: '/admin/scheduler', group: 'Admin',
+    name: 'Every scheduled job, its last run and its next',
+    specs: [],
+    what: 'NON-SPEC (#49). Filed under Monitoring. Every job registered ' +
+          'with cluster/scheduler.ts — the session-expiry sweep, the CRL ' +
+          'directory refresh, the scheduler\'s own history, and every one ' +
+          'after them — including the ones that are off, with the reason; ' +
+          'which process leads the scheduler and since when; each job\'s ' +
+          'last run (succeeded, failed with its code, abandoned, running) ' +
+          'and its time to next run as a duration and an absolute UTC time ' +
+          'by the database clock; a per-process job\'s row per process; ' +
+          'and the recent runs, filtered by job and outcome (?job=, ' +
+          '?outcome=), with ?run=<id> for one. POST: Run now (action=run, ' +
+          'job, realm) and Step down (action=step-down), Admin Write. Read ' +
+          'from the store, so every node draws the same. Add ?format=json.' },
   { path: '/admin/caches', group: 'Admin',
     name: 'Every cache this service holds, and one cache\'s entries',
     specs: [],
@@ -5874,6 +5889,20 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Credential status actions', specs: ['openapi'],
     what: 'NON-SPEC. suspend, reinstate and revoke, with { idx }: the ' +
           'console\'s three buttons.' },
+  { path: '/admin-api/scheduler', group: 'Management API',
+    name: 'Scheduler', specs: ['openapi'],
+    what: 'NON-SPEC (#49). Everything /admin/scheduler draws, as JSON: the ' +
+          'leader, every registered job with its schedule, state, last run, ' +
+          'nextRunAt, nextRunInMs (by the database clock) and nextRunState, ' +
+          'per-process rows, the recent runs (job, outcome, page, per) and ' +
+          'the queued commands; ?run=<id> for one run. Mirrors GET ' +
+          '/admin/scheduler.' },
+  { path: '/admin-api/scheduler/:action', group: 'Management API',
+    name: 'Scheduler actions', specs: ['openapi'],
+    what: 'NON-SPEC (#49). run, with { job, realm?, params? }: a queued run ' +
+          'the leader starts at its next tick, 202 with its runId; and ' +
+          'step-down: the leader gives up ops.scheduler at its next tick and ' +
+          'another node takes it. The console\'s two buttons.' },
   { path: '/admin-api/caches', group: 'Management API',
     name: 'Caches', specs: [],
     what: 'NON-SPEC (#74). Everything /admin/caches draws, as JSON: every ' +

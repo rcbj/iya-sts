@@ -385,6 +385,13 @@ const ACTIONS = [
   { action: 'logout.backchannel', category: 'session',
     label: 'A back-channel Logout Token reached a relying party, or finally ' +
            'did not' },
+  // THE SCHEDULER (2026-09-22, #49). A row per run when it finishes —
+  // succeeded, failed or abandoned — and one when a run is queued by hand;
+  // never one per tick. `cluster/scheduler.ts`.
+  { action: 'scheduler.run', category: 'service',
+    label: 'A scheduled job ran, was queued by hand, or was taken over' },
+  { action: 'scheduler.step-down', category: 'service',
+    label: 'The scheduler\'s leader was asked to stand down' },
 
   // The four the request that started this feature named, plus the two that
   // fall out of the same operations on something that is not a person. The

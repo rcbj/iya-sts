@@ -164,6 +164,16 @@ const SUBSYSTEMS = [
           'front of active-passive and active-active mode, atomic claims, ' +
           'the secrets every node shares, and the barrier that makes a ' +
           'request see what other nodes committed before it arrived.' },
+  // THE SCHEDULER (2026-09-22, #49): its own subsystem rather than CLUSTER's,
+  // because a code here is about a JOB — which one, on which node, and what
+  // became of its run — and an operator reading `STS-SCHED-0001` on a run row
+  // wants the job's owner, not the membership table.
+  { id: 'SCHED', label: 'Scheduler',
+    where: 'cluster/scheduler.ts, admin-ui/scheduler_admin.ts',
+    what: 'The one scheduler every periodic job in this service runs on: who ' +
+          'leads it, the claim and fence that make a job run once per slot ' +
+          'in the whole cluster, the runs it records, manual runs and the ' +
+          'planned handover of its leadership.' },
   { id: 'KEYS', label: 'Cryptography, keys and secrets',
     where: 'common/crypto.js, common/pq_jose.js, common/keystore.js, ' +
            'common/secrets.js',
@@ -1296,6 +1306,75 @@ const CODES = [
     summary: 'A cluster mode was configured with persistence.minted off, so ' +
       'nodes would not share sessions, pending sign-ins, codes or tokens; ' +
       'the service does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0041',
+    summary: 'Standing down from a lease early failed in the store; the ' +
+      'lease expires on its own within one node lifetime, and this node does ' +
+      'not renew it.',
+    spec: '' },
+  // ===== SCHED =============================================================
+  { code: 'STS-SCHED-0001',
+    summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
+      'as failed with the reason, and the job runs again at its next slot.',
+    spec: '' },
+  { code: 'STS-SCHED-0002',
+    summary: 'A job\'s run took longer than its time limit; it is recorded as ' +
+      'failed, its claim is given back, and anything it still does is fenced ' +
+      'out.',
+    spec: '' },
+  { code: 'STS-SCHED-0003',
+    summary: 'A run\'s outcome was fenced out: another attempt took the run ' +
+      'over after this one\'s claim lapsed, so this one\'s result is not ' +
+      'written.',
+    spec: '' },
+  { code: 'STS-SCHED-0004',
+    summary: 'A manual run was refused: no job by that id is registered.',
+    spec: '' },
+  { code: 'STS-SCHED-0005',
+    summary: 'A manual run was refused: the job runs on its schedule only.',
+    spec: '' },
+  { code: 'STS-SCHED-0006',
+    summary: 'A manual run was refused: the job is off (its setting, ' +
+      'scheduler.enabled, or a development-mode predicate), and says why.',
+    spec: '' },
+  { code: 'STS-SCHED-0007',
+    summary: 'A manual run was refused to a realm administrator: the job is ' +
+      'service-scoped, or names another realm.',
+    spec: '' },
+  { code: 'STS-SCHED-0008',
+    summary: 'The claim store could not be asked whether a run was already ' +
+      'taken; the run is not started until it can be, so it never runs ' +
+      'twice.',
+    spec: '' },
+  { code: 'STS-SCHED-0009',
+    summary: 'A job registration was refused whole: a member is missing or ' +
+      'malformed, or the id is taken.',
+    spec: '' },
+  { code: 'STS-SCHED-0010',
+    summary: 'A step-down was refused: this service is not clustered, so ' +
+      'there is no other node to hand the scheduler to.',
+    spec: '' },
+  { code: 'STS-SCHED-0011',
+    summary: 'A run was abandoned: the node running it stopped holding its ' +
+      'claim before it finished, and another attempt took it over.',
+    spec: '' },
+  { code: 'STS-SCHED-0012',
+    summary: 'A manual run was refused: the realm it names does not exist.',
+    spec: '' },
+  { code: 'STS-SCHED-0013',
+    summary: 'The scheduler\'s tick failed unexpectedly; it is tried again ' +
+      'at the next tick.',
+    spec: '' },
+  { code: 'STS-SCHED-0014',
+    summary: 'The scheduler\'s leader could not stand down; its lease expires ' +
+      'on its own.',
+    spec: '' },
+  { code: 'STS-SCHED-0015',
+    summary: 'A per-process job\'s run in this process threw or rejected; its ' +
+      'row for this process says so, and it runs again at its next slot.',
+    spec: '' },
+  { code: 'STS-SCHED-0016',
+    summary: 'A run was asked for that does not exist (an unknown run id).',
     spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',

@@ -943,6 +943,12 @@ class RequestWorker {
                ', coordinating ' +
                !!(state.coordinating && state.coordinating.coordinating) +
                '.');
+      // THE SCHEDULER, IN PER-PROCESS MODE (#49): this worker runs the jobs
+      // that clean what only it holds, and never a cluster job — those run
+      // on the scheduler's leader, which is a front process. Required here
+      // and not at the top, for `service_state`'s reason above: nothing of
+      // the stack is loaded before the stack is.
+      require('../cluster/scheduler').start('per-process');
       this.bindSocket();
     }).catch((err) => {
       log.error(errorCodes.tag('STS-WORKER-0019') +

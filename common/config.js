@@ -1317,6 +1317,21 @@ const SETTINGS = [
   // FACING SURFACES**, and a session lifetime is the first thing a deployment's
   // security review asks for. The keys say which module reads them.
   // ---------------------------------------------------------------------
+  { key: 'authn.sessionSweepS', group: 'Web security',
+    label: 'How often expired sessions are ended (seconds)',
+    env: 'STS_AUTHN_SESSION_SWEEP_S', type: 'int', dflt: 30, min: 0,
+    max: 86400, runtime: true,
+    description: 'The interval of the scheduler job `authn.session-expiry` ' +
+                 '(Monitoring → Scheduler), which ends every sign-on session ' +
+                 'whose lifetime or idle timeout has passed — the audit row, ' +
+                 'CAEP session-revoked and the back-channel Logout Tokens ' +
+                 'going out ONCE for the whole cluster — whether or not ' +
+                 'anybody comes back to present it. 0 switches the job off: ' +
+                 'an expired session is then still refused whenever it is ' +
+                 'presented, and ended at that moment, but nobody is told of ' +
+                 'one that is never presented again. It was a fixed thirty ' +
+                 'seconds in every process until 2026-09-22 (#49).' },
+
   { key: 'authn.sessionLifetimeS', group: 'Web security',
     label: 'Session lifetime (seconds)',
     env: 'STS_AUTHN_SESSION_LIFETIME_S',
@@ -11124,7 +11139,76 @@ const SETTINGS = [
                  'failure. Naming a capability id here accepts THAT failure ' +
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
-                 'a list somebody has to write is a list somebody has read.' }
+                 'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // THE SCHEDULER (2026-09-22, #49). Every periodic job in this service runs
+  // on it — `cluster/scheduler.ts` argues the design, and /admin/scheduler
+  // (Monitoring) draws what it has done. SERVICE-WIDE, every one: a realm
+  // runs on the same scheduler as every other realm, so a realm carrying its
+  // own tick would be a sentence about a thing that does not exist.
+  // -------------------------------------------------------------------------
+  { key: 'scheduler.enabled', group: 'Scheduler',
+    label: 'Run scheduled jobs',
+    env: 'STS_SCHEDULER_ENABLED', type: 'bool', dflt: true, runtime: true,
+    perProcess: true,
+    description: 'Whether the scheduler runs any job at all. OFF, nothing ' +
+                 'periodic happens anywhere — no session is ended when it ' +
+                 'expires until somebody presents it, no directory copy of a ' +
+                 'CRL is refreshed — and /admin/scheduler says so on every ' +
+                 'row. It is read at every tick, so turning it back on ' +
+                 'resumes at the next one, and a slot missed while it was off ' +
+                 'runs ONCE, not once per slot missed.' },
+
+  { key: 'scheduler.tickS', group: 'Scheduler',
+    label: 'How often the leader looks for due jobs (seconds)',
+    env: 'STS_SCHEDULER_TICK_S', type: 'int', dflt: 15, min: 1, max: 3600,
+    runtime: true, perProcess: true,
+    description: 'The scheduler\'s leader asks, this often, which jobs are ' +
+                 'due and which manual runs are queued. It is the most a job ' +
+                 'is late by, and the most a Run now waits before it starts. ' +
+                 'Read at every tick.' },
+
+  { key: 'scheduler.historyDays', group: 'Scheduler',
+    label: 'How long a finished run is kept (days)',
+    env: 'STS_SCHEDULER_HISTORY_DAYS', type: 'int', dflt: 30, min: 1,
+    max: 3650, runtime: true, perProcess: true,
+    description: 'A run that succeeded, failed or was abandoned is kept this ' +
+                 'long and then removed by the scheduler\'s own history job. ' +
+                 'The last run of every job is kept whatever its age, so a ' +
+                 'job that runs every 90 days still shows when it last ran. ' +
+                 'Queued and running rows are never removed by age.' },
+
+  { key: 'scheduler.maxRuns', group: 'Scheduler',
+    label: 'Most runs kept per realm',
+    env: 'STS_SCHEDULER_MAX_RUNS', type: 'int', dflt: 5000, min: 100,
+    max: 1000000, runtime: true, perProcess: true,
+    description: 'The bound on the run history of one trust realm (the ' +
+                 'service-wide jobs\' runs are the default realm\'s). Past ' +
+                 'it the oldest FINISHED run goes first; a queued or running ' +
+                 'one, and the last run of each job, are never dropped to ' +
+                 'make room.' },
+
+  { key: 'scheduler.disabledJobs', group: 'Scheduler',
+    label: 'Jobs switched off',
+    env: 'STS_SCHEDULER_DISABLED_JOBS', type: 'csv', dflt: '', runtime: true,
+    perProcess: true,
+    description: 'Job ids, comma-separated, that the scheduler does not run — ' +
+                 'on their schedule or by hand. Every registered job is ' +
+                 'listed on /admin/scheduler with its id, and one named here ' +
+                 'is drawn as off with this setting as the reason. An id no ' +
+                 'job has is ignored and listed on that page.' },
+
+  { key: 'scheduler.runTimeoutS', group: 'Scheduler',
+    label: 'The longest a run may take (seconds)',
+    env: 'STS_SCHEDULER_RUN_TIMEOUT_S', type: 'int', dflt: 600, min: 5,
+    max: 86400, runtime: true, perProcess: true,
+    description: 'A run still going after this long is recorded as failed ' +
+                 '(STS-SCHED-0002), its claim is given back, and anything it ' +
+                 'does afterwards is fenced out. A job may state a longer ' +
+                 'limit of its own — signer rotation, whose post-quantum ' +
+                 'keys are slow to make, does — and this is the limit of ' +
+                 'every job that does not.' }
 ];
 
 // Indexed once. A linear scan per read would be invisible on a mock and the
