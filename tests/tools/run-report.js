@@ -407,7 +407,10 @@ function vendoredJobs(options) {
                 docker: !!entry.docker,
                 // A job may raise its own watchdog and may not lower it; see
                 // runJob(), where that rule is enforced rather than trusted.
-                timeoutMs: Number(entry.timeoutMs) || 0 });
+                timeoutMs: Number(entry.timeoutMs) || 0,
+                // Keeps its connections under STS_TEST_FRESH_CONNECTIONS —
+                // see where the preload is decided, below.
+                reuseConnections: !!entry.reuseConnections });
   });
   const browserJobs = jobs.filter(function (j) { return j.browser; });
   if (browserJobs.length) {
@@ -1886,7 +1889,17 @@ async function main() {
       // jobs start exactly as they did. Appended for the reason the token's
       // preload above is.
       // ------------------------------------------------------------------
-      if (process.env.STS_TEST_FRESH_CONNECTIONS === '1') {
+      //
+      // **EXCEPT A JOB THAT SAYS `reuseConnections` (2026-09-21).** Against
+      // an AWS environment a new connection is a TCP and TLS handshake across
+      // the internet — about a second — before EVERY request, and the three
+      // bulk loads and the distribution-point walk make thousands: all four
+      // were killed at their watchdogs on the ci environment with a quarter
+      // to a half of their work done. Their subject is throughput and the
+      // documents, not which node answered, so they keep their connections;
+      // every other job still spreads across the nodes.
+      if (process.env.STS_TEST_FRESH_CONNECTIONS === '1' &&
+          !job.reuseConnections) {
         const fresh = '--require ' +
           path.join(__dirname, 'fresh-connections.js');
         job.env.NODE_OPTIONS = job.env.NODE_OPTIONS

@@ -101,7 +101,7 @@
 
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By } = require("selenium-webdriver");
+const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
@@ -585,6 +585,17 @@ async function submitForm(driver, index, values) {
       "button, input[type='submit']"));
   assert.ok(buttons.length, "form " + index + " has no submit button");
   await buttons[0].click();
+  // THE OLD PAGE GONE FIRST (2026-09-21). Straight after the click the page
+  // that holds the button is still the document, and its readyState is
+  // already "complete" — so the wait below could pass before the browser had
+  // even begun the navigation, and the survey read the OLD page's URL, with
+  // neither `error=` nor `notice=` on it. That is the "came back with no
+  // outcome at all" this file failed with twice on 2026-09-21, in memory and
+  // single-node, for a refusal the service had made correctly. The pressed
+  // button going stale is the old document being replaced.
+  await driver.wait(until.stalenessOf(buttons[0]), 15000,
+                    "form " + index + " was submitted and the page it was " +
+                    "on was never replaced");
   await driver.wait(async function () {
     return (await driver.executeScript("return document.readyState;")) ===
            "complete";

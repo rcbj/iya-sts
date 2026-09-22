@@ -331,7 +331,11 @@ class PkiService {
     const { log, app, errorCodes } = this.deps;
     log.debug("Entering PkiService.revocationOnly().");
     const path = String(req.url || '').split('?')[0];
-    if (/^\/pki\//.test(path) && path.indexOf('..') < 0) {
+    // `/healthcheck` too (2026-09-21): the load balancer's HTTP health
+    // check on this port (deploy/aws/environment/nlb.tf) — the same route
+    // `common/app.js` answers on the main port.
+    if ((/^\/pki\//.test(path) && path.indexOf('..') < 0) ||
+        path === '/healthcheck') {
       log.debug("Leaving PkiService.revocationOnly(). Handed to the app.");
       app(req, res);
       return;
@@ -341,8 +345,8 @@ class PkiService {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.end('This plain-HTTP listener serves the revocation endpoints under ' +
-            '/pki/ and nothing else. Everything else this service answers is ' +
-            'on its main port.\n');
+            '/pki/, and /healthcheck, and nothing else. Everything else this ' +
+            'service answers is on its main port.\n');
     log.debug("Leaving PkiService.revocationOnly(). Not a revocation path.");
   }
 

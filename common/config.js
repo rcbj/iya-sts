@@ -774,14 +774,23 @@ const SETTINGS = [
 
   { key: 'global.proxyProtocolTimeoutMs', group: 'Global',
     label: 'PROXY protocol header timeout (ms)',
-    env: 'STS_PROXY_PROTOCOL_TIMEOUT_MS', type: 'int', dflt: 5000,
+    // 30 SECONDS SINCE 2026-09-21, from 5. An AWS NLB writes the header WITH
+    // the client's first data, so the clock runs until the client's TLS hello
+    // arrives — and from a client on the public internet a lost segment and
+    // its TCP retransmissions can take longer than 5s. That cut off one
+    // `sts_est_enrollment` request on the ci environment (STS-PROXY-0007, 0
+    // bytes, then ECONNRESET at the client). Thirty still closes a socket
+    // that never speaks.
+    env: 'STS_PROXY_PROTOCOL_TIMEOUT_MS', type: 'int', dflt: 30000,
     min: 100, max: 60000, runtime: true, perProcess: true,
     description: 'How long a connection from a trusted proxy may take to ' +
                  'send its complete PROXY protocol header before it is ' +
-                 'closed. A balancer writes the header in the first segment, ' +
-                 'so this bounds a slow or stalled sender holding a socket ' +
-                 'open, not a real client. Read only with ' +
-                 'global.proxyProtocol on.' },
+                 'closed. An AWS network load balancer writes the header ' +
+                 'with the client\'s first data, so this is also how long ' +
+                 'a client may take to send its first bytes — generous ' +
+                 'enough for a client on a lossy internet path, short ' +
+                 'enough to bound a stalled sender holding a socket open. ' +
+                 'Read only with global.proxyProtocol on.' },
 
   // Added 2026-09-12. `baseUrlOf()` read the request's Host header and nothing
   // else could pin it, so a caller chose what this service believed its own

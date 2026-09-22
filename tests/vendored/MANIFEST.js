@@ -393,7 +393,8 @@ const JOBS = [
   // hand and was green while every certificate named a port nothing answered
   // on; this one rewrites nothing, and holds each CRL, OCSP answer and
   // caIssuers certificate to RFC 5280, RFC 4516/4523, RFC 5019 and RFC 6960.
-  { file: 'sts_pki_distribution_points.js', browser: false, local: true },
+  { file: 'sts_pki_distribution_points.js', browser: false, local: true,
+    reuseConnections: true },
   // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
   // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
   // `/admin-api/database`, and the tree that adds a page to that console is
@@ -578,11 +579,14 @@ const JOBS = [
   // one needs a port. Run by hand with neither, it FAILS naming the variable
   // rather than reporting green having driven nothing.
   { file: 'sts_directory_bulk_load_scim.js', browser: false, local: true,
-    timeoutMs: 1800000 },
+    timeoutMs: 1800000,
+    reuseConnections: true },
   { file: 'sts_directory_bulk_load_ldap.js', browser: false, local: true,
-    timeoutMs: 1800000 },
+    timeoutMs: 1800000,
+    reuseConnections: true },
   { file: 'sts_directory_bulk_load_api.js',  browser: false, local: true,
-    timeoutMs: 1800000 },
+    timeoutMs: 1800000,
+    reuseConnections: true },
   // FIFTY THOUSAND OVER LDAP, and LAST — it leaves the directory an order of
   // magnitude larger than the three above found it, so every job that walks a
   // page or reads a register has run before it. It drives

@@ -550,6 +550,18 @@ async function test() {
            grpcHost + " (Workload API " + workloadPort + ", SPIRE Server " +
            "API " + serverPort + ").");
   assert.ok(trustDomain, "spiffe.trustDomain is set");
+  // NOT PUBLISHED HERE (2026-09-21): an AWS environment publishes SPIFFE's
+  // ports only through the spiffe-realm stack, and a runner that knows it
+  // does not says so (deploy/aws/run-suite.sh) rather than letting this job
+  // wait out a port nobody listens on.
+  if (String(process.env.STS_TEST_UNPUBLISHED || "").split(",")
+        .indexOf("spiffe") >= 0) {
+    declineToRun(log, "this environment does not publish the SPIFFE " +
+                      "Workload API or SPIRE Server API ports " +
+                      "(STS_TEST_UNPUBLISHED names spiffe).");
+    log.debug("Leaving test(). Skipped.");
+    return;
+  }
   if (settings["spiffe.enabled"] !== true) {
     declineToRun(log, "spiffe.enabled is off in the default realm, so both " +
                       "gRPC surfaces answer Unavailable by design; this job " +

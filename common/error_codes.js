@@ -8231,6 +8231,14 @@ const CODES = [
       'under the old Root and a client holding the new bundle cannot ' +
       'verify it until a restart.',
     spec: '' },
+  { code: 'STS-SPIFFE-0115',
+    summary: 'After the service Root was replaced, a realm\'s certificate ' +
+      'authority branch did not arrive under the new Root within 30 seconds, ' +
+      'so its SPIRE Server API was re-keyed anyway and the branch was ' +
+      'repaired in this process — which may leave the realm with two ' +
+      'Intermediate CAs if the process that replaced the Root rebuilds it ' +
+      'too.',
+    spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
