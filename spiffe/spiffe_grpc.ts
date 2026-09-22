@@ -96,6 +96,10 @@ import nodeCrypto = require('crypto');
 // register nothing, so neither can move a route or close a cycle.
 import spiffeId = require('./spiffe_id');
 import ca = require('./spiffe_ca');
+// The kernel's facts about a Workload API socket's caller (#40 phase four).
+// A LIBRARY that requires only helpers and config.
+import peer = require('./spiffe_peer');
+import net = require('net');
 
 // ---------------------------------------------------------------------------
 // LOADING.
@@ -155,11 +159,16 @@ interface SpiffeGrpcDeps {
   nodeCrypto: typeof nodeCrypto;
   spiffeId: typeof spiffeId;
   ca: typeof ca;
+  peer: typeof peer;
+  net: typeof net;
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadRequestPool(): typeof import('../common/request_pool');
   loadRequestWorker(): typeof import('../common/request_worker');
 }
+
+// The accepting listeners of attested sockets, by the gRPC server they feed.
+const ATTESTED_LISTENERS = new Map<any, any[]>();
 
 // The services `SpiffeGrpc.wire()` names.
 type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
@@ -192,6 +201,8 @@ class SpiffeGrpc {
       nodeCrypto: nodeCrypto,
       spiffeId: spiffeId,
       ca: ca,
+      peer: peer,
+      net: net,
       loadRequestPool: function () {
         return require('../common/request_pool');
       },
@@ -678,6 +689,30 @@ class SpiffeGrpc {
                              'else.') };
     }
     const caller = auth.callerOf(call, surface);
+    // A CONNECTION ACCEPTED ON THE ATTESTED SOCKET (#40 phase four). Its
+    // facts were gathered, and its workload attestors run, before gRPC saw
+    // it; here, on EVERY call, the process must still be the one attested,
+    // and a connection whose attestation failed is refused with the reason
+    // — a workload is never answered on a partial attestation.
+    const facts = surface === 'workload'
+      ? this.deps.peer.factsFor(String(caller.peer || '')) : null;
+    if (facts) {
+      if (facts.error) {
+        log.debug('Leaving SpiffeGrpc.prepareCall(). Attestation failed.');
+        return { caller: caller, errorCode: 'STS-SPIFFE-0111',
+                 refusal: this.unavailable('Workload attestation failed for ' +
+                                           'this connection: ' + facts.error) };
+      }
+      const changed = this.deps.peer.stillValid(facts);
+      if (changed) {
+        log.debug('Leaving SpiffeGrpc.prepareCall(). The process changed.');
+        return { caller: caller, errorCode: 'STS-SPIFFE-0112',
+                 refusal: this.permissionDenied('This connection was ' +
+                   'attested for a process that is no longer the one ' +
+                   'holding it: ' + changed + '. Reconnect.') };
+      }
+      caller.attested = facts;
+    }
     if (surface === 'workload') {
       // What this service can see about a Workload API caller, as selectors.
       // Built HERE rather than in the handlers because all four issuing methods
@@ -1204,10 +1239,23 @@ class SpiffeGrpc {
   }
 
   // A bidirectional stream. Only `AttestAgent` and `SyncAuthorizedEntries` are
-  // one, and both are request/response in practice — the client sends, the
-  // server answers, and the stream closes. So the shape here is "for each
-  // message the client sends, answer it", which is what those two do and is
-  // much easier to get right than a general duplex.
+  // one. The shape is "for each message the client sends, answer it" — which
+  // is all `SyncAuthorizedEntries` needs — PLUS A CONVERSATION (#40,
+  // 2026-09-21), which is what `AttestAgent` needs once an attestor can
+  // challenge: the handler is handed `conversation.challenge(message, ms)`,
+  // which writes a server message and resolves with the client's NEXT one
+  // instead of treating that message as a fresh request.
+  //
+  // **A CLIENT'S HALF-CLOSE WAITS FOR THE HANDLERS IN FLIGHT.** It used to
+  // answer `end` with `call.end()` at once, and `AttestAgent` is asynchronous:
+  // a client that sent its one message and half-closed (a shape gRPC allows)
+  // got an empty stream while the handler went on to SPEND THE JOIN TOKEN and
+  // record the agent, so every retry was refused as spent.
+  // `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  // worked round it on the client side; this is the fix. The stream is ended
+  // once every handler started so far has written its answer or failed, and a
+  // challenge outstanding at the half-close is failed with `ended` — the
+  // client can no longer send the response it is waiting for.
   bidiStream(surface, method, handler) {
     const { log } = this.deps;
     const self = this;
@@ -1224,27 +1272,122 @@ class SpiffeGrpc {
         log.debug('Leaving the ' + method + ' bidi handler. Refused.');
         return;
       }
+      const inFlight = new Set();
+      let failed = false;
+      let clientEnded = false;
+      let finished = false;
+      // The one outstanding challenge, if any: { resolve, reject, timer }.
+      let waiting = null;
+      function conversationError(reason, message) {
+        log.debug("Entering conversationError().");
+        const err: any = new Error(message);
+        err.conversation = reason;
+        log.debug("Leaving conversationError().");
+        return err;
+      }
+      function failWaiting(reason, message) {
+        log.debug("Entering failWaiting().");
+        if (!waiting) {
+          log.debug("Leaving failWaiting(). Nothing outstanding.");
+          return;
+        }
+        const w = waiting;
+        waiting = null;
+        clearTimeout(w.timer);
+        w.reject(conversationError(reason, message));
+        log.debug("Leaving failWaiting().");
+      }
+      function finish() {
+        log.debug("Entering finish().");
+        if (finished || !clientEnded || inFlight.size) {
+          log.debug("Leaving finish(). Not yet.");
+          return;
+        }
+        finished = true;
+        if (!failed) {
+          self.recordCall(surface, method, true, { streaming: true },
+                          prepared.caller);
+          call.end();
+        }
+        log.debug('Leaving finish(). The ' + method + ' bidi stream is ' +
+                  'ended.');
+      }
+      const conversation = {
+        // Write `message` and resolve with the client's next message. At most
+        // one at a time: an attestor is a sequence, and two challenges
+        // outstanding at once would leave the next message's meaning to a
+        // race.
+        challenge: function (message, timeoutMs) {
+          log.debug("Entering challenge().");
+          if (waiting) {
+            log.debug("Leaving challenge(). One is already outstanding.");
+            return Promise.reject(conversationError('busy',
+              'A challenge is already outstanding on this stream.'));
+          }
+          if (clientEnded || failed) {
+            log.debug("Leaving challenge(). The stream is closing.");
+            return Promise.reject(conversationError('ended',
+              'The client ended the stream before it could be challenged.'));
+          }
+          log.debug("Leaving challenge().");
+          return new Promise(function (resolve, reject) {
+            waiting = {
+              resolve: resolve, reject: reject,
+              timer: setTimeout(function () {
+                failWaiting('timeout', 'No challenge response arrived within ' +
+                            Math.round(timeoutMs / 1000) + ' second(s).');
+              }, timeoutMs)
+            };
+            call.write(message);
+          });
+        }
+      };
       call.on('data', function (request) {
-        Promise.resolve()
-          .then(function () { return handler(request, call); })
+        if (waiting) {
+          // The answer to the outstanding challenge, and not a new request.
+          const w = waiting;
+          waiting = null;
+          clearTimeout(w.timer);
+          w.resolve(request);
+          return;
+        }
+        const running = Promise.resolve()
+          .then(function () { return handler(request, call, conversation); })
           .then(function (reply) {
-            if (reply) call.write(reply);
+            if (reply && !failed) call.write(reply);
           })
           .catch(function (err) {
+            log.debug("Caught in the " + method + " bidi handler: " +
+                      ((err && err.message) || err));
+            if (failed) {
+              return;
+            }
+            failed = true;
+            failWaiting('ended', 'The stream failed.');
             const status = self.errorToStatus(err, method);
             self.recordCall(surface, method, false, { status: status.code },
                             prepared.caller, self.failureCodeOf(call, err));
             call.emit('error', status);
+          })
+          .then(function () {
+            inFlight.delete(running);
+            finish();
           });
+        inFlight.add(running);
       });
       call.on('end', function () {
-        self.recordCall(surface, method, true, { streaming: true },
-                        prepared.caller);
-        call.end();
+        clientEnded = true;
+        failWaiting('ended', 'The client ended the stream with a challenge ' +
+                    'outstanding.');
+        finish();
         log.debug('Leaving the ' + method +
                   ' bidi handler. The client ended it.');
       });
+      call.on('cancelled', function () {
+        failWaiting('cancelled', 'The client cancelled the stream.');
+      });
       call.on('error', function (err) {
+        failWaiting('ended', 'The stream ended with ' + err.message);
         log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
                   err.message);
       });
@@ -1397,6 +1540,89 @@ class SpiffeGrpc {
         resolve({ address: address, listening: true, error: '', port: port });
       });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE WORKLOAD API'S UNIX SOCKET, ACCEPTED HERE AND ATTESTED BEFORE gRPC
+  // SEES A CONNECTION (#40 phase four).
+  //
+  // `bindOne()` would let grpc-js accept the socket, and then no handler can
+  // reach the connection's file descriptor to ask the kernel who it is. So
+  // this binds a `net.Server` on the path itself, and for each connection:
+  // `onConnection(socket)` resolves the facts (`spiffe_peer.observe()` and the
+  // workload attestors, in the listener's realm — the caller supplies that),
+  // the socket is TAGGED with the facts' `unix:attested-<n>` as its remote
+  // address, and only then handed to grpc-js through
+  // `createConnectionInjector()`, which the probe on #40 showed carries that
+  // tag to `call.getPeer()`. Bytes the client sent meanwhile wait in the
+  // socket. A failure to bind is REPORTED, as `bindOne()`'s is.
+  // ---------------------------------------------------------------------------
+  bindAttestedSocket(server, socketPath: string,
+                     onConnection: (socket: any) => Promise<any>):
+      Promise<Record<string, any>> {
+    const { log, grpc, net, peer, errorCodes } = this.deps;
+    const address = 'unix://' + socketPath;
+    log.debug("Entering SpiffeGrpc.bindAttestedSocket(). " + socketPath);
+    const injector = server.createConnectionInjector(
+      grpc.ServerCredentials.createInsecure());
+    const listener = net.createServer(function (socket: any) {
+      socket.pause();
+      Promise.resolve(onConnection(socket)).then(function (facts) {
+        if (socket.destroyed) {
+          peer.forget(facts.tag);
+          return;
+        }
+        Object.defineProperty(socket, 'remoteAddress', { value: facts.tag });
+        Object.defineProperty(socket, 'remotePort',
+                              { value: Number(facts.tag.split('-').pop()) });
+        socket.on('close', function () {
+          peer.forget(facts.tag);
+        });
+        // NOT resumed here: a resume with no reader yet EMITS what the
+        // client sent while the attestors ran — its HTTP/2 preface — to
+        // nobody, and the connection dies with nothing refused. Node's
+        // HTTP/2 session takes the paused socket and reads what is buffered.
+        injector.injectConnection(socket);
+      }, function (e) {
+        log.error(errorCodes.tag('STS-SPIFFE-0111') + 'spiffe: a Workload ' +
+                  'API connection could not be attested and was closed: ' +
+                  ((e && e.message) || e));
+        socket.destroy();
+      });
+    });
+    const held = ATTESTED_LISTENERS.get(server) || [];
+    held.push(listener);
+    ATTESTED_LISTENERS.set(server, held);
+    log.debug("Leaving SpiffeGrpc.bindAttestedSocket().");
+    return new Promise(function (resolve) {
+      listener.once('error', function (e: any) {
+        log.error(errorCodes.tag('STS-SPIFFE-0011') +
+                  'spiffe: could not bind ' + address + ': ' + e.message);
+        resolve({ address: address, listening: false, error: e.message,
+                  port: 0, attested: true });
+      });
+      listener.listen(socketPath, function () {
+        resolve({ address: address, listening: true, error: '', port: 0,
+                  attested: true });
+      });
+    });
+  }
+
+  // The accepting listeners bindAttestedSocket() opened for `server`, closed
+  // when its realm stops — grpc-js's own shutdown does not know them.
+  closeAttested(server): void {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.closeAttested().");
+    (ATTESTED_LISTENERS.get(server) || []).forEach(function (listener) {
+      try {
+        listener.close();
+      } catch (e) {
+        log.debug("Caught in SpiffeGrpc.closeAttested(): " +
+                  ((e && e.message) || e));
+      }
+    });
+    ATTESTED_LISTENERS.delete(server);
+    log.debug("Leaving SpiffeGrpc.closeAttested().");
   }
 
   // ---------------------------------------------------------------------------
@@ -1743,6 +1969,8 @@ export = {
   serverStream: slot.forward('serverStream'),
   bidiStream: slot.forward('bidiStream'),
   prepareSocketPath: slot.forward('prepareSocketPath'),
+  bindAttestedSocket: slot.forward('bindAttestedSocket'),
+  closeAttested: slot.forward('closeAttested'),
   restrictSocket: slot.forward('restrictSocket'),
   buildServer: slot.forward('buildServer'),
   bindOne: slot.forward('bindOne'),

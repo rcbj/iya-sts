@@ -1633,10 +1633,10 @@ class CryptoMetadata {
         hashes: 'SHA-256 over the SVID DER wherever one is recorded, and the ' +
                 'certificate signature\'s own digest, which follows the key ' +
                 'type.',
-        whatItDoesNot: 'It attests no workload and no node — what the ' +
-                       'Workload API lacks is ATTESTATION, not ' +
-                       'authentication, and its specification says it MUST ' +
-                       'NOT authenticate. It records no SVID it mints, so ' +
+        whatItDoesNot: 'It attests no Workload API caller over TCP — ' +
+                       'the Unix socket\'s callers and every agent are ' +
+                       'attested, and the Workload API\'s specification ' +
+                       'says it MUST NOT authenticate. It records no SVID it mints, so ' +
                        'one is revoked only by naming its serial by hand; ' +
                        'revoking the realm\'s SPIFFE Issuing CA on ' +
                        '/admin/pki is what refuses every SVID under it at ' +

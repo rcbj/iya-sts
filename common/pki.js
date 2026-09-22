@@ -6515,7 +6515,705 @@ function report(realmId) {
   return out;
 }
 
+// ===========================================================================
+// SOMEBODY ELSE'S CERTIFICATES (#40, 2026-09-21): A PATH TO A CALLER'S TRUST
+// ANCHORS, AND OPENSSH CERTIFICATES.
+//
+// Everything above this section is about the authority THIS service keeps.
+// SPIFFE's node attestors verify certificates from authorities it does not
+// keep — an operator's CA (x509pop), a DevID CA and a TPM manufacturer
+// (tpm_devid), an SSH host CA (sshpop) — against anchors configured on the
+// realm. They were written beside their attestors on the first day and moved
+// here the same day, at rcbj's direction: every certificate path this
+// service checks is checked in this module, and every signature in
+// `crypto.js`.
+//
+// **`verifyPathToAnchors()` IS GO'S `x509.Certificate.Verify()`** with
+// caller-supplied roots and `ExtKeyUsageAny`, because SPIRE is what the
+// attestors copy. It builds the path greedily by ISSUER with `issuedBy()`
+// above — a root that issued the current certificate first, then the first
+// unused intermediate — and checks every signature with the vendored
+// `x509.verifyChain()`, which reads ML-DSA, SLH-DSA and composite signatures.
+// Every certificate must be inside its validity window; every one above the
+// leaf a CA whose pathLenConstraint allows what is below it and whose
+// keyUsage, where stated, permits keyCertSign; the path must end at a
+// certificate in the anchors, which need not be self-signed (Go's roots are a
+// pool, so a root's own signature is never asked about).
+//
+// **TWO THINGS FAIL CLOSED WHERE GO WOULD EVALUATE THEM.** A critical
+// extension this module does not understand is refused on any certificate —
+// Go refuses those too — unless the caller names it (`tpm_devid` names
+// subjectAltName, which EK certificates mark critical, exactly as SPIRE
+// strips it). And a CA carrying nameConstraints is refused, because they are
+// not evaluated here: a path accepted without checking what its CA was
+// limited to would be accepted wrongly.
+//
+// **THE OPENSSH HALF** reads RFC 4251's wire types and OpenSSH's
+// PROTOCOL.certkeys: ssh-rsa, ecdsa-sha2-nistp256/384/521, ssh-ed25519 and
+// their -cert-v01 versions, an authorized_keys line, SHA-256 fingerprints,
+// and `checkSshHostCertificate()`, which is `x/crypto/ssh`'s
+// `CertChecker.CheckHostKey()`. The security-key (`sk-`) types and DSA are
+// refused; OpenSSH defines no post-quantum signature.
+// ===========================================================================
+
+// One certificate from DER: `{ der, pem, x509, sha1 }`, `sha1` being SPIRE's
+// fingerprint (SHA-1 of the DER, lowercase hex). null when it is not one.
+function certificateFromDer(der) {
+  log.debug("Entering certificateFromDer().");
+  try {
+    const x509cert = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+    log.debug("Leaving certificateFromDer().");
+    return { der: Buffer.from(x509cert.raw), pem: x509cert.toString(),
+             x509: x509cert,
+             sha1: nodeCrypto.createHash('sha1').update(x509cert.raw)
+               .digest('hex') };
+  } catch (e) {
+    log.debug("Caught in certificateFromDer(): " + ((e && e.message) || e));
+    log.debug("Leaving certificateFromDer(). Not a certificate.");
+    return null;
+  }
+}
+
+// Every certificate in a PEM bundle. A block that does not parse is counted
+// and skipped, never fatal, so one bad paste does not take the rest of an
+// operator's anchors with it.
+function certificateBundle(pemText) {
+  log.debug("Entering certificateBundle().");
+  const blocks = String(pemText || '').match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  const certificates = [];
+  let unreadable = 0;
+  blocks.forEach(function (block) {
+    const body = block.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    const one = certificateFromDer(Buffer.from(body, 'base64'));
+    if (one) {
+      certificates.push(one);
+    } else {
+      unreadable++;
+    }
+  });
+  log.debug("Leaving certificateBundle(). " + certificates.length +
+            " certificate(s), " + unreadable + " unreadable.");
+  return { certificates: certificates, unreadable: unreadable };
+}
+
+// A certificate's SubjectPublicKeyInfo, read with pkijs so that a key node
+// cannot read (a post-quantum one) is still there to describe —
+// `stsCrypto.publicKeyFromSpki()` takes it. null when it cannot be read.
+function spkiOf(one) {
+  log.debug("Entering spkiOf().");
+  try {
+    const cert = pkijs.Certificate.fromBER(new Uint8Array(one.der));
+    const der = Buffer.from(cert.subjectPublicKeyInfo.toSchema().toBER(false));
+    log.debug("Leaving spkiOf().");
+    return der;
+  } catch (e) {
+    log.debug("Caught in spkiOf(): " + ((e && e.message) || e));
+    log.debug("Leaving spkiOf(). Unreadable.");
+    return null;
+  }
+}
+
+// The keyUsage bits a certificate states, by name, or null when it states
+// none — Go's `KeyUsage` is zero then, which permits nothing.
+async function keyUsageOf(one) {
+  log.debug("Entering keyUsageOf().");
+  const ku = (await extensionsOf(one)).filter(function (ext) {
+    return ext.name === 'keyUsage';
+  })[0];
+  log.debug("Leaving keyUsageOf().");
+  return ku && Array.isArray(ku.value) ? ku.value.slice(0) : null;
+}
+
+// The RSA modulus size of a certificate's key in bits; 0 for any other key.
+function rsaKeyBits(one) {
+  log.debug("Entering rsaKeyBits().");
+  let bits = 0;
+  try {
+    const key = one.x509.publicKey;
+    if (key.asymmetricKeyType === 'rsa' ||
+        key.asymmetricKeyType === 'rsa-pss') {
+      bits = Number((key.asymmetricKeyDetails || {}).modulusLength || 0);
+    }
+  } catch (e) {
+    log.debug("Caught in rsaKeyBits(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving rsaKeyBits(). " + bits);
+  return bits;
+}
+
+// The described extensions of one certificate, from the vendored engine.
+async function extensionsOf(one) {
+  log.debug("Entering extensionsOf().");
+  const described = await x509.describeCertificate(one.pem);
+  log.debug("Leaving extensionsOf().");
+  return (described && described.extensions) || [];
+}
+
+// A critical extension nothing here evaluates, or a CA's nameConstraints,
+// as a sentence; '' when neither.
+async function foreignCriticalProblem(one, isCa, allowed) {
+  log.debug("Entering foreignCriticalProblem().");
+  const understood = ['basicConstraints', 'keyUsage', 'extKeyUsage',
+                      'subjectAltName', 'authorityKeyIdentifier',
+                      'subjectKeyIdentifier'];
+  const extensions = await extensionsOf(one);
+  const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+  for (let i = 0; i < extensions.length; i++) {
+    const ext = extensions[i];
+    if (isCa && ext.name === 'nameConstraints') {
+      log.debug("Leaving foreignCriticalProblem(). nameConstraints.");
+      return name + ' carries nameConstraints, which this server does not ' +
+             'evaluate, so a path through it is refused';
+    }
+    if (ext.critical && understood.indexOf(ext.name) < 0 &&
+        allowed.indexOf(ext.name) < 0) {
+      log.debug("Leaving foreignCriticalProblem(). Unhandled.");
+      return name + ' carries an unhandled critical extension (' +
+             ext.name + ')';
+    }
+  }
+  log.debug("Leaving foreignCriticalProblem().");
+  return '';
+}
+
+// What stops `one` signing a path with `below` CA certificates beneath it,
+// or ''.
+async function foreignCaProblem(one, below) {
+  log.debug("Entering foreignCaProblem().");
+  const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+  if (!one.x509.ca) {
+    log.debug("Leaving foreignCaProblem(). Not a CA.");
+    return name + ' issued a certificate and is not a CA ' +
+           '(basicConstraints cA is not set)';
+  }
+  const extensions = await extensionsOf(one);
+  const bc = extensions.filter(function (ext) {
+    return ext.name === 'basicConstraints';
+  })[0];
+  const pathLen = bc && bc.value ? bc.value.pathLen : null;
+  if (pathLen !== null && pathLen !== undefined && below > pathLen) {
+    log.debug("Leaving foreignCaProblem(). pathLen.");
+    return name + ' allows ' + pathLen + ' CA certificate(s) below it ' +
+           '(pathLenConstraint) and the path has ' + below;
+  }
+  const ku = extensions.filter(function (ext) {
+    return ext.name === 'keyUsage';
+  })[0];
+  if (ku && Array.isArray(ku.value) && ku.value.indexOf('keyCertSign') < 0) {
+    log.debug("Leaving foreignCaProblem(). keyUsage.");
+    return name + '\'s keyUsage does not permit keyCertSign';
+  }
+  log.debug("Leaving foreignCaProblem().");
+  return '';
+}
+
+// Build and verify a path from `leafDer` through `intermediateDers` to one of
+// `anchors` (certificateFromDer() answers). `opts.now` is milliseconds;
+// `opts.allowCritical` names critical extensions not to refuse. Resolves
+// `{ ok: true, chain }` — leaf first, the anchor last — or
+// `{ ok: false, reason }`. Never rejects.
+async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
+  log.debug("Entering verifyPathToAnchors().");
+  const options = opts || {};
+  const leaf = certificateFromDer(leafDer);
+  if (!leaf) {
+    log.debug("Leaving verifyPathToAnchors(). No leaf.");
+    return { ok: false, reason: 'the leaf is not an X.509 certificate' };
+  }
+  const intermediates = [];
+  for (let i = 0; i < (intermediateDers || []).length; i++) {
+    const one = certificateFromDer(intermediateDers[i]);
+    if (!one) {
+      log.debug("Leaving verifyPathToAnchors(). A bad intermediate.");
+      return { ok: false, reason: 'intermediate certificate ' + i +
+               ' is not an X.509 certificate' };
+    }
+    intermediates.push(one);
+  }
+  const roots = anchors || [];
+  if (!roots.length) {
+    log.debug("Leaving verifyPathToAnchors(). No anchors.");
+    return { ok: false, reason: 'no trust anchor is configured' };
+  }
+  const path = [leaf];
+  const used = {};
+  let current = leaf;
+  // A leaf that IS one of the anchors verifies as itself, as in Go.
+  let anchored = roots.some(function (root) {
+    return root.der.equals(leaf.der);
+  });
+  while (!anchored) {
+    const top = current;
+    const root = roots.filter(function (candidate) {
+      return issuedBy(top.x509, candidate.x509) > 0;
+    })[0];
+    if (root) {
+      path.push(root);
+      anchored = true;
+      break;
+    }
+    let next = -1;
+    intermediates.forEach(function (candidate, index) {
+      if (next < 0 && !used[index] &&
+          issuedBy(top.x509, candidate.x509) > 0) {
+        next = index;
+      }
+    });
+    if (next < 0) {
+      log.debug("Leaving verifyPathToAnchors(). No path.");
+      return { ok: false, reason: 'no path from "' +
+               top.x509.subject.replace(/\n/g, ', ') +
+               '" to a configured trust anchor' };
+    }
+    used[next] = true;
+    path.push(intermediates[next]);
+    current = intermediates[next];
+  }
+  let links = [];
+  try {
+    links = await x509.verifyChain(path.map(function (one) {
+      return one.pem;
+    }));
+  } catch (e) {
+    log.debug("Caught in verifyPathToAnchors(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyPathToAnchors(). The engine could not read it.");
+    return { ok: false, reason: 'the path could not be read: ' +
+             ((e && e.message) || e) };
+  }
+  const at = options.now === undefined ? Date.now() : options.now;
+  for (let i = 0; i < path.length; i++) {
+    const one = path[i];
+    const name = '"' + one.x509.subject.replace(/\n/g, ', ') + '"';
+    if (Date.parse(one.x509.validFrom) > at ||
+        Date.parse(one.x509.validTo) < at) {
+      log.debug("Leaving verifyPathToAnchors(). Outside validity.");
+      return { ok: false, reason: name + ' is outside its validity window (' +
+               one.x509.validFrom + ' to ' + one.x509.validTo + ')' };
+    }
+    if (i < path.length - 1 && !(links[i] && links[i].signatureValid)) {
+      log.debug("Leaving verifyPathToAnchors(). A bad signature.");
+      return { ok: false, reason: 'the signature on ' + name + ' does not ' +
+               'verify under the key of the certificate above it' +
+               (links[i] && links[i].error ? ' (' + links[i].error + ')'
+                                           : '') };
+    }
+    const critical = await foreignCriticalProblem(one, i > 0,
+                                                  options.allowCritical || []);
+    if (critical) {
+      log.debug("Leaving verifyPathToAnchors(). An extension.");
+      return { ok: false, reason: critical };
+    }
+    if (i > 0) {
+      const problem = await foreignCaProblem(one, i - 1);
+      if (problem) {
+        log.debug("Leaving verifyPathToAnchors(). Not a usable CA.");
+        return { ok: false, reason: problem };
+      }
+    }
+  }
+  log.debug("Leaving verifyPathToAnchors(). " + path.length +
+            " certificate(s).");
+  return { ok: true, chain: path };
+}
+
+// ----- OpenSSH --------------------------------------------------------------
+
+const SSH_CERT_SUFFIX = '-cert-v01@openssh.com';
+// SSH_CERT_TYPE_HOST (PROTOCOL.certkeys).
+const SSH_HOST_CERT = 2;
+// Go's CertTimeInfinity, and the largest time Go treats as a time.
+const SSH_FOREVER = BigInt('0xffffffffffffffff');
+const SSH_LATEST = BigInt('0x7fffffffffffffff');
+const SSH_CURVES = {
+  'nistp256': { crv: 'P-256', node: 'prime256v1', hash: 'sha256', bytes: 32 },
+  'nistp384': { crv: 'P-384', node: 'secp384r1', hash: 'sha384', bytes: 48 },
+  'nistp521': { crv: 'P-521', node: 'secp521r1', hash: 'sha512', bytes: 66 }
+};
+
+// A reader over RFC 4251's types. Every read throws on a short buffer, and
+// the parser's caller turns that into its refusal.
+function sshReader(bytes) {
+  log.debug("Entering sshReader().");
+  const buf = Buffer.from(bytes || []);
+  let at = 0;
+  // A HOT PATH: the reader's methods carry no Entering/Leaving pair. They
+  // run once per field of every key and certificate parsed, and a pair each
+  // would drown the log in lines that say nothing the parser's own do not.
+  const reader = {
+    take: function (n) {
+      if (n < 0 || at + n > buf.length) {
+        // error-code: none — a parse failure, refused by the caller under
+        // its own code
+        throw new Error('the SSH structure is truncated');
+      }
+      const out = buf.subarray(at, at + n);
+      at += n;
+      return out;
+    },
+    uint32: function () {
+      return reader.take(4).readUInt32BE(0);
+    },
+    uint64: function () {
+      return reader.take(8).readBigUInt64BE(0);
+    },
+    string: function () {
+      return reader.take(reader.uint32());
+    },
+    text: function () {
+      return reader.string().toString('utf8');
+    },
+    // An mpint's magnitude, without the sign byte OpenSSH adds.
+    mpint: function () {
+      const raw = reader.string();
+      let start = 0;
+      while (start < raw.length - 1 && raw[start] === 0) start++;
+      return raw.subarray(start);
+    },
+    position: function () {
+      return at;
+    },
+    rest: function () {
+      return reader.take(buf.length - at);
+    },
+    done: function () {
+      return at === buf.length;
+    }
+  };
+  log.debug("Leaving sshReader().");
+  return reader;
+}
+
+// A key component as a JWK carries it.
+function sshBase64Url(value) {
+  log.debug("Entering sshBase64Url().");
+  log.debug("Leaving sshBase64Url().");
+  return Buffer.from(value).toString('base64url');
+}
+
+// The public fields of one SSH key type, as node key material.
+function sshKeyFields(type, reader) {
+  log.debug("Entering sshKeyFields(). type=" + type);
+  const b64u = sshBase64Url;
+  if (type === 'ssh-rsa') {
+    const e = reader.mpint();
+    const n = reader.mpint();
+    log.debug("Leaving sshKeyFields(). RSA.");
+    return { key: nodeCrypto.createPublicKey({ format: 'jwk',
+      key: { kty: 'RSA', n: b64u(n), e: b64u(e) } }), curve: '' };
+  }
+  const ecdsa = /^ecdsa-sha2-(nistp256|nistp384|nistp521)$/.exec(type);
+  if (ecdsa) {
+    const curve = reader.text();
+    const q = reader.string();
+    const spec = SSH_CURVES[ecdsa[1]];
+    if (curve !== ecdsa[1] || q[0] !== 4 || q.length !== 1 + 2 * spec.bytes) {
+      log.debug("Leaving sshKeyFields(). A bad point.");
+      // error-code: none — see sshReader()
+      throw new Error('the ECDSA key is not an uncompressed ' + curve +
+                      ' point');
+    }
+    log.debug("Leaving sshKeyFields(). ECDSA.");
+    return { curve: ecdsa[1], key: nodeCrypto.createPublicKey({ format: 'jwk',
+      key: { kty: 'EC', crv: spec.crv,
+             x: b64u(q.subarray(1, 1 + spec.bytes)),
+             y: b64u(q.subarray(1 + spec.bytes)) } }) };
+  }
+  if (type === 'ssh-ed25519') {
+    const pk = reader.string();
+    if (pk.length !== 32) {
+      log.debug("Leaving sshKeyFields(). A bad Ed25519 key.");
+      // error-code: none — see sshReader()
+      throw new Error('an Ed25519 key is 32 bytes');
+    }
+    log.debug("Leaving sshKeyFields(). Ed25519.");
+    return { key: nodeCrypto.createPublicKey({ format: 'jwk',
+      key: { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) } }), curve: '' };
+  }
+  log.debug("Leaving sshKeyFields(). Unsupported.");
+  // error-code: none — see sshReader()
+  throw new Error('the SSH key type ' + type + ' is not supported (ssh-rsa, ' +
+                  'ecdsa-sha2-nistp256/384/521 and ssh-ed25519 are)');
+}
+
+// A packed list of name-value pairs (critical options, extensions).
+function sshOptions(bytes) {
+  log.debug("Entering sshOptions().");
+  const reader = sshReader(bytes);
+  const out = {};
+  while (!reader.done()) {
+    const name = reader.text();
+    const data = reader.string();
+    out[name] = data.length ? sshReader(data).text() : '';
+  }
+  log.debug("Leaving sshOptions().");
+  return out;
+}
+
+// A public key blob or a certificate blob, as `ssh.ParsePublicKey()`. A key
+// is `{ type, key, curve, blob }`; a certificate adds `certType`, `nonce`,
+// `serial`, `kind`, `keyId`, `principals`, `validAfter`, `validBefore`,
+// `criticalOptions`, `extensions`, `signatureKey`, `signature` and `signed`
+// (the bytes the authority signed). Throws on anything unreadable.
+function parseSshPublicKey(blob) {
+  log.debug("Entering parseSshPublicKey().");
+  const bytes = Buffer.from(blob || []);
+  const reader = sshReader(bytes);
+  const type = reader.text();
+  if (type.slice(-SSH_CERT_SUFFIX.length) !== SSH_CERT_SUFFIX) {
+    const fields = sshKeyFields(type, reader);
+    if (!reader.done()) {
+      log.debug("Leaving parseSshPublicKey(). Trailing bytes.");
+      // error-code: none — see sshReader()
+      throw new Error('trailing bytes after the SSH public key');
+    }
+    log.debug("Leaving parseSshPublicKey(). A key.");
+    return { type: type, key: fields.key, curve: fields.curve, blob: bytes };
+  }
+  const keyType = type.slice(0, -SSH_CERT_SUFFIX.length);
+  const nonce = reader.string();
+  const fields = sshKeyFields(keyType, reader);
+  const serial = reader.uint64();
+  const kind = reader.uint32();
+  const keyId = reader.text();
+  const principalReader = sshReader(reader.string());
+  const principals = [];
+  while (!principalReader.done()) principals.push(principalReader.text());
+  const validAfter = reader.uint64();
+  const validBefore = reader.uint64();
+  const criticalOptions = sshOptions(reader.string());
+  const extensions = sshOptions(reader.string());
+  reader.string();
+  const signatureKeyBlob = reader.string();
+  const signedLength = reader.position();
+  const signatureReader = sshReader(reader.string());
+  if (!reader.done()) {
+    log.debug("Leaving parseSshPublicKey(). Trailing bytes.");
+    // error-code: none — see sshReader()
+    throw new Error('trailing bytes after the SSH certificate');
+  }
+  const signatureKey = parseSshPublicKey(signatureKeyBlob);
+  if (signatureKey.certType) {
+    log.debug("Leaving parseSshPublicKey(). A certificate signed one.");
+    // error-code: none — see sshReader()
+    throw new Error('a certificate\'s signature key cannot itself be a ' +
+                    'certificate');
+  }
+  const format = signatureReader.text();
+  const signatureBlob = signatureReader.string();
+  const rest = signatureReader.rest();
+  log.debug("Leaving parseSshPublicKey(). A certificate.");
+  return {
+    type: keyType, certType: type, key: fields.key, curve: fields.curve,
+    blob: bytes, nonce: nonce, serial: serial, kind: kind, keyId: keyId,
+    principals: principals, validAfter: validAfter, validBefore: validBefore,
+    criticalOptions: criticalOptions, extensions: extensions,
+    signatureKey: signatureKey,
+    signature: { format: format, blob: signatureBlob, rest: rest },
+    signed: bytes.subarray(0, signedLength)
+  };
+}
+
+// One authorized_keys line — `[options] type base64 [comment]` — as a key,
+// or null for a line that is not one.
+function parseSshAuthorizedKey(line) {
+  log.debug("Entering parseSshAuthorizedKey().");
+  const text = String(line || '').trim();
+  if (!text || text.charAt(0) === '#') {
+    log.debug("Leaving parseSshAuthorizedKey(). Not a key.");
+    return null;
+  }
+  const fields = text.match(/"(?:[^"\\]|\\.)*"|\S+/g) || [];
+  for (let i = 0; i < fields.length - 1; i++) {
+    if (!/^(ssh-|ecdsa-|sk-)/.test(fields[i]) &&
+        fields[i].indexOf('@openssh.com') < 0) {
+      continue;
+    }
+    try {
+      const key = parseSshPublicKey(Buffer.from(fields[i + 1], 'base64'));
+      if (key.type === fields[i] || key.certType === fields[i]) {
+        log.debug("Leaving parseSshAuthorizedKey().");
+        return key;
+      }
+    } catch (e) {
+      log.debug("Caught in parseSshAuthorizedKey(): " +
+                ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving parseSshAuthorizedKey(). Unreadable.");
+  return null;
+}
+
+// `ssh.FingerprintSHA256()` without its prefix: unpadded base64 of the
+// SHA-256 of the key blob.
+function sshFingerprint(key) {
+  log.debug("Entering sshFingerprint().");
+  log.debug("Leaving sshFingerprint().");
+  return nodeCrypto.createHash('sha256').update(key.blob).digest('base64')
+    .replace(/=+$/, '');
+}
+
+// Does `signature` (`{ format, blob }`) over `data` verify under the SSH key?
+// The formats Go's `Verify()` accepts for each key type and no others:
+// ssh-rsa (SHA-1), rsa-sha2-256 and rsa-sha2-512; the curve's own hash for
+// ECDSA, whose blob is two mpints; ssh-ed25519.
+async function verifySshSignature(key, data, signature) {
+  log.debug("Entering verifySshSignature(). " + key.type + " / " +
+            (signature && signature.format));
+  if (!signature || !signature.blob) {
+    log.debug("Leaving verifySshSignature(). No signature.");
+    return false;
+  }
+  if (key.type === 'ssh-rsa') {
+    const hash = { 'ssh-rsa': 'sha1', 'rsa-sha2-256': 'sha256',
+                   'rsa-sha2-512': 'sha512' }[signature.format];
+    const ok = !!hash && await stsCrypto.verifyRawSignature(
+      { family: 'rsa-pkcs1', hash: hash }, key.key, data, signature.blob);
+    log.debug("Leaving verifySshSignature(). RSA " + ok);
+    return ok;
+  }
+  if (key.curve) {
+    if (signature.format !== key.type) {
+      log.debug("Leaving verifySshSignature(). Wrong format for the curve.");
+      return false;
+    }
+    const spec = SSH_CURVES[key.curve];
+    let raw = null;
+    try {
+      const inner = sshReader(signature.blob);
+      raw = stsCrypto.ecdsaIntegersToP1363(spec.node, inner.mpint(),
+                                           inner.mpint());
+    } catch (e) {
+      log.debug("Caught in verifySshSignature(): " + ((e && e.message) || e));
+    }
+    const ok = !!raw && await stsCrypto.verifyRawSignature(
+      { family: 'ecdsa', hash: spec.hash, encoding: 'p1363' }, key.key, data,
+      raw);
+    log.debug("Leaving verifySshSignature(). ECDSA " + ok);
+    return ok;
+  }
+  if (key.type === 'ssh-ed25519' && signature.format === 'ssh-ed25519') {
+    const ok = await stsCrypto.verifyRawSignature({ family: 'eddsa' },
+                                                  key.key, data,
+                                                  signature.blob);
+    log.debug("Leaving verifySshSignature(). Ed25519 " + ok);
+    return ok;
+  }
+  log.debug("Leaving verifySshSignature(). Refused.");
+  return false;
+}
+
+// `CertChecker.CheckHostKey(principal + ':22', …)`: resolves '' when the host
+// certificate is acceptable, otherwise why not.
+async function checkSshHostCertificate(cert, principal, authorities,
+                                       nowSeconds) {
+  log.debug("Entering checkSshHostCertificate().");
+  if (cert.kind !== SSH_HOST_CERT) {
+    log.debug("Leaving checkSshHostCertificate(). Not a host cert.");
+    return 'ssh: certificate presented as a host key has type ' + cert.kind;
+  }
+  const authority = sshFingerprint(cert.signatureKey);
+  if (!(authorities || []).some(function (one) {
+    return sshFingerprint(one) === authority;
+  })) {
+    log.debug("Leaving checkSshHostCertificate(). Unknown authority.");
+    return 'ssh: no authorities for hostname: ' + principal;
+  }
+  const options = Object.keys(cert.criticalOptions).filter(function (name) {
+    return name !== 'source-address';
+  });
+  if (options.length) {
+    log.debug("Leaving checkSshHostCertificate(). Critical option.");
+    return 'ssh: unsupported critical option "' + options[0] +
+           '" in certificate';
+  }
+  if (cert.principals.length && cert.principals.indexOf(principal) < 0) {
+    log.debug("Leaving checkSshHostCertificate(). Principal.");
+    return 'ssh: principal "' + principal + '" not in the set of valid ' +
+           'principals for given certificate';
+  }
+  const now = BigInt(Math.floor(nowSeconds));
+  if (cert.validAfter > SSH_LATEST || now < cert.validAfter) {
+    log.debug("Leaving checkSshHostCertificate(). Not yet valid.");
+    return 'ssh: cert is not yet valid';
+  }
+  if (cert.validBefore !== SSH_FOREVER &&
+      (cert.validBefore > SSH_LATEST || now >= cert.validBefore)) {
+    log.debug("Leaving checkSshHostCertificate(). Expired.");
+    return 'ssh: cert has expired';
+  }
+  if (!(await verifySshSignature(cert.signatureKey, cert.signed,
+                                 cert.signature))) {
+    log.debug("Leaving checkSshHostCertificate(). Signature.");
+    return 'ssh: certificate signature does not verify';
+  }
+  log.debug("Leaving checkSshHostCertificate(). Accepted.");
+  return '';
+}
+
+// ----- The clouds' published signing certificates (#40 phase three) ---------
+//
+// `pki_cloud_anchors.json` is GENERATED from SPIRE's own embedded tables (its
+// `_provenance` member says from which files): AWS's per-region certificates
+// for instance identity documents, RSA-2048 (PKCS#7 signatures) and RSA-1024
+// (the older raw signature, with one default for most regions), and the four
+// roots Azure's attested documents chain to. They are public certificates,
+// shipped the way SPIRE ships them, and never edited by hand.
+//
+// **AN AWS CERTIFICATE HERE IS A KEY HOLDER, NOT A PATH.** SPIRE verifies an
+// identity document's signature with the region's certificate's public key
+// and asks nothing about the certificate's own validity — AWS's default
+// RSA-1024 certificate expired on 2024-06-05 and still verifies the older
+// signature form in SPIRE — so `awsIidCertificate()` answers a certificate
+// and the caller uses its key. Azure's roots ARE a path's anchors
+// (`verifyPathToAnchors()`).
+let cloudAnchors = null;
+function cloudAnchorTable() {
+  log.debug("Entering cloudAnchorTable().");
+  if (!cloudAnchors) {
+    cloudAnchors = require('./pki_cloud_anchors.json');
+  }
+  log.debug("Leaving cloudAnchorTable().");
+  return cloudAnchors;
+}
+
+// The AWS certificate for `region` and `keyType` ('rsa2048' | 'rsa1024'), as
+// certificateFromDer() answers, or null — RSA-2048 has no fallback and an
+// unknown region is refused, RSA-1024 falls back to AWS's default, as SPIRE.
+function awsIidCertificate(region, keyType) {
+  log.debug("Entering awsIidCertificate(). " + region + "/" + keyType);
+  const table = cloudAnchorTable();
+  const pem = keyType === 'rsa2048'
+    ? table.awsRsa2048[String(region || '')]
+    : (table.awsRsa1024[String(region || '')] || table.awsRsa1024Default);
+  log.debug("Leaving awsIidCertificate(). " + (pem ? 'found' : 'none'));
+  return pem ? certificateBundle(pem).certificates[0] || null : null;
+}
+
+// The roots an Azure attested document's signing certificate must chain to.
+function azureImdsRoots() {
+  log.debug("Entering azureImdsRoots().");
+  log.debug("Leaving azureImdsRoots().");
+  return certificateBundle(cloudAnchorTable().azureRoots.join('\n'))
+    .certificates;
+}
+
 module.exports = {
+  // --- somebody else's certificates (#40) ---
+  certificateFromDer: certificateFromDer,
+  certificateBundle: certificateBundle,
+  rsaKeyBits: rsaKeyBits,
+  spkiOf: spkiOf,
+  keyUsageOf: keyUsageOf,
+  verifyPathToAnchors: verifyPathToAnchors,
+  SSH_HOST_CERT: SSH_HOST_CERT,
+  parseSshPublicKey: parseSshPublicKey,
+  parseSshAuthorizedKey: parseSshAuthorizedKey,
+  sshFingerprint: sshFingerprint,
+  verifySshSignature: verifySshSignature,
+  checkSshHostCertificate: checkSshHostCertificate,
+  awsIidCertificate: awsIidCertificate,
+  azureImdsRoots: azureImdsRoots,
   TIERS: TIERS,
   TIER_IDS: TIER_IDS,
   // A GETTER, so a reader of `pki.MAX_OBJECTS` sees `pki.maxStoredObjects`.

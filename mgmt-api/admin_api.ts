@@ -14810,17 +14810,20 @@ class AdminApi {
                      'trust domain, and whether each of the four gRPC ' +
                      'listeners actually bound — which nothing else can tell ' +
                      'you, because neither this API nor GET ' +
-                     '/admin/sts-metadata can see a socket.\n\nThe reply ' +
+                     '/admin/sts-metadata can see a socket, and ' +
+                     '`workloadAttestation`: what the Workload API\'s Unix ' +
+                     'socket attests.\n\nThe reply ' +
                      'also carries `authentication`: whether the SPIRE ' +
                      'Server API is enforcing mutual TLS, which identities ' +
                      'are administrators, and the whole per-method ' +
                      'authorization table, which is SPIRE\'s own ' +
-                     '`policy_data.json` row for row.\n\n**Nothing here ' +
-                     'attests a workload or a node.** A Workload API caller ' +
-                     'is identified only by the transport it arrived on, the ' +
-                     'endpoint it reached and its peer address — node cannot ' +
-                     'read a Unix socket\'s peer credentials — and an ' +
-                     'agent\'s attestation payload is taken on trust. Where ' +
+                     '`policy_data.json` row for row.\n\nA Workload API ' +
+                     'caller on the Unix socket is attested by the workload ' +
+                     'attestors `spiffe.workloadAttestors` names; one over ' +
+                     'TCP is identified only by the transport, the endpoint ' +
+                     'and its address. An agent\'s attestation is verified ' +
+                     'by the attestor its type names or refused (#40, ' +
+                     '2026-09-21). Where ' +
                      'the SPIRE Server API authenticates nobody, any caller ' +
                      'that reaches its port can create a registration entry ' +
                      'granting any identity here. GET /spiffe carries the ' +
@@ -15226,11 +15229,11 @@ class AdminApi {
                      'than configuration — everything on them was written by ' +
                      'this service — which is why nothing about an agent is ' +
                      'editable and the only write is the ban.\n\n**Node ' +
-                     'attestation is never verified.** Whatever attestor an ' +
-                     'agent names and whatever payload it sends are written ' +
-                     'down as claimed, which is why every agent carries a ' +
-                     'selector valued `unverified:true`: an agent\'s ' +
-                     'selectors here are claims, not attested facts.',
+                     'attestation is verified or refused.** An agent here ' +
+                     'attested with a type the realm accepts ' +
+                     '(spiffe.nodeAttestors) and an attestor verified, and ' +
+                     'its selectors are the ones that attestor derived ' +
+                     '(#40, 2026-09-21).',
         mirrors: 'GET /admin/spiffe/agents',
         parameters: [
           { name: 'agent', in: 'query', required: false,

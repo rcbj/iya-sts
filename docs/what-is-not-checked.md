@@ -56,7 +56,9 @@ any of them would be a broken implementation rather than a lenient one:
 * the reserved password **`invalid`**, refused at every door that takes a
   password, so a client's wrong-password path is always reachable;
 * a **disabled account** (`pwdAccountLockedTime`), refused at every door — see
-  the SCIM `active: false` row.
+  the SCIM `active: false` row;
+* a **SPIFFE node attestation**, by all nine of SPIRE's node attestors, and a
+  Workload API caller on the Unix socket, by the workload attestors (#40).
 
 ## The list
 
@@ -91,7 +93,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Require a credential at the WS-Trust STS | A request with no credential is refused; a UsernameToken's password is verified; an assertion is accepted only when this STS signed it and it is inside its `Conditions`; `OnBehalfOf` and `ActAs` need the requester's own credential and an assertion this STS signed (`STS-WSTRUST-0009`); a token asked for encrypted is not sent in the clear (`STS-WSTRUST-0012`, `0013`). Nothing decides **who** may act for whom | A request with no credential gets a token for `anonymous`, an unsigned assertion is believed, and `OnBehalfOf` needs no requester. A requested lifetime is clamped to `wstrust.maxTokenLifetimeMin` in both modes |
 | Encrypt an assertion it was asked to encrypt but holds no certificate for | Refused: a SAML Responder status with no assertion (`STS-SAML-0011`). It never encrypts to a certificate a request merely carried | The assertion is sent in the clear, with a warning. A provider whose metadata publishes an encryption key is encrypted to in both modes |
 | Decrypt an assertion a federation partner encrypted, or consume a federated sign-out | Neither: an encrypted assertion is refused naming "no assertion" (`STS-FED-0011`), and a sign-out request arriving at the federation endpoint is refused (`STS-FED-0024`). Nothing re-checks a federated person with the partner once the session exists | The same |
-| Attest a workload or a node | See [SPIFFE](#the-workload-api-is-the-opposite-case). Neither mode attests a workload; a node's attestation is verified only for a `join_token` | The same |
+| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP is still not attested** — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, and `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
 | Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. `oauth2.delegatedPermissionsEnforced` (off) turns an ungranted delegated permission into `invalid_scope`. See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all |
 
@@ -492,6 +494,24 @@ is authorized against SPIRE's own per-method table, copied row for row from
 everybody by design. **The private Unix socket is trusted as `local` with no
 credential** while `spiffe.trustLocalSocket` is on, which it is by default.
 
+**Node attestation is verified or refused, in every mode (2026-09-21).**
+`Agent.AttestAgent` accepts only an attestation type the realm names in
+`spiffe.nodeAttestors` **and** an attestor here can verify; anything else is
+refused with `FAILED_PRECONDITION`, as SPIRE refuses an attestor it has no plugin
+for. Until then any type was accepted with its payload unread and the agent
+marked `unverified:true`. The verifiable types are `join_token` (minted here,
+single use), `x509pop` (an X.509 certificate chaining to the realm's anchors and
+a signature over a fresh challenge — RSA, ECDSA or, beyond SPIRE, a
+post-quantum key), `sshpop` (an SSH host certificate from a configured
+authority, and a signature by its host key) and `tpm_devid` (a DevID key
+resident in a TPM whose endorsement key a configured manufacturer certified,
+proved by credential activation), `k8s_psat` (a projected service account
+token the cluster's own TokenReview authenticates), `http_challenge` (a nonce
+served from a host name the realm allows — as strong as the network's DNS,
+and the one place this service dials an address a caller named), and
+`aws_iid`, `gcp_iit` and `azure_imds` (each cloud's signed identity document,
+once per instance).
+
 ### The admin console, at `/admin`
 
 **There is no setting that opens this console.** Every page and form needs a
@@ -576,13 +596,42 @@ workload has no secret and no root of trust until that call gives it one, so the
 SPIFFE Workload Endpoint specification requires that the endpoint not demand
 authentication. No mode changes that.
 
-What it lacks is **attestation, not authentication**, in both modes. A real agent
-reads the peer credentials of its Unix socket — pid, uid, gid, executable,
-container, pod — and turns them into selectors. This service does not, so a
-caller is identified by the transport it arrived on, the endpoint it reached and
-its peer address, and the selectors are spelt `transport:`, `endpoint:` and
-`peer:` rather than `unix:` or `k8s:`. Writing `unix:uid:1000` for a uid nothing
-read would be inventing an attested fact.
+What it needs there is **attestation, not authentication**, and the two must
+not be merged. **Since 2026-09-21 (#40) the Unix socket attests its caller** the
+way a SPIRE agent does: the kernel names the connecting process (`SO_PEERCRED`,
+through a small native module built into the image, and a pidfd that holds the
+process), and the workload attestors that `spiffe.workloadAttestors` names turn it
+into SPIRE's selectors:
+
+* `unix`: `uid:`, `user:`, `gid:`, `group:`, the supplementary groups, and with
+  `spiffe.unixDiscoverWorkloadPath` the executable's `path:` and `sha256:`;
+* `docker`: the container's `label:`, `env:`, `image_id:` and
+  `image_config_digest:`, asked of the Docker Engine;
+* `k8s`: the pod's `sa:`, `ns:`, `pod-name:`, `pod-label:`, `pod-owner:`,
+  `container-name:`, `container-image:` and the rest of SPIRE's list, read from
+  the kubelet.
+
+A connection is attested once, when it is accepted, and **every call on it
+checks that the process is still the one attested**: a process that has exited,
+a reused pid or an `exec` of another program is refused (`PERMISSION_DENIED`). An
+attestor that fails refuses every call on the connection (`UNAVAILABLE`). A peer
+in a pid namespace this service cannot see is attested on the uid and gid the
+kernel recorded, and nothing else.
+
+What is still not attested:
+
+* **A caller over TCP.** It has no peer process to ask, so it is identified by
+  the transport, the endpoint and its address, spelt `transport:`, `endpoint:`
+  and `peer:`.
+* **A Unix-socket caller where the native module is missing.** Development serves
+  the socket unattested and `GET /spiffe` says so under `workloadAttestation`.
+  **Product does not serve the socket at all** (`STS-SPIFFE-0113`).
+* SPIRE's `systemd` workload attestor, the docker attestor's sigstore signature
+  checks and Podman sockets, and the Kubernetes broker. Each is a follow-up on #40.
+
+**Asserted selectors are never believed in product mode.** In development,
+`spiffe.acceptAssertedSelectors` still lets a caller assert them, so that
+selector matching can be exercised with no attestor at all.
 
 Selector matching still **decides** which entries answer a caller
 (`spiffe.attestWorkloads`, on by default). A caller that matches no entry gets
@@ -590,8 +639,8 @@ an empty SVID list — what a real agent does for an unregistered workload — *
 product always**, and in development when `spiffe.autoCreateEntries` is off;
 with it on, development creates an entry for the caller. Product seeds no
 registration entries at all. **`spiffe.acceptAssertedSelectors`** (off) makes
-the server believe selectors a caller sends in a header, and is not held back
-by product mode.
+the server believe selectors a caller sends in a header — in development only;
+product mode never believes them (#40).
 
 ## RFC 9700 mode
 
@@ -657,7 +706,8 @@ These are true in a product deployment today, and are tracked as issues:
 * **No rule decides who may act for whom** in WS-Trust or RFC 8693, and nothing
   ties a federation partner to the people it may assert ([#108](https://github.com/rcbj/iya-sts/issues/108),
   [#109](https://github.com/rcbj/iya-sts/issues/109)).
-* **A workload is not attested**, and a node only for a `join_token`
+* **A Workload API caller over TCP is not attested** — only one on the Unix
+  socket is, since #40 made node attestation verified or refused
   ([#40](https://github.com/rcbj/iya-sts/issues/40)).
 * **A scope is not tied to a client**: any client that can obtain a token may ask
   for `scim:write` or `ssf:write` ([#110](https://github.com/rcbj/iya-sts/issues/110)).

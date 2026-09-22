@@ -88,6 +88,14 @@ import auth = require('./spiffe_auth');
 // `spiffe_auth.ts` just above, which is where it is first required and its
 // routes register, so this adds a cache hit and moves nothing.
 import tlsServer = require('../tls/tls_server');
+// Workload attestation (#40 phase four): the kernel's facts about a caller,
+// and the attestors that turn them into selectors. LIBRARIES.
+import peer = require('./spiffe_peer');
+import workloadAttestation = require('./spiffe_workload_attestation');
+import unixAttestor = require('./spiffe_workload_attestor_unix');
+import dockerAttestor = require('./spiffe_workload_attestor_docker');
+import k8sAttestor = require('./spiffe_workload_attestor_k8s');
+import mode = require('../common/mode');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
 // module — `common/protocol_stack.ts` requires admin.js first, and until
 // #50's R1 the require would have pulled the bundle endpoint and /spiffe into
@@ -141,9 +149,16 @@ interface SpiffeServerDeps {
   workload: typeof workload;
   serverApi: typeof serverApi;
   auth: typeof auth;
+  peer: typeof peer;
+  mode: typeof mode;
+  // The workload attestation table, built with its three attestors.
+  buildWorkloadAttestation(): any;
 }
 
 type RouteApp = typeof app;
+
+// The workload attestation table, built on first use by any instance.
+const WORKLOAD_ATTESTATION: { table: any } = { table: null };
 
 class SpiffeServer {
   constructor(private readonly deps: SpiffeServerDeps) {
@@ -168,7 +183,21 @@ class SpiffeServer {
       rpc: rpc,
       workload: workload,
       serverApi: serverApi,
-      auth: auth
+      auth: auth,
+      peer: peer,
+      mode: mode,
+      buildWorkloadAttestation: function () {
+        const table = new workloadAttestation.WorkloadAttestation(
+          workloadAttestation.WorkloadAttestation.defaultDeps());
+        const info = table.containerInfo.bind(table);
+        table.register(new unixAttestor.UnixWorkloadAttestor(
+          unixAttestor.UnixWorkloadAttestor.defaultDeps()));
+        table.register(new dockerAttestor.DockerWorkloadAttestor(
+          dockerAttestor.DockerWorkloadAttestor.defaultDeps(info)));
+        table.register(new k8sAttestor.K8sWorkloadAttestor(
+          k8sAttestor.K8sWorkloadAttestor.defaultDeps(info)));
+        return table;
+      }
     };
   }
 
@@ -362,17 +391,17 @@ class SpiffeServer {
       // The list every reader of this page needs most, and it is deliberately
       // longer than the rest of the document.
       notChecked: [
-        'NO WORKLOAD ATTESTATION. A real agent reads the peer credentials of ' +
-        'the Unix socket — pid, and from that uid, gid, executable path, ' +
-        'container, pod — and turns them into selectors. Node has no ' +
-        'portable way to read SO_PEERCRED, so this service identifies a ' +
-        'caller only by the transport it arrived on, the endpoint it reached ' +
-        'and its peer address, and the selectors it produces are spelt ' +
-        '`transport:`, `endpoint:` and `peer:` rather than `unix:` so that ' +
-        'they cannot be mistaken for an attestor\'s. Those DO decide which ' +
-        'entries answer (spiffe.attestWorkloads), ' +
-        'but nothing proves who the caller is: any ' +
-        'caller that can reach the socket can still obtain an identity here.',
+        'A WORKLOAD API CALLER OVER TCP IS NOT ATTESTED. The Unix socket ' +
+        'is (#40, 2026-09-21): the kernel names the connecting process ' +
+        '(SO_PEERCRED, and a pidfd that holds it), the unix, docker and k8s ' +
+        'workload attestors turn it into SPIRE\'s selectors, and every call ' +
+        'checks the process is still the one attested. A TCP connection has ' +
+        'no peer process to ask, so its caller is identified only by the ' +
+        'transport, the endpoint and its address. A peer in a pid namespace ' +
+        'this service cannot see is attested on its uid and gid alone. In ' +
+        'development without the native module the socket is served ' +
+        'unattested and workloadAttestation below says so; a product does ' +
+        'not serve it at all.',
         'NO CREDENTIAL AT ALL ON THE WORKLOAD API, and that is the ' +
         'specification rather than this service being permissive. The SPIFFE ' +
         'Workload Endpoint specification says the endpoint "MUST NOT require ' +
@@ -389,12 +418,12 @@ class SpiffeServer {
         'the interesting behaviour of a Workload ' +
         'API and there is otherwise no way to exercise a client\'s "these ' +
         'matched and those did not" path here.',
-        'NO NODE ATTESTATION. Whatever attestor an agent names and whatever ' +
-        'payload it sends are written down as claimed and never verified. ' +
-        'The agent selectors on /admin/spiffe/agents carry an ' +
-        '`unverified:true` value for exactly this ' +
-        'reason. The ONE exception is a join token, ' +
-        'which this server minted and therefore checks: see `refused` below.',
+        'NODE ATTESTATION IS VERIFIED OR REFUSED (#40, 2026-09-21). ' +
+        'AttestAgent accepts only a type the realm names in ' +
+        'spiffe.nodeAttestors and an attestor here verifies — ' +
+        '`nodeAttestation` below lists them — and refuses every other with ' +
+        'FAILED_PRECONDITION. Nothing an agent claims is written down ' +
+        'unverified.',
         'A CSR SIGNATURE IS NOT VERIFIED. Only the public key is read out of ' +
         'a CSR — which is what stops a caller naming itself something it is ' +
         'not — but proof of possession is not checked.',
@@ -437,11 +466,12 @@ class SpiffeServer {
         'trust domain whose key verified it.',
         'A registration entry whose SPIFFE ID is invalid, belongs to another ' +
         'trust domain, or sits under the reserved /spire path.',
-        'AttestAgent for a banned agent, and a ' +
-        'join token this server did not mint, one that has expired, one ' +
-        'presented twice, and one minted for a named agent and presented by ' +
-        'another. A join token is the one attestation payload here this ' +
-        'service ISSUED and can therefore verify.',
+        'AttestAgent for an attestation type the realm does not accept or ' +
+        'no attestor here verifies (FAILED_PRECONDITION), evidence its ' +
+        'attestor could not verify, a banned agent, a second attestation ' +
+        'with evidence that is not re-attestable, and a challenge left ' +
+        'unanswered. For a join token: one this server did not mint, one ' +
+        'that has expired, and one presented twice.',
         'Every method on the SPIRE Server API that the caller\'s entity is ' +
         'not allowed, with UNAUTHENTICATED when nothing was presented and ' +
         'PERMISSION_DENIED when something was and it was not enough. The two ' +
@@ -463,6 +493,12 @@ class SpiffeServer {
         'registered — the same refusal it gives WS-Federation\'s wreqptr and ' +
         'a client\'s jwks_uri.'
       ],
+      // The node attestors this build verifies, which this realm accepts, and
+      // any configured name nothing verifies (#40).
+      nodeAttestation: serverApi.nodeAttestationState(),
+      // The workload attestors, whether the kernel can be asked at all, and
+      // each open attested connection (#40 phase four).
+      workloadAttestation: this.workloadAttestationState(),
       links: {
         bundle: base + BUNDLE_PATH,
         console: base + '/admin/spiffe',
@@ -948,6 +984,26 @@ class SpiffeServer {
                        authentication: 'Nothing is listening here.' });
         continue;
       }
+      // THE WORKLOAD API'S UNIX SOCKET IS ATTESTED (#40 phase four), and in
+      // product mode it is not served at all without the native module that
+      // makes attestation possible — every process that could reach it would
+      // otherwise get whatever the transport selectors match.
+      const attested = surface === 'workload' && !!entry.socketPath;
+      if (attested && !this.deps.peer.availability().available &&
+          this.deps.mode.requiresWorkloadAttestation()) {
+        const why = 'workload attestation is unavailable (' +
+          this.deps.peer.availability().problem + '), and this service is ' +
+          'running as a product, where the Workload API socket is not ' +
+          'served unattested';
+        log.error(errorCodes.tag('STS-SPIFFE-0113') + 'spiffe: the "' +
+                  (realmId || 'default') + '" realm\'s Workload API socket ' +
+                  'was NOT bound: ' + why);
+        results.push({ address: entry.address, listening: false, error: why,
+                       port: 0, tls: false, socket: true,
+                       realm: realmId || '',
+                       authentication: 'Nothing is listening here.' });
+        continue;
+      }
       // The SPIRE Server API's socket is PRIVATE — it is the trusted `local`
       // entity — and the Workload API's is not. See spiffe_grpc.ts.
       if (entry.socketPath) {
@@ -956,8 +1012,14 @@ class SpiffeServer {
       // The socket is the `local` entity and is never TLS; see above. `secure`
       // is null for every address but one.
       const tls = !entry.socketPath && secure;
-      const bound = await rpc.bindOne(server, entry.address,
-        tls ? secure : rpc.grpc.ServerCredentials.createInsecure());
+      const self = this;
+      const bound = attested
+        ? await rpc.bindAttestedSocket(server, entry.socketPath,
+          function (socket) {
+            return self.attestConnection(realmId, socket);
+          })
+        : await rpc.bindOne(server, entry.address,
+          tls ? secure : rpc.grpc.ServerCredentials.createInsecure());
       bound.tls = !!tls;
       bound.socket = !!entry.socketPath;
       if (bound.listening && entry.socketPath && surface === 'server') {
@@ -1198,6 +1260,70 @@ class SpiffeServer {
     return entry;
   }
 
+  // ONE WORKLOAD API CONNECTION, ATTESTED IN THE LISTENER'S REALM (#40 phase
+  // four): the kernel's facts, then the realm's workload attestors. Resolves
+  // the facts — with `error` set when attestation failed, which the
+  // connection's every call is then refused with.
+  async attestConnection(realmId, socket) {
+    const { log, peer } = this.deps;
+    log.debug('Entering SpiffeServer.attestConnection(). realm=' +
+              (realmId || 'default'));
+    const self = this;
+    const facts = peer.observe(socket);
+    if (!facts.error) {
+      try {
+        facts.selectors = await this.inRealm(realmId, function () {
+          return self.workloadAttestation().attest(facts);
+        });
+      } catch (e) {
+        log.debug("Caught in SpiffeServer.attestConnection(): " +
+                  ((e && e.message) || e));
+        facts.error = String((e && e.message) || e);
+      }
+    } else if (!this.deps.mode.requiresWorkloadAttestation() &&
+               !peer.availability().available) {
+      // DEVELOPMENT WITHOUT THE NATIVE MODULE: served on transport selectors
+      // alone, as the socket always was, and GET /spiffe says so.
+      facts.error = '';
+      facts.note = 'workload attestation is unavailable here: ' +
+                   peer.availability().problem;
+    }
+    log.debug('Leaving SpiffeServer.attestConnection(). ' + facts.tag + ' ' +
+              facts.selectors.length + ' selector(s)' +
+              (facts.error ? ', failed: ' + facts.error : ''));
+    return facts;
+  }
+
+  // What GET /spiffe, the console and /admin-api draw about workload
+  // attestation.
+  workloadAttestationState() {
+    const { log, peer, mode } = this.deps;
+    log.debug('Entering SpiffeServer.workloadAttestationState().');
+    const kernel = peer.state();
+    const attestors = this.workloadAttestation().state();
+    log.debug('Leaving SpiffeServer.workloadAttestationState().');
+    return {
+      nativeModule: kernel.nativeModule,
+      problem: kernel.problem,
+      unattestedSocketServed: !kernel.nativeModule &&
+        !mode.requiresWorkloadAttestation(),
+      attestors: attestors.attestors,
+      unknownConfigured: attestors.unknownConfigured,
+      connections: kernel.connections
+    };
+  }
+
+  // The workload attestation table, built once.
+  workloadAttestation() {
+    const { log, buildWorkloadAttestation } = this.deps;
+    log.debug('Entering SpiffeServer.workloadAttestation().');
+    if (!WORKLOAD_ATTESTATION.table) {
+      WORKLOAD_ATTESTATION.table = buildWorkloadAttestation();
+    }
+    log.debug('Leaving SpiffeServer.workloadAttestation().');
+    return WORKLOAD_ATTESTATION.table;
+  }
+
   stopRealm(realmId) {
     const { log } = this.deps;
     log.debug('Entering SpiffeServer.stopRealm(). realm=' +
@@ -1207,6 +1333,9 @@ class SpiffeServer {
       log.debug('Leaving SpiffeServer.stopRealm(). Nothing bound.');
       return;
     }
+    // The attested socket's accepting listener is this module's, not
+    // grpc-js's, and is closed here.
+    this.deps.rpc.closeAttested(entry.workloadServer);
     [entry.workloadServer, entry.apiServer].forEach(function (server) {
       if (!server) return;
       try {
@@ -1491,7 +1620,10 @@ class SpiffeServer {
 
     admin.setSpiffeReader(function () {
       const now = instance.bindingsNow();
-      return { workload: now.workload, api: now.api, bundlePath: BUNDLE_PATH };
+      // The workload attestation state rides the same reader (#40): it is
+      // this module's, and a slot of its own would fail rule 3e's test.
+      return { workload: now.workload, api: now.api, bundlePath: BUNDLE_PATH,
+               workloadAttestation: instance.workloadAttestationState() };
     });
     helpers.log.debug("Leaving SpiffeServer.wire().");
   }

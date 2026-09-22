@@ -158,3 +158,7 @@ debugger/embedded/
 # the suite runner ran out of memory sending. The lock files beside them are
 # committed and small, and neither image needs them either.
 **/.terraform
+
+# The one native module (#40): compiled inside an image build only, by
+# build-native.sh, and never committed or sent from a host.
+spiffe/native/*.node

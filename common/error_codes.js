@@ -7945,8 +7945,8 @@ const CODES = [
       'named or the connection carries.',
     spec: 'gRPC NOT_FOUND' },
   { code: 'STS-SPIFFE-0051',
-    summary: 'AttestAgent received a challenge_response when this server ' +
-      'issues no attestation challenge.',
+    summary: 'AttestAgent received a challenge_response with no attestation ' +
+      'challenge outstanding on the stream.',
     spec: 'gRPC INVALID_ARGUMENT' },
   { code: 'STS-SPIFFE-0052',
     summary: 'The agent attesting or renewing is banned on this server.',
@@ -7968,8 +7968,11 @@ const CODES = [
     spec: 'gRPC PERMISSION_DENIED' },
   { code: 'STS-SPIFFE-0057',
     summary: 'A join token created for a named agent was presented by an ' +
-      'attestation producing a different agent.',
-    spec: 'gRPC PERMISSION_DENIED' },
+      'attestation producing a different agent. Retired 2026-09-21 (#40): ' +
+      'the attesting agent is always the join token\'s own, so the check ' +
+      'refused every such token; agent_id now registers an alias entry, as ' +
+      'SPIRE does (STS-SPIFFE-0084).',
+    spec: 'gRPC PERMISSION_DENIED', retired: true },
   { code: 'STS-SPIFFE-0058',
     summary: 'RenewAgent was called on a connection that carries no attested ' +
       'agent\'s X509-SVID.',
@@ -8052,8 +8055,176 @@ const CODES = [
     summary: 'An agent asked for an SVID from a registration entry that is ' +
       'not beneath it (BatchNewX509SVID, NewJWTSVID).',
     spec: 'gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID)' },
-  // 0078-0113 are feature/40's (node and workload attestation), numbered
-  // there before this row; left free here so that merge reuses none.
+  { code: 'STS-SPIFFE-0078',
+    summary: 'AttestAgent named a node attestor this realm does not accept: ' +
+      'not in spiffe.nodeAttestors, or not one this server can verify. ' +
+      'Nothing is taken on trust (#40).',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0079',
+    summary: 'AttestAgent carried no attestation type in params.data.type.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0080',
+    summary: 'A node attestor challenged the agent and no challenge_response ' +
+      'arrived within spiffe.attestationChallengeTimeout.',
+    spec: 'gRPC DEADLINE_EXCEEDED' },
+  { code: 'STS-SPIFFE-0081',
+    summary: 'The message after an attestation challenge carried no ' +
+      'challenge_response.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0082',
+    summary: 'The AttestAgent stream closed or was cancelled while a node ' +
+      'attestor\'s challenge was outstanding.',
+    spec: 'gRPC CANCELLED' },
+  { code: 'STS-SPIFFE-0083',
+    summary: 'An agent already attested with evidence that is not ' +
+      're-attestable (a join token, a trust-on-first-use document) attested ' +
+      'again; the agent must be deleted first, as in SPIRE.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0084',
+    summary: 'CreateJoinToken\'s agent_id could not be registered as the ' +
+      'token\'s alias entry (not in this trust domain, reserved, or the ' +
+      'registry refused it), so no token was issued.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0085',
+    summary: 'A node attestor the realm accepts is not configured: x509pop ' +
+      'in external_pki mode with no spiffe.x509popCaBundle, sshpop with no ' +
+      'spiffe.sshpopCertAuthorities, tpm_devid with no DevID or ' +
+      'endorsement anchors, or a template that does not parse.',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0086',
+    summary: 'A node attestation payload or challenge response could not be ' +
+      'read: not the attestor\'s JSON, or a certificate, SSH certificate or ' +
+      'TPM structure in it that does not parse.',
+    spec: 'gRPC INVALID_ARGUMENT (INTERNAL for sshpop, as SPIRE answers)' },
+  { code: 'STS-SPIFFE-0087',
+    summary: 'An x509pop attestation carried more intermediate certificates ' +
+      'than spiffe.x509popMaxIntermediates.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0088',
+    summary: 'An x509pop attestation carried an RSA key larger than ' +
+      'spiffe.x509popMaxRsaKeySize.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0089',
+    summary: 'A node attestor\'s certificate did not chain to its configured ' +
+      'trust anchors (x509pop, the tpm_devid DevID or endorsement ' +
+      'certificate).',
+    spec: 'gRPC PERMISSION_DENIED (x509pop), INVALID_ARGUMENT (tpm_devid)' },
+  { code: 'STS-SPIFFE-0090',
+    summary: 'The agent\'s address is not one its certificate allows ' +
+      '(x509pop IP subjectAltNames, sshpop source-address), or the ' +
+      'certificate carries no such restriction.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0091',
+    summary: 'verify_client_ip is on and the agent has no address to verify ' +
+      '(it came in on the Unix socket).',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0092',
+    summary: 'No challenge could be issued for the attesting key: an x509pop ' +
+      'certificate not for digitalSignature, or a key type the attestor ' +
+      'does not sign with.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0093',
+    summary: 'A node attestor\'s challenge response did not verify: the ' +
+      'signature over the nonces, or the DevID signature.',
+    spec: 'gRPC PERMISSION_DENIED (x509pop), INTERNAL (sshpop), ' +
+      'INVALID_ARGUMENT (tpm_devid)' },
+  { code: 'STS-SPIFFE-0094',
+    summary: 'An x509pop attestation in spiffe mode presented no SPIFFE ID, ' +
+      'or one outside spiffe.x509popSpiffePrefix.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0095',
+    summary: 'An agent path template could not produce a valid agent SPIFFE ' +
+      'ID for this attestation.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0096',
+    summary: 'An sshpop host certificate was refused: not a host ' +
+      'certificate, no principal, an authority not configured, outside its ' +
+      'validity, an unsupported critical option, a signature that does not ' +
+      'verify, or a first principal outside spiffe.sshpopCanonicalDomain.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0097',
+    summary: 'A tpm_devid attestation did not prove its DevID key resides in ' +
+      'the TPM: incomplete, an endorsement certificate that does not match ' +
+      'the EK, or a certification the attestation key did not sign.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0098',
+    summary: 'A tpm_devid credential activation returned the wrong secret: ' +
+      'the TPM holding the EK did not decrypt it for this AK.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0099',
+    summary: 'A node attestor could not get an answer from a source it is ' +
+      'configured to ask: a Kubernetes API server (TokenReview, a pod, a ' +
+      'node), Google\'s certificates, Microsoft\'s tenant discovery or ' +
+      'intermediate, or a cloud API.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0100',
+    summary: 'A k8s_psat token was not authenticated by the cluster\'s ' +
+      'TokenReview, or not for this server\'s audience.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0101',
+    summary: 'A k8s_psat agent\'s service account is not in the cluster\'s ' +
+      'allow list, or the pod the token is bound to is not the pod that ' +
+      'now has that name.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0102',
+    summary: 'A k8s_psat agent named a cluster this realm is not configured ' +
+      'for, or sent no cluster or token.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0103',
+    summary: 'An http_challenge agent\'s port or agent name is not ' +
+      'acceptable (required_port, allow_non_root_ports, the name\'s form).',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0104',
+    summary: 'An http_challenge agent\'s host name matches none of ' +
+      'spiffe.httpChallengeAllowedDnsPatterns (or is localhost), so it was ' +
+      'neither resolved nor dialled.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0105',
+    summary: 'An http_challenge fetch did not return the nonce: the host was ' +
+      'unreachable, internal (product mode), redirected, or served ' +
+      'something else.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0106',
+    summary: 'A cloud node attestor is enabled and the SDK it calls its ' +
+      'cloud with is not installed; the refusal names the package.',
+    spec: 'gRPC FAILED_PRECONDITION' },
+  { code: 'STS-SPIFFE-0107',
+    summary: 'A cloud identity document or token did not verify: an ' +
+      'aws_iid signature against the region\'s AWS certificate, an ' +
+      'azure_imds PKCS#7 signature or its certificate chain, a gcp_iit ' +
+      'token signature.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0108',
+    summary: 'A cloud node is not one this realm admits: a project, tenant ' +
+      'or subscription not allowed, an account outside the organization, ' +
+      'an instance outside the EKS clusters, a gcp_iit token for another ' +
+      'audience or expired.',
+    spec: 'gRPC PERMISSION_DENIED (INTERNAL for the aws_iid organization ' +
+      'and EKS checks, as SPIRE answers)' },
+  { code: 'STS-SPIFFE-0109',
+    summary: 'An aws_iid instance failed the block device check: its root ' +
+      'volume and first network interface were not attached together.',
+    spec: 'gRPC INTERNAL' },
+  { code: 'STS-SPIFFE-0110',
+    summary: 'An azure_imds attested document did not carry this ' +
+      'challenge\'s nonce, or lacked a VM or subscription ID.',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0111',
+    summary: 'A connection to the Workload API\'s Unix socket could not be ' +
+      'attested — the kernel would not name its peer, or a workload ' +
+      'attestor (unix, docker, k8s) failed — and every call on it is ' +
+      'refused.',
+    spec: 'gRPC UNAVAILABLE' },
+  { code: 'STS-SPIFFE-0112',
+    summary: 'A Workload API call arrived on a connection attested for a ' +
+      'process that has since exited, whose pid was reused, or that ' +
+      'executed a different program.',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0113',
+    summary: 'A realm\'s Workload API Unix socket was not bound: this is a ' +
+      'product and the native module workload attestation needs is not ' +
+      'in the image.',
+    spec: '' },
   { code: 'STS-SPIFFE-0114',
     summary: 'A realm\'s SPIRE Server API could not take a new certificate ' +
       'after the service Root was replaced, so it still presents a chain ' +

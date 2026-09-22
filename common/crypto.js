@@ -4619,6 +4619,338 @@ function verifySecretAsync(plaintext, stored, opts) {
   });
 }
 
+// ===========================================================================
+// SECTION 8 — SIGNATURES OVER RAW BYTES, AND THE TPM 2.0 KEY DERIVATION
+// (#40, 2026-09-21).
+//
+// SPIFFE's node attestors prove possession of a key by signing a challenge,
+// in four formats none of which is a JWS or an XML signature: SPIRE's x509pop
+// (RSA-PSS over a digest, ECDSA as big-endian r and s), OpenSSH signatures
+// (sshpop), a TPM's TPMT_SIGNATURE and a DevID's plain X.509 signature
+// (tpm_devid). They were written beside their attestors on the first day and
+// moved here the same day, at rcbj's direction, for this file's reason:
+// every signature this service checks is checked in ONE place.
+//
+// **ONE PRIMITIVE, `verifyRawSignature()`, AND THE CALLER NAMES THE SCHEME.**
+// A signature is `{ family, hash, encoding, saltLength }` — what the
+// protocol says was done — and the key is whatever the caller holds. A key of
+// the wrong kind for the family is `false`, never a throw, as in section 1a.
+// The post-quantum family (ML-DSA, SLH-DSA, composite ML-DSA) goes through
+// the vendored `pqc_x509.js` rather than node, because node reads those keys
+// only from version 24 and composite never: the same engine that checks a
+// post-quantum certificate chain checks a post-quantum proof of possession.
+//
+// **TPM 2.0 KDFa AND MakeCredential ARE HERE TOO**, because they are a key
+// derivation, an OAEP encryption, a CFB encryption and an HMAC — four of this
+// file's kinds of thing — and the TPM structures they are fed are a codec
+// that stays in `spiffe/spiffe_tpm.ts`.
+//
+// It stays a LEAF: `./vendored/pqc_x509` requires only noble, asn1js and
+// other vendored files.
+// ===========================================================================
+const pqcX509 = require('./vendored/pqc_x509');
+
+// The families `verifyRawSignature()` understands.
+const RAW_SIGNATURE_FAMILIES = ['rsa-pkcs1', 'rsa-pss', 'ecdsa', 'eddsa',
+                                'pq'];
+
+// The curve sizes an ECDSA r||s signature is padded to.
+const ECDSA_BYTES = { 'prime256v1': 32, 'secp384r1': 48, 'secp521r1': 66 };
+
+// What a SubjectPublicKeyInfo holds, as a caller choosing a scheme needs to
+// know it: `kind` is 'rsa', 'ec', 'ed25519', 'ed448' or 'pq', `key` the node
+// KeyObject where node can read one, `curve` for EC, and `pqAlgorithm` (the
+// vendored engine's name, 'ML-DSA-65') for a post-quantum key. `kind` is ''
+// for anything else. Never throws.
+function publicKeyFromSpki(spkiDer) {
+  log.debug("Entering publicKeyFromSpki().");
+  const der = Buffer.from(spkiDer || []);
+  const pq = (function () {
+    try {
+      return pqcX509.decodeSpki(new Uint8Array(der));
+    } catch (e) {
+      log.debug("Caught in publicKeyFromSpki(): " + ((e && e.message) || e));
+      return null;
+    }
+  })();
+  if (pq && pq.alg) {
+    log.debug("Leaving publicKeyFromSpki(). Post-quantum.");
+    return { kind: 'pq', key: null, curve: '', pqAlgorithm: String(pq.alg),
+             spki: der };
+  }
+  try {
+    const key = nodeCrypto.createPublicKey({ key: der, format: 'der',
+                                             type: 'spki' });
+    const type = String(key.asymmetricKeyType || '');
+    const kind = type === 'rsa-pss' ? 'rsa' : type;
+    log.debug("Leaving publicKeyFromSpki(). " + kind);
+    return { kind: ['rsa', 'ec', 'ed25519', 'ed448'].indexOf(kind) >= 0
+               ? kind : '',
+             key: key,
+             curve: String((key.asymmetricKeyDetails || {}).namedCurve || ''),
+             pqAlgorithm: '', spki: der };
+  } catch (e) {
+    log.debug("Caught in publicKeyFromSpki(): " + ((e && e.message) || e));
+    log.debug("Leaving publicKeyFromSpki(). Unreadable.");
+    return { kind: '', key: null, curve: '', pqAlgorithm: '', spki: der };
+  }
+}
+
+// THE ONE PRIMITIVE FOR A SIGNATURE OVER RAW BYTES. `scheme`:
+//   family      one of RAW_SIGNATURE_FAMILIES
+//   hash        'sha1' | 'sha256' | 'sha384' | 'sha512' — the digest the
+//               signature was made over `data` with (omitted for eddsa, pq)
+//   encoding    ecdsa only: 'der' or 'p1363' (r||s, each padded to the curve)
+//   saltLength  rsa-pss only: a number, or 'auto' to accept any
+// `key` is a node KeyObject, anything `createPublicKey()` takes, or — for the
+// pq family, and for any family — a `publicKeyFromSpki()` answer. Resolves
+// true or false; a malformed signature or a key of the wrong kind is false.
+async function verifyRawSignature(scheme, key, data, signature) {
+  const s = scheme || {};
+  log.debug("Entering verifyRawSignature(). " + s.family + "/" +
+            (s.hash || ''));
+  const message = Buffer.from(data || []);
+  const sig = Buffer.from(signature || []);
+  if (RAW_SIGNATURE_FAMILIES.indexOf(s.family) < 0) {
+    log.debug("Leaving verifyRawSignature(). Unknown family.");
+    return false;
+  }
+  try {
+    if (s.family === 'pq') {
+      const described = key && key.spki ? key : publicKeyFromSpki(key);
+      if (described.kind !== 'pq') {
+        log.debug("Leaving verifyRawSignature(). Not a post-quantum key.");
+        return false;
+      }
+      const read = pqcX509.decodeSpki(new Uint8Array(described.spki));
+      const ok = await pqcX509.verify(read.alg, new Uint8Array(sig),
+                                      new Uint8Array(message), read.pub);
+      log.debug("Leaving verifyRawSignature(). " + read.alg + " " + ok);
+      return !!ok;
+    }
+    const publicKey = key && key.spki !== undefined ? key.key
+      : (key && key.type === 'public') ? key : nodeCrypto.createPublicKey(key);
+    if (!publicKey) {
+      log.debug("Leaving verifyRawSignature(). No key.");
+      return false;
+    }
+    const type = String(publicKey.asymmetricKeyType || '');
+    let ok = false;
+    if (s.family === 'rsa-pkcs1' && (type === 'rsa' || type === 'rsa-pss')) {
+      ok = nodeCrypto.verify(s.hash, message, { key: publicKey,
+        padding: nodeCrypto.constants.RSA_PKCS1_PADDING }, sig);
+    } else if (s.family === 'rsa-pss' &&
+               (type === 'rsa' || type === 'rsa-pss')) {
+      ok = nodeCrypto.verify(s.hash, message, { key: publicKey,
+        padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: s.saltLength === 'auto' || s.saltLength === undefined
+          ? nodeCrypto.constants.RSA_PSS_SALTLEN_AUTO : s.saltLength }, sig);
+    } else if (s.family === 'ecdsa' && type === 'ec') {
+      ok = nodeCrypto.verify(s.hash, message, { key: publicKey,
+        dsaEncoding: s.encoding === 'p1363' ? 'ieee-p1363' : 'der' }, sig);
+    } else if (s.family === 'eddsa' &&
+               (type === 'ed25519' || type === 'ed448')) {
+      ok = nodeCrypto.verify(null, message, publicKey, sig);
+    }
+    log.debug("Leaving verifyRawSignature(). " + ok);
+    return !!ok;
+  } catch (e) {
+    log.debug("Caught in verifyRawSignature(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyRawSignature(). Threw, so false.");
+    return false;
+  }
+}
+
+// An ECDSA signature held as its two integers, big-endian and unpadded (Go's
+// big.Int.Bytes(), an SSH mpint), as the r||s the primitive above takes.
+// `curve` is node's name ('prime256v1'). null when either integer is longer
+// than the curve allows.
+function ecdsaIntegersToP1363(curve, r, s) {
+  log.debug("Entering ecdsaIntegersToP1363(). curve=" + curve);
+  const size = ECDSA_BYTES[String(curve || '')];
+  let rr = Buffer.from(r || []);
+  let ss = Buffer.from(s || []);
+  while (rr.length > 1 && rr[0] === 0) rr = rr.subarray(1);
+  while (ss.length > 1 && ss[0] === 0) ss = ss.subarray(1);
+  if (!size || rr.length > size || ss.length > size) {
+    log.debug("Leaving ecdsaIntegersToP1363(). Out of range.");
+    return null;
+  }
+  log.debug("Leaving ecdsaIntegersToP1363().");
+  return Buffer.concat([Buffer.alloc(size - rr.length), rr,
+                        Buffer.alloc(size - ss.length), ss]);
+}
+
+// TPM 2.0 KDFa (Library Part 1, section 11.4.10.2), as go-tpm computes it:
+// counter-mode HMAC over label ‖ 0x00 ‖ contextU ‖ contextV ‖ bits.
+function tpmKdfa(hash, key, label, contextU, contextV, bits) {
+  log.debug("Entering tpmKdfa(). label=" + label);
+  const bytes = Math.ceil(bits / 8);
+  const parts = [];
+  let length = 0;
+  const bitsField = Buffer.alloc(4);
+  bitsField.writeUInt32BE(bits, 0);
+  for (let counter = 1; length < bytes; counter++) {
+    const counterField = Buffer.alloc(4);
+    counterField.writeUInt32BE(counter, 0);
+    const block = nodeCrypto.createHmac(hash, key).update(counterField)
+      .update(Buffer.from(label, 'utf8')).update(Buffer.from([0]))
+      .update(contextU || Buffer.alloc(0))
+      .update(contextV || Buffer.alloc(0)).update(bitsField).digest();
+    parts.push(block);
+    length += block.length;
+  }
+  const out = Buffer.from(Buffer.concat(parts).subarray(0, bytes));
+  if (bits % 8) out[0] &= (1 << (bits % 8)) - 1;
+  log.debug("Leaving tpmKdfa().");
+  return out;
+}
+
+// TPM2_MakeCredential in software (Library Part 1, section 24), as go-tpm's
+// `credactivation.Generate()` computes it for an RSA endorsement key:
+//   akName       the AK's Name — nameAlg ‖ digest — whose nameAlg is the hash
+//   ekPublicKey  the EK, a node RSA public KeyObject
+//   seedBytes    the EK's symmetric key size in bytes (16 for AES-128)
+//   secret       what the TPM must give back
+// Returns the contents of TPM2B_ID_OBJECT (`credential`) and
+// TPM2B_ENCRYPTED_SECRET (`secret`). Only a TPM holding the EK's private key,
+// activating FOR that AK, recovers `secret`.
+function tpmMakeCredential(akName, ekPublicKey, seedBytes, secret, hash) {
+  log.debug("Entering tpmMakeCredential().");
+  const seed = nodeCrypto.randomBytes(seedBytes);
+  const encryptedSeed = nodeCrypto.publicEncrypt({
+    key: ekPublicKey, padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: hash, oaepLabel: Buffer.from('IDENTITY\0', 'latin1')
+  }, seed);
+  const storageKey = tpmKdfa(hash, seed, 'STORAGE', akName, null,
+                             seed.length * 8);
+  const sized = Buffer.alloc(2);
+  sized.writeUInt16BE(secret.length, 0);
+  const cipher = nodeCrypto.createCipheriv('aes-' + (seed.length * 8) +
+                                           '-cfb', storageKey,
+                                           Buffer.alloc(16));
+  const encIdentity = Buffer.concat([cipher.update(
+    Buffer.concat([sized, secret])), cipher.final()]);
+  const macKey = tpmKdfa(hash, seed, 'INTEGRITY', null, null,
+                         nodeCrypto.createHash(hash).digest().length * 8);
+  const integrity = nodeCrypto.createHmac(hash, macKey).update(encIdentity)
+    .update(akName).digest();
+  const integritySize = Buffer.alloc(2);
+  integritySize.writeUInt16BE(integrity.length, 0);
+  log.debug("Leaving tpmMakeCredential().");
+  return { credential: Buffer.concat([integritySize, integrity, encIdentity]),
+           secret: encryptedSeed };
+}
+
+// A PKCS#7 / CMS SignedData with its content attached, VERIFIED: the one
+// SignerInfo's signature (over its signed attributes, whose messageDigest
+// must be the content's) under the signer's certificate. AWS signs an
+// instance identity document this way (its RSA-2048 signature) and Azure an
+// attested document.
+//   der           the SignedData, DER (a ContentInfo)
+//   options.certificates  certificate DERs to find the signer among BESIDE
+//                 the ones the SignedData carries — AWS's carries none and the
+//                 signer is the region's published certificate
+// Resolves `{ ok, content, signerDer, embeddedDers, why }`. Never rejects.
+// It checks the signature and nothing about the certificate: whether the
+// signer is one to believe is the caller's question (`pki.js`).
+async function verifyPkcs7SignedData(der, options) {
+  log.debug("Entering verifyPkcs7SignedData().");
+  const opts = options || {};
+  const pkijs = require('pkijs');
+  const refuse = function (why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    return { ok: false, content: null, signerDer: null, embeddedDers: [],
+             why: why };
+  };
+  let signed = null;
+  try {
+    const parsed = asn1js.fromBER(new Uint8Array(Buffer.from(der || [])));
+    if (parsed.offset === -1) {
+      log.debug("Leaving verifyPkcs7SignedData(). Not BER.");
+      return refuse('the signature is not DER');
+    }
+    const info = new pkijs.ContentInfo({ schema: parsed.result });
+    signed = new pkijs.SignedData({ schema: info.content });
+  } catch (e) {
+    log.debug("Caught in verifyPkcs7SignedData(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyPkcs7SignedData(). Not a SignedData.");
+    return refuse('the signature is not a PKCS#7 SignedData: ' + e.message);
+  }
+  if (!signed.signerInfos || signed.signerInfos.length !== 1) {
+    log.debug("Leaving verifyPkcs7SignedData(). Not one signer.");
+    return refuse('expected exactly one signer, found ' +
+                  ((signed.signerInfos || []).length));
+  }
+  const econtent = signed.encapContentInfo &&
+    signed.encapContentInfo.eContent;
+  if (!econtent) {
+    log.debug("Leaving verifyPkcs7SignedData(). Detached.");
+    return refuse('the SignedData carries no content');
+  }
+  const content = Buffer.from(econtent.getValue
+    ? econtent.getValue() : econtent.valueBlock.valueHexView);
+  const embedded = (signed.certificates || []).filter(function (one) {
+    return one instanceof pkijs.Certificate;
+  });
+  const extra = (opts.certificates || []).map(function (one) {
+    return pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(one)));
+  });
+  signed.certificates = embedded.concat(extra);
+  let verdict = null;
+  try {
+    verdict = await signed.verify({ signer: 0, checkChain: false,
+                                    extendedMode: true });
+  } catch (e) {
+    log.debug("Caught in verifyPkcs7SignedData(): " +
+              ((e && (e.message || e.code)) || e));
+    const reason = (e && (e.message || (e.signatureVerified === false
+      ? 'the signature does not verify' : ''))) || String(e);
+    log.debug("Leaving verifyPkcs7SignedData(). Refused.");
+    return refuse('the signature does not verify: ' + reason);
+  }
+  if (!verdict || !verdict.signatureVerified || !verdict.signerCertificate) {
+    log.debug("Leaving verifyPkcs7SignedData(). Did not verify.");
+    return refuse('the signature does not verify under the signer\'s ' +
+                  'certificate');
+  }
+  log.debug("Leaving verifyPkcs7SignedData(). Verified.");
+  return {
+    ok: true, content: content, why: '',
+    signerDer: Buffer.from(verdict.signerCertificate.toSchema().toBER(false)),
+    embeddedDers: embedded.map(function (one) {
+      return Buffer.from(one.toSchema().toBER(false));
+    })
+  };
+}
+
+// The SHA-256 of a file, streamed, lowercase hex — refusing one larger than
+// `limit` bytes when `limit` is above 0 (SPIRE's `util.GetSHA256Digest()`,
+// which the unix workload attestor hashes an executable with, #40). Rejects
+// with a sentence.
+async function sha256OfFile(file, limit) {
+  log.debug("Entering sha256OfFile().");
+  const fs = require('fs');
+  const size = fs.statSync(file).size;
+  if (limit > 0 && size > limit) {
+    log.debug("Leaving sha256OfFile(). Too large.");
+    // error-code: none — reported by the caller under its own code
+    throw new Error('workload ' + file + ' exceeds size limit (' + size +
+                    ' > ' + limit + ')');
+  }
+  const hash = nodeCrypto.createHash('sha256');
+  await new Promise(function (resolve, reject) {
+    fs.createReadStream(file).on('data', function (chunk) {
+      hash.update(chunk);
+    }).on('end', function () {
+      resolve(undefined);
+    }).on('error', reject);
+  });
+  log.debug("Leaving sha256OfFile().");
+  return hash.digest('hex');
+}
+
 module.exports = {
   // --- a credential several processes have to derive alike ---
   deriveSharedCredential: deriveSharedCredential,
@@ -4724,6 +5056,15 @@ module.exports = {
   verifySecret: verifySecret,
   verifySecretAsync: verifySecretAsync,
   isHashedSecret: isHashedSecret,
+  // --- section 8: raw signatures and TPM 2.0 (#40) ---
+  RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
+  publicKeyFromSpki: publicKeyFromSpki,
+  verifyRawSignature: verifyRawSignature,
+  ecdsaIntegersToP1363: ecdsaIntegersToP1363,
+  tpmKdfa: tpmKdfa,
+  tpmMakeCredential: tpmMakeCredential,
+  verifyPkcs7SignedData: verifyPkcs7SignedData,
+  sha256OfFile: sha256OfFile,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,

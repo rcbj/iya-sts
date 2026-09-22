@@ -9752,6 +9752,553 @@ const SETTINGS = [
     description: 'How long a join token from CreateJoinToken lives when the ' +
                  'request names no ttl. A request\'s own ttl still wins.' },
 
+  // #40 (2026-09-21): the node attestors AttestAgent accepts, per realm. A
+  // type not named here — or named and not one this build can verify — is
+  // refused with FAILED_PRECONDITION; nothing is taken on trust in any mode.
+  { key: 'spiffe.nodeAttestors', group: 'SPIFFE', label: 'Node attestors ' +
+      'accepted',
+    env: 'STS_SPIFFE_NODE_ATTESTORS', type: 'csv', dflt: 'join_token',
+    runtime: true,
+    description: 'The attestation types Agent.AttestAgent accepts in this ' +
+                 'realm, comma-separated — SPIRE\'s NodeAttestor plugins. ' +
+                 'Each is VERIFIED: a type not listed, or listed and not one ' +
+                 'this server can verify, is refused with ' +
+                 'FAILED_PRECONDITION, as SPIRE refuses an attestor it has ' +
+                 'no plugin for. join_token, the default, needs nothing but ' +
+                 'a token from CreateJoinToken. GET /spiffe lists the types ' +
+                 'this build verifies.' },
+
+  { key: 'spiffe.attestationChallengeTimeout', group: 'SPIFFE',
+    label: 'Attestation challenge timeout (s)',
+    env: 'STS_SPIFFE_ATTESTATION_CHALLENGE_TIMEOUT', type: 'int', dflt: 30,
+    min: 1, max: 600, runtime: true,
+    description: 'How long AttestAgent waits for an agent\'s ' +
+                 'challenge_response once a node attestor has challenged it. ' +
+                 'Past it the call fails with DEADLINE_EXCEEDED and nothing ' +
+                 'is spent.' },
+
+  // #40 phase two (2026-09-21): the x509pop, sshpop and tpm_devid node
+  // attestors, each configured per realm with SPIRE's own options. A trust
+  // anchor is PEM text here where SPIRE takes a file path, as
+  // oid4vp.trustedIssuerCertificates is, so the console and /admin-api can set
+  // it; an attestor with no anchor configured refuses every agent.
+  { key: 'spiffe.x509popMode', group: 'SPIFFE', label: 'x509pop mode',
+    env: 'STS_SPIFFE_X509POP_MODE', type: 'enum', dflt: 'external_pki',
+    enumValues: ['external_pki', 'spiffe'], runtime: true,
+    description: 'SPIRE\'s x509pop `mode`. external_pki verifies the agent\'s ' +
+                 'certificate against spiffe.x509popCaBundle; spiffe verifies ' +
+                 'it against this realm\'s own SPIFFE trust bundle and names ' +
+                 'the agent after its X509-SVID path below ' +
+                 'spiffe.x509popSpiffePrefix.' },
+
+  { key: 'spiffe.x509popCaBundle', group: 'SPIFFE',
+    label: 'x509pop trust anchors (PEM)',
+    env: 'STS_SPIFFE_X509POP_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'PEM certificates, concatenated — SPIRE\'s ca_bundle_path(s). ' +
+                 'In external_pki mode an agent\'s certificate must chain to ' +
+                 'one of them; empty refuses every x509pop agent. A root ' +
+                 'need not be self-signed, as in SPIRE.' },
+
+  { key: 'spiffe.x509popSpiffePrefix', group: 'SPIFFE',
+    label: 'x509pop SVID path prefix',
+    env: 'STS_SPIFFE_X509POP_SPIFFE_PREFIX', type: 'string',
+    dflt: '/spire-exchange/', runtime: true,
+    description: 'SPIRE\'s spiffe_prefix: in spiffe mode the agent\'s ' +
+                 'X509-SVID path must start with it, and what follows it is ' +
+                 'SVIDPathTrimmed in the agent path template.' },
+
+  { key: 'spiffe.x509popAgentPathTemplate', group: 'SPIFFE',
+    label: 'x509pop agent path template',
+    env: 'STS_SPIFFE_X509POP_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is SPIRE\'s default for ' +
+                 'the mode: /{{ .PluginName }}/{{ .Fingerprint }}, or ' +
+                 '/{{ .PluginName }}/{{ .SVIDPathTrimmed }} in spiffe mode. ' +
+                 'Field references and sprig\'s string, hash and encoding ' +
+                 'functions are evaluated; the rest of Go\'s template ' +
+                 'language is refused rather than rendered differently.' },
+
+  { key: 'spiffe.x509popMaxIntermediates', group: 'SPIFFE',
+    label: 'x509pop intermediates allowed',
+    env: 'STS_SPIFFE_X509POP_MAX_INTERMEDIATES', type: 'int', dflt: 4, min: 1,
+    max: 32, runtime: true,
+    description: 'SPIRE\'s max_intermediates: an attestation carrying more ' +
+                 'intermediate certificates is refused before any is read.' },
+
+  { key: 'spiffe.x509popMaxRsaKeySize', group: 'SPIFFE',
+    label: 'x509pop largest RSA key (bits)',
+    env: 'STS_SPIFFE_X509POP_MAX_RSA_KEY_SIZE', type: 'int', dflt: 8192,
+    min: 1024, max: 16384, runtime: true,
+    description: 'SPIRE\'s max_rsa_key_size: an RSA key larger than this on ' +
+                 'any certificate presented is refused, because verifying ' +
+                 'with a huge key is the expensive half of the protocol.' },
+
+  { key: 'spiffe.x509popVerifyClientIp', group: 'SPIFFE',
+    label: 'x509pop verifies the client address',
+    env: 'STS_SPIFFE_X509POP_VERIFY_CLIENT_IP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the address the agent connected ' +
+                 'from must be one of the leaf certificate\'s IP ' +
+                 'subjectAltNames. An agent on the Unix socket has no address ' +
+                 'and is refused.' },
+
+  { key: 'spiffe.x509popGroupTemplate', group: 'SPIFFE',
+    label: 'x509pop group template',
+    env: 'STS_SPIFFE_X509POP_GROUP_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s group_template: rendered over the verified ' +
+                 'certificate, and when the result is one of ' +
+                 'spiffe.x509popAllowedGroups the agent gets the selector ' +
+                 'x509pop:group:<it>. Set both or neither.' },
+
+  { key: 'spiffe.x509popAllowedGroups', group: 'SPIFFE',
+    label: 'x509pop allowed groups',
+    env: 'STS_SPIFFE_X509POP_ALLOWED_GROUPS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s allowed_groups, comma-separated: the only values ' +
+                 'spiffe.x509popGroupTemplate may produce a selector for.' },
+
+  { key: 'spiffe.sshpopCertAuthorities', group: 'SPIFFE',
+    label: 'sshpop host certificate authorities',
+    env: 'STS_SPIFFE_SSHPOP_CERT_AUTHORITIES', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s cert_authorities: SSH public keys in ' +
+                 'authorized_keys form, one per line, whose host ' +
+                 'certificates an sshpop agent may present. Empty refuses ' +
+                 'every sshpop agent.' },
+
+  { key: 'spiffe.sshpopCanonicalDomain', group: 'SPIFFE',
+    label: 'sshpop canonical domain',
+    env: 'STS_SPIFFE_SSHPOP_CANONICAL_DOMAIN', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s canonical_domain: the host certificate\'s first ' +
+                 'principal must end in .<it>, and the Hostname in the agent ' +
+                 'path template is the principal without it. Empty takes the ' +
+                 'principal whole.' },
+
+  { key: 'spiffe.sshpopAgentPathTemplate', group: 'SPIFFE',
+    label: 'sshpop agent path template',
+    env: 'STS_SPIFFE_SSHPOP_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template for sshpop. Empty is ' +
+                 '/{{ .PluginName }}/{{ .Fingerprint }}; the same subset of ' +
+                 'Go\'s template language as x509pop\'s.' },
+
+  { key: 'spiffe.sshpopVerifyClientIp', group: 'SPIFFE',
+    label: 'sshpop verifies the client address',
+    env: 'STS_SPIFFE_SSHPOP_VERIFY_CLIENT_IP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the host certificate must carry ' +
+                 'a source-address critical option and the agent\'s address ' +
+                 'must be in it.' },
+
+  { key: 'spiffe.tpmDevidCaBundle', group: 'SPIFFE',
+    label: 'tpm_devid DevID trust anchors (PEM)',
+    env: 'STS_SPIFFE_TPM_DEVID_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s devid_ca_path: PEM certificates a tpm_devid ' +
+                 'agent\'s DevID certificate must chain to. Empty refuses ' +
+                 'every tpm_devid agent.' },
+
+  { key: 'spiffe.tpmEndorsementCaBundle', group: 'SPIFFE',
+    label: 'tpm_devid endorsement trust anchors (PEM)',
+    env: 'STS_SPIFFE_TPM_ENDORSEMENT_CA_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s endorsement_ca_path: PEM certificates of the TPM ' +
+                 'manufacturers whose endorsement key certificates are ' +
+                 'trusted. Empty refuses every tpm_devid agent.' },
+
+  // #40 phase three (2026-09-21): k8s_psat, http_challenge, aws_iid,
+  // gcp_iit and azure_imds. NO CREDENTIAL IS EVER A SETTING HERE — a
+  // setting is drawn on the console, returned by /admin-api and persisted —
+  // so where SPIRE takes an access key, an app secret or a token inline,
+  // this takes a FILE PATH or the SDK's own credential chain (instance role,
+  // workload identity, managed identity, the environment).
+  { key: 'spiffe.k8sPsatClusters', group: 'SPIFFE',
+    label: 'k8s_psat clusters (JSON)',
+    env: 'STS_SPIFFE_K8S_PSAT_CLUSTERS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s k8s_psat `clusters`, as a JSON object from cluster ' +
+                 'name to {"serviceAccountAllowList": ["ns:sa", …], ' +
+                 '"audience": [...] (default ["spire-server"]), ' +
+                 '"apiServer": "https://…" , "caFile": "/path", ' +
+                 '"tokenFile": "/path", "allowedNodeLabelKeys": [...], ' +
+                 '"allowedPodLabelKeys": [...], "usePodUidForAgentId": ' +
+                 'false}. With no apiServer the in-cluster service account ' +
+                 'is used, as SPIRE\'s empty kube_config_file means. The ' +
+                 'bearer token is always read from a FILE. Empty refuses ' +
+                 'every k8s_psat agent.' },
+
+  { key: 'spiffe.httpChallengeAllowedDnsPatterns', group: 'SPIFFE',
+    label: 'http_challenge allowed host names (regular expressions)',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_ALLOWED_DNS_PATTERNS', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s allowed_dns_patterns, comma-separated regular ' +
+                 'expressions. An http_challenge agent\'s host name must ' +
+                 'match one BEFORE this server looks it up or dials it. ' +
+                 'Stricter than SPIRE: empty refuses every http_challenge ' +
+                 'agent, where SPIRE\'s empty list allows any name — this ' +
+                 'attestor is the one place the server dials an address a ' +
+                 'caller named.' },
+
+  { key: 'spiffe.httpChallengeRequiredPort', group: 'SPIFFE',
+    label: 'http_challenge required port',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_REQUIRED_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s required_port. 0 allows any port the next ' +
+                 'setting allows.' },
+
+  { key: 'spiffe.httpChallengeAllowNonRootPorts', group: 'SPIFFE',
+    label: 'http_challenge allows ports above 1023',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_ALLOW_NON_ROOT_PORTS', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'SPIRE\'s allow_non_root_ports. Off, only a port a process ' +
+                 'must be root to bind is accepted — the proof then says ' +
+                 'root on that host.' },
+
+  { key: 'spiffe.httpChallengeTofu', group: 'SPIFFE',
+    label: 'http_challenge trusts on first use',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_TOFU', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'SPIRE\'s tofu: on, a host name attests ONCE until its agent ' +
+                 'is deleted. It may be turned off only when ' +
+                 'spiffe.httpChallengeRequiredPort is below 1024 or ' +
+                 'non-root ports are not allowed, as in SPIRE.' },
+
+  { key: 'spiffe.httpChallengeVerifyClientIp', group: 'SPIFFE',
+    label: 'http_challenge verifies the client address',
+    env: 'STS_SPIFFE_HTTP_CHALLENGE_VERIFY_CLIENT_IP', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s verify_client_ip: the address the agent connected ' +
+                 'from must be one its host name resolves to.' },
+
+  { key: 'spiffe.awsIidPartition', group: 'SPIFFE',
+    label: 'aws_iid partition', env: 'STS_SPIFFE_AWS_IID_PARTITION',
+    type: 'enum', enumValues: ['aws', 'aws-cn', 'aws-us-gov'], dflt: 'aws',
+    runtime: true,
+    description: 'SPIRE\'s partition, used to build the assume_role ARN.' },
+
+  { key: 'spiffe.awsIidAssumeRole', group: 'SPIFFE',
+    label: 'aws_iid role to assume in the node\'s account',
+    env: 'STS_SPIFFE_AWS_IID_ASSUME_ROLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s assume_role: a role NAME assumed in each node\'s ' +
+                 'account before EC2 and IAM are asked about it. Empty uses ' +
+                 'the SDK\'s credential chain directly. Access keys are never ' +
+                 'a setting here — the chain reads them from the environment ' +
+                 'or the instance role.' },
+
+  { key: 'spiffe.awsIidSkipBlockDevice', group: 'SPIFFE',
+    label: 'aws_iid skips the block device check',
+    env: 'STS_SPIFFE_AWS_IID_SKIP_BLOCK_DEVICE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s skip_block_device: off, the root volume and the ' +
+                 'first network interface must have been attached within a ' +
+                 'minute of each other, which is what stops an identity ' +
+                 'document from one instance being replayed by another built ' +
+                 'from its volume.' },
+
+  { key: 'spiffe.awsIidDisableInstanceProfileSelectors', group: 'SPIFFE',
+    label: 'aws_iid skips the IAM role selectors',
+    env: 'STS_SPIFFE_AWS_IID_DISABLE_INSTANCE_PROFILE_SELECTORS',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'SPIRE\'s disable_instance_profile_selectors: on, no ' +
+                 'iamrole: selectors, and no IAM call.' },
+
+  { key: 'spiffe.awsIidLocalValidAccountIds', group: 'SPIFFE',
+    label: 'aws_iid accounts trusted without the block device check',
+    env: 'STS_SPIFFE_AWS_IID_LOCAL_VALID_ACCOUNT_IDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s account_ids_for_local_validation.' },
+
+  { key: 'spiffe.awsIidAgentPathTemplate', group: 'SPIFFE',
+    label: 'aws_iid agent path template',
+    env: 'STS_SPIFFE_AWS_IID_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is ' +
+                 '/{{ .PluginName }}/{{ .AccountID }}/{{ .Region }}/' +
+                 '{{ .InstanceID }}; .Tags.<key> is available.' },
+
+  { key: 'spiffe.awsIidVerifyOrganization', group: 'SPIFFE',
+    label: 'aws_iid organization check (JSON)',
+    env: 'STS_SPIFFE_AWS_IID_VERIFY_ORGANIZATION', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s verify_organization, as JSON: ' +
+                 '{"managementAccountId", "assumeOrgRole", ' +
+                 '"managementAccountRegion" (us-west-2), "orgAccountMapTtl" ' +
+                 '(seconds, 180, at least 60)} to ask AWS Organizations, or ' +
+                 '{"accountList": ["123456789012", …]} instead. The node\'s ' +
+                 'account must be an ACTIVE member. Empty: no check.' },
+
+  { key: 'spiffe.awsIidEksClusterNames', group: 'SPIFFE',
+    label: 'aws_iid EKS clusters a node must belong to',
+    env: 'STS_SPIFFE_AWS_IID_EKS_CLUSTER_NAMES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s validate_eks_cluster_membership: the instance must ' +
+                 'be in a node group of one of these clusters. Empty: no ' +
+                 'check.' },
+
+  { key: 'spiffe.awsIidEndpoint', group: 'SPIFFE',
+    label: 'aws_iid API endpoint override',
+    env: 'STS_SPIFFE_AWS_IID_ENDPOINT', type: 'string', dflt: '',
+    runtime: true,
+    description: 'An endpoint every AWS client is pointed at instead of the ' +
+                 'public one — a VPC endpoint, or a test. Empty uses AWS.' },
+
+  { key: 'spiffe.gcpIitProjectIdAllowList', group: 'SPIFFE',
+    label: 'gcp_iit projects allowed',
+    env: 'STS_SPIFFE_GCP_IIT_PROJECT_ID_ALLOW_LIST', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s projectid_allow_list, required: an identity ' +
+                 'token from any other project is refused. Empty refuses ' +
+                 'every gcp_iit agent.' },
+
+  { key: 'spiffe.gcpIitAgentPathTemplate', group: 'SPIFFE',
+    label: 'gcp_iit agent path template',
+    env: 'STS_SPIFFE_GCP_IIT_AGENT_PATH_TEMPLATE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is ' +
+                 '/{{ .PluginName }}/{{ .ProjectID }}/{{ .InstanceID }}.' },
+
+  { key: 'spiffe.gcpIitUseInstanceMetadata', group: 'SPIFFE',
+    label: 'gcp_iit reads the instance from Compute Engine',
+    env: 'STS_SPIFFE_GCP_IIT_USE_INSTANCE_METADATA', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s use_instance_metadata: on, the instance is read ' +
+                 'from the Compute Engine API for tag:, label: and metadata: ' +
+                 'selectors (needs @google-cloud/compute).' },
+
+  { key: 'spiffe.gcpIitAllowedLabelKeys', group: 'SPIFFE',
+    label: 'gcp_iit instance labels made selectors',
+    env: 'STS_SPIFFE_GCP_IIT_ALLOWED_LABEL_KEYS', type: 'csv', dflt: '',
+    runtime: true, description: 'SPIRE\'s allowed_label_keys.' },
+
+  { key: 'spiffe.gcpIitAllowedMetadataKeys', group: 'SPIFFE',
+    label: 'gcp_iit instance metadata made selectors',
+    env: 'STS_SPIFFE_GCP_IIT_ALLOWED_METADATA_KEYS', type: 'csv', dflt: '',
+    runtime: true, description: 'SPIRE\'s allowed_metadata_keys.' },
+
+  { key: 'spiffe.gcpIitMaxMetadataValueSize', group: 'SPIFFE',
+    label: 'gcp_iit largest metadata value',
+    env: 'STS_SPIFFE_GCP_IIT_MAX_METADATA_VALUE_SIZE', type: 'int',
+    dflt: 128, min: 1, max: 65536, runtime: true,
+    description: 'SPIRE\'s max_metadata_value_size: a longer allowed value ' +
+                 'refuses the attestation.' },
+
+  { key: 'spiffe.gcpIitServiceAccountFile', group: 'SPIFFE',
+    label: 'gcp_iit service account key file',
+    env: 'STS_SPIFFE_GCP_IIT_SERVICE_ACCOUNT_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s service_account_file, a PATH. Empty uses the ' +
+                 'SDK\'s application default credentials.' },
+
+  { key: 'spiffe.gcpIitCertsUrl', group: 'SPIFFE',
+    label: 'gcp_iit Google certificate URL',
+    env: 'STS_SPIFFE_GCP_IIT_CERTS_URL', type: 'string',
+    dflt: 'https://www.googleapis.com/oauth2/v1/certs', runtime: true,
+    description: 'Where Google publishes the certificates its instance ' +
+                 'identity tokens are signed with — SPIRE\'s constant, ' +
+                 'settable for a mirror or a test.' },
+
+  { key: 'spiffe.azureImdsTenants', group: 'SPIFFE',
+    label: 'azure_imds tenants (JSON)',
+    env: 'STS_SPIFFE_AZURE_IMDS_TENANTS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s azure_imds `tenants`, as a JSON object from tenant ' +
+                 'domain to {"tenantId" (looked up when absent), ' +
+                 '"tokenAuth": {"tokenPath", "appId"}, "allowedVmTags": ' +
+                 '[...], "restrictToSubscriptions": [...]}. With no ' +
+                 'tokenAuth the SDK\'s default credential is used. An app ' +
+                 'secret is never a setting here. Empty refuses every ' +
+                 'azure_imds agent.' },
+
+  { key: 'spiffe.azureImdsAgentPathTemplate', group: 'SPIFFE',
+    label: 'azure_imds agent path template',
+    env: 'STS_SPIFFE_AZURE_IMDS_AGENT_PATH_TEMPLATE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s agent_path_template. Empty is ' +
+                 '/{{ .PluginName }}/{{ .TenantID }}/{{ .SubscriptionID }}/' +
+                 '{{ .VMID }}.' },
+
+  { key: 'spiffe.azureImdsAllowedMetadataDomains', group: 'SPIFFE',
+    label: 'azure_imds signing certificate domains',
+    env: 'STS_SPIFFE_AZURE_IMDS_ALLOWED_METADATA_DOMAINS', type: 'csv',
+    dflt: 'metadata.azure.com', runtime: true,
+    description: 'SPIRE\'s allowed_metadata_domains: the attested document\'s ' +
+                 'signing certificate must name one of these (or a ' +
+                 'subdomain) in a DNS subjectAltName.' },
+
+  { key: 'spiffe.azureImdsTrustBundle', group: 'SPIFFE',
+    label: 'azure_imds extra roots (PEM)',
+    env: 'STS_SPIFFE_AZURE_IMDS_TRUST_BUNDLE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s trust_bundle_path, as PEM: CA certificates trusted ' +
+                 'beside the DigiCert roots SPIRE embeds, for a sovereign ' +
+                 'cloud or a test.' },
+
+  { key: 'spiffe.azureImdsIntermediateHost', group: 'SPIFFE',
+    label: 'azure_imds intermediate certificate host',
+    env: 'STS_SPIFFE_AZURE_IMDS_INTERMEDIATE_HOST', type: 'string',
+    dflt: 'www.microsoft.com', runtime: true,
+    description: 'The only host the signing certificate\'s CA Issuers URL may ' +
+                 'name — SPIRE\'s constant, settable for a test.' },
+
+  { key: 'spiffe.azureImdsDiscoveryUrl', group: 'SPIFFE',
+    label: 'azure_imds tenant discovery base URL',
+    env: 'STS_SPIFFE_AZURE_IMDS_DISCOVERY_URL', type: 'string',
+    dflt: 'https://login.microsoftonline.com', runtime: true,
+    description: 'Where a tenant domain\'s ID is looked up ' +
+                 '(<this>/<domain>/.well-known/openid-configuration) — ' +
+                 'SPIRE\'s constant, settable for a test.' },
+
+  // ===== SPIFFE WORKLOAD ATTESTATION (#40 phase four, 2026-09-21) ==========
+  // This service is the SPIRE agent for its own Workload API, and these are
+  // the agent's workload attestors. Like the node attestors above, no
+  // credential is a setting: the kubelet's token, certificate and key are
+  // FILE PATHS.
+  { key: 'spiffe.workloadAttestors', group: 'SPIFFE',
+    label: 'Workload attestors', env: 'STS_SPIFFE_WORKLOAD_ATTESTORS',
+    type: 'csv', dflt: 'unix', runtime: true,
+    description: 'Which of SPIRE\'s workload attestors run for a connection ' +
+                 'to the Workload API\'s Unix socket: unix, docker, k8s, ' +
+                 'comma-separated. Each runs once per connection, at ' +
+                 'accept; every call then checks the process is still the ' +
+                 'one attested. An attestor that fails fails the ' +
+                 'connection. A TCP caller is never attested.' },
+
+  { key: 'spiffe.workloadProcRoot', group: 'SPIFFE',
+    label: 'Workload attestation /proc root',
+    env: 'STS_SPIFFE_WORKLOAD_PROC_ROOT', type: 'string', dflt: '/proc',
+    runtime: true,
+    description: 'Where a caller\'s process is read from. A peer in a pid ' +
+                 'namespace this service cannot see is attested on the ' +
+                 'uid and gid the kernel recorded at connect, and nothing ' +
+                 'else.' },
+
+  { key: 'spiffe.unixDiscoverWorkloadPath', group: 'SPIFFE',
+    label: 'unix: attest the executable\'s path and digest',
+    env: 'STS_SPIFFE_UNIX_DISCOVER_WORKLOAD_PATH', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s discover_workload_path: add path: and sha256: ' +
+                 'selectors for the caller\'s executable.' },
+
+  { key: 'spiffe.unixWorkloadSizeLimit', group: 'SPIFFE',
+    label: 'unix: largest executable hashed (bytes)',
+    env: 'STS_SPIFFE_UNIX_WORKLOAD_SIZE_LIMIT', type: 'int', dflt: 0,
+    min: -1, max: 1099511627776, runtime: true,
+    description: 'SPIRE\'s workload_size_limit: 0 hashes any size, a ' +
+                 'positive value refuses a larger executable, -1 emits no ' +
+                 'sha256: selector.' },
+
+  { key: 'spiffe.dockerSocketPath', group: 'SPIFFE',
+    label: 'docker: Engine API socket',
+    env: 'STS_SPIFFE_DOCKER_SOCKET_PATH', type: 'string',
+    dflt: 'unix:///var/run/docker.sock', runtime: true,
+    description: 'SPIRE\'s docker_socket_path. The Engine is asked about the ' +
+                 'container the caller\'s cgroups name.' },
+
+  { key: 'spiffe.dockerApiVersion', group: 'SPIFFE',
+    label: 'docker: Engine API version', env: 'STS_SPIFFE_DOCKER_API_VERSION',
+    type: 'string', dflt: '', runtime: true,
+    description: 'SPIRE\'s docker_version: empty asks the Engine\'s own ' +
+                 'default.' },
+
+  { key: 'spiffe.k8sKubeletReadOnlyPort', group: 'SPIFFE',
+    label: 'k8s: kubelet read-only port',
+    env: 'STS_SPIFFE_K8S_KUBELET_READ_ONLY_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s kubelet_read_only_port: above 0, the pod list is ' +
+                 'read over plain HTTP on the loopback address, and the ' +
+                 'secure port is not used.' },
+
+  { key: 'spiffe.k8sKubeletSecurePort', group: 'SPIFFE',
+    label: 'k8s: kubelet secure port',
+    env: 'STS_SPIFFE_K8S_KUBELET_SECURE_PORT', type: 'int', dflt: 0,
+    min: 0, max: 65535, runtime: true,
+    description: 'SPIRE\'s kubelet_secure_port. 0 (the default) is the ' +
+                 'kubelet\'s own 10250 — a port this service DIALS, never ' +
+                 'binds.' },
+
+  { key: 'spiffe.k8sNodeName', group: 'SPIFFE', label: 'k8s: node name',
+    env: 'STS_SPIFFE_K8S_NODE_NAME', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s node_name: the kubelet dialled on the secure ' +
+                 'port. Empty reads the next setting\'s environment ' +
+                 'variable; with neither, the kubelet is 127.0.0.1 and its ' +
+                 'certificate is checked for its chain only.' },
+
+  { key: 'spiffe.k8sNodeNameEnv', group: 'SPIFFE',
+    label: 'k8s: node name environment variable',
+    env: 'STS_SPIFFE_K8S_NODE_NAME_ENV', type: 'string', dflt: 'MY_NODE_NAME',
+    runtime: true,
+    description: 'SPIRE\'s node_name_env.' },
+
+  { key: 'spiffe.k8sCertificateFile', group: 'SPIFFE',
+    label: 'k8s: kubelet client certificate file',
+    env: 'STS_SPIFFE_K8S_CERTIFICATE_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s certificate_path, with the next setting. Empty ' +
+                 'authenticates to the kubelet with a token.' },
+
+  { key: 'spiffe.k8sPrivateKeyFile', group: 'SPIFFE',
+    label: 'k8s: kubelet client key file',
+    env: 'STS_SPIFFE_K8S_PRIVATE_KEY_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s private_key_path.' },
+
+  { key: 'spiffe.k8sUseAnonymousAuthentication', group: 'SPIFFE',
+    label: 'k8s: anonymous to the kubelet',
+    env: 'STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s use_anonymous_authentication: no token and no ' +
+                 'certificate on the secure port.' },
+
+  { key: 'spiffe.k8sTokenFile', group: 'SPIFFE',
+    label: 'k8s: kubelet bearer token file',
+    env: 'STS_SPIFFE_K8S_TOKEN_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s token_path. Empty is the in-cluster service ' +
+                 'account\'s token.' },
+
+  { key: 'spiffe.k8sSkipKubeletVerification', group: 'SPIFFE',
+    label: 'k8s: skip kubelet certificate verification',
+    env: 'STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s skip_kubelet_verification.' },
+
+  { key: 'spiffe.k8sKubeletCaFile', group: 'SPIFFE',
+    label: 'k8s: kubelet CA file', env: 'STS_SPIFFE_K8S_KUBELET_CA_FILE',
+    type: 'string', dflt: '', runtime: true,
+    description: 'SPIRE\'s kubelet_ca_path. Empty is the in-cluster service ' +
+                 'account\'s ca.crt.' },
+
+  { key: 'spiffe.k8sMaxPollAttempts', group: 'SPIFFE',
+    label: 'k8s: pod list attempts', env: 'STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS',
+    type: 'int', dflt: 60, min: 1, max: 10000, runtime: true,
+    description: 'SPIRE\'s max_poll_attempts: how often the pod list is ' +
+                 'read before a container not yet in it fails the ' +
+                 'attestation.' },
+
+  { key: 'spiffe.k8sPollRetryIntervalMs', group: 'SPIFFE',
+    label: 'k8s: pod list retry interval (ms)',
+    env: 'STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS', type: 'int', dflt: 500,
+    min: 0, max: 60000, runtime: true,
+    description: 'SPIRE\'s poll_retry_interval.' },
+
+  { key: 'spiffe.k8sDisableContainerSelectors', group: 'SPIFFE',
+    label: 'k8s: pod selectors only',
+    env: 'STS_SPIFFE_K8S_DISABLE_CONTAINER_SELECTORS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s disable_container_selectors.' },
+
+  { key: 'spiffe.k8sEnableNamespaceLabels', group: 'SPIFFE',
+    label: 'k8s: namespace label selectors',
+    env: 'STS_SPIFFE_K8S_ENABLE_NAMESPACE_LABELS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Add ns-label: selectors, read from the API server with ' +
+                 'the in-cluster service account.' },
+
   { key: 'spiffe.maxJoinTokens', group: 'SPIFFE', label: 'Unspent join ' +
       'tokens held',
     env: 'STS_SPIFFE_MAX_JOIN_TOKENS', type: 'int', dflt: 256, min: 1,

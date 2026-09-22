@@ -9,8 +9,9 @@
 // reached; it does not reach. That was not an accident of what got built — it
 // is a position taken in two places and argued in both (the requesters added
 // since — SSF, the XACML nudge, the embedded debugger's api, the RFC 9728
-// import, a registered RFC 9101 `request_uri` — each argue their own case; the
-// root CLAUDE.md's non-goal index lists them):
+// import, a registered RFC 9101 `request_uri`, SPIFFE's node attestors'
+// configured sources and `http_challenge` (#40) — each argue their own case;
+// the root CLAUDE.md's non-goal index lists them):
 //
 //   * `oauthJwksUri` on an application entry is RECORDED AND NEVER FETCHED.
 //     `applications.js`'s schema row says why: following it would mean this
@@ -826,6 +827,325 @@ class FederationHttp {
   }
 
   // -------------------------------------------------------------------------
+  // ONE RESPONSE, READ WITHIN THE RULES EVERY REQUESTER HERE SHARES: no
+  // redirect followed, the body capped at `cap`, the request timed out. The
+  // two SPIFFE requesters below use it; the older three keep their own
+  // readers, which grew their own messages. It NEVER rejects.
+  // -------------------------------------------------------------------------
+  private exchange(transport: any, requestOptions: any, body: Buffer | null,
+                   cap: number, timeoutMs: number, raw: string):
+      Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
+                kind: string; why: string; url: string }> {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.exchange().");
+    const empty = Buffer.alloc(0);
+    log.debug("Leaving FederationHttp.exchange().");
+    return new Promise<any>(function (resolve) {
+      let settled = false;
+      const done = function (result) {
+        log.debug("Entering done().");
+        if (!settled) {
+          settled = true;
+          resolve(Object.assign({ body: empty, headers: {}, why: '',
+                                  kind: '', url: raw }, result));
+        }
+        log.debug("Leaving done().");
+      };
+      let request = null;
+      try {
+        request = transport.request(requestOptions, function (response) {
+          const status = response.statusCode || 0;
+          if (status >= 300 && status < 400) {
+            response.destroy();
+            done({ ok: false, status: status, kind: 'redirect',
+                   headers: response.headers,
+                   why: 'it answered ' + status + ' redirecting to "' +
+                        (response.headers.location || '(no Location)') +
+                        '", and a redirect is not followed' });
+            return;
+          }
+          const chunks: Buffer[] = [];
+          let bytes = 0;
+          response.on('data', function (chunk) {
+            bytes += chunk.length;
+            if (bytes > cap) {
+              response.destroy();
+              done({ ok: false, status: status, kind: 'too-large',
+                     headers: response.headers,
+                     why: 'it answered with more than ' + cap + ' bytes' });
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on('end', function () {
+            const ok = status >= 200 && status < 300;
+            done({ ok: ok, status: status, body: Buffer.concat(chunks),
+                   headers: response.headers, kind: ok ? '' : 'status',
+                   why: ok ? '' : 'it answered ' + status });
+          });
+          response.on('error', function (e) {
+            log.debug("Caught in a callback in exchange(): " +
+                      ((e && e.message) || e));
+            done({ ok: false, status: status, kind: 'network',
+                   why: 'the response failed: ' + e.message });
+          });
+        });
+      } catch (e) {
+        log.debug("Caught in FederationHttp.exchange(): " +
+                  ((e && e.message) || e));
+        done({ ok: false, status: 0, kind: 'build',
+               why: 'the request could not be built: ' + e.message });
+        return;
+      }
+      request.setTimeout(timeoutMs, function () {
+        request.destroy();
+        done({ ok: false, status: 0, kind: 'timeout',
+               why: 'it did not answer within ' + timeoutMs + 'ms' });
+      });
+      request.on('error', function (e) {
+        log.debug("Caught in a request callback in exchange(): " +
+                  ((e && e.message) || e));
+        done({ ok: false, status: 0, kind: 'network',
+               why: 'the request failed: ' +
+                    (e.code ? e.code + ' — ' : '') + e.message });
+      });
+      if (body && body.length) {
+        request.write(body);
+      }
+      request.end();
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // A SOURCE A SPIFFE NODE ATTESTOR WAS CONFIGURED TO ASK (#40, 2026-09-21):
+  // a Kubernetes API server (TokenReview, a pod, a node), Google's
+  // identity-token certificates, Microsoft's tenant discovery and the
+  // intermediate its attested documents name.
+  //
+  // THE ADMINISTRATOR'S KIND OF URL, AND THE FOURTH ARGUMENT HERE. Every URL
+  // that reaches this function was written into a `spiffe.*` setting by
+  // somebody who administers the realm — a cluster's API server — or is a
+  // constant SPIRE itself dials, which an administrator may point elsewhere
+  // (for an air-gapped mirror, or a test); the agent attesting names none of
+  // them. That is `fetchJson()`'s argument, not `fetchPublished()`'s, and so
+  // this function does what `fetchJson()` does about addresses: NOTHING. A
+  // Kubernetes API server lives on an internal address as a rule, and
+  // refusing internal addresses here would refuse the one place it lives.
+  //
+  // Everything else holds: the kill switch, https unless
+  // `federation.outboundAllowInsecure`, no redirect, the body cap, the
+  // timeout. `options.ca` is a PEM bundle to verify the server against
+  // INSTEAD of node's default roots — a cluster's own CA — and the TLS check
+  // is never turned off by it.
+  //
+  // `options.signedArtifact` admits plain http for ONE kind of fetch: a
+  // document whose own signature the caller verifies before believing a byte
+  // of it — the intermediate certificate an Azure attested document's
+  // signing certificate names in its CA Issuers URL, which Microsoft serves
+  // over http, as AIA URLs are. Nothing secret travels on such a request and
+  // nothing unverified comes back from it, which is the whole of what https
+  // would have added.
+  //
+  // FOUR MORE OPTIONS, FOR THE KUBELET (#40 phase four), each SPIRE's k8s
+  // workload attestor's: `cert` and `key` (PEM) authenticate this client with
+  // a certificate; `chainOnly` verifies the server's chain against `ca` and
+  // not its NAME — SPIRE's check when no node name is configured, because a
+  // kubelet's certificate names the node and not 127.0.0.1; `skipVerify` is
+  // `skip_kubelet_verification`, an administrator's explicit choice, logged on
+  // every request; and `loopbackPlainHttp` admits http to 127.0.0.1 or ::1
+  // ONLY, which is the kubelet's read-only port. It NEVER rejects.
+  // -------------------------------------------------------------------------
+  requestConfigured(raw: string, options?: {
+    method?: string; headers?: Record<string, string>; body?: Buffer | string;
+    ca?: string; timeoutMs?: number; signedArtifact?: boolean;
+    cert?: string; key?: string; chainOnly?: boolean; skipVerify?: boolean;
+    loopbackPlainHttp?: boolean }):
+      Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
+                kind: string; why: string; url: string }> {
+    const { log } = this.deps;
+    const opts = options || {};
+    log.debug("Entering FederationHttp.requestConfigured().");
+    const empty = Buffer.alloc(0);
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.requestConfigured(). Outbound off.");
+      return Promise.resolve({ ok: false, status: 0, body: empty,
+        headers: {}, kind: 'outbound-off', url: String(raw || ''),
+        why: 'federation.outbound is off, so this service makes no ' +
+             'outbound request at all' });
+    }
+    const plainSigned = (!!opts.signedArtifact && !opts.body &&
+      /^http:\/\//i.test(String(raw || ''))) ||
+      (!!opts.loopbackPlainHttp &&
+       /^http:\/\/(127\.0\.0\.1|\[::1\])(:\d+)?\//i.test(String(raw || '')));
+    const problem = plainSigned ? '' : this.urlProblem(raw);
+    if (problem) {
+      log.debug("Leaving FederationHttp.requestConfigured(). " + problem);
+      return Promise.resolve({ ok: false, status: 0, body: empty,
+        headers: {}, kind: 'url', url: String(raw || ''),
+        why: 'the URL cannot be dialled: ' + problem });
+    }
+    const target = new URL(String(raw));
+    const secure = target.protocol === 'https:';
+    if (!secure && !plainSigned) {
+      log.warn('outbound: a SPIFFE node attestor is dialling ' +
+               target.origin + ' over plain http because ' +
+               'federation.outboundAllowInsecure is ON.');
+    }
+    const body = opts.body === undefined || opts.body === null ? null
+      : Buffer.isBuffer(opts.body) ? opts.body
+        : Buffer.from(String(opts.body), 'utf8');
+    const headers = Object.assign({ 'Accept': 'application/json',
+                                    'User-Agent': this.deps.userAgent },
+                                  opts.headers || {});
+    if (body) headers['Content-Length'] = String(body.length);
+    const requestOptions: any = {
+      protocol: target.protocol, hostname: target.hostname,
+      port: target.port || (secure ? 443 : 80),
+      path: target.pathname + target.search,
+      method: String(opts.method || 'GET').toUpperCase(),
+      headers: headers,
+      rejectUnauthorized: secure && !this.allowInsecure()
+    };
+    if (secure && opts.ca) requestOptions.ca = String(opts.ca);
+    if (secure && opts.cert && opts.key) {
+      requestOptions.cert = String(opts.cert);
+      requestOptions.key = String(opts.key);
+    }
+    if (secure && opts.chainOnly) {
+      // The chain is still verified against `ca`; only the name is not.
+      requestOptions.checkServerIdentity = function () {
+        return undefined;
+      };
+    }
+    if (secure && opts.skipVerify) {
+      log.warn('outbound: ' + target.origin + ' is dialled WITHOUT ' +
+               'verifying its certificate, because the configuration asks ' +
+               'for that (a kubelet\'s skip_kubelet_verification).');
+      requestOptions.rejectUnauthorized = false;
+    }
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
+                                                 : this.timeoutMs();
+    log.debug("Leaving FederationHttp.requestConfigured().");
+    return this.exchange(secure ? this.deps.https : this.deps.http,
+                         requestOptions, body, this.maxBodyBytes(),
+                         timeoutMs, String(raw));
+  }
+
+  // -------------------------------------------------------------------------
+  // A LOCAL UNIX SOCKET AN ADMINISTRATOR NAMED (#40 phase four): the Docker
+  // Engine API, which SPIRE's docker workload attestor asks about the
+  // container a workload runs in. Not a network request at all — nothing
+  // leaves the host — but it is a request this service makes, so it keeps the
+  // rules the others do: the kill switch, no redirect, the cap, the timeout.
+  // `socketPath` is a setting (`spiffe.dockerSocketPath`); `path` is built by
+  // the caller from a container ID read out of the kernel's cgroup file.
+  // It NEVER rejects.
+  // -------------------------------------------------------------------------
+  requestLocalSocket(socketPath: string, path: string, options?: {
+    method?: string; timeoutMs?: number }):
+      Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
+                kind: string; why: string; url: string }> {
+    const { log } = this.deps;
+    const opts = options || {};
+    log.debug("Entering FederationHttp.requestLocalSocket(). " + socketPath +
+              " " + path);
+    const where = 'unix://' + socketPath + path;
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.requestLocalSocket(). Outbound off.");
+      return Promise.resolve({ ok: false, status: 0, body: Buffer.alloc(0),
+        headers: {}, kind: 'outbound-off', url: where,
+        why: 'federation.outbound is off, so this service makes no ' +
+             'outbound request at all' });
+    }
+    const timeoutMs = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs)
+                                                 : this.timeoutMs();
+    log.debug("Leaving FederationHttp.requestLocalSocket().");
+    return this.exchange(this.deps.http, {
+      socketPath: socketPath, path: path,
+      method: String(opts.method || 'GET').toUpperCase(),
+      headers: { 'Accept': 'application/json', 'Host': 'docker',
+                 'User-Agent': this.deps.userAgent }
+    }, null, this.maxBodyBytes(), timeoutMs, where);
+  }
+
+  // -------------------------------------------------------------------------
+  // SPIRE'S `http_challenge`: the one GET here to an address the CALLER
+  // named (#40, 2026-09-21 — rcbj's decision, with these bounds).
+  //
+  // THE FIFTH ARGUMENT, AND THE ONLY ONE OF ITS KIND. An agent attesting with
+  // `http_challenge` says "I am `hostname`, and I am serving on `port`", and
+  // the proof is this server fetching
+  // `http://<hostname>:<port>/.well-known/spiffe/nodeattestor/http_challenge/
+  // <agent>/challenge` and finding the nonce it sent. The address is the
+  // caller's — the header's first refusal — and what makes it acceptable is
+  // what bounds it, in order:
+  //
+  //   1. the attestor has already matched `hostname` against the realm's
+  //      `spiffe.httpChallengeAllowedDnsPatterns` BEFORE this is called — an
+  //      empty list refuses every agent, which is stricter than SPIRE, whose
+  //      empty list allows any name;
+  //   2. the kill switch;
+  //   3. in product mode every address the name resolves to is checked
+  //      against the internal ranges and the connection is pinned to the one
+  //      checked (`vetHost()`), as the RFC 9728 import does;
+  //   4. no redirect, 64 bytes of body (SPIRE reads 64), a 10-second timeout
+  //      (SPIRE's);
+  //   5. nothing is sent but the request line and a User-Agent, and what
+  //      comes back is compared with a nonce and discarded.
+  //
+  // It is plain HTTP, and `federation.outboundAllowInsecure` is not asked:
+  // SPIRE's plugin speaks http, nothing secret travels on the request, and
+  // the proof is the nonce coming back from the address the name resolves
+  // to — which is exactly as strong as this network's DNS, and no stronger.
+  // It NEVER rejects.
+  // -------------------------------------------------------------------------
+  fetchHttpChallenge(hostname: string, port: number, path: string):
+      Promise<{ ok: boolean; status: number; body: Buffer; headers: any;
+                kind: string; why: string; url: string }> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering FederationHttp.fetchHttpChallenge(). host=" +
+              hostname + " port=" + port);
+    const empty = Buffer.alloc(0);
+    const where = 'http://' + (String(hostname).indexOf(':') >= 0
+      ? '[' + hostname + ']' : hostname) + ':' + port + path;
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.fetchHttpChallenge(). Outbound off.");
+      return Promise.resolve({ ok: false, status: 0, body: empty,
+        headers: {}, kind: 'outbound-off', url: where,
+        why: 'federation.outbound is off, so this service makes no ' +
+             'outbound request at all' });
+    }
+    log.debug("Leaving FederationHttp.fetchHttpChallenge(). Vetting.");
+    return this.vetHost(hostname).then(function (vetted) {
+      if (!vetted.ok) {
+        return { ok: false, status: 0, body: empty, headers: {},
+                 kind: vetted.kind || 'internal', why: vetted.why || '',
+                 url: where };
+      }
+      const requestOptions: any = {
+        protocol: 'http:', hostname: hostname, port: port, path: path,
+        method: 'GET',
+        headers: { 'User-Agent': self.deps.userAgent, 'Accept': '*/*' }
+      };
+      if (vetted.address) {
+        requestOptions.lookup = function (name, lookupOptions, callback) {
+          log.debug("Entering lookup().");
+          log.debug("Leaving lookup().");
+          if (lookupOptions && lookupOptions.all) {
+            callback(null, [{ address: vetted.address,
+                              family: vetted.family }]);
+            return;
+          }
+          callback(null, vetted.address, vetted.family);
+        };
+      }
+      return self.exchange(self.deps.http, requestOptions, null, 64, 10000,
+                           where);
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // THE REQUEST.
   //
   //   record     the federation relationship, as `federation.js` hands it back
@@ -1088,6 +1408,9 @@ export = {
   vetHost: slot.forward('vetHost'),
   deliverForm: slot.forward('deliverForm'),
   fetchPublished: slot.forward('fetchPublished'),
+  requestConfigured: slot.forward('requestConfigured'),
+  fetchHttpChallenge: slot.forward('fetchHttpChallenge'),
+  requestLocalSocket: slot.forward('requestLocalSocket'),
   maxBodyBytes: slot.forward('maxBodyBytes'),
   urlProblem: slot.forward('urlProblem'),
   fetchJson: slot.forward('fetchJson'),

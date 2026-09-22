@@ -53,3 +53,7 @@ coverage/
 # instead. It is the other repository's build output — its own node_modules
 # included — and never this one's source.
 debugger/embedded/
+
+# The one native module (#40): compiled inside an image build only, by
+# build-native.sh, and never committed or sent from a host.
+spiffe/native/*.node

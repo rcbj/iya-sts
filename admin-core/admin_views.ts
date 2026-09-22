@@ -3722,6 +3722,9 @@ class AdminViews {
                      root: state.root,
                      maxRetained: spiffeCa.MAX_RETAINED_AUTHORITIES },
       listeners: { workloadApi: bindings.workload, serverApi: bindings.api },
+      // What the Workload API's Unix socket attests (#40 phase four): the
+      // native module, the attestors, and each open attested connection.
+      workloadAttestation: (bindings as any).workloadAttestation || null,
       federated: state.federated,
       counts: { entries: spiffeRegistry.entryCount(),
                 agents: spiffeRegistry.agentCount(),
@@ -3751,7 +3754,8 @@ class AdminViews {
                  'spiffe.workloadSocketEnabled', 'spiffe.workloadSocket',
                  'spiffe.workloadPort', 'spiffe.serverPort',
                  'spiffe.serverSocketEnabled', 'spiffe.serverSocket',
-                 'spiffe.grpcHost'].map(function (key) {
+                 'spiffe.grpcHost', 'spiffe.workloadAttestors',
+                 'spiffe.workloadProcRoot'].map(function (key) {
         return { key: key, value: config.text(key) };
       })
     };
