@@ -587,22 +587,32 @@ const SPECS: Spec[] = [
               'value, which is the reverse of every other event in all three ' +
               'vocabularies; a subject in another format is SENT with a ' +
               'warning rather than refused, because it is perfectly ' +
-              'deliverable and merely wrong. FOUR OF THE FOURTEEN FIRE ON ' +
-              'THEIR OWN when the DIRECTORY changes — a person deleted, ' +
-              'active going false or true, an identifier moving — which is a ' +
-              'different observer from CAEP\'s, watching provisioning rather ' +
-              'than authentication, and risc.autoEmit turns it off. Section ' +
+              'deliverable and merely wrong. THIRTEEN OF THE FOURTEEN FIRE ' +
+              'ON THEIR OWN (#146), and risc.autoEmit turns them off: from ' +
+              'the DIRECTORY, a person deleted, disabled (with the reason an ' +
+              'administrator gave, and none when none was given) or enabled, ' +
+              'an identifier moving, and an identifier RECYCLED — given to ' +
+              'an account after another released it within ' +
+              'risc.recycleWindowDays; from an ADMINISTRATOR, a required ' +
+              'credential change, recovery-activated for a reset link, ' +
+              'credential-compromise for a reset marked as caused by one, ' +
+              'and recovery information changed (as from a person confirming ' +
+              'new recovery codes); and from the ACCOUNT HOLDER on ' +
+              '/portal/signals, the section 2.8 opt-out moves, ' +
+              'opt-out-effective following after risc.optOutDelayHours ' +
+              'from a scheduler job. Section ' +
               '2.8\'s opt-out state machine is enforced: an account in the ' +
               'final state has its events SUPPRESSED (risc.honourOptOut) ' +
               'except for the four opt-out events themselves, without which ' +
               'exception opt-out-effective could never be delivered and ' +
               'opt-in could never bring an account back. Section 3.1\'s ' +
               'Google compatibility note is reproducible at ' +
-              'risc.googleSubjectType. NOT covered: the other ten event ' +
-              'types have no act here that could cause them — no breach ' +
-              'corpus is searched by this service and no recovery flow runs ' +
-              'in it — so they are emitted by hand from /admin/risc or POST ' +
-              '/admin-api/risc/emit.' },
+              'risc.googleSubjectType. NOT covered: no detector finds a ' +
+              'compromised credential by itself (#62); the deprecated ' +
+              'sessions-revoked is emitted only by hand from /admin/risc or ' +
+              'POST /admin-api/risc/emit; a person cannot start recovery ' +
+              'themselves until there is a mail channel (#63); and a ' +
+              'received event is not acted on (#153, #117).' },
 
   { id: 'rfc8936', name: 'RFC 8936 — Poll-Based Delivery of Security Event ' +
                          'Tokens',
@@ -4370,15 +4380,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'MEMBERS AT ALL and the subject carries the entire message. Only ' +
           'credential-compromise has a required member and it is defined by ' +
           'reference to CAEP\'s credential-change. Its ONE control is the ' +
-          'form that emits an event by hand, and it exists because TEN OF ' +
-          'THE FOURTEEN describe things nothing here does: no breach corpus ' +
-          'is searched by this service and no recovery flow runs in it. Four ' +
-          'of those ten CHANGE REAL STATE when they go — RISC section 2.8 ' +
-          'defines each opt-out event as "the account is in this state" ' +
-          'rather than as a report that it moved. The other four fire on ' +
-          'their own when the DIRECTORY changes, which is a different ' +
-          'observer from CAEP\'s: risc.autoEmit watches provisioning where ' +
-          'caep.autoEmit watches authentication. The risc.* settings ' +
+          'form that emits an event by hand. Thirteen of the fourteen also ' +
+          'fire on their own since #146 — from the DIRECTORY, the ' +
+          'administrator\'s acts and the account holder\'s own opt-out ' +
+          'choice on /portal/signals — and the four opt-out events CHANGE ' +
+          'REAL STATE when they go, because RISC section 2.8 defines each ' +
+          'as "the account is in this state" rather than as a report that ' +
+          'it moved. risc.autoEmit watches provisioning where caep.autoEmit ' +
+          'watches authentication. The risc.* settings ' +
           'post back to it, including risc.googleSubjectType — the only ' +
           'deliberate defect in this service that a specification asks for ' +
           'by name (RISC section 3.1). Add ?format=json.' },
@@ -4640,10 +4649,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'cannot resolve to an account (a phone number, an opaque id it did ' +
           'not compose) is NOT shown, because showing one person another ' +
           'person\'s account lockout is a disclosure and failing to show ' +
-          'somebody one of their own is an incomplete page. THERE IS NO ' +
-          'CONTROL ON IT: a person may not clear the record of what was said ' +
+          'somebody one of their own is an incomplete page. THE LIST HAS NO ' +
+          'CONTROL: a person may not clear the record of what was said ' +
           'about their own account, so the Clear is the console\'s at ' +
-          '/admin/signals and this page has none.',
+          '/admin/signals. THE ONE CONTROL (#146, 2026-09-22) is RISC ' +
+          'section 2.8\'s: the POST moves the account holder\'s own ' +
+          'participation — opt-out-initiated, opt-out-cancelled, opt-in — ' +
+          'only along the state diagram, and opt-out-effective is sent by ' +
+          'the risc.opt-out-effective scheduler job after ' +
+          'risc.optOutDelayHours, never by the person.',
     coverage: 'full for what it claims. It shows every delivered event this ' +
               'service could match to the signed-in person and says, on the ' +
               'page, that a subject it cannot match is left out rather than ' +

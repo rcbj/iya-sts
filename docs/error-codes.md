@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2892** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2895** of them, in **35** subsystems.
 
 ## Where a code appears
 
@@ -78,9 +78,9 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 274
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 170
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 171
 * [Management API (`STS-API`)](#sts-api) — 72
-* [User portal (`STS-PORTAL`)](#sts-portal) — 52
+* [User portal (`STS-PORTAL`)](#sts-portal) — 54
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 104
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
@@ -2999,6 +2999,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0791` | Uploading a SAML 2.0 service provider's metadata document failed — none was sent, or consuming it was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0792` | Disabling or enabling an account named nobody, or named the anonymous principal, which is not an account. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0793` | Disabling or enabling an account was refused and the refusal carried no code of its own. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0794` | A disable named a riscReason that is not one of RISC account-disabled's two (hijacking, bulk-account; RISC 1.0 section 2.2). | HTTP 400 |
 
 ## STS-API
 
@@ -3141,6 +3142,8 @@ Raised from: portal/.
 | `STS-PORTAL-0072` | A new password from a reset link was refused before it was tried: missing, not typed twice alike, or the reserved password. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0073` | A new password from a reset link was refused by the password policy or the store. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0074` | The realm chooser in front of /portal was asked for a realm that is not defined. | HTTP 400 on /portal |
+| `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off. | HTTP 409, the page redrawn saying so |
+| `STS-PORTAL-0076` | An account holder's RISC opt-out move was not recorded: Shared Signals is not running in this process, so there was no register to move. | HTTP 503, the page redrawn saying so |
 
 ## STS-LOGOUT
 

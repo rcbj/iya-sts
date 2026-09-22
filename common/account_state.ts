@@ -260,7 +260,10 @@ class AccountState {
                         (disabled ? 'disabled' : 'enabled') + '; nothing ' +
                         'was changed.' };
     }
-    const written: Json = credentials.setAccountDisabled(name, !!disabled);
+    // RISC's reason, when the administrator gave one of section 2.2's two
+    // (#146); `o.reason` stays the free text the audit row keeps.
+    const written: Json = credentials.setAccountDisabled(name, !!disabled,
+      { riscReason: String(o.riscReason || '') });
     if (!written || !written.ok) {
       log.debug("Leaving AccountState.setDisabled(). Not written.");
       return written;

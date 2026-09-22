@@ -218,6 +218,42 @@ class AccountSignals {
                                       { act: 'credentialChangeRequired' }));
   }
 
+  // RISC recovery-activated (#146): account recovery was started — an
+  // administrator issued a password-reset link.
+  recoveryActivated(notice?: object): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.recoveryActivated().');
+    log.debug('Leaving AccountSignals.recoveryActivated().');
+    return this.deliver('a RISC recovery-activated', 'emitRiscAccountAct',
+                        Object.assign({}, notice || {},
+                                      { act: 'recoveryActivated' }));
+  }
+
+  // RISC credential-compromise (#146): an administrator said a reset was
+  // BECAUSE the credential was compromised. `credentialType` is section 2.7's
+  // required `credential_type`.
+  credentialCompromised(notice?: Record<string, any>):
+      Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.credentialCompromised().');
+    const asked = notice || {};
+    log.debug('Leaving AccountSignals.credentialCompromised().');
+    return this.deliver('a RISC credential-compromise', 'emitRiscAccountAct',
+      Object.assign({}, asked, { act: 'credentialCompromise',
+        values: { credential_type: String(asked.credentialType ||
+                                          'password') } }));
+  }
+
+  // One of RISC section 2.8's opt-out moves, made by the account holder on
+  // /portal/signals (#146): optOutInitiated, optOutCancelled or optIn.
+  optOutMoved(notice?: Record<string, any>): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.optOutMoved().');
+    log.debug('Leaving AccountSignals.optOutMoved().');
+    return this.deliver('a RISC opt-out move', 'emitRiscAccountAct',
+                        Object.assign({}, notice || {}));
+  }
+
   // RISC recovery-information-changed: somebody's recovery codes were
   // cleared.
   recoveryInformationChanged(notice?: object): Promise<Delivery> {
@@ -256,6 +292,9 @@ export = {
   certificateChanged: slot.forward('certificateChanged'),
   credentialChangeRequired: slot.forward('credentialChangeRequired'),
   recoveryInformationChanged: slot.forward('recoveryInformationChanged'),
+  recoveryActivated: slot.forward('recoveryActivated'),
+  credentialCompromised: slot.forward('credentialCompromised'),
+  optOutMoved: slot.forward('optOutMoved'),
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
   keyCredentialType: AccountSignals.keyCredentialType,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE
