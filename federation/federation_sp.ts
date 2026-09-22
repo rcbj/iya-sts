@@ -1422,8 +1422,9 @@ class FederationSp {
     // saml/document_settings.ts.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      privateKeyPem: STS.privateKeyPem,
-      certPem: STS.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
+      privateKeyPem: STS.xml.privateKeyPem,
+      certPem: STS.xml.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
@@ -2827,7 +2828,10 @@ class FederationSp {
       return;
     }
     const base = baseUrlOf(req);
-    const der = STS.certPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    // The XML signing key (#42, D2): what this service signs its outbound
+    // AuthnRequests with.
+    const der = STS.xml.certPem.replace(/-----[^-]+-----/g, '')
+      .replace(/\s+/g, '');
     const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ' +
         'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ' +

@@ -2385,6 +2385,21 @@ const SECTIONS = [
                'and no control: a cache is emptied by the settings that ' +
                'bound it, not by a button. The figures are the answering ' +
                'process\'s own.' },
+      // THE SCHEDULER (2026-09-22, #49), after the caches and before the
+      // audit log: the last page whose subject is the process itself, and the
+      // one that says whether the background work is being DONE. Drawn by
+      // `admin-ui/scheduler_admin.ts` out of `cluster/scheduler.ts`.
+      { path: '/admin/scheduler', label: 'Scheduler',
+        blurb: 'Every periodic job this service runs &mdash; the ' +
+               'session-expiry sweep, the CRL directory refresh, and every ' +
+               'job registered after them &mdash; with its schedule, its ' +
+               'last run and how it ended, and the time to its next run as ' +
+               'a duration and an absolute time in UTC by the database\'s ' +
+               'clock. <strong>A cluster job runs once for the whole ' +
+               'service</strong>, on the scheduler\'s leader, which the ' +
+               'page names; a per-process job has a row per process. ' +
+               'Admin Write may run a job now, and on a cluster may ask ' +
+               'the leader to hand the scheduler to another node.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -14267,7 +14282,8 @@ class AdminConsole {
     const back = named
       ? '/admin/applications' + queryWith(listView, { application: named }) +
         // Back to the section the button was in, which is four screens down.
-        (String(body.action || '') === 'regenerate-secret' ? '#credentials'
+        (String(body.action || '') === 'regenerate-secret' ||
+         String(body.action || '') === 'rotate-secret' ? '#credentials'
           : (String(body.action || '') === 'issue-software-statement'
             ? '#software-statements'
             : (String(body.action || '') === 'revoke-tls-client-certificate' ||
@@ -14490,6 +14506,33 @@ class AdminConsole {
                    'application is seen.' };
   }
 
+  // THE LIST'S EXPIRING-SECRET MARK (#49 P5): a client secret that has
+  // expired, or expires within oauth2.clientSecretExpiryWarningDays — the
+  // same two the daily job oauth2.client-secret-expiry warns about.
+  secretExpiryMark(row) {
+    const { log, applications, config } = this.deps;
+    log.debug("Entering AdminConsole.secretExpiryMark().");
+    const record = applications.get(row.identifier);
+    const fields = (record && record.fields) || {};
+    const expiresAt = fields.oauthClientSecret
+      ? applications.secretExpiryOf(fields) : 0;
+    if (!expiresAt) {
+      log.debug("Leaving AdminConsole.secretExpiryMark(). None.");
+      return '';
+    }
+    const nowS = Math.floor(Date.now() / 1000);
+    const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
+                  86400;
+    log.debug("Leaving AdminConsole.secretExpiryMark().");
+    return expiresAt <= nowS
+      ? '<div class="sub warn">Client secret EXPIRED ' +
+        this.esc(new Date(expiresAt * 1000).toISOString()) + '</div>'
+      : expiresAt - nowS <= warnS
+        ? '<div class="sub warn">Client secret expires ' +
+          this.esc(new Date(expiresAt * 1000).toISOString()) + '</div>'
+        : '';
+  }
+
   applicationsListPage(req) {
     const { log, adminViews, queryWith, applications } = this.deps;
     const self = this;
@@ -14525,7 +14568,8 @@ class AdminConsole {
           (row.identifier === row.dnLabel ? '' :
             ' &mdash; the identifier is too long for a readable RDN, so the ' +
             '<code>cn</code> is a digest of it') + '</div>' : '') +
-        '</td><td>' + self.esc(row.name) + '</td>' +
+        '</td><td>' + self.esc(row.name) + self.secretExpiryMark(row) +
+        '</td>' +
         '<td>' + self.applicationKindCells(row) + '</td>' +
         // BOTH PROTOCOL LISTS IN ONE CELL, and the declared half is labelled
         // rather than run in with the other. An application created by hand has
@@ -15292,7 +15336,25 @@ class AdminConsole {
                    : 'Generate a client secret') + '</button>' +
       '<span class="sub">' + (secret.held
         ? 'The current secret stops working immediately.'
-        : 'This application holds none yet.') + '</span></div></form>';
+        : 'This application holds none yet.') + '</span></div></form>' +
+      // ROTATION WITH AN OVERLAP (#49 P5): the one to use for a client in
+      // service — the old secret keeps working while it changes over.
+      (secret.held
+        ? '<form method="post" action="/admin/applications">' + carryBack +
+          '<div class="formrow">' + hidden('action', 'rotate-secret') +
+          hidden('application', id) +
+          '<button type="submit">Rotate the client secret</button>' +
+          '<span class="sub">A new secret; the current one goes on working ' +
+          'for oauth2.clientSecretOverlapS so the client can change over.' +
+          (secret.previousUntil
+            ? ' The secret an earlier rotation replaced works until ' +
+              this.esc(new Date(secret.previousUntil).toISOString()) + '.'
+            : '') +
+          (secret.expiresAt
+            ? ' The current secret expires at ' +
+              this.esc(new Date(secret.expiresAt * 1000).toISOString()) + '.'
+            : '') + '</span></div></form>'
+        : '');
 
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
       return '<option value="' + self.esc(one.id) + '">' + self.esc(one.label) +
@@ -37510,6 +37572,13 @@ const SETTING_HOMES = [
   // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
   // what is missing would be a list of ids with no meaning.
   { group: 'Cluster', pages: ['/admin/cluster'] },
+  // SIGNER ROTATION (2026-09-22, #42/#48), on /admin/keys — the page that
+  // shows every unit's current, next and retired keys and carries the
+  // Rotate controls (rcbj's D5).
+  { group: 'Signing keys', pages: ['/admin/keys'] },
+  // THE SCHEDULER'S SETTINGS (2026-09-22, #49), on the page that shows the
+  // jobs they switch and the ticks they time.
+  { group: 'Scheduler', pages: ['/admin/scheduler'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another

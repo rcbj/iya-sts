@@ -145,6 +145,8 @@ interface VcIssuerDeps {
   jsonFromB64u: typeof helpers.jsonFromB64u;
   randomId: typeof helpers.randomId;
   bbsKeyPair: typeof helpers.bbsKeyPair;
+  bbsGenerations: typeof helpers.bbsGenerations;
+  bbsKidOf: typeof helpers.bbsKidOf;
   vciError: typeof helpers.vciError;
   signingKeyFor: typeof helpers.signingKeyFor;
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
@@ -229,6 +231,11 @@ const vciNoncesCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'oid4vci.cNonceTtlS after it was issued, or when it is used.';
   },
+  // What the nonce endpoint drops before it issues one (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, vciNonces,
+    function (expires: unknown, nonce: unknown, now: number): boolean {
+      return Number(expires) < now;
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, vciNonces,
       function (expires: unknown, nonce: unknown): object {
@@ -374,6 +381,8 @@ class VcIssuer {
       jsonFromB64u: helpers.jsonFromB64u,
       randomId: helpers.randomId,
       bbsKeyPair: helpers.bbsKeyPair,
+      bbsGenerations: helpers.bbsGenerations,
+      bbsKidOf: helpers.bbsKidOf,
       vciError: helpers.vciError,
       signingKeyFor: helpers.signingKeyFor,
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
@@ -1359,9 +1368,14 @@ class VcIssuer {
     // dereferenceable https URL.
     log.debug("Entering VcIssuer.buildLdpVc().");
     const issuerId = issuerDid || credentialIssuer;
-    const bbsVerificationMethod = issuerDid ? issuerDid + '#bbs-1'
-                                            : credentialIssuer + '/bbs/keys/1';
     const keys = await bbsKeyPair();
+    // NAMED BY ITS KID (#49 P5): the realm's BBS key rotates, and a method id
+    // that meant "whichever key is current" would resolve, after a rotation,
+    // to a key this credential was not signed with.
+    const bbsKid = this.deps.bbsKidOf(keys.publicKey);
+    const bbsVerificationMethod = issuerDid ? issuerDid + '#' + bbsKid
+                                            : credentialIssuer + '/bbs/keys/' +
+                                              bbsKid;
     const now = Math.floor(Date.now() / 1000);
     // THE HOLDER, as the did:jwk of the key the wallet proved at issuance —
     // the one binding this format has, and what the holder's Data Integrity
@@ -1798,7 +1812,7 @@ class VcIssuer {
       // opinion, so a token that introspected active could be refused here
       // seconds before it should have been. The shared verifier applies it by
       // default.
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      claims = helpers.verifyOwnJws(accessToken);
     } catch (e) {
       log.debug("Caught in VcIssuer.requestedClaimPaths(): " +
                 ((e && e.message) || e));
@@ -1926,7 +1940,7 @@ class VcIssuer {
       // Applies `oauth2.clockSkewS` since 2026-08-27 — see the note in
       // requestedClaimPaths() above; this was the second of the four sites that
       // had drifted away from the rule oauth2.js states.
-      claims = stsCrypto.verifyJws(accessToken, STS.certPem);
+      claims = helpers.verifyOwnJws(accessToken);
     } catch (e) {
       // Not our token (or not valid): nothing was granted by us. The caller
       // still checks the token elsewhere; this only answers "what did we
@@ -2340,16 +2354,35 @@ class VcIssuer {
     // regenerated on every start. Its CORS header is `common/cors.js`'s
     // decision like every other response's; the `*` this route used to set for
     // itself would have overridden it.
-    app.get('/bbs/keys/1', async (req, res) => {
+    // `/bbs/keys/<kid>` for every live generation of the realm's BBS key
+    // (#49 P5), which is what a credential's verificationMethod names; `1` is
+    // kept as the name of the CURRENT one.
+    app.get('/bbs/keys/:id', async (req, res) => {
       log.debug("Entering the BBS key endpoint.");
-      const keys = await bbsKeyPair();
+      void bbsKeyPair;
+      const generations = await this.deps.bbsGenerations();
+      const asked = String(req.params.id || '');
+      const one = asked === '1' ? generations[0]
+        : generations.filter(function (g: any): boolean {
+          return g.kid === asked;
+        })[0];
       res.set('Cache-Control', 'no-store');
+      if (!one) {
+        errorCodes.mark(res, 'STS-VC-0087');
+        res.status(404).type('application/json').send(JSON.stringify({
+          error: 'not_found',
+          error_description: 'this realm holds no BBS key "' + asked + '"'
+        }));
+        log.debug("Leaving the BBS key endpoint. No such key.");
+        return;
+      }
       res.status(200).type('application/json').send(JSON.stringify({
-        id: baseUrlOf(req) + '/bbs/keys/1',
+        id: baseUrlOf(req) + '/bbs/keys/' + asked,
         type: 'Multikey',
         controller: baseUrlOf(req),
         cryptosuite: bbs2023.CRYPTOSUITE,
-        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(keys.publicKey)
+        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(one.publicKey),
+        state: one.role
       }));
       log.debug("Leaving the BBS key endpoint.");
     });

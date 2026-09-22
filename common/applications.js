@@ -950,6 +950,28 @@ const SCHEMA = {
             'this directory can authenticate as this client — which is the ' +
             'honest state of a service that authenticates nobody. It is ' +
             'never written to the audit log.' },
+    // CLIENT-SECRET ROTATION AND EXPIRY (2026-09-22, #49 P5, rcbj's answer).
+    { name: 'oauthClientSecretPrevious', kind: 'single',
+      from: 'a rotation on /admin/applications or /admin-api',
+      sensitive: true,
+      what: 'The secret a ROTATION replaced, still accepted at the token ' +
+            'endpoint until oauthClientSecretPreviousUntil, so a client ' +
+            'can move to the new one without a moment when neither works. ' +
+            'In the clear for oauthClientSecret\'s reason, and cleared by ' +
+            'the scheduler job oauth2.client-secret-expiry once the overlap ' +
+            'has passed.' },
+    { name: 'oauthClientSecretPreviousUntil', kind: 'single',
+      from: 'a rotation on /admin/applications or /admin-api',
+      what: 'When the previous secret stops being accepted, in ' +
+            'milliseconds since the epoch: the rotation\'s instant plus ' +
+            'oauth2.clientSecretOverlapS.' },
+    { name: 'oauthClientSecretExpiresAt', kind: 'single',
+      from: 'POST /oauth2/register, or a rotation',
+      what: 'When the current secret expires, in SECONDS since the epoch — ' +
+            'RFC 7591 section 3.2.1\'s client_secret_expires_at — or 0 for ' +
+            'never. Refused after it in product mode ' +
+            '(mode.refusesExpiredClientSecrets()); administrators are warned ' +
+            'oauth2.clientSecretExpiryWarningDays ahead.' },
     { name: 'oauthRedirectUri', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'Registered redirect URIs from a registration, and any ' +
             'redirect_uri this service has ACCEPTED for the application ' +
@@ -3006,6 +3028,9 @@ const EDITABLE = {
   // out.
   oauthAudience: 'multi',
   oauthClientSecret: 'set',
+  oauthClientSecretPrevious: 'set',
+  oauthClientSecretPreviousUntil: 'set',
+  oauthClientSecretExpiresAt: 'set',
   oauthTokenEndpointAuthMethod: 'set',
   oauthJwks: 'set',
   oauthJwksUri: 'set',
@@ -6932,6 +6957,15 @@ function clientConfigOf(identifier) {
     token_endpoint_auth_method: method,
     client_secret: fields.oauthClientSecret === undefined
       ? '' : String(fields.oauthClientSecret),
+    // ROTATION AND EXPIRY (#49 P5): the secret a rotation replaced and until
+    // when it is accepted (ms), and when the current one expires (seconds,
+    // 0 for never) — the attribute, or a registration's own
+    // client_secret_expires_at when only that says.
+    client_secret_previous: fields.oauthClientSecretPrevious === undefined
+      ? '' : String(fields.oauthClientSecretPrevious),
+    client_secret_previous_until: Number(valuesOf(
+      fields.oauthClientSecretPreviousUntil)[0]) || 0,
+    client_secret_expires_at: secretExpiryOf(fields),
     // What an ASYMMETRIC method verifies against. Public key material and two
     // certificate facts — none of them a secret, which is the property RFC 9700
     // section 2.5 is recommending them for.
@@ -8013,6 +8047,115 @@ function mintClientSecret() {
 // three doors onto one entry, and minting in one of them would be a second
 // definition of what a client secret looks like.
 // ---------------------------------------------------------------------------
+// When an entry's current secret expires, in seconds since the epoch, or 0
+// for never (#49 P5): its own attribute, or — for a client registered before
+// the attribute existed — the client_secret_expires_at its registration
+// document published.
+function secretExpiryOf(fields) {
+  log.debug("Entering secretExpiryOf().");
+  const own = Number(valuesOf(fields.oauthClientSecretExpiresAt)[0]);
+  if (own > 0) {
+    log.debug("Leaving secretExpiryOf(). The attribute.");
+    return own;
+  }
+  let fromDocument = 0;
+  const text = valuesOf(fields.appRegistrationJson)[0];
+  if (text) {
+    try {
+      fromDocument = Number(JSON.parse(String(text))
+        .client_secret_expires_at) || 0;
+    } catch (e) {
+      // A document that does not parse publishes no expiry.
+      log.debug("Caught in secretExpiryOf(): " + ((e && e.message) || e));
+      fromDocument = 0;
+    }
+  }
+  log.debug("Leaving secretExpiryOf().");
+  return fromDocument > 0 ? fromDocument : 0;
+}
+
+// THE DAILY CLIENT-SECRET SWEEP (#49 P5, rcbj's answer), which the scheduler
+// job `oauth2.client-secret-expiry` runs in each realm: an audit row and a
+// warning for every secret expiring within
+// oauth2.clientSecretExpiryWarningDays, one for every secret that has
+// expired, and the previous secret of every rotation whose overlap has
+// passed CLEARED from its entry. Answers the three lists of identifiers.
+function sweepClientSecrets(nowMs) {
+  log.debug("Entering sweepClientSecrets().");
+  const now = Number(nowMs) || Date.now();
+  const nowS = Math.floor(now / 1000);
+  const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
+                86400;
+  const out = { expiring: [], expired: [], cleared: [] };
+  list().forEach(function (row) {
+    const fields = row.fields || {};
+    if (!valuesOf(fields.oauthClientSecret)[0]) {
+      return;
+    }
+    const expiresAt = secretExpiryOf(fields);
+    if (expiresAt > 0 && expiresAt <= nowS) {
+      out.expired.push(row.identifier);
+    } else if (expiresAt > 0 && expiresAt - nowS <= warnS) {
+      out.expiring.push(row.identifier);
+    }
+    const until = Number(valuesOf(fields.oauthClientSecretPreviousUntil)[0]);
+    if (valuesOf(fields.oauthClientSecretPrevious)[0] && until > 0 &&
+        until <= now) {
+      const loaded = load(row.identifier);
+      if (loaded.known) {
+        delete loaded.record.fields.oauthClientSecretPrevious;
+        delete loaded.record.fields.oauthClientSecretPreviousUntil;
+        save(loaded.record);
+        out.cleared.push(row.identifier);
+      }
+    }
+  });
+  out.expiring.forEach(function (id) {
+    audit.audit({ action: 'application.secret-expiring', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(id),
+      summary: 'Application "' + id + '": its client secret expires within ' +
+               'oauth2.clientSecretExpiryWarningDays; rotate it on ' +
+               '/admin/applications', detail: { identifier: String(id) } });
+  });
+  out.expired.forEach(function (id) {
+    audit.audit({ action: 'application.secret-expired', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(id),
+      outcome: 'failure', errorCode: 'STS-REG-0166',
+      summary: 'Application "' + id + '": its client secret has expired',
+      detail: { identifier: String(id) } });
+  });
+  out.cleared.forEach(function (id) {
+    audit.audit({ action: 'application.update', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(id),
+      summary: 'Application "' + id + '": the secret a rotation replaced ' +
+               'stopped being accepted, its overlap having passed',
+      detail: { identifier: String(id),
+                attribute: 'oauthClientSecretPrevious', mode: 'cleared' } });
+  });
+  if (out.expiring.length || out.expired.length) {
+    log.warn(errorCodes.tag('STS-REG-0166') + 'applications: ' +
+             out.expired.length + ' client secret(s) expired (' +
+             out.expired.join(', ') + ') and ' + out.expiring.length +
+             ' expire soon (' + out.expiring.join(', ') + '). Rotate them ' +
+             'on /admin/applications.');
+  }
+  log.debug("Leaving sweepClientSecrets(). " + JSON.stringify({
+    expiring: out.expiring.length, expired: out.expired.length,
+    cleared: out.cleared.length }));
+  return out;
+}
+
+// ROTATE — a new secret, with the old one still accepted for
+// oauth2.clientSecretOverlapS (#49 P5, rcbj's answer). The Admin Write act
+// the console and `POST /admin-api/applications/rotate-secret` share.
+function rotateClientSecret(identifier, options) {
+  log.debug("Entering rotateClientSecret(). identifier=" + identifier);
+  const out = regenerateClientSecret(identifier,
+    Object.assign({}, options || {}, { keepPrevious: true }));
+  log.debug("Leaving rotateClientSecret().");
+  return out;
+}
+
 function regenerateClientSecret(identifier, options) {
   log.debug("Entering regenerateClientSecret(). identifier=" + identifier);
   const opts = options || {};
@@ -8048,6 +8191,20 @@ function regenerateClientSecret(identifier, options) {
   const bytes = clientSecretBytes();
   const secret = mintClientSecret();
   const replaced = !!record.fields.oauthClientSecret;
+  const previous = valuesOf(record.fields.oauthClientSecret)[0];
+  // A ROTATION (#49 P5) keeps the secret it replaces working for
+  // oauth2.clientSecretOverlapS; a regeneration ends it now, and ends any
+  // overlap an earlier rotation left.
+  const overlapMs = Number(config.value('oauth2.clientSecretOverlapS')) * 1000;
+  const keeps = !!opts.keepPrevious && !!previous && overlapMs > 0;
+  if (keeps) {
+    setField(record, 'oauthClientSecretPrevious', String(previous));
+    setField(record, 'oauthClientSecretPreviousUntil',
+             String(Date.now() + overlapMs));
+  } else {
+    delete record.fields.oauthClientSecretPrevious;
+    delete record.fields.oauthClientSecretPreviousUntil;
+  }
   setField(record, 'oauthClientSecret', secret);
   if (record.fields.appRegistrationJson) {
     try {
@@ -8059,6 +8216,8 @@ function regenerateClientSecret(identifier, options) {
             config.value('oauth2.registeredSecretLifetimeS'));
         document.client_secret_expires_at = isFinite(seconds) && seconds > 0
           ? nowSec() + Math.floor(seconds) : 0;
+        setField(record, 'oauthClientSecretExpiresAt',
+                 String(document.client_secret_expires_at));
       }
       setField(record, 'appRegistrationJson', JSON.stringify(document));
     } catch (e) {
@@ -8082,14 +8241,22 @@ function regenerateClientSecret(identifier, options) {
              (replaced ? 'regenerated' : 'generated'),
     // The attribute and never the value — see updateApplication()'s row.
     detail: { identifier: String(identifier), attribute: 'oauthClientSecret',
-              mode: 'regenerate', replaced: replaced }
+              mode: keeps ? 'rotate' : 'regenerate', replaced: replaced,
+              overlapUntil: keeps ? Date.now() + overlapMs : 0 }
   });
   log.info('applications: "' + identifier + '" — the client secret was ' +
            (replaced ? 'regenerated' : 'generated') + '.');
   log.debug("Leaving regenerateClientSecret().");
   return { ok: true, changed: true, replaced: replaced, clientSecret: secret,
            application: viewAfterWrite(identifier, record),
-           message: (replaced
+           overlapUntil: keeps ? Date.now() + overlapMs : 0,
+           message: (keeps
+             ? 'A new client secret replaced the old one, which goes on ' +
+               'authenticating at the token endpoint until ' +
+               new Date(Date.now() + overlapMs).toISOString() +
+               ' (oauth2.clientSecretOverlapS), so the client can change ' +
+               'over.'
+             : replaced
              ? 'A new client secret replaced the old one, which stops ' +
                'authenticating at the token endpoint now.'
              : 'A client secret was generated.') + ' It is ' + bytes +
@@ -8750,6 +8917,27 @@ function list() {
 // The setting's own value is used and the log names the entry, the attribute
 // and the reason, which is the only way somebody finds out that the exception
 // they typed is not in force.
+// THE LARGEST VALUE a per-application setting takes across this realm's
+// entries, or the setting's own value when no entry overrides it higher —
+// for a question about EVERY client at once, such as how long the longest
+// token a key signed can live (`common/signing_rotation.ts`, #42).
+function largestSetting(settingKey, config) {
+  log.debug("Entering largestSetting(). setting=" + settingKey);
+  let most = Number(config.value(settingKey)) || 0;
+  if (!OVERRIDE_ATTRIBUTES[settingKey]) {
+    log.debug("Leaving largestSetting(). Not per-application.");
+    return most;
+  }
+  list().forEach(function (record) {
+    const v = Number(settingFor(record.identifier, settingKey, config)) || 0;
+    if (v > most) {
+      most = v;
+    }
+  });
+  log.debug("Leaving largestSetting(). " + most);
+  return most;
+}
+
 function settingFor(identifier, settingKey, config) {
   log.debug("Entering settingFor(). identifier=" + (identifier || '(none)') +
             ", setting=" + settingKey);
@@ -10070,6 +10258,9 @@ module.exports = {
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
   regenerateClientSecret: regenerateClientSecret,
+  rotateClientSecret: rotateClientSecret,
+  sweepClientSecrets: sweepClientSecrets,
+  secretExpiryOf: secretExpiryOf,
   mintClientSecret: mintClientSecret,
   KEY_SOURCES: KEY_SOURCES,
   KEY_SOURCE_ATTRIBUTES: KEY_SOURCE_ATTRIBUTES,
@@ -10097,6 +10288,7 @@ module.exports = {
   list: list,
   get: get,
   settingFor: settingFor,
+  largestSetting: largestSetting,
   overridableSettings: overridableSettings,
   // The audience lookup, exported for the token endpoint. See its header for
   // why it is a lookup and not a check.

@@ -196,6 +196,8 @@ const PUBLISH_DELAY_MS = 250;
 // How often a socket-holding process deletes the rows of nodes that are no
 // longer members, and instructions past their lifetime.
 const MAINTAIN_EVERY_MS = 15 * 1000;
+// The maintenance's scheduler job (#49 P5): see armMaintenance().
+const MAINTAIN_JOB = 'ldap.connection-mirror-maintenance';
 // How long an instruction is acted on after it was written. Far longer than
 // any replication delay a live node has, far shorter than a hole that is
 // applied late (ten minutes, persistence_replication.js).
@@ -244,7 +246,6 @@ class LdapClusterConnections {
   // closeLocal(key) }`. Null in a process that loaded this file alone.
   private hooks: SocketHooks | null = null;
   private publishTimer: NodeJS.Timeout | null = null;
-  private maintainTimer: NodeJS.Timeout | null = null;
   // Replaced by tests: the cluster module, and the clock.
   private clusterModule: ClusterView | null = null;
   private now: () => number;
@@ -721,23 +722,40 @@ class LdapClusterConnections {
   // socket-holding process may do it; asynchronous, because membership is a
   // database read.
   // -------------------------------------------------------------------------
+  // A SCHEDULER JOB (#49 P5): `ldap.connection-mirror-maintenance`, a QUIET
+  // PER-PROCESS job every MAINTAIN_EVERY_MS — every socket-holding process
+  // may sweep, and each deletes idempotently. It was an interval of its own,
+  // armed at the first local change; the job is registered then, and is off
+  // in a process that holds no sockets or is not coordinating.
   private armMaintenance(): void {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering LdapClusterConnections.armMaintenance().");
-    if (this.maintainTimer) {
-      log.debug("Leaving LdapClusterConnections.armMaintenance(). Armed.");
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(MAINTAIN_JOB)) {
+      log.debug("Leaving LdapClusterConnections.armMaintenance(). " +
+                "Registered.");
       return;
     }
-    this.maintainTimer = setInterval(function () {
-      self.maintain().catch(function (e) {
-        log.debug("Caught in LdapClusterConnections.armMaintenance(): " +
-                  ((e && e.message) || e));
-      });
-    }, MAINTAIN_EVERY_MS);
-    if (this.maintainTimer.unref) {
-      this.maintainTimer.unref();
-    }
+    scheduler.register({
+      id: MAINTAIN_JOB,
+      title: 'LDAP connection mirror maintenance',
+      describe: 'Deletes the mirrored LDAP connections of nodes that are no ' +
+                'longer members, and sign-out instructions past their ' +
+                'lifetime.',
+      owner: 'ldap/ldap_cluster_connections.ts',
+      kind: 'per-process', quiet: true,
+      everyMs: function (): number {
+        return MAINTAIN_EVERY_MS;
+      },
+      off: function (): string {
+        return self.active() && self.holdsSockets() ? ''
+          : 'this process holds no mirrored LDAP connections';
+      },
+      run: function (): Promise<{ swept: number; expired: number }> {
+        return self.maintain();
+      }
+    });
     log.debug("Leaving LdapClusterConnections.armMaintenance().");
   }
 
@@ -802,10 +820,6 @@ class LdapClusterConnections {
     if (this.publishTimer) {
       clearTimeout(this.publishTimer);
       this.publishTimer = null;
-    }
-    if (this.maintainTimer) {
-      clearInterval(this.maintainTimer);
-      this.maintainTimer = null;
     }
     connectionsByNode.clear();
     signOuts.clear();

@@ -398,7 +398,8 @@ const FIELD_PREFIX = 'field.';
 // ../mgmt-api/CLAUDE.md, which is the rule that sentence serves.
 const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'confirm-address', 'discard-address',
-                             'regenerate-secret', 'generate-secret',
+                             'regenerate-secret', 'rotate-secret',
+                             'generate-secret',
                              'issue-software-statement',
                              'issue-tls-client-certificate',
                              'revoke-tls-client-certificate',
@@ -2648,7 +2649,7 @@ class AdminActions {
     const identifier = String(body.application || '').trim();
     const needsOne = ['set', 'add', 'remove', 'confirm-address',
                       'discard-address', 'regenerate-secret',
-                      'issue-software-statement',
+                      'rotate-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
                       'revoke-registration', 'forget'];
@@ -2800,6 +2801,15 @@ class AdminActions {
       const result = applications.regenerateClientSecret(identifier);
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "regenerate-secret " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0620', result);
+    }
+
+    // A ROTATION (#49 P5): the same new secret, with the old one still
+    // accepted for oauth2.clientSecretOverlapS so the client can change over.
+    if (action === 'rotate-secret') {
+      const result = applications.rotateClientSecret(identifier);
+      log.debug("Leaving AdminActions.applicationsAction(). rotate-secret " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0620', result);
     }

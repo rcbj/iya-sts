@@ -268,8 +268,8 @@ interface SharedSignalsDeps {
   loadCapabilities(): Capabilities;
 }
 
-// The dead-letter sweep's timer: one per process. See scheduleSweep().
-let sweepTimer = null;
+// The dead-letter sweep's scheduler job (#49 P5). See scheduleSweep().
+const SWEEP_JOB = 'ssf.dead-letter-sweep';
 
 class SharedSignals {
   // The well-known suffix RFC 8414's registry carries for this document. It
@@ -991,25 +991,40 @@ class SharedSignals {
     });
   }
 
+  // THE SWEEP IS A SCHEDULER JOB (#49 P5): `ssf.dead-letter-sweep`, a
+  // PER-PROCESS job every `ssf.deadLetterSweepS` — each process still sweeps,
+  // as it did on a timer of its own, because what it reports is its OWN: the
+  // SETs this process dead-lettered since its last sweep, and the monitoring
+  // page's sweep history. The part that must happen once — probing a dead
+  // stream — was already gated to one node (`ssfCluster.leadsProbes()`), and
+  // deleting an expired dead letter is idempotent. Registered by the wire
+  // step, once per process.
   scheduleSweep(): void {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug('Entering SharedSignals.scheduleSweep().');
-    const seconds = Math.max(5,
-                             Number(config.value('ssf.deadLetterSweepS')) ||
-                             60);
-    const again = () => {
-      this.scheduleSweep();
-    };
-    sweepTimer = setTimeout(() => {
-      this.sweepSignals().then(again, again);
-    }, seconds * 1000);
-    // A sweep must not keep a process that has finished everything else alive
-    // — `npm test` loads this file and would otherwise wait out the interval.
-    if (sweepTimer.unref) {
-      sweepTimer.unref();
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(SWEEP_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleSweep(). Registered.');
+      return;
     }
-    log.debug('Leaving SharedSignals.scheduleSweep(). ' + seconds + 's.');
+    scheduler.register({
+      id: SWEEP_JOB,
+      title: 'Shared Signals dead-letter sweep',
+      describe: 'Deletes this process\'s expired dead letters, probes dead ' +
+                'streams that are due (one node only) and logs the summary ' +
+                'of what was dead-lettered since the last sweep.',
+      owner: 'ssf/ssf.ts',
+      kind: 'per-process',
+      everySetting: 'ssf.deadLetterSweepS', everySettingUnit: 's',
+      run: () => {
+        return this.sweepSignals().then(function () {
+          return { swept: true };
+        });
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleSweep(). On the scheduler.');
   }
+
 
   // -------------------------------------------------------------------------
   // `ssf.delivery` (#46 section 6), AT REQUIRE TIME like every capability —
@@ -2515,6 +2530,69 @@ class SharedSignals {
   }
 
   // ---------------------------------------------------------------------------
+  // A REALM'S SIGNING KEYS ROTATED (#42, rcbj's D4) — this service's own event,
+  // to every stream that delivers it, from `common/signing_rotation.ts` after
+  // the rotation has happened. It has no subject, so every stream that asked
+  // for the type gets it. Never throws: the rotation stands whatever happens
+  // to the notice of it.
+  // ---------------------------------------------------------------------------
+  signingKeyRotated(notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, errorCodes, helpers } = this.deps;
+    log.debug('Entering SharedSignals.signingKeyRotated().');
+    if (!this.enabled()) {
+      log.debug('Leaving SharedSignals.signingKeyRotated(). SSF is off.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    const n = notice || {};
+    const uri = events.SIGNING_KEY_ROTATED;
+    let base = '';
+    try {
+      base = helpers.baseUrlOf(null);
+    } catch (e) {
+      // No public base URL outside a request: the two links are optional
+      // members, and the event goes without them.
+      log.debug('Caught in SharedSignals.signingKeyRotated(): ' +
+                ((e && e.message) || e));
+      base = '';
+    }
+    const payload = events.EVENT_BY_URI[uri].generate({
+      realm: n.realm, reason: n.reason,
+      rotated: (n.rotated || []).map(function (r: Json): string {
+        return r.unit + ' ' + r.from + ' -> ' + r.to;
+      }).join(', '),
+      jwks_uri: base ? base + '/oauth2/jwks' : '',
+      crypto_metadata_uri: base ? base + '/crypto/metadata.json' : ''
+    });
+    const candidates = streams.listStreams().filter((record: Json) => {
+      return streams.deliversEvent(record, uri);
+    });
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.signingKeyRotated(). No stream ' +
+                'takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.signingKeyRotated().');
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { uri: uri, payload: payload,
+        toe: payload.event_timestamp });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: signing-key-rotated for the "' + payload.realm + '" ' +
+               'realm went to ' + sent + ' of ' + candidates.length +
+               ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.signingKeyRotated(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0100') + 'ssf: the ' +
+                'signing-key-rotated event could not be sent: ' + e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // A CAEP EVENT A PROTOCOL FAMILY OBSERVED ABOUT SOMETHING THAT IS NOT A
   // SIGN-ON SESSION.
   //
@@ -3919,6 +3997,7 @@ export = {
   consoleAction: slot.forward('consoleAction'),
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
+  signingKeyRotated: slot.forward('signingKeyRotated'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),

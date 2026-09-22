@@ -743,6 +743,85 @@ signed while it was on names a key the JWKS no longer lists until that token
 expires. This service's own checks of its own tokens accept either name whatever
 the setting says. It can be set per realm.
 
+## Signing key generations, and the crypto metadata document
+
+Every signer of a realm is a UNIT — a use case and an algorithm: `jose:RS256`
+(tokens), `xml:RS256` (SAML, WS-Federation and WS-Trust, a key of its own
+since 2026-09-22), one per elliptic curve and one per post-quantum algorithm.
+A unit holds a **current** key, and may hold a **next** key and **retired**
+keys:
+
+* a **next** key is published — in `/oauth2/jwks`, in the SAML 2.0, SAML 1.1
+  and WS-Federation metadata, in the DID document and in `/crypto/metadata` —
+  before it signs anything, so a relying party that refreshes its copy of
+  your keys already holds it on the day it starts being used;
+* when a unit is rotated, its next key becomes current and the old one is
+  **retired**: still published and still accepted for what it signed, until
+  `signing.retiredKeyGraceDays` or the longest lifetime of anything it could
+  have signed, whichever is later;
+* after that the retired key is dropped, its certificate superseded.
+
+Each generation has a certificate of its own from the unit's Issuing CA.
+
+`GET /crypto/metadata` (per realm: `/realm/<id>/crypto/metadata`) lists every
+generation of every unit with its kid, JWK, certificate chain, validity,
+SHA-256 fingerprint and revocation addresses; the algorithms per use case; and
+the rotation policy. It needs no credential, is never cached, and comes as:
+
+| Path | Form |
+|---|---|
+| `/crypto/metadata` | by `Accept`: JSON, XML (`application/xml`) or signed JSON (`application/jwt`) |
+| `/crypto/metadata.json` | JSON |
+| `/crypto/metadata.xml` | XML, namespace `urn:iya:sts:crypto-metadata:1` |
+| `/crypto/metadata.jwt` | the JSON signed as a JWS by the realm's current JOSE key |
+| `/crypto/metadata.signed.xml` | the XML with an enveloped XML Signature by the realm's current XML key |
+| `/crypto/metadata.xsd` | the XML Schema |
+
+OpenID Connect discovery links to it as `crypto_metadata_uri`, and the SAML
+2.0 metadata in an `md:Extensions` element (`cm:CryptoMetadataLocation`). No
+specification defines this document.
+
+In development mode keys are made anew at every start and are not rotated.
+In product mode two scheduler jobs, per realm, do it (`/admin/scheduler`):
+
+* **`signing.rotate`**, hourly: a unit with no next key is given one, and a
+  unit whose next key has been published for a whole
+  `signing.rotationIntervalDays` is promoted. The refresh-token encryption
+  keys rotate on the same interval; the set they replace goes on opening the
+  refresh tokens sealed under it until the longest of them expires.
+* **`signing.retire`**, hourly: drops each retired key past its grace and
+  puts its certificate on its Issuing CA's CRL as `superseded`.
+
+The key verifiable credentials are signed with
+(`oid4vci.credentialSigningAlgorithm`) keeps its retired keys verifying until
+the longest credential lifetime has passed, and rotates on
+`signing.credentialRotationIntervalDays` — when no token is signed with the
+same key. RS256, the default, is the token signer's key, so it rotates on the
+token interval; choose an algorithm of its own (for example ES256K) to give
+credentials a longer-lived key.
+
+**Rotating by hand**, in either mode: the Rotation section of `/admin/keys`
+(Rotate selected, Rotate all), or
+
+```bash
+curl -X POST https://sts.example/admin-api/keys/rotate \
+     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"units": ["jose:RS256"]}'        # [] or omitted: every unit
+```
+
+which answers `202` with a `runId` to follow at
+`/admin-api/scheduler?run=<runId>`. **An emergency**, for keys presumed
+compromised, is `POST /admin-api/keys/emergency` with
+`{"confirm": "compromised"}` (or the Emergency form): every key is replaced
+with a new one — not the published next key — with no grace, the old
+certificates are revoked for `keyCompromise`, the refresh-token keys are
+replaced, and every session of the realm is ended. Everything signed before
+it stops verifying at once.
+
+After each rotation a Shared Signals event of this service's own,
+`urn:iya:sts:secevent:event-type:signing-key-rotated`, goes to every stream
+that asked for it. The settings are the Signing keys group on `/admin/keys`.
+
 ## Where the CA private keys live
 
 They inherit the mode, and both surfaces that report it say which is in force

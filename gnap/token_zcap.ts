@@ -354,8 +354,27 @@ class TokenZcap {
       log.debug("Leaving TokenZcap.controllerDocument(). Keys unusable.");
       return pair;
     }
+    const document = this.controllerDocumentFor(libs.lib, publicKeys,
+                                                pair.pair);
+    // THE OTHER GENERATIONS OF THE KEY (#49 P5, D6): the next key and the
+    // retired ones still verifying, each a verification method of its own,
+    // so a capability signed before a rotation still resolves here. The
+    // current one stays first.
+    const others = Array.isArray(publicKeys.others) ? publicKeys.others : [];
+    for (let i = 0; i < others.length; i++) {
+      const one = Object.assign({ controller: publicKeys.controller },
+                                others[i]);
+      const extra = await this.keyPairOf(libs.lib, one, false);
+      if (!extra.ok) {
+        continue;
+      }
+      document.verificationMethod.push(extra.pair.export({
+        publicKey: true, includeContext: false }));
+      document.assertionMethod.push(one.keyId);
+      document.capabilityDelegation.push(one.keyId);
+    }
     log.debug("Leaving TokenZcap.controllerDocument().");
-    return this.controllerDocumentFor(libs.lib, publicKeys, pair.pair);
+    return document;
   }
 
   private rootIdFor(target: string): string {

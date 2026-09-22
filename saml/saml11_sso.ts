@@ -941,8 +941,9 @@ class Saml11Sso {
     // saml/document_settings.ts.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      privateKeyPem: STS.privateKeyPem,
-      certPem: STS.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
+      privateKeyPem: STS.xml.privateKeyPem,
+      certPem: STS.xml.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'append'
@@ -2413,8 +2414,17 @@ class Saml11Sso {
     const keyDescriptor = (use) => {
       log.debug("Entering keyDescriptor().");
       log.debug("Leaving keyDescriptor().");
+      // One per live generation of the XML key (#42), for signing.
+      if (use === 'signing') {
+        return helpers.ownRsaCertificates('xml').map(function (one: any) {
+          return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
+            NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
+            stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
+            '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+        }).join('');
+      }
       return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo xmlns:ds="' +
-        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.certB64 +
+        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.xml.certB64 +
         '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
     };
 
@@ -2702,10 +2712,8 @@ class Saml11Sso {
     // function has always been asking, now asked in one place for all four
     // profiles. It also refuses a signature whose reference names a different
     // element, which this file could not previously check at all.
-    const result = stsCrypto.verifyXmlSignature(xml, {
-      element: rootLocalName,
-      certPem: STS.certPem
-    });
+    // Any generation of this realm's XML key (#42): helpers.verifyOwnXml().
+    const result = helpers.verifyOwnXml(xml, { element: rootLocalName });
     log.debug("Leaving Saml11Sso.verifySignature(). ok=" + result.ok);
     return result;
   }

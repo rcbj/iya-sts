@@ -152,6 +152,13 @@ const entriesCount = cacheRegistry.register({
     return 'as long as the credential it describes; its index is free ' +
       'again after that.';
   },
+  // A credential past its expiry, whose index `allocate()` already treats as
+  // free — its bit could be reused, and so changed, at any allocation after
+  // that, so ejecting it changes nothing a verifier may rely on (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, entries,
+    function (row: any, idx: unknown, now: number): boolean {
+      return !!(row && row.expiresAt && row.expiresAt <= now);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, entries,
       function (row: any, idx: unknown): object {
@@ -183,6 +190,12 @@ const fetchedCount = cacheRegistry.register({
     return 'the list\'s own ttl (and never past its exp), at most ' +
       'oid4vp.statusListMaxCacheS; a failed fetch 30 seconds.';
   },
+  // A fetched list past `until`, which `fetchList()` would fetch again
+  // (#49 P5).
+  eject: cacheRegistry.mapEjector(fetched,
+    function (row: any, uri: unknown, now: number): boolean {
+      return !(row && Number(row.until) > now);
+    }),
   entries: function (): unknown[] {
     const out: unknown[] = [];
     fetched.forEach(function (row, uri) {
@@ -213,6 +226,12 @@ const signedCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'until the list changes, or half of oid4vci.statusListTtlS.';
   },
+  // A signed list past half its ttl, which `reuse()` would sign again
+  // (#49 P5).
+  eject: cacheRegistry.mapEjector(signedTokens,
+    function (row: any, key: unknown, now: number): boolean {
+      return !(row && now - Number(row.signedAt) < Number(row.ttlMs) / 2);
+    }),
   entries: function (): unknown[] {
     const out: unknown[] = [];
     signedTokens.forEach(function (row, key) {

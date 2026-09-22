@@ -624,3 +624,24 @@ starts a session, so two polls on two nodes cannot both sign somebody in
 (`STS-VC-0062`; a store that cannot be asked, `STS-VC-0063`). The bar door's
 behaviour is unchanged.
 
+## THE BBS KEY IS THE REALM'S, AND ROTATES (2026-09-22, #49 P5, rcbj's D6 answer)
+
+The key bbs-2023 proofs are signed with was one pair for the whole service (a
+cluster secret, handed to workers in an environment variable at fork), so it
+could never change while the service ran. It is a member of each realm's key
+set now — `helpers.bbsKeyPair()` makes it on first use, the post-quantum
+keys' way — and the signing unit `bbs:BBS`: a next key published ahead, a
+promotion, and retired keys verifying through their grace. Because it signs
+only credentials it rotates on `signing.credentialRotationIntervalDays` and
+its grace outlasts every credential lifetime (`common/signing_rotation.ts`).
+
+**AN ldp_vc NAMES ITS KEY BY KID** — `#bbs-<kid>` in the DID document,
+`/bbs/keys/<kid>` without a DID — where it named `#bbs-1` and `/bbs/keys/1`,
+which after a rotation would have resolved to a key the credential was not
+signed with. The DID document and `/bbs/keys/<kid>` publish every live
+generation; `/bbs/keys/1` is kept as the name of the current one. The
+Verifier tries the generation the proof options name first, then the rest.
+**Realms no longer share one BBS key**, which the header note in
+`vc_verifier.ts` about the issuer being disclosed already assumed was not
+needed to tell them apart.
+

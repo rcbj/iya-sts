@@ -37,13 +37,14 @@
 // AES-256-GCM `sts_keys` uses.
 //
 // **AN ENVIRONMENT VARIABLE STILL WINS** (`STS_CSRF_SECRET`,
-// `STS_ACME_NONCE_SECRET`, `STS_SSF_RECEIVER_SECRET`, `STS_BBS_KEYPAIR`): an
+// `STS_ACME_NONCE_SECRET`, `STS_SSF_RECEIVER_SECRET`): an
 // operator who set one has set it on every node, and that is agreement by
 // configuration.
 //
-// **A FOURTH SINCE 2026-09-14 IS A KEY PAIR, NOT RANDOM BYTES** — the BBS pair
-// — and its offer is made by an asynchronous `generate` on its row. Its
-// argument is at the row in `DECLARED`.
+// **A SECRET MAY HAVE A GENERATOR** (an asynchronous `generate` on its row)
+// rather than random bytes. The BBS pair was the one that did, from
+// 2026-09-14 until 2026-09-22, when it became a member of each realm's key
+// set (#49 P5, `common/helpers.js`) so that it could rotate.
 //
 // A LIBRARY (rule 3). `start()` is called from `common/service_state.ts` after
 // the keystore opens; `persistence.js` is required lazily.
@@ -137,46 +138,7 @@ const DECLARED: Record<string, DeclaredSecret> = {
           '(acme/acme_jws.ts).' },
   'ssf-receiver': { bytes: 32, env: 'STS_SSF_RECEIVER_SECRET',
     what: 'The secret the console\'s and the portal\'s own SSF receivers ' +
-          'authenticate pushes with (ssf/ssf_receivers.ts).' },
-  // -------------------------------------------------------------------------
-  // THE BBS KEY PAIR (2026-09-14, #46 section 1) — A SECRET WHOSE OFFER IS
-  // MADE BY A GENERATOR RATHER THAN BY `randomBytes()`.
-  //
-  // It is the key a bbs-2023 Data Integrity proof is signed with and the key
-  // `/bbs/keys/1` and the did:web document PUBLISH. `common/helpers.js` made
-  // one per process and shared it only with its own request workers, through
-  // this same variable, so two nodes behind one balancer each published a
-  // different `publicKeyMultibase`: a credential issued through node A and
-  // resolved through node B did not verify — `ldp_vc_issuance`,
-  // `ldp_vc_refresh` and `vc_did`, in the suite's `cluster` mode.
-  //
-  // **HERE AND NOT IN THE KEYSTORE'S SEALED ROWS**, and the smaller design is
-  // also the correct one. `sts_keys` is a REALM's key set — keyed by realm,
-  // enriched member by member, backfilled, rotated, certified by the PKI —
-  // and this pair is one per SERVICE and none of those things: it is never
-  // rotated, never certified and never per realm (`helpers.js` said as much
-  // when it kept it off the keystore's shared channel). What it needs is
-  // exactly what this table already gives the CSRF key: made once for the
-  // store, sealed under the KEK, first writer wins, read before serving, and
-  // handed to the request workers in the environment variable they already
-  // read. The only thing it lacks is a synchronous way to be made, which is
-  // `generate`.
-  //
-  // **A SECRET WITH A GENERATOR IS NEVER MADE PER PROCESS HERE.** Where
-  // nothing is shared (memory, ldif, no KEK, an ephemeral KEK) `text()`
-  // answers '' and `helpers.bbsKeyPair()` makes its own, asynchronously,
-  // exactly as it did before this row existed — so a single process and a
-  // single container behave as they always have.
-  'bbs-keypair': { env: 'STS_BBS_KEYPAIR',
-    generate: function () {
-      // LAZILY: helpers.js is loaded long before start() runs, and a require
-      // at the top of this library would drag the whole of it into every
-      // module that only wants the CSRF key.
-      return require('../common/helpers').newBbsKeyPairText();
-    },
-    what: 'The BBS key pair bbs-2023 Data Integrity proofs are signed with ' +
-          'and /bbs/keys/1 and the did:web document publish ' +
-          '(common/helpers.js).' }
+          'authenticate pushes with (ssf/ssf_receivers.ts).' }
 };
 
 // name -> { text, source: 'process'|'store'|'environment'|'node' }. The TEXT is
@@ -471,9 +433,11 @@ class ClusterSecrets {
 
 // At require time; see cluster.js's note on why a capability is the code.
 capabilities.provide('cluster.shared-secrets');
-// THE BBS PAIR'S ROW IN `DECLARED` is the fix for `vc.keys-agreement`: every
-// node reads the one pair the store kept before it serves, and hands it to its
-// request workers in `STS_BBS_KEYPAIR`, which `helpers.bbsKeyPair()` adopts.
+// `vc.keys-agreement`: every node signs and publishes the same BBS key. It
+// was a row in `DECLARED` here until 2026-09-22 (#49 P5); the BBS key is a
+// member of each realm's key set now (`common/helpers.js`), agreed across
+// nodes and processes the way every member is — the store's first writer and
+// the sibling channel's enrichment rule — which is what this still stands for.
 capabilities.provide('vc.keys-agreement');
 
 // ---------------------------------------------------------------------------

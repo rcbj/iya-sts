@@ -213,10 +213,12 @@ function advance(opts) {
 // **A STORE THAT CANNOT BE ASKED ANSWERS `reason: 'store'`**, and what the
 // caller does with that is ITS decision (the limiter falls back to its own
 // buckets and says so; see there). A row is swept once its window has passed,
-// at most once a minute, by whichever process counts next.
+// once a minute, by the scheduler job cluster.rate-window-purge (#49 P5).
 // ===========================================================================
 const WINDOW_PURGE_INTERVAL_MS = 60 * 1000;
-let lastWindowPurgeAt = 0;
+// The sweep's scheduler job (#49 P5): see ensureWindowPurgeJob().
+const WINDOW_PURGE_JOB = 'cluster.rate-window-purge';
+let windowJobRegistered = false;
 
 function windowStore() {
   log.debug("Entering windowStore().");
@@ -237,23 +239,51 @@ function sharesWindows() {
   return out;
 }
 
-function maybePurgeWindows(theStore) {
-  log.debug("Entering maybePurgeWindows().");
-  const now = Date.now();
-  if (typeof theStore.purgeWindows !== 'function' ||
-      now - lastWindowPurgeAt < WINDOW_PURGE_INTERVAL_MS) {
-    log.debug("Leaving maybePurgeWindows(). Not due.");
+// THE SWEEP IS A SCHEDULER JOB (#49 P5): `cluster.rate-window-purge`, a
+// CLUSTER job every WINDOW_PURGE_INTERVAL_MS — the windows are one table
+// every process shares. It was piggy-backed on the next count in every
+// process. Registered at the first count against a shared store, lazily for
+// `cluster_claims.js`'s reason.
+function ensureWindowPurgeJob() {
+  log.debug("Entering ensureWindowPurgeJob().");
+  if (windowJobRegistered) {
+    log.debug("Leaving ensureWindowPurgeJob(). Registered.");
     return;
   }
-  lastWindowPurgeAt = now;
-  Promise.resolve().then(function () {
-    return theStore.purgeWindows();
-  }).catch(function (e) {
-    log.warn(errorCodes.tag('STS-CLUSTER-0024') + 'cluster counters: ' +
-             'sweeping finished rate-limit windows failed: ' +
-             ((e && e.message) || e) + '. They are swept on a later count.');
+  windowJobRegistered = true;
+  const scheduler = require('./scheduler');
+  if (scheduler.job(WINDOW_PURGE_JOB)) {
+    log.debug("Leaving ensureWindowPurgeJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: WINDOW_PURGE_JOB,
+    title: 'Finished rate-limit windows sweep',
+    describe: 'Deletes the rate-limit windows that have passed from the ' +
+              'table every node shares.',
+    owner: 'cluster/cluster_counters.js',
+    everyMs: function () {
+      return WINDOW_PURGE_INTERVAL_MS;
+    },
+    off: function () {
+      const theStore = windowStore();
+      return theStore && typeof theStore.purgeWindows === 'function' ? ''
+        : 'no shared rate-limit windows in this process';
+    },
+    run: function () {
+      return Promise.resolve().then(function () {
+        return windowStore().purgeWindows();
+      }).then(function (removed) {
+        return { removed: Number(removed) || 0 };
+      }, function (e) {
+        log.warn(errorCodes.tag('STS-CLUSTER-0024') + 'cluster counters: ' +
+                 'sweeping finished rate-limit windows failed: ' +
+                 ((e && e.message) || e) + '.');
+        throw e;
+      });
+    }
   });
-  log.debug("Leaving maybePurgeWindows(). Started.");
+  log.debug("Leaving ensureWindowPurgeJob().");
 }
 
 // The shape every window call is checked against, one place.
@@ -303,7 +333,7 @@ function countInWindow(opts) {
       reason: args ? 'unshared' : 'store',
       why: args ? 'no shared store' : 'a window needs a scope and a key' });
   }
-  maybePurgeWindows(theStore);
+  ensureWindowPurgeJob();
   log.debug("Leaving countInWindow(). Asking the store.");
   return Promise.resolve().then(function () {
     return theStore.countWindow(args.scope, args.realm, args.digest,
@@ -367,7 +397,6 @@ function clearWindow(opts) {
 function reset() {
   log.debug("Entering reset().");
   memory.clear();
-  lastWindowPurgeAt = 0;
   log.debug("Leaving reset().");
 }
 

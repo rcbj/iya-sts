@@ -300,8 +300,9 @@ function run(t) {
   try {
     config.setOverride('saml.signatureAlgorithm', 'rsa-sha384');
     const signed = saml2.buildSamlAssertion('alice', 'https://sp.test', 5);
-    const verdict = stsCrypto.verifyXmlSignature(signed, { element: 'Assertion',
-                                                           certPem: helpers.STS.certPem });
+    // The XML signer, `STS.xml`, since the RSA key split (#42, D2).
+    const verdict = stsCrypto.verifyXmlSignature(signed,
+      { element: 'Assertion', certPem: helpers.STS.xml.certPem });
     t.equal(verdict.ok, true, 'an assertion signed with rsa-sha384 verifies',
             verdict.why);
     t.check(/rsa-sha384/.test(verdict.signatureMethod),
@@ -311,7 +312,8 @@ function run(t) {
                                               audience: 'rp' });
     const v11 = stsCrypto.verifyXmlSignature(s11, { element: 'Assertion',
                                                     certPem:
-                                                      helpers.STS.certPem });
+                                                      helpers.STS.xml.certPem
+                                                  });
     t.check(v11.ok && /rsa-sha384/.test(v11.signatureMethod),
             'the SAML 1.1 builder reads the same setting',
             v11.signatureMethod + ' ' + v11.why);

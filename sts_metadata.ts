@@ -2820,6 +2820,90 @@ const ENDPOINTS: EndpointEntry[] = [
           'rather than a chain over a different key. `no-store`, like every ' +
           'document publishing this service\'s key material. Ungated, ' +
           'because what it returns is already named by the token.' },
+  { path: '/crypto/metadata', group: 'PKI',
+    name: 'The crypto metadata document, by Accept',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC: no specification defines such a document. By `Accept`: ' +
+          'JSON by default, XML for application/xml, the signed JSON for ' +
+          'application/jwt. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.json', group: 'PKI',
+    name: 'The crypto metadata document, as JSON',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The model itself. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.xml', group: 'PKI',
+    name: 'The crypto metadata document, as XML',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The same model, in the namespace ' +
+          'urn:iya:sts:crypto-metadata:1, validating against ' +
+          '/crypto/metadata.xsd. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.jwt', group: 'PKI',
+    name: 'The crypto metadata document, signed as a JWS',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The JSON as the claims of a JWS signed by the realm\'s ' +
+          'current JOSE signer, through the one signer RFC 8414\'s ' +
+          'signed_metadata uses (oauth2.signedMetadataAlgorithm), `sub` ' +
+          'the issuer. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.signed.xml', group: 'PKI',
+    name: 'The crypto metadata document, as signed XML',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC. The XML with an enveloped XML Signature first in the ' +
+          'root, by the realm\'s current XML signer and the algorithm ' +
+          'saml2.signatureAlgorithm selects. ' +
+          'Every signer of this realm, each key generation (current, next, ' +
+          'and retired keys still within their grace), with its kid, JWK, ' +
+          'chain to the Root, validity, SHA-256 fingerprint and its ' +
+          'issuer\'s CRL, OCSP and caIssuers addresses; the algorithms per ' +
+          'use case and the default of each; and the rotation policy the ' +
+          'realm runs (#42). Per realm by the realm prefix; anonymous in ' +
+          'both modes, because it is built from the lookups the JWKS and ' +
+          'the SAML metadata are and holds public material only; ' +
+          '`no-store`, like every document that describes a key. ' +
+          'pki/crypto_metadata_document.ts.' },
+  { path: '/crypto/metadata.xsd', group: 'PKI',
+    name: 'The crypto metadata document\'s XML Schema',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'NON-SPEC: the XSD of urn:iya:sts:crypto-metadata:1, which the ' +
+          'signed and the unsigned XML both validate against.' },
   { path: '/pki/revocation', group: 'PKI',
     name: 'Every CRL and OCSP responder this service publishes',
     specs: ['rfc5280', 'rfc6960'],
@@ -3479,6 +3563,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'ready" would be a page with nothing on it. A REFUSAL is still a ' +
           'page, so a bad password or an impossible format reads like every ' +
           'other refusal here. Needs Admin Write.' },
+  { path: '/admin/keys/rotate', group: 'Admin',
+    name: 'Rotate signing keys, or rotate them in an emergency',
+    specs: [],
+    what: 'NON-SPEC (#42/#48). The two forms in the Rotation section of ' +
+          '/admin/keys. `action=rotate` with the units ticked (or all): each ' +
+          'next key becomes current and the key it replaces goes on ' +
+          'verifying through its grace. `action=emergency`, confirmed by ' +
+          'typing `compromised`: every key of every unit is replaced with no ' +
+          'grace, their certificates are revoked for keyCompromise, the ' +
+          'refresh-token keys are replaced and every session of the realm ' +
+          'is ended (CAEP session-revoked, RISC sessions-revoked). Either ' +
+          'queues a run of signing.rotate-now on the scheduler and lands on ' +
+          'that run\'s page. Needs Admin Write; a realm administrator ' +
+          'rotates the realm they signed in to.' },
   { path: '/admin/crypto-metadata', group: 'Admin', name: 'Cryptography',
     specs: [],
     what: 'NON-SPEC. The companion to this page, one layer down: what this ' +
@@ -5085,6 +5183,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'and status — computed from what was set here, an administrator\'s ' +
           'revocation on /admin/tokens and a global sign-out\'s disown — ' +
           'with Suspend, Reinstate and Revoke. Add ?format=json.' },
+  { path: '/admin/scheduler', group: 'Admin',
+    name: 'Every scheduled job, its last run and its next',
+    specs: [],
+    what: 'NON-SPEC (#49). Filed under Monitoring. Every job registered ' +
+          'with cluster/scheduler.ts — the session-expiry sweep, the CRL ' +
+          'directory refresh, the scheduler\'s own history, and every one ' +
+          'after them — including the ones that are off, with the reason; ' +
+          'which process leads the scheduler and since when; each job\'s ' +
+          'last run (succeeded, failed with its code, abandoned, running) ' +
+          'and its time to next run as a duration and an absolute UTC time ' +
+          'by the database clock; a per-process job\'s row per process; ' +
+          'and the recent runs, filtered by job and outcome (?job=, ' +
+          '?outcome=), with ?run=<id> for one. POST: Run now (action=run, ' +
+          'job, realm) and Step down (action=step-down), Admin Write. Read ' +
+          'from the store, so every node draws the same. Add ?format=json.' },
   { path: '/admin/caches', group: 'Admin',
     name: 'Every cache this service holds, and one cache\'s entries',
     specs: [],
@@ -5744,8 +5857,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'can be exported as. A LIST AND NEVER KEY MATERIAL. Mirrors GET ' +
           '/admin/keys.' },
   { path: '/admin-api/keys/:action', group: 'Management API',
-    name: 'Export a key pair', specs: [],
-    what: 'NON-SPEC. THIS OPERATION RETURNS PRIVATE KEY MATERIAL, base64 in ' +
+    name: 'Export a key pair, or rotate the signing keys', specs: [],
+    what: 'NON-SPEC. `rotate` and `emergency` (#48) are /admin/keys/rotate\'s ' +
+          'two forms: `{ "units": [...] }` (empty or "all" for every unit) ' +
+          'and, for an emergency, `"confirm": "compromised"`; each answers ' +
+          '202 with the runId of the queued signing.rotate-now run, to ' +
+          'follow at /admin-api/scheduler?run=. `export`: ' +
+          'THIS OPERATION RETURNS PRIVATE KEY MATERIAL, base64 in ' +
           'a JSON reply because this API answers JSON everywhere else. Takes ' +
           'a key id, a format (pem, der, jwk, pkcs12) and a password — ' +
           'required for pkcs12, optional elsewhere, where it encrypts the ' +
@@ -5874,6 +5992,20 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Credential status actions', specs: ['openapi'],
     what: 'NON-SPEC. suspend, reinstate and revoke, with { idx }: the ' +
           'console\'s three buttons.' },
+  { path: '/admin-api/scheduler', group: 'Management API',
+    name: 'Scheduler', specs: ['openapi'],
+    what: 'NON-SPEC (#49). Everything /admin/scheduler draws, as JSON: the ' +
+          'leader, every registered job with its schedule, state, last run, ' +
+          'nextRunAt, nextRunInMs (by the database clock) and nextRunState, ' +
+          'per-process rows, the recent runs (job, outcome, page, per) and ' +
+          'the queued commands; ?run=<id> for one run. Mirrors GET ' +
+          '/admin/scheduler.' },
+  { path: '/admin-api/scheduler/:action', group: 'Management API',
+    name: 'Scheduler actions', specs: ['openapi'],
+    what: 'NON-SPEC (#49). run, with { job, realm?, params? }: a queued run ' +
+          'the leader starts at its next tick, 202 with its runId; and ' +
+          'step-down: the leader gives up ops.scheduler at its next tick and ' +
+          'another node takes it. The console\'s two buttons.' },
   { path: '/admin-api/caches', group: 'Management API',
     name: 'Caches', specs: [],
     what: 'NON-SPEC (#74). Everything /admin/caches draws, as JSON: every ' +
@@ -8477,11 +8609,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'renders a QR code. ?mode=cross-device (H.2) and ?mode=deferred ' +
           '(H.3) select the pre-authorized code grant with a Transaction ' +
           'Code.' },
-  { path: '/bbs/keys/1', group: 'VC Issuance (OID4VCI)', name: 'BBS public key',
+  { path: '/bbs/keys/:id', group: 'VC Issuance (OID4VCI)',
+    name: 'BBS public key',
     specs: ['di-bbs'],
     what: 'The BLS12-381 key an ldp_vc proof is verified with, as a ' +
-          'Multikey. This is what a plain ldp_vc credential\'s ' +
-          'verificationMethod dereferences to.' },
+          'Multikey. `/bbs/keys/<kid>` is what a plain ldp_vc credential\'s ' +
+          'verificationMethod dereferences to, for every live generation of ' +
+          'the realm\'s BBS key (current, next, and retired ones within ' +
+          'their grace — the key rotates with the realm\'s signing keys, ' +
+          '#49); `/bbs/keys/1` is the current one. 404 for any other.' },
 
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',

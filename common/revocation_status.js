@@ -4169,6 +4169,10 @@ function registerCaches() {
     bound: 'Enforced: pki.revocationCrlCacheEntries, the oldest write ' +
       'dropped and fetched again when next needed.',
     lifetime: crlAge,
+    // What `cached()` deletes when it reads one (#49 P5).
+    eject: cacheRegistry.mapEjector(crlCache, function (e, key, now) {
+      return !e || e.expiresAt <= now;
+    }),
     entries: function () {
       return timedRows(crlCache, function (e) {
         return e.expiresAt;
@@ -4192,6 +4196,10 @@ function registerCaches() {
         config.value('pki.revocationOcspMaxAgeS') + ' s); the oldest ' +
         'write goes first when full.';
     },
+    // What `cached()` deletes when it reads one (#49 P5).
+    eject: cacheRegistry.mapEjector(ocspCache, function (e, key, now) {
+      return !e || e.expiresAt <= now;
+    }),
     entries: function () {
       return timedRows(ocspCache, function (e) {
         return e.expiresAt;
@@ -4211,6 +4219,10 @@ function registerCaches() {
     bound: 'Enforced: pki.revocationCrlCacheEntries, the oldest write ' +
       'dropped and fetched again when next needed.',
     lifetime: crlAge,
+    // What `cached()` deletes when it reads one (#49 P5).
+    eject: cacheRegistry.mapEjector(certCache, function (e, key, now) {
+      return !e || e.expiresAt <= now;
+    }),
     entries: function () {
       return timedRows(certCache, function (e) {
         return e.expiresAt;
@@ -4236,6 +4248,10 @@ function registerCaches() {
         config.value('pki.revocationFailureRetryS') + ' s) after the ' +
         'failure; zero remembers nothing.';
     },
+    // What `failedRecently()` deletes when it reads one (#49 P5).
+    eject: cacheRegistry.mapEjector(failures, function (e, key, now) {
+      return !e || e.until <= now;
+    }),
     entries: function () {
       return timedRows(failures, function (e) {
         return e.until;

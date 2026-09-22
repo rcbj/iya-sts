@@ -943,6 +943,12 @@ class RequestWorker {
                ', coordinating ' +
                !!(state.coordinating && state.coordinating.coordinating) +
                '.');
+      // THE SCHEDULER, IN PER-PROCESS MODE (#49): this worker runs the jobs
+      // that clean what only it holds, and never a cluster job — those run
+      // on the scheduler's leader, which is a front process. Required here
+      // and not at the top, for `service_state`'s reason above: nothing of
+      // the stack is loaded before the stack is.
+      require('../cluster/scheduler').start('per-process');
       this.bindSocket();
     }).catch((err) => {
       log.error(errorCodes.tag('STS-WORKER-0019') +
@@ -1337,12 +1343,8 @@ class RequestWorker {
     // (The OID4VCI request-encryption key used to arrive here, into the
     // environment. It is a member of every realm's key set since 2026-09-12,
     // so it arrives in `message.keys` below with the rest of each set.)
-    //
-    // The BBS pair, same channel and same reason — helpers.js reads it the
-    // first time anything issues a Data Integrity proof.
-    if (message.bbsKeyPair) {
-      process.env.STS_BBS_KEYPAIR = message.bbsKeyPair;
-    }
+    // The BBS pair used to arrive here too; it is a member of every realm's
+    // key set since 2026-09-22 (#49 P5), so it arrives in `message.keys`.
     (message.keys || []).forEach(function (one: any) {
       if (one && one.realm && one.blob) {
         keystore.adoptShared(one.realm, one.blob);

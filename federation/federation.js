@@ -1582,6 +1582,19 @@ const releaseIndexCount = cacheRegistry.register({
       ' ms) after it was built, or at once when a federation ' +
       'relationship is written through this service.';
   },
+  // A realm's index past its lifetime, which `releaseIndexNow()` would
+  // rebuild: dropped, and rebuilt at the next use (#49 P5).
+  eject: function (now) {
+    let dropped = 0;
+    const ttl = releaseIndexTtlMs();
+    releaseIndexes.existing().forEach(function (held) {
+      if (held && held.index && now - held.at >= ttl) {
+        held.index = null;
+        dropped += 1;
+      }
+    });
+    return dropped;
+  },
   entries: function () {
     const out = [];
     releaseIndexes.existing().forEach(function (held, id) {

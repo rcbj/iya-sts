@@ -203,6 +203,8 @@ import secretsAdmin = require('../admin-ui/secrets_admin');
 import cachesAdmin = require('../admin-ui/caches_admin');
 // THE STATUS LISTS' PAGE (#38's follow-ups), for its two functions (rule 7).
 import vcStatusAdmin = require('../admin-ui/vc_status_admin');
+// The scheduler's page (#49): its view and its two actions, rule 7.
+import schedulerAdmin = require('../admin-ui/scheduler_admin');
 // The embedded protocol debugger's report (2026-09-13). A page module required
 // at 18 like the one above, and it reads the listener's status lazily, so this
 // require moves no route.
@@ -1841,6 +1843,149 @@ class AdminApi {
         })
       },
 
+      // ---------------------------------------------------------------------
+      // THE SCHEDULER (#49, 2026-09-22). `schedulerAdmin.schedulerView()` —
+      // the function the page's `?format=json` answers — and
+      // `schedulerAdmin.schedulerAction()`, the function its two forms post
+      // to. Nothing here reads the scheduler a second way.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/scheduler', tag: 'Service',
+        operationId: 'getScheduler',
+        summary: 'Every scheduled job, its last run and its next, or one run',
+        description: 'Without `run`: the scheduler\'s `leader` (`node`, ' +
+                     '`nodeName`, `host`, `pid`, `since`, `token`, ' +
+                     '`lastTickAt`, `live`, `clustered`, `thisProcess`), ' +
+                     'and one row in `jobs` for EVERY registered job, ' +
+                     'including one that is off — `id`, `title`, ' +
+                     '`describe`, `owner`, `kind` (`cluster` or ' +
+                     '`per-process`), `scope` (`service` or `realm`) and ' +
+                     '`realm`, `schedule` (`text`, `everyMs`, `setting`, ' +
+                     '`cron`, `manualOnly`), `state` (`enabled` or `off`) ' +
+                     'and `offReason`, `manual` (whether it may be run now), ' +
+                     '`lastRun` and `running` (a run: `runId`, `state`, ' +
+                     '`attempt`, `fenceAt`, `node`, `pid`, `startedAt`, ' +
+                     '`endedAt`, `durationMs`, `errorCode`, `why`), ' +
+                     '`queued` manual runs, `nextRunAt` (absolute, UTC), ' +
+                     '`nextRunInMs` (by the DATABASE\'s clock at the time of ' +
+                     'the request, so every node answers the same figure) ' +
+                     'and `nextRunState` (`scheduled`, `due`, `overdue`, ' +
+                     '`running`, `queued`, `manual-only` or `off`), and for ' +
+                     'a per-process job `processes[]`, one per node and ' +
+                     'process. Then the recent `runs`, newest first, ' +
+                     'filtered by `job` and `outcome` and answered in ' +
+                     '`runsPaging`, and the queued `commands`. With `run`: ' +
+                     'that run, as `detail`, or `found: false`. Everything is ' +
+                     'read from the store, so any node answers the same. A ' +
+                     'realm\'s own administrator sees the service jobs ' +
+                     'read-only and their own realm\'s rows only.',
+        mirrors: 'GET /admin/scheduler',
+        parameters: [
+          { name: 'run', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A run id, to answer that run.' },
+          { name: 'job', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only the runs of this job.' },
+          { name: 'outcome', in: 'query', required: false,
+            schema: { type: 'string', enum: ['succeeded', 'failed',
+                                             'abandoned', 'running',
+                                             'queued'] },
+            description: 'Only the runs in this state.' }
+        ].concat(self.pagingParameters()),
+        responseDescription: 'The scheduler\'s report, or one run.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `nowMs`, `clock`, `answeredBy`, ' +
+                       '`leader`, `tickS`, `enabled`, ' +
+                       '`unknownDisabledIds`, `jobs`, `runs`, ' +
+                       '`runsPaging` and `commands`; or `run`, `found` and ' +
+                       '`detail`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API scheduler endpoint.");
+          // Awaited, and the handler catches: Express 4 does not look at
+          // what a handler returns (the database report's reason).
+          schedulerAdmin.schedulerView(req, req.query).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API scheduler endpoint.");
+          }).catch(function (e) {
+            errorCodes.mark(res, 'STS-SCHED-0013');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The scheduler report could not be built: ' +
+              (e && e.message ? e.message : String(e))] });
+            log.debug("Leaving the management API scheduler endpoint. It " +
+                      "threw.");
+          });
+          log.debug("Leaving handler().");
+        } },
+
+      { method: 'POST', route: BASE + '/scheduler/:action', tag: 'Service',
+        mirrors: 'POST /admin/scheduler',
+        handler: function (req, res) {
+          log.debug("Entering the management API scheduler action.");
+          const result = schedulerAdmin.schedulerAction(req,
+            self.withAction(req, parseBody(req)),
+            'the management API at /admin-api/scheduler');
+          if (!result.ok) {
+            errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0012');
+            self.sendJson(res, result.status || 400,
+                          { ok: false, errors: result.errors });
+            log.debug("Leaving the management API scheduler action. " +
+                      "Refused.");
+            return;
+          }
+          self.sendJson(res, 202, result);
+          log.debug("Leaving the management API scheduler action.");
+        },
+        actions: [
+          { action: 'run', operationId: 'runSchedulerJob',
+            summary: 'Queue a run of one job now',
+            description: 'Writes a queued run of `job` (in `realm`, for a ' +
+                         'realm-scoped job) that the scheduler\'s leader ' +
+                         'starts at its next tick, wherever this request ' +
+                         'was answered — 202 with its `runId` and `href`. A ' +
+                         'second request while one is queued answers the ' +
+                         'same run (`alreadyQueued`). Refused 404 for an ' +
+                         'unknown job, 400 for a job that runs on its ' +
+                         'schedule only, is off (with the reason: its ' +
+                         'setting, scheduler.enabled, or development mode), ' +
+                         'or names a realm that does not exist; 403 to a ' +
+                         'realm administrator for a service job or another ' +
+                         'realm.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                job: { type: 'string',
+                       description: 'The job `id`, as GET ' +
+                                    '/admin-api/scheduler lists it.' },
+                realm: { type: 'string',
+                         description: 'The realm, for a realm-scoped job; ' +
+                                      'the one the request is in otherwise.' },
+                params: { type: 'object',
+                          description: 'Parameters the job reads, where it ' +
+                                       'reads any.' }
+              },
+              required: ['job'],
+              examples: [{ job: 'pki.crl-directory-refresh' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run.' },
+          { action: 'step-down', operationId: 'stepDownScheduler',
+            summary: 'Ask the scheduler\'s leader to hand over',
+            description: 'Writes a command the leader obeys at its next ' +
+                         'tick: it gives up the `ops.scheduler` lease and ' +
+                         'does not ask for it again for three heartbeats, ' +
+                         'so another node takes the lead. A planned ' +
+                         'handover, and a way to drain a node. 202; 400 ' +
+                         'when the service is not clustered ' +
+                         '(STS-SCHED-0010). A service operation.',
+            requestBodyRequired: false,
+            requestBody: { type: 'object', properties: {},
+                           additionalProperties: false, examples: [{}] },
+            responseDescription: 'The command, and who led when it was ' +
+                                 'asked.' }
+        ]
+      },
+
       { method: 'GET', path: BASE + '/caches', tag: 'Service',
         operationId: 'getCaches',
         summary: 'Every cache this service holds, or one cache\'s entries',
@@ -2178,6 +2323,30 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API key export endpoint.");
           const body = self.withAction(req, parseBody(req));
+          // ROTATE AND EMERGENCY (#48): the console's `/admin/keys/rotate`,
+          // through the one action it posts to. `crypto_metadata.ts` is
+          // required HERE, at the request, because it is 20a in the order and
+          // this module is 19.
+          if (body.action === 'rotate' || body.action === 'emergency') {
+            const result = require('../admin-ui/crypto_metadata')
+              .keysAction(req, body, 'the management API at ' +
+                          '/admin-api/keys/' + body.action);
+            if (!result.ok) {
+              errorCodes.mark(res, result.errorCode || 'STS-API-0014');
+              self.sendJson(res, result.status || 400,
+                            { ok: false, errors: result.errors });
+              log.debug("Leaving the management API key endpoint. Refused.");
+              return;
+            }
+            self.sendJson(res, 202, { ok: true, accepted: true,
+              runId: result.runId, emergency: result.emergency,
+              units: result.units, message: result.message,
+              run: BASE + '/scheduler?run=' +
+                   encodeURIComponent(result.runId) });
+            log.debug("Leaving the management API key endpoint. Queued " +
+                      result.runId + ".");
+            return;
+          }
           if (body.action !== 'export') {
             // THE SENTENCE IS THE SHAPE THE SUITE READS, and that is not a
             // formatting preference: `sts_admin_api_operations.js` matches
@@ -2188,7 +2357,7 @@ class AdminApi {
             errorCodes.mark(res, 'STS-API-0014');
             self.sendJson(res, 400, { ok: false, errors: [
               'Unknown action "' + body.action + '". The actions here are: ' +
-              'export.'] });
+              'export, rotate, emergency.'] });
             log.debug("Leaving the management API key export endpoint. " +
                       "Unknown action.");
             return;
@@ -2291,7 +2460,57 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The exported files.',
-            responseSchema: { $ref: '#/components/schemas/KeyExport' } }
+            responseSchema: { $ref: '#/components/schemas/KeyExport' } },
+          // ROTATE AND EMERGENCY (#48, 2026-09-22): /admin/keys/rotate's two
+          // forms. NO EXAMPLE, deliberately: an example is what
+          // `sts_admin_api_operations.js` drives, and an emergency signs a
+          // realm out; `sts_key_rotation.js` drives both, in a realm of its
+          // own, and the operations job's NOT_DRIVEN_HERE says so.
+          { action: 'rotate', operationId: 'rotateSigningKeys',
+            summary: 'Rotate the realm\'s signing keys now',
+            description: 'Queues a run of the scheduler job ' +
+                         '`signing.rotate-now` and answers **202** with its ' +
+                         '`runId` (follow it at `/admin-api/scheduler?run=`). ' +
+                         'Each named unit — or every unit and the ' +
+                         'refresh-token keys, for `units` empty or `"all"` — ' +
+                         'has its next key promoted; the key it replaces goes ' +
+                         'on verifying through its grace. An unknown unit is ' +
+                         '400 (STS-KEYS-0065).',
+            requestBody: {
+              type: 'object',
+              properties: {
+                units: { type: 'array', items: { type: 'string' },
+                         description: 'Units from GET /admin-api/keys ' +
+                                      '`rotation.units`, e.g. `jose:RS256`.' }
+              },
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run: `runId`, `units`, and ' +
+                                 '`run`, the address to follow it at.' },
+          { action: 'emergency', operationId: 'rotateSigningKeysEmergency',
+            summary: 'Rotate the realm\'s signing keys in an EMERGENCY',
+            description: 'For keys presumed compromised. Queues ' +
+                         '`signing.rotate-now` with the emergency flag and ' +
+                         'answers **202**: every key of every named unit ' +
+                         '(or all) is replaced with a NEW key — not the ' +
+                         'published next one — with no grace; their ' +
+                         'certificates are revoked for keyCompromise; the ' +
+                         'refresh-token keys are replaced; and every session ' +
+                         'of the realm is ended, with CAEP session-revoked ' +
+                         'and RISC sessions-revoked. Everything signed before ' +
+                         'it stops verifying at once. `confirm` must be ' +
+                         '`compromised` (STS-KEYS-0066 otherwise).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                confirm: { type: 'string', enum: ['compromised'] },
+                units: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['confirm'],
+              additionalProperties: false
+            },
+            responseDescription: 'The queued run, as for `rotate`.' }
         ] },
 
       // ---------------------------------------------------------------------
@@ -7995,6 +8214,34 @@ class AdminApi {
             responseDescription: 'The new secret in `clientSecret`, whether ' +
                                  'one was replaced, and the application as ' +
                                  'it now stands.' },
+
+          // ROTATION WITH AN OVERLAP (#49 P5, 2026-09-22).
+          { action: 'rotate-secret',
+            operationId: 'rotateApplicationClientSecret',
+            summary: 'Mint a new client secret, keeping the old one working ' +
+                     'for an overlap',
+            description: 'Exactly `regenerate-secret`, except that the ' +
+                         'secret it replaces goes on authenticating at the ' +
+                         'token endpoint until ' +
+                         '`oauth2.clientSecretOverlapS` has passed (a week ' +
+                         'by default) — kept on the entry as ' +
+                         '`oauthClientSecretPrevious` and ' +
+                         '`oauthClientSecretPreviousUntil`, and cleared by ' +
+                         'the scheduler job `oauth2.client-secret-expiry` ' +
+                         'after it — so the client can change over without ' +
+                         'an outage. With the overlap at 0 it is a ' +
+                         'regeneration.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'my-web-app' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new secret in `clientSecret`, and ' +
+                                 '`overlapUntil`: when the old one stops ' +
+                                 'working (ms).' },
 
           // /admin/applications/new's *Generate Secret* button (2026-09-18).
           { action: 'generate-secret',
@@ -15767,9 +16014,10 @@ class AdminApi {
         // ---------------------------------------------------------------------
         let claims = null;
         try {
-          const certPem = realms.run(realms.get(realms.DEFAULT_ID),
-                                     function () { return STS.certPem; });
-          claims = stsCrypto.verifyJws(presented, certPem);
+          // Any generation of the DEFAULT realm's key (#42).
+          claims = realms.run(realms.get(realms.DEFAULT_ID), function () {
+            return helpers.verifyOwnJws(presented);
+          });
         } catch (e) {
           log.debug("Caught in a callback in module scope: " +
                     ((e && e.message) || e));
@@ -15795,7 +16043,7 @@ class AdminApi {
         let tokenRealm = realms.DEFAULT_ID;
         if (!claims && realms.currentId() !== realms.DEFAULT_ID) {
           try {
-            claims = stsCrypto.verifyJws(presented, STS.certPem);
+            claims = helpers.verifyOwnJws(presented);
             tokenRealm = realms.currentId();
           } catch (e) {
             log.debug("Caught in a callback in module scope: " +
@@ -15986,6 +16234,11 @@ class AdminApi {
             return self.sendJson(res, 403, { error: 'forbidden',
                                              errors: [realmRefusal.detail] });
           }
+          // SAID ON THE RESPONSE (#49): a realm's own token is that realm's
+          // administrator, and a view that shows several realms' rows — the
+          // scheduler's — confines itself by this, as it does by a realm
+          // administrator's console session.
+          res.locals.realmTokenOf = tokenRealm;
         }
         const held = roles.rolesOf({ kind: 'application', name: who,
                                      authenticated: true, scopes: scopes });

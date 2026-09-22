@@ -516,6 +516,12 @@ const signedMetadataCount = cacheRegistry.register({
       config.value('oauth2.signedMetadataCacheS') + ' s) after signing, ' +
       'per realm; the oldest goes first when full.';
   },
+  // A document past `until`, which `signedMetadata()` would sign again
+  // (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, signedMetadataCache,
+    function (held: Json, key: unknown, now: number): boolean {
+      return !(held && Number(held.until) > now);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmRows(
       realms.list().map(function (r: { id: string }): string {
@@ -618,6 +624,11 @@ const redeemedCodesCount = cacheRegistry.register({
   lifetime: function (): string {
     return 'One code lifetime after the code would have expired.';
   },
+  // What `forgetStaleRedemptions()` drops, in every realm (#49 P5).
+  eject: cacheRegistry.realmMapEjector(realms, redeemedCodes,
+    function (done: Json, code: unknown, now: number): boolean {
+      return Number(done && done.forget) < now;
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, redeemedCodes,
       function (done: Json, code: unknown): Json {
@@ -1583,6 +1594,12 @@ class OAuth2Server {
                                  'id_token token', 'code id_token token'],
       // --- RECOMMENDED / OPTIONAL ---
       jwks_uri: at + '/oauth2/jwks',
+      // NON-SPEC (#42, D8): the realm's public crypto metadata document —
+      // every signer generation, its chain, its algorithms and the rotation
+      // policy — at the realm's own base, since keys are the realm's and not
+      // a named authorization server's. A member no specification defines,
+      // which RFC 8414 section 2 lets a client ignore.
+      crypto_metadata_uri: base + '/crypto/metadata.json',
       registration_endpoint: at + '/oauth2/register',
       // `address` and `phone` were listed here and are gone: OIDC Core section
       // 5.4 makes each of these scopes a request for a NAMED set of claims, and
@@ -2471,7 +2488,30 @@ class OAuth2Server {
         // one after it free. Publishing them lazily one at a time would be
         // worse: a client that cached the JWKS before a key existed would be
         // missing exactly the key it later needs.
-        }].concat(signingKeys.map(function (k) { return k.publicJwk; })))
+        }].concat(signingKeys.map(function (k) { return k.publicJwk; }))
+        // THE STANDBY KEY GENERATIONS (2026-09-22, #42), after every current
+        // key: each unit's `next` key, published AHEAD of its promotion so a
+        // relying party holds it before it signs anything, and every retired
+        // key still in its grace, so what it signed goes on verifying. An RSA
+        // one carries its own chain, from its own generation slot.
+          .concat(helpers.ownRsaCertificates('jose')
+            .filter(function (one: any): boolean {
+              return one.role !== 'current';
+            }).map(function (one: any): Json {
+              const jwk: any = crypto.createPublicKey(one.certPem)
+                .export({ format: 'jwk' });
+              return { kty: 'RSA', use: 'sig', kid: one.kid, n: jwk.n,
+                       e: jwk.e,
+                       x5c: [forX5c(one.certPem)].concat(
+                         (one.chainPem || []).map(forX5c)) };
+            }))
+          .concat(helpers.standbyOf(STS).filter(function (one: any): boolean {
+            return one.kind !== 'rsa' && one.useCase === 'jose' &&
+                   (one.role === 'next' || !(Number(one.retiredUntil) > 0) ||
+                    Number(one.retiredUntil) > Date.now());
+          }).map(function (one: any): Json {
+            return one.publicJwk;
+          })))
         // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101 section 6.1,
         // 2026-09-13), LAST — after every signing key, for the ordering rule
         // above — and marked `use: "enc"`, which is what tells a client these
@@ -6931,7 +6971,7 @@ class OAuth2Server {
     const { stsCrypto, log, STS } = this.deps;
     log.debug("Entering OAuth2Server.tokenFailure().");
     try {
-      stsCrypto.verifyJws(token, STS.certPem);
+      helpers.verifyOwnJws(token);
       log.debug("Leaving OAuth2Server.tokenFailure(). It verifies after all.");
       return '';
     } catch (e) {
@@ -9170,9 +9210,11 @@ class OAuth2Server {
         // DECRYPTED FIRST, then verified exactly as it always was. `open()`
         // refuses an unencrypted refresh token outright — this service no
         // longer issues one — and names the condition in its message.
-        claims = stsCrypto.verifyJws(refreshTokenCrypto.open(
-            String(body.refresh_token || '')),
-                                     STS.certPem);
+        // Any generation of this realm's key (#42): a refresh token outlives
+        // a rotation, and verifies against the key that signed it until that
+        // key's grace ends.
+        claims = helpers.verifyOwnJws(refreshTokenCrypto.open(
+            String(body.refresh_token || '')));
       } catch (e) {
         const refreshCode = errorCodes.codeOf(e) || 'STS-OAUTH-0213';
         log.error(errorCodes.tag(refreshCode) +
@@ -10134,7 +10176,7 @@ class OAuth2Server {
       // this realm has revoked is not one it will exchange either.
       const strictExchange = !mode.exchangesUnverifiedTokens();
       try {
-        subject = stsCrypto.verifyJws(subjectJws, STS.certPem);
+        subject = helpers.verifyOwnJws(subjectJws);
       } catch (e) {
         log.debug("Caught in tokenGrant(): " + ((e && e.message) || e));
         if (strictExchange) {
@@ -10180,8 +10222,7 @@ class OAuth2Server {
         let actorClaims = null;
         if (strictExchange) {
           try {
-            actorClaims = stsCrypto.verifyJws(String(body.actor_token),
-                                              STS.certPem);
+            actorClaims = helpers.verifyOwnJws(String(body.actor_token));
           } catch (e) {
             log.debug("Caught in tokenGrant(): " + ((e && e.message) || e));
             log.info('oauth2: product mode refused a token exchange by "' +
@@ -11249,7 +11290,7 @@ class OAuth2Server {
     }
     let claims;
     try {
-      claims = stsCrypto.verifyJws(jws, STS.certPem);
+      claims = helpers.verifyOwnJws(jws);
     } catch (e) {
       // Expired, forged, or simply not one of ours.
       log.debug("Caught in OAuth2Server.introspectionOf(): the token does " +
@@ -11553,8 +11594,9 @@ class OAuth2Server {
         // An encrypted refresh token is opened first; `open()` throws for one
         // this realm cannot open, which RFC 7009 answers exactly as an invalid
         // token.
-        const claims = stsCrypto.verifyJws(refreshTokenCrypto.isEncrypted(token)
-          ? refreshTokenCrypto.open(token) : token, STS.certPem);
+        const claims = helpers.verifyOwnJws(
+          refreshTokenCrypto.isEncrypted(token)
+            ? refreshTokenCrypto.open(token) : token);
         if (claims.jti) stats.revoke(claims.jti, 'the RFC 7009 revocation ' +
                                                  'endpoint');
       } catch (e) {

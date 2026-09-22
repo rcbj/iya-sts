@@ -68,7 +68,9 @@ const MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // scope \0 realm \0 digest -> { reservation, expiresAt }
 const memory = new Map();
 let claimsSinceSweep = 0;
-let lastPurgeAt = 0;
+// The database sweep's scheduler job (#49 P5): see ensurePurgeJob().
+const PURGE_JOB = 'cluster.claims-purge';
+let purgeJobRegistered = false;
 
 function store() {
   log.debug("Entering store().");
@@ -104,21 +106,53 @@ function sweepMemory(now) {
   log.debug("Leaving sweepMemory(). " + removed + " expired.");
 }
 
-function maybePurge(theStore) {
-  log.debug("Entering maybePurge().");
-  const now = Date.now();
-  if (now - lastPurgeAt < PURGE_INTERVAL_MS) {
-    log.debug("Leaving maybePurge(). Not due.");
+// THE DATABASE SWEEP IS A SCHEDULER JOB (#49 P5): `cluster.claims-purge`,
+// a CLUSTER job every PURGE_INTERVAL_MS — the claims are one table every
+// process shares, so one sweep for the cluster is enough. It was a purge
+// piggy-backed on the next claim in every process. Registered at the first
+// claim against a database, LAZILY: `cluster/scheduler.ts` requires this
+// module. An expired claim is still refused at the claim itself, whenever
+// the sweep last ran — that check is correctness, not housekeeping.
+function ensurePurgeJob() {
+  log.debug("Entering ensurePurgeJob().");
+  if (purgeJobRegistered) {
+    log.debug("Leaving ensurePurgeJob(). Registered.");
     return;
   }
-  lastPurgeAt = now;
-  Promise.resolve().then(function () {
-    return theStore.purgeClaims();
-  }).catch(function (e) {
-    log.warn(errorCodes.tag('STS-CLUSTER-0015') + 'cluster claims: sweeping ' +
-             'expired claims failed: ' + ((e && e.message) || e) + '.');
+  purgeJobRegistered = true;
+  const scheduler = require('./scheduler');
+  if (scheduler.job(PURGE_JOB)) {
+    log.debug("Leaving ensurePurgeJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: PURGE_JOB,
+    title: 'Expired claims sweep',
+    describe: 'Deletes the single-use claims whose lifetime has passed from ' +
+              'the table every node shares.',
+    owner: 'cluster/cluster_claims.js',
+    everyMs: function () {
+      return PURGE_INTERVAL_MS;
+    },
+    off: function () {
+      const theStore = store();
+      return theStore && typeof theStore.purgeClaims === 'function' ? ''
+        : 'no shared claims table in this process';
+    },
+    run: function () {
+      return Promise.resolve().then(function () {
+        return store().purgeClaims();
+      }).then(function (removed) {
+        return { removed: Number(removed) || 0 };
+      }, function (e) {
+        log.warn(errorCodes.tag('STS-CLUSTER-0015') + 'cluster claims: ' +
+                 'sweeping expired claims failed: ' +
+                 ((e && e.message) || e) + '.');
+        throw e;
+      });
+    }
   });
-  log.debug("Leaving maybePurge(). Started.");
+  log.debug("Leaving ensurePurgeJob().");
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +211,7 @@ function claim(opts) {
     log.debug("Leaving claim(). Claimed, in memory.");
     return Promise.resolve({ ok: true, handle: handle, claimedAt: now });
   }
-  maybePurge(theStore);
+  ensurePurgeJob();
   log.debug("Leaving claim(). Asking the store.");
   return Promise.resolve().then(function () {
     return theStore.claimOnce(scope, realmId, digest,
@@ -342,7 +376,6 @@ function reset() {
   log.debug("Entering reset().");
   memory.clear();
   claimsSinceSweep = 0;
-  lastPurgeAt = 0;
   log.debug("Leaving reset().");
 }
 

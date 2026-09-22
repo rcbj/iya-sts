@@ -612,7 +612,7 @@ async function run(t) {
     log.debug("Entering ownSha1().");
     log.debug("Leaving ownSha1().");
     return stsCrypto.signXml(xml, {
-      privateKeyPem: STS.privateKeyPem, certPem: STS.certPem,
+      privateKeyPem: STS.xml.privateKeyPem, certPem: STS.xml.certPem,
       sigAlg: kit.SHA1.rsa[0], what: 'a SHA-1 test document' });
   };
   const own = ownSha1(assertionXml(
@@ -657,7 +657,7 @@ async function run(t) {
   });
   const ownSha256 = stsCrypto.signXml(assertionXml(
     'https://idp.test', 'https://rp.test', '_o2'), {
-    privateKeyPem: STS.privateKeyPem, certPem: STS.certPem,
+    privateKeyPem: STS.xml.privateKeyPem, certPem: STS.xml.certPem,
     what: 'an ordinary test document' });
   t.check(wsfed.verifyAssertionSignature(ownSha256, 'Assertion').ok &&
           s11.verifySignature(ownSha256, 'Assertion').ok,

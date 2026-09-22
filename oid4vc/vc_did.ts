@@ -62,6 +62,7 @@ interface VcDidDeps {
   STS: typeof helpers.STS;
   baseUrlOf: typeof helpers.baseUrlOf;
   bbsKeyPair: typeof helpers.bbsKeyPair;
+  bbsGenerations: typeof helpers.bbsGenerations;
   signingKeyFor: typeof helpers.signingKeyFor;
   signingKeyForAsync: typeof helpers.signingKeyForAsync;
   stsKeysFor: typeof helpers.stsKeysFor;
@@ -145,6 +146,7 @@ class VcDid {
       STS: helpers.STS,
       baseUrlOf: helpers.baseUrlOf,
       bbsKeyPair: helpers.bbsKeyPair,
+      bbsGenerations: helpers.bbsGenerations,
       signingKeyFor: helpers.signingKeyFor,
       signingKeyForAsync: helpers.signingKeyForAsync,
       stsKeysFor: helpers.stsKeysFor,
@@ -293,6 +295,20 @@ class VcDid {
     // /oauth2/jwks publishes — so the two documents cannot describe different
     // keys. Nothing is added for RS256, which keeps the document exactly as it
     // was.
+    // EVERY LIVE GENERATION OF THE RSA KEY (#42): a credential outlives a
+    // rotation, so a verifier resolving this DID must find the retired key
+    // that signed it — and the `next` one, published ahead of its use.
+    helpers.ownRsaCertificates('jose').forEach(function (own: any): void {
+      if (own.role === 'current') {
+        return;
+      }
+      const jwk: any = crypto.createPublicKey(own.certPem)
+        .export({ format: 'jwk' });
+      methods.push({ id: did + '#' + own.kid, type: 'JsonWebKey2020',
+                     controller: did,
+                     publicKeyJwk: { kty: 'RSA', use: 'sig', alg: 'RS256',
+                                     kid: own.kid, n: jwk.n, e: jwk.e } });
+    });
     const signer = await this.didSignerAsync();
     if (signer.alg !== 'RS256' && signer.kid !== STS.kid) {
       const held = stsKeysFor();
@@ -304,6 +320,16 @@ class VcDid {
         methods.push({ id: did + '#' + signer.kid, type: 'JsonWebKey2020',
                        controller: did,
                        publicKeyJwk: extra.publicJwk });
+        // And that unit's live standby keys (#42), for the RSA key's reason.
+        helpers.standbyOf(held).forEach(function (one: any): void {
+          if (one.kind !== 'rsa' && one.alg === extra.alg &&
+              (one.crv || '') === (extra.publicJwk.crv || '') &&
+              (one.role === 'next' || !(Number(one.retiredUntil) > 0) ||
+               Number(one.retiredUntil) > Date.now())) {
+            methods.push({ id: did + '#' + one.kid, type: 'JsonWebKey2020',
+                           controller: did, publicKeyJwk: one.publicJwk });
+          }
+        });
       } else {
         log.error(errorCodes.tag('STS-VC-0043') +
                   'the ' + signer.alg + ' key credentials are signed with ' +
@@ -312,15 +338,22 @@ class VcDid {
       }
     }
     try {
-      const keys = await bbsKeyPair();
-      methods.push({
-        id: did + '#bbs-1',
-        type: 'Multikey',
-        controller: did,
-        // Same encoding as /bbs/keys/1: multibase base64url, which is "u" and
-        // then the raw compressed bytes. A BBS key has no registered JOSE kty,
-        // so it cannot be a publicKeyJwk however convenient that would be.
-        publicKeyMultibase: 'u' + bbs2023.bytesToB64u(keys.publicKey)
+      // EVERY LIVE GENERATION OF THE REALM'S BBS KEY (#49 P5), each named by
+      // its kid — the verification method an ldp_vc names — so a credential
+      // issued before a rotation still resolves here.
+      void bbsKeyPair;
+      const generations = await this.deps.bbsGenerations();
+      generations.forEach(function (one: any): void {
+        methods.push({
+          id: did + '#' + one.kid,
+          type: 'Multikey',
+          controller: did,
+          // Same encoding as /bbs/keys/<kid>: multibase base64url, which is
+          // "u" and then the raw compressed bytes. A BBS key has no
+          // registered JOSE kty, so it cannot be a publicKeyJwk however
+          // convenient that would be.
+          publicKeyMultibase: 'u' + bbs2023.bytesToB64u(one.publicKey)
+        });
       });
     } catch (e) {
       log.debug("Caught in VcDid.stsDidDocument(): " +

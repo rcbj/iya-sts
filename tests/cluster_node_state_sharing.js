@@ -14,7 +14,9 @@
 //      request workers, so `/bbs/keys/1` published a different key on each
 //      node and a bbs-2023 proof issued through one did not verify against the
 //      key resolved through the other (`ldp_vc_issuance`, `ldp_vc_refresh`,
-//      `vc_did`). Now a declared cluster secret: first writer wins.
+//      `vc_did`). It was a declared cluster secret from then until 2026-09-22
+//      (#49 P5); it is a member of each realm's key set now, which is what
+//      this section holds.
 //   2. THE PENDING ENROLMENTS. `credentials.js`'s pending TOTP secret,
 //      pending recovery-code set and pending security-key challenge were
 //      undeclared stores, so a setup begun on one node found nothing on the
@@ -157,7 +159,6 @@ async function node(role, storeFile, kekFile) {
   process.env.STS_KEYS_KEK_FILE = kekFile;
   process.env.STS_WORKERS_REQUEST_COUNT = '1';
   process.env.STS_WORKERS_DISPATCH = '*';
-  delete process.env.STS_BBS_KEYPAIR;
   const store = fileStore(storeFile);
   const keystore = require('../common/keystore');
   keystore.reset();
@@ -172,35 +173,31 @@ async function node(role, storeFile, kekFile) {
   config.setOverride('persistence.minted', true);
 
   // ---- 1. the BBS pair ----------------------------------------------------
+  // A MEMBER OF THE REALM'S KEY SET since 2026-09-22 (#49 P5), where it was
+  // the cluster secret `bbs-keypair`: it reaches every node and every worker
+  // the way the set does, so what is asserted here is that it IS on the set,
+  // travels in the serialised blob every node reads, and that the secret
+  // table no longer carries it.
   const persistence = require('../persistence/persistence');
   const helpers = require('../common/helpers');
   const clusterSecrets = require('../cluster/cluster_secrets');
   persistence.clusterStore = function () { return store; };
   await clusterSecrets.start(keystore);
-  out.bbsText = process.env.STS_BBS_KEYPAIR || '';
   const pair = await helpers.bbsKeyPair();
   out.bbsPublic = Buffer.from(pair.publicKey).toString('hex');
-  // THE CONTROL: the arrangement before this fix — a pair this process makes
-  // for itself. Two nodes doing this must disagree, or section 1 proves
-  // nothing.
-  out.bbsOwn = Buffer.from(
-    helpers.bbsKeyPairFromText(await helpers.newBbsKeyPairText()).publicKey)
-    .toString('hex');
-  out.bbsSource = (clusterSecrets.describe().secrets.filter(function (one) {
+  const set = helpers.stsKeysFor();
+  out.bbsOnSet = !!(set.bbsKey && Buffer.from(set.bbsKey.publicKey)
+    .toString('hex') === out.bbsPublic);
+  const blob = keystore.serialise(set);
+  out.bbsInBlob = !!(blob.bbsKey && Buffer.from(blob.bbsKey.publicKey,
+                                                'base64')
+    .toString('hex') === out.bbsPublic);
+  out.bbsUnit = helpers.signingUnitsOf(set).some(function (u) {
+    return u.unit === helpers.BBS_UNIT;
+  });
+  out.bbsSecretGone = !clusterSecrets.describe().secrets.some(function (one) {
     return one.name === 'bbs-keypair';
-  })[0] || {}).source;
-  if (role === 'a') {
-    // A VARIABLE THAT CHANGES AFTER A PAIR IS HELD IS ADOPTED: the case where
-    // something issued before the store's value arrived.
-    const other = await helpers.newBbsKeyPairText();
-    const before = process.env.STS_BBS_KEYPAIR;
-    process.env.STS_BBS_KEYPAIR = other;
-    out.adoptsChange = Buffer.from((await helpers.bbsKeyPair()).publicKey)
-      .equals(Buffer.from(helpers.bbsKeyPairFromText(other).publicKey));
-    process.env.STS_BBS_KEYPAIR = before;
-    out.adoptsBack = Buffer.from((await helpers.bbsKeyPair()).publicKey)
-      .toString('hex') === out.bbsPublic;
-  }
+  });
 
   // ---- 2 and 3: minted rows ----------------------------------------------
   const minted = require('../persistence/persistence_minted');
@@ -342,30 +339,22 @@ function run(t) {
     const a = runNode(t, 'a', dir);
     const b = runNode(t, 'b', dir, { PROBE_HANDLE: a.codesHandle || '' });
 
-    t.log.info('=== 1. one BBS key pair for every node ===');
+    t.log.info('=== 1. the BBS key is a member of the realm\'s key set ===');
     t.check(a.sealed && b.sealed && a.mintedEnabled && b.mintedEnabled,
             'both nodes hold the one real key-encryption key and write ' +
             'minted state — the arrangement a cluster node has',
             JSON.stringify({ a: [a.sealed, a.mintedEnabled],
                              b: [b.sealed, b.mintedEnabled] }));
-    t.check(!!a.bbsPublic && a.bbsPublic === b.bbsPublic,
-            'TWO NODES AGAINST ONE STORE PUBLISH ONE BBS PUBLIC KEY — what ' +
-            '/bbs/keys/1 and the did:web document answer on either');
-    t.check(a.bbsSource === 'store' && b.bbsSource === 'store',
-            'and each read it from the store rather than making its own',
-            a.bbsSource + ' / ' + b.bbsSource);
-    t.check(!!a.bbsOwn && a.bbsOwn !== b.bbsOwn,
-            'CONTROL: a pair each node makes for itself differs between ' +
-            'them, which is what every node published before this fix');
-    const raw = fs.readFileSync(path.join(dir, 'store.json'), 'utf8');
-    const stored = JSON.parse(raw).secrets['bbs-keypair'] || '';
-    t.check(!!stored && !!a.bbsText && stored !== a.bbsText &&
-            raw.indexOf(a.bbsText) < 0,
-            'what reached the store is the sealed pair, never its text');
-    t.check(a.adoptsChange === true && a.adoptsBack === true,
-            'A PAIR HELD BEFORE THE STORE\'S VALUE ARRIVED IS REPLACED: ' +
-            'helpers.bbsKeyPair() adopts STS_BBS_KEYPAIR whenever it changes',
-            JSON.stringify([a.adoptsChange, a.adoptsBack]));
+    t.check(a.bbsOnSet && b.bbsOnSet && a.bbsInBlob && b.bbsInBlob,
+            'THE BBS PAIR IS ON THE REALM\'S KEY SET AND IN THE BLOB EVERY ' +
+            'NODE AND WORKER READS (#49 P5) — so it is agreed the way every ' +
+            'member is, and rotates with the set',
+            JSON.stringify({ a: [a.bbsOnSet, a.bbsInBlob],
+                             b: [b.bbsOnSet, b.bbsInBlob] }));
+    t.check(a.bbsUnit && b.bbsUnit,
+            'and it is the signing unit bbs:BBS, with generations');
+    t.check(a.bbsSecretGone && b.bbsSecretGone,
+            'and the cluster secret bbs-keypair that carried it is gone');
 
     t.log.info('=== 2. an enrolment begun on A is finished on B ===');
     t.check((a.began || []).every(Boolean),

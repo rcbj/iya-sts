@@ -856,7 +856,11 @@ async function everyDocumentedExampleIsAccepted(doc) {
   for (const row of rows) {
     const reply = await post(row.path, row.example);
     const errors = (reply.body && reply.body.errors) || [];
-    if (reply.status === 200 && reply.body && reply.body.ok !== false) {
+    // 202 IS ACCEPTED TOO (2026-09-22): an operation that QUEUES a run on
+    // the scheduler (`/scheduler/run`, #49) answers 202 with the run's id,
+    // which is RFC 9110's "accepted for processing" and not a refusal.
+    if ((reply.status === 200 || reply.status === 202) && reply.body &&
+        reply.body.ok !== false) {
       accepted++;
       await theResourceReadsBack(row.path, row.operationId);
       continue;
@@ -4959,7 +4963,17 @@ async function settleThenStatus(previous) {
 // The table stays rather than the constant being deleted, because the next
 // operation that cannot be driven here needs somewhere to say why — and an
 // empty object is a much better prompt for that than no object at all.
-const NOT_DRIVEN_HERE = {};
+const NOT_DRIVEN_HERE = {
+  // SIGNING KEY ROTATION (#48, 2026-09-22). Driven by `sts_key_rotation.js`,
+  // end to end and in a realm of its own: a rotation is checked against the
+  // JWKS, the crypto metadata document and a token signed before it, which a
+  // walk that only asks for a 2xx could not do — and an EMERGENCY signs every
+  // session of its realm out, which is not a call to make in passing here.
+  "POST /keys/rotate": "sts_key_rotation.js drives it, and checks what it " +
+    "did",
+  "POST /keys/emergency": "sts_key_rotation.js drives it in a throwaway " +
+    "realm; an emergency ends every session of the realm it runs in"
+};
 
 function everyDocumentedOperationWasDriven(doc) {
   log.debug("Entering everyDocumentedOperationWasDriven().");

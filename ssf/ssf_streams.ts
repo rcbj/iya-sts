@@ -537,9 +537,13 @@ class SsfStreams {
       return null;
     }
     const allowed = {};
-    events.SSF_EVENTS.forEach((row) => {
-      allowed[row.uri] = true;
-    });
+    // SSF's own two, and this service's own signing-key event (#42, D4),
+    // which is about the transmitter rather than anybody an entry could be
+    // limiting a stream about.
+    (events.SSF_EVENTS as any[]).concat(events.STS_EVENTS)
+      .forEach((row: any) => {
+        allowed[row.uri] = true;
+      });
     values.forEach((value) => {
       const word = String(value).trim();
       const lower = word.toLowerCase();

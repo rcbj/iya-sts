@@ -385,6 +385,27 @@ const ACTIONS = [
   { action: 'logout.backchannel', category: 'session',
     label: 'A back-channel Logout Token reached a relying party, or finally ' +
            'did not' },
+  // THE SCHEDULER (2026-09-22, #49). A row per run when it finishes —
+  // succeeded, failed or abandoned — and one when a run is queued by hand;
+  // never one per tick. `cluster/scheduler.ts`.
+  { action: 'scheduler.run', category: 'service',
+    label: 'A scheduled job ran, was queued by hand, or was taken over' },
+  { action: 'scheduler.step-down', category: 'service',
+    label: 'The scheduler\'s leader was asked to stand down' },
+  // SIGNING KEY ROTATION (2026-09-22, #42). One row per act, however many
+  // units it moved: `common/signing_rotation.ts`.
+  { action: 'keys.rotate', category: 'service',
+    label: 'A realm\'s signing keys were rotated' },
+  { action: 'keys.rotate.emergency', category: 'service',
+    label: 'A realm\'s signing keys were rotated in an EMERGENCY: ' +
+           'certificates revoked for keyCompromise, sessions ended' },
+  // CLIENT-SECRET EXPIRY (#49 P5): the daily sweep's two warnings.
+  { action: 'application.secret-expiring', category: 'admin',
+    label: 'An application\'s client secret expires soon' },
+  { action: 'application.secret-expired', category: 'admin',
+    label: 'An application\'s client secret has expired' },
+  { action: 'keys.retire', category: 'service',
+    label: 'Retired signing keys past their grace were dropped' },
 
   // The four the request that started this feature named, plus the two that
   // fall out of the same operations on something that is not a person. The

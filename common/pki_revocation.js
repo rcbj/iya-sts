@@ -602,6 +602,22 @@ function setDirectory(hooks) {
   return true;
 }
 
+// The directory installed now, or null — for a test that installs its own and
+// must put back what was there (tests/CLAUDE.md, process-wide state).
+function currentDirectory() {
+  log.debug('Entering currentDirectory().');
+  log.debug('Leaving currentDirectory().');
+  return directory;
+}
+
+// Puts back what currentDirectory() answered, null included — which
+// setDirectory() refuses, and which a test that found none must restore.
+function restoreDirectory(hooks) {
+  log.debug('Entering restoreDirectory().');
+  directory = hooks || null;
+  log.debug('Leaving restoreDirectory().');
+}
+
 function directoryBaseFor(scopeId) {
   log.debug("Entering directoryBaseFor().");
   if (directory) {
@@ -658,6 +674,8 @@ module.exports = {
   scopeFromSegment: scopeFromSegment,
   httpBase: httpBase,
   setDirectory: setDirectory,
+  currentDirectory: currentDirectory,
+  restoreDirectory: restoreDirectory,
   directoryBaseFor: directoryBaseFor,
   // The CRL and OCSP halves below. Named here rather than assigned onto the
   // export after each half (#50, 2026-09-16): every one is a function
@@ -1132,14 +1150,19 @@ async function publishAll(scopeIds) {
 //     rebuilt or reissued is in the directory before anybody could have read
 //     a certificate naming it. Coalesced per scope, because one build is
 //     several saves.
-//   * **`keepDirectoryCurrent()`**, a timer at half the lifetime, so a list is
-//     replaced long before its `nextUpdate` whatever happened to the branch.
-//     Half rather than just under the whole, so a relying party that fetched
-//     a moment before the refresh still holds a list with time left on it.
+//   * **`keepDirectoryCurrent()`**, which registers the scheduler job
+//     `pki.crl-directory-refresh` (#49, 2026-09-22) at half the lifetime, so
+//     a list is replaced long before its `nextUpdate` whatever happened to
+//     the branch. Half rather than just under the whole, so a relying party
+//     that fetched a moment before the refresh still holds a list with time
+//     left on it.
 //
-// **THE TIMER IS UNREFERENCED** for the reason `keystore.js`'s purge timer is:
-// a process holding nothing else must be able to exit, and `npm test` must not
-// hang for half an hour because a module it required meant to refresh a CRL.
+// **IT WAS A `setInterval` IN EVERY PROCESS UNTIL 2026-09-22**, request
+// workers included and with no coordination at all — every process signed
+// and wrote every authority's list into the directory, which then carried
+// each write to every other process. It is a CLUSTER job now
+// (`cluster/scheduler.ts`): the scheduler's leader publishes once per slot,
+// and the directory's own replication carries the entries everywhere else.
 // ---------------------------------------------------------------------------
 const scopesToPublish = new Map();
 
@@ -1167,28 +1190,63 @@ function publishScopeSoon(scopeId) {
   log.debug("Leaving publishScopeSoon(). Scheduled.");
 }
 
-let refresher = null;
+// The scheduler job's id (`cluster/scheduler.ts`).
+const REFRESH_JOB = 'pki.crl-directory-refresh';
 
+let refreshRegistered = false;
+
+// The refresh's interval: half a list's lifetime, and never under a minute.
+function refreshIntervalMs() {
+  log.debug("Entering refreshIntervalMs().");
+  log.debug("Leaving refreshIntervalMs().");
+  return Math.max(60000, Math.floor(crlLifetimeMs() / 2));
+}
+
+// Registers the refresh with the scheduler, once per process. Answers true
+// the first time and false afterwards — `pki.start()` calls it on every start
+// and `tests/crl_directory_publication.js` holds it to that. Requires the
+// scheduler LAZILY, for `revocationExtensionsFor()`'s reason: this file is
+// loaded from inside `pki.js`, and `cluster/scheduler.ts` requires `helpers`.
 function keepDirectoryCurrent() {
   log.debug("Entering keepDirectoryCurrent().");
-  if (refresher || !directory) {
-    log.debug("Leaving keepDirectoryCurrent(). Already running, or no " +
-              "directory in this process.");
+  if (refreshRegistered) {
+    log.debug("Leaving keepDirectoryCurrent(). Already registered.");
     return false;
   }
-  const every = Math.max(60000, Math.floor(crlLifetimeMs() / 2));
-  refresher = setInterval(function () {
-    publishAll(pki.knownScopes()).catch(function (e) {
-      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the ' +
-                'directory copies of the CRLs could not be refreshed: ' +
-                ((e && e.message) || e) + '. An ldap:// distribution point ' +
-                'will serve a list past its nextUpdate.');
-    });
-  }, every);
-  if (typeof refresher.unref === 'function') {
-    refresher.unref();
+  refreshRegistered = true;
+  const scheduler = require('../cluster/scheduler');
+  if (scheduler.job(REFRESH_JOB)) {
+    log.debug("Leaving keepDirectoryCurrent(). Registered by another copy.");
+    return false;
   }
-  log.debug("Leaving keepDirectoryCurrent(). Every " + every + "ms.");
+  scheduler.register({
+    id: REFRESH_JOB,
+    title: 'CRL directory refresh',
+    describe: 'Signs every authority\'s CRL again and writes it into the ' +
+              'directory, at the ldap:// address every certificate names, ' +
+              'so no directory copy is ever past its nextUpdate.',
+    owner: 'common/pki_revocation.js',
+    everyMs: refreshIntervalMs,
+    off: function () {
+      if (!config.value('pki.publishCrlToDirectory')) {
+        return 'pki.publishCrlToDirectory is off';
+      }
+      return directory ? '' : 'no directory in this process';
+    },
+    run: function () {
+      return publishAll(pki.knownScopes()).then(function (published) {
+        return { published: published, scopes: pki.knownScopes().length };
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the ' +
+                  'directory copies of the CRLs could not be refreshed: ' +
+                  ((e && e.message) || e) + '. An ldap:// distribution ' +
+                  'point will serve a list past its nextUpdate.');
+        throw e;
+      });
+    }
+  });
+  log.debug("Leaving keepDirectoryCurrent(). Every " + refreshIntervalMs() +
+            "ms, on the scheduler.");
   return true;
 }
 

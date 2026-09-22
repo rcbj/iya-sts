@@ -442,9 +442,108 @@ function recordJwt(payload, signed, context) {
     nums.tokensForgotten++;
   }
   tokens.set(key, record);
+  ensureTokenPurgeJob();
   log.debug("Leaving recordJwt(). " + tokens.size + " token(s) held, " +
       nums.tokensForgotten + " " +
       "forgotten.");
+}
+
+// ---------------------------------------------------------------------------
+// CLEARING THE TRACKED TOKENS (#49 P5, the ticket's "cache clearing jobs
+// (tracked sessions, tracked tokens)"): `oauth2.expired-token-purge`, a
+// CLUSTER job every hour — the register is one replicated store — that
+// deletes, in every realm:
+//
+//   * a token record past its `exp`, the clock skew and
+//     `oauth2.expiredTokenRetentionS` — kept that long so /admin/tokens can
+//     still show a token as EXPIRED, which an operator asks about; and
+//   * a revoked jti whose token has expired: a revocation of a token that no
+//     verifier would accept anyway protects nothing. A revoked jti whose
+//     record is already gone is KEPT, because nothing here knows when that
+//     token expires.
+//
+// Registered at the first recording, lazily: the scheduler loads after this.
+// A record with no `exp` is a token that never expires and is never purged —
+// the size cap (MAX_TOKENS) still bounds the register.
+// ---------------------------------------------------------------------------
+const TOKEN_PURGE_JOB = 'oauth2.expired-token-purge';
+let tokenPurgeRegistered = false;
+
+function purgeExpiredTokens(nowMs) {
+  log.debug("Entering purgeExpiredTokens().");
+  const now = Number(nowMs) || Date.now();
+  const out = { records: 0, revocations: 0 };
+  realms.list().forEach(function (r) {
+    realms.run(r, function () {
+      const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
+      const keepMs = Number(config.value('oauth2.expiredTokenRetentionS')) *
+                     1000;
+      const map = tokens.realmMap(r.id);
+      const revoked = revokedJtis.realmMap(r.id);
+      const deadJtis = [];
+      const gone = [];
+      map.forEach(function (record, key) {
+        if (!record || !record.exp) {
+          return;
+        }
+        const deadAt = record.exp * 1000 + skewMs;
+        if (deadAt <= now && record.jti && revoked.has(record.jti)) {
+          deadJtis.push(record.jti);
+        }
+        if (deadAt + keepMs <= now) {
+          gone.push(key);
+        }
+      });
+      deadJtis.forEach(function (jti) {
+        revoked.delete(jti);
+      });
+      gone.forEach(function (key) {
+        map.delete(key);
+      });
+      out.records += gone.length;
+      out.revocations += deadJtis.length;
+    });
+  });
+  log.debug("Leaving purgeExpiredTokens(). " + JSON.stringify(out));
+  return out;
+}
+
+function ensureTokenPurgeJob() {
+  log.debug("Entering ensureTokenPurgeJob().");
+  if (tokenPurgeRegistered) {
+    log.debug("Leaving ensureTokenPurgeJob(). Registered.");
+    return;
+  }
+  tokenPurgeRegistered = true;
+  let scheduler = null;
+  try {
+    scheduler = require('../cluster/scheduler');
+  } catch (e) {
+    // A process without the scheduler — the parent project's in-process
+    // Kerberos tests load this file alone — keeps the size cap only.
+    log.debug("Caught in ensureTokenPurgeJob(): " + ((e && e.message) || e));
+    log.debug("Leaving ensureTokenPurgeJob(). No scheduler.");
+    return;
+  }
+  if (scheduler.job(TOKEN_PURGE_JOB)) {
+    log.debug("Leaving ensureTokenPurgeJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: TOKEN_PURGE_JOB,
+    title: 'Expired tracked tokens purge',
+    describe: 'Deletes the token records past their expiry and ' +
+              'oauth2.expiredTokenRetentionS, and the revocations of tokens ' +
+              'that have expired.',
+    owner: 'common/admin_stats.js',
+    everyMs: function () {
+      return 3600000;
+    },
+    run: function (ctx) {
+      return purgeExpiredTokens(ctx.nowMs());
+    }
+  });
+  log.debug("Leaving ensureTokenPurgeJob().");
 }
 
 setJwtRecorder(recordJwt);
@@ -4371,6 +4470,7 @@ module.exports = {
   SCIM_MAX_CLIENTS: SCIM_MAX_CLIENTS,
   revoke: revoke,
   restore: restore,
+  purgeExpiredTokens: purgeExpiredTokens,
   revokeWhere: revokeWhere,
   revokeArtifact: revokeArtifact,
   restoreArtifact: restoreArtifact,

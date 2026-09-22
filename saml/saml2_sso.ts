@@ -982,7 +982,13 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.implicitCertificatesFor().");
     const mine = String(spEntityId) === base + SP_PATH;
     log.debug("Leaving Saml2Sso.implicitCertificatesFor(). mock SP=" + mine);
-    return mine ? [String(STS.certB64 || '')] : [];
+    // The XML key's certificate, in EVERY live generation (#42): the mock
+    // SP signs with the current one, and a request signed a moment before a
+    // rotation still verifies.
+    return mine ? this.deps.helpers.ownRsaCertificates('xml')
+      .map(function (one: any): string {
+        return stsCrypto.stripPem(one.certPem);
+      }) : [];
   }
 
   // Assess one message's signature, write the audit row, and say whether to
@@ -1513,8 +1519,9 @@ class Saml2Sso {
     // answer.
     const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
-      privateKeyPem: STS.privateKeyPem,
-      certPem: STS.certPem,
+      // The XML signing key (#42, D2): `STS.xml`, not the JOSE key.
+      privateKeyPem: STS.xml.privateKeyPem,
+      certPem: STS.xml.certPem,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'prepend'
@@ -1548,8 +1555,9 @@ class Saml2Sso {
     const { stsCrypto } = this.deps;
     const { STS, log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.signQueryString().");
-    const signature = stsCrypto.signQueryString(queryString, STS.privateKeyPem,
-                                                sigAlg);
+    // The XML signing key (#42, D2), which the metadata publishes for it.
+    const signature = stsCrypto.signQueryString(queryString,
+                                                STS.xml.privateKeyPem, sigAlg);
     log.debug("Leaving Saml2Sso.signQueryString().");
     return signature;
   }
@@ -3822,9 +3830,10 @@ class Saml2Sso {
     let nameIdEl = firstByLocal(root, 'NameID');
     let decrypted = null;
     if (encryptedIdEl && !nameIdEl) {
-      decrypted = decryptElement(new XMLSerializer().serializeToString(
-          encryptedIdEl),
-                                 STS.privateKeyPem);
+      // Any of this realm's RSA keys, every live generation (#42).
+      decrypted = this.deps.helpers.decryptOwnElement(
+        new XMLSerializer().serializeToString(encryptedIdEl),
+        { logArtifact: this.deps.helpers.logArtifact });
       if (!decrypted.ok) {
         log.warn('saml2: a LogoutRequest from ' + (spEntityId || '(unnamed)') +
                  ' ' +
@@ -4079,8 +4088,20 @@ class Saml2Sso {
     const keyDescriptor = function (use) {
       log.debug("Entering keyDescriptor().");
       log.debug("Leaving keyDescriptor().");
+      // SIGNING: one KeyDescriptor per live generation of the XML key (#42)
+      // — the `next` key published ahead of its promotion, and a retired key
+      // still verifying. ENCRYPTION: the current key alone, so new encryption
+      // goes to it while something encrypted to a retired one still opens.
+      if (use === 'signing') {
+        return helpers.ownRsaCertificates('xml').map(function (one: any) {
+          return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
+            NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
+            stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
+            '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+        }).join('');
+      }
       return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo xmlns:ds="' +
-        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.certB64 +
+        NS_DS + '"><ds:X509Data><ds:X509Certificate>' + STS.xml.certB64 +
         '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
     };
 
@@ -4095,6 +4116,14 @@ class Saml2Sso {
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ID="' + id + '"' +
         ' entityID="' + xmlEscape(idpEntityId) + '">' +
+        // WHERE EVERY SIGNER GENERATION IS DESCRIBED (#42, D8), in an
+        // md:Extensions of this document's own namespace, which SAML
+        // metadata section 2.3.1 lets any consumer ignore. After the
+        // prepended ds:Signature and before the role, as the schema orders.
+        '<md:Extensions><cm:CryptoMetadataLocation xmlns:cm="' +
+          'urn:iya:sts:crypto-metadata:1">' +
+          xmlEscape(base + '/crypto/metadata.xml') +
+          '</cm:CryptoMetadataLocation></md:Extensions>' +
         '<md:IDPSSODescriptor' +
           // WantAuthnRequestsSigned FOLLOWS WHAT IS ENFORCED (#37). It was the
           // literal "false" while nothing verified a request signature, and
@@ -4355,10 +4384,8 @@ class Saml2Sso {
     // `ID`, `AssertionID`, `ResponseID` and `RequestID` natively, so there is
     // no list to add a name to and no duplicate to unshift onto it. That is
     // what removed the hazard this function used to carry a paragraph about.
-    const result = stsCrypto.verifyXmlSignature(xml, {
-      element: wanted,
-      certPem: STS.certPem
-    });
+    // Any generation of this realm's XML key (#42): helpers.verifyOwnXml().
+    const result = this.deps.helpers.verifyOwnXml(xml, { element: wanted });
     log.debug("Leaving Saml2Sso.verifyResponseSignature(). ok=" + result.ok);
     return result;
   }

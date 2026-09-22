@@ -3051,3 +3051,25 @@ refused all the same). The OID4VCI pre-authorized code grant in `tokenGrant()` i
 all of it in process — including a control store that answers every claim "yes", under
 which two concurrent redemptions of one code are both issued, and which fails six of its
 assertions.
+
+## CLIENT SECRETS EXPIRE AND ROTATE WITH AN OVERLAP (2026-09-22, #49 P5, rcbj's answer)
+
+**Expiry is enforced**: `client_auth.verify()` refuses a secret past its
+expiry — `oauthClientSecretExpiresAt` (seconds; RFC 7591's
+`client_secret_expires_at`), or the registration document's own — with
+`invalid_client` and `STS-OAUTH-0558`, in product mode
+(`mode.refusesExpiredClientSecrets()`); development accepts it and logs
+`STS-OAUTH-0559`. **A rotation keeps the old secret working**:
+`rotate-secret` on `/admin/applications` and `/admin-api/applications` mints
+a new one as `regenerate-secret` does and keeps the old as
+`oauthClientSecretPrevious` until `oauthClientSecretPreviousUntil`
+(`oauth2.clientSecretOverlapS`, a week), which `verify()` accepts until then
+and no later — the time alone ends it, before any sweep. `regenerate-secret`
+still ends the old secret at once. **Administrators are told**: the daily
+scheduler job `oauth2.client-secret-expiry` writes
+`application.secret-expiring` and `application.secret-expired` audit rows
+and a warning (`STS-REG-0166`), clears rotated-out secrets past their
+overlap, and `/admin/applications` marks each such entry. `verify()` reads
+these off the client's entry itself (the registry required lazily), so no
+caller threads them through. `tests/client_secret_rotation.js`.
+

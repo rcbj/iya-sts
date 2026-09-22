@@ -945,9 +945,10 @@ the list merge, the session rank).
   no longer a live member, are declared gone; a change is deleted only below the
   lowest remaining mark AND older than `persistence.changeLogRetentionS` (3600
   by default, 0 turns it off) by the database clock; with no reader, nothing.
-  Every five minutes, by the holder of the `ops.change-log-purge` lease in a
-  cluster, and by every front process outside one — two trims agree, because
-  the bound is the readers' and not the trimmer's.
+  Every five minutes, as the scheduler job `persistence.change-log-purge`
+  (#49 P5) — on the scheduler's leader in a cluster (it replaced the
+  `ops.change-log-purge` lease), and in every front process outside one — two
+  trims agree, because the bound is the readers' and not the trimmer's.
 * **A process declared gone that was only paused** finds its row missing on its
   next report and logs `STS-STORE-0057`: trimmed changes may be missing from what
   it holds, and a restart restores from the store.

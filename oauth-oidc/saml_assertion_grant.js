@@ -345,7 +345,8 @@ function decryptIfNeeded(xml) {
     log.debug('Leaving decryptIfNeeded(). Not encrypted.');
     return { ok: true, xml: String(xml), encrypted: false };
   }
-  const opened = stsCrypto.decryptElement(String(xml), STS.privateKeyPem);
+  // Any of this realm's RSA keys, every live generation (#42).
+  const opened = require('../common/helpers').decryptOwnElement(String(xml));
   if (!opened.ok) {
     log.debug('Leaving decryptIfNeeded(). It would not decrypt.');
     return { ok: false, why: 'this assertion arrived as a ' +
@@ -406,8 +407,8 @@ function read(xml) {
   let nameIdFormat = attr(nameId, 'Format');
   let idWasEncrypted = false;
   if (!nameId && encryptedId) {
-    const opened = stsCrypto.decryptElement(
-      new XMLSerializer().serializeToString(encryptedId), STS.privateKeyPem);
+    const opened = require('../common/helpers').decryptOwnElement(
+      new XMLSerializer().serializeToString(encryptedId));
     if (opened.ok) {
       const inner = new DOMParser().parseFromString(opened.xml, 'text/xml');
       const el = inner && inner.documentElement;

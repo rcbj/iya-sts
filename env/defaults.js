@@ -146,6 +146,7 @@ var config = {
 
   // --- Web security ----------------------------------------------------
   authn: {
+    sessionSweepS: 30,              // How often expired sessions are ended (seconds)
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
@@ -287,6 +288,8 @@ var config = {
     softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint
     softwareStatementRequired: false,            // Require a software statement on every registration
     softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
+    clientSecretOverlapS: 604800,                // Keep a rotated client secret working for (seconds)
+    clientSecretExpiryWarningDays: 14,           // Warn about an expiring client secret this many days ahead
     registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
     registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
@@ -310,6 +313,7 @@ var config = {
     accessTokenTtlS: 3600,                       // Access token lifetime (s)
     idTokenTtlS: 3600,                           // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
+    expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
     clockSkewS: 30,                              // Token clock skew (s)
     redirectUris: "",                            // Registered redirect URIs
     loopbackPortWildcard: true,                  // Loopback port wildcard
@@ -950,6 +954,23 @@ var config = {
     heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
     nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
     acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+  },
+
+  // --- Signing keys ----------------------------------------------------
+  signing: {
+    rotationIntervalDays: 90,            // Rotate each signing key every (days)
+    credentialRotationIntervalDays: 365, // Rotate the credential signing key every (days)
+    retiredKeyGraceDays: 0               // Keep a retired key verifying for (days)
+  },
+
+  // --- Scheduler -------------------------------------------------------
+  scheduler: {
+    enabled: true,    // Run scheduled jobs
+    tickS: 15,        // How often the leader looks for due jobs (seconds)
+    historyDays: 30,  // How long a finished run is kept (days)
+    maxRuns: 5000,    // Most runs kept per realm
+    disabledJobs: "", // Jobs switched off
+    runTimeoutS: 600  // The longest a run may take (seconds)
   },
 };
 

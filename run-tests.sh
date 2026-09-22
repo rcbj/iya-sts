@@ -910,6 +910,65 @@ captureOneContainerLog()
   printf '%-12s %s\n' "${label}:" "${dest}"
 }
 
+# ---------------------------------------------------------------------------
+# THE SCHEDULER SURVIVES A CRASHED LEADER (#49, rcbj's D10(a), 2026-09-22).
+#
+# The LAST step of the `cluster` mode, because it removes a node: the runner
+# has finished, the stack is still up (the mode runs detached for this), and
+# `tests/tools/scheduler-takeover.js` names the scheduler's leader, this
+# function `docker kill`s that node's container — a crash, so its lease is not
+# released — and the tool asserts through the balancer that the other node
+# leads within the node lifetime and three ticks, runs a run queued now, and
+# ran every slot of the session-expiry job once. Its output is
+# tests/report/<mode>-99-scheduler-takeover.log. STS_TEST_SCHEDULER_TAKEOVER=0
+# skips it; a kept stack (--keep-stack) is never crashed.
+# ---------------------------------------------------------------------------
+schedulerTakeover()
+{
+  local mode="$1" out leader container rc
+  local dest="${CURRENT_DIR}/tests/report/${mode}-99-scheduler-takeover.log"
+  local tool=(docker run --rm --network "${COMPOSE_PROJECT}_default"
+              -v "${CURRENT_DIR}:/repo:ro"
+              -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}"
+              -e NODE_PATH=/usr/src/sts/node_modules
+              -w /usr/src/sts "${STS_IMAGE:-rcbj/sts}"
+              node /repo/tests/tools/scheduler-takeover.js)
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  echo ""
+  echo "Mode ${mode}: the scheduler's crash takeover — the last step, because"
+  echo "it stops a node."
+  if ! out="$("${tool[@]}" before "$(serviceUrl)" 2>&1)";
+  then
+    printf '%s\n' "${out}" > "${dest}"
+    echo "  The scheduler's leader could not be named; see ${dest}." >&2
+    return 1
+  fi
+  printf '%s\n' "${out}" > "${dest}"
+  leader="$(printf '%s' "${out}" | tail -n 1)"
+  case "${leader}" in
+    node-a) container="${STS_CONTAINER_NAME}" ;;
+    node-b) container="${STS2_CONTAINER_NAME}" ;;
+    *)
+      echo "  The leader is \"${leader}\", which is neither node." >&2
+      return 1
+      ;;
+  esac
+  echo "  ${leader} leads; killing ${container}."
+  if ! docker kill "${container}" > /dev/null 2>&1;
+  then
+    echo "  docker kill ${container} failed." >&2
+    return 1
+  fi
+  "${tool[@]}" after "$(serviceUrl)" "${leader}" >> "${dest}" 2>&1
+  rc=$?
+  grep -E '✓|FAILED' "${dest}" | sed 's/^/  /' || true
+  if [ "${rc}" -ne 0 ];
+  then
+    echo "  The scheduler did NOT survive its leader's crash; see ${dest}." >&2
+  fi
+  return "${rc}"
+}
+
 # Always tear the stack down, even when the tests fail, so the next run starts
 # clean. A TRAP rather than a line at the end: an interrupted run (^C, a failing
 # step) would otherwise leave the stack's containers, volumes and network
@@ -1505,7 +1564,16 @@ do
     then
       KEEP_THIS_MODE=1
     fi
-    if [ "${KEEP_THIS_MODE}" = "0" ];
+    # THE `cluster` MODE RUNS DETACHED TOO (#49, 2026-09-22), for the same
+    # reason a kept mode does: `--abort-on-container-exit` stops every
+    # container the moment the runner exits, and the scheduler's crash
+    # takeover below needs the stack still up to kill a node of.
+    DETACHED_MODE="${KEEP_THIS_MODE}"
+    if stsModeIsCluster "${MODE}";
+    then
+      DETACHED_MODE=1
+    fi
+    if [ "${DETACHED_MODE}" = "0" ];
     then
       docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up \
         --no-attach openbao-tls --no-attach openbao-seed \
@@ -1530,6 +1598,16 @@ do
     if [ "${MODE_RC}" -ge 124 ];
     then
       MODE_RC="$(recoverModeVerdict "${MODE}" "${MODE_RC}")"
+    fi
+    # The crash takeover, LAST in the cluster mode, and never on a kept stack.
+    if stsModeIsCluster "${MODE}" && [ "${KEEP_THIS_MODE}" = "0" ] &&
+       [ "${STS_TEST_SCHEDULER_TAKEOVER:-1}" = "1" ] &&
+       modeWroteReport "${MODE}";
+    then
+      if ! schedulerTakeover "${MODE}";
+      then
+        MODE_RC=1
+      fi
     fi
     # A MODE WHOSE RUNNER WROTE NO REPORT DID NOT PASS, whatever compose
     # returned. The stack stopping before the runner started is exactly the

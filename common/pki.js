@@ -3761,10 +3761,16 @@ function jwsAlgFor(keyDesc, sigAlgId) {
 // keep; those are marked and are the only records with a key in them.
 // ===========================================================================
 
-function slotKey(useCaseId, slot) {
+// A slot holds one certificate. **A KEY GENERATION HAS A SLOT OF ITS OWN**
+// (2026-09-22, #42): `jose:RS256@<kid>` beside `jose:RS256`, so the `next`
+// key published ahead of its promotion and a retired key still verifying each
+// keep their certificate (and their `x5c`) while the current key keeps the
+// plain slot every reader already asks for.
+function slotKey(useCaseId, slot, kid) {
   log.debug("Entering slotKey().");
   log.debug("Leaving slotKey().");
-  return String(useCaseId) + ':' + String(slot);
+  return String(useCaseId) + ':' + String(slot) + (kid ? '@' + String(kid)
+                                                   : '');
 }
 
 // Every certificate this Issuing CA has minted, newest first.
@@ -3795,11 +3801,25 @@ function issuedKeyPairsFor(scopeId, useCaseId) {
   });
 }
 
-function certificateFor(scopeId, useCaseId, slot) {
+// `kid`, where given, asks for that key generation's own slot first, and the
+// plain slot only when the certificate there is over the same key — so a
+// caller naming a key never gets a certificate over another one.
+function certificateFor(scopeId, useCaseId, slot, kid) {
   log.debug("Entering certificateFor().");
   const row = rawRowFor(scopeId);
+  const certs = (row && row.certs) || {};
+  if (kid) {
+    const own = certs[slotKey(useCaseId, slot, kid)];
+    if (own) {
+      log.debug("Leaving certificateFor(). The generation's own slot.");
+      return own;
+    }
+    const plain = certs[slotKey(useCaseId, slot)];
+    log.debug("Leaving certificateFor(). The plain slot, if it is this key.");
+    return plain && plain.kid && plain.kid === String(kid) ? plain : null;
+  }
   log.debug("Leaving certificateFor().");
-  return ((row && row.certs) || {})[slotKey(useCaseId, slot)] || null;
+  return certs[slotKey(useCaseId, slot)] || null;
 }
 
 // The public view of one certificate. A pinned record HAS a private key in it
@@ -4097,7 +4117,14 @@ async function certify(scopeId, useCaseId, spec) {
                            'STS-PKI-0186');
   }
   fresh.certs = Object.assign({}, fresh.certs || {});
-  fresh.certs[slotKey(uc.id, record.slot)] = record;
+  // THE KEY IT IS OVER, BY KID (#42): the plain slot names the current key,
+  // and `spec.generationSlot` puts a standby key's certificate in a slot of
+  // its own (`slotKey()`'s header).
+  if (spec.kid) {
+    record.kid = String(spec.kid);
+  }
+  fresh.certs[slotKey(uc.id, record.slot,
+                      spec.generationSlot ? spec.kid : '')] = record;
   saveRow(id, fresh);
   log.debug('Leaving certify(). ' + record.subject);
   return { ok: true, certificate: describeCertificate(record), record: record };
@@ -4122,9 +4149,9 @@ function pinnedKeyFor(scopeId, useCaseId, slot) {
 
 // The certificate a caller should PUBLISH for a slot, and the chain under it.
 // Synchronous, for `pinnedKeyFor()`'s reason.
-function publishedCertificateFor(scopeId, useCaseId, slot) {
+function publishedCertificateFor(scopeId, useCaseId, slot, kid) {
   log.debug("Entering publishedCertificateFor().");
-  const held = certificateFor(scopeId, useCaseId, slot);
+  const held = certificateFor(scopeId, useCaseId, slot, kid);
   if (!held) {
     log.debug("Leaving publishedCertificateFor().");
     return null;
@@ -5094,7 +5121,7 @@ function pqSubjectPublicKeyPem(alg, publicJwk) {
 // **IT ANSWERS AND DOES NOT THROW**, for `certify()`'s reason — a key that
 // could not be certified still signs, and a startup path must not fail on it.
 // ---------------------------------------------------------------------------
-async function certifyPqKeys(realmId, pqKeys) {
+async function certifyPqKeys(realmId, pqKeys, keepKids) {
   log.debug('Entering certifyPqKeys(). realm=' + realmId);
   const id = realmIdOf(realmId);
   const list = Array.isArray(pqKeys) ? pqKeys : [];
@@ -5119,6 +5146,14 @@ async function certifyPqKeys(realmId, pqKeys) {
       continue;
     }
     const fingerprint = thumbprintOf(spkiPem);
+    const pqKid = (one.publicJwk && one.publicJwk.kid) || '';
+    // A key this slot displaced by a promotion keeps its certificate in its
+    // own generation slot, and the promoted key's is adopted (#42).
+    keepDisplacedCertificate(id, 'jose', alg, pqKid, keepKids);
+    if (adoptGenerationCertificate(id, 'jose', alg, pqKid, spkiPem)) {
+      unchanged += 1;
+      continue;
+    }
     const held = certificateFor(id, 'jose', alg);
     const issuingNow = (rawRowFor(id).issuing.jose || {}).certificatePem;
     if (held && !held.pinned && held.subjectKeyFingerprint === fingerprint &&
@@ -5127,7 +5162,8 @@ async function certifyPqKeys(realmId, pqKeys) {
       continue;
     }
     const done = await certify(id, 'jose', {
-      slot: alg, alg: alg, keyAlg: PQ_JOSE_IN_X509[alg].id.toLowerCase(),
+      slot: alg, alg: alg, kid: pqKid,
+      keyAlg: PQ_JOSE_IN_X509[alg].id.toLowerCase(),
       label: alg + ' signing key',
       commonName: 'JOSE signing (' + alg + ')',
       publicKeyPem: spkiPem,
@@ -5173,6 +5209,143 @@ async function certifyPqKeys(realmId, pqKeys) {
 // that trusts this service for SAML has not thereby said anything about its
 // OAuth tokens, and two certificates is how that stays sayable. It is also why
 // the slot is per USE CASE rather than per key.
+// ---------------------------------------------------------------------------
+// A PROMOTION WITHOUT A SECOND CERTIFICATE (2026-09-22, #42). When a `next`
+// key becomes current, the certificate it has been published with since it
+// was minted — in its own generation slot — is the one it goes on being
+// published with, so the plain slot takes THAT record rather than a fresh
+// one. And the record the plain slot held, over the key that was just
+// retired, moves to THAT key's own generation slot first, so a retired key
+// keeps the certificate (and the `x5c`) a relying party already holds.
+// ---------------------------------------------------------------------------
+//
+// **ONLY A KEY THAT IS STILL A GENERATION IS KEPT** (`keepKids`, the set's
+// standby kids). A key promoted over is RETIRED and goes on verifying, so its
+// certificate moves to its own slot; a key REPLACED — a restore, a key put in
+// the slot by hand — is gone, so its certificate is left where it is for
+// `certify()` to supersede, as it always was (`tests/pq_key_certification.js`
+// E holds that half).
+function keepDisplacedCertificate(id, useCaseId, slot, currentKid, keepKids) {
+  log.debug("Entering keepDisplacedCertificate(). " + useCaseId + ':' + slot);
+  const row = rawRowFor(id);
+  const plain = row && row.certs && row.certs[slotKey(useCaseId, slot)];
+  if (!plain || !plain.kid || plain.kid === String(currentKid || '')) {
+    log.debug("Leaving keepDisplacedCertificate(). Nothing displaced.");
+    return false;
+  }
+  if ((keepKids || []).indexOf(plain.kid) < 0) {
+    log.debug("Leaving keepDisplacedCertificate(). Not a generation: left " +
+              "to be superseded.");
+    return false;
+  }
+  const own = slotKey(useCaseId, slot, plain.kid);
+  const fresh = Object.assign({}, row);
+  fresh.certs = Object.assign({}, row.certs);
+  if (!fresh.certs[own]) {
+    fresh.certs[own] = plain;
+  }
+  delete fresh.certs[slotKey(useCaseId, slot)];
+  saveRow(id, fresh);
+  log.debug("Leaving keepDisplacedCertificate(). Moved to " + own + ".");
+  return true;
+}
+
+function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
+  log.debug("Entering adoptGenerationCertificate(). " + useCaseId + ':' +
+            slot);
+  if (!kid) {
+    log.debug("Leaving adoptGenerationCertificate(). No kid.");
+    return false;
+  }
+  const row = rawRowFor(id);
+  const own = row && row.certs && row.certs[slotKey(useCaseId, slot, kid)];
+  const issuingNow = ((row && row.issuing && row.issuing[useCaseId]) || {})
+    .certificatePem;
+  if (!own || own.subjectKeyFingerprint !== thumbprintOf(publicKeyPem) ||
+      (own.chainPem || [])[0] !== issuingNow) {
+    log.debug("Leaving adoptGenerationCertificate(). None to adopt.");
+    return false;
+  }
+  const plainKey = slotKey(useCaseId, slot);
+  if (row.certs[plainKey] && row.certs[plainKey].serialHex === own.serialHex) {
+    log.debug("Leaving adoptGenerationCertificate(). Already there.");
+    return true;
+  }
+  const fresh = Object.assign({}, row);
+  fresh.certs = Object.assign({}, row.certs);
+  fresh.certs[plainKey] = own;
+  saveRow(id, fresh);
+  log.debug("Leaving adoptGenerationCertificate(). Adopted.");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE STANDBY KEY GENERATIONS (2026-09-22, #42): the `next` key of each unit,
+// published before it is promoted, and each retired key still verifying. Each
+// is certified under its unit's Issuing CA in a slot of its own
+// (`slotKey()`'s header), ONCE — a slot already holding a certificate over
+// the same key from the current Issuing CA is left alone, as
+// `certifyPqKeys()` leaves its keys.
+// ---------------------------------------------------------------------------
+async function certifyStandbyKeys(realmId, keys, nodeCryptoModule) {
+  log.debug('Entering certifyStandbyKeys(). realm=' + realmId);
+  const id = realmIdOf(realmId);
+  const nodeC = nodeCryptoModule || nodeCrypto;
+  const standby = (keys && keys.generations && keys.generations.standby) || [];
+  let certified = 0;
+  const failed = [];
+  for (let i = 0; i < standby.length; i++) {
+    const one = standby[i];
+    // A BBS key (#49 P5) is not an X.509 subject: nothing to certify.
+    if (one.kind === 'bbs') {
+      continue;
+    }
+    let publicPem = '';
+    try {
+      publicPem = one.kind === 'pq'
+        ? pqSubjectPublicKeyPem(one.alg, one.publicJwk)
+        : one.kind === 'rsa'
+          ? nodeC.createPublicKey(one.certPem)
+              .export({ type: 'spki', format: 'pem' })
+          : nodeC.createPublicKey({ key: one.publicJwk, format: 'jwk' })
+              .export({ type: 'spki', format: 'pem' });
+    } catch (e) {
+      failed.push(one.unit + '@' + one.kid + ': ' + e.message);
+      continue;
+    }
+    const row = rawRowFor(id) || {};
+    const held = certificateFor(id, one.useCase, one.slot, one.kid);
+    const issuingNow = ((row.issuing && row.issuing[one.useCase]) || {})
+      .certificatePem;
+    if (held && held.kid === one.kid &&
+        held.subjectKeyFingerprint === thumbprintOf(publicPem) &&
+        (held.chainPem || [])[0] === issuingNow && scopeChainsToRoot(id)) {
+      continue;
+    }
+    const label = one.kind === 'rsa'
+      ? (one.useCase === 'xml' ? 'XML signing (RS256)' : 'JOSE signing (RS256)')
+      : (one.crv || one.alg) + ' signing key';
+    const done = await certify(id, one.useCase, {
+      slot: one.slot, alg: one.alg, crv: one.crv || '', kid: one.kid,
+      generationSlot: true,
+      keyAlg: one.kind === 'rsa' ? 'rsa-2048'
+        : String(one.crv || one.alg).toLowerCase(),
+      label: label + ', ' + one.role + ' generation',
+      commonName: label, publicKeyPem: publicPem,
+      keyUsage: one.kind === 'rsa'
+        ? ['digitalSignature', 'nonRepudiation', 'keyEncipherment']
+        : undefined
+    });
+    if (done.ok) {
+      certified += 1;
+    } else {
+      failed.push(one.unit + '@' + one.kid + ': ' + done.errors.join(' '));
+    }
+  }
+  log.debug('Leaving certifyStandbyKeys(). ' + certified + ' certified.');
+  return { certified: certified, failed: failed };
+}
+
 async function certifyKeySet(realmId, keys, nodeCryptoModule) {
   log.debug('Entering certifyKeySet(). realm=' + realmId);
   const id = realmIdOf(realmId);
@@ -5185,6 +5358,12 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
   }
   let certified = 0;
   const failed = [];
+  // The kids still generations of this set, whose certificates a promotion
+  // moves aside rather than supersedes (`keepDisplacedCertificate()`).
+  const keepKids = ((keys && keys.generations && keys.generations.standby) ||
+                    []).map(function (one) {
+    return String(one.kid);
+  });
 
   // --- the RSA key, under JOSE and under XML -------------------------------
   let rsaPublicPem = '';
@@ -5199,15 +5378,37 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
     return errorCodes.mark({ ok: false, certified: 0, errors: [e.message] },
                            'STS-PKI-0030');
   }
+  // THE XML USE CASE HAS A KEY OF ITS OWN SINCE 2026-09-22 (#42, D2): the
+  // `xml` leaf is issued over `keys.xmlKey`, and over the RSA key above only
+  // for a set that has none yet (it is backfilled on first use).
+  let xmlPublicPem = rsaPublicPem;
+  if (keys.xmlKey && keys.xmlKey.privateKeyPem) {
+    try {
+      xmlPublicPem = nodeC.createPublicKey(keys.xmlKey.privateKeyPem)
+        .export({ type: 'spki', format: 'pem' });
+    } catch (e) {
+      log.debug("Caught in certifyKeySet(): " + ((e && e.message) || e));
+      xmlPublicPem = rsaPublicPem;
+    }
+  }
   const rsaJobs = [
-    { useCase: 'jose', slot: 'RS256', cn: 'JOSE signing (RS256)' },
-    { useCase: 'xml', slot: 'RS256', cn: 'XML signing (RS256)' }
+    { useCase: 'jose', slot: 'RS256', cn: 'JOSE signing (RS256)',
+      publicKeyPem: rsaPublicPem, kid: keys.kid },
+    { useCase: 'xml', slot: 'RS256', cn: 'XML signing (RS256)',
+      publicKeyPem: xmlPublicPem,
+      kid: keys.xmlKey && keys.xmlKey.kid ? keys.xmlKey.kid : keys.kid }
   ];
   for (let i = 0; i < rsaJobs.length; i++) {
     const job = rsaJobs[i];
+    keepDisplacedCertificate(id, job.useCase, job.slot, job.kid, keepKids);
+    if (adoptGenerationCertificate(id, job.useCase, job.slot, job.kid,
+                                   job.publicKeyPem)) {
+      certified += 1;
+      continue;
+    }
     const done = await certify(id, job.useCase, {
-      slot: job.slot, alg: 'RS256', keyAlg: 'rsa-2048',
-      label: job.cn, commonName: job.cn, publicKeyPem: rsaPublicPem,
+      slot: job.slot, alg: 'RS256', keyAlg: 'rsa-2048', kid: job.kid,
+      label: job.cn, commonName: job.cn, publicKeyPem: job.publicKeyPem,
       // XML Signature and JWS are both DIGITAL SIGNATURES, and this key also
       // DECRYPTS — a JWE sent to this service, and an EncryptedID in a SAML
       // document — so it carries keyEncipherment as well. A certificate whose
@@ -5236,8 +5437,13 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
       failed.push('jose/' + slot + ': ' + e.message);
       continue;
     }
+    keepDisplacedCertificate(id, 'jose', slot, jwk.kid, keepKids);
+    if (adoptGenerationCertificate(id, 'jose', slot, jwk.kid, publicPem)) {
+      certified += 1;
+      continue;
+    }
     const done = await certify(id, 'jose', {
-      slot: slot, alg: one.alg, crv: jwk.crv || '',
+      slot: slot, alg: one.alg, crv: jwk.crv || '', kid: jwk.kid,
       keyAlg: (jwk.crv || '').toLowerCase(),
       label: (jwk.crv || one.alg) + ' signing key',
       commonName: 'JOSE signing (' + (jwk.crv || one.alg) + ')',
@@ -5258,12 +5464,19 @@ async function certifyKeySet(realmId, keys, nodeCryptoModule) {
   // may predate a rebuilt branch, and `certifyPqKeys()` leaves alone the ones
   // that are still current.
   if (Array.isArray(keys.pqKeys) && keys.pqKeys.length) {
-    const pq = await certifyPqKeys(id, keys.pqKeys);
+    const pq = await certifyPqKeys(id, keys.pqKeys, keepKids);
     certified += pq.certified || 0;
     (pq.failed || []).forEach(function (one) {
       failed.push(one);
     });
   }
+
+  // --- every STANDBY key generation, in a slot of its own (#42) -----------
+  const standby = await certifyStandbyKeys(id, keys, nodeC);
+  certified += standby.certified;
+  standby.failed.forEach(function (one) {
+    failed.push(one);
+  });
 
   if (failed.length) {
     log.warn(errorCodes.tag('STS-PKI-0031') + 'pki: the "' + id +
@@ -7259,6 +7472,7 @@ module.exports = {
   issueEnrolled: issueEnrolled,
   describeIssuer: describeIssuer,
   certifyKeySet: certifyKeySet,
+  certifyStandbyKeys: certifyStandbyKeys,
   // The eleven post-quantum keys per realm, under its JOSE Issuing CA
   // (2026-09-13) — and the one translation that makes that possible, exported
   // so the test can hold it against both readings.

@@ -1326,6 +1326,21 @@ const SETTINGS = [
   // FACING SURFACES**, and a session lifetime is the first thing a deployment's
   // security review asks for. The keys say which module reads them.
   // ---------------------------------------------------------------------
+  { key: 'authn.sessionSweepS', group: 'Web security',
+    label: 'How often expired sessions are ended (seconds)',
+    env: 'STS_AUTHN_SESSION_SWEEP_S', type: 'int', dflt: 30, min: 0,
+    max: 86400, runtime: true,
+    description: 'The interval of the scheduler job `authn.session-expiry` ' +
+                 '(Monitoring → Scheduler), which ends every sign-on session ' +
+                 'whose lifetime or idle timeout has passed — the audit row, ' +
+                 'CAEP session-revoked and the back-channel Logout Tokens ' +
+                 'going out ONCE for the whole cluster — whether or not ' +
+                 'anybody comes back to present it. 0 switches the job off: ' +
+                 'an expired session is then still refused whenever it is ' +
+                 'presented, and ended at that moment, but nobody is told of ' +
+                 'one that is never presented again. It was a fixed thirty ' +
+                 'seconds in every process until 2026-09-22 (#49).' },
+
   { key: 'authn.sessionLifetimeS', group: 'Web security',
     label: 'Session lifetime (seconds)',
     env: 'STS_AUTHN_SESSION_LIFETIME_S',
@@ -3677,6 +3692,28 @@ const SETTINGS = [
                  'permits. Changing this does not move a statement already ' +
                  'issued; its `exp` is inside its signature.' },
 
+  // CLIENT-SECRET ROTATION AND EXPIRY (2026-09-22, #49 P5).
+  { key: 'oauth2.clientSecretOverlapS', group: 'OAuth 2.0 / OIDC',
+    label: 'Keep a rotated client secret working for (seconds)',
+    env: 'STS_OAUTH2_CLIENT_SECRET_OVERLAP_S', type: 'int', dflt: 604800,
+    min: 0, max: 31536000, runtime: true,
+    description: 'How long the secret a ROTATION replaced (Rotate secret on ' +
+                 '/admin/applications, or rotate-secret on /admin-api) goes ' +
+                 'on authenticating at the token endpoint beside the new ' +
+                 'one, so a client can change over without an outage. A ' +
+                 'week by default; 0 makes a rotation a regeneration, which ' +
+                 'ends the old secret at once.' },
+  { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Warn about an expiring client secret this many days ahead',
+    env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
+    dflt: 14, min: 0, max: 365, runtime: true,
+    description: 'The daily scheduler job oauth2.client-secret-expiry ' +
+                 'writes an audit row and a warning for every application ' +
+                 'whose secret expires within this many days (its ' +
+                 'oauthClientSecretExpiresAt, or its registration\'s ' +
+                 'client_secret_expires_at), and /admin/applications marks ' +
+                 'it. 0 warns only once it has expired.' },
+
   { key: 'oauth2.registeredSecretLifetimeS', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered secret lifetime (s)',
     env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S', type: 'int', dflt: 0,
@@ -4690,6 +4727,21 @@ const SETTINGS = [
   // client's machine and one is about this one — and a deployment that wants a
   // strict assertion check and a forgiving expiry reading, or the reverse, has
   // to be able to say so.
+  // THE TRACKED TOKENS' RETENTION (#49 P5): how long past its expiry a
+  // token stays on /admin/tokens before oauth2.expired-token-purge deletes
+  // its record.
+  { key: 'oauth2.expiredTokenRetentionS', group: 'OAuth 2.0 / OIDC',
+    label: 'Keep an expired token on /admin/tokens for (seconds)',
+    env: 'STS_OAUTH2_EXPIRED_TOKEN_RETENTION_S', type: 'int', dflt: 86400,
+    min: 0, max: 31536000, runtime: true,
+    description: 'How long a token this service issued stays in the ' +
+                 'register /admin/tokens and /admin-api/tokens read after it ' +
+                 'has expired (its exp plus oauth2.clockSkewS), before the ' +
+                 'hourly scheduler job oauth2.expired-token-purge deletes ' +
+                 'its record. The revocation of an expired token is deleted ' +
+                 'at its expiry, since no verifier accepts it any more. A ' +
+                 'day by default; 0 deletes a record as soon as it expires.' },
+
   { key: 'oauth2.clockSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'Token clock skew (s)',
     env: 'STS_OAUTH2_CLOCK_SKEW_S', type: 'int', dflt: 30,
@@ -5223,7 +5275,8 @@ const SETTINGS = [
     label: 'Back-channel logout sweep interval (seconds)',
     env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SWEEP_S', type: 'int', dflt: 10,
     min: 1, max: 3600, runtime: true,
-    description: 'How often every process looks for deliveries that are due ' +
+    description: 'How often the scheduler\'s oauth2.backchannel-logout-sweep ' +
+                 'job (on the leader) looks for deliveries that are due ' +
                  '— a retry whose backoff has passed, a lease that lapsed, a ' +
                  'row restored after a restart — and dead-letters any still ' +
                  'pending past the retention. The process that planned a ' +
@@ -11133,7 +11186,133 @@ const SETTINGS = [
                  'failure. Naming a capability id here accepts THAT failure ' +
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
-                 'a list somebody has to write is a list somebody has read.' }
+                 'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // SIGNER ROTATION (2026-09-22, #42/#48). A REALM carries these: each realm's
+  // keys are its own, and so is how often they are replaced. The rotation
+  // runs on the scheduler (`signing.rotate`, `signing.retire`) and only in
+  // product mode — `mode.rotatesSigningKeys()` — because a development process
+  // makes new keys at every start anyway. `common/helpers.js`, KEY
+  // GENERATIONS, is the model; /admin/keys draws it.
+  // -------------------------------------------------------------------------
+  { key: 'signing.rotationIntervalDays', group: 'Signing keys',
+    label: 'Rotate each signing key every (days)',
+    env: 'STS_SIGNING_ROTATION_INTERVAL_DAYS', type: 'int', dflt: 90, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a signing key stays CURRENT before the scheduler ' +
+                 'promotes the NEXT key of its unit — (realm, use case, ' +
+                 'algorithm): the JOSE and XML RSA keys, each curve key and ' +
+                 'each post-quantum key — and mints a new next one. The next ' +
+                 'key is published from the moment it is minted (the JWKS, ' +
+                 'the SAML and WS-Federation metadata, /crypto/metadata), so ' +
+                 'a relying party that refreshes its copy at least this often ' +
+                 'already holds it when it starts signing. 0 switches ' +
+                 'scheduled rotation off; a rotation by hand (/admin/keys) ' +
+                 'still works. Product mode only.' },
+
+  // THE CREDENTIAL SIGNER'S OWN INTERVAL (#42, D3). A credential outlives
+  // every token, so the unit `oid4vci.credentialSigningAlgorithm` names is
+  // given a longer life of its own — when no token setting signs with it;
+  // the RSA unit and any unit a token setting names keep the token interval.
+  { key: 'signing.credentialRotationIntervalDays', group: 'Signing keys',
+    label: 'Rotate the credential signing key every (days)',
+    env: 'STS_SIGNING_CREDENTIAL_ROTATION_INTERVAL_DAYS', type: 'int',
+    dflt: 365, min: 0, max: 3650, runtime: true,
+    description: 'How long the key verifiable credentials are signed with ' +
+                 '(oid4vci.credentialSigningAlgorithm) works before its next ' +
+                 'key is promoted, in product mode. It applies only when ' +
+                 'that key signs no tokens: RS256, the default, and any ' +
+                 'algorithm oauth2.signedMetadataAlgorithm, ' +
+                 'ssf.signingAlgorithm or wstrust.jwtAlgorithm names rotate ' +
+                 'on signing.rotationIntervalDays instead. Its retired keys ' +
+                 'go on verifying until the longest credential lifetime has ' +
+                 'passed, whichever interval applies. 0 turns its rotation ' +
+                 'off.' },
+
+  { key: 'signing.retiredKeyGraceDays', group: 'Signing keys',
+    label: 'Keep a retired key verifying for (days)',
+    env: 'STS_SIGNING_RETIRED_KEY_GRACE_DAYS', type: 'int', dflt: 0, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a key that was just replaced goes on VERIFYING ' +
+                 'what it signed — and, for an RSA key, decrypting what was ' +
+                 'encrypted to it — before `signing.retire` drops it and ' +
+                 'revokes its certificate with reason superseded. 0, the ' +
+                 'default, means the DERIVED minimum: the longest lifetime of ' +
+                 'anything the key could have signed (access tokens, ID ' +
+                 'Tokens, refresh tokens, SAML and WS-Federation assertions). ' +
+                 'A value below that minimum is raised to it, because a ' +
+                 'retirement that stranded a live token would be the outage ' +
+                 'rotation exists to avoid.' },
+
+  // -------------------------------------------------------------------------
+  // THE SCHEDULER (2026-09-22, #49). Every periodic job in this service runs
+  // on it — `cluster/scheduler.ts` argues the design, and /admin/scheduler
+  // (Monitoring) draws what it has done. SERVICE-WIDE, every one: a realm
+  // runs on the same scheduler as every other realm, so a realm carrying its
+  // own tick would be a sentence about a thing that does not exist.
+  // -------------------------------------------------------------------------
+  { key: 'scheduler.enabled', group: 'Scheduler',
+    label: 'Run scheduled jobs',
+    env: 'STS_SCHEDULER_ENABLED', type: 'bool', dflt: true, runtime: true,
+    perProcess: true,
+    description: 'Whether the scheduler runs any job at all. OFF, nothing ' +
+                 'periodic happens anywhere — no session is ended when it ' +
+                 'expires until somebody presents it, no directory copy of a ' +
+                 'CRL is refreshed — and /admin/scheduler says so on every ' +
+                 'row. It is read at every tick, so turning it back on ' +
+                 'resumes at the next one, and a slot missed while it was off ' +
+                 'runs ONCE, not once per slot missed.' },
+
+  { key: 'scheduler.tickS', group: 'Scheduler',
+    label: 'How often the leader looks for due jobs (seconds)',
+    env: 'STS_SCHEDULER_TICK_S', type: 'int', dflt: 15, min: 1, max: 3600,
+    runtime: true, perProcess: true,
+    description: 'The scheduler\'s leader asks, this often, which jobs are ' +
+                 'due and which manual runs are queued. It is the most a job ' +
+                 'is late by, and the most a Run now waits before it starts. ' +
+                 'Read at every tick.' },
+
+  { key: 'scheduler.historyDays', group: 'Scheduler',
+    label: 'How long a finished run is kept (days)',
+    env: 'STS_SCHEDULER_HISTORY_DAYS', type: 'int', dflt: 30, min: 1,
+    max: 3650, runtime: true, perProcess: true,
+    description: 'A run that succeeded, failed or was abandoned is kept this ' +
+                 'long and then removed by the scheduler\'s own history job. ' +
+                 'The last run of every job is kept whatever its age, so a ' +
+                 'job that runs every 90 days still shows when it last ran. ' +
+                 'Queued and running rows are never removed by age.' },
+
+  { key: 'scheduler.maxRuns', group: 'Scheduler',
+    label: 'Most runs kept per realm',
+    env: 'STS_SCHEDULER_MAX_RUNS', type: 'int', dflt: 5000, min: 100,
+    max: 1000000, runtime: true, perProcess: true,
+    description: 'The bound on the run history of one trust realm (the ' +
+                 'service-wide jobs\' runs are the default realm\'s). Past ' +
+                 'it the oldest FINISHED run goes first; a queued or running ' +
+                 'one, and the last run of each job, are never dropped to ' +
+                 'make room.' },
+
+  { key: 'scheduler.disabledJobs', group: 'Scheduler',
+    label: 'Jobs switched off',
+    env: 'STS_SCHEDULER_DISABLED_JOBS', type: 'csv', dflt: '', runtime: true,
+    perProcess: true,
+    description: 'Job ids, comma-separated, that the scheduler does not run — ' +
+                 'on their schedule or by hand. Every registered job is ' +
+                 'listed on /admin/scheduler with its id, and one named here ' +
+                 'is drawn as off with this setting as the reason. An id no ' +
+                 'job has is ignored and listed on that page.' },
+
+  { key: 'scheduler.runTimeoutS', group: 'Scheduler',
+    label: 'The longest a run may take (seconds)',
+    env: 'STS_SCHEDULER_RUN_TIMEOUT_S', type: 'int', dflt: 600, min: 5,
+    max: 86400, runtime: true, perProcess: true,
+    description: 'A run still going after this long is recorded as failed ' +
+                 '(STS-SCHED-0002), its claim is given back, and anything it ' +
+                 'does afterwards is fenced out. A job may state a longer ' +
+                 'limit of its own — signer rotation, whose post-quantum ' +
+                 'keys are slow to make, does — and this is the limit of ' +
+                 'every job that does not.' }
 ];
 
 // Indexed once. A linear scan per read would be invisible on a mock and the

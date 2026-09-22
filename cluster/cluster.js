@@ -448,7 +448,7 @@ function join() {
              'node(s). Heartbeat every ' + heartbeatMs() + 'ms, lifetime ' +
              ttlMs() + 'ms by the database clock.');
     scheduleHeartbeat();
-    scheduleCacheReport(CACHE_REPORT_FIRST_MS);
+    scheduleCacheReport();
   });
 }
 
@@ -529,17 +529,16 @@ function nodeInfo() {
 // `snapshot()`'s member list. No request crosses between nodes to get it,
 // which is why it needed no new plumbing.
 //
-// IT IS COMPUTED ON A TIMER OF ITS OWN, NOT ON THE HEARTBEAT. A snapshot
+// IT IS COMPUTED BY A JOB OF ITS OWN, NOT ON THE HEARTBEAT. A snapshot
 // walks every registered store's rows, and the heartbeat is what a node's
 // life depends on (the paragraph above `nodeInfo()`): so the heartbeat only
-// attaches the last one taken, and the walk happens every
-// CACHE_REPORT_MS, first shortly after joining. What another node shows is
+// attaches the last one taken, and the walk happens every CACHE_REPORT_MS
+// (the scheduler job below), first at the join. What another node shows is
 // therefore up to that old plus a heartbeat, and the page says how old.
 // ---------------------------------------------------------------------------
 const CACHE_REPORT_MS = 30000;
-const CACHE_REPORT_FIRST_MS = 5000;
+const CACHE_REPORT_JOB = 'cluster.cache-report';
 let cacheReport = null;
-let cacheReportTimer = null;
 
 function refreshCacheReport() {
   log.debug("Entering refreshCacheReport().");
@@ -553,29 +552,49 @@ function refreshCacheReport() {
   log.debug("Leaving refreshCacheReport().");
 }
 
-function scheduleCacheReport(delayMs) {
+// THE WALK IS A SCHEDULER JOB (#49 P5): `cluster.cache-report`, a QUIET
+// PER-PROCESS job every CACHE_REPORT_MS — it reads this process's own stores,
+// which no other process can — off everywhere but a front process that has
+// joined. The first snapshot is taken at the join itself, so a node's figures
+// are on its very first heartbeat. `scheduler.ts` requires this module, so
+// this requires it lazily, at the join, when both are loaded.
+function scheduleCacheReport() {
   log.debug("Entering scheduleCacheReport().");
-  if (cacheReportTimer || stopping || role !== 'front') {
+  if (stopping || role !== 'front') {
     log.debug("Leaving scheduleCacheReport(). Not reporting.");
     return;
   }
-  cacheReportTimer = setTimeout(function () {
-    cacheReportTimer = null;
-    refreshCacheReport();
-    scheduleCacheReport(CACHE_REPORT_MS);
-  }, delayMs);
-  if (cacheReportTimer.unref) {
-    cacheReportTimer.unref();
+  refreshCacheReport();
+  const scheduler = require('./scheduler');
+  if (scheduler.job(CACHE_REPORT_JOB)) {
+    log.debug("Leaving scheduleCacheReport(). Registered.");
+    return;
   }
-  log.debug("Leaving scheduleCacheReport().");
+  scheduler.register({
+    id: CACHE_REPORT_JOB,
+    title: 'Cluster cache report',
+    describe: 'Takes this node\'s cache and replay-store snapshot, which its ' +
+              'heartbeat carries to /admin/caches on every other node.',
+    owner: 'cluster/cluster.js',
+    kind: 'per-process', quiet: true,
+    everyMs: function () {
+      return CACHE_REPORT_MS;
+    },
+    off: function () {
+      return stopping || role !== 'front' || !nodeId
+        ? 'this process is not a joined front process' : '';
+    },
+    run: function () {
+      refreshCacheReport();
+      return { taken: !!cacheReport };
+    }
+  });
+  log.debug("Leaving scheduleCacheReport(). On the scheduler.");
 }
 
+// Nothing to stop: the job is off once this process is stopping.
 function stopCacheReport() {
   log.debug("Entering stopCacheReport().");
-  if (cacheReportTimer) {
-    clearTimeout(cacheReportTimer);
-    cacheReportTimer = null;
-  }
   log.debug("Leaving stopCacheReport().");
 }
 
@@ -753,12 +772,18 @@ function beat() {
   });
 }
 
-// Asks for every role some module wants led and this node does not hold.
+// Asks for every role some module wants led and this node does not hold —
+// except one this node STOOD DOWN from a moment ago (`stepDown()`), which it
+// does not ask for again until its hold-off has passed.
 function campaign() {
   log.debug("Entering campaign().");
   let chain = Promise.resolve();
+  const nowMono = monotonicMs();
   roles.forEach(function (handlers, name) {
     if (held.has(name)) {
+      return;
+    }
+    if ((standingDownUntil.get(name) || 0) > nowMono) {
       return;
     }
     chain = chain.then(function () {
@@ -861,6 +886,62 @@ function holds(name) {
   log.debug("Entering holds().");
   log.debug("Leaving holds().");
   return !enabled() || held.has(name);
+}
+
+// ---------------------------------------------------------------------------
+// STANDING DOWN FROM A ROLE (2026-09-22, #49): a planned handover, which is
+// what `POST /admin-api/scheduler/step-down` asks of the scheduler's leader.
+//
+// The lease is EXPIRED in the store at the token this node holds it at (the
+// driver's `releaseLease()`, which a lease that already changed hands does
+// not touch), `onLose()` is called as a lost lease's is, and this node does
+// not campaign for the role again for `holdOffMs` — without that it would
+// take the lease straight back on its next heartbeat, before any other node
+// had asked. The hold-off defaults to three heartbeats: every other node
+// campaigns once a heartbeat, so one of them has asked at least twice.
+//
+// Resolves `{ ok: true, token }` or `{ ok: false, reason }`, never rejects.
+// A service that is not clustered has no other node to hand to, and says so.
+// ---------------------------------------------------------------------------
+const standingDownUntil = new Map();
+
+function stepDown(name, holdOffMs) {
+  log.debug("Entering stepDown(). name=" + name);
+  if (!enabled()) {
+    log.debug("Leaving stepDown(). Not clustered.");
+    return Promise.resolve({ ok: false, reason: 'not-clustered' });
+  }
+  if (!held.has(name)) {
+    log.debug("Leaving stepDown(). Not held here.");
+    return Promise.resolve({ ok: false, reason: 'not-held' });
+  }
+  const token = held.get(name);
+  const hold = Math.max(heartbeatMs(),
+                        Number(holdOffMs) > 0 ? Number(holdOffMs)
+                          : 3 * heartbeatMs());
+  standingDownUntil.set(name, monotonicMs() + hold);
+  held.delete(name);
+  const wanted = roles.get(name);
+  if (wanted && typeof wanted.onLose === 'function') {
+    try {
+      wanted.onLose();
+    } catch (e) {
+      log.debug("Caught in stepDown(): " + ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving stepDown(). Releasing token " + token + ".");
+  return driver.releaseLease(name, nodeId, token).then(function (released) {
+    log.info('cluster: node ' + nodeId + ' stood down from the "' + name +
+             '" lease (token ' + token + '); it will not ask for it again ' +
+             'for ' + hold + 'ms.');
+    return { ok: true, token: token, released: !!released, holdOffMs: hold };
+  }, function (err) {
+    log.warn(errorCodes.tag('STS-CLUSTER-0041') + 'cluster: standing down ' +
+             'from the "' + name + '" lease failed (' + err.message + '); ' +
+             'it expires on its own within ' + ttlMs() + 'ms, and this node ' +
+             'does not renew it.');
+    return { ok: false, reason: 'store', why: err.message };
+  });
 }
 
 // Runs `fn` with `name` held, and every transaction it opens fenced by that
@@ -1089,6 +1170,7 @@ function reset(options) {
   refreshing = null;
   held.clear();
   roles.clear();
+  standingDownUntil.clear();
   [ENV_NODE, ENV_MODE, ENV_SERVICE_TOKEN].forEach(function (name) {
     delete process.env[name];
   });
@@ -1118,6 +1200,7 @@ module.exports = {
   acquire: acquire,
   lead: lead,
   holds: holds,
+  stepDown: stepDown,
   withLease: withLease,
   leave: leave,
   status: status,

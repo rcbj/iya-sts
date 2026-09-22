@@ -1199,11 +1199,10 @@ Three things about it are decisions:
   by both lazy lookups and by the sweep. `via` says which noticed it, because
   "it expired and somebody came back" and "it expired and the sweep found it"
   are the same act at different moments and the log should not have to guess.
-* **The sweep is armed by the FIRST session this process creates**, and
-  `unref()`'d. A process that signs nobody in — the parent project's in-process
-  Kerberos jobs, `npm test`, `node env/generate_defaults.js` — never arms a
-  timer it would then have to be shut down for. It is the shape of decision the
-  worker pool makes about forking nothing until the first post-quantum job.
+* **The sweep is a SCHEDULER JOB since 2026-09-22** (below), so nothing is
+  armed by a session any more: it was a `setInterval` armed by the first
+  session a process created, `unref()`'d, and it ran in every process that had
+  created one.
 * **It sweeps every realm and runs INSIDE each one.** The store is
   `realms.map()`, so a bare `forEach` walks the ambient realm's partition and a
   timer has no ambient realm: without `realms.run()` it would sweep the default
@@ -1211,35 +1210,35 @@ Three things about it are decisions:
   Running in the realm is also what makes the event right rather than merely
   present, since the observer builds a subject from the realm's own issuer.
 
-**THE SWEEP BECOMES A SCHEDULER JOB — rcbj, 2026-09-21** (root `CLAUDE.md`,
-*Anything periodic is a scheduler job*; the plan is on #49, and this job is
-in its first phase, P1, beside the CRL refresh). Not built yet;
-until it is, the `setInterval` in `armSessionSweep()` is one of the recorded
-exceptions. What moves and what does not:
+**THE SWEEP IS A SCHEDULER JOB — rcbj, 2026-09-21; BUILT 2026-09-22** (root
+`CLAUDE.md`, *Anything periodic is a scheduler job*; #49's P1, beside the CRL
+refresh; `cluster/CLAUDE.md`, *The scheduler*). What moved and what did not:
 
-* **What moves:** the periodic half. `authn.session-expiry` is a *cluster* job:
-  it runs on the scheduler leader, walks every realm inside `realms.run()` as
-  the sweep does now, and ends what has expired through `expireSession()`.
-  That is what reaches the applications and sessions concerned — the
-  `session.end` audit row, CAEP's `session-revoked` through the observer, and
-  the back-channel Logout Tokens (`oauth2.backchannelLogoutOnExpiry`). The job
-  adds no path of its own to any of them. The 30-second `SESSION_SWEEP_MS`
-  becomes a setting, read without the `|| n` trap.
-* **What stays:** the two lazy lookups and their synchronous local delete. A
+* **What moved:** the periodic half. `authn.session-expiry` is a *cluster* job
+  registered at the foot of `authn.ts`, every `authn.sessionSweepS` seconds (30,
+  and 0 switches it off — read directly, never with `|| n`). It runs on the
+  scheduler's leader, walks every realm inside `realms.run()`, and ends what
+  has expired through `expireSession()` — so the `session.end` audit row, CAEP's
+  `session-revoked` (initiated by the `policy`) and the back-channel Logout
+  Tokens (`oauth2.backchannelLogoutOnExpiry`) still come from that one path.
+  The job adds no path of its own to any of them. `tests/scheduler_jobs.js`
+  holds it to ending each session once.
+* **What stayed:** the two lazy lookups and their synchronous local delete. A
   process that finds a session expired stops honouring it at once, whenever the
   job last ran — that is correctness, not housekeeping. The `authn.session-end`
   claim stays too, because a lazy lookup, a sign-out and the job can still
   meet on one session. So does its fail-OPEN reporting (a notice that must not
   be lost).
-* **What the first-session arming decision becomes:** the scheduler starts
-  only from `service_state.start()` on a serving front process, so the
-  processes that header protects — in-process Kerberos jobs, `npm test`,
-  `generate_defaults.js` — still never run it.
-* **To confirm when it is built:** a job that runs on ONE node is enough only
-  because every configuration with more than one process has the sessions in a
-  shared store — clustering requires `persistence.minted`, and dispatch without
-  coordination is refused. If any configuration is found where a process holds
-  sessions nobody else can see, the job is *per-process* there instead.
+* **The first-session arming decision became:** the scheduler starts only from
+  `server.js`, after the state is restored, so the processes that decision
+  protected — in-process Kerberos jobs, `npm test`, `generate_defaults.js` —
+  still never run it.
+* **Confirmed while building it:** a job on ONE node is enough because every
+  configuration with more than one process shares the session store —
+  clustering requires `persistence.minted`, a request pool shares `sts_minted`
+  under the ephemeral key-encryption key `request_pool.js` generates, and
+  dispatch without coordination is refused. A configuration where a process
+  holds sessions nobody else can see would make it a *per-process* job there.
 
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
@@ -1701,7 +1700,8 @@ the four call sites to it.
 
 ## SEVERAL NODES: A SESSION'S END IS REPORTED ONCE (2026-09-14, #46 section 6)
 
-Every process runs the sweep over its own copy, and `sessionOf()` expires a
+Every process ran the sweep over its own copy until 2026-09-22 (it is one
+scheduler job now), and `sessionOf()` expires a
 session wherever it is next presented, so two processes — a container's
 workers, or two containers — found the same expired session and each wrote
 `session.end` and emitted CAEP `session-revoked`. A sweep led by one elected

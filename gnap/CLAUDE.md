@@ -231,3 +231,14 @@ written from the RFCs) and `gnap_flow.js` (the resource owner and harness).
 **What is not independently verified:** a zcap token's Ed25519Signature2020
 proof needs RDF dataset canonicalization, which the RS job does not write out;
 it resolves the verification method to the published key instead and says so.
+
+## THE ED25519 KEY ROTATES WITH THE REALM'S SIGNING KEYS (2026-09-22, #49 P5, D6)
+
+Biscuits and ZCAPs are signed with the realm's `jose:EdDSA:Ed25519` unit, so
+`signing.rotate` rotates that key like any other (#42). What changed here is
+verification: `verify()` tries every live generation of the unit — current
+first, then the next key and the retired ones within their grace — and
+answers the current key's refusal when none verifies. `/gnap/keys` adds
+`biscuit.root_public_keys` (non-standard; `root_public_key` is still the
+current one) and the ZCAP controller document lists every generation as a
+verification method.

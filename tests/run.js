@@ -65,8 +65,10 @@ const log = bunyan.createLogger({ name: 'run',
 // recursive and `/\.js$/` does not match a directory name, so the discovery
 // rule below is untouched by tooling being added.
 // `wallet_kit.js` (#38's follow-ups) is the five wallet sign-in tests' shared
-// wallet and stack, required from their child processes.
-const NOT_A_TEST = ['run.js', 'harness.js', 'wallet_kit.js'];
+// wallet and stack, required from their child processes. `scheduler_kit.js`
+// (#49) is the simulated cluster the two scheduler tests drive.
+const NOT_A_TEST = ['run.js', 'harness.js', 'wallet_kit.js',
+                    'scheduler_kit.js'];
 
 // `patterns` is the `--only` filter: a file is kept when its name contains any
 // one of them. Empty means every file, which is what `npm test` asks for.

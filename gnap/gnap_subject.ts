@@ -496,8 +496,8 @@ class GnapSubject {
         // Signature only: section 2.4 lets an AS "accept a recently expired
         // assertion in order to help bootstrap a new session", and this AS
         // does, within `gnap.assertionMaxAgeS` of its expiry.
-        claims = stsCrypto.verifyCompactJws(assertion.value, STS.certPem,
-                                            { algorithms: ['RS256'] }).claims;
+        claims = helpers.verifyOwnCompactJws(assertion.value,
+                                             { algorithms: ['RS256'] }).claims;
       } catch (e) {
         log.debug("Caught in GnapSubject.usernameFromAssertion(): " +
                   ((e && e.message) || e));
@@ -523,9 +523,8 @@ class GnapSubject {
     if (assertion.format === 'saml2') {
       const xml = Buffer.from(String(assertion.value), 'base64url')
                         .toString('utf8');
-      const result = stsCrypto.verifyXmlSignature(xml,
-                                                  { element: 'Assertion',
-                                                    certPem: STS.certPem });
+      // Any generation of this realm's XML key (#42).
+      const result = helpers.verifyOwnXml(xml, { element: 'Assertion' });
       if (!result.ok) {
         log.debug("Leaving GnapSubject.usernameFromAssertion(). SAML " +
                   "assertion does not verify.");

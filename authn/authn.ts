@@ -186,6 +186,9 @@ import audit = require('../common/audit');
 // it requires `persistence.js` lazily and registers nothing. See
 // sessionEndOnce() below.
 import clusterClaims = require('../cluster/cluster_claims');
+// THE SCHEDULER (#49), for the session-expiry job registered at the foot of
+// this file. A LIBRARY (rule 3) that requires nothing of this one.
+import scheduler = require('../cluster/scheduler');
 // The error codes (common/error_codes.js). A refusal here is marked on the
 // RESPONSE before the page or redirect is sent; a verdict from the credential
 // libraries arrives carrying its own code non-enumerably, and this module
@@ -616,12 +619,24 @@ let sessionObserver = null;
 // else counting sessions, hours after it had expired. That is why this needed
 // a SWEEP and not just a shared function.
 //
-// The sweep is unref'd, so it never holds the process open, and it is started
-// LAZILY — by the first session created — so a process that signs nobody in
-// (the parent project's in-process Kerberos jobs, `npm test`,
-// `node env/generate_defaults.js`) never arms a timer it would only ever have
-// to be shut down for. It is the same shape of decision the worker pool makes
-// about forking nothing until the first post-quantum job.
+// **THE SWEEP IS A SCHEDULER JOB SINCE 2026-09-22 (#49)**, rcbj's directive
+// of the day before: `authn.session-expiry`, a CLUSTER job on
+// `cluster/scheduler.ts`, every `authn.sessionSweepS` (30, and 0 switches it
+// off). It was a `setInterval` of a fixed thirty seconds, armed by the first
+// session a process created, in every process that created one — so with
+// request workers, every worker swept, and the `authn.session-end` claim
+// below was what kept an expiry from being reported once per process. Now
+// the scheduler's leader sweeps, once per slot for the whole cluster, and
+// each other process holds the same sessions by replication (every
+// configuration with more than one process shares the session store: a
+// cluster requires `persistence.minted`, and dispatch without coordination is
+// refused). A process that signs nobody in still arms nothing: the job
+// belongs to the scheduler, which only `server.js` starts.
+//
+// **WHAT DID NOT MOVE.** The lazy check where a session is looked up — a
+// process never honours an expired session, whenever the sweep last ran —
+// and the `authn.session-end` claim, because a lookup, a sign-out and the
+// job can still meet on one session.
 //
 // **IT SWEEPS EVERY REALM AND RUNS INSIDE EACH ONE.** The store is
 // `realms.map()`, so `sessions.forEach` walks the AMBIENT realm's partition —
@@ -631,8 +646,9 @@ let sessionObserver = null;
 // right rather than merely present: the observer builds a subject from the
 // realm's own issuer, and an event naming the wrong one is refused at the far
 // end and reads as a bad signature.
-const SESSION_SWEEP_MS = 30 * 1000;
-let sweepTimer = null;
+// The scheduler job's id, and its interval's setting.
+const SESSION_EXPIRY_JOB = 'authn.session-expiry';
+const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
 
 // ---------------------------------------------------------------------------
 // A SESSION'S END IS REPORTED ONCE, HOWEVER MANY PROCESSES NOTICE IT
@@ -2005,7 +2021,6 @@ class Authn {
     };
     const cookieValue = this.mintSessionHandle(session);
     store.set(sessionId, session);
-    this.armSessionSweep();
     this.setCookieHeader(spec.res, this.sessionCookieLine(spec.cookie,
                                                           cookieValue));
     // THE AUDIT ROW SAYS WHERE IT CAME FROM, and it is a `session.start` like
@@ -2575,7 +2590,7 @@ class Authn {
     log.debug("Leaving Authn.reportExpiry().");
   }
 
-  private sweepExpiredSessions() {
+  sweepExpiredSessions() {
     const { realms, log } = this.deps;
     const self = this;
     log.debug("Entering Authn.sweepExpiredSessions().");
@@ -2624,28 +2639,7 @@ class Authn {
                'nobody is ever told about.');
     }
     log.debug("Leaving Authn.sweepExpiredSessions(). " + gone + " ended.");
-  }
-
-  // Armed by the first session this process creates, and never before — see the
-  // header. `unref()` so it cannot be the reason a process will not exit.
-  private armSessionSweep() {
-    const { log } = this.deps;
-    log.debug("Entering Authn.armSessionSweep().");
-    if (sweepTimer) {
-      log.debug("Leaving Authn.armSessionSweep().");
-      return;
-    }
-    sweepTimer = setInterval(this.sweepExpiredSessions.bind(this),
-                             SESSION_SWEEP_MS);
-    if (typeof sweepTimer.unref === 'function') {
-      sweepTimer.unref();
-    }
-    log.info('authn: the session sweep is running every ' +
-             (SESSION_SWEEP_MS / 1000) +
-             's. A session that expires is ended, ' +
-             'audited and reported over CAEP whether or not anybody comes ' +
-             'back to look at it.');
-    log.debug("Leaving Authn.armSessionSweep().");
+    return gone;
   }
 
   // ---------------------------------------------------------------------------
@@ -3397,10 +3391,8 @@ class Authn {
     // the correlation and ends the fixation.
     const cookieValue = this.mintSessionHandle(session);
     sessions.set(sessionId, session);
-    // The first session this process holds arms the sweep that will end it if
-    // nobody signs it out. See armSessionSweep(): nothing is armed in a process
-    // that signs nobody in.
-    this.armSessionSweep();
+    // The sweep that ends it if nobody signs it out is the scheduler job
+    // `authn.session-expiry` (see the header); nothing is armed here.
     // `Secure` when — and only when — this port is TLS (global.https, which RFC
     // 9700 mode brings with it). It has to be conditional rather than always
     // on: a browser silently DROPS a Secure cookie that arrives over plain
@@ -3778,6 +3770,38 @@ class Authn {
                                                     'There was ' +
         'no such session.'));
     return session;
+  }
+
+  // END EVERY SESSION OF ONE REALM (#48, an emergency key rotation). Each
+  // through the same door as one (`dropSession()`), so each is an audit row, a
+  // CAEP session-revoked and the back-channel Logout Tokens of its relying
+  // parties. Collected first and ended afterwards, for the sweep's reason.
+  // Answers who was signed out, so the caller can tell RISC about accounts.
+  endEverySessionIn(realmId, via) {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.endEverySessionIn(). realm=" + realmId);
+    const realm = realms.get(String(realmId || '')) ||
+                  realms.get(realms.DEFAULT_ID);
+    const store = sessions.realmMap(realm.id);
+    const ids = [];
+    if (store) {
+      store.forEach(function (session, id) {
+        if (session) {
+          ids.push({ id: id,
+                     username: String((session.user &&
+                                       session.user.username) || '') });
+        }
+      });
+    }
+    const ended = realms.run(realm, function () {
+      return ids.filter(function (one) {
+        return !!self.dropSession(one.id, via, false);
+      });
+    });
+    log.debug("Leaving Authn.endEverySessionIn(). " + ended.length +
+              " ended.");
+    return ended;
   }
 
   // Clear the session cookie on this response, whatever the session it named.
@@ -8859,6 +8883,27 @@ const slot = new InstanceSlot<Authn>(
 slot.buildNowUnlessDeferred();
 
 // ---------------------------------------------------------------------------
+// THE SESSION-EXPIRY SWEEP, AS A SCHEDULER JOB (#49, 2026-09-22) — see the
+// header's *THE SWEEP IS A SCHEDULER JOB*. Registered here, at load, and run
+// only by the scheduler's leader; it ends every expired session in every
+// realm through `expireSession()`, so the audit row, CAEP session-revoked and
+// the back-channel Logout Tokens keep coming from the one path.
+// ---------------------------------------------------------------------------
+scheduler.register({
+  id: SESSION_EXPIRY_JOB,
+  title: 'Session expiry',
+  describe: 'Ends every sign-on session whose lifetime or idle timeout has ' +
+            'passed, in every realm: an audit row, CAEP session-revoked and ' +
+            'the back-channel Logout Tokens, once for the whole cluster.',
+  owner: 'authn/authn.ts',
+  everySetting: SESSION_SWEEP_SETTING,
+  everySettingUnit: 's',
+  run: function (): any {
+    return { ended: slot.get().sweepExpiredSessions() };
+  }
+});
+
+// ---------------------------------------------------------------------------
 // What the rest of this service uses.
 //
 // `sessions` is handed out rather than copied because the admin console reports
@@ -8976,6 +9021,7 @@ export = {
   sessionsOf: slot.forward('sessionsOf'),
   sessionById: slot.forward('sessionById'),
   endSessionById: slot.forward('endSessionById'),
+  endEverySessionIn: slot.forward('endEverySessionIn'),
   clearSessionCookie: slot.forward('clearSessionCookie'),
   beginAuthentication: slot.forward('beginAuthentication'),
   // THE SIGN-IN SCREEN'S STYLESHEET, for oauth-oidc/consent_screen.ts. A

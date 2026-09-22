@@ -66,11 +66,11 @@ files did not change; the paths did.
 | `saml/` | The SAML 2.0 and SAML 1.1 assertion builders, each with a SEPARATE browser-facing identity provider rather than one with a version flag. `saml/CLAUDE.md`. |
 | `ws-trust/` | WS-Trust 1.0–1.4. `ws-trust/CLAUDE.md`. |
 | `ws-federation/` | WS-Federation 1.2's passive requestor profile and a mock relying party. `ws-federation/CLAUDE.md`. |
-| `pki/` | `pki_service.ts`: the certificate authority's PUBLIC surface — a CRL and an OCSP responder per CA, each CA's own certificate, and the chain documents at `/pki/chain/`. No gate and no credential, by construction; the authority itself is `common/pki.js`. Its header is its documentation (no `CLAUDE.md`). |
+| `pki/` | `pki_service.ts`: the certificate authority's PUBLIC surface — a CRL and an OCSP responder per CA, each CA's own certificate, and the chain documents at `/pki/chain/`. `crypto_metadata_document.ts` (#42, 2026-09-22): `/crypto/metadata` per realm, every signer GENERATION with its chain, in JSON, XML and signed forms. No gate and no credential, by construction; the authority itself is `common/pki.js`. Each header is its file's documentation (no `CLAUDE.md`). |
 | `federation/` | Federation relationships in either direction, in five protocols; `ou=federations` is the register, and it holds the first and strongest of the outbound requests. `federation/CLAUDE.md`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO (the negotiation, the page, and the sign-in that turns a ticket into a session), and eight codec modules **VENDORED from the parent project and not editable here**, despite not being under `common/vendored/`. `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory — the store for people, groups, applications and the SPIFFE registry — and the eight `/admin/ldap/*` console pages that show it. `ldap/CLAUDE.md`. |
-| `cluster/` | **Several containers against one postgres store** (#46, 2026-09-14): membership and leases with a fencing token every write transaction checks, the gate in front of `cluster.mode` (active-passive by default in product mode on postgres; active-active refused while a capability is missing), atomic claims, the secrets every node shares, and the cross-node read barrier. Libraries — no route but `/admin/cluster`'s status block. `cluster/CLAUDE.md`. |
+| `cluster/` | **Several containers against one postgres store** (#46, 2026-09-14): membership and leases with a fencing token every write transaction checks, the gate in front of `cluster.mode` (active-passive by default in product mode on postgres; active-active refused while a capability is missing), atomic claims, the secrets every node shares, and the cross-node read barrier — and **the scheduler every periodic job runs on** (#49, `scheduler.ts`). Libraries — no route but `/admin/cluster`'s status block; `/admin/scheduler` is `admin-ui/scheduler_admin.ts`. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down (`memory`, `ldif`, `postgres`), and the coordination of several processes through one change log — state, not sockets. `persistence/CLAUDE.md`. |
 | `scim/` | `/scim/v2`, its authentication and attribute mapping, and two console pages (`/admin/scim`, `/admin/scim/monitor`). `scim/CLAUDE.md`. |
 | `ssf/` | The Shared Signals Framework — the one family here that TALKS BACK — with CAEP and RISC as the two vocabularies over it and this service's own console and portal as registered receivers. `ssf/CLAUDE.md`. |
@@ -354,13 +354,14 @@ service does not start**, because it answers WRONGLY rather than slowly.
 
 **rcbj's architectural directive, 2026-09-21: anything that has to be done
 periodically in the background is a job on the central scheduler** (#49,
-`cluster/scheduler.ts` once built), which runs each job on exactly one node, on
-the serving front process and never in a request worker, and hands it to
-another node when that one goes. **No new module may start a timer of its
+`cluster/scheduler.ts`, built 2026-09-22 — `cluster/CLAUDE.md`, *The
+scheduler*), which runs each job on exactly one node, on the serving front
+process and never in a request worker, and hands it to another node when that
+one goes. Monitoring → Scheduler (`/admin/scheduler`) lists every job. **No new module may start a timer of its
 own** — no `setInterval`, no `setTimeout` chain, no sweep armed at require or
 wire time — for work that repeats.
 
-**Cache and store clean-up is included**, and today none of it is a job: a
+**Cache and store clean-up is included**, and none of it is a job yet: a
 cache here drops an entry only when it is read and found expired, when a size
 cap evicts the oldest on an insert, or when a purge piggy-backs on the next
 request that uses the store (claims, used assertions, rate-limit windows and
@@ -382,14 +383,13 @@ What does NOT count: a per-request timeout, a debounce, a retry delay inside
 one operation, and the cluster heartbeat with its lease and origin-claim
 renewals, which are what the scheduler's own leadership stands on.
 
-**The existing timers are exceptions until they move**, and the inventory of
-them — the session sweep, the back-channel logout and SSF sweeps, the CRL
-directory refresh, the SAML metadata refresher, the change-log trim, the
-piggy-backed purges — is in the plan on #49. The CRL refresh moves first,
-because it is the one that runs in every process with no coordination at all.
-**The session-expiry sweep was named by rcbj on the same day** — the one that
-ends expired sessions and sends CAEP and the back-channel Logout Tokens to the
-applications concerned; what moves and what stays is in `authn/CLAUDE.md`.
+**Every timer that existed has moved (#49 P1 and P5, 2026-09-22)** — the
+session sweep, the CRL directory refresh, the back-channel logout and SSF
+sweeps, the SAML metadata refresher, the change-log pull and trim, the cache
+report, the LDAP mirror's maintenance — and so have the purges piggy-backed on
+requests (claims, used assertions, rate-limit windows, minted tombstones).
+`cluster/CLAUDE.md` has the table of jobs; `tests/no_periodic_timers.js`
+holds that nothing else repeats, with the permanent exceptions and why.
 
 ## The require order and the route order
 
@@ -450,6 +450,7 @@ is and the named file says why.
 | 17 | `kerberos/spnego` | JavaScript, locked: registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
 | 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
 | 17b | `pki/pki_service` | No constraint: it requires only libraries. Here, ahead of the console, so `/admin/sts-metadata` groups the revocation endpoints with the protocols. | `common/protocol_stack.ts` (17b) |
+| 17c | `pki/crypto_metadata_document` | 17b's reason (#42): libraries only, `pki.js`, `oauth2.ts`'s signer and the revocation module each LAZILY, so it may sit beside the revocation endpoints. | `common/protocol_stack.ts` (17c) |
 | 18 | `admin-ui/admin` | After `oauth2` (rule 5), and before the families whose modules would otherwise have to be required from it — which is why it offers slots (rule 3e). | `admin-ui/CLAUDE.md` |
 | 18-core | `admin-core/*` | No line of its own. Registers nothing, but requires `oauth2`, `saml2`, `saml11` and `federation`, so it may be required at 18 or later and nowhere earlier — since R1 such a require moves no route, but it still runs those modules' load-time code out of order. | `admin-core/CLAUDE.md` |
 | 18a | `admin-ui/pki_admin` | After `admin-ui/admin`, before `mgmt-api/admin_api`, so the API's require of it is a cache hit and it needs no slot (and since R1 that require could register nothing anyway). | `admin-ui/CLAUDE.md` |
@@ -458,6 +459,7 @@ is and the named file says why.
 | 18f | `oauth-oidc/oauth2_monitor_admin` | Beside the other report pages and for 18a's reason: it requires the console's shell and libraries already loaded, and `oauth2.ts` (9) cannot require it without closing a cycle through the console. | `oauth-oidc/CLAUDE.md` |
 | 18g | `admin-ui/caches_admin` | 18a's placement and 18a's reason (#74): the console's shell and libraries already loaded, and `mgmt-api/admin_api` requires it. It reads `common/cache_registry.js` when drawn, so an owner registered later still appears. | `admin-ui/CLAUDE.md` |
 | 18h | `admin-ui/vc_status_admin` | 18a's placement and 18a's reason (2026-09-17): the console's shell and `oid4vc/vc_status` already loaded, and `mgmt-api/admin_api` requires it. | `admin-ui/CLAUDE.md` |
+| 18i | `admin-ui/scheduler_admin` | 18a's placement and 18a's reason (#49): the console's shell and `cluster/scheduler` (a library the job owners above already loaded), and `mgmt-api/admin_api` requires it. A job registered later still appears: the page asks the scheduler when it is drawn. | `cluster/CLAUDE.md` |
 | 19 | `mgmt-api/admin_api` | After `admin-ui/admin` (rule 7). | `mgmt-api/CLAUDE.md` |
 | 19a | `admin-ui/api_explorer` | After `admin-ui/admin` (the shell and gate) and `mgmt-api/admin_api` (the route table its OpenAPI document is built from); a file of its own so `admin.ts` never requires the API. | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 20 | `tls/tls_server` | JavaScript: registers its `/tls*` views at this require. Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |
@@ -466,6 +468,7 @@ is and the named file says why.
 | 22 | `scim/scim` | After `ldap/ldap_server`, as a plain require. | `scim/CLAUDE.md` |
 | 23 | `spiffe/spiffe_server` | After `ldap/ldap_server` and `tls/tls_server`; its registry's store is the directory. | `spiffe/CLAUDE.md` |
 | 23b | `ssf/ssf` | After `admin-ui/admin`, whose slots it fills; also fills `authn.setSessionObserver()`. Starts nothing. | `ssf/CLAUDE.md`, `authn/CLAUDE.md` |
+| 23b-ii | `common/signing_rotation` | After `ssf/ssf`, whose `signingKeyRotated()` it calls (lazily, so the order is for a reader). A library: registers the `signing.rotate` and `signing.retire` scheduler jobs when built and no route. | `common/signing_rotation.ts` (#42) |
 | 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require for the family, and two `register()` calls — `xacml_admin`, then `xacml`. **Requiring `xacml_role_pep.ts` here is what arms every issuance site** — before this REQUIRE (a load-time effect, not a route) `issuance_gate.js` answers "allowed". | `xacml/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |
 | 23e–g | `acme/acme`, `est/est`, `scep/scep` | **After `admin-ui/admin`** (18), whose shell each family's `_admin.ts` draws its two pages with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each requires its own `_admin.ts`, so each family is one require in `common/protocol_stack.ts`, followed by two `register()` calls (the family, then its `_admin`); `mgmt-api/admin_api.ts` spreads each `<family>_api.ts`, which registers no route and requires its view model lazily. No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |

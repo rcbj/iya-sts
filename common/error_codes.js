@@ -164,6 +164,16 @@ const SUBSYSTEMS = [
           'front of active-passive and active-active mode, atomic claims, ' +
           'the secrets every node shares, and the barrier that makes a ' +
           'request see what other nodes committed before it arrived.' },
+  // THE SCHEDULER (2026-09-22, #49): its own subsystem rather than CLUSTER's,
+  // because a code here is about a JOB — which one, on which node, and what
+  // became of its run — and an operator reading `STS-SCHED-0001` on a run row
+  // wants the job's owner, not the membership table.
+  { id: 'SCHED', label: 'Scheduler',
+    where: 'cluster/scheduler.ts, admin-ui/scheduler_admin.ts',
+    what: 'The one scheduler every periodic job in this service runs on: who ' +
+          'leads it, the claim and fence that make a job run once per slot ' +
+          'in the whole cluster, the runs it records, manual runs and the ' +
+          'planned handover of its leadership.' },
   { id: 'KEYS', label: 'Cryptography, keys and secrets',
     where: 'common/crypto.js, common/pq_jose.js, common/keystore.js, ' +
            'common/secrets.js',
@@ -585,7 +595,7 @@ const CODES = [
   { code: 'STS-CORE-0025',
     summary: 'The BBS key pair handed down from the front process could not ' +
       'be read, so this process generated its own.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-CORE-0026',
     summary: 'A request declared a JSON body that does not parse; it is read ' +
       'as empty.',
@@ -625,7 +635,7 @@ const CODES = [
     summary: 'The BBS key pair could not be shared with the request workers; ' +
       'each generates its own and a did:web document may name a key ' +
       'its siblings did not sign with.',
-    spec: '' },
+    spec: '', retired: true },
   { code: 'STS-CORE-0035',
     summary: 'The service refused to start because its signing key material ' +
       '(or the key-encryption key that opens it) could not be read.',
@@ -719,6 +729,10 @@ const CODES = [
       'fixed when the realm is created.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== WORKER ============================================================
+  { code: 'STS-CORE-0102',
+    summary: 'A cache or replay store could not eject its expired entries; ' +
+      'the store still refuses an expired entry where it reads it.',
+    spec: 'none — logged by the caches.eject-expired job' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -1297,6 +1311,75 @@ const CODES = [
       'nodes would not share sessions, pending sign-ins, codes or tokens; ' +
       'the service does not start.',
     spec: '' },
+  { code: 'STS-CLUSTER-0041',
+    summary: 'Standing down from a lease early failed in the store; the ' +
+      'lease expires on its own within one node lifetime, and this node does ' +
+      'not renew it.',
+    spec: '' },
+  // ===== SCHED =============================================================
+  { code: 'STS-SCHED-0001',
+    summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
+      'as failed with the reason, and the job runs again at its next slot.',
+    spec: '' },
+  { code: 'STS-SCHED-0002',
+    summary: 'A job\'s run took longer than its time limit; it is recorded as ' +
+      'failed, its claim is given back, and anything it still does is fenced ' +
+      'out.',
+    spec: '' },
+  { code: 'STS-SCHED-0003',
+    summary: 'A run\'s outcome was fenced out: another attempt took the run ' +
+      'over after this one\'s claim lapsed, so this one\'s result is not ' +
+      'written.',
+    spec: '' },
+  { code: 'STS-SCHED-0004',
+    summary: 'A manual run was refused: no job by that id is registered.',
+    spec: '' },
+  { code: 'STS-SCHED-0005',
+    summary: 'A manual run was refused: the job runs on its schedule only.',
+    spec: '' },
+  { code: 'STS-SCHED-0006',
+    summary: 'A manual run was refused: the job is off (its setting, ' +
+      'scheduler.enabled, or a development-mode predicate), and says why.',
+    spec: '' },
+  { code: 'STS-SCHED-0007',
+    summary: 'A manual run was refused to a realm administrator: the job is ' +
+      'service-scoped, or names another realm.',
+    spec: '' },
+  { code: 'STS-SCHED-0008',
+    summary: 'The claim store could not be asked whether a run was already ' +
+      'taken; the run is not started until it can be, so it never runs ' +
+      'twice.',
+    spec: '' },
+  { code: 'STS-SCHED-0009',
+    summary: 'A job registration was refused whole: a member is missing or ' +
+      'malformed, or the id is taken.',
+    spec: '' },
+  { code: 'STS-SCHED-0010',
+    summary: 'A step-down was refused: this service is not clustered, so ' +
+      'there is no other node to hand the scheduler to.',
+    spec: '' },
+  { code: 'STS-SCHED-0011',
+    summary: 'A run was abandoned: the node running it stopped holding its ' +
+      'claim before it finished, and another attempt took it over.',
+    spec: '' },
+  { code: 'STS-SCHED-0012',
+    summary: 'A manual run was refused: the realm it names does not exist.',
+    spec: '' },
+  { code: 'STS-SCHED-0013',
+    summary: 'The scheduler\'s tick failed unexpectedly; it is tried again ' +
+      'at the next tick.',
+    spec: '' },
+  { code: 'STS-SCHED-0014',
+    summary: 'The scheduler\'s leader could not stand down; its lease expires ' +
+      'on its own.',
+    spec: '' },
+  { code: 'STS-SCHED-0015',
+    summary: 'A per-process job\'s run in this process threw or rejected; its ' +
+      'row for this process says so, and it runs again at its next slot.',
+    spec: '' },
+  { code: 'STS-SCHED-0016',
+    summary: 'A run was asked for that does not exist (an unknown run id).',
+    spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
@@ -1563,7 +1646,28 @@ const CODES = [
       'DigestMethod) and saml.allowSha1Signatures is off (the default), so ' +
       'it was refused before any cryptography, on every XML signature path.',
     spec: 'refusal by the calling protocol' },
+  { code: 'STS-KEYS-0063',
+    summary: 'A signing key rotation was refused: the realm\'s key set ' +
+      'could not be replaced (a newer generation was already held, or the ' +
+      'store refused the write).',
+    spec: 'the scheduler run fails with this code; /admin/keys and ' +
+      '/admin-api report it' },
   // ===== PKI ===============================================================
+  { code: 'STS-KEYS-0064',
+    summary: 'After an emergency key rotation the realm\'s sessions could ' +
+      'not be ended; the keys were rotated and their certificates revoked.',
+    spec: 'none — logged; the run still succeeds and its audit row counts ' +
+      'the sessions ended' },
+  { code: 'STS-KEYS-0065',
+    summary: 'A rotation was asked for a signing unit this realm does not ' +
+      'have.',
+    spec: 'HTTP 400 from POST /admin-api/keys/rotate; a refusal on ' +
+      '/admin/keys' },
+  { code: 'STS-KEYS-0066',
+    summary: 'An emergency rotation was asked for without its confirmation ' +
+      '(confirm: "compromised").',
+    spec: 'HTTP 400 from POST /admin-api/keys/emergency; a refusal on ' +
+      '/admin/keys' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -2411,6 +2515,10 @@ const CODES = [
     summary: 'A certificate was not recorded because the Issuing CA that ' +
       'signed it was replaced, repeatedly, while it was being signed.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0187',
+    summary: 'The public crypto metadata document (/crypto/metadata) could ' +
+      'not be built.',
+    spec: 'HTTP 500 server_error from /crypto/metadata' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
@@ -5762,6 +5870,15 @@ const CODES = [
       'refused because this realm has revoked it.',
     spec: 'invalid_request (HTTP 400), RFC 8693 section 2.2.2' },
   // ===== SAML ==============================================================
+  { code: 'STS-OAUTH-0558',
+    summary: 'A client authenticated with a client_secret past its ' +
+      'expiry (oauthClientSecretExpiresAt, or the registration\'s ' +
+      'client_secret_expires_at), in product mode.',
+    spec: 'invalid_client (RFC 6749 section 5.2)' },
+  { code: 'STS-OAUTH-0559',
+    summary: 'A client authenticated with an expired client_secret and was ' +
+      'accepted, because the service is in development mode.',
+    spec: 'none — logged; the request is answered' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -8760,6 +8877,11 @@ const CODES = [
       'notification) in product mode.',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   // ===== SSF ===============================================================
+  { code: 'STS-VC-0087',
+    summary: 'A BBS key was asked for at /bbs/keys/<kid> that is not a live ' +
+      'generation of this realm\'s BBS key (current, next, or retired within ' +
+      'its grace).',
+    spec: 'HTTP 404 not_found' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -9166,6 +9288,10 @@ const CODES = [
       'confirmed unused across the cluster, so the token was refused.',
     spec: 'HTTP 401 {err: invalid_token}' },
   // ===== GNAP ==============================================================
+  { code: 'STS-SSF-0100',
+    summary: 'The signing-key-rotated event (this service\'s own) could not ' +
+      'be transmitted after a rotation; the rotation itself stands.',
+    spec: 'none — logged; nothing is sent to a receiver' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -12571,6 +12697,12 @@ const CODES = [
       'inline jwks key of the right type to encrypt to (a jwks_uri is ' +
       'never fetched).',
     spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0166',
+    summary: 'An application\'s client secret has expired, or expires within ' +
+      'oauth2.clientSecretExpiryWarningDays — found by the daily scheduler ' +
+      'job oauth2.client-secret-expiry.',
+    spec: 'none — an audit row and a warning; rotate the secret on ' +
+      '/admin/applications' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
