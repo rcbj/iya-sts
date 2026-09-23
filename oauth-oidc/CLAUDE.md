@@ -319,6 +319,16 @@ so must `admin-ui/admin.ts`.
    reachable negative. Do not fold it into the mode — a compliance flag that
    also breaks tokens is a flag nobody will turn on.
 
+   **IT IS DEVELOPMENT MODE'S, NOT RFC 9700 MODE'S (#104, 2026-09-23).** Product
+   mode honoured it until then. The row carries `onlyWhile: 'spoilsOnPurpose'`,
+   so a product realm refuses turning it on (`STS-CORE-0103`, `config.js`'s
+   `modeWriteProblem()`), and `idToken()` reads it through
+   `mode.valueInForce()`, which answers the default in a product realm whatever
+   is stored and says so once (`STS-CORE-0106`). The READ is the guard, because
+   `global.mode` is itself a runtime setting and a realm can be switched with
+   the value still stored; `GET /oauth2/rfc9700` reports it the same way, as it
+   is in force.
+
    **THE TLS REQUIREMENT IS NOT A CHECK AND MUST NOT BE MADE ONE.** "An
    authorization response MUST NOT be sent over an unencrypted connection"
    cannot be refused per request — by the time anything here runs the request
@@ -432,8 +442,7 @@ so must `admin-ui/admin.ts`.
    `post_logout_redirect_uri` only in RFC 9700 or 2.1 mode, and believes one only
    off the client's own list (`STS-OAUTH-0290`).
 
-   **NOT DONE, AND WRITTEN DOWN**: the debugger's client side;
-   introspection and revocation still authenticate no client; and product mode
+   **NOT DONE, AND WRITTEN DOWN**: the debugger's client side; and product mode
    still checks an OAuth `redirect_uri` only when one of the two modes is on.
    `tests/oauth21_mode.js` and `tests/redirect_uri_schemes.js` are the
    in-process half, mutation-tested against twenty mutants.
@@ -1329,6 +1338,25 @@ so must `admin-ui/admin.ts`.
    `introspection_endpoint_auth_methods_supported` is `clientAuth.METHODS` now,
    filtered as the token endpoint's is; it named three while nothing
    authenticated a caller there at all.
+
+   **REVOCATION AUTHENTICATES THROUGH THE SAME FUNCTION SINCE #102
+   (2026-09-22).** `authenticateEndpointCaller()` in `oauth2.ts` is the rate
+   limit, the advertised-method check, `observeClientAuthentication()` and the
+   failure settlement, once, for both endpoints; each passes its own codes and
+   sentences. Two options tell them apart: `allowPublic` (RFC 7009 section 2.1
+   validates credentials "in case of a confidential client", so a public entry
+   is IDENTIFIED by its client_id; introspection needs a resource server it can
+   address and keeps refusing one) and `lenient` (development's revocation with
+   a credential: a credential that fails is refused as in product, one with
+   nothing on file to check is not a failure). `mode.opensRevocation()` is the
+   gate; `revocation_endpoint_auth_methods_supported` is introspection's list.
+   The rest of RFC 7009 — ownership as `invalid_grant`, `unsupported_token_type`
+   for an ID Token, the required `token`, the ignored hint, and a refresh token
+   revoking its GRANT (`bcp.grantMembersOf()`, recorded at issue in every mode)
+   — is argued above `revokeEndpoint()`. **The grant revocation is not 3f's
+   replay rule**, which leaves access tokens alive as evidence: a replay is the
+   server detecting a copied chain, a revocation is the client ending the grant.
+   `tests/rfc7009_revocation.js` and `tests/vendored/sts_token_revocation.js`.
 
    **WHAT MAKES IT NOT A TOKEN** (section 8.1): `typ: token-introspection+jwt`,
    which no resource server here accepts; no top-level `sub` or `exp`; the

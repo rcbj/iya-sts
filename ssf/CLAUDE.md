@@ -1229,6 +1229,18 @@ the errors have to be reachable on purpose.
 * **`ssf.breakSetSignature`** changes ONE CHARACTER of the signature after
   signing.
 
+**BOTH ARE DEVELOPMENT MODE'S ONLY (#104, 2026-09-23).** Product mode honoured
+them until then, which let a deployment emit SETs nothing had signed. Each row
+carries `onlyWhile: 'spoilsOnPurpose'` — refused on write in a product realm
+(`STS-CORE-0103`) — and `ssf_events.js` reads both through
+`mode.valueInForce()`, `buildSet()` for the claim and `signSet()`'s `.then()`
+for the signature, so a realm switched to product with either still stored
+stops producing the defect on its next SET and says so once (`STS-CORE-0106`).
+`caep.omitEventTimestamp`, `risc.omitEventTimestamp` and
+`risc.googleSubjectType` are NOT marked: the first two are conforming, and the
+third — non-conforming on purpose, and honoured in product — was found in the
+same sweep and left for a decision of its own.
+
 **And the second one has a trap in it that cost a test run.** It changes the
 **first** character of the signature and not the last, and that is not a style
 choice: the last character of a base64url string usually carries PADDING BITS

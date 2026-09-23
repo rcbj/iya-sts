@@ -87,15 +87,23 @@ response type or endpoint that would be refused.
   ([RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), `S256` and `plain`).
 * **Implicit and hybrid**: every combination of `code`, `token` and
   `id_token`, including `id_token token`.
+* **`response_type=none`**: nothing is issued. The response carries `state`
+  and `iss`, in the query. `none` combined with another value is refused
+  (Multiple Response Type Encoding Practices section 4).
 * **Response modes** `query`, `fragment` and `form_post`. `form_post` is
   answered with a self-submitting form that also has a real submit button.
+  When an error is shown instead of redirected (RFC 9700 mode, nobody signed
+  in), a `form_post` request's way on is a form with a button that POSTs the
+  error, never a link carrying it in the URL.
   Without an explicit mode, `code` alone answers in the query and every
   response type that returns a token or an ID Token answers in the fragment
   ([Multiple Response Type Encoding
   Practices](https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html)
   section 2.1). **An error goes where the success would have gone**, so an
   implicit or hybrid request gets its error in the fragment. An explicit
-  `response_mode=query` is ignored for a response type that returns a token.
+  `response_mode=query` for a response type that returns a token or an ID
+  Token is **refused**, and the error goes in the fragment, because section
+  2.1 says that encoding MUST NOT be used.
 * **JWT-secured responses (JARM)**: the response modes `query.jwt`,
   `fragment.jwt`, `form_post.jwt` and `jwt` (a query for `code`, a fragment
   otherwise) answer with one `response` parameter, a JWT carrying what the
@@ -469,8 +477,28 @@ reported as `{"active": false}`. The answer includes `cnf`, `acr`, `auth_time`
 and `authorization_details`.
 
 `POST /oauth2/revoke` ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009))
-authenticates nobody in any mode. It writes to the same revocation set as the
-console's **Revoke** buttons.
+writes to the same revocation set as the console's **Revoke** buttons, and
+since [#102](https://github.com/rcbj/iya-sts/issues/102) it follows section 2.1:
+
+* **The client first.** In product mode every request comes from a client: a
+  confidential one presents a credential that verifies, by any method the
+  token endpoint accepts, and a public one names its registered `client_id`.
+  Anything else is 401 `invalid_client`. In development a request with no
+  credential still revokes, but a credential that is presented is verified,
+  and one that fails is refused the same way.
+* **A client revokes only its own tokens.** A token issued to another client
+  is refused `invalid_grant` and nothing is revoked.
+* **Access and refresh tokens only.** An ID Token, or any other token this
+  realm signed, is `unsupported_token_type` (section 2.2.1). A token that does
+  not verify is still answered 200, as section 2.2 says.
+* **`token` is required** (`invalid_request` without it), and
+  `token_type_hint` is a hint: an unknown value is ignored.
+* **A refresh token takes its grant with it.** Revoking one revokes every
+  refresh token of its family and every access token issued beside them.
+  Revoking an access token revokes that token alone.
+
+`revocation_endpoint_auth_methods_supported` is the same list as
+introspection's, `none` included.
 
 ### Dynamic registration and software statements
 
@@ -859,7 +887,7 @@ The console's **Protocols → OAuth2 / OIDC** group:
 
 | Page | What it is for |
 |---|---|
-| `/admin/oauth2` | the `oauth2.*` settings: issuer, both compliance modes, redirect URIs, logout, the deliberate `breakIdTokenNonce` defect |
+| `/admin/oauth2` | the `oauth2.*` settings: issuer, both compliance modes, redirect URIs, logout, the deliberate `breakIdTokenNonce` defect (development mode only) |
 | `/admin/authorization-servers` | named authorization server profiles, their members and their drift |
 | `/admin/token-lifetimes` | the three lifetimes and the clock skew, beside a count of what has expired |
 | `/admin/claims` | the access token and ID Token custom claim sets |

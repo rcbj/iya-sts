@@ -474,6 +474,13 @@ const NAV = [
       // it asking what happened rather than asking to change something.
       { path: BASE + '/signals', label: 'Security activity',
         heading: 'Your security activity' },
+      // RECENT SIGN-INS (#62 P6, 2026-09-22), beside Security activity and
+      // for its reason: not a control over a credential, but what this
+      // service made of the person's sign-ins — with the one control that
+      // belongs there, saying whether each was them. Drawn by
+      // `portal_sign_ins.ts`.
+      { path: BASE + '/sign-ins', label: 'Recent sign-ins',
+        heading: 'Your recent sign-ins' },
       // EMAIL (#63, 2026-09-22): the address this service writes to, whether
       // it is verified, which messages may be declined, and what was sent.
       // Under *Your account* for Security activity's reason — it is what this
@@ -4362,6 +4369,9 @@ class Portal {
               'one. You need at least one way to sign in.'));
       }
       if (password) {
+        // Screened against Pwned Passwords first (#62 P6), so the password
+        // rules find the verdict waiting.
+        await require('../common/breached_passwords').screen(password);
         const set = credentials.setPassword(username, password);
         if (!set.ok) {
           errorCodes.mark(res, self.innerCode(set) || 'STS-PORTAL-0008');
@@ -4541,6 +4551,8 @@ class Portal {
                                'Password reset link');
       }
       self.holdLinkClaim(res, spent.handle);
+      // Screened against Pwned Passwords first (#62 P6).
+      await require('../common/breached_passwords').screen(password);
       const set = credentials.setPassword(username, password);
       if (!set.ok) {
         errorCodes.mark(res, self.innerCode(set) || 'STS-PORTAL-0073');
@@ -5660,6 +5672,8 @@ class Portal {
           next ? 'The two new passwords do not match.' : 'Give a new ' +
             'password.'));
       }
+      // Screened against Pwned Passwords first (#62 P6).
+      await require('../common/breached_passwords').screen(next);
       const set = credentials.setPassword(username, next);
       if (!set.ok) {
         errorCodes.mark(res, self.innerCode(set) || 'STS-PORTAL-0008');
@@ -6106,6 +6120,8 @@ const portalCertificates = require('./portal_certificates');
 const portalAppPasswords = require('./portal_app_passwords');
 // /portal/kerberos (#59), the same arrangement, registered after that.
 const portalKerberos = require('./portal_kerberos');
+// /portal/sign-ins (#62 P6), the same arrangement, registered after that.
+const portalSignIns = require('./portal_sign_ins');
 // /portal/email, /portal/verify-email and /portal/forgot-password (#63),
 // the same arrangement, registered after that.
 const portalMail = require('./portal_mail');
@@ -6143,6 +6159,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalKerberos.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalSignIns.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

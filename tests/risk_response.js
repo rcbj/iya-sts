@@ -31,6 +31,10 @@
 //      a thin history, and — enforced — ends everything the person held.
 //   H. THE `risk.rescore` JOB raises a live session whose address has since
 //      become a Tor exit, and never lowers one.
+//   I. WHAT THE PERSON SAID (#62 P6): "this was me" from the flagged session
+//      moves nothing, from another low-risk session lowers the standing;
+//      "this wasn't me" puts it at HIGH and ends every session; a sign-in is
+//      answered once, and only by its own person.
 //
 // In a child process, for `risk_decisions.js`'s reason. Every list is
 // synthetic; the one address on them is the loopback.
@@ -293,6 +297,58 @@ function childMain() {
     note(standing && standing.level === 'MEDIUM',
          'H3. the person\'s standing moves with it',
          JSON.stringify(standing));
+
+    // --- I. what the person said (#62 P6) -----------------------------------
+    // The loopback off the Tor list again, or every sign-in below is MEDIUM
+    // and asked for a second factor this test does not give.
+    await riskDatasets.importVersion({ dataset: 'iplist.tor-exit',
+      format: 'ip-list', content: '192.0.2.250\n', version: 'rr-tor-2',
+      source: 'upload' });
+    config.setOverride('risk.enforceInDevelopment', true);
+    ldap.createUser('rr-dana', { invent: false });
+    const danaSub = helpers.subjectForName('rr-dana');
+    const dana = await signIn('rr-dana', CHROME);
+    const danaAssessed = dana.assessment;
+    const fromItself = await riskEngine.feedback({ realm: 'default',
+      subject: danaSub, username: 'rr-dana', assessmentId: danaAssessed.id,
+      verdict: 'confirmed', fromSessionId: dana.session.id,
+      fromSessionLevel: 'MEDIUM' });
+    note(fromItself.ok && fromItself.moved === '',
+         'I1. "this was me" said from the flagged session itself is ' +
+         'recorded and moves nothing', JSON.stringify(fromItself));
+    const again2 = await riskEngine.feedback({ realm: 'default',
+      subject: danaSub, username: 'rr-dana', assessmentId: danaAssessed.id,
+      verdict: 'denied', fromSessionId: 'x', fromSessionLevel: 'LOW' });
+    note(!again2.ok, 'I2. a sign-in is answered once');
+    const second = await signIn('rr-dana', FIREFOX);
+    await riskStore.upsertSubject({ realm: 'default', subject: danaSub,
+      score: 5, level: 'MEDIUM', reason: 'a test',
+      lastAssessment: second.assessment.id, updatedAt: Date.now() }, false);
+    const vouched = await riskEngine.feedback({ realm: 'default',
+      subject: danaSub, username: 'rr-dana',
+      assessmentId: second.assessment.id, verdict: 'confirmed',
+      fromSessionId: dana.session.id, fromSessionLevel: 'LOW' });
+    const lowered = await riskStore.subjectOf('default', danaSub, false);
+    note(vouched.ok && vouched.moved === 'LOW' && lowered.level === 'LOW',
+         'I3. "this was me" from ANOTHER, low-risk session lowers the ' +
+         'person\'s standing to LOW', JSON.stringify(lowered));
+    const third = await signIn('rr-dana', CHROME);
+    const denied = await riskEngine.feedback({ realm: 'default',
+      subject: danaSub, username: 'rr-dana',
+      assessmentId: third.assessment.id, verdict: 'denied',
+      fromSessionId: third.session.id, fromSessionLevel: 'LOW' });
+    await new Promise(function (r) { setTimeout(r, 200); });
+    const raised = await riskStore.subjectOf('default', danaSub, false);
+    note(denied.ok && denied.moved === 'HIGH' && raised.level === 'HIGH' &&
+         !authn.sessionsOf('rr-dana').length,
+         'I4. "this wasn\'t me" puts the standing at HIGH, and every ' +
+         'session the person held is ended', JSON.stringify(raised) +
+         ' held ' + authn.sessionsOf('rr-dana').length);
+    const stranger = await riskEngine.feedback({ realm: 'default',
+      subject: aliceSub, username: 'rr-alice',
+      assessmentId: third.assessment.id, verdict: 'denied',
+      fromSessionId: 'x', fromSessionLevel: 'LOW' });
+    note(!stranger.ok, 'I5. nobody answers for somebody else\'s sign-in');
 
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

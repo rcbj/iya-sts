@@ -915,6 +915,14 @@ because "the client must validate the nonce" is a requirement no server can
 check, and a reachable negative is the only way to find out whether a client
 does.
 
+**It works in development mode only** (#104). A realm in product mode ignores
+it where the ID Token is built — a value still stored from before the realm was
+switched is logged once (`STS-CORE-0106`) — and refuses turning it on
+(`STS-CORE-0103`). The same marker (`onlyWhile` on the row in
+`common/config.js`) makes `ssf.breakSetSignature`, `ssf.legacySubClaim`,
+`spiffe.acceptAssertedSelectors` and `spiffe.attestWorkloads` off development
+only, and the four `…SkipTlsVerification` settings before them (#171).
+
 ### The four token lifetimes
 
 | Setting | Default | Allowed |

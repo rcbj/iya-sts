@@ -694,7 +694,8 @@ crosses to a request worker is the caller, already plain.
 **What is still not attested, and why each is a sentence rather than a gap:**
 
 * **A caller over TCP** — no peer process to ask. It keeps the `transport:`,
-  `endpoint:` and `peer:` selectors.
+  `endpoint:` and `peer:` selectors, and **product does not serve it without a
+  declared network** — see *The Workload API over TCP* below (#166).
 * **A peer in another pid namespace** (pid 0 from `SO_PEERCRED`) — attested on
   its kernel uid and gid alone; nothing that needs the process is invented.
 * **The socket without the native module** — development serves it
@@ -709,6 +710,92 @@ crosses to a request worker is the caller, already plain.
 process and asserts the child's pid, uid, gid and selectors, the revalidation,
 and a failing attestor's refusal; the attestors over fake `/proc`, Engine and
 kubelet beside it.
+
+**THE TWO LOOSENING SWITCHES ARE DEVELOPMENT MODE'S (#104, 2026-09-23).**
+`spiffe.acceptAssertedSelectors` was already ignored in product (#40) and
+`spiffe.attestWorkloads` OFF was not: it handed every caller every entry,
+which made the attestation above meaningless. Both rows carry `onlyWhile`
+(`believesAssertedSelectors`, `servesUnattestedEntries`), so a product realm
+refuses the non-default value on write (`STS-CORE-0103`), and
+`spiffe_auth.ts` reads both through `mode.valueInForce()`, which answers the
+default there whatever is stored and says so once (`STS-CORE-0106`).
+
+### The Workload API over TCP, and what an entry must select (#166, 2026-09-23)
+
+The Workload Endpoint specification section 3: "TCP transport MUST NOT be used
+unless the underlying network allows the Workload Endpoint server to strongly
+authenticate the workload based on source IP address." Sections 3.1 and 5 rule
+out TLS and client authentication, so the source address is the only identity a
+TCP caller can carry — and product bound 8092 on `0.0.0.0` and attested nobody.
+Whether a network authenticates source addresses is not observable from here, so
+the operator DECLARES it. Decisions taken on the issue, the most secure in each
+case:
+
+* **`SpiffeAuth.workloadTcpPosture()` IS THE ONE ANSWER**, read in the ambient
+  realm by three askers: `bindAll()` (a product realm without
+  `spiffe.workloadTcpSourceAuthenticated` does not bind the TCP address,
+  `STS-SPIFFE-0120`; with it and a wildcard `spiffe.grpcHost`, not either,
+  `STS-SPIFFE-0121` — the operator names the address they vouch for),
+  `prepareCall()` (a realm switched to product, or whose declaration was
+  withdrawn, after its port was bound refuses every call on it `UNAVAILABLE` —
+  the listeners are bound once, so the read is the guard), and
+  `workloadAttestationState().tcp`, which `GET /spiffe`, `/admin/spiffe` and
+  `/admin-api/spiffe` draw. The predicate is `mode.servesUnattestedWorkloadTcp()`
+  and the setting is `realmRuntime`, like the port it governs. A refused
+  binding carries its code as `errorCodes.mark()`, never as a member: the row is
+  drawn and returned.
+* **AN ENTRY MUST IDENTIFY ITS WORKLOAD** (`mode.registersUnidentifyingEntries()`,
+  `registry.identifiesWorkload()`): in product, one with no selector or only
+  `transport:`/`endpoint:` is refused in `checkRecord()` (`STS-SPIFFE-0122`), so
+  the console, `/admin-api` and `BatchCreateEntry`/`BatchUpdateEntry`
+  (INVALID_ARGUMENT per item) are held to it alike; the code rides the result as
+  a mark and each door records it. An entry written in development answers
+  nobody once the realm is in product (`answersWorkloads()` in
+  `entitledEntries()`, `STS-SPIFFE-0123`, said once per entry). Empty is refused
+  too because SPIRE itself refuses an empty selector list.
+* **`peer:` STAYS EXACT.** No CIDR prefixes: SPIRE has no such selector, and a
+  prefix would be this service inventing a matching rule a client written
+  against SPIRE would not expect.
+* **Development is unchanged**, and `workloadSelectors()` too: `peer:` was
+  already the only TCP selector that says WHO; the refusal is what makes
+  `transport:` and `endpoint:` descriptive.
+
+`tests/spiffe_workload_tcp_product.js` holds all of it — the posture, a real
+bind in both modes with a gRPC client over TCP, the three doors, exact `peer:`;
+`tests/vendored/sts_spiffe_grpc.js` the network's view in both states. The test
+stacks (`docker-compose-run-tests.yml`) DECLARE their bridge, which only this
+launcher's containers are on, so the product modes exercise the declared path.
+
+### The `local` entity, verified in product (#104)
+
+SPIRE trusts its private socket outright and relies on its filesystem
+permissions; `spiffe.trustLocalSocket` (on) did the same here in every mode,
+and a chmod that FAILED (`STS-SPIFFE-0010`) left the socket served and trusted
+in product. rcbj's decision on #104 was to keep the default on and VERIFY the
+boundary in product rather than assume it. `SpiffeAuth.localTrust()`, asked per
+call on the server surface in the listener's realm:
+
+* development (`mode.trustsUnverifiedLocalSocket()`): `local` on the socket's
+  existence, unchanged;
+* product: `local` only when the connection's facts say the socket is PRIVATE
+  (`restrictSocket()` succeeded for that path before the connection was
+  accepted, and neither the socket nor its directory has a group or other bit —
+  `SpiffeGrpc.socketPrivacy()`, `STS-SPIFFE-0117`) AND the peer's kernel uid is
+  `process.geteuid()` (`STS-SPIFFE-0118`). Facts that cannot be read — no
+  native module, `SO_PEERCRED` failed — are "not local" (`STS-SPIFFE-0119`).
+  Root is NOT accepted as a stand-in for the service's uid.
+
+**The facts come from the Workload API's own listener.** Wherever the native
+module is built, the Server socket is bound through `bindAttestedSocket()` in
+both modes and `observeLocalCaller()` records the peer's credentials and
+`facts.localSocket` at accept; no workload attestor runs and nothing is refused
+there. Without the module it is bound as before and a product realm trusts
+nobody on it — it is still SERVED, because the mode is per realm and runtime,
+and the refusal (with its code) is what tells the operator why. A refused
+caller is anonymous on the socket (it carries no TLS), and `authorize()` puts
+the local refusal's code and sentence on the `UNAUTHENTICATED` answer.
+`tests/spiffe_local_socket.js` holds all of it, the real socket and a CLI in a
+child process included.
 
 **THE SPIRE SERVER API IS THE OTHER HALF**, and it came first: its TCP port is
 MUTUAL TLS, its callers present an X509-SVID verified against the trust bundle,

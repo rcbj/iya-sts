@@ -133,7 +133,8 @@ these protocol families:
 
 It exists to exercise *clients*: in development mode it checks no password,
 validates no access token and **attests no Workload API caller over TCP**
-(the Unix socket's are attested, #40). The surfaces below are
+(the Unix socket's are attested, #40; product serves TCP only on a declared
+network, #166). The surfaces below are
 the exceptions, and each is argued where it lives.
 
 | Surface | What it requires | Argued in |
@@ -590,7 +591,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the eight scripted pages below, and others
+growing number of routes relax it — the ten scripted pages below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -625,11 +626,11 @@ argues it.
 silently.
 
 
-## Nine pages here have a script on them, and each is the same exception
+## Ten pages here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Nine pages need a script and each takes the SAME shape of
+than merely unlikely. Ten pages need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
 and **each but the OP iframe carries a REAL SUBMIT BUTTON as well**, because
 with the script blocked the button is the whole mechanism. The OP iframe has
@@ -645,6 +646,7 @@ no person in front of it and nothing to submit; its argument is its row.
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
+| the sign-in screen `/authn/login`, **only while `risk.fingerprinting` is on in the realm** (#62 P6, off by default) | `/authn/fingerprint.js` — FingerprintJS (MIT, served with its notice) computing a browser identifier, which no markup can; the form works with it blocked, the field simply empty | `authn/CLAUDE.md`, `risk/CLAUDE.md` |
 | `/oauth2/check_session` (#121, 2026-09-23, off by default) | `/oauth2/check_session.js` — it answers a relying party's `postMessage`, which no markup can; so it is the one page here with **NO submit button**, and with script off a relying party's question simply goes unanswered | `oauth-oidc/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
@@ -958,11 +960,11 @@ the file the row names.
 | Enforce anything by default, **in development mode** — `oauth2.rfc9700` and `oauth2.oauth21` (which turns it on) are the modes, off unless set. **Product mode implies RFC 9700 mode since 2026-09-17**, which is what lets it allow public clients | `oauth-oidc/CLAUDE.md`, `common/mode.js` |
 | Federate with anybody it was not CONFIGURED to federate with — the one place it refuses by default, and not a mode | `federation/CLAUDE.md` |
 | Decrypt an assertion a federation partner encrypted, consume a federated sign-out, or re-check a federated person after the session exists | `federation/CLAUDE.md` |
-| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it. **The fourth is a STATUS LIST (2026-09-17)** — an address inside a credential, which is a caller's kind of URL; what makes it the administrator's is where it sits, under a signature that verified against a certificate in `oid4vp.trustedIssuerCertificates`, and it is never fetched for a credential this realm signed (whose list is in its own store). **The fifth is a SAML MDQ lookup (2026-09-17)** — the operator's `saml2.mdqBaseUrl`, with only a request's entityID as its path, never awaited. **The sixth is SPIFFE's `http_challenge` (2026-09-21, #40)** — a host name the attesting agent names, fetched only after it matched the realm's `spiffe.httpChallengeAllowedDnsPatterns` (empty refuses all), internal addresses refused in product mode, no redirect, 64 bytes. **The seventh is an OpenID Connect `sector_identifier_uri` (2026-09-22, #118)** — fetched once, when a client REGISTERS it, through `federation_http.fetchPublished()`, never while issuing. **The eighth is a client's registered `jwks_uri` (2026-09-22, #120)** — which this row named as a refusal until then: fetched when a key is needed, through the same `fetchPublished()`, cached by `oauth-oidc/client_jwks.js`, and never beside an inline `jwks` | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md`, `spiffe/CLAUDE.md` |
+| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — the URLs it does dial are addresses somebody asked to be SENT something at. **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode. **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode. **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it. **The fourth is a STATUS LIST (2026-09-17)** — an address inside a credential, which is a caller's kind of URL; what makes it the administrator's is where it sits, under a signature that verified against a certificate in `oid4vp.trustedIssuerCertificates`, and it is never fetched for a credential this realm signed (whose list is in its own store). **The fifth is a SAML MDQ lookup (2026-09-17)** — the operator's `saml2.mdqBaseUrl`, with only a request's entityID as its path, never awaited. **The sixth is SPIFFE's `http_challenge` (2026-09-21, #40)** — a host name the attesting agent names, fetched only after it matched the realm's `spiffe.httpChallengeAllowedDnsPatterns` (empty refuses all), internal addresses refused in product mode, no redirect, 64 bytes. **The seventh is an OpenID Connect `sector_identifier_uri` (2026-09-22, #118)** — fetched once, when a client REGISTERS it, through `federation_http.fetchPublished()`, never while issuing. **The eighth is a client's registered `jwks_uri` (2026-09-22, #120)** — which this row named as a refusal until then: fetched when a key is needed, through the same `fetchPublished()`, cached by `oauth-oidc/client_jwks.js`, and never beside an inline `jwks`. **The ninth is the Pwned Passwords range API (2026-09-22, #62 P6)** — the operator's `risk.breachApiUrl` with a five-character SHA-1 prefix computed here as its path, product mode only, through `fetchPublished()`; off in every suite stack | `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md`, `spiffe/CLAUDE.md`, `risk/CLAUDE.md` |
 | ~~Ask anybody's permission before it issues something~~ — **reversed 2026-09-01**: `/oauth2/consent`, with `oauth2.consentRequired` ON by default | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer (`Access-Control-Allow-Origin: *` until 2026-09-13) — unless the origin is this service's own or an application lists it in `appCorsOrigin`, per client where the request names one; in both modes, on every path | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** — product verifies every presented password; a Kerberos ticket, a TOTP code and a recovery code are verified in BOTH modes | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
-| Verify a client's credential, **in development mode outside RFC 9700, OAuth 2.1 and FAPI mode** — those modes verify whatever method a client declared, and product mode implies RFC 9700 mode, refuses an unknown `client_id` and allows a declared public client. A caller at `/oauth2/introspect` authenticates for an RFC 9701 JWT in every mode and for JSON in product; `/oauth2/revoke` authenticates nobody in any mode | `oauth-oidc/CLAUDE.md` |
+| Verify a client's credential, **in development mode outside RFC 9700, OAuth 2.1 and FAPI mode** — those modes verify whatever method a client declared, and product mode implies RFC 9700 mode, refuses an unknown `client_id` and allows a declared public client. A caller at `/oauth2/introspect` authenticates for an RFC 9701 JWT in every mode and for JSON in product; one at `/oauth2/revoke` authenticates in product, and in development only when it presents a credential (#102, `mode.opensRevocation()`) | `oauth-oidc/CLAUDE.md` |
 | Refuse an LDAP bind, **in development mode**, except the reserved password `invalid` and a disabled account | `ldap/CLAUDE.md` |
 | Authorize an LDAP write, **in development mode**; reads are authorized in neither mode | `ldap/CLAUDE.md` |
 | Check a Kerberos password, **in development mode** — though it cannot not check the KEY | `kerberos/CLAUDE.md` |
@@ -978,7 +980,7 @@ the file the row names.
 | ~~Turn a verified presentation into a sign-on~~ — **reversed 2026-09-17 (#38)**: `/authn/wallet` signs in the entry a holder-bound SD-JWT VC this realm issued was issued for; any other presentation still verifies and signs nobody in | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | ~~Publish a status for a credential it issued~~ — **reversed 2026-09-17**: a Token Status List and two Bitstring Status Lists per realm, a reference in every credential, and the Verifier consults them — this realm's from its own store, a trusted foreign issuer's by fetching the list | `oid4vc/CLAUDE.md` |
 | ~~Deactivate anybody on SCIM `active: false`~~ — **reversed 2026-09-17**: it is `pwdAccountLockedTime` on the entry, the same DISABLED state an administrator writes from `/admin/users`, and every door refuses the person while it is set | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
-| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)**: all nine of SPIRE's node attestors verify or refuse, and the Workload API's Unix socket attests its caller (`unix`, `docker`, `k8s`) through a native module built into the image. A caller over TCP is still not attested | `spiffe/CLAUDE.md` |
+| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)**: all nine of SPIRE's node attestors verify or refuse, and the Workload API's Unix socket attests its caller (`unix`, `docker`, `k8s`) through a native module built into the image. A caller over TCP is still not attested, so product serves TCP only where `spiffe.workloadTcpSourceAuthenticated` declares the network authenticates source addresses, and refuses an entry selecting nothing but the transport (#166) | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one, which is a different claim | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
 | Let a group grant anything BY BEING A GROUP — what a group grants is what a role or a roster names it for: the console rosters, REMOTE_PEPS and XACML_USER, and a configured role's group members; the groups claim grants nothing | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |

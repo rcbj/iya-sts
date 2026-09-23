@@ -308,6 +308,9 @@ class ProtocolStack {
     this.build('portal/portal_kerberos',
                require('../portal/portal_kerberos'),
                'PortalKerberos');
+    this.build('portal/portal_sign_ins',
+               require('../portal/portal_sign_ins'),
+               'PortalSignIns');
     // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
     // register no route — the channel and its uses — built here, before the
     // portal whose `/portal/email`, `/portal/verify-email` and
@@ -854,6 +857,10 @@ class ProtocolStack {
                'RiskDatasets');
     this.build('risk/risk_failures', require('../risk/risk_failures'),
                'RiskFailures');
+    // The Pwned Passwords screen (#62 P6): a library every password door
+    // reaches lazily. Built here, with the risk modules it belongs beside.
+    this.build('common/breached_passwords',
+               require('./breached_passwords'), 'BreachedPasswords');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');

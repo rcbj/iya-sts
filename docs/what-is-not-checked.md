@@ -74,6 +74,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Verify an access token at the OpenID4VCI endpoints | The credential, deferred credential and notification endpoints refuse a token this realm cannot verify, and one it revoked, with `invalid_token` | A token this realm cannot verify — or has revoked — is read unverified, since OpenID4VCI lets the authorization server be somebody else. A credential issued that way cannot sign anybody in |
 | Verify the tokens in an RFC 8693 token exchange | **Since 2026-09-21**: the `subject_token` and the `actor_token` must verify against this realm's signing key, be unexpired and not revoked, or the exchange is `invalid_request` (`STS-OAUTH-0555`, `0556`, `0557`). Until that date product exchanged a forged token exactly as development does | A `subject_token` this realm cannot verify is read for its name and exchanged, and the `/admin/users` row says the subject was *told about* rather than authenticated. An `actor_token` is read and never verified. A **revoked** token this realm signed is refused in both modes |
 | Require DPoP or mutual TLS | Refresh tokens rotate (product implies RFC 9700 mode). Nothing else here changes with the mode, and `POST /dpop/nonce-mode` is refused | Four settings make a sender constraint mandatory, all off unless set: `oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` refuse a presented access token with no `cnf.jkt` or `cnf["x5t#S256"]` at every surface that takes one, and `oauth2.refreshTokenRequireDpop` and `oauth2.refreshTokenRequireMtls` refuse to issue or redeem an unbound refresh token. Neither OAuth 2.1 nor RFC 9700 asks for these, so no mode turns one on. The access-token pair refuses at the resource only, and the mutual TLS pair needs `global.https`. `oauth2.dpopNonceRequired` makes proofs fresher, not mandatory |
+| Require a client to revoke a token | `POST /oauth2/revoke` requires client authentication — a confidential client's credential, or a public client's registered `client_id` — and refuses without it (401 `invalid_client`). A client may revoke only its own tokens (`invalid_grant`) | Anybody holding the token string may revoke it. **A credential that is presented is verified in both modes**, and then only the client's own tokens may be revoked |
 | Require a credential to introspect a token as JSON | `POST /oauth2/introspect` requires client authentication and refuses without it (401 `invalid_client`). A caller learns only about tokens meant for it | Anybody holding the token string gets RFC 7662 JSON. **An RFC 9701 JWT response requires client authentication in both modes** |
 | Require a request object to be signed | An RFC 9101 request object with `alg: none` is refused, and a `request_uri` must be https and answer with the `oauth-authz-req+jwt` or `jwt` media type | `alg: none` is accepted unless `oauth2.requireSignedRequestObject`, the client or a named authorization server asks for a signed one. In both modes a signed object is always verified, a `request_uri` is fetched only from an address the client registered, and a `jti` is accepted once |
 | Refuse a pushed authorization request whose client credential did not verify | A client that declared a confidential method is refused 401; a public client may push without one. The pushed request is always validated and bound to its client | The credential is observed and the push accepted. Section 2.4's unregistered `redirect_uri` (`oauth2.parAllowUnregisteredRedirectUris`, off) needs a credential that verified in every mode |
@@ -93,7 +94,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Require a credential at the WS-Trust STS | A request with no credential is refused; a UsernameToken's password is verified; an assertion is accepted only when this STS signed it and it is inside its `Conditions`; `OnBehalfOf` and `ActAs` need the requester's own credential and an assertion this STS signed (`STS-WSTRUST-0009`); a token asked for encrypted is not sent in the clear (`STS-WSTRUST-0012`, `0013`). Nothing decides **who** may act for whom | A request with no credential gets a token for `anonymous`, an unsigned assertion is believed, and `OnBehalfOf` needs no requester. A requested lifetime is clamped to `wstrust.maxTokenLifetimeMin` in both modes |
 | Encrypt an assertion it was asked to encrypt but holds no certificate for | Refused: a SAML Responder status with no assertion (`STS-SAML-0011`). It never encrypts to a certificate a request merely carried | The assertion is sent in the clear, with a warning. A provider whose metadata publishes an encryption key is encrypted to in both modes |
 | Decrypt an assertion a federation partner encrypted, or consume a federated sign-out | Neither: an encrypted assertion is refused naming "no assertion" (`STS-FED-0011`), and a sign-out request arriving at the federation endpoint is refused (`STS-FED-0024`). Nothing re-checks a federated person with the partner once the session exists | The same |
-| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP is still not attested** — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, and `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors |
+| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP cannot be attested, so the Workload API is not served over TCP** (`STS-SPIFFE-0120`, #166) unless `spiffe.workloadTcpSourceAuthenticated` declares that the network authenticates source addresses, and then only on a named address (`STS-SPIFFE-0121`); an entry must select something that identifies its workload — `peer:<address>` for TCP — never only `transport:` and `endpoint:` (`STS-SPIFFE-0122`) — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors, and the TCP port is served to anybody who reaches it, where an entry on `transport:tcp` alone is issued to every caller |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
 | Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on |
 | Verify the certificate of whoever answers an outbound request — a GNAP push finish, an SSF push, a federation back channel (and the SAML metadata, RFC 9728, Logout Token and status-list fetches that share its policy), an XACML PEP nudge, a kubelet | **Always verified, since 2026-09-23 (#171)**: every `…SkipTlsVerification` setting and `spiffe.k8sSkipKubeletVerification` is ignored (logged once with its family's code) and cannot be turned on (`STS-CORE-0103`). A private CA is trusted through the family's `…CaFile`. Plain http is refused for SSF, federation and XACML whatever `…AllowHttp` says, and allowed for a GNAP push finish to a loopback address only | `…SkipTlsVerification` turns verification off, warned on every request, and `…AllowHttp` admits plain http to any host. Both are off by default |
@@ -212,12 +213,36 @@ or rotation keeps the previous key version for a bounded window
 is still accepted; the old *password* is not. The `krbtgt` key is not rotated
 and keeps no previous version.
 
+**A person who holds or must hold a second factor gets no ticket on a password
+alone** (#173). An authenticator app, a security key in the `mfa` role,
+`stsMfaRequired` on their entry or `authn.mfaRequired` for the realm — the
+same rule as the [password-only doors](#app-passwords-at-the-password-only-doors) —
+and an AS-REQ proving only the password (`PA-ENC-TIMESTAMP`, or FAST's
+encrypted challenge) is refused `KDC_ERR_POLICY` (12). The refusal comes
+**after** the password verified: a wrong password is still
+`KDC_ERR_PREAUTH_FAILED`, so nobody without the password learns anything, not
+even that the account has a second factor. Kerberos can ask for the second
+factor, so a person with an authenticator app gets a ticket through **RFC 6113
+FAST** — armored by a ticket-granting ticket the client host got with its own
+keytab (a service principal from `/admin/kerberos/principals`) — carrying **RFC
+6560 OTP pre-authentication**: the password as the PIN and the code, both
+checked in one exchange (`kinit -T <armor ccache>`). The code is verified by the
+sign-in screen's own verifier and spent from the same once-only step, so one
+code cannot be used at both. The ticket carries the RFC 8129 authentication
+indicator `otp`, copied into the service tickets it buys, and `/authn/spnego`
+counts it as the second factor. An app password is never a Kerberos key, so the
+KDC refuses it like any wrong password. A person whose only second factor is a
+security key cannot use Kerberos at all yet: PKINIT is
+[#179](https://github.com/rcbj/iya-sts/issues/179).
+
 **In development mode** any username authenticates and every user shares one
 password (`password!`, `KRB5_USER_PASSWORD`), with a name nobody configured
 created on first sight. Three refusals are kept reachable: a service-shaped name
 for a host this service is not willing to *be* (`KDC_ERR_S_PRINCIPAL_UNKNOWN`),
 the names in `KRB5_UNKNOWN_USERS` (`KDC_ERR_C_PRINCIPAL_UNKNOWN`), and a wrong
-password (`KDC_ERR_PREAUTH_FAILED`).
+password (`KDC_ERR_PREAUTH_FAILED`). A password alone gets a ticket whatever
+second factor the person holds (`mode.issuesTicketsOnPasswordAlone()`); FAST
+and OTP work the same as in product, and the one-time code is verified.
 
 The acceptor verifies tickets a real KDC issued to its service principal, in
 both modes.
@@ -291,9 +316,11 @@ the `mfa` role, or of whom a second factor is required (`stsMfaRequired`,
   weaker option and documented as one.
 
 Development mode checks no password at those doors, so it refuses nothing
-there. A Kerberos AS-REQ pre-authenticated with the person's password-derived
-keys is the one password door not covered yet
-([#173](https://github.com/rcbj/iya-sts/issues/173)).
+there. The Kerberos AS exchange is a sixth door that CAN ask for the second
+factor, so there a password alone is refused with `KDC_ERR_POLICY` instead and
+the way in is FAST with OTP pre-authentication (see
+[Kerberos](#kerberos-is-the-exception-and-cannot-not-be), #173); an app
+password is not accepted by the KDC.
 
 ## A WebAuthn ceremony is verified, and the authenticator behind it is not
 
@@ -341,7 +368,11 @@ something to run against:
 - **`invalid` as a SCIM `userName`** is refused, as is a duplicate one.
 - **`oauth2.breakIdTokenNonce`** puts a deliberately wrong `nonce` in every ID
   Token. It is off by default, is not part of RFC 9700 mode, and **is honoured
-  in product mode as well** — do not turn it on in a deployment.
+  in development mode only** (#104): a product realm ignores it where the ID
+  Token is built — even with it still stored from before the realm was
+  switched, which is logged once (`STS-CORE-0106`) — and refuses turning it on
+  (`STS-CORE-0103`). The same is true of SSF's two deliberate defects,
+  `ssf.breakSetSignature` and `ssf.legacySubClaim`.
 - **WS-Federation's `wauth`** is never faked. A relying party demanding
   multi-factor or a hardware token against a session that does not have it
   sends the person back through the sign-in with that factor required — a
@@ -551,7 +582,14 @@ verified against the trust bundle and checked for revocation, and every method
 is authorized against SPIRE's own per-method table, copied row for row from
 `pkg/server/authpolicy/policy_data.json`. `Agent.AttestAgent` is open to
 everybody by design. **The private Unix socket is trusted as `local` with no
-credential** while `spiffe.trustLocalSocket` is on, which it is by default.
+credential** while `spiffe.trustLocalSocket` is on, which it is by default —
+in development on the socket's existence alone, as a real `spire-server` does.
+**In product the boundary is verified per connection** (#104): the socket must
+have been made 0600 in a directory with no group or other bits
+(`STS-SPIFFE-0117`), and the caller's kernel uid, read with `SO_PEERCRED`
+through the native module, must be the service's own (`STS-SPIFFE-0118`;
+`STS-SPIFFE-0119` where it cannot be read). Any other caller on the socket is
+not `local` and needs an administrator's X509-SVID on the TCP port.
 
 **Node attestation is verified or refused, in every mode (2026-09-21).**
 `Agent.AttestAgent` accepts only an attestation type the realm names in
@@ -741,19 +779,39 @@ What is still not attested:
 
 * **A caller over TCP.** It has no peer process to ask, so it is identified by
   the transport, the endpoint and its address, spelt `transport:`, `endpoint:`
-  and `peer:`.
+  and `peer:`. The specification allows TCP only "if the underlying network
+  allows the Workload Endpoint server to strongly authenticate the workload
+  based on source IP address" (section 3), and this service cannot see whether
+  it does — so **product mode does not bind the TCP port** (`STS-SPIFFE-0120`,
+  #166) unless the operator declares it with
+  `spiffe.workloadTcpSourceAuthenticated`, and even then **not on a wildcard
+  `spiffe.grpcHost`** (`STS-SPIFFE-0121`): name the address whose network you
+  vouch for. A realm switched to product with the port already bound refuses
+  every call on it. **An entry must select something that identifies a
+  workload** in product — never only `transport:` and `endpoint:`, which every
+  caller of the port carries, and never nothing (`STS-SPIFFE-0122`, at the
+  console, `/admin-api` and the SPIRE Server API); one written in development
+  answers nobody once the realm is in product (`STS-SPIFFE-0123`). For TCP that
+  is `peer:<address>`, matched **exactly** — no prefix, as in SPIRE. With the
+  declaration, every host that reaches the port from that address is issued
+  the entry's SVIDs, which is the declaration's warning. `GET /spiffe` says
+  which of the two a realm has, under `workloadAttestation.tcp`. Development
+  serves TCP as it always did.
 * **A Unix-socket caller where the native module is missing.** Development serves
   the socket unattested and `GET /spiffe` says so under `workloadAttestation`.
   **Product does not serve the socket at all** (`STS-SPIFFE-0113`).
 * SPIRE's `systemd` workload attestor, the docker attestor's sigstore signature
   checks and Podman sockets, and the Kubernetes broker. Each is a follow-up on #40.
 
-**Asserted selectors are never believed in product mode.** In development,
-`spiffe.acceptAssertedSelectors` still lets a caller assert them, so that
-selector matching can be exercised with no attestor at all.
+**Asserted selectors are never believed in product mode**, and
+`spiffe.acceptAssertedSelectors` cannot be turned on there (#104). In
+development it still lets a caller assert them, so that selector matching can
+be exercised with no attestor at all.
 
 Selector matching still **decides** which entries answer a caller
-(`spiffe.attestWorkloads`, on by default). A caller that matches no entry gets
+(`spiffe.attestWorkloads`, on by default). **Off is development only** (#104):
+it hands every caller every entry, so a product realm reads it as on whatever
+is stored and refuses turning it off. A caller that matches no entry gets
 an empty SVID list — what a real agent does for an unregistered workload — **in
 product always**, and in development when `spiffe.autoCreateEntries` is off;
 with it on, development creates an entry for the caller. Product seeds no
@@ -793,8 +851,7 @@ URI, and a token request naming a client whose entry declares nothing is
 refused. `GET /oauth2/oauth21` says which requirements are enforced and which are
 inherited.
 
-What it still does not check: a client at `/oauth2/revoke` (see below); a client
-at `/oauth2/introspect` beyond what that endpoint checks in every mode; and the
+What it still does not check: a client at `/oauth2/introspect` beyond what that endpoint checks in every mode; and the
 client of an assertion grant that names none. In product a pre-authorized code
 grant that names no client is refused.
 
@@ -802,19 +859,13 @@ grant that names no client is refused.
 
 These are true in a product deployment today, and are tracked as issues:
 
-* **A Kerberos AS-REQ asks for no second factor.** Pre-authenticated with the
-  keys derived from a person's password, it signs in somebody who holds or must
-  hold a second factor with the password alone. The five other password-only
-  doors refuse that (see [App passwords](#app-passwords-at-the-password-only-doors));
-  the KDC is [#173](https://github.com/rcbj/iya-sts/issues/173).
-* **`/oauth2/revoke` authenticates no client** and does not check that the token
-  belongs to the caller (RFC 7009 section 2.1). Anybody holding a token string
-  can revoke it ([#102](https://github.com/rcbj/iya-sts/issues/102)).
-* **`oauth2.breakIdTokenNonce`** and **`spiffe.trustLocalSocket`** are honoured
-  in product; the first is off by default and the second is on
-  ([#104](https://github.com/rcbj/iya-sts/issues/104)).
-  `spiffe.acceptAssertedSelectors` is not: product never believes asserted
-  selectors, whatever it says (#40).
+* **A person whose only second factor is a security key cannot use Kerberos.**
+  Since #173 the KDC refuses a password alone to anybody who holds or must hold
+  a second factor, and takes an authenticator app's code through FAST and OTP
+  pre-authentication; the security-key equivalent, PKINIT, is
+  [#179](https://github.com/rcbj/iya-sts/issues/179). FAST in the TGS exchange
+  (implicit armor) is not implemented either: a TGS-REQ that carries it is
+  answered unarmored, which MIT's client accepts.
 * **A WebAuthn attestation statement is not verified**: there is no FIDO
   metadata service ([#105](https://github.com/rcbj/iya-sts/issues/105)).
 * **The directory has no per-identity read authorization**: anybody who has bound
@@ -824,9 +875,6 @@ These are true in a product deployment today, and are tracked as issues:
   chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).
 * **No rule decides who may act for whom** in WS-Trust or RFC 8693
   ([#108](https://github.com/rcbj/iya-sts/issues/108)).
-* **A Workload API caller over TCP is not attested** — only one on the Unix
-  socket is, since #40 made node attestation verified or refused
-  ([#40](https://github.com/rcbj/iya-sts/issues/40)).
 * **The KDC's sign-out mark is cleared by the person's next AS-REQ**, after
   which a ticket-granting ticket from before the sign-out is accepted again
   ([#111](https://github.com/rcbj/iya-sts/issues/111)).

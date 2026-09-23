@@ -1405,6 +1405,30 @@ token there would refuse a credential the policy had just allowed.
 
 ---
 
+## THE SIGN-IN SCREEN MAY CARRY ONE SCRIPT: THE BROWSER FINGERPRINT (2026-09-22, #62 P6)
+
+**Only while `risk.fingerprinting` is on in the realm — off by default**
+(rcbj's decision). The argument the root CLAUDE.md asks for, made from
+scratch: **a browser fingerprint cannot be computed without a script** — it
+is the canvas, audio and font behaviour of the browser, which no form field
+reports — and **the screen does not need it to work**. The script
+(`/authn/fingerprint.js`: FingerprintJS v5, MIT, its usage ping turned off,
+then eight lines of glue) only fills a hidden `device_fp` field; with the
+script blocked the field is empty, the real submit button signs the person
+in exactly as before, and an empty field decides nothing. `sendLoginPage()`
+relaxes `script-src` to `'self'` through `app.contentSecurityPolicy()` and
+only while the setting is on; the script answers 404 (STS-AUTHN-0225) while
+it is off, so nothing serves a script no page asks for.
+
+**The value is never kept**: `eventContext()` reads it from the posted form
+and keeps `device`, a keyed digest (`credentialFingerprint('device:' …)`),
+beside the User-Agent's. The risk engine scores a digest this person never
+signed in from as `new-device` (×2).
+
+**Turning it on is the operator's decision**, after the privacy impact
+assessment `docs/risk-scoring.md` sets out: a browser fingerprint is personal
+data about the device, collected without the person doing anything.
+
 ## EVERY SIGN-IN SCREEN ANSWERS A REFUSED SESSION, AND THE REFUSAL SAYS WHY (2026-09-22, #62 P0)
 
 `startSession()` refuses by returning null (the section above), and **three
@@ -1711,8 +1735,9 @@ after computing `factor`:
 
 **THIS SCREEN IS THE ONLY DOOR THAT CAN ASK FOR IT**, and since #101 the
 five that cannot are no longer a gap: they REFUSE the password (the section
-below). What it still does not reach is a federated assertion, SPNEGO or a
-Kerberos AS-REQ (#173), and a TLS client certificate. A session that already
+below). What it still does not reach is a federated assertion and a TLS client
+certificate. **The Kerberos AS exchange is the one other door that CAN ask for a
+second factor** (#173, the section below). A session that already
 exists is not ended. **The enrolment emits
 no CAEP event**, because the signals the request asked for are the ADMIN doors'
 (`admin-core/admin_actions.ts`); the portal's own enrolment pages do not emit
@@ -1763,8 +1788,39 @@ either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
 * **No `password || OTP` concatenation** (rcbj, #101): ambiguous to parse, it
   spends a TOTP step per connection a pooled client cannot manage, and no
   specification describes it. **The Kerberos AS-REQ is not one of the five** —
-  the KDC derives keys from the password and never calls `verify()`, and the
-  locked `krb5_kdc.js` offers no hook (#173).
+  the KDC derives keys from the password and never calls `verify()` — and it
+  has its own answer, below.
+
+## THE KERBEROS AS EXCHANGE: A SIXTH PASSWORD DOOR, AND THE ONE THAT CAN ASK (2026-09-22, #173)
+
+**The same account rule, a different answer, because Kerberos standardised a
+second factor.** `common/credentials.ts`'s `secondFactorDemand()` — the question
+`secondFactorRefusal()` asks, answered on its own — decides who is a two-factor
+account at the KDC too (`kerberos/krb5_person_keys.ts` asks it through the
+principal database's key source), so the two cannot disagree. In product
+(`mode.issuesTicketsOnPasswordAlone()` false) an AS-REQ proving the password
+alone is refused `KDC_ERR_POLICY` (`STS-KRB-0135`) — and, unlike the five
+doors' answer, that is NOT a wrong password's: the refusal comes only AFTER the
+password verified, so somebody without it gets `KDC_ERR_PREAUTH_FAILED` and
+learns nothing, and somebody with it learns what this screen tells them by
+asking for the code next. The e-text says how to get a ticket instead:
+
+* **RFC 6113 FAST** armored by the client host's own TGT, carrying **RFC 6560
+  OTP pre-authentication**: the password as the PIN and the authenticator code,
+  both checked in one exchange (`kerberos/krb5_fast.ts`). **THE CODE IS SPENT
+  WHERE THIS SCREEN SPENDS IT** — `verifyTotpAsync()` and the `authn.totp-step`
+  counter — so one code cannot be used at `/authn/totp` and at the KDC, in
+  either order (`tests/kerberos_fast_otp.js`, and over the wire the portal's
+  confirmation code refused at the KDC).
+* **An app password is not accepted by the KDC**: it never derives a Kerberos
+  key, so as a PIN or a PA-ENC-TIMESTAMP it is a wrong password.
+* **The ticket carries the RFC 8129 indicator `otp`**, and `/authn/spnego`
+  (`kerberos/spnego_authn.ts`) turns it into `amr ["pwd","otp"]`, `acr "mfa"` —
+  the claims this screen makes after `/authn/totp`. The SPNEGO button is still
+  withheld from a request that demanded two factors: whether a ticket carries
+  the indicator is not known until it is presented.
+* **A security key over Kerberos is PKINIT (#179)**, not built: a person whose
+  only second factor is a key cannot get a ticket in product.
 
 ## SEVERAL NODES: A SIGN-OUT HOLDS, AND TWO COPIES OF A SESSION MERGE (2026-09-14, #46 section 3)
 

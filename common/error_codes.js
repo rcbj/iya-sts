@@ -749,9 +749,13 @@ const CODES = [
       'the store still refuses an expired entry where it reads it.',
     spec: 'none — logged by the caches.eject-expired job' },
   { code: 'STS-CORE-0103',
-    summary: 'A write turning on a development-only setting — a ' +
-      '…SkipTlsVerification, or spiffe.k8sSkipKubeletVerification — was ' +
-      'refused because the realm it lands in is in product mode (#171).',
+    summary: 'A write giving a development-only setting a value other than ' +
+      'its default — a …SkipTlsVerification or ' +
+      'spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ' +
+      'ssf.breakSetSignature, ssf.legacySubClaim or ' +
+      'spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off ' +
+      '(#104) — was refused because the realm it lands in is in product ' +
+      'mode.',
     spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }' },
   { code: 'STS-CORE-0104',
@@ -766,6 +770,13 @@ const CODES = [
       'gnap.pushAllowInsecure, ssf.pushAllowInsecure, ' +
       'federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure.',
     spec: 'none — the process exits' },
+  { code: 'STS-CORE-0106',
+    summary: 'A development-only setting — oauth2.breakIdTokenNonce, ' +
+      'ssf.breakSetSignature, ssf.legacySubClaim or ' +
+      'spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off — ' +
+      'is stored in a realm that is in product mode, and is ignored: its ' +
+      'default is in force. Logged once per process and setting (#104).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -4060,6 +4071,25 @@ const CODES = [
       'this realm\'s directory. An application authenticates with its own ' +
       'client credentials, and an app password is a person\'s.',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-AUTHN-0222',
+    summary: 'A password being set was refused because it has appeared in a ' +
+      'data breach: Pwned Passwords lists it (#62 P6, product mode).',
+    spec: 'NIST SP 800-63B section 3.1.1.2' },
+  { code: 'STS-AUTHN-0223',
+    summary: 'A password was set in product mode by a door that did not ' +
+      'screen it against Pwned Passwords first, so no breach verdict was ' +
+      'there to read. The door is named in the line; it needs a screen().',
+    spec: '' },
+  { code: 'STS-AUTHN-0224',
+    summary: 'The Pwned Passwords range API did not answer (off, ' +
+      'unreachable, refused by the outbound rules, or too slow); a password ' +
+      'was set unscreened.',
+    spec: '' },
+  { code: 'STS-AUTHN-0225',
+    summary: 'The browser fingerprint script was asked for while ' +
+      'risk.fingerprinting is off in the realm; nothing draws a page that ' +
+      'uses it, so it is not served (#62 P6).',
+    spec: 'HTTP 404' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -6251,6 +6281,54 @@ const CODES = [
     summary: 'The RP-Initiated Logout endpoint failed while answering ' +
       '(#124).',
     spec: 'HTTP 500 (an HTML page)' },
+  { code: 'STS-OAUTH-0606',
+    summary: 'response_type none was combined with another response type; ' +
+      'it asks for nothing to be issued (Multiple Response Type Encoding ' +
+      'Practices section 4, #125).',
+    spec: 'redirect {error: unsupported_response_type}' },
+  { code: 'STS-OAUTH-0607',
+    summary: 'response_mode=query was asked for a response type that ' +
+      'returns a token or an ID Token, which section 2.1 of Multiple ' +
+      'Response Type Encoding Practices forbids (#125). The refusal goes in ' +
+      'the fragment.',
+    spec: 'redirect {error: invalid_request}' },
+  { code: 'STS-OAUTH-0608',
+    summary: 'An RFC 7009 revocation request named no token: section 2.1 ' +
+      'makes the token parameter REQUIRED (#102). In both modes.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0609',
+    summary: 'An RFC 7009 revocation request from a registered client did ' +
+      'not authenticate: in product mode a confidential client presented no ' +
+      'credential, or (in either mode) a credential that did not verify, ' +
+      'or an entry that declares no method presented none (#102).',
+    spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
+  { code: 'STS-OAUTH-0610',
+    summary: 'Product mode: an RFC 7009 revocation request named no client ' +
+      'this realm has registered — no client_id at all, or one with no ' +
+      'entry — so there is no client to validate (#102).',
+    spec: 'invalid_client (HTTP 401, RFC 7009 section 2.1)' },
+  { code: 'STS-OAUTH-0611',
+    summary: 'An RFC 7009 revocation request presented a token this realm ' +
+      'signed that is neither an access token nor a refresh token — an ID ' +
+      'Token, a logout token, a SET — which this server does not revoke ' +
+      '(#102).',
+    spec: 'unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1)' },
+  { code: 'STS-OAUTH-0612',
+    summary: 'An RFC 7009 revocation request from an authenticated or ' +
+      'identified client presented a token issued to another client. ' +
+      'Refused and nothing revoked; the audit row names both clients ' +
+      '(#102).',
+    spec: 'invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 ' +
+      'section 5.2)' },
+  { code: 'STS-OAUTH-0613',
+    summary: 'A client authenticating at the revocation endpoint declares a ' +
+      'token_endpoint_auth_method the selected authorization server does ' +
+      'not list in revocation_endpoint_auth_methods_supported (#102).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0614',
+    summary: 'The revocation endpoint failed with an unexpected error ' +
+      'outside every refusal it makes (#102).',
+    spec: 'server_error (HTTP 500)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -7772,6 +7850,101 @@ const CODES = [
     summary: 'A keytab was refused because the person\'s account is ' +
       'disabled, which the KDC refuses whatever key is presented.',
     spec: 'HTTP 400 { ok: false, errors } / a 400 portal page' },
+  { code: 'STS-KRB-0135',
+    summary: 'An AS-REQ pre-authenticated with a password alone ' +
+      '(PA-ENC-TIMESTAMP, or FAST\'s PA-ENCRYPTED-CHALLENGE) was refused, in ' +
+      'product mode, because the person holds or is required to ' +
+      'hold a second factor. Refused only after the password ' +
+      'verified.',
+    spec: 'KDC_ERR_POLICY (12)' },
+  { code: 'STS-KRB-0136',
+    summary: 'A FAST-armored AS-REQ (PA-FX-FAST) did not decode, carried ' +
+      'no armor, named an armor type other than ' +
+      'FX_FAST_ARMOR_AP_REQUEST, or its armor was not an AP-REQ.',
+    spec: 'RFC 6113 section 5.4.1: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0137',
+    summary: 'A FAST armor ticket was refused: not a TGT for the ' +
+      'ticket-granting service of the realm asked, sealed under another ' +
+      'key, expired or not yet valid.',
+    spec: 'RFC 6113 section 5.4.1.1: KDC_ERR_PREAUTH_FAILED (24), ' +
+      'KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), ' +
+      'KRB_AP_ERR_TKT_NYV (33)' },
+  { code: 'STS-KRB-0138',
+    summary: 'A FAST armor AP-REQ\'s Authenticator was refused: it did not ' +
+      'decrypt, named another client, was outside the clock ' +
+      'tolerance, or carried no subkey.',
+    spec: 'RFC 6113 section 5.4.1.1: KRB_AP_ERR_BAD_INTEGRITY (31), ' +
+      'KRB_AP_ERR_BADMATCH (36), KRB_AP_ERR_SKEW (37), ' +
+      'KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0139',
+    summary: 'A FAST req-checksum did not cover the outer request body ' +
+      'under the armor key.',
+    spec: 'RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0140',
+    summary: 'A FAST enc-fast-req did not open under the armor key, or the ' +
+      'KrbFastReq inside it did not decode.',
+    spec: 'RFC 6113 section 5.4.2: KRB_AP_ERR_BAD_INTEGRITY (31)' },
+  { code: 'STS-KRB-0141',
+    summary: 'A FAST request set a critical FAST option this KDC does not ' +
+      'implement (hide-client-names).',
+    spec: 'RFC 6113 section 5.4.2: ' +
+      'KDC_ERR_UNKNOWN_CRITICAL_FAST_OPTIONS (93)' },
+  { code: 'STS-KRB-0142',
+    summary: 'A PA-ENCRYPTED-CHALLENGE did not decode or did not decrypt ' +
+      'under the challenge key: a wrong password inside FAST.',
+    spec: 'RFC 6113 section 5.4.6: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0143',
+    summary: 'A PA-ENCRYPTED-CHALLENGE\'s timestamp was outside the clock ' +
+      'tolerance.',
+    spec: 'RFC 6113 section 5.4.6: KRB_AP_ERR_SKEW (37)' },
+  { code: 'STS-KRB-0144',
+    summary: 'A PA-ENCRYPTED-CHALLENGE was presented a second time (the ' +
+      'same ciphertext).',
+    spec: 'RFC 6113 section 5.4.6: KRB_AP_ERR_REPEAT (34)' },
+  { code: 'STS-KRB-0145',
+    summary: 'A PA-ENCRYPTED-CHALLENGE could not be proved unused because ' +
+      'the claim store could not be asked.',
+    spec: 'KRB_ERR_GENERIC (60)' },
+  { code: 'STS-KRB-0146',
+    summary: 'A PA-OTP-REQUEST did not decode, its encData was not under ' +
+      'the armor key or did not open, or it answered no ' +
+      'PA-OTP-CHALLENGE this KDC issued (or its timestamp was outside the ' +
+      'tolerance).',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24), ' +
+      'KDC_ERR_ETYPE_NOSUPP (14), KRB_AP_ERR_SKEW (37)' },
+  { code: 'STS-KRB-0147',
+    summary: 'A PA-OTP-REQUEST carried no otp-pin, and this KDC requires ' +
+      'the password as the PIN.',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PIN_REQUIRED (97)' },
+  { code: 'STS-KRB-0148',
+    summary: 'A PA-OTP-REQUEST\'s otp-pin was not the person\'s password (it ' +
+      'does not derive the Kerberos key the KDC holds; an app ' +
+      'password never does).',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0149',
+    summary: 'A PA-OTP-REQUEST\'s code was refused by the authenticator ' +
+      'verifier: wrong, or no authenticator app enrolled.',
+    spec: 'RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0150',
+    summary: 'A PA-OTP-REQUEST\'s code had already been used, at the KDC or ' +
+      'at the sign-in screen (one step counter for both).',
+    spec: 'RFC 6238 section 5.2: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0151',
+    summary: 'A PA-OTP-REQUEST\'s code could not be proved unspent because ' +
+      'the step store could not be asked.',
+    spec: 'KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0152',
+    summary: 'A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one ' +
+      'used as key material), which this KDC did not ask for.',
+    spec: 'RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24)' },
+  { code: 'STS-KRB-0153',
+    summary: 'A ticket\'s AD-CAMMAC did not verify under the key the ticket ' +
+      'is sealed with, so its authentication indicators were ' +
+      'ignored.',
+    spec: 'RFC 7751 section 7, RFC 8129 section 5' },
+  { code: 'STS-KRB-0154',
+    summary: 'Asking whether a person holds a second factor failed, so the ' +
+      'KDC treated a password alone as not enough.' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -8872,6 +9045,55 @@ const CODES = [
       'k8s workload attestor verifies the kubelet\'s certificate against ' +
       'its CA whatever it says. Logged once per process (#171).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-SPIFFE-0117',
+    summary: 'A caller on the SPIRE Server API\'s Unix socket was not ' +
+      'trusted as the local entity, in a product realm, because the socket ' +
+      'was not verified private: it was not made 0600 (STS-SPIFFE-0010), ' +
+      'the connection came before it was, or the socket or its directory ' +
+      'has a group or other bit (#104).',
+    spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
+      'which it may call only as another entity' },
+  { code: 'STS-SPIFFE-0118',
+    summary: 'A caller on the SPIRE Server API\'s Unix socket was not ' +
+      'trusted as the local entity, in a product realm, because the kernel ' +
+      'says it runs as a uid that is not this service\'s own (#104).',
+    spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
+      'which it may call only as another entity' },
+  { code: 'STS-SPIFFE-0119',
+    summary: 'A caller on the SPIRE Server API\'s Unix socket was not ' +
+      'trusted as the local entity, in a product realm, because its kernel ' +
+      'credentials could not be read — the native module is not built, or ' +
+      'SO_PEERCRED failed (#104).',
+    spec: 'gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, ' +
+      'which it may call only as another entity' },
+  { code: 'STS-SPIFFE-0120',
+    summary: 'The Workload API was not served over TCP in a product realm, ' +
+      'because spiffe.workloadTcpSourceAuthenticated does not declare that ' +
+      'the network authenticates source addresses (SPIFFE Workload Endpoint ' +
+      'section 3) — the port was not bound, or a realm switched to product ' +
+      'with it bound refused the call (#166).',
+    spec: 'nothing listening on the port; gRPC UNAVAILABLE on a port already ' +
+      'bound' },
+  { code: 'STS-SPIFFE-0121',
+    summary: 'The Workload API was not served over TCP in a product realm: ' +
+      'spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a ' +
+      'wildcard address, and the declaration covers one named network (#166).',
+    spec: 'nothing listening on the port; gRPC UNAVAILABLE on a port already ' +
+      'bound' },
+  { code: 'STS-SPIFFE-0122',
+    summary: 'A SPIFFE registration entry was refused in a product realm ' +
+      'because it selects nothing that identifies a workload — no selector, ' +
+      'or only transport: and endpoint: ones — at the console, /admin-api or ' +
+      'the SPIRE Server API (#166).',
+    spec: 'gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and ' +
+      'BatchUpdateEntry; a refused console or management API action' },
+  { code: 'STS-SPIFFE-0123',
+    summary: 'A SPIFFE registration entry already in the registry that ' +
+      'selects nothing identifying a workload answered no Workload API ' +
+      'caller, because its realm is in product mode; said once per entry ' +
+      'per process (#166).',
+    spec: 'the entry is left out of the answer; the caller may get an empty ' +
+      'SVID list' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -13198,6 +13420,14 @@ const CODES = [
   { code: 'STS-PORTAL-0082',
     summary: 'A POST to /portal/kerberos named an action the page does not ' +
       'have.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0083',
+    summary: 'A POST to /portal/sign-ins was refused: its CSRF token did not ' +
+      'match the session.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-PORTAL-0084',
+    summary: 'A POST to /portal/sign-ins named a sign-in that is not the ' +
+      'person\'s own, is too old, or has already been answered (#62 P6).',
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +

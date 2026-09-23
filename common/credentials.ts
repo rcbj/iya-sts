@@ -963,15 +963,14 @@ class Credentials {
                 'stands.');
       return null;
     }
-    if (!this.isPersonEntry(name)) {
+    const demand = this.secondFactorDemand(name);
+    if (!demand.person) {
       log.debug('Leaving Credentials.secondFactorRefusal(). Not a person.');
       return null;
     }
-    const holds = this.keysOf(name).some((one) => {
-      return one.role === 'mfa';
-    }) || !!this.totpOf(name);
-    const requirement = this.mfaRequirementFor(name);
-    if (!holds && !requirement.required) {
+    const holds = demand.holds;
+    const requirement = { required: demand.required, byUser: demand.byUser };
+    if (!demand.needed) {
       log.debug('Leaving Credentials.secondFactorRefusal(). No second ' +
                 'factor held or required.');
       return null;
@@ -1003,6 +1002,52 @@ class Credentials {
       detail: 'the password is right and ' + why + ', and ' + via + ' ' +
               'cannot ask for one: make an app password for this door on ' +
               '/portal/app-passwords' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // DOES THIS PERSON HOLD, OR OWE, A SECOND FACTOR? (#173, 2026-09-22)
+  //
+  // The question `secondFactorRefusal()` asks at the five password-only doors,
+  // answered on its own for a door that asks it WITHOUT a password in hand:
+  // the KDC, which verifies the password as a Kerberos key and never calls
+  // `verify()` (`kerberos/krb5_person_keys.ts` asks this through the key
+  // source). One answer for both, so the two doors cannot come to disagree
+  // about who is a two-factor account.
+  //
+  //   person    the entry is a PERSON (`isPersonEntry()`), not an application
+  //   totp      they hold an authenticator app — the second factor the KDC
+  //             can ASK for, as RFC 6560 OTP pre-authentication
+  //   key       they hold a security key in the `mfa` role
+  //   holds     totp or key
+  //   required  one is required of them (`mfaRequirementFor()`), and
+  //             `byUser` says whether by their entry or by the realm
+  //   needed    person, and holds or required
+  //
+  // Mode-free: whether `needed` REFUSES anything is each door's predicate.
+  // ---------------------------------------------------------------------------
+  secondFactorDemand(username) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.secondFactorDemand().');
+    const name = String(username || '').trim();
+    const none = { person: false, totp: false, key: false, holds: false,
+                   required: false, byUser: false, needed: false };
+    if (!name || !this.isPersonEntry(name)) {
+      log.debug('Leaving Credentials.secondFactorDemand(). Not a person.');
+      return none;
+    }
+    const key = this.keysOf(name).some((one) => {
+      return one.role === 'mfa';
+    });
+    const totp = !!this.totpOf(name);
+    const requirement = this.mfaRequirementFor(name);
+    const holds = key || totp;
+    const answer = { person: true, totp: totp, key: key, holds: holds,
+                     required: !!requirement.required,
+                     byUser: !!requirement.byUser,
+                     needed: holds || !!requirement.required };
+    log.debug('Leaving Credentials.secondFactorDemand(). needed=' +
+              answer.needed);
+    return answer;
   }
 
   // Is this entry a PERSON? The directory decides, by placement, never by
@@ -1148,6 +1193,39 @@ class Credentials {
     return false;
   }
 
+  // What the door's Pwned Passwords screen said about this password (#62
+  // P6): 'breached', 'clean', 'unscreened' (logged), or 'off'. Required
+  // LAZILY — `breached_passwords.ts` is built by the root long after this
+  // file — and a process without it screens nothing.
+  private breachVerdictOf(password, via) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Credentials.breachVerdictOf().");
+    let breached = null;
+    try {
+      breached = require('./breached_passwords');
+    } catch (e) {
+      log.debug("Caught in Credentials.breachVerdictOf(): " +
+                ((e && e.message) || e));
+      // Not loaded here: nothing screens.
+      breached = null;
+    }
+    if (!breached || !breached.enabled()) {
+      log.debug("Leaving Credentials.breachVerdictOf(). Off.");
+      return 'off';
+    }
+    const verdict = breached.verdictOf(password);
+    if (!verdict) {
+      log.warn(errorCodes.tag('STS-AUTHN-0223') + 'credentials: a password ' +
+               'was set through ' + String(via || 'a door that did not say ' +
+               'which') + ' without being screened against Pwned Passwords ' +
+               'first.');
+      log.debug("Leaving Credentials.breachVerdictOf(). Unscreened.");
+      return 'unscreened';
+    }
+    log.debug("Leaving Credentials.breachVerdictOf().");
+    return verdict.breached ? 'breached' : 'clean';
+  }
+
   // ---------------------------------------------------------------------------
   // PREPARING ONE: everything setting a password decides, and nothing it
   // writes.
@@ -1194,6 +1272,27 @@ class Credentials {
                   'policy.');
         return coded('STS-AUTHN-0056', { ok: false, reason: 'password-policy',
                                          problems: problems, errors: [said] });
+      }
+    }
+    // -----------------------------------------------------------------------
+    // A PASSWORD KNOWN FROM A DATA BREACH IS REFUSED (#62 P6, NIST SP
+    // 800-63B section 3.1.1.2). The door screened it a moment ago
+    // (`breached_passwords.ts`'s `screen()` is asynchronous, and this is
+    // not), and the verdict is read here, beside the policy it sits with. A
+    // door that did not screen is named in the log (STS-AUTHN-0223) and the
+    // password is set: an unreachable breach service is not a reason nobody
+    // can change their password. A generated password is not asked about.
+    // -----------------------------------------------------------------------
+    if (enforced && !options.generated) {
+      const breach = this.breachVerdictOf(password, options.via);
+      if (breach === 'breached') {
+        log.info('credentials: a password for ' + name + ' was refused: it ' +
+                 'has appeared in a data breach.');
+        log.debug('Leaving Credentials.preparePassword(). Breached.');
+        return coded('STS-AUTHN-0222', { ok: false, reason: 'breached',
+          errors: ['That password has appeared in a data breach, so ' +
+                   'people trying stolen passwords will try it. Choose a ' +
+                   'different one.'] });
       }
     }
     const current = options.current !== undefined
@@ -5906,6 +6005,7 @@ export = {
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   mechanismsFor: slot.forward('mechanismsFor'),
+  secondFactorDemand: slot.forward('secondFactorDemand'),
   bootstrap: slot.forward('bootstrap'),
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,

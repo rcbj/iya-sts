@@ -278,7 +278,7 @@ var config = {
     consentRequired: true,                       // Ask for consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
-    breakIdTokenNonce: false,                    // Break the ID Token nonce
+    breakIdTokenNonce: false,                    // Break the ID Token nonce (development only)
     refreshIdleSeconds: 86400,                   // Refresh token idle timeout (s)
     revokeRefreshOnLogout: true,                 // Revoke refresh tokens on sign-out
     eddsaCurve: "Ed25519",                       // EdDSA curve
@@ -777,8 +777,8 @@ var config = {
     receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
     receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
-    legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim
-    breakSetSignature: false                                                                                                                              // Sign every SET badly
+    legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
+    breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },
 
   // --- CAEP ------------------------------------------------------------
@@ -799,25 +799,32 @@ var config = {
 
   // --- Risk ------------------------------------------------------------
   risk: {
-    datasetsDirectory: "",         // Dataset directory
-    datasetsDirectoryScanS: 300,   // Dataset directory scan interval (seconds)
-    datasetShrinkLimitPercent: 50, // Largest shrink accepted (percent)
-    supersededRetentionDays: 30,   // Keep a superseded version (days)
-    geoStaleAfterDays: 45,         // Geolocation and ASN data is stale after (days)
-    ipListStaleAfterHours: 24,     // Tor and reputation lists are stale after (hours)
-    recordFailures: true,          // Record attributable failures
-    failureRetentionDays: 30,      // Keep failures (days)
-    assessSignIns: true,           // Assess every sign-in
-    enforceInDevelopment: false,   // Enforce risk decisions in development mode
-    standingValidMinutes: 720,     // A person's standing answers for (minutes)
-    mdsTrustAnchors: "",           // FIDO metadata trust anchors (PEM)
-    mdsStaleGraceDays: 7,          // FIDO metadata grace after its nextUpdate (days)
-    rescoreEveryS: 300,            // Re-check live sessions every (seconds)
-    standingCacheSize: 20000,      // People whose standing each process holds
-    mediumScorePercent: 100,       // MEDIUM from (percent of a score of 1)
-    highScorePercent: 1000,        // HIGH from (percent of a score of 1)
-    assessmentRetentionDays: 90,   // Keep assessments (days)
-    historyRetentionDays: 180      // Keep the model's history (days)
+    datasetsDirectory: "",                                 // Dataset directory
+    datasetsDirectoryScanS: 300,                           // Dataset directory scan interval (seconds)
+    datasetShrinkLimitPercent: 50,                         // Largest shrink accepted (percent)
+    supersededRetentionDays: 30,                           // Keep a superseded version (days)
+    geoStaleAfterDays: 45,                                 // Geolocation and ASN data is stale after (days)
+    ipListStaleAfterHours: 24,                             // Tor and reputation lists are stale after (hours)
+    recordFailures: true,                                  // Record attributable failures
+    failureRetentionDays: 30,                              // Keep failures (days)
+    assessSignIns: true,                                   // Assess every sign-in
+    enforceInDevelopment: false,                           // Enforce risk decisions in development mode
+    standingValidMinutes: 720,                             // A person's standing answers for (minutes)
+    fingerprinting: false,                                 // Fingerprint the browser at sign-in
+    breachCheck: "on",                                     // Refuse passwords known from data breaches
+    breachCheckAtSignIn: true,                             // Ask a breached password to be changed at sign-in
+    breachApiUrl: "https://api.pwnedpasswords.com/range/", // Pwned Passwords range API
+    breachCacheMinutes: 60,                                // Keep a range answer (minutes)
+    breachCacheSize: 5000,                                 // Range answers each process keeps
+    breachTimeoutMs: 3000,                                 // Wait for the range API (milliseconds)
+    mdsTrustAnchors: "",                                   // FIDO metadata trust anchors (PEM)
+    mdsStaleGraceDays: 7,                                  // FIDO metadata grace after its nextUpdate (days)
+    rescoreEveryS: 300,                                    // Re-check live sessions every (seconds)
+    standingCacheSize: 20000,                              // People whose standing each process holds
+    mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
+    highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
+    assessmentRetentionDays: 90,                           // Keep assessments (days)
+    historyRetentionDays: 180                              // Keep the model's history (days)
   },
 
   // --- RISC ------------------------------------------------------------
@@ -965,8 +972,8 @@ var config = {
     trustLocalSocket: true,                                       // Trust the SPIRE Server API socket as local
     adminIds: "",                                                 // Administrator SPIFFE IDs
     clockSkew: 60,                                                // Clock skew (s)
-    attestWorkloads: true,                                        // Match Workload API callers on selectors
-    acceptAssertedSelectors: false,                               // Believe selectors a workload asserts
+    attestWorkloads: true,                                        // Match Workload API callers on selectors (off: development only)
+    acceptAssertedSelectors: false,                               // Believe selectors a workload asserts (development only)
     maxEntries: 500,                                              // Maximum registration entries
     maxAgents: 200,                                               // Maximum attested agents
     maxFederatedBundles: 32,                                      // Maximum federated bundles
@@ -974,6 +981,7 @@ var config = {
     workloadSocketEnabled: true,                                  // Workload API on a Unix socket; restart to apply
     workloadSocket: "/tmp/spire-agent/public/api.sock",           // Workload API socket path; restart to apply
     workloadPort: 8092,                                           // Workload API TCP port; restart to apply
+    workloadTcpSourceAuthenticated: false,                        // Workload API TCP: the network authenticates source addresses; restart to apply
     serverPort: 8181,                                             // SPIRE Server API TCP port; restart to apply
     serverSocketEnabled: false,                                   // SPIRE Server API on a Unix socket; restart to apply
     serverSocket: "/tmp/spire-server/private/api.sock",           // SPIRE Server API socket path; restart to apply

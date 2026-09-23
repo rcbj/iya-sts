@@ -294,12 +294,23 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
+  // mode, another client's token refused invalid_grant, the token types, an
+  // unknown hint, and a refresh token taking its grant with it. `local:
+  // true`: this repository's own authorization server, in a throwaway realm.
+  { file: 'sts_token_revocation.js',     browser: false, local: true },
   // OPENID CONNECT RP-INITIATED LOGOUT OVER THE WIRE (#124 with #115,
   // 2026-09-23): refusals as pages, the registered return with state by GET
   // and POST, each mode's answer for a client that registered none, and a
   // foreign hint refused. `local: true`: this repository's own OP, in a
   // throwaway realm it leaves behind.
   { file: 'sts_rp_initiated_logout.js',  browser: false, local: true },
+  // FORM POST RESPONSE MODE's INTERSTITIAL (#126, 2026-09-23): with nobody
+  // signed in, an error for a form_post request offers a FORM POSTing the
+  // fields — and form_post.jwt the one `response` field — never a GET link.
+  // `local: true`: this repository's own authorization server, in a
+  // throwaway realm with RFC 9700 mode on.
+  { file: 'sts_form_post.js',            browser: false, local: true },
   // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
   // by default, then the discovery member, the OP iframe's narrowed
   // frame-ancestors and its script, and prompt=none's session_state checked
@@ -625,11 +636,22 @@ const JOBS = [
   // service is reached at, in both modes.
   { file: 'sts_ldaps.js',                browser: false, local: true },
   { file: 'sts_kerberos_spnego.js',      browser: false, local: true },
+  // A PASSWORD ALONE IS NO TICKET FOR A TWO-FACTOR ACCOUNT (#173,
+  // 2026-09-22): over TCP 88, the product refusal after the password
+  // verified, RFC 6113 FAST armored by a host's TGT, RFC 6560 OTP with the
+  // password as the PIN and the portal's own once-only step, and the RFC 8129
+  // indicator in the tickets — with real MIT kinit where it is installed.
+  // `local: true`: this repository's KDC, portal and API.
+  { file: 'sts_kerberos_fast_otp.js',    browser: false, local: true },
   // A PERSON'S KEYTAB (#59, 2026-09-22): from the administrator's reset, a
   // generated password and /portal/kerberos, each read with `klist -k` and
   // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
   // keytab's key — against the KDC at the published address, in both modes.
   { file: 'sts_kerberos_keytab.js',      browser: false, local: true },
+  // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
+  // Workload API's TCP port in product: refused where the network is not
+  // declared to authenticate source addresses, and entries selecting this
+  // job's own peer: address where it is.
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
@@ -642,6 +664,11 @@ const JOBS = [
   // modes (a skip ignored in product, a CA file honoured), the RFC 9728
   // import under federation's policy, and XACML's in-force view.
   { file: 'sts_outbound_tls.js',         browser: false, local: true },
+  // #104 (2026-09-23): the deliberate defects and the loosening SPIFFE
+  // switches — refused on write in a product realm, and ignored where they
+  // are read once a realm holding them is switched to product (the ID
+  // Token's nonce, a SET's signature, GET /spiffe's view).
+  { file: 'sts_development_only_settings.js', browser: false, local: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.
@@ -757,6 +784,8 @@ const LOCAL_HELPERS = [
   // AP-REQ and SPNEGO — for `sts_kerberos_spnego.js` (2026-09-18). It reuses
   // the service's codec for the encodings and works out key usages and
   // checksums itself, so the exchange is not the KDC agreeing with itself.
+  // Since #173 it also carries a FAST, OTP and authentication-indicator
+  // client for `sts_kerberos_fast_otp.js`, written apart from the KDC's.
   'krb5_wire.js',
   // What the three sts_directory_bulk_load_*.js jobs share, which is
   // everything except the door.

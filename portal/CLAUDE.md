@@ -22,6 +22,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/keys` | authenticated | **Security keys** — the list, and a Remove per key |
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
+| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
 | `/portal/callback` | — | the OIDC redirect URI |

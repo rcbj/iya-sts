@@ -3407,15 +3407,19 @@ const SETTINGS = [
                  'how to end one.' },
 
   // NOT part of RFC 9700 mode, and deliberately separate from it: it is a
-  // testing aid rather than a policy, and it is useful in both modes. It is the
-  // only way this service can help with a requirement it cannot enforce — the
-  // CLIENT must validate the ID Token's nonce, and nothing observable from here
-  // distinguishes a client that does from one that does not.
+  // testing aid rather than a policy, and it is useful in either compliance
+  // mode. It is the only way this service can help with a requirement it
+  // cannot enforce — the CLIENT must validate the ID Token's nonce, and nothing
+  // observable from here distinguishes a client that does from one that does
+  // not. DEVELOPMENT MODE ONLY since #104 (2026-09-23): the `onlyWhile` marker.
   { key: 'oauth2.breakIdTokenNonce', group: 'OAuth 2.0 / OIDC',
-    label: 'Break the ID Token nonce',
+    label: 'Break the ID Token nonce (development only)',
     env: 'STS_OAUTH2_BREAK_ID_TOKEN_NONCE', type: 'bool', dflt: false,
-    runtime: true,
-    description: 'Put a DELIBERATELY WRONG nonce in every ID Token that ' +
+    runtime: true, onlyWhile: 'spoilsOnPurpose',
+    description: 'DEVELOPMENT MODE ONLY. In product mode it is ignored where ' +
+                 'it is read (logged once, STS-CORE-0106) and turning it on ' +
+                 'is refused (STS-CORE-0103). ' +
+                 'Put a DELIBERATELY WRONG nonce in every ID Token that ' +
                  'should carry one. RFC 9700 sections 2.1.1 and 4.5.3.2 make ' +
                  'validating it the CLIENT\'s job and this server cannot see ' +
                  'whether it happens — so this is how to find out: a client ' +
@@ -9295,9 +9299,13 @@ const SETTINGS = [
                  'transmitter needs to be able to reach.' },
 
   { key: 'ssf.legacySubClaim', group: 'SSF',
-    label: 'Also emit the deprecated `sub` claim',
+    label: 'Also emit the deprecated `sub` claim (development only)',
     env: 'STS_SSF_LEGACY_SUB_CLAIM', type: 'bool', dflt: false, runtime: true,
-    description: 'MAKES THIS SERVICE WRONG ON PURPOSE, like ' +
+    onlyWhile: 'spoilsOnPurpose',
+    description: 'DEVELOPMENT MODE ONLY: ignored in product mode where it is ' +
+                 'read (logged once, STS-CORE-0106), and turning it on there ' +
+                 'is refused (STS-CORE-0103). ' +
+                 'MAKES THIS SERVICE WRONG ON PURPOSE, like ' +
                  'oauth2.breakIdTokenNonce and the Kerberos names that stay ' +
                  'unknown. RFC 8417 section 2.2 discourages `sub` on a SET ' +
                  'and SSF carries the subject in `sub_id` (RFC 9493) ' +
@@ -9308,10 +9316,13 @@ const SETTINGS = [
                  'one.' },
 
   { key: 'ssf.breakSetSignature', group: 'SSF',
-    label: 'Sign every SET badly',
+    label: 'Sign every SET badly (development only)',
     env: 'STS_SSF_BREAK_SET_SIGNATURE', type: 'bool', dflt: false,
-    runtime: true,
-    description: 'The second deliberate defect. One character of the ' +
+    runtime: true, onlyWhile: 'spoilsOnPurpose',
+    description: 'DEVELOPMENT MODE ONLY: ignored in product mode where it is ' +
+                 'read (logged once, STS-CORE-0106), and turning it on there ' +
+                 'is refused (STS-CORE-0103). ' +
+                 'The second deliberate defect. One character of the ' +
                  'signature is changed AFTER signing, so a receiver that ' +
                  'does not verify accepts an event nothing signed. It is a ' +
                  'character rather than a truncation on purpose: a ' +
@@ -9553,6 +9564,73 @@ const SETTINGS = [
                  'person made HIGH at the browser is not issued a ticket ' +
                  'elsewhere. Older than this, the issuance carries no risk ' +
                  'facts and the roles decide.' },
+
+  { key: 'risk.fingerprinting', group: 'Risk',
+    label: 'Fingerprint the browser at sign-in',
+    env: 'STS_RISK_FINGERPRINTING', type: 'bool', dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT (#62 P6). On, the sign-in screen runs one ' +
+                 'script, FingerprintJS (MIT; it sends nothing anywhere), ' +
+                 'which computes an identifier from what the browser exposes ' +
+                 'and puts it in the form; the service keeps only a keyed ' +
+                 'digest, and a browser this person has never signed in ' +
+                 'from is the signal new-device (x2). A browser fingerprint ' +
+                 'is personal data: complete the privacy impact assessment ' +
+                 'in docs/risk-scoring.md, and tell the people who sign in, ' +
+                 'before turning it on. Per realm, like every setting.' },
+
+  { key: 'risk.breachCheck', group: 'Risk',
+    label: 'Refuse passwords known from data breaches',
+    env: 'STS_RISK_BREACH_CHECK', type: 'enum', dflt: 'on',
+    enumValues: ['on', 'off'], runtime: true,
+    description: 'In product mode, a password being set is checked against ' +
+                 'Have I Been Pwned\'s Pwned Passwords by k-anonymity (#62 ' +
+                 'P6, NIST SP 800-63B section 3.1.1.2): the first five ' +
+                 'characters of its SHA-1 go to risk.breachApiUrl, and one ' +
+                 'that has appeared in a breach is refused. The password ' +
+                 'itself never leaves this service. An unreachable API sets ' +
+                 'the password unscreened rather than refusing it. Also ' +
+                 'asked at sign-in (risk.breachCheckAtSignIn). Development ' +
+                 'mode checks no password.' },
+
+  { key: 'risk.breachCheckAtSignIn', group: 'Risk',
+    label: 'Ask a breached password to be changed at sign-in',
+    env: 'STS_RISK_BREACH_CHECK_AT_SIGN_IN', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'With risk.breachCheck on, a correct password typed at the ' +
+                 'sign-in screen is checked too, and one that has appeared ' +
+                 'in a breach must be changed before the sign-in finishes — ' +
+                 'the same step a password an administrator set does.' },
+
+  { key: 'risk.breachApiUrl', group: 'Risk',
+    label: 'Pwned Passwords range API',
+    env: 'STS_RISK_BREACH_API_URL', type: 'string',
+    dflt: 'https://api.pwnedpasswords.com/range/', runtime: true,
+    description: 'Where the five-character prefix is sent; the prefix is ' +
+                 'appended to it. The operator\'s address — a mirror, or an ' +
+                 'internal copy of the service — never a caller\'s. Every ' +
+                 'request goes through the outbound rules ' +
+                 '(federation.outbound, TLS verified in product mode).' },
+
+  { key: 'risk.breachCacheMinutes', group: 'Risk',
+    label: 'Keep a range answer (minutes)',
+    env: 'STS_RISK_BREACH_CACHE_MINUTES', type: 'int', dflt: 60, min: 1,
+    max: 10080, runtime: true,
+    description: 'How long the answer for one five-character prefix is ' +
+                 'reused before it is asked for again.' },
+
+  { key: 'risk.breachCacheSize', group: 'Risk',
+    label: 'Range answers each process keeps',
+    env: 'STS_RISK_BREACH_CACHE_SIZE', type: 'int', dflt: 5000, min: 1,
+    max: 1048576, runtime: true,
+    description: 'The bound on the per-process cache of range answers; full, ' +
+                 'the oldest is dropped.' },
+
+  { key: 'risk.breachTimeoutMs', group: 'Risk',
+    label: 'Wait for the range API (milliseconds)',
+    env: 'STS_RISK_BREACH_TIMEOUT_MS', type: 'int', dflt: 3000, min: 100,
+    max: 60000, runtime: true,
+    description: 'How long a password being set waits for the range API ' +
+                 'before it is set unscreened.' },
 
   { key: 'risk.mdsTrustAnchors', group: 'Risk',
     label: 'FIDO metadata trust anchors (PEM)',
@@ -11146,10 +11224,18 @@ const SETTINGS = [
                  'outright — the access control is the socket\'s filesystem ' +
                  'permissions — and a caller there is the `local` entity, ' +
                  'which may do everything an admin may and two things an ' +
-                 'admin may not. Off, the socket demands an X509-SVID like ' +
-                 'the TCP port, which is the only way to exercise a ' +
-                 'client\'s "I was refused on the local socket" path. Read ' +
-                 'per call, so it needs no restart.' },
+                 'admin may not. In DEVELOPMENT mode that is all it takes. ' +
+                 'In PRODUCT mode (#104) the boundary is VERIFIED rather ' +
+                 'than assumed: a caller is `local` only when the socket was ' +
+                 'made 0600 in a directory with no group or other bits ' +
+                 '(STS-SPIFFE-0117) and the kernel says the caller runs as ' +
+                 'this service\'s own uid (SO_PEERCRED; STS-SPIFFE-0118, and ' +
+                 'STS-SPIFFE-0119 where it cannot be read); anybody else ' +
+                 'needs an administrator\'s X509-SVID on the TCP port. Off, ' +
+                 'the socket demands an X509-SVID like the TCP port, which ' +
+                 'is the only way to exercise a client\'s "I was refused on ' +
+                 'the local socket" path. Read per call, so it needs no ' +
+                 'restart.' },
 
   { key: 'spiffe.adminIds', group: 'SPIFFE', label: 'Administrator SPIFFE IDs',
     env: 'STS_SPIFFE_ADMIN_IDS', type: 'string', dflt: '', runtime: true,
@@ -11173,30 +11259,32 @@ const SETTINGS = [
                  'skew reads as a broken certificate.' },
 
   { key: 'spiffe.attestWorkloads', group: 'SPIFFE',
-    label: 'Match Workload API callers on selectors',
+    label: 'Match Workload API callers on selectors (off: development only)',
     env: 'STS_SPIFFE_ATTEST_WORKLOADS', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'ON, a Workload API caller is IDENTIFIED from what this ' +
-                 'service can actually see about it — the transport, the ' +
-                 'endpoint it reached, its peer address — and is answered ' +
-                 'with the registration entries whose selectors that ' +
-                 'identification matches, which is what a real agent does. ' +
-                 'OFF, every caller is answered with every entry, which is ' +
-                 'what this service did before. **NOTHING KERNEL-LEVEL IS ' +
-                 'READ EITHER WAY**: node cannot read a Unix socket\'s peer ' +
-                 'credentials, so there is no uid, no pid, no container and ' +
-                 'no pod here, and the selectors this service produces are ' +
-                 'spelt `transport:`, `endpoint:` and `peer:` so that they ' +
-                 'cannot be mistaken for an attestor\'s. ' +
-                 'spiffe.autoCreateEntries still invents an entry for a ' +
-                 'caller that matches nothing, so the default experience is ' +
-                 'unchanged.' },
+    runtime: true, onlyWhile: 'servesUnattestedEntries',
+    description: 'ON, a Workload API caller is answered with the ' +
+                 'registration entries whose selectors match what this ' +
+                 'service observed about it, which is what a real agent ' +
+                 'does: on the Unix socket, what the workload attestors ' +
+                 '(spiffe.workloadAttestors: unix, docker, k8s) read from ' +
+                 'the kernel through the native module (#40); over TCP, the ' +
+                 '`transport:`, `endpoint:` and `peer:` selectors. OFF, ' +
+                 'every caller is answered with every entry — DEVELOPMENT ' +
+                 'MODE ONLY: in product mode off is ignored where it is read ' +
+                 '(logged once, STS-CORE-0106) and refused on write ' +
+                 '(STS-CORE-0103), because it would hand every identity to ' +
+                 'whoever reaches the socket. spiffe.autoCreateEntries still ' +
+                 'invents an entry for a caller that matches nothing, in ' +
+                 'development.' },
 
   { key: 'spiffe.acceptAssertedSelectors', group: 'SPIFFE',
-    label: 'Believe selectors a workload asserts',
+    label: 'Believe selectors a workload asserts (development only)',
     env: 'STS_SPIFFE_ACCEPT_ASSERTED_SELECTORS', type: 'bool', dflt: false,
-    runtime: true,
-    description: 'OFF by default, and it is the one setting here that is not ' +
+    runtime: true, onlyWhile: 'believesAssertedSelectors',
+    description: 'DEVELOPMENT MODE ONLY: never believed in product mode ' +
+                 '(#40), where turning it on is refused (STS-CORE-0103, ' +
+                 '#104). ' +
+                 'OFF by default, and it is the one setting here that is not ' +
                  'attestation of any kind. On, a Workload API caller may ' +
                  'send the metadata header `x-sts-workload-selector: ' +
                  'unix:uid:1000` (repeatable, or comma-separated) and those ' +
@@ -11291,6 +11379,33 @@ const SETTINGS = [
                  'this is reached from another container or from a host that ' +
                  'cannot share the socket. 0 turns it off and leaves the ' +
                  'Unix socket alone.' },
+
+  // #166 (2026-09-23): the Workload Endpoint specification's section 3
+  // condition, which only the operator can know. See `mode.js`'s
+  // `servesUnattestedWorkloadTcp()`.
+  { key: 'spiffe.workloadTcpSourceAuthenticated', group: 'SPIFFE',
+    label: 'Workload API TCP: the network authenticates source addresses',
+    env: 'STS_SPIFFE_WORKLOAD_TCP_SOURCE_AUTHENTICATED', type: 'bool',
+    dflt: false, runtime: false, realmRuntime: true,
+    restartReason: 'it decides whether the Workload API TCP port is bound, ' +
+                   'which happens when the process starts; a REALM\'s ' +
+                   'decision is taken when its SPIFFE is turned on',
+    description: 'In PRODUCT mode the Workload API is not served over TCP ' +
+                 'at all unless this is on. Turning it on DECLARES what the ' +
+                 'SPIFFE Workload Endpoint specification (section 3) makes ' +
+                 'the condition for TCP: that the network lets this server ' +
+                 'strongly authenticate a workload by its source IP address ' +
+                 '— a pod network with anti-spoofing, a host-only bridge — ' +
+                 'because a TCP caller has no peer process to attest and its ' +
+                 'address is the only identity it carries. This service ' +
+                 'cannot check the claim. WARNING: every host that can reach ' +
+                 'the port from an address a registration entry selects ' +
+                 '(peer:<address>) is issued that entry\'s X509-SVIDs and ' +
+                 'JWT-SVIDs, so an address that can be spoofed, shared ' +
+                 'behind a NAT or reassigned hands the identity to whoever ' +
+                 'holds it. Product also refuses a wildcard spiffe.grpcHost ' +
+                 'with this on: name the address whose source authentication ' +
+                 'you vouch for. Development serves TCP whatever this says.' },
 
   { key: 'spiffe.serverPort', group: 'SPIFFE', label: 'SPIRE Server API TCP ' +
                                                       'port',
@@ -12487,22 +12602,30 @@ function replacedBy(key) {
 }
 
 // ---------------------------------------------------------------------------
-// A VALUE THE MODE DOES NOT ALLOW TO BE WRITTEN (#171).
+// A VALUE THE MODE DOES NOT ALLOW TO BE WRITTEN (#171, widened by #104).
 //
 // A row carrying `onlyWhile: '<predicate>'` names a `common/mode.js`
-// predicate that must answer true for the row to be SET TRUE. The four
-// `…SkipTlsVerification` rows and SPIRE's `spiffe.k8sSkipKubeletVerification`
-// carry `skipsOutboundTlsVerification`: in a product realm a write of `true`
-// is refused (STS-CORE-0103), through /admin and /admin-api alike — the
-// `set`, `set-many` and realm `set` doors. Writing `false` is always allowed,
-// which is how a stored value is taken back.
+// predicate that must answer true for the row to be set to anything but its
+// DEFAULT. The four `…SkipTlsVerification` rows and SPIRE's
+// `spiffe.k8sSkipKubeletVerification` carry `skipsOutboundTlsVerification`
+// (#171); the three deliberate defects — `oauth2.breakIdTokenNonce`,
+// `ssf.breakSetSignature`, `ssf.legacySubClaim` — carry `spoilsOnPurpose`,
+// `spiffe.acceptAssertedSelectors` carries `believesAssertedSelectors`, and
+// `spiffe.attestWorkloads` (whose default is ON, so what is refused is OFF)
+// carries `servesUnattestedEntries` (#104). In a product realm a write of a
+// value other than the default is refused (STS-CORE-0103), through /admin and
+// /admin-api alike — the `set`, `set-many` and realm `set` doors. Writing the
+// default is always allowed, which is how a stored value is taken back.
+// `mode.writeRefusalReason()` supplies the sentence that says why, per
+// predicate, so the refusal and the read-time warning cannot disagree.
 //
 // **IT IS NOT PART OF `checkOverride()`**, and that is deliberate:
 // `checkOverride()` is also what a start and another process's change apply a
 // STORED override through, and what a restored realm's overrides are
-// validated with. A stored `true` in a product realm is IGNORED where it is
-// read and said once (`common/outbound_tls.ts`) — refusing it here would
-// refuse to restore the realm that holds it.
+// validated with. A stored value in a product realm is IGNORED where it is
+// read and said once (`mode.valueInForce()`, and `common/outbound_tls.ts` for
+// the TLS rows) — refusing it here would refuse to restore the realm that
+// holds it.
 //
 // `mode.js` requires THIS file, so the require here is LAZY: by the time any
 // write arrives both modules are loaded, and the require is a cache hit that
@@ -12530,21 +12653,22 @@ function modeWriteProblem(key, raw) {
     log.debug("Leaving modeWriteProblem(). No marker.");
     return null;
   }
-  if (TYPES[setting.type].check(raw, setting) ||
-      !TYPES[setting.type].parse(raw, setting)) {
-    log.debug("Leaving modeWriteProblem(). Not a true value.");
+  if (TYPES[setting.type].check(raw, setting)) {
+    log.debug("Leaving modeWriteProblem(). Not a value of the row's type.");
     return null;
   }
+  const parsed = TYPES[setting.type].parse(raw, setting);
   const mode = require('./mode');
-  if (mode[setting.onlyWhile]()) {
+  if (mode.allowsValue(key, parsed)) {
     log.debug("Leaving modeWriteProblem(). The mode allows it.");
     return null;
   }
   log.debug("Leaving modeWriteProblem(). Refused.");
-  return '"' + key + '" cannot be turned on here: this realm is in product ' +
-    'mode (global.mode=product), where it is ignored — verifying the ' +
-    'certificate of whoever answers an outbound request is not optional ' +
-    'there. Name a private CA in the matching CA file setting instead.';
+  return '"' + key + '" cannot be ' +
+    (parsed === true ? 'turned on' : parsed === false ? 'turned off'
+                                                      : 'set to ' + raw) +
+    ' here: this realm is in product mode (global.mode=product), where it ' +
+    'is ignored — ' + mode.writeRefusalReason(setting.onlyWhile);
 }
 
 // checkOverride() and then the mode rule above, for the doors that WRITE a

@@ -267,7 +267,7 @@ const SPECS: Spec[] = [
     name: 'SPIFFE Workload API and Workload Endpoint',
     where: 'SPIFFE (CNCF)',
     url: 'https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_API.md',
-    coverage: 'partial, and the gap is the whole of workload attestation. ' +
+    coverage: 'partial, and the gap is attestation of a TCP caller. ' +
               'Five of the seven methods are implemented — FetchX509SVID, ' +
               'FetchX509Bundles, FetchJWTSVID, FetchJWTBundles, ' +
               'ValidateJWTSVID — over a Unix socket and over TCP, with the ' +
@@ -281,16 +281,18 @@ const SPECS: Spec[] = [
               'ASKED FOR AND THERE MUST NOT BE ONE — the Workload Endpoint ' +
               'specification says the endpoint MUST NOT require direct ' +
               'authentication of its clients and that TLS MUST NOT be ' +
-              'required — so what is missing is ATTESTATION rather than ' +
-              'authentication. A caller is identified only by the transport ' +
-              'it arrived on, the endpoint it reached and its peer address, ' +
-              'because node cannot read a Unix socket\'s peer credentials; ' +
-              'those selectors DO decide which registration entries answer ' +
-              '(spiffe.attestWorkloads), and they prove nothing about who is ' +
-              'calling, so any caller that reaches the socket still gets an ' +
-              'identity. The selectors are spelt `transport:`, `endpoint:` ' +
-              'and `peer:` rather than `unix:` so that they cannot be ' +
-              'mistaken for an attestor\'s.' },
+              'required — so what is needed is ATTESTATION. A caller on the ' +
+              'Unix socket is attested from the kernel\'s account of the ' +
+              'connecting process by the unix, docker and k8s workload ' +
+              'attestors (#40). A caller over TCP has no process to ask and ' +
+              'is identified by its transport, endpoint and source address ' +
+              '(`transport:`, `endpoint:`, `peer:`), so section 3 allows TCP ' +
+              'only where the network authenticates the source address: ' +
+              'PRODUCT mode does not bind the TCP port unless ' +
+              'spiffe.workloadTcpSourceAuthenticated declares that, and not ' +
+              'on a wildcard address, and refuses a registration entry that ' +
+              'selects nothing but the transport and endpoint (#166). ' +
+              'Development serves TCP to anybody who reaches it.' },
   { id: 'spire-server-api', name: 'SPIRE Server API',
     where: 'SPIRE (CNCF) — spire-api-sdk',
     url: 'https://github.com/spiffe/spire-api-sdk',
@@ -320,7 +322,8 @@ const SPECS: Spec[] = [
               'pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 ' +
               'carrying the salt, ticket flags, clock-skew enforcement and ' +
               'the error catalogue. Two realms with a trust between them, so ' +
-              'cross-realm referrals work. No FAST, no request signatures, ' +
+              'cross-realm referrals work. FAST and OTP pre-authentication are ' +
+              'their own rows (RFC 6113, RFC 6560); no request signatures, ' +
               'no PKINIT, no kpasswd (S4U is [MS-SFU], its own row). The AP ' +
               'exchange belongs to the protected service, not here. ' +
               // The rule for these notes is that they say what would mislead
@@ -338,10 +341,59 @@ const SPECS: Spec[] = [
               'password is published, and krbtgt and the configured service ' +
               'account exist only where krb5.krbtgtPassword and ' +
               'krb5.servicePassword are set to something other than their ' +
-              'published defaults — so a product KDC authenticates NOBODY ' +
-              '(directory people get no Kerberos account) and its useful ' +
-              'half is the acceptor, for tickets a real KDC issued to ' +
-              'krb5.servicePrincipal.' },
+              'published defaults. A product KDC authenticates the ' +
+              'directory\'s PEOPLE with keys derived from their own ' +
+              'passwords (after they sign in once), and service principals ' +
+              'with random keys an operator created; and a person who holds ' +
+              'or must hold a second factor gets NO ticket on the password ' +
+              'alone (KDC_ERR_POLICY, after the password verified) — only ' +
+              'through FAST with OTP pre-authentication.' },
+  { id: 'rfc6113', name: 'A Generalized Framework for Kerberos ' +
+                         'Pre-Authentication — FAST (RFC 6113)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc6113',
+    coverage: 'partial: FAST in the AS exchange with the one armor type, ' +
+              'FX_FAST_ARMOR_AP_REQUEST — a TGT for this realm\'s ' +
+              'ticket-granting service with a subkey, the armor key ' +
+              'KRB-FX-CF2 of the two — the req-checksum, the armored ' +
+              'KrbFastReq replacing the outer request, every error carried ' +
+              'as PA-FX-ERROR inside the armor, a KrbFastFinished over the ' +
+              'ticket, the reply key always strengthened, PA-FX-COOKIE, and ' +
+              'the encrypted challenge (section 5.4.6) with its replay check. ' +
+              'PA-FX-FAST is advertised in every KDC_ERR_PREAUTH_REQUIRED ' +
+              'wherever the directory is loaded. NOT implemented: FAST in ' +
+              'the TGS exchange (implicit armor — a TGS-REQ that carries it ' +
+              'is answered unarmored, which MIT\'s client accepts), ' +
+              'anonymous PKINIT armor, the hide-client-names option ' +
+              '(refused as an unknown critical option), authentication sets ' +
+              '(section 5.3) and AD-authentication-strength.' },
+  { id: 'rfc6560', name: 'One-Time Password (OTP) Pre-Authentication ' +
+                         '(RFC 6560)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc6560',
+    coverage: 'partial: PA-OTP-CHALLENGE and PA-OTP-REQUEST inside FAST, ' +
+              'four-pass (the nonce bound by a cookie) and two-pass, for ONE ' +
+              'kind of token: the person\'s authenticator app (RFC 6238), ' +
+              'verified by the sign-in screen\'s own verifier and once-only ' +
+              'step. The token information asks for the PIN separately, and ' +
+              'the PIN IS THE PASSWORD, checked as the Kerberos key it ' +
+              'derives — so one exchange proves both factors, and an app ' +
+              'password is refused. The OTP value travels in otp-value (the ' +
+              'host-key armor authenticates the KDC); must-encrypt-nonce, ' +
+              'hashed OTP values, PIN change and resynchronisation are not ' +
+              'implemented.' },
+  { id: 'rfc8129', name: 'Authentication Indicator in Kerberos Tickets ' +
+                         '(RFC 8129, over RFC 7751\'s AD-CAMMAC)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc8129',
+    coverage: 'partial: a ticket from an OTP pre-authentication carries the ' +
+              'indicator `otp` in an AD-CAMMAC (inside AD-IF-RELEVANT) with ' +
+              'a kdc-verifier and a svc-verifier; the TGS copies it from this ' +
+              'realm\'s own TGT into the tickets it buys (never under S4U or ' +
+              'across a trust); the acceptor reads it only from a CAMMAC ' +
+              'that verifies under its key, and /authn/spnego counts it as ' +
+              'a second factor. No other indicator is issued, and ' +
+              'other-verifiers are neither written nor read.' },
   { id: 'rfc3961', name: 'Kerberos encryption framework (RFC 3961/3962/8009, ' +
                          'RFC 4757)',
     where: 'IETF',
@@ -501,7 +553,8 @@ const SPECS: Spec[] = [
               '`sub` claim section 2.2 discourages is absent unless ' +
               'ssf.legacySubClaim is turned on, which is a deliberate defect ' +
               'for testing a client written against a transmitter that gets ' +
-              'it wrong.' },
+              'it wrong — in development mode only; a product realm ignores ' +
+              'it.' },
   { id: 'rfc9493', name: 'RFC 9493 — Subject Identifiers for Security Event ' +
                          'Tokens',
     where: 'IETF',
@@ -1292,8 +1345,15 @@ const SPECS: Spec[] = [
               'server.' },
   { id: 'rfc7009', name: 'RFC 7009 — Token Revocation',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7009',
-    coverage: 'full: revocation takes effect — a revoked token is reported ' +
-              'inactive by introspection.' },
+    coverage: 'full: section 2.1 in product mode — a confidential client ' +
+              'authenticates, a public one names its registered client_id, ' +
+              'and a client revokes only its own tokens (invalid_grant ' +
+              'otherwise); development authenticates only a caller that ' +
+              'presents a credential. Access and refresh tokens are ' +
+              'revocable, anything else is unsupported_token_type; an ' +
+              'unknown token_type_hint is ignored; a refresh token takes ' +
+              'its whole grant, access tokens included; a revoked token is ' +
+              'reported inactive by introspection (#102).' },
   { id: 'rfc7515', name: 'RFC 7515/7516/7517/7518 — JWS, JWE, JWK, JWA',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7515',
     coverage: 'partial: RS256 signatures throughout; RSA-OAEP-256 with ' +
@@ -1588,16 +1648,17 @@ const SPECS: Spec[] = [
     name: 'OAuth 2.0 Multiple Response Type Encoding Practices',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html',
-    coverage: 'partial: the combined response types code id_token, code ' +
-              'token, code id_token token and id_token token, and section ' +
-              '2.1\'s default response modes — the query for code alone and ' +
-              'the fragment for every type that returns a token — for a ' +
-              'successful response AND an error (#118; errors went in the ' +
-              'query until then). An explicit response_mode=fragment is ' +
-              'honoured for any type; an explicit query is honoured only ' +
-              'for code alone. NOT covered: response_type=none, and refusing ' +
-              'rather than overriding an explicit query for a token-bearing ' +
-              'type (#125).' },
+    coverage: 'full (#118, #125): the combined response types code ' +
+              'id_token, code token, code id_token token and id_token ' +
+              'token; section 4\'s response_type=none — state and iss ' +
+              'alone, in the query, advertised, and refused in combination ' +
+              '(STS-OAUTH-0606) — and section 2.1\'s default response modes ' +
+              '(the query for code and none, the fragment for every type ' +
+              'that returns a token) for a successful response AND an error. ' +
+              'An explicit response_mode=fragment is honoured for any type, ' +
+              'and an explicit query for a type that returns a token or an ' +
+              'ID Token is REFUSED, in the fragment (STS-OAUTH-0607), since ' +
+              'the section says it MUST NOT be used.' },
   { id: 'oauth-form-post', name: 'OAuth 2.0 Form Post Response Mode',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html',
@@ -1613,7 +1674,12 @@ const SPECS: Spec[] = [
               'blocked the button is the whole mechanism. It was ADVERTISED ' +
               'AND MISSING for a long time — every request got a 302 ' +
               'whatever it asked for — which is why the member was removed ' +
-              'from the metadata until this existed.' },
+              'from the metadata until this existed. Where RFC 9700 section ' +
+              '4.11.2 shows an error instead of redirecting it (nobody ' +
+              'signed in), the way on for a form_post request is a FORM ' +
+              'POSTing the same fields — and form_post.jwt\'s one response ' +
+              'field — with a button and no script, never a GET link ' +
+              'carrying them in the URL (#126).' },
   { id: 'rfc7521', name: 'RFC 7521 — Assertion Framework for OAuth 2.0 ' +
                         'Client Authentication and Authorization Grants',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7521',
@@ -1791,7 +1857,8 @@ const SPECS: Spec[] = [
               'validate the ID Token nonce and must not use a token before ' +
               'that succeeds, neither of which this server can observe; ' +
               'oauth2.breakIdTokenNonce spoils the nonce on purpose so a ' +
-              'client author can find out whether their own code checks it. ' +
+              'client author can find out whether their own code checks it ' +
+              '(development mode only; a product realm ignores it). ' +
               'Pushed Authorization Requests (RFC 9126) and Resource ' +
               'Indicators (RFC 8707) are features of their own, in every ' +
               'mode, rather than constraints this mode enforces. GET /oauth2/rfc9700 lists every requirement with ' +
@@ -1818,7 +1885,8 @@ const SPECS: Spec[] = [
               'token keeping its scope are true in every mode. NOT covered: ' +
               'the OpenID4VCI pre-authorized code grant and the assertion ' +
               'grants are exempt from the registered-client rule, and ' +
-              'introspection and revocation still authenticate no client. ' +
+              'introspection (JSON) and revocation authenticate their ' +
+              'caller by global.mode, not by this mode (#102). ' +
               'GET /oauth2/oauth21 lists every requirement.' },
   { id: 'fapi1-baseline', name: 'FAPI 1.0 Part 1: Baseline Security ' +
                                'Profile (final)',
@@ -2427,7 +2495,8 @@ const ENDPOINTS: EndpointEntry[] = [
     // specification nothing links to is an IDLE CLAIM, which
     // tests/vendored/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
-    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961'],
+    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'rfc6113', 'rfc6560',
+            'rfc8129'],
     what: 'Relays a KDC-PROXY-MESSAGE to the KDC listening on TCP and UDP ' +
           'port 88 in this process. A browser cannot open a raw socket, so ' +
           'this is how the in-browser client reaches a KDC without the api ' +
@@ -3841,11 +3910,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'SOCKETS, all four: this page is built by walking the Express ' +
           'router and cannot see one, so their state is reported by GET ' +
           '/spiffe and on /admin/spiffe rather than here. MOST OF THAT PAGE ' +
-          'IS WHAT IS AND IS NOT CHECKED — no workload attestation (node ' +
-          'attestation is verified or refused since 2026-09-21, #40; a ' +
-          'Workload API caller is identified by its ' +
-          'transport, endpoint and peer address and nothing else, because ' +
-          'node cannot read a socket\'s peer credentials), no revocation ' +
+          'IS WHAT IS AND IS NOT CHECKED — node attestation verified or ' +
+          'refused and the Unix socket\'s workload attested (#40), a TCP ' +
+          'caller identified by its transport, endpoint and source address ' +
+          'alone and therefore served in product only on a network ' +
+          'declared to authenticate source addresses (#166), no revocation ' +
           'anywhere — the directory does record a `spiffeCredentialStatus` ' +
           'on an identity whose last registration entry was deleted or whose ' +
           'agent was banned or deleted, and that is not one: nothing reads ' +
@@ -5043,6 +5112,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'so the keytab holds that key and the page says so. The identity ' +
           'is the session\'s; nothing on the form names a person. A real ' +
           'submit button and no script.' },
+  { path: '/portal/sign-ins', group: 'User portal',
+    name: 'Your recent sign-ins, and whether each was you',
+    specs: [],
+    effect: 'records "this was me" or "this wasn\'t me" on one of the ' +
+            'signed-in person\'s own assessed sign-ins; "not me" puts their ' +
+            'risk at HIGH, which ends everything they hold',
+    what: 'NON-SPEC page (#62 P6). The signed-in person\'s own risk ' +
+          'assessments of the last thirty days — when, from where (the city, ' +
+          'country and network the datasets named), with what browser and ' +
+          'system, through which door, at what level — each with two ' +
+          'buttons until answered. "This was me" is recorded for ' +
+          'calibration and lowers the person\'s standing to LOW only when ' +
+          'said from another, low-risk session. "This wasn\'t me" puts the ' +
+          'standing at HIGH (reported-not-me), which the risk-response ' +
+          'policy answers — every session ended, RISC told the credential is ' +
+          'compromised. The identity is the session\'s; the assessment ' +
+          'named must be the person\'s own. Real submit buttons and no ' +
+          'script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -6083,7 +6170,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'a sign-out revokes refresh tokens, the client assertion clock ' +
           'skew, the four lifetimes /admin/token-lifetimes also draws — and ' +
           'oauth2.breakIdTokenNonce, which makes this service return a WRONG ' +
-          'nonce on purpose so that a client can be shown to check it. Every ' +
+          'nonce on purpose so that a client can be shown to check it (in ' +
+          'development mode only: a product realm ignores it and refuses ' +
+          'setting it). Every ' +
           'form here posts to /admin/config, so there is one store and one ' +
           'action; what moved is the door. Add ?format=json.' },
   { path: '/admin/oid4vci', group: 'Admin', name: 'OpenID4VCI settings',
@@ -7473,7 +7562,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'described — value, source, whether it can be changed while the ' +
           'service runs — and the prose and caveats the page carries, ' +
           'including that oauth2.breakIdTokenNonce makes this service wrong ' +
-          'on purpose. Read-only; POST /admin-api/config/set-many is how ' +
+          'on purpose, in development mode only. Read-only; POST ' +
+          '/admin-api/config/set-many is how ' +
           'they are written.' },
   { path: '/admin-api/oid4vci-settings', group: 'Management API',
     name: 'OpenID4VCI settings',
@@ -8516,7 +8606,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'two partners are left the sign-in screen is drawn instead.' },
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
-    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'oidc'],
+    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
+            'oidc'],
     effect: 'answers 401 with "WWW-Authenticate: Negotiate" and, to a ' +
             'request carrying a valid service ticket, establishes the ' +
             'browser session and returns to whatever was interrupted',
@@ -8740,6 +8831,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'page has NO SCRIPT and is served under the service-wide ' +
           'script-src \'none\' — a person reads digits and types them, so ' +
           'the exception the security-key page needs does not apply here.' },
+  { path: '/authn/fingerprint.js', group: 'Authentication',
+    name: 'Browser fingerprint script (optional)',
+    specs: [],
+    what: 'NON-SPEC (#62 P6). Served only while risk.fingerprinting is on in ' +
+          'the realm — 404 otherwise — and then the sign-in screen is the ' +
+          'ninth scripted page: FingerprintJS (MIT, v5; it runs in the ' +
+          'browser and sends nothing, its usage ping turned off) puts a ' +
+          'visitorId in a hidden field, and the service keeps only a keyed ' +
+          'digest of it, scored as a device this person never used. The ' +
+          'form works without it. Off by default: it is personal data, and ' +
+          'turning it on is the operator\'s decision, after the privacy ' +
+          'impact assessment the risk-scoring page describes.' },
   { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ' +
       'ceremony script',
     specs: ['webauthn'],
@@ -9105,7 +9208,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/revoke', group: 'OAuth 2.0 / OIDC', name: 'Revocation ' +
       'endpoint',
     specs: ['rfc7009'], what: 'Revocation that takes effect: introspection ' +
-                              'then reports inactive.' },
+                              'then reports inactive. The client ' +
+                              'authenticates (in development only when it ' +
+                              'presents a credential), revokes only its ' +
+                              'own tokens, and a refresh token takes its ' +
+                              'grant with it.' },
   { path: '/oauth2/register', group: 'OAuth 2.0 / OIDC', name: 'Dynamic ' +
       'client registration',
     specs: ['rfc7591', 'rfc9700', 'oidc-registration'],

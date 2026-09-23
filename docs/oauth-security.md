@@ -75,7 +75,9 @@ refused**: a reused challenge, an unbound access token, a client using a
 shared secret, and the client's duty to check the ID Token's `nonce`. For that
 last one, `oauth2.breakIdTokenNonce` puts a deliberately wrong nonce in every ID
 Token, so you can see whether a client notices. It is reported on
-`/oauth2/rfc9700` and is not part of the mode.
+`/oauth2/rfc9700` as it is in force, is not part of the mode, and works in
+**development mode only**: a product realm ignores it — even one still stored
+from before the realm was switched — and refuses turning it on.
 
 ### OAuth 2.1 mode
 
@@ -383,7 +385,6 @@ default**:
 * `mtls_endpoint_aliases` (RFC 8705 section 5): the endpoints already ask for a
   certificate where they are.
 * A client certificate forwarded in a header by a TLS-terminating proxy.
-* Client authentication at `/oauth2/revoke`, in any mode.
 * `acr_values` on the device and token-exchange grants; GNAP's interaction does
   not read a step-up requirement.
 
@@ -424,7 +425,7 @@ headers) are described on [Configuration](configuration.md) and
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In every mode, revoke the refresh tokens issued on a browser session without `offline_access` when that session ends (Back-Channel Logout section 2.7). |
 | `oauth2.maxPendingTransactions` | `STS_OAUTH2_MAX_PENDING_TRANSACTIONS` | `500` | yes | How many authorization transactions RFC 9700 mode remembers to refuse a reused PKCE challenge or nonce. |
 | `oauth2.maxRefreshTokenFamilies` | `STS_OAUTH2_MAX_REFRESH_TOKEN_FAMILIES` | `2000` | yes | How many refresh tokens are tracked for rotation and replay detection. |
-| `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a deliberately wrong `nonce` in every ID Token, to find out whether a client checks it. |
+| `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a deliberately wrong `nonce` in every ID Token, to find out whether a client checks it. Development mode only. |
 
 ### DPoP
 
@@ -491,7 +492,9 @@ client may override `oauth2.refreshIdleSeconds` and
   went away. A replayed chain is one that was copied. Treating the two the same
   would make the replay refusal mean nothing.
 * **`oauth2.breakIdTokenNonce` is not part of the mode.** A compliance flag that
-  also breaks tokens is one nobody would turn on.
+  also breaks tokens is one nobody would turn on. It belongs to development
+  mode instead (#104): product ignores it where the ID Token is built and
+  refuses writing it.
 * **No DPoP-required mode; five explicit settings instead.** Neither
   specification asks for them. They exist so a client can meet a strict server
   here before it meets one in production, and nothing turns them on implicitly.

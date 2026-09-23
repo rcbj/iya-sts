@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3076** of them, in **37** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3119** of them, in **37** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 59
+* [Service core (`STS-CORE`)](#sts-core) — 60
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 62
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
@@ -62,16 +62,16 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 485
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 204
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 494
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 97
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 134
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 154
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 72
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 116
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 180
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 60
+* [User portal (`STS-PORTAL`)](#sts-portal) — 62
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 123
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -196,9 +196,10 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0100` | A trust realm was given a domain another realm — the default realm's global.domain included — already has. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0101` | An update tried to change a trust realm's domain, which is fixed when the realm is created. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0102` | A cache or replay store could not eject its expired entries; the store still refuses an expired entry where it reads it. | none — logged by the caches.eject-expired job |
-| `STS-CORE-0103` | A write turning on a development-only setting — a …SkipTlsVerification, or spiffe.k8sSkipKubeletVerification — was refused because the realm it lands in is in product mode (#171). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-CORE-0103` | A write giving a development-only setting a value other than its default — a …SkipTlsVerification or spiffe.k8sSkipKubeletVerification (#171); oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off (#104) — was refused because the realm it lands in is in product mode. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-CORE-0104` | An outbound request (a GNAP push, an SSF push, a federation back channel or an XACML nudge) was not made because the CA file its …CaFile setting names could not be read or holds no certificate. | none — the family's own failure record (a grant history, a dead letter, a relationship's last error, a PEP row) |
 | `STS-CORE-0105` | The service did not start: the appconfig file or the environment still names a setting removed on 2026-09-23 (#171) — gnap.pushAllowInsecure, ssf.pushAllowInsecure, federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure. | none — the process exits |
+| `STS-CORE-0106` | A development-only setting — oauth2.breakIdTokenNonce, ssf.breakSetSignature, ssf.legacySubClaim or spiffe.acceptAssertedSelectors on, or spiffe.attestWorkloads off — is stored in a realm that is in product mode, and is ignored: its default is in force. Logged once per process and setting (#104). | none — a warning in the log |
 
 ## STS-WORKER
 
@@ -1082,6 +1083,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0219` | An app password was not revoked: the person holds none with that id. | HTTP 400 (API), or 404 on the portal, where somebody else's is answered as one that does not exist |
 | `STS-AUTHN-0220` | The app passwords on a person's entry could not be read or written: the directory threw, refused the write, or holds a value this service did not write. A value it cannot read is refused rather than compared. | HTTP 400 (API), the page redrawn, or the door's wrong-password answer |
 | `STS-AUTHN-0221` | An app password was not made: the name is not a person in this realm's directory. An application authenticates with its own client credentials, and an app password is a person's. | HTTP 400 (API) |
+| `STS-AUTHN-0222` | A password being set was refused because it has appeared in a data breach: Pwned Passwords lists it (#62 P6, product mode). | NIST SP 800-63B section 3.1.1.2 |
+| `STS-AUTHN-0223` | A password was set in product mode by a door that did not screen it against Pwned Passwords first, so no breach verdict was there to read. The door is named in the line; it needs a screen(). | — |
+| `STS-AUTHN-0224` | The Pwned Passwords range API did not answer (off, unreachable, refused by the outbound rules, or too slow); a password was set unscreened. | — |
+| `STS-AUTHN-0225` | The browser fingerprint script was asked for while risk.fingerprinting is off in the realm; nothing draws a page that uses it, so it is not served (#62 P6). | HTTP 404 |
 
 ## STS-OAUTH
 
@@ -1576,6 +1581,15 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
 | `STS-OAUTH-0604` | An RP-Initiated Logout request sent with POST was not a form (application/x-www-form-urlencoded, section 2) (#124). | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0605` | The RP-Initiated Logout endpoint failed while answering (#124). | HTTP 500 (an HTML page) |
+| `STS-OAUTH-0606` | response_type none was combined with another response type; it asks for nothing to be issued (Multiple Response Type Encoding Practices section 4, #125). | redirect {error: unsupported_response_type} |
+| `STS-OAUTH-0607` | response_mode=query was asked for a response type that returns a token or an ID Token, which section 2.1 of Multiple Response Type Encoding Practices forbids (#125). The refusal goes in the fragment. | redirect {error: invalid_request} |
+| `STS-OAUTH-0608` | An RFC 7009 revocation request named no token: section 2.1 makes the token parameter REQUIRED (#102). In both modes. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0609` | An RFC 7009 revocation request from a registered client did not authenticate: in product mode a confidential client presented no credential, or (in either mode) a credential that did not verify, or an entry that declares no method presented none (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0610` | Product mode: an RFC 7009 revocation request named no client this realm has registered — no client_id at all, or one with no entry — so there is no client to validate (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0611` | An RFC 7009 revocation request presented a token this realm signed that is neither an access token nor a refresh token — an ID Token, a logout token, a SET — which this server does not revoke (#102). | unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1) |
+| `STS-OAUTH-0612` | An RFC 7009 revocation request from an authenticated or identified client presented a token issued to another client. Refused and nothing revoked; the audit row names both clients (#102). | invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 section 5.2) |
+| `STS-OAUTH-0613` | A client authenticating at the revocation endpoint declares a token_endpoint_auth_method the selected authorization server does not list in revocation_endpoint_auth_methods_supported (#102). | invalid_client (HTTP 401) |
+| `STS-OAUTH-0614` | The revocation endpoint failed with an unexpected error outside every refusal it makes (#102). | server_error (HTTP 500) |
 
 ## STS-SAML
 
@@ -1964,6 +1978,26 @@ Raised from: kerberos/.
 | `STS-KRB-0132` | A keytab was refused because the password given does not derive the key the product KDC holds for the person, or none was given. | HTTP 400 { ok: false, errors } / a 400 portal page |
 | `STS-KRB-0133` | A development-mode keytab was refused because the development KDC has no principal for the person and will not make one (a name krb5.unknownUsers reserves), or it offers no enctype. | HTTP 400 { ok: false, errors } / a 400 portal page |
 | `STS-KRB-0134` | A keytab was refused because the person's account is disabled, which the KDC refuses whatever key is presented. | HTTP 400 { ok: false, errors } / a 400 portal page |
+| `STS-KRB-0135` | An AS-REQ pre-authenticated with a password alone (PA-ENC-TIMESTAMP, or FAST's PA-ENCRYPTED-CHALLENGE) was refused, in product mode, because the person holds or is required to hold a second factor. Refused only after the password verified. | KDC_ERR_POLICY (12) |
+| `STS-KRB-0136` | A FAST-armored AS-REQ (PA-FX-FAST) did not decode, carried no armor, named an armor type other than FX_FAST_ARMOR_AP_REQUEST, or its armor was not an AP-REQ. | RFC 6113 section 5.4.1: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0137` | A FAST armor ticket was refused: not a TGT for the ticket-granting service of the realm asked, sealed under another key, expired or not yet valid. | RFC 6113 section 5.4.1.1: KDC_ERR_PREAUTH_FAILED (24), KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), KRB_AP_ERR_TKT_NYV (33) |
+| `STS-KRB-0138` | A FAST armor AP-REQ's Authenticator was refused: it did not decrypt, named another client, was outside the clock tolerance, or carried no subkey. | RFC 6113 section 5.4.1.1: KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_BADMATCH (36), KRB_AP_ERR_SKEW (37), KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0139` | A FAST req-checksum did not cover the outer request body under the armor key. | RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0140` | A FAST enc-fast-req did not open under the armor key, or the KrbFastReq inside it did not decode. | RFC 6113 section 5.4.2: KRB_AP_ERR_BAD_INTEGRITY (31) |
+| `STS-KRB-0141` | A FAST request set a critical FAST option this KDC does not implement (hide-client-names). | RFC 6113 section 5.4.2: KDC_ERR_UNKNOWN_CRITICAL_FAST_OPTIONS (93) |
+| `STS-KRB-0142` | A PA-ENCRYPTED-CHALLENGE did not decode or did not decrypt under the challenge key: a wrong password inside FAST. | RFC 6113 section 5.4.6: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0143` | A PA-ENCRYPTED-CHALLENGE's timestamp was outside the clock tolerance. | RFC 6113 section 5.4.6: KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0144` | A PA-ENCRYPTED-CHALLENGE was presented a second time (the same ciphertext). | RFC 6113 section 5.4.6: KRB_AP_ERR_REPEAT (34) |
+| `STS-KRB-0145` | A PA-ENCRYPTED-CHALLENGE could not be proved unused because the claim store could not be asked. | KRB_ERR_GENERIC (60) |
+| `STS-KRB-0146` | A PA-OTP-REQUEST did not decode, its encData was not under the armor key or did not open, or it answered no PA-OTP-CHALLENGE this KDC issued (or its timestamp was outside the tolerance). | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24), KDC_ERR_ETYPE_NOSUPP (14), KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0147` | A PA-OTP-REQUEST carried no otp-pin, and this KDC requires the password as the PIN. | RFC 6560 section 3.4: KDC_ERR_PIN_REQUIRED (97) |
+| `STS-KRB-0148` | A PA-OTP-REQUEST's otp-pin was not the person's password (it does not derive the Kerberos key the KDC holds; an app password never does). | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0149` | A PA-OTP-REQUEST's code was refused by the authenticator verifier: wrong, or no authenticator app enrolled. | RFC 6560 section 3.4: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0150` | A PA-OTP-REQUEST's code had already been used, at the KDC or at the sign-in screen (one step counter for both). | RFC 6238 section 5.2: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0151` | A PA-OTP-REQUEST's code could not be proved unspent because the step store could not be asked. | KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0152` | A PA-OTP-REQUEST carried no otp-value (a hashed OTP or one used as key material), which this KDC did not ask for. | RFC 6560 section 3.6: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0153` | A ticket's AD-CAMMAC did not verify under the key the ticket is sealed with, so its authentication indicators were ignored. | RFC 7751 section 7, RFC 8129 section 5 |
+| `STS-KRB-0154` | Asking whether a person holds a second factor failed, so the KDC treated a password alone as not enough. | — |
 
 ## STS-LDAP
 
@@ -2253,6 +2287,13 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0114` | A realm's SPIRE Server API could not take a new certificate after the service Root was replaced, so it still presents a chain under the old Root and a client holding the new bundle cannot verify it until a restart. | — |
 | `STS-SPIFFE-0115` | After the service Root was replaced, a realm's certificate authority branch did not arrive under the new Root within 30 seconds, so its SPIRE Server API was re-keyed anyway and the branch was repaired in this process — which may leave the realm with two Intermediate CAs if the process that replaced the Root rebuilds it too. | — |
 | `STS-SPIFFE-0116` | Product mode ignored spiffe.k8sSkipKubeletVerification: the k8s workload attestor verifies the kubelet's certificate against its CA whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-SPIFFE-0117` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the socket was not verified private: it was not made 0600 (STS-SPIFFE-0010), the connection came before it was, or the socket or its directory has a group or other bit (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
+| `STS-SPIFFE-0118` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because the kernel says it runs as a uid that is not this service's own (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
+| `STS-SPIFFE-0119` | A caller on the SPIRE Server API's Unix socket was not trusted as the local entity, in a product realm, because its kernel credentials could not be read — the native module is not built, or SO_PEERCRED failed (#104). | gRPC UNAUTHENTICATED (or PERMISSION_DENIED) from the method, which it may call only as another entity |
+| `STS-SPIFFE-0120` | The Workload API was not served over TCP in a product realm, because spiffe.workloadTcpSourceAuthenticated does not declare that the network authenticates source addresses (SPIFFE Workload Endpoint section 3) — the port was not bound, or a realm switched to product with it bound refused the call (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
+| `STS-SPIFFE-0121` | The Workload API was not served over TCP in a product realm: spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a wildcard address, and the declaration covers one named network (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
+| `STS-SPIFFE-0122` | A SPIFFE registration entry was refused in a product realm because it selects nothing that identifies a workload — no selector, or only transport: and endpoint: ones — at the console, /admin-api or the SPIRE Server API (#166). | gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and BatchUpdateEntry; a refused console or management API action |
+| `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; the caller may get an empty SVID list |
 
 ## STS-TLS
 
@@ -3326,6 +3367,8 @@ Raised from: portal/.
 | `STS-PORTAL-0080` | A keytab download on /portal/kerberos was refused because the password typed is not the person's current one. | HTTP 400 page |
 | `STS-PORTAL-0081` | A keytab download on /portal/kerberos was refused by the Kerberos register after the password verified; its own STS-KRB code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
+| `STS-PORTAL-0083` | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
 
 ## STS-LOGOUT
 

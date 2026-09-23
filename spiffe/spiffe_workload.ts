@@ -53,12 +53,18 @@
 //     `entitledEntries()` with no caller) narrows by it. It used to be
 //     implemented and unused here, because there was nothing to match against.
 //     There is now. `spiffe.attestWorkloads` off restores the old answer —
-//     every entry to every caller.
+//     every entry to every caller — in DEVELOPMENT MODE ONLY (#104,
+//     `mode.servesUnattestedEntries()`): `auth.attestWorkloads()` reads it
+//     through `mode.valueInForce()`, so a product realm narrows whatever is
+//     stored.
 //
-//   * **Any caller that can reach the TCP port can still obtain an
-//     identity** (and, on the socket, any process when the native module is
-//     missing in development). Nothing proves who it is; matching narrows
-//     WHICH entries answer, and
+//   * **In development any caller that can reach the TCP port can still
+//     obtain an identity** (and, on the socket, any process when the native
+//     module is missing). Nothing proves who it is; matching narrows WHICH
+//     entries answer. **Product serves TCP only on a network declared to
+//     authenticate source addresses, and answers only entries that select
+//     something identifying** — `peer:` for TCP (#166, `entitledEntries()`
+//     below, `spiffe_registry.ts`'s `answersWorkloads()`). And
 //     `spiffe.autoCreateEntries` still invents one for a caller that matches
 //     none. So the socket's filesystem permissions are still the only thing
 //     standing between a process and an SVID here, which is the same statement
@@ -196,9 +202,14 @@ class SpiffeWorkload {
     // I get".
     const selectors = (caller && caller.selectors) || null;
     const narrow = !!(selectors && auth.attestWorkloads());
-    const rows = narrow ? live.filter(function (entry) {
+    // An entry that selects nothing identifying answers no caller in a
+    // product realm (#166), however it got into the registry — the refusal
+    // at the write is `checkRecord()`'s, and this is the read.
+    const rows = (narrow ? live.filter(function (entry) {
       return registry.selectorsMatch(entry.selectors, selectors);
-    }) : live;
+    }) : live).filter(function (entry) {
+      return !caller || registry.answersWorkloads(entry);
+    });
     if (narrow) {
       log.debug('entitledEntries(): ' + rows.length + ' of ' + live.length +
                 ' entry/entries match [' +

@@ -1090,8 +1090,10 @@ class AdminApi {
                      'four lifetimes `GET /token-lifetimes` also reports — ' +
                      'and `oauth2.breakIdTokenNonce`, which makes this ' +
                      'service return an ID Token whose `nonce` is WRONG so ' +
-                     'that a client can be shown to check ' +
-                     'it.\n\n`oauth2.rfc9700` is restart-only and says so in ' +
+                     'that a client can be shown to check it — in ' +
+                     'development mode only; a product realm ignores it and ' +
+                     'refuses setting it.\n\n`oauth2.rfc9700` is ' +
+                     'restart-only and says so in ' +
                      '`restartReason`: `global.https` derives from it and a ' +
                      'listener\'s scheme is settled when the socket is ' +
                      'bound. A TRUST REALM can carry it while the process ' +
@@ -1245,7 +1247,16 @@ class AdminApi {
                      '`KDC_ERR_C_PRINCIPAL_UNKNOWN` — every other name gets ' +
                      'an account — and `krb5.clockOffset` moves this KDC\'s ' +
                      'idea of now so a client can be shown `KRB_AP_ERR_SKEW` ' +
-                     'without anybody touching a system clock.' },
+                     'without anybody touching a system clock.\n\nAND A ' +
+                     '`status` MEMBER (#173): what the KDC does about ' +
+                     'pre-authentication in this realm — whether a password ' +
+                     'alone gets a ticket for a person who holds or must hold ' +
+                     'a second factor (`passwordAloneRefused`; product ' +
+                     'refuses it with KDC_ERR_POLICY after the password ' +
+                     'verified), whether RFC 6113 FAST is served (`fast`, ' +
+                     'with its armor types and factors), and the RFC 8129 ' +
+                     'indicator an OTP pre-authentication puts in a ticket ' +
+                     '(`otpIndicator`).' },
       { path: '/ldap', console: '/admin/ldap', tag: 'LDAP',
         operationId: 'getLdapSettings',
         summary: 'The embedded directory\'s own settings',
@@ -3293,6 +3304,11 @@ class AdminApi {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
           const request = self.withAction(req, body);
+          // A PASSWORD IN THE REQUEST IS SCREENED AGAINST PWNED PASSWORDS
+          // FIRST (#62 P6), for the console route's reason: the action is
+          // synchronous and reads the verdict this leaves.
+          return require('../common/breached_passwords')
+            .screenAll([request.password]).then(function () {
           // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
           return self.runClaimed(res, request.action === 'create'
             ? { username: String(request.username || request.user || '') }
@@ -3314,6 +3330,7 @@ class AdminApi {
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API users action endpoint.");
           });
+            });
         },
         actions: [
           { action: 'issue-activation', operationId: 'issueActivationLink',
@@ -15960,7 +15977,11 @@ class AdminApi {
                      'you, because neither this API nor GET ' +
                      '/admin/sts-metadata can see a socket, and ' +
                      '`workloadAttestation`: what the Workload API\'s Unix ' +
-                     'socket attests.\n\nThe reply ' +
+                     'socket attests, and under `tcp` whether its TCP port ' +
+                     'is served — in product only where ' +
+                     '`spiffe.workloadTcpSourceAuthenticated` declares the ' +
+                     'network authenticates source addresses, on a named ' +
+                     'address (#166).\n\nThe reply ' +
                      'also carries `authentication`: whether the SPIRE ' +
                      'Server API is enforcing mutual TLS, which identities ' +
                      'are administrators, and the whole per-method ' +
@@ -15969,7 +15990,10 @@ class AdminApi {
                      'caller on the Unix socket is attested by the workload ' +
                      'attestors `spiffe.workloadAttestors` names; one over ' +
                      'TCP is identified only by the transport, the endpoint ' +
-                     'and its address. An agent\'s attestation is verified ' +
+                     'and its address, which is why a product realm refuses ' +
+                     'a registration entry selecting nothing but the ' +
+                     'transport and endpoint. An agent\'s attestation is ' +
+                     'verified ' +
                      'by the attestor its type names or refused (#40, ' +
                      '2026-09-21). Where ' +
                      'the SPIRE Server API authenticates nobody, any caller ' +

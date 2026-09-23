@@ -326,6 +326,11 @@ import scopePolicy = require('../common/scope_policy');
 // uses, required for the same grant and on the same argument.
 import credentials = require('../common/credentials');
 import websecurity = require('../common/websecurity');
+// The audit log, for the one row the HTTP funnel's own cannot carry: WHICH
+// client revoked WHOSE token at /oauth2/revoke (RFC 7009, #102). A library
+// that requires nothing here, so it can neither close a cycle nor move a
+// route.
+import audit = require('../common/audit');
 // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46). Two LIBRARIES: the
 // atomic "once" an authorization code and a PAR request_uri are spent through,
 // and the barrier a request that lost that race waits on to see what the
@@ -447,6 +452,7 @@ interface OAuth2ServerDeps {
   scopePolicy: typeof scopePolicy;
   credentials: typeof credentials;
   websecurity: typeof websecurity;
+  audit: typeof audit;
   clusterClaims: typeof clusterClaims;
   clusterBarrier: typeof clusterBarrier;
   capabilities: typeof capabilities;
@@ -1320,6 +1326,21 @@ const TOKEN_QUERY_FORM = vz.looseObject({
   client_secret: vz.string().max(1024).optional()
 });
 
+// RFC 7009 ALONE (#102, 2026-09-22), and it differs from the form above in
+// exactly two places. `token_type_hint` is any short string: section 2.1 says
+// a server that does not understand a hint MAY ignore it, and section 4.1.2 is
+// a REGISTRY of hint values that grows — so an unknown one is ignored here
+// rather than refused as a malformed request, which is what sharing
+// introspection's form did. And `token` stays optional to the validator so
+// that its absence is answered by name (`STS-OAUTH-0608`) rather than as a
+// schema failure. Introspection keeps its own form, unchanged.
+const REVOCATION_FORM = vz.looseObject({
+  token: vz.string().max(validation.CAP.TEXT).optional(),
+  token_type_hint: vz.string().max(256).optional(),
+  client_id: vt.opt(vt.identifier),
+  client_secret: vz.string().max(1024).optional()
+});
+
 // OpenID Connect RP-Initiated Logout 1.0 section 2.
 //
 // **`post_logout_redirect_uri` IS A `redirectUri` AND THAT IS THE POINT OF
@@ -1501,6 +1522,7 @@ class OAuth2Server {
       scopePolicy: scopePolicy,
       credentials: credentials,
       websecurity: websecurity,
+      audit: audit,
       clusterClaims: clusterClaims,
       clusterBarrier: clusterBarrier,
       capabilities: capabilities
@@ -1650,10 +1672,13 @@ class OAuth2Server {
       // id_token, so `id_token token` belongs here too — OpenID Connect Dynamic
       // Registration names it as one an OP should support, and leaving it out
       // of the list while honouring it is the same drift as the reverse.
+      // `none` since #125: Multiple Response Type Encoding Practices section
+      // 4, a response carrying `state` and nothing issued.
       response_types_supported: ['code', 'token', 'id_token', 'code token',
                                  'code ' +
           'id_token',
-                                 'id_token token', 'code id_token token'],
+                                 'id_token token', 'code id_token token',
+                                 'none'],
       // --- RECOMMENDED / OPTIONAL ---
       jwks_uri: at + '/oauth2/jwks',
       // NON-SPEC (#42, D8): the realm's public crypto metadata document —
@@ -1799,9 +1824,16 @@ class OAuth2Server {
       op_policy_uri: base + '/policy',
       op_tos_uri: base + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
-      revocation_endpoint_auth_methods_supported: ['client_secret_basic',
-                                                   'client_secret_post',
-                                                   'private_key_jwt'],
+      // THE METHODS THE REVOCATION ENDPOINT CAN VERIFY, which since #102
+      // (2026-09-22) is introspection's list for introspection's reason: the
+      // same `authenticateEndpointCaller()`, the same six methods, and `none`
+      // for the public client RFC 7009 section 2.1 lets identify itself by
+      // its client_id. It named three hard-coded methods while nothing
+      // authenticated a caller there at all.
+      revocation_endpoint_auth_methods_supported: clientAuth.METHODS.filter(
+          function (method) {
+        return mtls.available() || method.indexOf('tls_client_auth') < 0;
+      }),
       revocation_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
       introspection_endpoint: at + '/oauth2/introspect',
@@ -3517,17 +3549,17 @@ class OAuth2Server {
     if (opts.request) {
       payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
     }
-    // THE FAMILY THIS TOKEN BELONGS TO, IN THE TOKEN (2026-09-14, #46).
-    // Wherever rotation is required — either compliance mode, or
-    // `oauth2.refreshTokenRotation` since #34 — and inside the JWE, so no
-    // client reads it. It is what lets a node that never heard of the parent
-    // mint the child into the parent's family, where looking the parent up here
-    // would start a new one and split the chain. See `oauth2_bcp.js` above
-    // `familyForIssuance()`.
-    if (bcp.rotationRequired()) {
-      payload[bcp.FAMILY_CLAIM] = bcp.familyForIssuance(
-        refreshJti, opts.parent_refresh_jti, opts.parent_refresh_family);
-    }
+    // THE FAMILY THIS TOKEN BELONGS TO, IN THE TOKEN (2026-09-14, #46), and
+    // inside the JWE, so no client reads it. It is what lets a node that never
+    // heard of the parent mint the child into the parent's family, where
+    // looking the parent up here would start a new one and split the chain.
+    // See `oauth2_bcp.js` above `familyForIssuance()`. IN EVERY MODE since
+    // #102 (2026-09-22), where it was only while rotation was required: RFC
+    // 7009's revocation of a refresh token takes the whole grant, and a chain
+    // that does not rotate is still one grant.
+    const familyId = bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
+                                           opts.parent_refresh_family);
+    payload[bcp.FAMILY_CLAIM] = familyId;
     // SIGNED, THEN ENCRYPTED (2026-09-12): the JWS is what `signJwt()` records
     // and what the refresh grant verifies once it has decrypted; the JWE around
     // it is what leaves this service. See `refresh_token_crypto.ts`.
@@ -3546,6 +3578,12 @@ class OAuth2Server {
     // required (neither compliance mode nor `oauth2.refreshTokenRotation`).
     bcp.noteRefreshIssued(refreshJti, opts.parent_refresh_jti, opts.client_id,
                           opts.parent_refresh_family);
+    // WHAT THIS GRANT ISSUED (#102): this refresh token and the access token
+    // `tokenSet()` minted beside it, so that RFC 7009's revocation of any
+    // refresh token of the family reaches both. Kept until the later of the
+    // two expires.
+    bcp.noteGrantTokens(familyId, refreshJti, opts.access_jti, opts.client_id,
+                        Math.max(payload.exp, Number(opts.access_exp) || 0));
     log.debug("Leaving OAuth2Server.refreshToken().");
     return token;
   }
@@ -3698,7 +3736,7 @@ class OAuth2Server {
   async idToken(base: Json, opts: Json): Promise<Json> {
     const { log, nowSec, randomId, signJwt, signJwtAsAsync, userFor, stats,
             config, frontchannel, backchannel, applications,
-            idTokenEncryption } = this.deps;
+            idTokenEncryption, mode } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.idToken().");
     const iat = nowSec();
@@ -3763,8 +3801,13 @@ class OAuth2Server {
     // `invalid` — a reachable negative, off by default, and loud every single
     // time, because an ID Token that is wrong in a way nobody remembers turning
     // on would be the most expensive hour in this repository.
+    //
+    // DEVELOPMENT MODE ONLY (#104, `mode.spoilsOnPurpose()`): read through
+    // `mode.valueInForce()`, which answers the default in a product realm
+    // whatever is stored — the mode can be switched at runtime, so this read
+    // is the guard and the refused write beside it is not.
     if (opts.nonce) {
-      if (config.value('oauth2.breakIdTokenNonce')) {
+      if (mode.valueInForce('oauth2.breakIdTokenNonce')) {
         payload.nonce = 'broken-' + randomId(8);
         log.warn('oauth2.breakIdTokenNonce is ON: this ID Token carries the ' +
                  'nonce "' + payload.nonce + '" where the authorization ' +
@@ -4210,8 +4253,12 @@ class OAuth2Server {
       const hasGrantDetails =
           Object.prototype.hasOwnProperty.call(opts,
                                                'grantAuthorizationDetails');
+      // The access token beside it, for RFC 7009 (#102): recorded on the
+      // refresh token's family so that revoking the grant revokes it too.
       body.refresh_token = self.refreshToken(base,
         Object.assign({}, issuing, {
+          access_jti: self.jtiOf(access),
+          access_exp: this.deps.nowSec() + Number(body.expires_in || 0),
           scope: hasGrantScope ? String(opts.grantScope || '') :
                  (opts.scope || ''),
           resources: hasGrantResources ? opts.grantResources :
@@ -6271,8 +6318,16 @@ class OAuth2Server {
           xmlEscape(String(info.state)) + '</code></dd>'
         : '') +
       '</dl>' +
-      '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
-      xmlEscape(info.redirectUri) + '</a></p><p class="sub">Nothing has been ' +
+      (info.form
+        ? '<form method="post" action="' + xmlEscape(info.redirectUri) +
+          '">' + Object.keys(info.form).map(function (name: string): string {
+            return '<input type="hidden" name="' + xmlEscape(name) +
+                   '" value="' + xmlEscape(String(info.form[name])) + '">';
+          }).join('') + '<button type="submit">Continue to ' +
+          xmlEscape(info.redirectUri) + '</button></form>'
+        : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
+          xmlEscape(info.redirectUri) + '</a></p>') +
+      '<p class="sub">Nothing has been ' +
       'sent anywhere yet. Following that link delivers the error above to ' +
       'the application, which is what would have happened automatically if ' +
       'you were signed in here.</p></body></html>';
@@ -6294,8 +6349,11 @@ class OAuth2Server {
   // fragment-reading code never saw it. An explicit `fragment` is honoured
   // for any type; an explicit `query` only where nothing in the response can
   // be a token (section 2.1 of that document: "MUST NOT use the query
-  // encoding" for those) — so it is ignored for the rest rather than obeyed.
-  // `form_post` is redirectBack()'s own branch and never reaches here.
+  // encoding" for those) — and since #125 such a request is REFUSED in
+  // `vetAuthorizationRequest()` (STS-OAUTH-0607), so the refusal is the one
+  // place that decides this for a token-bearing type; `none` (section 4) is
+  // the query. `form_post` is redirectBack()'s own branch and never reaches
+  // here.
   // -------------------------------------------------------------------------
   usesFragment(types: Json, responseMode?: Json): boolean {
     const { log } = this.deps;
@@ -6948,7 +7006,21 @@ class OAuth2Server {
                           'client_id is required.');
     }
     const types = String(q.response_type || '').split(/\s+/).filter(Boolean);
-    const known = ['code', 'token', 'id_token'];
+    const known = ['code', 'token', 'id_token', 'none'];
+    // OAuth 2.0 Multiple Response Type Encoding Practices section 4 (#125):
+    // `none` asks for NOTHING to be issued — the response carries `state`
+    // (and RFC 9207's `iss`) alone — so it is not combined with any other
+    // value.
+    if (types.length > 1 && types.indexOf('none') >= 0) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). none " +
+                "combined.");
+      return redirectable('STS-OAUTH-0606', 'unsupported_response_type',
+        'response_type "none" asks for no credential at all (Multiple ' +
+        'Response Type Encoding Practices section 4), so it cannot be ' +
+        'combined with "' + types.filter(function (t) {
+          return t !== 'none';
+        }).join(' ') + '".');
+    }
     if (!types.length ||
         types.some(function (t) { return known.indexOf(t) < 0; })) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). " +
@@ -7030,6 +7102,23 @@ class OAuth2Server {
               'posts a message, receives one, or frames anything.'
             : ''));
       }
+    }
+
+    // MULTIPLE RESPONSE TYPE ENCODING PRACTICES section 2.1 (#125): a
+    // response type that returns a token or an ID Token "MUST NOT use the
+    // query encoding" — so an explicit `response_mode=query` for one is
+    // refused, in every mode. It was quietly overridden to the fragment since
+    // #118, which answered a request the client did not make. The refusal
+    // itself goes in the fragment, where the success would have gone.
+    if (String(q.response_mode || '') === 'query' &&
+        types.some(function (t) { return t === 'token' || t === 'id_token'; })) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). query for " +
+                "a token-bearing response type.");
+      return redirectable('STS-OAUTH-0607', 'invalid_request',
+        'response_mode=query cannot carry response_type "' +
+        String(q.response_type) + '": a response returning a token or an ID ' +
+        'Token MUST NOT use the query encoding (OAuth 2.0 Multiple Response ' +
+        'Type Encoding Practices section 2.1). Use fragment or form_post.');
     }
 
     // JARM section 2.3.1 (#139, #143): `query.jwt` carries no token in clear.
@@ -7496,7 +7585,7 @@ class OAuth2Server {
         log.debug("Leaving the authorization endpoint. Showing " + error +
                   " rather than redirecting it (" + policy.requirement + ").");
         log.debug("Leaving fail().");
-        const shown = {
+        const shown: Json = {
           error: error, description: description, redirectUri: redirectUri,
           clientId: q.client_id, state: q.state, why: policy.why,
           // The link the person can choose. It carries the same parameters the
@@ -7510,6 +7599,24 @@ class OAuth2Server {
                                       self.usesFragment(q.response_type,
                                                         q.response_mode))
         };
+        // A FORM POST REQUEST GETS A FORM (#126). The link above is a GET
+        // carrying the error in the URL — exactly what a client that asked
+        // for form_post asked NOT to receive (OAuth 2.0 Form Post Response
+        // Mode, section 2). So the person's choice is a button that POSTs
+        // the same fields to the redirect URI; no script, because this page is
+        // a decision and a form that submitted itself would be the redirect
+        // with an extra page in front of it.
+        if (String(q.response_mode || '') === 'form_post') {
+          const posted: Json = Object.assign({ error: error,
+            error_description:
+              self.deps.oauth21.sanitizeDescription(description) },
+            self.sessionStateField(res, redirectUri));
+          if (q.state !== undefined) {
+            posted.state = q.state;
+          }
+          posted.iss = base;
+          shown.form = posted;
+        }
         // A JARM request's link carries the JWT-secured error (#139, #143),
         // which is what its client reads.
         if (self.deps.jarm.isJarm(q.response_mode)) {
@@ -7522,8 +7629,12 @@ class OAuth2Server {
           return self.jarmUrl(res, base, redirectUri, fields,
                               String(q.response_mode))
             .then(function (target: Json): Json {
+              // form_post.jwt (#126): the JWT as a form field, POSTed.
               return self.sendRedirectInterstitial(res,
-                Object.assign(shown, { target: target.url }));
+                Object.assign(shown, { target: target.url },
+                              target.formPost
+                                ? { form: { response: target.response } }
+                                : {}));
             }).catch(function (e: Json): void {
               log.debug("Caught in fail(): " + ((e && e.message) || e));
               errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-OAUTH-0588');
@@ -13217,10 +13328,179 @@ class OAuth2Server {
     return answer;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHO IS CALLING AN ENDPOINT THAT IS NOT THE TOKEN ENDPOINT (#102,
+  // 2026-09-22), for the two that authenticate their caller as a client:
+  // introspection (RFC 7662 section 2.1, RFC 9701 section 5) and revocation
+  // (RFC 7009 section 2.1). It was introspection's own block until revocation
+  // needed the same thing, and one copy is the point — a secret throttled at
+  // one endpoint must not be guessable at the other, and a method advertised
+  // for one must be verified the same way at the other.
+  //
+  // **WHAT IT DOES, IN ORDER.** The secret rate limit, the token endpoint's
+  // bucket, before any secret is looked at; the advertised-method check
+  // against the member `opts.capability` names, so a client declaring a
+  // method the selected authorization server does not list is refused before
+  // its credential is read; `bcp.observeClientAuthentication()`, all six
+  // methods, with assertion audiences of this endpoint, the token endpoint,
+  // the issuer and the base; and the failure counted, or the success settled.
+  //
+  // **A PUBLIC CLIENT IS THE ONE DIFFERENCE BETWEEN THE CALLERS.** RFC 7009
+  // section 2.1 validates "the client credentials (in case of a confidential
+  // client)", and section 5 expects a public client to revoke its own tokens
+  // — so where `opts.allowPublic` is set, an entry declaring `none` is
+  // IDENTIFIED by its registered client_id and let through as such. RFC 9701
+  // needs a resource server it can address a signed answer to, so
+  // introspection passes false and a public client is refused there as
+  // before.
+  //
+  // **`opts.lenient`** is development's revocation with a credential (see
+  // `mode.opensRevocation()`): a credential that FAILS is refused exactly as
+  // in product, but one with nothing to check it against — an unknown
+  // client_id, an entry with nothing on file, an entry declaring no method —
+  // is not a failure, and the caller goes on unidentified, as it would have
+  // with no credential at all.
+  //
+  // Resolves `{ ok: true, clientId, method, identified }` — `identified`
+  // false only on the lenient path — or `{ ok: false }` with the refusal
+  // already sent: `opts.refusal(observed, why)` says which code, status and
+  // sentence, and whether a Basic caller gets the challenge.
+  // ---------------------------------------------------------------------------
+  private async authenticateEndpointCaller(req: Req, res: Res, body: Json,
+                                           opts: Json): Promise<Json> {
+    const { log, bcp, oauth21, applications, errorCodes,
+            websecurity } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.authenticateEndpointCaller(). " +
+              opts.endpoint);
+    const client = self.clientFrom(req, body);
+    const clientId = String(client.client_id || '');
+    const registered = applications.clientConfigOf(clientId);
+    const presented = self.presentedClientAuthentication(req, body);
+    // THE SECRET RATE LIMIT, the token endpoint's bucket: a client and address
+    // past the limit is answered before its secret is looked at.
+    if (clientId && self.secretPresented(presented, registered)) {
+      const key = self.secretLimitKey(req, clientId);
+      const lockedOut = await websecurity.blockedShared(key.what, req,
+                                                        key.identity);
+      if (lockedOut) {
+        res.set('Retry-After', String(lockedOut.retryAfterS));
+        log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). Too " +
+                  "many failed client secrets.");
+        errorCodes.mark(res, 'STS-OAUTH-0284');
+        self.oauthError(res, 429, 'invalid_client',
+          'Too many failed client authentications for client "' + clientId +
+          '" from this address. ' + lockedOut.detail);
+        return { ok: false };
+      }
+    }
+    // WHAT THIS AUTHORIZATION SERVER SAYS IT ACCEPTS, the token endpoint's
+    // rule: a client whose entry declares a method the selected server does
+    // not advertise is refused before its credential is read, so the sentence
+    // is about the server's capabilities rather than about the credential. A
+    // removed member means the check does not run.
+    const advertisedAuth = self.capabilityFor(req, opts.capability);
+    const declaredMethod = String(registered.token_endpoint_auth_method ||
+                                  '');
+    if (declaredMethod && advertisedAuth &&
+        advertisedAuth.indexOf(declaredMethod) < 0) {
+      log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). " +
+                self.profileOf(req) + " does not advertise " +
+                declaredMethod + " for " + opts.endpoint + ".");
+      errorCodes.mark(res, opts.advertisedCode);
+      // error-code: none — marked on the line above, with the caller's code.
+      self.oauthError(res, opts.advertisedStatus, 'invalid_client',
+        'The "' + self.profileOf(req) + '" authorization server advertises ' +
+        opts.capability + ' ' + JSON.stringify(advertisedAuth) + ', and ' +
+        'this client is configured for "' + declaredMethod + '". A client ' +
+        'may use any authorization server here, but only in a way that ' +
+        'server offers.');
+      return { ok: false };
+    }
+    const base = self.asBaseOf(req);
+    // What a client assertion may name as its audience: this endpoint, and
+    // what the token endpoint accepts — the token endpoint URL, the issuer and
+    // the base — because RFC 7523 section 3 says "the authorization server"
+    // and a client library signs one assertion shape for every endpoint.
+    const observed = await bcp.observeClientAuthentication({
+      clientId: clientId,
+      clientSecret: client.client_secret,
+      assertion: client.assertion,
+      assertionType: client.assertionType,
+      request: req,
+      audiences: [base + opts.path, base + '/oauth2/token',
+                  self.issuerOf(base), base],
+      strictAudience: (oauth21.strictClientAssertionAudience() ||
+                       self.deps.fapi.strictAssertionAudience()) ?
+                      self.issuerOf(base) : '',
+      registered: registered
+    });
+    if (!observed.authenticated) {
+      // A PUBLIC CLIENT, identified by the client_id its entry was registered
+      // under. `STS-OAUTH-0194` is the observation that says exactly that and
+      // nothing else: a known entry declaring `none`.
+      if (opts.allowPublic && observed.errorCode === 'STS-OAUTH-0194') {
+        log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). " +
+                  "Public client " + clientId + ", identified by its " +
+                  "client_id.");
+        return { ok: true, clientId: clientId, method: 'none',
+                 identified: true };
+      }
+      // Development's "nothing to check it against" — see the header.
+      if (opts.lenient &&
+          ['STS-OAUTH-0193', 'STS-OAUTH-0195',
+           'STS-OAUTH-0553'].indexOf(String(observed.errorCode)) >= 0) {
+        log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). " +
+                  "Development: nothing to verify the credential against (" +
+                  observed.errorCode + "), so the caller is unidentified.");
+        return { ok: true, clientId: '', method: '', identified: false };
+      }
+      const overLimit = await self.countSecretFailure(req, clientId,
+                                                      presented, registered);
+      if (overLimit) {
+        log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). Past " +
+                  "the secret limit.");
+        self.secretLockout(res, clientId, overLimit);
+        return { ok: false };
+      }
+      const why = clientId ? observed.why
+        : 'the request carried no client credential — no Authorization: ' +
+          'Basic header, no client_id and client_secret, and no client ' +
+          'assertion.';
+      const refusal = opts.refusal(observed, why);
+      log.info(errorCodes.tag(refusal.code) + opts.endpoint + ': client "' +
+               (clientId || '(none)') + '" did not authenticate (' +
+               (observed.errorCode || 'no credential') + '): ' + why);
+      if (refusal.challenge && presented.basic) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). " +
+                "Refused (" + refusal.code + ").");
+      errorCodes.mark(res, refusal.code);
+      // error-code: none — marked on the line above, with the caller's code.
+      self.oauthError(res, refusal.status, 'invalid_client',
+                      refusal.description);
+      return { ok: false };
+    }
+    const racedOut = await self.settleSecretSuccess(req, clientId, presented,
+                                                    registered);
+    if (racedOut) {
+      log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). A " +
+                "verified secret past the limit.");
+      self.secretLockout(res, clientId, racedOut);
+      return { ok: false };
+    }
+    log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). Client " +
+              clientId + " authenticated with " + observed.method + " at " +
+              opts.endpoint + ".");
+    return { ok: true, clientId: clientId, method: observed.method,
+             identified: true };
+  }
+
   private async introspectRequest(req: Req, res: Res): Promise<Json> {
-    const { log, baseUrlOf, parseBody, mode, bcp, oauth21,
+    const { log, baseUrlOf, parseBody, mode, oauth21,
             applications, validation, errorCodes,
-            introspectionJwt, websecurity } = this.deps;
+            introspectionJwt } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.introspectRequest().");
     const posted = validation.checkParsed(parseBody(req), 'body',
@@ -13239,7 +13519,7 @@ class OAuth2Server {
     const body = posted.value;
     const wantsJwt = introspectionJwt.wantsJwt(req.headers['accept']);
     const client = self.clientFrom(req, body);
-    const clientId = String(client.client_id || '');
+    let clientId = String(client.client_id || '');
     const registered = applications.clientConfigOf(clientId);
     const presented = self.presentedClientAuthentication(req, body);
 
@@ -13261,113 +13541,37 @@ class OAuth2Server {
     // JSON request, which authenticates nobody and so cannot be compared.
     let authenticated = false;
     if (wantsJwt || !mode.opensIntrospection()) {
-      // THE SECRET RATE LIMIT, the token endpoint's bucket: a client and
-      // address past the limit is answered before its secret is looked at.
-      if (clientId && self.secretPresented(presented, registered)) {
-        const key = self.secretLimitKey(req, clientId);
-        const lockedOut = await websecurity.blockedShared(key.what, req,
-                                                          key.identity);
-        if (lockedOut) {
-          res.set('Retry-After', String(lockedOut.retryAfterS));
-          log.debug("Leaving OAuth2Server.introspectRequest(). Too many " +
-                    "failed client secrets.");
-          errorCodes.mark(res, 'STS-OAUTH-0284');
-          return self.oauthError(res, 429, 'invalid_client',
-            'Too many failed client authentications for client "' + clientId +
-            '" from this address. ' + lockedOut.detail);
-        }
-      }
-      // WHAT THIS AUTHORIZATION SERVER SAYS IT ACCEPTS, the token endpoint's
-      // rule: a client whose entry declares a method the selected server does
-      // not advertise is refused before its credential is read, so the sentence
-      // is about the server's capabilities rather than about the credential. A
-      // removed member means the check does not run.
-      const advertisedAuth = self.capabilityFor(req,
-        'introspection_endpoint_auth_methods_supported');
-      const declaredMethod = String(registered.token_endpoint_auth_method ||
-                                    '');
-      if (declaredMethod && advertisedAuth &&
-          advertisedAuth.indexOf(declaredMethod) < 0) {
-        log.debug("Leaving OAuth2Server.introspectRequest(). " +
-                  self.profileOf(req) + " does " +
-                  "not advertise " + declaredMethod + " for introspection.");
-        errorCodes.mark(res, 'STS-OAUTH-0295');
-        return self.oauthError(res, wantsJwt ? 400 : 401, 'invalid_client',
-          'The "' + self.profileOf(req) + '" authorization server advertises ' +
-          'introspection_endpoint_auth_methods_supported ' +
-          JSON.stringify(advertisedAuth) + ', and this client is configured ' +
-          'for "' + declaredMethod + '". A client may use any authorization ' +
-          'server here, but only in a way that server offers.');
-      }
-      const base = self.asBaseOf(req);
-      // What a client assertion may name as its audience: this endpoint, and
-      // what the token endpoint accepts — the token endpoint URL, the issuer
-      // and the base — because RFC 7523 section 3 says "the authorization
-      // server" and a client library signs one assertion shape for every
-      // endpoint.
-      const observed = await bcp.observeClientAuthentication({
-        clientId: clientId,
-        clientSecret: client.client_secret,
-        assertion: client.assertion,
-        assertionType: client.assertionType,
-        request: req,
-        audiences: [base + '/oauth2/introspect', base + '/oauth2/token',
-                    self.issuerOf(base), base],
-        strictAudience: (oauth21.strictClientAssertionAudience() ||
-                         self.deps.fapi.strictAssertionAudience()) ?
-                        self.issuerOf(base) : '',
-        registered: registered
-      });
-      if (!observed.authenticated) {
-        const overLimit = await self.countSecretFailure(req, clientId,
-                                                        presented,
-                                                        registered);
-        if (overLimit) {
-          log.debug("Leaving OAuth2Server.introspectRequest(). Past the " +
-                    "secret limit.");
-          return self.secretLockout(res, clientId, overLimit);
-        }
-        const code = wantsJwt ? 'STS-OAUTH-0291' : 'STS-OAUTH-0292';
-        const why = clientId ? observed.why
-          : 'the request carried no client credential — no Authorization: ' +
-            'Basic header, no client_id and client_secret, and no client ' +
-            'assertion.';
-        log.info(errorCodes.tag(code) + 'introspection: client "' +
-                 (clientId || '(none)') + '" did not authenticate (' +
-                 (observed.errorCode || 'no credential') + '): ' + why);
-        if (!wantsJwt) {
-          // RFC 7662 section 2.3 answers as RFC 6749 section 5.2 does, and a
-          // client_secret_basic caller needs the challenge to know what to
-          // retry.
-          if (presented.basic) {
-            res.set('WWW-Authenticate', self.basicChallenge());
+      const caller = await self.authenticateEndpointCaller(req, res, body, {
+        endpoint: 'introspection',
+        path: '/oauth2/introspect',
+        capability: 'introspection_endpoint_auth_methods_supported',
+        advertisedCode: 'STS-OAUTH-0295',
+        advertisedStatus: wantsJwt ? 400 : 401,
+        allowPublic: false,
+        refusal: function (observed: Json, why: string): Json {
+          if (!wantsJwt) {
+            // RFC 7662 section 2.3 answers as RFC 6749 section 5.2 does, and
+            // a client_secret_basic caller needs the challenge to know what
+            // to retry.
+            return { code: 'STS-OAUTH-0292', status: 401, challenge: true,
+                     description: 'This realm is in product mode, where ' +
+                       'introspection requires the caller to authenticate ' +
+                       'as a client (RFC 7662 section 2.1) — and ' + why };
           }
-          log.debug("Leaving OAuth2Server.introspectRequest(). Product " +
-                    "mode refused an unauthenticated caller.");
-          errorCodes.mark(res, 'STS-OAUTH-0292');
-          return self.oauthError(res, 401, 'invalid_client',
-            'This realm is in product mode, where introspection requires the ' +
-            'caller to authenticate as a client (RFC 7662 section 2.1) — and ' +
-            why);
+          return { code: 'STS-OAUTH-0291', status: 400, challenge: false,
+                   description: 'RFC 9701 section 5: a JWT introspection ' +
+                     'response is addressed to the resource server that ' +
+                     'asks for it, so the caller must authenticate as a ' +
+                     'client — and ' + why };
         }
-        log.debug("Leaving OAuth2Server.introspectRequest(). RFC 9701 " +
-                  "refused an unauthenticated caller.");
-        errorCodes.mark(res, 'STS-OAUTH-0291');
-        return self.oauthError(res, 400, 'invalid_client',
-          'RFC 9701 section 5: a JWT introspection response is addressed to ' +
-          'the resource server that asks for it, so the caller must ' +
-          'authenticate as a client — and ' + why);
+      });
+      if (!caller.ok) {
+        log.debug("Leaving OAuth2Server.introspectRequest(). The caller " +
+                  "did not authenticate.");
+        return undefined;
       }
-      const racedOut = await self.settleSecretSuccess(req, clientId, presented,
-                                                 registered);
-      if (racedOut) {
-        log.debug("Leaving OAuth2Server.introspectRequest(). A verified " +
-                  "secret past the limit.");
-        return self.secretLockout(res, clientId, racedOut);
-      }
+      clientId = caller.clientId;
       authenticated = true;
-      log.debug("introspectRequest(): client " + clientId + " authenticated " +
-                "with " + observed.method + ".");
     }
 
     // SECTION 5's "not intended to be introspected by the resource server",
@@ -13446,45 +13650,266 @@ class OAuth2Server {
   }
 
   // --- revocation (RFC 7009)
-  // --------------------------------------------------- "The authorization
-  // server responds with HTTP 200 for both a successful revocation and an
-  // invalid token" — so this always succeeds. A revoked jti stops introspecting
-  // as active and stops refreshing.
+  // ---------------------------------------------------------------------------
+  // WHAT THE REVOCATION ENDPOINT DOES SINCE #102 (2026-09-22). Until then it
+  // revoked the jti of ANY JWS this realm had signed, for anybody who held
+  // the string, answered 200 to a request with no token at all, and left the
+  // rest of a refresh token's grant alive. RFC 7009, section by section:
+  //
+  //   * **SECTION 2.1's `token` IS REQUIRED**: a request without one is 400
+  //     `invalid_request` (`STS-OAUTH-0608`), in both modes.
+  //   * **THE CLIENT FIRST.** "The authorization server first validates the
+  //     client credentials (in case of a confidential client) and then
+  //     verifies whether the token was issued to the client making the
+  //     revocation request." In product (`mode.opensRevocation()`) every
+  //     request is asked: a confidential client presents a credential that
+  //     verifies (`STS-OAUTH-0609`), a public one names its registered
+  //     client_id (`STS-OAUTH-0610` when it names nothing registered).
+  //     Development asks only a caller that PRESENTED a credential — and holds
+  //     that one to the same refusals, so a client under test that
+  //     authenticates meets them. `authenticateEndpointCaller()` is shared
+  //     with introspection, rate limit and all.
+  //   * **SECTION 2.2's 200 FOR AN INVALID TOKEN**, unchanged: one that does
+  //     not open or verify, or a refresh token that is not the JWE this realm
+  //     issues, is answered 200 with nothing revoked.
+  //   * **SECTION 2.2.1's `unsupported_token_type` FOR ANYTHING THAT IS NOT AN
+  //     ACCESS OR A REFRESH TOKEN** (`STS-OAUTH-0611`) — an ID Token, a
+  //     logout token, a SET: valid tokens this realm signed, of a type this
+  //     server does not revoke. Chosen over section 2.2's quiet 200, which is
+  //     for an INVALID token "since the client cannot handle such an error in
+  //     a reasonable way"; an ID Token is not invalid, and section 2.2.1
+  //     defines this error for exactly the case of a server "not supporting
+  //     [the revocation of] the presented token type". A 200 would tell the
+  //     client something was revoked when nothing was, and the ID Token
+  //     cannot be withdrawn anyway — nothing presents it back here.
+  //   * **ANOTHER CLIENT'S TOKEN IS REFUSED `invalid_grant`** (`STS-OAUTH-
+  //     0606`), which is RFC 6749 section 5.2's word for a grant "issued to
+  //     another client", and nothing is revoked. Section 2.1 says the request
+  //     "is refused and the client is informed of the error"; answering 200
+  //     would have been the refusal pretending to be a success. The caller
+  //     already holds the token string, so the refusal teaches it nothing it
+  //     did not know. The row on the audit log names both clients.
+  //   * **A REFRESH TOKEN TAKES ITS GRANT WITH IT.** Section 2.1: revoking a
+  //     refresh token SHOULD also invalidate the access tokens "based on the
+  //     same authorization grant", and here it does — every refresh token of
+  //     its family and every access token minted beside one
+  //     (`bcp.grantMembersOf()`), through `stats.revoke()`, and the family by
+  //     id for every node (`bcp.revokeFamily()`). **This is NOT
+  //     `oauth2_bcp.js`'s replay rule**, which deliberately leaves the access
+  //     tokens alone: a replay is this server DETECTING a copied chain and
+  //     keeping the evidence of what it was used for, while a revocation is
+  //     the CLIENT saying it is finished with the grant. An access token keeps
+  //     the section's MAY unexercised: revoking one revokes that token alone.
+  //
+  // **A PROMISE CHAIN BEHIND A SYNCHRONOUS HANDLER**, for
+  // `introspectEndpoint()`'s reason: both routes call this, so the catch is
+  // here once.
+  // ---------------------------------------------------------------------------
   private revokeEndpoint(req: Req, res: Res): Json {
-    const { stsCrypto, log, STS, parseBody, stats, validation,
-            errorCodes, refreshTokenCrypto } = this.deps;
+    const { log, errorCodes } = this.deps;
     const self = this;
-    log.debug("Entering the revocation endpoint.");
+    log.debug("Entering OAuth2Server.revokeEndpoint().");
+    self.revokeRequest(req, res).catch(function (e) {
+      log.error(errorCodes.tag('STS-OAUTH-0614') +
+                'the revocation endpoint failed: ' +
+                (e && e.stack ? e.stack : e));
+      if (!res.headersSent) {
+        errorCodes.mark(res, 'STS-OAUTH-0614');
+        self.oauthError(res, 500, 'server_error',
+                        String((e && e.message) || e));
+      }
+    });
+    log.debug("Leaving OAuth2Server.revokeEndpoint().");
+  }
+
+  // Which kind of token RFC 7009 was handed, once it has opened and verified:
+  // 'access', 'refresh', or 'other' for a token this realm signed that is
+  // neither. An access token is RFC 9068's `at+jwt` by its protected header,
+  // or this service's own `typ: Bearer` claim, which every access token here
+  // has carried beside it; a refresh token is the `Refresh` JWS this realm
+  // seals as a JWE — and one that arrived unsealed is not one it issued,
+  // which is `null`: an invalid token, answered as section 2.2 says.
+  private revocableKindOf(jws: string, claims: Json,
+                          sealed: boolean): string | null {
+    const { log, jwtAccessToken } = this.deps;
+    log.debug("Entering OAuth2Server.revocableKindOf().");
+    if (claims.typ === 'Refresh' || sealed) {
+      log.debug("Leaving OAuth2Server.revocableKindOf(). " +
+                ((claims.typ === 'Refresh') === sealed ? "A refresh token."
+                  : "A refresh token not sealed, or a JWE that is not one."));
+      return (claims.typ === 'Refresh') === sealed ? 'refresh' : null;
+    }
+    const access =
+      jwtAccessToken.isAccessTokenType(jwtAccessToken.typOf(jws)) ||
+      claims.typ === 'Bearer';
+    log.debug("Leaving OAuth2Server.revocableKindOf(). " +
+              (access ? "An access token." : "Neither."));
+    return access ? 'access' : 'other';
+  }
+
+  private async revokeRequest(req: Req, res: Res): Promise<Json> {
+    const { log, parseBody, stats, validation, errorCodes, mode, bcp, oauth21,
+            refreshTokenCrypto, audit } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.revokeRequest().");
+    // Every answer this endpoint gives, the refusals included, is about a
+    // credential — so none of them is cached.
+    res.set('Cache-Control', 'no-store');
     const posted = validation.checkParsed(parseBody(req), 'body',
-                                          TOKEN_QUERY_FORM);
+                                          REVOCATION_FORM);
     if (!posted.ok) {
-      log.debug("Leaving the revocation endpoint. The request is malformed.");
+      log.debug("Leaving OAuth2Server.revokeRequest(). The request is " +
+                "malformed.");
       errorCodes.mark(res, 'STS-OAUTH-0230');
-      log.debug("Leaving OAuth2Server.revokeEndpoint().");
       return self.oauthError(res, 400, 'invalid_request', posted.detail);
     }
     const body = posted.value;
     const token = String(body.token || '');
-    if (token) {
-      try {
-        // An encrypted refresh token is opened first; `open()` throws for one
-        // this realm cannot open, which RFC 7009 answers exactly as an invalid
-        // token.
-        const claims = helpers.verifyOwnJws(
-          refreshTokenCrypto.isEncrypted(token)
-            ? refreshTokenCrypto.open(token) : token);
-        if (claims.jti) stats.revoke(claims.jti, 'the RFC 7009 revocation ' +
-                                                 'endpoint');
-      } catch (e) {
-        // RFC 7009: an invalid token is still a successful revocation.
-        log.debug("Revocation: the token does not verify (" + e.message +
-                  "), " +
-            "so there is nothing to revoke.");
+    if (!token) {
+      log.debug("Leaving OAuth2Server.revokeRequest(). No token.");
+      errorCodes.mark(res, 'STS-OAUTH-0608');
+      return self.oauthError(res, 400, 'invalid_request',
+        'RFC 7009 section 2.1: the token parameter is REQUIRED — the ' +
+        'request names nothing to revoke.');
+    }
+    // OAuth 2.1 section 2.4, introspection's reason: a request carrying two
+    // credentials is malformed whichever of them would be read.
+    const presented = self.presentedClientAuthentication(req, body);
+    const several = oauth21.multipleMethodsRefusal(presented);
+    if (several) {
+      log.debug("Leaving OAuth2Server.revokeRequest(). OAuth 2.1: several " +
+                "client authentication methods.");
+      errorCodes.mark(res, several.errorCode || 'STS-OAUTH-0281');
+      return self.oauthError(res, 400, several.error, several.description);
+    }
+
+    // THE CLIENT. A certificate is not counted as "presented" in development:
+    // the main port asks every connection for one, so a browser that happens
+    // to hold one would otherwise be authenticated on a request it never
+    // meant to authenticate. Product asks every request, certificates
+    // included.
+    const credentialPresented = !!(presented.basic || presented.bodySecret ||
+                                   presented.assertion);
+    let caller: Json = { ok: true, clientId: '', method: '',
+                         identified: false };
+    if (!mode.opensRevocation() || credentialPresented) {
+      caller = await self.authenticateEndpointCaller(req, res, body, {
+        endpoint: 'revocation',
+        path: '/oauth2/revoke',
+        capability: 'revocation_endpoint_auth_methods_supported',
+        advertisedCode: 'STS-OAUTH-0613',
+        advertisedStatus: 401,
+        allowPublic: true,
+        lenient: mode.opensRevocation(),
+        refusal: function (observed: Json, why: string): Json {
+          const unknown = observed.errorCode === 'STS-OAUTH-0193';
+          return { code: unknown ? 'STS-OAUTH-0610' : 'STS-OAUTH-0609',
+                   status: 401, challenge: true,
+                   description: 'RFC 7009 section 2.1: the revocation ' +
+                     'endpoint validates the client before the token' +
+                     (mode.opensRevocation() ? ', and a credential was ' +
+                       'presented'
+                       : ' — this realm is in product mode, where every ' +
+                         'revocation request comes from a client') +
+                     ' — and ' + why };
+        }
+      });
+      if (!caller.ok) {
+        log.debug("Leaving OAuth2Server.revokeRequest(). The caller was " +
+                  "refused.");
+        return undefined;
       }
     }
-    res.status(200).set('Cache-Control', 'no-store').end();
-    log.debug("Leaving the revocation endpoint. " + stats.revokedCount() + " " +
-        "token(s) revoked so far.");
+
+    // THE TOKEN. An encrypted refresh token is opened first; `open()` throws
+    // for one this realm cannot open, which RFC 7009 answers exactly as an
+    // invalid token.
+    const sealed = refreshTokenCrypto.isEncrypted(token);
+    let jws = token;
+    let claims: Json = null;
+    try {
+      jws = sealed ? refreshTokenCrypto.open(token) : token;
+      claims = helpers.verifyOwnJws(jws);
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.revokeRequest(): the token does not " +
+                "verify (" + ((e && e.message) || e) + ").");
+      claims = null;
+    }
+    const kind = claims ? self.revocableKindOf(jws, claims, sealed) : null;
+    if (!kind) {
+      // SECTION 2.2: "invalid tokens do not cause an error response".
+      res.status(200).end();
+      log.debug("Leaving OAuth2Server.revokeRequest(). An invalid token; " +
+                "nothing to revoke.");
+      return undefined;
+    }
+    if (kind === 'other') {
+      log.debug("Leaving OAuth2Server.revokeRequest(). Not an access or a " +
+                "refresh token (typ " + (claims.typ || '(none)') + ").");
+      errorCodes.mark(res, 'STS-OAUTH-0611');
+      return self.oauthError(res, 400, 'unsupported_token_type',
+        'RFC 7009 section 2.2.1: this authorization server revokes access ' +
+        'tokens and refresh tokens, and the token presented is neither' +
+        (claims.typ ? ' (typ "' + claims.typ + '")' : '') + ' — an ID ' +
+        'Token, for one, is not revocable here. Nothing was revoked.');
+    }
+    const owner = String(claims.client_id || claims.azp || '');
+    if (caller.identified && owner !== caller.clientId) {
+      audit.record({
+        action: 'oauth.token.revoke', actor: caller.clientId,
+        target: owner || '(no client)', protocol: 'OAuth 2.0 / OIDC',
+        channel: 'http', outcome: 'refused', errorCode: 'STS-OAUTH-0612',
+        detail: 'client "' + caller.clientId + '" asked to revoke a ' + kind +
+                ' token issued to "' + (owner || '(no client)') + '", jti ' +
+                (claims.jti || '(none)')
+      });
+      log.info(errorCodes.tag('STS-OAUTH-0612') + 'revocation: client "' +
+               caller.clientId + '" asked to revoke a ' + kind + ' token ' +
+               'issued to "' + (owner || '(no client)') + '". Refused; ' +
+               'nothing was revoked.');
+      log.debug("Leaving OAuth2Server.revokeRequest(). Another client's " +
+                "token.");
+      errorCodes.mark(res, 'STS-OAUTH-0612');
+      return self.oauthError(res, 400, 'invalid_grant',
+        'RFC 7009 section 2.1: this token was issued to another client, and ' +
+        'a client may revoke only its own. Nothing was revoked.');
+    }
+
+    const via = 'the RFC 7009 revocation endpoint';
+    const revoked: string[] = [];
+    if (claims.jti && stats.revoke(claims.jti, via)) {
+      revoked.push(String(claims.jti));
+    }
+    if (kind === 'refresh') {
+      // THE GRANT: every refresh token of the family and every access token
+      // minted beside one, as the header above argues; and the family BY ID,
+      // so a member minted on another node at this moment is refused at its
+      // first use.
+      const family = bcp.familyOfRefresh(claims);
+      bcp.grantMembersOf(family, claims.jti).forEach(function (jti: string) {
+        if (stats.revoke(jti, via + ', with the refresh token of its grant')) {
+          revoked.push(jti);
+        }
+      });
+      if (family) {
+        await bcp.revokeFamily(family, owner);
+      }
+    }
+    audit.record({
+      action: 'oauth.token.revoke', actor: caller.clientId || '',
+      target: owner || '(no client)', protocol: 'OAuth 2.0 / OIDC',
+      channel: 'http', outcome: 'success',
+      detail: (caller.identified ? 'client "' + caller.clientId + '"'
+                                 : 'an unidentified caller (development)') +
+              ' revoked a ' + kind + ' token issued to "' +
+              (owner || '(no client)') + '"; ' + revoked.length +
+              ' jti(s) newly revoked'
+    });
+    res.status(200).end();
+    log.debug("Leaving OAuth2Server.revokeRequest(). A " + kind + " token; " +
+              revoked.length + " jti(s) newly revoked, " +
+              stats.revokedCount() + " revoked so far.");
+    return undefined;
   }
 
   // --- dynamic client registration (RFC 7591) + management (RFC 7592)
