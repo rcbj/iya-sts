@@ -234,6 +234,13 @@ function checkDispatchEverything(t) {
               'from any of them is the service\'s',
               String(pool.dispatched(url)));
     });
+    ['/admin/spiffe/brokers', '/admin-api/spiffe/brokers',
+     '/realm/acme/admin-api/spiffe/brokers'].forEach(function (url) {
+      t.check(pool.dispatched(url) === false,
+              'but NOT ' + url + ': it reports whether a realm\'s Broker ' +
+              'API socket is listening, and only the front process binds one',
+              String(pool.dispatched(url)));
+    });
     t.check(pool.fansOut('/admin-api/spiffe') === true,
             'and the management API half still fans out with the rest of it',
             String(pool.fansOut('/admin-api/spiffe')));
