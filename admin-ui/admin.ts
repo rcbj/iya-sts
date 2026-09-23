@@ -25659,14 +25659,17 @@ class AdminConsole {
       row.role === 'service-provider'
         ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
            'fedMayAssertAdministrators', 'fedAllowUnsolicited',
-           'fedSignRequest']
+           'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
         : []).map(function (name) {
       const field = federation.SCHEMA.attributes.filter(
           function (f) { return f.name === name; })[0];
       if (!field) return '';
-      // The two provisioning switches default ON; the rest default off.
+      // The two provisioning switches and the two sign-out switches (#167)
+      // default ON; the rest default off.
       const dflt = name === 'fedAutocreateUsers' ||
-                   name === 'fedUpdateUserAttributes';
+                   name === 'fedUpdateUserAttributes' ||
+                   name === 'fedAcceptSignout' ||
+                   name === 'fedRequireSignedLogout';
       const on = federation.boolOf(record[name], dflt);
       return '<tr><td><code>' + self.esc(name) + '</code></td>' +
         '<td class="' + (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') +
@@ -25796,6 +25799,34 @@ class AdminConsole {
               'deliberately — a signature over it made by the very key it ' +
               'publishes proves nothing they did not already have to ' +
               'trust</span></td></tr>'
+            : '') +
+          // A PARTNER'S SIGN-OUT (#167): what the partner registers so it can
+          // tell this service a session ended, and — below the table — what
+          // this service tells it.
+          Object.keys(view.signOut || {}).map(function (name) {
+            const words = {
+              singleLogout: 'SingleLogoutService (Redirect and POST), for ' +
+                            'the partner\'s LogoutRequest and its ' +
+                            'LogoutResponse to ours',
+              signOutCleanup: 'Sign-out cleanup URL, for wsignoutcleanup1.0 ' +
+                              '— the person confirms it here',
+              backchannelLogout: '<code>backchannel_logout_uri</code>',
+              frontchannelLogout: '<code>frontchannel_logout_uri</code>, ' +
+                                  'with <code>frontchannel_logout_session' +
+                                  '_required</code>',
+              postLogoutRedirect: '<code>post_logout_redirect_uri</code>, ' +
+                                  'for a sign-out here that ends at the ' +
+                                  'partner'
+            };
+            return '<tr><td>' + (words[name] || self.esc(name)) + '</td><td ' +
+              'class="who"><code>' + self.esc(view.signOut[name]) +
+              '</code></td></tr>';
+          }).join('') +
+          ((row.protocol === 'saml11' || row.protocol === 'oauth2')
+            ? '<tr><td>Sign-out</td><td><span class="sub">none — ' +
+              (row.protocol === 'saml11' ? 'SAML 1.1' : 'OAuth 2.0') +
+              ' defines no sign-out, so the partner cannot end a session ' +
+              'here and is not told of one ending</span></td></tr>'
             : '') +
           '</table>' +
           this.note('<a class="btn" href="' + this.esc(login) +

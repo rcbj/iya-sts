@@ -26,6 +26,13 @@
 //                                    partner, so the partner can be configured
 //                                    without anybody typing five URLs.
 //
+// A PARTNER'S SIGN-OUT (#167) is `federation_slo.ts`'s: /federation/slo/{id},
+// /federation/backchannel-logout/{id} and /federation/frontchannel-logout/
+// {id}. What THIS module keeps for it is what a sign-in learns about the
+// partner's session — partnerSessionOf(), sessionBoundOf() — and the ACS's
+// refusal of a sign-out sent to it (STS-FED-0024), which now names the path
+// that consumes one.
+//
 // ---------------------------------------------------------------------------
 // THIS IS THE MODULE WHERE THE SERVICE'S USUAL POSTURE IS INVERTED, AND EVERY
 // REFUSAL IN IT IS DELIBERATE.
@@ -242,6 +249,9 @@ const LOGIN_PATH = federation.PATHS.login;
 const ACS_PATH = federation.PATHS.acs;
 const METADATA_PATH = federation.PATHS.metadata;
 const LINK_PATH = federation.PATHS.link;
+// A partner's sign-out (#167), served by `federation_slo.ts`; named here too
+// because the ACS points at it and the metadata publishes it.
+const SLO_PATH = federation.PATHS.slo;
 
 // The `via` of the local sign-in link-at-first-sign-in asks for (#109): the
 // pending record's `protocol`, which `authn.ts` writes onto the session's
@@ -459,7 +469,7 @@ class FederationSp {
     return config.value('federation.requestTtlMin') * 60 * 1000;
   }
 
-  private putContext(record) {
+  putContext(record) {
     const { log, randomId } = this.deps;
     log.debug("Entering FederationSp.putContext().");
     const handle = 'fed-' + randomId(18);
@@ -533,7 +543,7 @@ class FederationSp {
   // window has not closed. The SAML 1.1 case is the one that has no context at
   // all — see `fedAllowUnsolicited` — and it is handled by the caller rather
   // than by pretending there was one.
-  private takeContext(handle) {
+  takeContext(handle) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.takeContext(). handle=" +
               (handle || '(none)'));
@@ -650,6 +660,16 @@ class FederationSp {
     log.debug("Entering FederationSp.acsUrl().");
     log.debug("Leaving FederationSp.acsUrl().");
     return base + ACS_PATH + '/' + encodeURIComponent(record.fedId);
+  }
+
+  // Where a partner's browser-borne sign-out arrives (#167): the SAML
+  // SingleLogoutService, the WS-Federation cleanup URL and the OpenID Connect
+  // post_logout_redirect_uri, one path for the ACS's reason (decision 2).
+  sloUrl(base, record) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.sloUrl().");
+    log.debug("Leaving FederationSp.sloUrl().");
+    return base + SLO_PATH + '/' + encodeURIComponent(record.fedId);
   }
 
   // ---------------------------------------------------------------------------
@@ -832,13 +852,19 @@ class FederationSp {
     const { log, firstByLocal, textByLocal } = this.deps;
     log.debug("Entering FederationSp.assertionContents().");
     const out = { subject: '', nameFormat: '', bag: {}, authnInstant: '',
-                  context: '' };
+                  context: '', nameQualifier: '', spNameQualifier: '',
+                  sessionIndex: '', sessionNotOnOrAfter: '' };
     const nameEl = firstByLocal(assertion, 'NameID') ||
                    firstByLocal(assertion, 'NameIdentifier');
     if (nameEl) {
       out.subject = (nameEl.textContent || '').trim();
       out.nameFormat = nameEl.getAttribute('Format') ||
                        nameEl.getAttribute('Format') || '';
+      // The two qualifiers a LogoutRequest names the principal with again
+      // (saml-core-2.0-os section 3.7.3.2 matches on the NameID WHOLE), kept
+      // so a partner's sign-out can be matched and ours can be built (#167).
+      out.nameQualifier = nameEl.getAttribute('NameQualifier') || '';
+      out.spNameQualifier = nameEl.getAttribute('SPNameQualifier') || '';
     }
     const authn = firstByLocal(assertion, 'AuthnStatement') ||
       firstByLocal(assertion, 'AuthenticationStatement');
@@ -847,6 +873,13 @@ class FederationSp {
         authn.getAttribute('AuthenticationInstant') || '';
       out.context = textByLocal(authn, 'AuthnContextClassRef') ||
         authn.getAttribute('AuthenticationMethod') || '';
+      // THE PARTNER'S SESSION (#167): the SessionIndex its LogoutRequest will
+      // name, and the instant it says its session ends (saml-core-2.0-os
+      // section 2.7.2). SAML 2.0 only; a SAML 1.1 AuthenticationStatement
+      // carries neither, and that profile defines no logout.
+      out.sessionIndex = authn.getAttribute('SessionIndex') || '';
+      out.sessionNotOnOrAfter = authn.getAttribute('SessionNotOnOrAfter') ||
+                                '';
     }
     const attributes = assertion.getElementsByTagName('*');
     for (let i = 0; i < attributes.length; i++) {
@@ -1462,7 +1495,14 @@ class FederationSp {
         subject: result.subject, issuer: result.issuer || '',
         nameFormat: result.nameFormat || '', bag: result.bag || {},
         amr: result.amr || [], acr: result.acr || '',
-        returnTo: result.returnTo || '', application: result.application || ''
+        returnTo: result.returnTo || '', application: result.application || '',
+        // THE PARTNER'S SESSION (#167), carried across the linking sign-in so
+        // the federated session it starts can be ended by the partner too.
+        nameQualifier: result.nameQualifier || '',
+        spNameQualifier: result.spNameQualifier || '',
+        sessionIndex: result.sessionIndex || '',
+        sessionNotOnOrAfter: Number(result.sessionNotOnOrAfter) || 0,
+        sid: result.sid || '', idToken: result.idToken || ''
       }
     });
     let target = '';
@@ -1744,7 +1784,12 @@ class FederationSp {
         attributes: mapped.attributes,
         mapped: mapped.mapped.length,
         unmapped: mapped.unmapped.map((one) => { return one.incoming; })
-      }
+      },
+      // THE PARTNER'S SESSION, AND ITS BOUND (#167): kept on the session by
+      // `authn.startSession()` so the partner's sign-out can name it, and
+      // the partner's SessionNotOnOrAfter as the session's latest end.
+      fedPartnerSession: this.partnerSessionOf(record, result),
+      sessionNotOnOrAfter: Number(result.sessionNotOnOrAfter) || 0
     };
 
     // The relationship's own counts, and — where this sign-in began at an
@@ -1922,6 +1967,55 @@ class FederationSp {
                                                 { username: username }),
                                   result, session)));
     log.debug("Leaving FederationSp.startFederatedSession(). Drew the result page.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THIS SERVICE KNOWS ABOUT THE PARTNER'S SESSION (#167), kept on the
+  // session here as `fedPartnerSession`. Everything a partner's sign-out is
+  // matched against, and everything this service's own sign-out to the
+  // partner is built from, and nothing else:
+  //
+  //   relationship, protocol, issuer    which partner, through which door
+  //   nameId, nameIdFormat, nameQualifier, spNameQualifier
+  //                                     SAML: the principal, WHOLE, as
+  //                                     section 3.7.3.2 matches it
+  //   sessionIndex                      SAML: the partner's session
+  //   sub, sid                          OpenID Connect: the End-User and the
+  //                                     partner's session (Back-Channel and
+  //                                     Front-Channel Logout 1.0)
+  //   idToken                           OpenID Connect: id_token_hint for
+  //                                     RP-Initiated Logout, only while
+  //                                     fedEndSessionUrl is set
+  //   at                                when the partner signed them in here
+  // ---------------------------------------------------------------------------
+  partnerSessionOf(record, result) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.partnerSessionOf().");
+    const saml = record.fedProtocol === 'saml2' ||
+                 record.fedProtocol === 'wsfed';
+    const oidc = record.fedProtocol === 'oidc';
+    const out: any = {
+      relationship: String(record.fedId || ''),
+      protocol: String(record.fedProtocol || ''),
+      issuer: String(result.issuer || record.fedPeer || ''),
+      at: Date.now()
+    };
+    if (saml) {
+      out.nameId = String(result.subject || '');
+      out.nameIdFormat = String(result.nameFormat || '');
+      out.nameQualifier = String(result.nameQualifier || '');
+      out.spNameQualifier = String(result.spNameQualifier || '');
+      out.sessionIndex = String(result.sessionIndex || '');
+    }
+    if (oidc) {
+      out.sub = String(result.subject || '');
+      out.sid = String(result.sid || '');
+      if (result.idToken) {
+        out.idToken = String(result.idToken);
+      }
+    }
+    log.debug("Leaving FederationSp.partnerSessionOf(). " + out.protocol);
+    return out;
   }
 
   private samlFieldsFor(record) {
@@ -2444,6 +2538,21 @@ class FederationSp {
     log.debug("Entering FederationSp.consumeSamlResponse(). version=" +
               version);
     const encoded = String(params.SAMLResponse || '');
+    // A <LogoutRequest> SENT TO THE ASSERTION CONSUMER SERVICE (#167): a
+    // partner whose single logout service was configured as the ACS. Refused
+    // here, as a wsignout1.0 is, and pointed at the path that consumes it.
+    if (!encoded && params.SAMLRequest) {
+      errorCodes.mark(res, 'STS-FED-0024');
+      log.debug("Leaving FederationSp.consumeSamlResponse(). A SAMLRequest " +
+                "at the ACS.");
+      return this.refuse(res, record, 400, 'That is a sign-out, and this is ' +
+                                           'the sign-in endpoint',
+        'A SAMLRequest arrived at the assertion consumer service for "' +
+        record.fedId + '". A partner\'s <LogoutRequest> is consumed at ' +
+        this.sloUrl(baseUrlOf(req), record) + ' — this relationship\'s ' +
+        'SingleLogoutService, published in its metadata. Configure that ' +
+        'address at the partner.');
+    }
     if (!encoded) {
       log.debug("Leaving FederationSp.consumeSamlResponse(). No SAMLResponse.");
       errorCodes.mark(res, 'STS-FED-0007');
@@ -2660,6 +2769,16 @@ class FederationSp {
     log.debug("Leaving FederationSp.consumeSamlResponse(). Verified; " +
               'completing the sign-in once the signing certificate is known ' +
               'not to be revoked.');
+    // THE PARTNER'S SESSION BOUND (#167), refused here when it has already
+    // passed rather than started and ended in one breath.
+    const bound = this.sessionBoundOf(contents);
+    if (bound.refused) {
+      errorCodes.mark(res, 'STS-FED-0131');
+      log.debug("Leaving FederationSp.consumeSamlResponse(). The partner's " +
+                "session has already ended.");
+      return this.refuse(res, record, 401, 'The partner\'s session has ' +
+                                           'already ended', bound.why);
+    }
     return this.signerStillAccepted(req, res, record, () => {
       return this.completeSignIn(req, res, record, {
         subject: contents.subject,
@@ -2668,6 +2787,10 @@ class FederationSp {
         // none — see federation_links.ts's stableSubjectOf().
         issuer: issuer,
         nameFormat: contents.nameFormat,
+        nameQualifier: contents.nameQualifier,
+        spNameQualifier: contents.spNameQualifier,
+        sessionIndex: contents.sessionIndex,
+        sessionNotOnOrAfter: bound.at,
         bag: contents.bag,
         amr: this.federatedAmr([]),
         acr: contents.context || '',
@@ -2675,6 +2798,51 @@ class FederationSp {
         application: this.fromContext(context).application
       });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PARTNER'S SessionNotOnOrAfter, AS A BOUND ON THE SESSION HERE (#167).
+  //
+  // `{ at, refused, why }`: `at` is the epoch ms the session here must end by
+  // (0 for none), which `authn.startSession()` makes the session's absolute
+  // expiry where it is the earlier. The same clock-skew allowance an
+  // assertion's own NotOnOrAfter gets (conditionsCheck()), because the two
+  // are instants the same partner wrote with the same clock. An instant that
+  // has passed even with the allowance is refused: a session that is over
+  // before it starts is not one to start. A value that does not parse is
+  // refused too — a bound nobody can read is not a bound to ignore.
+  // ---------------------------------------------------------------------------
+  sessionBoundOf(contents) {
+    const { config, log } = this.deps;
+    log.debug("Entering FederationSp.sessionBoundOf().");
+    const text = String((contents && contents.sessionNotOnOrAfter) || '');
+    if (!text) {
+      log.debug("Leaving FederationSp.sessionBoundOf(). None.");
+      return { at: 0, refused: false, why: '' };
+    }
+    const parsed = Date.parse(text);
+    if (!isFinite(parsed)) {
+      log.debug("Leaving FederationSp.sessionBoundOf(). Unreadable.");
+      return { at: 0, refused: true,
+               why: 'The assertion\'s SessionNotOnOrAfter, "' + text + '", ' +
+                    'is not an instant this service can read, so how long ' +
+                    'the partner says the session may last is unknown.' };
+    }
+    const skewMs = config.value('oauth2.clockSkewS') * 1000;
+    const at = parsed + skewMs;
+    if (at <= Date.now()) {
+      log.debug("Leaving FederationSp.sessionBoundOf(). Passed.");
+      return { at: at, refused: true,
+               why: 'The assertion says the partner\'s session ended at ' +
+                    text + ' (SessionNotOnOrAfter, saml-core-2.0-os section ' +
+                    '2.7.2), which has passed even allowing ' +
+                    config.value('oauth2.clockSkewS') + 's of clock skew. A ' +
+                    'session here may not outlive the partner\'s, and one ' +
+                    'that is over before it starts is not started.' };
+    }
+    log.debug("Leaving FederationSp.sessionBoundOf(). " +
+              new Date(at).toISOString());
+    return { at: at, refused: false, why: '' };
   }
 
   // ---------------------------------------------------------------------------
@@ -2700,11 +2868,12 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0024');
       log.debug("Leaving FederationSp.consumeWsFedResponse().");
       return this.refuse(res, record, 400, 'That is not a sign-in response',
-        'wa=' + wa + '. This endpoint consumes wa=wsignin1.0. A wsignout1.0 ' +
-        'arriving here is a partner configured to send its sign-out where ' +
-        'its sign-in goes — this service does not consume a federated ' +
-        'sign-out, which is listed as a gap in federation/CLAUDE.md rather ' +
-        'than left to be discovered.');
+        'wa=' + wa + '. This endpoint consumes wa=wsignin1.0. A ' +
+        'wsignout1.0 or wsignoutcleanup1.0 arriving here is a partner ' +
+        'configured to send its sign-out where its sign-in goes: a ' +
+        'partner\'s sign-out is consumed at ' +
+        this.sloUrl(baseUrlOf(req), record) + ' (#167). Configure that ' +
+        'address at the partner as this relying party\'s sign-out URL.');
     }
     const wresult = String(params.wresult || '');
     if (!wresult) {
@@ -2806,6 +2975,16 @@ class FederationSp {
             'anyway, and note that doing so removes this check for every ' +
             'response.');
     }
+    // A SAML 2.0 TOKEN INSIDE THE RSTR CARRIES A SESSION BOUND TOO (#167),
+    // and it binds the session here exactly as it does on the SAML path.
+    const bound = this.sessionBoundOf(contents);
+    if (bound.refused) {
+      errorCodes.mark(res, 'STS-FED-0131');
+      log.debug("Leaving FederationSp.consumeWsFedResponse(). The partner's " +
+                "session has already ended.");
+      return this.refuse(res, record, 401, 'The partner\'s session has ' +
+                                           'already ended', bound.why);
+    }
     log.debug("Leaving FederationSp.consumeWsFedResponse(). Verified; " +
               'completing the sign-in once the signing certificate is known ' +
               'not to be revoked.');
@@ -2813,6 +2992,10 @@ class FederationSp {
       return this.completeSignIn(req, res, record, {
         subject: contents.subject, bag: contents.bag,
         issuer: issuer, nameFormat: contents.nameFormat,
+        nameQualifier: contents.nameQualifier,
+        spNameQualifier: contents.spNameQualifier,
+        sessionIndex: contents.sessionIndex,
+        sessionNotOnOrAfter: bound.at,
         amr: this.federatedAmr([]), acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
         application: this.fromContext(context).application
@@ -2834,7 +3017,7 @@ class FederationSp {
   // and trying them all turns a rotation into a silent success against a key
   // the partner has retired.
   // ---------------------------------------------------------------------------
-  private keysFor(record) {
+  keysFor(record) {
     const { fedHttp, log } = this.deps;
     log.debug("Entering FederationSp.keysFor(). id=" + record.fedId);
     const pasted = String(record.fedJwks || '').trim();
@@ -2895,7 +3078,7 @@ class FederationSp {
     return family.filter((alg) => { return wanted.indexOf(alg) >= 0; });
   }
 
-  private verifyForeignJwt(token, record, keys, options) {
+  verifyForeignJwt(token, record, keys, options) {
     const { config, stsCrypto, log, jsonFromB64u } = this.deps;
     log.debug("Entering FederationSp.verifyForeignJwt().");
     let header = null;
@@ -3223,6 +3406,14 @@ class FederationSp {
             // `iss` + `sub` — OpenID Connect Core section 5.7's stable
             // identifier (#109). `iss` has been checked against fedPeer.
             issuer: String(payload.iss || record.fedPeer || ''),
+            // THE PARTNER'S SESSION (#167): the `sid` its Back-Channel and
+            // Front-Channel logouts will name, and the ID Token itself where
+            // this relationship will send it back as id_token_hint — kept
+            // only while fedEndSessionUrl is set, because a signed statement
+            // about the person is not something to hold for no reason.
+            sid: String(payload.sid || ''),
+            idToken: String(record.fedEndSessionUrl || '').trim()
+              ? String(idToken) : '',
             acr: String(payload.acr || ''),
             returnTo: this.fromContext(context).returnTo,
             application: this.fromContext(context).application
@@ -3544,7 +3735,17 @@ class FederationSp {
         der +
       '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>' +
       // `federation.spNameIdFormat` since 2026-09-12; the literal before it is
-      // the setting's default.
+      // the setting's default. THE SINGLE LOGOUT SERVICE (#167), on the
+      // two bindings a partner's LogoutRequest and LogoutResponse are
+      // accepted on — SAML 2.0 only:
+      // SAML 1.1 defines no logout, so its SPSSODescriptor names none.
+      // saml-metadata-2.0-os section 2.4.2 puts it before NameIDFormat.
+      (record.fedProtocol === 'saml2'
+        ? '<md:SingleLogoutService Binding="' + BINDING_REDIRECT + '" ' +
+          'Location="' + xmlEscape(this.sloUrl(base, record)) + '"/>' +
+          '<md:SingleLogoutService Binding="' + BINDING_POST + '" ' +
+          'Location="' + xmlEscape(this.sloUrl(base, record)) + '"/>'
+        : '') +
       '<md:NameIDFormat>' +
       xmlEscape(String(config.value('federation.spNameIdFormat') || '')) +
         '</md:NameIDFormat>' +
@@ -3662,7 +3863,20 @@ class FederationSp {
         'partner.</strong></td></tr><tr><td><code>' + METADATA_PATH +
       '/{id}</code></td><td>This ' +
         'service\'s own SAML metadata for that partner. Unsigned, ' +
-        'deliberately.</td></tr></table><p class="note">The base URL this ' +
+        'deliberately.</td></tr>' +
+      // A PARTNER'S SIGN-OUT (#167), served by federation_slo.ts.
+      '<tr><td><code>' + SLO_PATH + '/{id}</code></td><td>Where a ' +
+        'partner\'s sign-out arrives in a browser: the SAML ' +
+        'SingleLogoutService, the WS-Federation cleanup URL and the OpenID ' +
+        'Connect post_logout_redirect_uri. It ends only the session the ' +
+        'partner names, after the same signature check a sign-in gets.' +
+        '</td></tr><tr><td><code>' + federation.PATHS.backchannelLogout +
+        '/{id}</code></td><td>The OpenID Connect backchannel_logout_uri to ' +
+        'register at the partner.</td></tr><tr><td><code>' +
+        federation.PATHS.frontchannelLogout + '/{id}</code></td><td>The ' +
+        'OpenID Connect frontchannel_logout_uri to register at the partner, ' +
+        'with frontchannel_logout_session_required.</td></tr></table>' +
+        '<p class="note">The base URL this ' +
         'service sees itself at is <code>' + xmlEscape(base) +
       '</code>, so the URLs above are absolute from there.</p>' +
       // **`/portal` AND NOT `/authn/login`, WHICH IS NOT A PAGE ANYBODY CAN BE
@@ -3734,6 +3948,21 @@ export = {
   ourEntityId: slot.forward('ourEntityId'),
   acsUrl: slot.forward('acsUrl'),
   certPemOf: slot.forward('certPemOf'),
+  // For `federation_slo.ts` (#167): the one request-context store (decision
+  // 3) — a LogoutRequest this service sent, an end_session round trip and a
+  // WS-Federation cleanup confirmation are in-flight flows exactly as a
+  // sign-in is — and the SLO address; and, for tests/federation_signout.js,
+  // how a partner's SessionNotOnOrAfter becomes the session's bound.
+  putContext: slot.forward('putContext'),
+  takeContext: slot.forward('takeContext'),
+  sessionBoundOf: slot.forward('sessionBoundOf'),
+  sloUrl: slot.forward('sloUrl'),
+  // THE ONE PLACE A JWT FROM SOMEBODY ELSE IS VERIFIED, now for a Logout
+  // Token as well as an ID Token (#167): the same keys, the same
+  // key-decides-the-family rule, the same refusals.
+  keysFor: slot.forward('keysFor'),
+  verifyForeignJwt: slot.forward('verifyForeignJwt'),
+  SLO_PATH: SLO_PATH,
   // For tests/revocation_status.js: the check a configured signing certificate
   // or partner key gets once it has verified a response.
   signerStillAccepted: slot.forward('signerStillAccepted')

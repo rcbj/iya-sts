@@ -166,6 +166,12 @@ import backchannel = require('../oauth-oidc/backchannel_logout');
 // that wrote it. See their own headers for why the builder is not here.
 import wsfed = require('../ws-federation/wsfed');
 import saml2Sso = require('../saml/saml2_sso');
+// A FEDERATION PARTNER (#167): the foreign identity provider a session was
+// signed in THROUGH, told of this sign-out, and the one door by which the
+// partner's own sign-out ends a session here (endPartnerSession()). A cache
+// hit — `federation_slo.ts` is at 10c-ii — and it requires this module back
+// only lazily, when a session is ended.
+import federationSlo = require('../federation/federation_slo');
 // The pre-authorized codes a Credential Offer minted. Exported as Maps by that
 // module, which is what rule 2 made it for.
 import vcOffers = require('../oid4vc/vc_offers');
@@ -216,6 +222,7 @@ interface LogoutDeps {
   backchannel: typeof backchannel;
   wsfed: typeof wsfed;
   saml2Sso: typeof saml2Sso;
+  federationSlo: typeof federationSlo;
   vcOffers: typeof vcOffers;
   vcVerifier: typeof vcVerifier;
   krb5Principals: typeof krb5Principals;
@@ -266,6 +273,7 @@ class Logout {
       backchannel: backchannel,
       wsfed: wsfed,
       saml2Sso: saml2Sso,
+      federationSlo: federationSlo,
       vcOffers: vcOffers,
       vcVerifier: vcVerifier,
       krb5Principals: krb5Principals,
@@ -410,7 +418,7 @@ class Logout {
   private buildFamilies() {
     const { log, authn, config, frontchannel, backchannel, krb5Principals,
       ldapServer, oauth2, saml2Sso, stats, vcOffers, vcVerifier,
-      wsfed } = this.deps;
+      wsfed, federationSlo } = this.deps;
     log.debug("Entering Logout.buildFamilies().");
     log.debug("Leaving Logout.buildFamilies().");
     return [
@@ -707,6 +715,80 @@ class Logout {
                                 'and has to be sent by following the link'
                               : ' (there is nowhere to send a ' +
                                   'LogoutRequest)') };
+        } },
+
+      // -----------------------------------------------------------------------
+      // THE FEDERATION PARTNER A SESSION WAS SIGNED IN THROUGH (#167). The
+      // other lists above are parties this service signed somebody in TO;
+      // this is the one party that signed them in HERE, and ending the
+      // session here leaves theirs live unless it is told. `endOrder` 13:
+      // with the federated lists and before the session, whose
+      // `fedPartnerSession` it reads. Terminable only where there is a
+      // BROWSER — the person's own /logout — because telling the partner is
+      // a redirect or a form that browser follows; /admin/logout and the
+      // API list it and say so. And it is never selected when the PARTNER
+      // ended the session (endPartnerSession()), which would bounce its own
+      // sign-out back at it.
+      { id: 'federation-partner', endOrder: 13,
+        label: 'Federation partners',
+        protocol: 'Federation',
+        spec: 'saml-profiles-2.0-os section 4.4.3; OpenID Connect ' +
+              'RP-Initiated Logout 1.0; WS-Federation 1.2 section 13.2.4',
+        what: 'The foreign identity provider this session was signed in ' +
+              'THROUGH. Ending it offers the partner\'s own sign-out — a ' +
+              'signed LogoutRequest, an RP-Initiated Logout redirect with ' +
+              'the partner\'s ID Token as id_token_hint, or wsignout1.0 — ' +
+              'as a link or a form on the page, because it is the ' +
+              'person\'s browser that goes there. SAML 1.1 and OAuth 2.0 ' +
+              'define no sign-out, so a partner of either is never told.',
+        collect: (ctx) => {
+          log.debug("Entering federation-partner.collect().");
+          const rows = [];
+          ctx.sessions.forEach((session) => {
+            const held = session.fedPartnerSession;
+            if (!held || !held.relationship) {
+              return;
+            }
+            const can = federationSlo.canTellPartner(held);
+            const why = !can.ok ? 'the partner cannot be told: ' + can.why
+              : (ctx.browser ? '' : 'the partner is told only from the ' +
+                 'person\'s own sign-out (/logout), because it is their ' +
+                 'browser that goes there');
+            rows.push(this.row('federation-partner', 'federation partner',
+                               session.id + '|' + held.relationship, {
+              label: held.relationship,
+              detail: 'signed in through ' + held.relationship + ' (' +
+                      (held.protocol || '?') + ')' +
+                      (why ? '; ' + why : '; the partner will be offered ' +
+                                          'its own sign-out'),
+              sessionId: session.id,
+              terminable: !why,
+              why: why
+            }));
+          });
+          log.debug("Leaving federation-partner.collect().");
+          return rows;
+        },
+        terminate: (r, ctx) => {
+          log.debug("Entering federation-partner.terminate().");
+          const parts = String(r.handle).split('|');
+          const session = authn.sessionById(parts[0]);
+          if (!session) {
+            log.debug("Leaving federation-partner.terminate().");
+            return { ok: false, message: 'the session that partner signed ' +
+                                         'in has already ended' };
+          }
+          const built = federationSlo.partnerLogoutFor(session, ctx.base);
+          if (!built.ok) {
+            log.debug("Leaving federation-partner.terminate(). " + built.why);
+            return { ok: false, message: 'the partner cannot be told: ' +
+                                         built.why };
+          }
+          ctx.partnerLogouts.push(built.target);
+          log.debug("Leaving federation-partner.terminate().");
+          return { ok: true,
+                   message: 'the sign-out at ' + built.target.label + ' is ' +
+                            'on the page: ' + built.target.what };
         } },
 
       // -----------------------------------------------------------------------
@@ -1399,6 +1481,13 @@ class Logout {
       notifications: [],
       cleanups: [],
       logoutRequests: [],
+      // THE FEDERATION PARTNERS TO TELL (#167), as links and forms, and what
+      // building them needs: the base URL this service answered the sign-out
+      // at (the name it has with the partner), and whether there is a
+      // browser to follow them. Filled by terminate() from its options.
+      partnerLogouts: [],
+      base: '',
+      browser: false,
       // THE SESSIONS THIS ACT WILL END (2026-09-17, #36 follow-up), filled by
       // terminate() before any family runs. The `oidc-rp` family reads it: a
       // relying party on a session that is ending is told by the session's
@@ -2034,6 +2123,8 @@ class Logout {
     // lists what THIS act queued (2026-09-17, #36).
     const backchannelMark = backchannel.mark();
     const ctx = this.contextFor(key, options.issuer, options.by);
+    ctx.base = String(options.base || '');
+    ctx.browser = options.browser === true && !!ctx.base;
     const wanted = (selection || []).map(String).filter(Boolean);
     const global = !wanted.length;
     const wantedSet = {};
@@ -2209,6 +2300,8 @@ class Logout {
       notifications: ctx.notifications,
       cleanups: ctx.cleanups,
       logoutRequests: ctx.logoutRequests,
+      // And the federation partners to tell (#167) — a browser's to follow.
+      partnerLogouts: ctx.partnerLogouts,
       // What this process sends by itself, with no browser: the back-channel
       // Logout Tokens, each with its state at the moment of this answer.
       backchannel: backchannelRows,
@@ -2401,7 +2494,7 @@ class Logout {
   // and the three things only the BROWSER can do — the front-channel iframes,
   // the WS-Federation cleanup images, and the SAML LogoutRequests as links.
   private resultPage(base?, result?, inventory?) {
-    const { log, app, frontchannel, backchannel, xmlEscape } = this.deps;
+    const { log, app, federationSlo, xmlEscape } = this.deps;
     log.debug("Entering Logout.resultPage().");
     const listOf = (rows, cls) => {
       log.debug("Entering listOf().");
@@ -2412,30 +2505,7 @@ class Logout {
           'class="' + cls + '">' + xmlEscape(one.message) + '</td></tr>';
       }).join('') + '</tbody></table>';
     };
-    const cleanupRows = result.cleanups.map((target) => {
-      return '<tr><td><code>' + xmlEscape(target.realm) + '</code></td><td>' +
-        (target.url
-          ? '<a href="' + xmlEscape(target.url) + '" target="_blank" ' +
-                                                  'rel="noopener noreferrer">' +
-            xmlEscape(target.url) + '</a>'
-          : '<span class="cannot">no wreply was supplied, so there is ' +
-            'nowhere to send one</span>') +
-        '</td></tr>';
-    }).join('');
-    const logoutRows = result.logoutRequests.map((target) => {
-      return '<tr><td><code>' + xmlEscape(target.entityId) +
-        '</code></td><td>' + (target.url
-          ? '<a href="' + xmlEscape(target.url) + '">send the ' +
-            'LogoutRequest</a><br><span ' +
-            'class="sub">' + xmlEscape(target.from) + '</span>'
-          : '<span class="cannot">no SingleLogoutService is known for ' +
-        'it</span>') +
-        '</td></tr>';
-    }).join('');
-    const images = result.cleanups.filter((t) => { return !!t.url; })
-                                  .map((t) => {
-      return '<img src="' + xmlEscape(t.url) + '" alt="" width="1" height="1">';
-    }).join('');
+    const fan = this.fanOutOf([result]);
     const inner =
       '<h1>' + (result.scope === 'global' ? 'Signed out everywhere' :
                 'Signed ' +
@@ -2453,29 +2523,10 @@ class Logout {
           'assertion, a service ticket or an SVID is presented, so there is ' +
           'no revocation to perform.</p>'
         : '') +
-      (result.notifications.length
-        ? frontchannel.render(result.notifications)
-        : '') +
-      backchannel.render(result.backchannel || []) +
-      (result.cleanups.length
-        ? '<h2>WS-Federation cleanup ' +
-          'requests</h2><table><thead><tr><th>Realm</th><th>Cleanup ' +
-          'URL</th></tr></thead><tbody>' +
-          cleanupRows + '</tbody></table><p class="sub">Each was fetched as ' +
-          'a one-pixel image as this page loaded — front-channel logout — ' +
-          'and the links are the same URLs so a failed ping can be seen ' +
-          'rather ' +
-          'than guessed at.</p>' + images
-        : '') +
-      (result.logoutRequests.length
-        ? '<h2>SAML 2.0 LogoutRequests</h2><table><thead><tr><th>Service ' +
-          'provider</th><th>LogoutRequest</th></tr></thead><tbody>' +
-          logoutRows + '</tbody></table><p class="sub">Links rather than an ' +
-          'automatic fan-out, which is /saml2/slo\'s own decision reused: a ' +
-          'LogoutRequest is a signed message a service provider ANSWERS, and ' +
-          'firing those into hidden frames would claim a federation-wide ' +
-          'logout this service cannot observe.</p>'
-        : '') +
+      fan.html +
+      // The federation partners the sessions were signed in THROUGH (#167):
+      // links and forms this browser follows, never an automatic redirect.
+      federationSlo.renderPartnerLogouts(result.partnerLogouts || []) +
       '<h2>What is still live</h2>' +
       (inventory.total
         ? '<p class="sub">' + inventory.total + ' item(s) remain. <a href="' +
@@ -2485,18 +2536,135 @@ class Logout {
         : '<div class="ok">Nothing. This service is holding no live session ' +
           'or credential for ' +
           xmlEscape(result.key) + ' that it can still see.</div>');
-    // The two relaxations this one response needs, and only these: `frame-src`
-    // for the front-channel iframes, enumerated from the URLs actually being
-    // loaded, and `img-src` for the cleanup pings, which are third-party by
-    // definition. Both go through app.contentSecurityPolicy(), which re-adds
-    // `frame-ancestors` and `base-uri` whatever is asked for — this page cannot
-    // drop them and must not want to.
-    const origins = frontchannel.frameOriginsOf(result.notifications);
-    const overrides = {};
-    if (origins.length) overrides['frame-src'] = origins.join(' ');
-    if (images) overrides['img-src'] = "'self' data: *";
     log.debug("Leaving Logout.resultPage().");
-    return this.page('Signed out', inner, app.contentSecurityPolicy(overrides));
+    return this.page('Signed out', inner,
+                     app.contentSecurityPolicy(fan.policy));
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A BROWSER STILL HAS TO DO AFTER ONE OR MORE TERMINATIONS: the
+  // front-channel iframes, the back-channel deliveries' state, the
+  // WS-Federation cleanup images and the SAML LogoutRequests as links — and
+  // the two relaxations of the page's policy that make them load. One
+  // function, because two pages draw it: this module's own result page, and
+  // the page a federation partner's sign-out answers with (#167,
+  // `federation/federation_slo.ts`), which must fan out to this service's own
+  // relying parties exactly as a sign-out here does.
+  //
+  // The relaxations are `frame-src` for the front-channel iframes, enumerated
+  // from the URLs actually being loaded, and `img-src` for the cleanup pings,
+  // which are third-party by definition. Both go to the caller as OVERRIDES,
+  // and every caller hands them to `app.contentSecurityPolicy()` or
+  // `app.framedContentSecurityPolicy()`, which re-add `frame-ancestors` and
+  // `base-uri` whatever is asked for.
+  // ---------------------------------------------------------------------------
+  fanOutOf(results?) {
+    const { log, frontchannel, backchannel, xmlEscape } = this.deps;
+    log.debug("Entering Logout.fanOutOf().");
+    const all = (Array.isArray(results) ? results : [results])
+      .filter(Boolean);
+    const notifications = [];
+    const cleanups = [];
+    const logoutRequests = [];
+    const deliveries = [];
+    all.forEach((result) => {
+      (result.notifications || []).forEach((one) => {
+        notifications.push(one);
+      });
+      (result.cleanups || []).forEach((one) => { cleanups.push(one); });
+      (result.logoutRequests || []).forEach((one) => {
+        logoutRequests.push(one);
+      });
+      (result.backchannel || []).forEach((one) => { deliveries.push(one); });
+    });
+    const cleanupRows = cleanups.map((target) => {
+      return '<tr><td><code>' + xmlEscape(target.realm) + '</code></td><td>' +
+        (target.url
+          ? '<a href="' + xmlEscape(target.url) + '" target="_blank" ' +
+                                                  'rel="noopener noreferrer">' +
+            xmlEscape(target.url) + '</a>'
+          : '<span class="cannot">no wreply was supplied, so there is ' +
+            'nowhere to send one</span>') +
+        '</td></tr>';
+    }).join('');
+    const logoutRows = logoutRequests.map((target) => {
+      return '<tr><td><code>' + xmlEscape(target.entityId) +
+        '</code></td><td>' + (target.url
+          ? '<a href="' + xmlEscape(target.url) + '">send the ' +
+            'LogoutRequest</a><br><span ' +
+            'class="sub">' + xmlEscape(target.from) + '</span>'
+          : '<span class="cannot">no SingleLogoutService is known for ' +
+        'it</span>') +
+        '</td></tr>';
+    }).join('');
+    const images = cleanups.filter((t) => { return !!t.url; })
+                           .map((t) => {
+      return '<img src="' + xmlEscape(t.url) + '" alt="" width="1" height="1">';
+    }).join('');
+    const html =
+      (notifications.length ? frontchannel.render(notifications) : '') +
+      backchannel.render(deliveries) +
+      (cleanups.length
+        ? '<h2>WS-Federation cleanup ' +
+          'requests</h2><table><thead><tr><th>Realm</th><th>Cleanup ' +
+          'URL</th></tr></thead><tbody>' +
+          cleanupRows + '</tbody></table><p class="sub">Each was fetched as ' +
+          'a one-pixel image as this page loaded — front-channel logout — ' +
+          'and the links are the same URLs so a failed ping can be seen ' +
+          'rather ' +
+          'than guessed at.</p>' + images
+        : '') +
+      (logoutRequests.length
+        ? '<h2>SAML 2.0 LogoutRequests</h2><table><thead><tr><th>Service ' +
+          'provider</th><th>LogoutRequest</th></tr></thead><tbody>' +
+          logoutRows + '</tbody></table><p class="sub">Links rather than an ' +
+          'automatic fan-out, which is /saml2/slo\'s own decision reused: a ' +
+          'LogoutRequest is a signed message a service provider ANSWERS, and ' +
+          'firing those into hidden frames would claim a federation-wide ' +
+          'logout this service cannot observe.</p>'
+        : '');
+    const origins = frontchannel.frameOriginsOf(notifications);
+    const policy = {};
+    if (origins.length) policy['frame-src'] = origins.join(' ');
+    if (images) policy['img-src'] = "'self' data: *";
+    log.debug("Leaving Logout.fanOutOf().");
+    return { html: html, policy: policy };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A FEDERATION PARTNER ENDED THIS SESSION (#167).
+  //
+  // Through `terminate()`, like every other sign-out, with a selection of
+  // exactly this session and the relying parties riding on it — the `session`
+  // row and its `oidc-rp`, `wsfed-rp` and `saml2-sp` rows — so the cascade is
+  // the one every sign-out has: the session's end (Back-Channel Logout Tokens
+  // to this service's relying parties, CAEP session-revoked, the RFC 9700
+  // refresh revocation, the `session.end` audit row), and the front-channel
+  // notifications for a browser to load. NOT the `federation-partner` row:
+  // that would send the partner its own sign-out back. NOT the person's other
+  // sessions: a partner's sign-out ends only the session it names (rcbj's
+  // decision 4 on #167).
+  // ---------------------------------------------------------------------------
+  endPartnerSession(session?, opts?) {
+    const { log, stats } = this.deps;
+    log.debug("Entering Logout.endPartnerSession(). " +
+              ((session && session.id) || '(none)'));
+    const options = opts || {};
+    const username = (session && session.user && session.user.username) || '';
+    const sub = (session && session.user && session.user.sub) || '';
+    const key = stats.holderKeyOf(username, sub);
+    const ctx = this.contextFor(key, options.issuer);
+    const riding = ['oidc-rp', 'wsfed-rp', 'saml2-sp'];
+    const selection = ['session:' + session.id].concat(
+      this.allRows(ctx).filter((r) => {
+        return r.sessionId === session.id && riding.indexOf(r.family) >= 0;
+      }).map((r) => { return r.id; }));
+    const result = this.terminate(key, selection, {
+      issuer: options.issuer, by: options.by, actor: options.by,
+      channel: options.channel || 'http' });
+    log.debug("Leaving Logout.endPartnerSession(). " +
+              result.terminated.length + " ended.");
+    return result;
   }
 
   private send(res?, built?, status?) {
@@ -2819,6 +2987,9 @@ class Logout {
       const ownSessionId = subject.session ? subject.session.id : '';
       const result = this.terminate(subject.key, selection, {
         issuer: this.issuerFor(req),
+        // THE BROWSER THAT WILL FOLLOW A PARTNER'S SIGN-OUT (#167), and the
+        // name this service has with the partner — its base URL here.
+        base: baseUrlOf(req), browser: true,
         actor: subject.username,
         by: subject.named ? '/logout, naming ' +
             subject.username : '/logout, on ' + 'its own session'
@@ -2933,6 +3104,10 @@ export = {
   // than three — rule 7.
   inventoryFor: slot.forward('inventoryFor'),
   terminate: slot.forward('terminate'),
+  // A federation partner's sign-out (#167): the one session it named, ended
+  // through terminate(), and what a browser then has to draw.
+  endPartnerSession: slot.forward('endPartnerSession'),
+  fanOutOf: slot.forward('fanOutOf'),
   // EVERY live session in the service, for /admin/sessions and
   // GET /admin-api/sessions. It is on this slot rather than on one of its own
   // for the reason the slot exists at all — see setLogoutReader() in

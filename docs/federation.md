@@ -44,7 +44,10 @@ an `ldapmodify`.
 | `GET /federation/login/{id}` | **start**: sends the browser to the partner — an `<AuthnRequest>`, a SAML 1.1 inter-site transfer URL, `wa=wsignin1.0`, or an OAuth 2.0 authorization request. Takes `?returnTo=` (a path on this service) and `?application=` (a hint naming what the person is signing in to) |
 | `GET\|POST /federation/acs/{id}` | **finish**: the assertion consumer service, the WS-Federation `wreply` and the OAuth 2.0 `redirect_uri`, all one path. **This is the URL to configure at the partner** |
 | `GET /federation/link/{handle}` | where the linking sign-in of `link-at-first-sign-in` returns: after the person has signed in here as the account the partner named, this records the link and finishes the federated sign-in (#109) |
-| `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned |
+| `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned — with its `SingleLogoutService` on the Redirect and POST bindings |
+| `GET\|POST /federation/slo/{id}` | **a partner's sign-out, in a browser** (#167): a SAML 2.0 `<LogoutRequest>` or `<LogoutResponse>`, a WS-Federation `wsignoutcleanup1.0` or `wsignout1.0`, and the browser coming back from an OpenID Provider's `end_session_endpoint`. The SAML `SingleLogoutService`, the WS-Federation sign-out URL and the OpenID Connect `post_logout_redirect_uri` to configure at the partner |
+| `POST /federation/backchannel-logout/{id}` | the OpenID Connect `backchannel_logout_uri` to register at the partner |
+| `GET /federation/frontchannel-logout/{id}` | the OpenID Connect `frontchannel_logout_uri` to register at the partner, with `frontchannel_logout_session_required` |
 | `GET /authn/select-idp` | the chooser drawn when an application names several usable partners |
 
 In a trust realm every path is under `/realm/{id}`. One path receives all five
@@ -281,14 +284,62 @@ SAML 2.0, SAML 1.1 and WS-Federation need no back channel at all, and an OIDC
 partner can be used with no egress through `fedResponseType: id_token` and its
 keys pasted into `fedJwks`.
 
+### A partner's sign-out
+
+The partner is the authority on the person's sign-on. When it ends a session
+— a sign-out there, an account disabled at the source — its sign-out message
+is the only signal that reaches this service, so it ends the session here that
+the partner started (#167). **Only that session**: the federated session
+carrying the partner's SAML NameID and SessionIndex, or its OpenID Connect
+`sid` (or, with only a `sub`, that person's sessions from that partner) —
+never a local sign-in of the same person, and never a session another partner
+started. Ending it is the protocol-independent sign-out's own act, so this
+service's own relying parties are told as for any sign-out: Back-Channel
+Logout Tokens, CAEP `session-revoked`, and — where the message came through a
+browser — front-channel notifications drawn before the answer goes back.
+
+| Protocol | What the partner sends | What is checked |
+|---|---|---|
+| SAML 2.0 | a `<LogoutRequest>` to `/federation/slo/{id}`, Redirect or POST binding | signed (saml-profiles-2.0-os section 4.4.4.1) and verified against `fedSigningCertificate` and nothing else — the Redirect binding's detached signature over the query string, or an enveloped one; issued by `fedPeer`; `Destination` this endpoint; `IssueInstant` within `federation.requestTtlMin` and `NotOnOrAfter` not passed; its `ID` accepted once ever. Answered with a signed `<LogoutResponse>` to `fedSloUrl` on `fedSloBinding` — `Requester`/`UnknownPrincipal` where no session matched |
+| OpenID Connect | a Logout Token POSTed to `/federation/backchannel-logout/{id}` | verified exactly as the partner's ID Token is (its keys, the key's algorithm family, `aud` = `fedClientId`, `iss` = `fedPeer`), then Back-Channel Logout 1.0 section 2.6: the `events` member, no `nonce`, `sub` or `sid`, a `jti` accepted once ever, `iat` within `federation.requestTtlMin`. 200, or 400 `invalid_request` |
+| OpenID Connect | `/federation/frontchannel-logout/{id}?iss=…&sid=…` in the partner's iframe | `iss` must be `fedPeer` and `sid` is required. Only the partner's origin may frame the page (`frame-ancestors` narrowed, never dropped) and it runs no script. Best-effort by nature — the iframe is the partner's page — so Back-Channel Logout is the reliable path |
+| WS-Federation | `wa=wsignoutcleanup1.0` or `wsignout1.0` at `/federation/slo/{id}` | unsigned by its specification, so it ends nothing by itself: it draws a page with a real button, and the session in **that** browser ends only when the button is pressed |
+| SAML 1.1, OAuth 2.0 | — | **neither defines a sign-out**: SAML 1.1 has no logout protocol, and OAuth 2.0 authorizes a client rather than signing anybody in. A message for either is refused naming that |
+
+**The partner's session bound.** A SAML 2.0 `AuthnStatement`'s
+`SessionNotOnOrAfter` — including a SAML 2.0 token inside WS-Federation — is
+the session's latest end here (with the `oauth2.clockSkewS` allowance an
+assertion's own window gets), and an assertion whose bound has already passed
+starts no session. An ID Token's `exp` is the token's lifetime, not the
+session's, and bounds nothing.
+
+**A sign-out here tells the partner.** `/logout` in the person's own browser
+offers, for each session a partner signed in, that partner's sign-out: a signed
+`<LogoutRequest>` naming the NameID and SessionIndex (to `fedSloUrl`, whose
+`<LogoutResponse>` comes back to `/federation/slo/{id}` and is matched once by
+`InResponseTo` and `RelayState`), RP-Initiated Logout to `fedEndSessionUrl`
+with the partner's ID Token as `id_token_hint`, `client_id`, this
+relationship's `post_logout_redirect_uri` and a `state` matched once on the way
+back, or `wa=wsignout1.0` to a WS-Federation partner. Each is a link or a form
+with a real button, never an automatic redirect. `/admin/logout` and the
+management API list the partner and say it is told only from the person's own
+sign-out, because it is their browser that goes there.
+
+**Not used as a relying party: OpenID Connect Session Management.** Polling a
+partner's `check_session_iframe` needs a script running in this service's page,
+this service admits a script only where a page cannot work without one, and
+Back-Channel Logout already tells it what that script would find out.
+
 ### Not implemented
 
 * Decrypting an `<EncryptedAssertion>` a partner sends — refused, naming the
   cause (`STS-FED-0011`).
-* Consuming a federated **sign-out** — a `wsignout1.0` or `<LogoutRequest>`
-  arriving at the ACS is refused (`STS-FED-0024`).
-* Refreshing a partner's tokens, or re-checking a federated person after the
-  session exists.
+* An encrypted Logout Token or `<EncryptedID>` in a `<LogoutRequest>`: this
+  service registers no encryption with a partner and its metadata publishes no
+  encryption key.
+* Refreshing a partner's tokens, or re-checking a federated person with the
+  partner while the session lasts — beyond the partner's own sign-out and its
+  `SessionNotOnOrAfter`, above.
 * Validating the partner's certificate against a CA or its validity dates — it
   is a pinned key; only its revocation is checked.
 * Restricting **which** people a partner may assert.
@@ -304,6 +355,7 @@ development. What the mode changes:
 | `fedSubjectPolicy` `any-existing` | the name match of old | refused, when set and at the sign-in |
 | The password at the linking sign-in | not checked (the reserved `invalid` is refused) | verified, with the second factor |
 | Revocation of the partner's signing certificate (`pki.revocationCheck=auto`) | soft-fail: a status that cannot be fetched is accepted | hard-fail: a status that cannot be established is refused |
+| `fedRequireSignedLogout` off | an **unsigned** SAML logout message from the partner is accepted — a warning: anybody who can name a partner session can then end it | refused on the relationship (`STS-FED-0132`), and an unsigned logout message is refused whatever it says |
 
 See [What is not checked](what-is-not-checked.md), *Federation inverts all of
 this*.
@@ -358,6 +410,10 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedClientId`, `fedClientSecret` | SP | this service's client credentials at the partner |
 | `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` or `id_token` |
 | `fedBinding`, `fedSignRequest` | SP | the outbound SAML binding; whether the `AuthnRequest` is signed |
+| `fedSloUrl`, `fedSloBinding` | SP | the partner's SAML `SingleLogoutService`, and the binding (`HTTP-Redirect`, the default, or `HTTP-POST`) this service's `LogoutRequest` and `LogoutResponse` go on |
+| `fedEndSessionUrl` | SP | the partner's OpenID Connect `end_session_endpoint`; the ID Token is kept for `id_token_hint` only while this is set |
+| `fedAcceptSignout` | SP | honour the partner's sign-out; `TRUE` by default, and off every one is refused (`STS-FED-0123`) |
+| `fedRequireSignedLogout` | SP | require a SAML logout message to be signed; `TRUE` by default and always in product — **off is a warning**: an unsigned sign-out is anybody signing anybody out |
 | `fedUsernameSource`, `fedAttributeMap` | SP | which incoming value is the username; extra attribute mappings |
 | `fedAutocreateUsers`, `fedUpdateUserAttributes`, `fedAllowUnsolicited` | SP | the provisioning switches; accepting a response nobody asked for |
 | `fedSubjectPolicy` | SP | what an unlinked subject may become: `link-at-first-sign-in` (default), `pre-linked`, `jit-namespaced`, `any-existing` (development only — see the warning above) |
