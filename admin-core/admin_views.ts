@@ -106,6 +106,7 @@ import backupCodes = require('../common/backup_codes');
 // App passwords (#101): a LIBRARY, for the scope catalogue and the settings.
 import appPasswords = require('../common/app_passwords');
 import identityAssurance = require('../common/identity_assurance');
+import siop = require('../oid4vc/siop');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -405,6 +406,7 @@ interface AdminViewsDeps {
   backupCodes: typeof backupCodes;
   appPasswords: typeof appPasswords;
   identityAssurance: typeof identityAssurance;
+  siop: typeof siop;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -484,6 +486,7 @@ class AdminViews {
       backupCodes: backupCodes,
       appPasswords: appPasswords,
       identityAssurance: identityAssurance,
+      siop: siop,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -6920,6 +6923,28 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S ENROLLED SELF-ISSUED SUBJECTS (#129) — `GET
+  // /admin-api/users/self-issued-subjects`, the list the Self-issued IDs block
+  // on their /admin/users page draws. At most `siop.MAX_SUBJECTS`, so not
+  // paged.
+  // ---------------------------------------------------------------------------
+  selfIssuedSubjectsJson(query) {
+    const { log, siop, config } = this.deps;
+    log.debug("Entering AdminViews.selfIssuedSubjectsJson().");
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const held = who ? siop.list(who) : null;
+    log.debug("Leaving AdminViews.selfIssuedSubjectsJson().");
+    return {
+      user: who,
+      entryFound: Array.isArray(held),
+      signInEnabled: !!config.value('oid4vp.signInSelfIssued'),
+      maxPerPerson: siop.MAX_SUBJECTS,
+      subjectSyntaxTypes: siop.SUBJECT_SYNTAX_TYPES.slice(0),
+      subjects: held || []
+    };
+  }
+
   // THIS PERSON'S DIRECTORY ENTRY, which is the whole json half of the panel
   // `ldapObjectSection()` draws: `directoryReader(key)`, or null where no
   // directory is loaded in this process. The section keeps the markup and takes
@@ -7260,6 +7285,7 @@ export = {
   mfaJson: slot.forward('mfaJson'),
   appPasswordsJson: slot.forward('appPasswordsJson'),
   verificationsJson: slot.forward('verificationsJson'),
+  selfIssuedSubjectsJson: slot.forward('selfIssuedSubjectsJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
   riskFor: slot.forward('riskFor'),

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3221** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3229** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -73,15 +73,15 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 142
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 94
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 27
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 187
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 189
 * [Management API (`STS-API`)](#sts-api) — 73
-* [User portal (`STS-PORTAL`)](#sts-portal) — 64
+* [User portal (`STS-PORTAL`)](#sts-portal) — 65
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 129
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -2541,6 +2541,11 @@ Raised from: oid4vc/.
 | `STS-VC-0087` | A BBS key was asked for at /bbs/keys/<kid> that is not a live generation of this realm's BBS key (current, next, or retired within its grace). | HTTP 404 not_found |
 | `STS-VC-0088` | A credential presented to the OpenID4VP Verifier names no status (no Token Status List claim, no BitstringStatusListEntry) and oid4vp.requireStatusReference requires one: a foreign credential under all whose issuer certificate is not in oid4vp.statusOptionalIssuers, or one this realm signed under all or own-only. | invalid_request (HTTP 400); HTTP 403 page at a sign-in |
 | `STS-VC-0089` | An ldp_vc presented at the OpenID4VP Verifier (not a sign-in, whose register holds the status) disclosed no credentialStatus entry, though the request asked for it and oid4vp.requireStatusReference requires one. | invalid_request (HTTP 400) |
+| `STS-VC-0090` | A self-issued ID Token (SIOPv2, #129) was refused: it did not verify (iss not sub, a subject key that did not resolve or match, a bad signature, the wrong aud or nonce, expired or too old), or with vp_token id_token its subject was not the presentation's holder. | invalid_request (HTTP 400), or a 303 for form_post |
+| `STS-VC-0091` | A self-issued ID Token verified and its subject is enrolled for nobody in the realm, so it signed nobody in — in both modes (#129). | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 |
+| `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
+| `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
 
 ## STS-SSF
 
@@ -3301,6 +3306,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0806` | set-may-act (naming the one party who may act for a person, or clearing it) was refused (#108). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0807` | record-verification (an identity verification for OpenID Connect for Identity Assurance, #127) was refused: the verification did not check, a claim is not verifiable or has no value on the entry, or the entry does not exist. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0808` | remove-verification named a verification not recorded for the person, or the directory did not store the change (#127). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0809` | enrol-self-issued-subject was refused: not a DID, thumbprint or public JWK, already enrolled for somebody, the person's limit reached, or no entry (#129). | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0810` | remove-self-issued-subject named a subject not enrolled for the person, or the directory did not store the change (#129). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 
@@ -3456,6 +3463,7 @@ Raised from: portal/.
 | `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
 | `STS-PORTAL-0085` | A POST to /portal/consents named no consent of the signed-in person's own to withdraw — none held for that application and scope, or no scope named (#172). | HTTP 400 page |
 | `STS-PORTAL-0086` | A POST to /portal/delegate could not set or clear the signed-in person's delegate (stsMayAct) (#108). | HTTP 400 page |
+| `STS-PORTAL-0087` | A POST to /portal/self-issued named a self-issued subject the signed-in person has not enrolled, or the directory did not store the removal (#129). | HTTP 400 page |
 
 ## STS-LOGOUT
 

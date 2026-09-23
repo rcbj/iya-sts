@@ -7822,6 +7822,71 @@ const SETTINGS = [
     description: 'How old a Key Binding JWT\'s `iat` may be before the ' +
                  'Verifier rejects the presentation as a replay.' },
 
+  // SELF-ISSUED OPENID PROVIDER v2 (#129): the relying party's half.
+  // `oid4vc/siop.ts` argues it.
+  { key: 'oid4vp.signInSelfIssued', group: 'OID4VP',
+    label: 'Sign in with a self-issued ID (SIOPv2)',
+    env: 'OID4VP_SIGN_IN_SELF_ISSUED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Offer "Sign in with a self-issued ID" on /authn/login: a ' +
+                 'SIOPv2 request (response_type=id_token) whose ID Token the ' +
+                 'wallet signs with its own key. It signs in only the person ' +
+                 'who ENROLLED that key — on /portal/self-issued, or by an ' +
+                 'administrator on /admin/users — in every mode, and offers ' +
+                 'the same enrolment page. OFF by default: a new way in is ' +
+                 'something a realm turns on.' },
+
+  { key: 'oid4vp.siopIdTokenMaxAgeS', group: 'OID4VP',
+    label: 'Self-issued ID Token max age (s)',
+    env: 'OID4VP_SIOP_ID_TOKEN_MAX_AGE_S', type: 'int', dflt: 300,
+    min: 1, max: 3600, runtime: true,
+    description: 'How old a self-issued ID Token\'s `iat` may be (SIOPv2 ' +
+                 'section 11.1). It is signed for one request, so this is ' +
+                 'short.' },
+
+  { key: 'oid4vp.clientIdPrefix', group: 'OID4VP',
+    label: 'Client Identifier prefix of a signed request',
+    env: 'OID4VP_CLIENT_ID_PREFIX', type: 'enum',
+    enumValues: ['pre-registered', 'decentralized_identifier',
+                 'verifier_attestation', 'openid_federation'],
+    dflt: 'pre-registered', runtime: true,
+    description: 'How a wallet is to authenticate a SIGNED request ' +
+                 '(OpenID4VP section 5.9). pre-registered: oid4vp.clientId, which the ' +
+                 'wallet knows out of band. decentralized_identifier: the ' +
+                 'realm\'s did:web, the request signed with a key its ' +
+                 'document lists. verifier_attestation: a Verifier ' +
+                 'Attestation JWT in the request\'s `jwt` header — ' +
+                 'oid4vp.verifierAttestation, or one this realm signs for ' +
+                 'itself, which a wallet trusts only if it trusts this ' +
+                 'realm. ' +
+                 'openid_federation: this realm\'s entity identifier, whose ' +
+                 'Entity Configuration is at /.well-known/openid-federation. ' +
+                 'An unsigned request always uses redirect_uri.' },
+
+  { key: 'oid4vp.verifierAttestation', group: 'OID4VP',
+    label: 'Verifier Attestation JWT',
+    env: 'OID4VP_VERIFIER_ATTESTATION', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A Verifier Attestation JWT an attestation issuer the ' +
+                 'wallets trust signed for this Verifier (typ ' +
+                 'verifier-attestation+jwt). Its `cnf` must name this ' +
+                 'realm\'s request-signing key and its `sub` becomes the ' +
+                 'Client Identifier. EMPTY, the default: with ' +
+                 'oid4vp.clientIdPrefix=verifier_attestation this realm ' +
+                 'attests itself, which only a wallet that already trusts ' +
+                 'this realm will accept.' },
+
+  { key: 'oid4vp.federationAuthorityHints', group: 'OID4VP',
+    label: 'OpenID Federation authority hints',
+    env: 'OID4VP_FEDERATION_AUTHORITY_HINTS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The entity identifiers of the federation intermediates or ' +
+                 'trust anchors directly above this realm, published as ' +
+                 '`authority_hints` in its Entity Configuration. EMPTY, the ' +
+                 'default: the configuration names none, and a wallet can ' +
+                 'build a trust chain to this Verifier only if it trusts ' +
+                 'this realm as a trust anchor itself.' },
+
   { key: 'oid4vp.claims', group: 'OID4VP', label: 'Requested claims',
     env: 'OID4VP_CLAIMS', type: 'csv', dflt: 'given_name,family_name',
     runtime: true,

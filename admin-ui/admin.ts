@@ -12178,6 +12178,62 @@ class AdminConsole {
             : this.note('Recording or removing one needs <strong>Admin ' +
                         'Write</strong>.')));
 
+    // --- self-issued IDs (#129, 2026-09-23) --------------------------------
+    // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
+    // with a Remove each, and a form that enrols one BY VALUE — the
+    // administrator's door; the person's own proves the key on
+    // `/portal/self-issued`. `POST /admin-api/users/enrol-self-issued-subject`
+    // and `remove-self-issued-subject` are the same two acts (rule 7), and
+    // `GET /admin-api/users/self-issued-subjects` is this list.
+    const siopView = adminViews.selfIssuedSubjectsJson({ user: key });
+    const siopRow = function (one) {
+      log.debug("Entering siopRow().");
+      log.debug("Leaving siopRow().");
+      return '<tr><td><code>' + self.esc(one.subject) + '</code></td><td>' +
+        self.esc(one.label || '') + '</td><td>' +
+        self.esc(one.enrolledAt ? self.whenText(one.enrolledAt) : '—') +
+        (one.by ? ' by ' + self.esc(one.by) : '') + '</td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="remove-self-issued-subject">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="subject" value="' +
+            self.esc(one.subject) + '"><input type="hidden" name="from" ' +
+            'value="user"><input type="hidden" name="back" value="' +
+            self.esc(back) + '"><button class="danger" ' +
+            'type="submit">Remove</button></form>'
+          : '') + '</td></tr>';
+    };
+    const selfIssuedBlock = '<h3>Self-issued IDs</h3>' +
+      this.note('Wallet keys whose self-issued ID Token (SIOPv2) signs this ' +
+                'person in' + (siopView.signInEnabled ? '.'
+                  : ' — while <code>oid4vp.signInSelfIssued</code> is on, ' +
+                    'which it is not here.')) +
+      (siopView.subjects.length
+        ? '<table><tr><th>Subject</th><th>Label</th><th>Enrolled</th>' +
+          '<th></th></tr>' + siopView.subjects.map(siopRow).join('') +
+          '</table>'
+        : this.note('<strong>None.</strong> The person enrols their own on ' +
+                    '<code>/portal/self-issued</code>.')) +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" ' +
+          'value="enrol-self-issued-subject">' +
+          '<input type="hidden" name="user" value="' + this.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + this.esc(back) + '">' +
+          '<div class="formrow"><label>Subject <input type="text" ' +
+          'name="subject" size="60" maxlength="2048" required ' +
+          'placeholder="did:jwk:… or a JWK thumbprint"></label> <label>Label ' +
+          '<input type="text" name="label" maxlength="64"></label></div>' +
+          '<div class="formrow"><button type="submit" title="' +
+          this.esc('Whoever holds this key signs in as this person. Enrol ' +
+                   'only a key you know is theirs.') + '">Enrol</button>' +
+          '</div></form>'
+        : this.note('Enrolling or removing one needs <strong>Admin ' +
+                    'Write</strong>.'));
+
     const html = heading +
       this.note('Everything in this section is about <code>' +
                 this.esc(row.name) +
@@ -12188,7 +12244,7 @@ class AdminConsole {
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
       wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock +
-      verificationsBlock;
+      selfIssuedBlock + verificationsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +
               allKeys.length +

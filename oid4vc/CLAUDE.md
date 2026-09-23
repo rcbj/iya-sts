@@ -547,6 +547,48 @@ DCQL credential query (so it answers the first format
 
 ---
 
+## 3ba. `siop.ts`: SIOPv2, THE RELYING PARTY'S HALF (#129, 2026-09-23)
+
+rcbj's four answers: **the relying party only** (this service is never the
+Self-Issued OP); a self-issued subject — a DID or an RFC 9278 JWK thumbprint
+URI — is **ENROLLED on the person's entry** (`stsSelfIssuedSubject`, withheld
+from LDAP reads), by the person or by an administrator; **an unenrolled
+subject is refused in BOTH modes**, so there is no `mode.js` predicate; and a
+signed request may use **all four Client Identifier prefixes**.
+
+* **The person enrols by PROVING the key.** `/portal/self-issued`'s *Enrol a
+  wallet* is `/authn/wallet?siop=1&enrol=1`: `vc_signin.ts` starts a SIOPv2
+  transaction for the person the browser's sign-on session names
+  (`tx.signIn.enrol`), `vc_verifier.ts`'s `answerSelfIssued()` accepts any
+  VERIFIED subject for it, and `finish()` enrols it (`siop.enrol()` refuses one
+  held by somebody else) and goes back to the portal — no session is started.
+  A pasted DID could be somebody else's; a proved one cannot. The admin door
+  enrols by value (Admin Write), as it creates any other credential.
+* **`answerSelfIssued()` is one handler for `direct_post` and `form_post`**:
+  the body is the same form either way; only the reply differs. A sign-in is
+  always `direct_post`, because its binding cookie is SameSite=Lax and a form
+  posted from the wallet's page would not carry it. With `vp_token id_token`
+  the ID Token's key must be the presentation's holder key
+  (`siop.sameHolder()`), and the person is the credential's.
+* **A did:web is fetched only when it is enrolled** (`didKey()` asks
+  `ownerOf()` first): it is the presenter's kind of URL, and the enrolment is
+  what makes it the person's or the administrator's — the root `CLAUDE.md`'s
+  row of URLs this service dials carries it.
+* **The prefixes live in `signedClientId()`**: the DID URL `kid`
+  (`helpers.signJwt()`'s `kidDid`), the Verifier Attestation in the `jwt`
+  header (a configured one is checked against this realm's key and refused
+  with `STS-VC-0092` rather than sent), and the Entity Configuration at
+  `/.well-known/openid-federation` (`entityConfiguration()`). That document
+  lives in `vc_verifier.ts` while the Verifier is this entity's only
+  federation role; #132-#137 move it when another joins.
+* **Not built, by argument**: the `fragment` response mode (a Verifier
+  chooses its mode, and a fragment needs a script on a page here) and dynamic
+  discovery of a Self-Issued OP (the static `siopv2:` configuration).
+
+`tests/siop.js` holds the library and the request builder in process;
+`tests/vendored/sts_siop.js` (local) drives the sign-in, both enrolments, the
+refusals and the bar door's `form_post` over HTTP.
+
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 
 The literals became `config.js` rows whose `dflt` is the old value, read per

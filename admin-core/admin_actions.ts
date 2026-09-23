@@ -186,6 +186,7 @@ import accountSignals = require('../ssf/account_signals');
 // neither of which requires anything back.
 import accountState = require('../common/account_state');
 import identityAssurance = require('../common/identity_assurance');
+import siop = require('../oid4vc/siop');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
@@ -332,7 +333,10 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // Who may act for them (#108, 2026-09-23).
                        'set-not-delegated', 'set-may-act',
                        // Identity verifications (#127, 2026-09-23).
-                       'record-verification', 'remove-verification'];
+                       'record-verification', 'remove-verification',
+                       // Self-issued subjects (#129, 2026-09-23).
+                       'enrol-self-issued-subject',
+                       'remove-self-issued-subject'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -386,7 +390,13 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // JSON or as the console's flat fields, and the `claims` it covered — and
   // `remove-verification` takes one away by its `id`.
   // `common/identity_assurance.ts` checks and keeps them.
-  'record-verification', 'remove-verification'];
+  'record-verification', 'remove-verification',
+  // SELF-ISSUED SUBJECTS (#129, 2026-09-23): `enrol-self-issued-subject`
+  // enrols a DID or JWK thumbprint (`subject`, with an optional `label`)
+  // whose SIOPv2 ID Token then signs the person in, and
+  // `remove-self-issued-subject` takes one away. `oid4vc/siop.ts` keeps
+  // them; a person enrols their own by proving the key on the portal.
+  'enrol-self-issued-subject', 'remove-self-issued-subject'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -789,6 +799,7 @@ interface AdminActionsDeps {
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
   identityAssurance: typeof identityAssurance;
+  siop: typeof siop;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
@@ -849,6 +860,7 @@ class AdminActions {
       accountSignals: accountSignals,
       accountState: accountState,
       identityAssurance: identityAssurance,
+      siop: siop,
       backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
@@ -2226,6 +2238,38 @@ class AdminActions {
                message: 'Identity verification ' + id + ' of ' + who +
                         ' is removed; nothing is released from it any ' +
                         'more.' };
+    }
+
+    if (action === 'enrol-self-issued-subject' ||
+        action === 'remove-self-issued-subject') {
+      const { siop } = this.deps;
+      const enrolling = action === 'enrol-self-issued-subject';
+      const subject = String(body.subject || '').trim();
+      const done = enrolling
+        ? siop.enrol(who, subject, body.label, ctx.actor)
+        : siop.remove(who, subject);
+      audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
+              (done.ok ? '' : 'could not ') +
+              (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +
+              'subject ' + subject + (enrolling ? ' for ' : ' of ') + who,
+              { subject: subject,
+                errors: done.ok ? undefined : [done.error] },
+              done.ok ? 'success' : 'failure');
+      if (!done.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " was refused.");
+        return this.refusedBy(enrolling ? 'STS-ADMIN-0809' : 'STS-ADMIN-0810',
+                              { ok: false, errors: [done.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return enrolling
+        ? { ok: true, username: who, enrolled: done.enrolled,
+            message: done.enrolled.subject + ' is enrolled for ' + who +
+                     ': a self-issued ID Token (SIOPv2) signed by that key ' +
+                     'now signs them in.' }
+        : { ok: true, username: who, removed: done.removed,
+            message: done.removed + ' no longer signs ' + who + ' in.' };
     }
 
     // require-mfa and stop-requiring-mfa

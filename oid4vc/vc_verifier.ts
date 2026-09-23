@@ -134,6 +134,15 @@ import keystore = require('../common/keystore');
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 import validation = require('../common/validation');
 
+// SELF-ISSUED OPENID PROVIDER v2 (#129): the self-issued ID Token's check,
+// the enrolled-subject register, and whom a verified one signs in. A LIBRARY
+// over `common/` and `vc_data_integrity.ts`; it does not require this file.
+import siop = require('./siop');
+// This realm's did:web, for the `decentralized_identifier` Client
+// Identifier. `vc_did.ts` requires `vc_configs.ts` and `common/` and never
+// this file, and since #50's R1 a require of it registers no route.
+import vcDid = require('./vc_did');
+
 const { VCI_JWT_TYPES, VCI_VCT } = vcConfigs;
 
 // `jsonwebtoken` was required here and is no longer called; the import is
@@ -189,6 +198,9 @@ interface VcVerifierDeps {
   stsCrypto: typeof stsCrypto;
   vpTransactions: BoundedStore;
   vpRequests: Store;
+  siop: typeof siop;
+  stsDid: typeof vcDid.stsDid;
+  publishedKidFor: typeof helpers.publishedKidFor;
 }
 
 // The credential formats this issuer actually offers, read off the table that
@@ -407,7 +419,13 @@ const OID4VC_QUERY = validation.z.looseObject({
   wallet: validation.types.opt(validation.types.uri),
   state: validation.types.opt(validation.types.opaque),
   credential_configuration_ids: validation.types.opt(
-    validation.z.string().max(validation.CAP.SCOPE))
+    validation.z.string().max(validation.CAP.SCOPE)),
+  // SIOPv2 (#129): a self-issued ID Token alone, or with a presentation,
+  // and the two response modes a Verifier here may ask for.
+  response_type: validation.types.opt(validation.types.oneOf(
+    ['vp_token', 'id_token', 'vp_token id_token'])),
+  response_mode: validation.types.opt(validation.types.oneOf(
+    ['direct_post', 'form_post']))
 });
 
 class VcVerifier {
@@ -456,7 +474,10 @@ class VcVerifier {
       vpConfig: vpConfig,
       stsCrypto: stsCrypto,
       vpTransactions: vpTransactions,
-      vpRequests: vpRequests
+      vpRequests: vpRequests,
+      siop: siop,
+      stsDid: vcDid.stsDid,
+      publishedKidFor: helpers.publishedKidFor
     };
   }
 
@@ -823,8 +844,168 @@ class VcVerifier {
   // same query, `response_mode` `dc_api.jwt` (or `dc_api`), no response URI,
   // and `expected_origins` naming this service's origin. One transaction, two
   // ways in, answered once.
+  // ---------------------------------------------------------------------------
+  // THE CLIENT IDENTIFIER OF A SIGNED REQUEST (OpenID4VP section 5.9, #129):
+  // how the wallet is to know the key that signed it. `oid4vp.clientIdPrefix`
+  // chooses; an unsigned request is always `redirect_uri:`.
+  //
+  //   pre-registered            `oid4vp.clientId`, as it always was: the
+  //                             wallet has this Verifier's key out of band.
+  //   decentralized_identifier  this realm's did:web, and the request's `kid`
+  //                             a DID URL naming the signing key in that
+  //                             document (`vc_did.ts` lists it).
+  //   verifier_attestation      the `sub` of a Verifier Attestation JWT
+  //                             carried in the `jwt` header, whose `cnf` is
+  //                             the signing key — the configured one
+  //                             (`oid4vp.verifierAttestation`), checked
+  //                             against this realm's key before it is used,
+  //                             or one this realm signs for itself.
+  //   openid_federation         this realm's entity identifier; the wallet
+  //                             resolves `/.well-known/openid-federation`
+  //                             (`oauth-oidc/openid_federation.ts`).
+  //
+  // Throws, with `code`, where the configured attestation cannot be used —
+  // a request a wallet must refuse is worse than none.
+  // ---------------------------------------------------------------------------
+  signedClientId(req: any): { clientId: string; header: any;
+                               kidDid: string } {
+    const { log, config, baseUrlOf, stsDid } = this.deps;
+    log.debug("Entering VcVerifier.signedClientId().");
+    const prefix = String(config.value('oid4vp.clientIdPrefix') ||
+                          'pre-registered');
+    if (prefix === 'decentralized_identifier') {
+      const did = stsDid(req);
+      log.debug("Leaving VcVerifier.signedClientId(). A DID.");
+      return { clientId: 'decentralized_identifier:' + did, header: {},
+               kidDid: did };
+    }
+    if (prefix === 'verifier_attestation') {
+      const attestation = this.verifierAttestation(req);
+      log.debug("Leaving VcVerifier.signedClientId(). An attestation.");
+      return { clientId: 'verifier_attestation:' + attestation.sub,
+               header: { jwt: attestation.jwt }, kidDid: '' };
+    }
+    if (prefix === 'openid_federation') {
+      log.debug("Leaving VcVerifier.signedClientId(). A federation entity.");
+      return { clientId: 'openid_federation:' + baseUrlOf(req), header: {},
+               kidDid: '' };
+    }
+    log.debug("Leaving VcVerifier.signedClientId(). Pre-registered.");
+    return { clientId: this.vpClientId(), header: {}, kidDid: '' };
+  }
+
+  // The public JWK of the key signJwt() signs a request object with (the
+  // realm's RS256 key), for an attestation's `cnf`.
+  private requestSigningJwk(): any {
+    const { log, STS, publishedKidFor } = this.deps;
+    log.debug("Entering VcVerifier.requestSigningJwk().");
+    const jwk: any = crypto.createPublicKey(STS.privateKey)
+      .export({ format: 'jwk' });
+    log.debug("Leaving VcVerifier.requestSigningJwk().");
+    // The `kid` the signed header carries (`keys.kidFormat`), so a wallet
+    // finds the key by it.
+    return { kty: jwk.kty, n: jwk.n, e: jwk.e, use: 'sig', alg: 'RS256',
+             kid: publishedKidFor(STS.kid) };
+  }
+
+  // THIS REALM AS AN OPENID FEDERATION ENTITY: its Entity Configuration, a
+  // JWT of type entity-statement+jwt (OpenID Federation 1.0 section 3).
+  entityConfiguration(req: any): string {
+    const { log, config, signJwt, nowSec, baseUrlOf, siop } = this.deps;
+    log.debug("Entering VcVerifier.entityConfiguration().");
+    const entity = baseUrlOf(req);
+    const key = this.requestSigningJwk();
+    const now = nowSec();
+    const hints = (config.value('oid4vp.federationAuthorityHints') || [])
+      .map(function (one: unknown) {
+        return String(one).trim();
+      }).filter(Boolean);
+    const payload: Record<string, any> = {
+      iss: entity, sub: entity, iat: now, exp: now + 86400,
+      jwks: { keys: [key] },
+      metadata: {
+        openid_credential_verifier: Object.assign({
+          client_name: 'OpenID4VP Verifier',
+          jwks: { keys: [key] },
+          response_uris: [entity + '/oid4vp/response'],
+          redirect_uris: [entity + '/oid4vp/response'],
+          vp_formats_supported: this.vpFormatsSupported()
+        }, siop.clientMetadata())
+      }
+    };
+    if (hints.length) {
+      payload.authority_hints = hints;
+    }
+    const jwt = signJwt(payload, null,
+                        { header: { typ: 'entity-statement+jwt' } });
+    log.debug("Leaving VcVerifier.entityConfiguration().");
+    return jwt;
+  }
+
+  // THE VERIFIER ATTESTATION (OpenID4VP section 12): `{ jwt, sub }`.
+  verifierAttestation(req: any): { jwt: string; sub: string } {
+    const { log, config, signJwt, nowSec, baseUrlOf, stsCrypto,
+            errorCodes } = this.deps;
+    log.debug("Entering VcVerifier.verifierAttestation().");
+    const ours = this.requestSigningJwk();
+    const configured = String(config.value('oid4vp.verifierAttestation') ||
+                              '').trim();
+    if (configured) {
+      let header: any = null;
+      let claims: any = null;
+      try {
+        const parts = configured.split('.');
+        header = JSON.parse(Buffer.from(parts[0], 'base64url')
+          .toString('utf8'));
+        claims = JSON.parse(Buffer.from(parts[1], 'base64url')
+          .toString('utf8'));
+      } catch (e) {
+        log.debug("Caught in VcVerifier.verifierAttestation(): " +
+                  ((e && e.message) || e));
+      }
+      const cnf = claims && claims.cnf && claims.cnf.jwk;
+      let problem = '';
+      if (!header || !claims) {
+        problem = 'it is not a readable JWT';
+      } else if (header.typ !== 'verifier-attestation+jwt') {
+        problem = 'its typ is "' + header.typ + '", not ' +
+                  'verifier-attestation+jwt';
+      } else if (typeof claims.sub !== 'string' || !claims.sub) {
+        problem = 'it names no sub';
+      } else if (!(Number(claims.exp) > nowSec())) {
+        problem = 'it has expired';
+      } else if (!cnf || stsCrypto.jwkThumbprint(cnf) !==
+                 stsCrypto.jwkThumbprint(ours)) {
+        problem = 'its cnf is not this realm\'s request-signing key';
+      }
+      if (problem) {
+        log.error(errorCodes.tag('STS-VC-0092') + 'oid4vp: ' +
+                  'oid4vp.verifierAttestation cannot be used — ' + problem +
+                  '; no signed request is built until it is replaced.');
+        const refused: any = new Error('oid4vp.verifierAttestation cannot ' +
+                                       'be used: ' + problem + '.');
+        refused.code = 'STS-VC-0092';
+        log.debug("Leaving VcVerifier.verifierAttestation(). Unusable.");
+        throw refused;
+      }
+      log.debug("Leaving VcVerifier.verifierAttestation(). Configured.");
+      return { jwt: configured, sub: claims.sub };
+    }
+    // SELF-ATTESTED: this realm vouches for its own key. A wallet that does
+    // not already trust this realm has no reason to believe it, which the
+    // setting's description says; it is what makes the prefix testable.
+    const sub = String(this.vpClientId());
+    const now = nowSec();
+    const jwt = signJwt({ iss: baseUrlOf(req), sub: sub, iat: now,
+                          exp: now + 3600, cnf: { jwk: ours } }, null,
+                        { header: { typ: 'verifier-attestation+jwt' } });
+    log.debug("Leaving VcVerifier.verifierAttestation(). Self-attested.");
+    return { jwt: jwt, sub: sub };
+  }
+
   buildVpRequest(req: any, opts: { byReference?: boolean; format?: string;
-                                   signIn?: any }) {
+                                   signIn?: any; responseType?: string;
+                                   responseMode?: string }) {
     const { log, logArtifact, baseUrlOf, nowSec, randomId, signJwt, vpConfig,
             stsCrypto, vpTransactions, vpRequests } = this.deps;
     log.debug("Entering VcVerifier.buildVpRequest(). byReference=" +
@@ -838,32 +1019,61 @@ class VcVerifier {
     const id = randomId(16);
     const nonce = randomId(18);
     const state = randomId(18);
-    const clientId = byReference ? this.vpClientId() :
+    // SIOPv2 (#129): `id_token` asks for a self-issued ID Token alone,
+    // `vp_token id_token` for one beside a presentation, whose holder it must
+    // be. `form_post` sends the answer through the browser to a
+    // `redirect_uri` where `direct_post` has the wallet POST it to a
+    // `response_uri`; the handler is the same either way. A sign-in is always
+    // `direct_post`: its binding cookie is SameSite=Lax, which a form posted
+    // from the wallet's page would not carry.
+    const responseType = String(opts.responseType || 'vp_token');
+    const selfIssued = responseType.split(' ').indexOf('id_token') >= 0;
+    const wantsVp = responseType.split(' ').indexOf('vp_token') >= 0;
+    const responseMode = !signIn && opts.responseMode === 'form_post'
+      ? 'form_post' : 'direct_post';
+    const signed = byReference ? this.signedClientId(req) : null;
+    const clientId = signed ? signed.clientId :
                      ('redirect_uri:' + responseUri);
     const ttlMs = signIn && signIn.ttlMs > 0 ? Number(signIn.ttlMs) :
                   this.vpTtlMs();
-    const formats = signIn ? this.signInFormats(signIn.formats) : [];
-    const request = {
+    const formats = signIn && wantsVp ? this.signInFormats(signIn.formats) :
+                    [];
+    const request: Record<string, any> = {
       client_id: clientId,
-      response_type: 'vp_token',
-      response_mode: 'direct_post',
-      response_uri: responseUri,
+      response_type: responseType,
+      response_mode: responseMode,
       nonce: nonce,
       state: state,
-      dcql_query: signIn ? this.signInDcqlQuery(formats, base) :
-                  this.vpDcqlQuery(opts.format),
       client_metadata: {
         client_name: signIn ? 'Sign-in with a wallet' :
-                     'Mock Verifier (bar door)',
-        // All three formats are advertised whichever one this request asks for:
-        // this is what the Verifier CAN accept, not what it wants this time —
-        // the DCQL query is what says that.
-        vp_formats_supported: this.vpFormatsSupported()
+                     'Mock Verifier (bar door)'
       }
     };
+    if (responseMode === 'form_post') {
+      request.redirect_uri = responseUri;
+    } else {
+      request.response_uri = responseUri;
+    }
+    if (wantsVp) {
+      request.dcql_query = signIn ? this.signInDcqlQuery(formats, base) :
+                           this.vpDcqlQuery(opts.format);
+      // All three formats are advertised whichever one this request asks
+      // for: this is what the Verifier CAN accept, not what it wants this
+      // time — the DCQL query is what says that.
+      request.client_metadata.vp_formats_supported =
+        this.vpFormatsSupported();
+    }
+    if (selfIssued) {
+      // SIOPv2 section 9: the request is an OpenID Connect one, and section
+      // 8 is what it says about the subjects and algorithms it accepts.
+      request.scope = 'openid';
+      Object.assign(request.client_metadata,
+                    this.deps.siop.clientMetadata());
+    }
     const record: Record<string, any> = {
       id: id, nonce: nonce, state: state, clientId: clientId,
-      responseMode: 'direct_post', request: request,
+      responseMode: responseMode, request: request,
+      responseType: responseType,
       byReference: byReference,
       // The claims asked for, FROZEN onto the transaction rather than read
       // again when the presentation arrives. That is not tidiness: the list is
@@ -871,12 +1081,13 @@ class VcVerifier {
       // flight, and a verifier that judged what came back against a list
       // changed after the request was sent would refuse a wallet for answering
       // the question it was actually asked.
-      requested: signIn ? [] : vpConfig.requestedClaims(),
+      requested: signIn || !wantsVp ? [] : vpConfig.requestedClaims(),
       // Which format this Verifier asked for. The response is verified against
       // THIS, not against whatever shape happens to turn up, so a wallet that
       // answers a jwt_vc_json query with an SD-JWT is refused rather than
       // quietly accepted by the other code path.
-      format: signIn ? formats[0] : vpConfig.formatOf(opts.format),
+      format: !wantsVp ? '' :
+              signIn ? formats[0] : vpConfig.formatOf(opts.format),
       // The `vct` a presented SD-JWT VC must carry, frozen for the same
       // reason as the claims. Only a sign-in pins it; the bar door reads
       // `oid4vp.expectedVct` when the answer arrives, as it always did.
@@ -926,12 +1137,16 @@ class VcVerifier {
       record.requestObject = signJwt(
         Object.assign({ typ: 'oauth-authz-req+jwt' }, payload), null,
         { certificateHeader: 'vp-request-object',
-          header: { typ: 'oauth-authz-req+jwt' } });
+          header: Object.assign({ typ: 'oauth-authz-req+jwt' },
+                                signed.header),
+          kidDid: signed.kidDid || undefined });
       logArtifact('OID4VP Request Object', 'after signing',
                   record.requestObject);
       vpRequests.set(id, state);
     }
-    if (signIn && signIn.dcApiOrigin) {
+    // The Digital Credentials API carries OpenID4VP only: a self-issued
+    // request is answered by link or QR code.
+    if (signIn && signIn.dcApiOrigin && !selfIssued) {
       record.signIn.dcApi = this.dcApiRequest(record, String(
         signIn.dcApiOrigin), String(signIn.dcApiResponseMode || ''));
     }
@@ -1133,20 +1348,24 @@ class VcVerifier {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcVerifier.vpRequestQuery().");
     const base = baseUrlOf(req);
-    const params = record.byReference
-      ? { client_id: record.clientId,
-          request_uri: base + '/oid4vp/request/' + record.id,
-          request_uri_method: 'get' }
-      : {
-          client_id: record.clientId,
-          response_type: record.request.response_type,
-          response_mode: record.request.response_mode,
-          response_uri: record.request.response_uri,
-          nonce: record.nonce,
-          state: record.state,
-          dcql_query: JSON.stringify(record.request.dcql_query),
-          client_metadata: JSON.stringify(record.request.client_metadata)
-        };
+    // By value, every member the request holds — the SIOPv2 ones (#129:
+    // `scope`, a `redirect_uri` for form_post, no `dcql_query` for an ID
+    // Token alone) included — objects as JSON.
+    const params: Record<string, string> = {};
+    if (record.byReference) {
+      params.client_id = record.clientId;
+      params.request_uri = base + '/oid4vp/request/' + record.id;
+      params.request_uri_method = 'get';
+    } else {
+      ['client_id', 'response_type', 'response_mode', 'response_uri',
+       'redirect_uri', 'scope', 'nonce', 'state', 'dcql_query',
+       'client_metadata'].forEach(function (k) {
+        const v = record.request[k];
+        if (v !== undefined) {
+          params[k] = typeof v === 'string' ? v : JSON.stringify(v);
+        }
+      });
+    }
     const query = Object.keys(params)
       .map((k) => {
         return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
@@ -2136,8 +2355,9 @@ class VcVerifier {
       return base + '/oid4vp/done?state=' + encodeURIComponent(record.state);
     }
     log.debug("Leaving VcVerifier.afterResponseUri(). A sign-in.");
-    return base + record.signIn.completePath +
-      '?authn=' + encodeURIComponent(record.signIn.authnId) +
+    const path = String(record.signIn.completePath);
+    return base + path + (path.indexOf('?') >= 0 ? '&' : '?') +
+      'authn=' + encodeURIComponent(record.signIn.authnId) +
       '&state=' + encodeURIComponent(record.state) +
       (responseCode ? '&response_code=' + encodeURIComponent(responseCode) :
                       '');
@@ -2760,6 +2980,133 @@ class VcVerifier {
     return outcome;
   }
 
+  // ---------------------------------------------------------------------------
+  // A SELF-ISSUED ANSWER (SIOPv2, #129), at the Response URI (`direct_post`)
+  // or the Redirect URI (`form_post`) — one handler, because the body is the
+  // same form either way; only the reply differs (JSON for the wallet, a 303
+  // for the browser).
+  //
+  //   * the ID Token is checked by `siop.ts` (section 11.1) against this
+  //     request's Client Identifier and nonce;
+  //   * with `vp_token id_token`, the presentation is verified as any other,
+  //     and the ID Token's subject must be the HOLDER the presentation's key
+  //     binding proved — otherwise the two answer for two different people;
+  //   * for a sign-in, who is signed in: the credential's person when a
+  //     presentation came with it (and the holder matched), the enrolled
+  //     subject's person when the ID Token came alone.
+  // ---------------------------------------------------------------------------
+  private async answerSelfIssued(req: any, res: any, record: any,
+                                 body: any): Promise<void> {
+    const { log, errorCodes, siop, vpTransactions, stats,
+            logArtifact } = this.deps;
+    log.debug("Entering VcVerifier.answerSelfIssued().");
+    const types = String(record.responseType).split(' ');
+    const withVp = types.indexOf('vp_token') >= 0;
+    const idv = await siop.verifyIdToken(body.id_token,
+      { clientId: record.clientId, nonce: record.nonce });
+    let answer: any = null;
+    let checks = idv.checks.slice(0);
+    let ok = idv.ok;
+    if (withVp) {
+      answer = await this.verifyAnswer(record, body.vp_token,
+                                       { aud: record.clientId });
+      if (!answer.shapeOk) {
+        checks.push({ name: 'vp_token', ok: false, detail: answer.why });
+        ok = false;
+      } else {
+        checks = checks.concat(answer.verified.checks);
+        const same = idv.ok && answer.verified.ok &&
+          siop.sameHolder(idv.jwk, answer.verified.holderJwk);
+        checks.push({ name: 'id_token subject is the holder', ok: same,
+                      detail: same ? idv.subject
+                        : 'the ID Token and the presentation were signed ' +
+                          'by different keys' });
+        ok = ok && answer.verified.ok && same;
+      }
+    }
+    record.verdict = {
+      ok: ok, at: new Date().toISOString(), checks: checks,
+      selfIssued: { subject: idv.subject, claims: idv.claims },
+      claims: answer && answer.shapeOk ? answer.verified.claims : {},
+      requested: record.requested || [],
+      sub: idv.subject,
+      format: answer && answer.shapeOk ? answer.format : 'siopv2'
+    };
+    let responseCode = '';
+    if (record.signIn) {
+      let outcome: any;
+      if (withVp) {
+        outcome = ok ? this.signInOutcome(answer.verified, answer) :
+          { ok: false, errorCode: 'STS-VC-0090', username: '', subject: '',
+            reason: 'The self-issued ID Token and the presentation did not ' +
+                    'both verify for one holder, so nobody was signed in.' };
+      } else if (record.signIn.enrol && idv.ok) {
+        // AN ENROLMENT (#129): the key is proved, and the person it is for
+        // is the one the transaction was started by; whether it may be
+        // enrolled (nobody else's, not too many) is `siop.enrol()`'s, asked
+        // when the browser collects this.
+        outcome = { ok: true, errorCode: '', reason: '',
+                    username: String(record.signIn.enrol.username),
+                    subject: idv.subject, enrol: true };
+      } else {
+        outcome = siop.signInOutcome(idv);
+      }
+      record.signIn.outcome = outcome;
+      record.signIn.via = record.responseMode;
+      if (outcome.ok) {
+        responseCode = this.deps.randomId(24);
+        record.signIn.responseCodeHash = crypto.createHash('sha256')
+          .update(responseCode, 'utf8').digest('base64url');
+      } else if (idv.ok) {
+        log.info(errorCodes.tag(outcome.errorCode) + 'oid4vp: a ' +
+                 'self-issued ID Token verified and signs nobody in: ' +
+                 outcome.reason);
+      }
+    }
+    vpTransactions.set(String(record.state), record);
+    logArtifact('SIOPv2 verification result', ok ? 'accepted' : 'REFUSED',
+                record.verdict);
+    const signsIn = !!(record.signIn && record.signIn.outcome &&
+                       record.signIn.outcome.ok);
+    if (ok && !signsIn && idv.subject) {
+      // The bar door's rule (see the response endpoint): an identity that
+      // got somewhere is recorded; a sign-in is recorded by its session.
+      stats.recordAuthentication({
+        presented: idv.subject, protocol: 'SIOPv2',
+        method: 'self-issued ID Token (' + record.responseType + ')',
+        client_id: record.clientId || '',
+        applicationKind: 'oid4vp-verifier',
+        note: 'A self-issued ID Token that verified. It started no session.'
+      });
+    }
+    const next = this.afterResponseUri(req, record, responseCode);
+    if (record.responseMode === 'form_post') {
+      if (!ok) {
+        errorCodes.mark(res, 'STS-VC-0090');
+      }
+      res.redirect(303, next);
+      log.debug("Leaving VcVerifier.answerSelfIssued(). form_post, ok=" + ok);
+      return;
+    }
+    if (!ok) {
+      errorCodes.mark(res, 'STS-VC-0090');
+      res.status(400).type('application/json').send(JSON.stringify({
+        error: 'invalid_request',
+        error_description: 'The self-issued answer was refused: ' +
+          checks.filter(function (c: any) {
+            return !c.ok;
+          }).map(function (c: any) {
+            return c.name + ' — ' + c.detail;
+          }).join(' | ')
+      }));
+      log.debug("Leaving VcVerifier.answerSelfIssued(). Refused.");
+      return;
+    }
+    res.status(200).type('application/json').send(JSON.stringify({
+      redirect_uri: next }));
+    log.debug("Leaving VcVerifier.answerSelfIssued(). Accepted.");
+  }
+
   // The transaction a state names, or null. An expired one is removed on the
   // way past. For `vc_signin.ts`, which must not read the store directly: a
   // second reader of a persisted store is a second place to forget the
@@ -3009,9 +3356,24 @@ class VcVerifier {
       // default starts as, so a link that worked before this page existed asks
       // for what it always did.
       const format = vpConfig.formatOf(String(req.query.format || ''));
-      const record = this.buildVpRequest(req,
-                                    { byReference: byReference,
-                                     format: format });
+      let record: any = null;
+      try {
+        record = this.buildVpRequest(req,
+                                     { byReference: byReference,
+                                       format: format,
+                                       responseType: String(
+                                         req.query.response_type || ''),
+                                       responseMode: String(
+                                         req.query.response_mode || '') });
+      } catch (e) {
+        // The one thing that stops a request being built: a configured
+        // Verifier Attestation this realm cannot use (it is logged there).
+        log.debug("Caught in the presentation start endpoint: " +
+                  ((e && e.message) || e));
+        errorCodes.mark(res, (e && e.code) || 'STS-VC-0092');
+        return res.status(500).type('text/plain').send(
+          ((e && e.message) || String(e)) + '\n');
+      }
       const query = this.vpRequestQuery(req, record);
       const walletChoice = this.vpWalletFor(req);
       if (walletChoice.error) {
@@ -3035,7 +3397,10 @@ class VcVerifier {
       // scan, as the openid4vp URI a wallet registers for.
       this.renderVpQrPage(res, {
         base: baseUrlOf(req),
-        requestUri: 'openid4vp://?' + query,
+        // SIOPv2 section 7.2's static `siopv2:` for an ID Token alone; the
+        // OpenID4VP scheme whenever a presentation is asked for.
+        requestUri: (record.responseType === 'id_token' ? 'siopv2://?' :
+                     'openid4vp://?') + query,
         walletUrl: wallet + '?' + query,
         record: record
       });
@@ -3126,6 +3491,14 @@ class VcVerifier {
         return;
       }
 
+      // A SELF-ISSUED ID TOKEN (SIOPv2, #129) — alone, or beside a
+      // presentation — is answered by its own method.
+      if (String(record.responseType || '').split(' ')
+            .indexOf('id_token') >= 0) {
+        await this.answerSelfIssued(req, res, record, body);
+        log.debug("Leaving the OID4VP response endpoint. Self-issued.");
+        return;
+      }
       // vp_token is a JSON object keyed by the DCQL credential query id, each
       // value an array of presentations (section 8.1). Read, verified in the
       // format its query asked for — so answering a jwt_vc_json query with an
@@ -3272,6 +3645,25 @@ class VcVerifier {
       log.debug("Leaving the OID4VP response endpoint. Accepted.");
     });
 
+    // THE ENTITY CONFIGURATION (OpenID Federation 1.0 section 9, #129): what
+    // a wallet resolves when a signed request's Client Identifier is
+    // `openid_federation:<this realm's base URL>`. Self-signed with the key
+    // the request objects are signed with, which is also this entity's
+    // federation key; its one entity type is `openid_credential_verifier`
+    // (OpenID4VP section 11.2), and `authority_hints` are the operator's
+    // (`oid4vp.federationAuthorityHints`). It lives with the Verifier while
+    // the Verifier is the only role this entity plays in a federation; the
+    // OpenID Federation tickets (#132-#137) move it to a module of its own
+    // when another role joins it. no-store, as every document describing a
+    // key is (root CLAUDE.md).
+    app.get('/.well-known/openid-federation', (req, res) => {
+      log.debug("Entering the entity configuration endpoint.");
+      res.set('Cache-Control', 'no-store');
+      res.status(200).type('application/entity-statement+jwt')
+         .send(this.entityConfiguration(req));
+      log.debug("Leaving the entity configuration endpoint.");
+    });
+
     // Not in the spec: the verdict, so the wallet's own page (and the test
     // suite) can show what this Verifier decided and why. A real Verifier tells
     // the End-User in its own UI; this makes the same information
@@ -3375,6 +3767,10 @@ export = {
   // For tests/revocation_status.js, which asks it about a revoked certificate.
   issuerCertificateRevocation: slot.forward('issuerCertificateRevocation'),
   buildVpRequest: slot.forward('buildVpRequest'),
+  // SIOPv2 and the Client Identifier prefixes (#129).
+  signedClientId: slot.forward('signedClientId'),
+  verifierAttestation: slot.forward('verifierAttestation'),
+  entityConfiguration: slot.forward('entityConfiguration'),
   vpDcqlQuery: slot.forward('vpDcqlQuery'),
   // THE SIGN-IN'S HALF (2026-09-17, #38), for `vc_signin.ts` and its test:
   // the request a sign-in asks with, how a wallet is handed it, whom a

@@ -3119,6 +3119,33 @@ class AdminApi {
           log.debug("Leaving the management API app-passwords endpoint.");
         } },
 
+      // SELF-ISSUED SUBJECTS, ONE PERSON'S (#129). The list the Self-issued
+      // IDs block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/self-issued-subjects',
+        tag: 'Users', operationId: 'getUserSelfIssuedSubjects',
+        summary: 'The self-issued (SIOPv2) subjects enrolled for one person',
+        description: 'Each DID or RFC 9278 JWK thumbprint URI enrolled for ' +
+                     'the person, with its label, when and by whom — every ' +
+                     'one a key whose self-issued ID Token signs them in. ' +
+                     'Beside them, whether signing in that way is on ' +
+                     '(`oid4vp.signInSelfIssued`), how many a person may ' +
+                     'hold, and the subject syntaxes accepted.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ],
+        responseDescription: 'The subjects enrolled.',
+        handler: function (req, res) {
+          log.debug("Entering the management API self-issued subjects " +
+                    "endpoint.");
+          self.sendJson(res, 200,
+                        adminViews.selfIssuedSubjectsJson(req.query));
+          log.debug("Leaving the management API self-issued subjects " +
+                    "endpoint.");
+        } },
+
       // IDENTITY VERIFICATIONS, ONE PERSON'S, PAGED (#127). The list the
       // Identity verifications block on /admin/users draws.
       { method: 'GET', path: BASE + '/users/verifications', tag: 'Users',
@@ -3898,6 +3925,69 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The delegate as it now stands.' },
+
+          { action: 'enrol-self-issued-subject',
+            operationId: 'enrolUserSelfIssuedSubject',
+            summary: 'Enrol a self-issued (SIOPv2) subject for somebody',
+            description: 'Enrols a did:jwk, did:key or did:web, an RFC 9278 ' +
+                         'JWK thumbprint URI, a base64url SHA-256 JWK ' +
+                         'thumbprint or a public JWK (as JSON) on the ' +
+                         'person\'s entry. A self-issued ID Token signed by ' +
+                         'that key then signs them in, while ' +
+                         'oid4vp.signInSelfIssued is on. Refused where the ' +
+                         'subject is already enrolled for anybody in the ' +
+                         'realm. A person enrols their own on ' +
+                         '/portal/self-issued by proving the key with their ' +
+                         'wallet.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                subject: { type: 'string',
+                           description: 'The DID, thumbprint or JWK.' },
+                label: { type: 'string',
+                         description: 'A name for it, at most 64 ' +
+                                      'characters.' }
+              },
+              required: ['user', 'subject'],
+              examples: [{ user: 'alice',
+                           subject: 'did:jwk:eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI' +
+                                    '1NTE5IiwieCI6IjEyMyJ9',
+                           label: 'phone wallet' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The subject as enrolled.' },
+
+          { action: 'remove-self-issued-subject',
+            operationId: 'removeUserSelfIssuedSubject',
+            summary: 'Remove one of somebody\'s self-issued subjects',
+            description: 'Takes the subject off the person\'s entry; its ' +
+                         'self-issued ID Token signs nobody in afterwards.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                subject: { type: 'string',
+                           description: 'The subject, as listed.' }
+              },
+              required: ['user', 'subject'],
+              examples: [{ user: 'alice',
+                           subject: 'urn:ietf:params:oauth:jwk-thumbprint:' +
+                                    'sha-256:NzbLsXh8uDCcd-6MNwXF4W_7noWXFZ' +
+                                    'AfHkxZsRGC9Xs' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was removed.' },
 
           { action: 'record-verification',
             operationId: 'recordUserVerification',

@@ -2443,7 +2443,48 @@ const SPECS: Spec[] = [
               'it was issued for; anything else verifies and signs nobody ' +
               'in. No presentation_definition (DIF PE) — DCQL only; no ' +
               'unsigned or multi-signed DC API request; no mso_mdoc; no ' +
-              'wallet attestation; no transaction_data.' },
+              'wallet attestation; no transaction_data. SINCE #129 a signed ' +
+              'request names its Client Identifier by the prefix ' +
+              'oid4vp.clientIdPrefix chooses (section 5.9): pre-registered, ' +
+              'decentralized_identifier (the realm\'s did:web, a DID URL ' +
+              'kid), verifier_attestation (a Verifier Attestation JWT in the ' +
+              '`jwt` header, configured or self-attested), or ' +
+              'openid_federation (the realm\'s Entity Configuration); an ' +
+              'unsigned one uses redirect_uri. x509_san_dns, x509_hash and ' +
+              'origin are not offered.' },
+  { id: 'siopv2', name: 'Self-Issued OpenID Provider v2',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-self-issued-v2-1_0.html',
+    coverage: 'partial (#129, 2026-09-23): the RELYING PARTY only — this ' +
+              'service holds no wallet and is never the Self-Issued OP. ' +
+              'Requests with response_type id_token or vp_token id_token ' +
+              'and scope openid, by value or signed by reference, with the ' +
+              'section 8 client_metadata (subject_syntax_types_supported: ' +
+              'the JWK Thumbprint syntax, did:jwk, did:key, did:web) and ' +
+              'the static siopv2: scheme; responses by direct_post or ' +
+              'form_post. Section 11.1 validation: iss equals sub, a ' +
+              'thumbprint subject against sub_jwk, a DID subject\'s kid ' +
+              'among its authentication methods (did:web fetched only when ' +
+              'enrolled), the signature, aud, nonce, exp and iat; a combined ' +
+              'response must be signed by the presentation\'s holder. A ' +
+              'verified token signs in only the person who ENROLLED its ' +
+              'subject (/portal/self-issued, by proving the key; ' +
+              '/admin/users by value), in both modes. MISSING: the ' +
+              'fragment response mode (it would need a script on a page ' +
+              'here; a Verifier chooses its response mode), dynamic ' +
+              'discovery of a Self-Issued OP\'s metadata (the static ' +
+              'configuration is assumed), and the Self-Issued OP role.' },
+  { id: 'openid-federation', name: 'OpenID Federation 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-federation-1_0.html',
+    coverage: 'partial (#129, 2026-09-23): the realm\'s own Entity ' +
+              'Configuration at /.well-known/openid-federation, self-signed, ' +
+              'with the openid_credential_verifier entity type and the ' +
+              'operator\'s authority_hints — enough for a wallet to ' +
+              'resolve an openid_federation: Client Identifier. MISSING: ' +
+              'subordinate statements, trust chain resolution, trust marks, ' +
+              'the fetch, list and resolve endpoints, and every other ' +
+              'entity type (#132-#137).' },
   { id: 'sd-jwt', name: 'RFC 9901 — Selective Disclosure for JWTs (SD-JWT)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9901',
     coverage: 'full for issuance and verification: _sd digests with a decoy, ' +
@@ -5212,6 +5253,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'that party, and a token exchange of one by anybody else is ' +
           'refused invalid_request in every mode. The identity is the ' +
           'session\'s; the form names only the delegate.' },
+  { path: '/portal/self-issued', group: 'User portal',
+    name: 'Your self-issued IDs — the SIOPv2 keys that sign you in',
+    specs: ['siopv2'],
+    effect: 'lists and removes the signed-in person\'s enrolled self-issued ' +
+            'subjects; "Enrol a wallet" starts a SIOPv2 request at ' +
+            '/authn/wallet?siop=1&enrol=1',
+    what: 'NON-SPEC page (#129). A person enrols a wallet key by PROVING ' +
+          'it — their wallet answers a SIOPv2 request from the session ' +
+          'they already hold, and the verified subject is enrolled for ' +
+          'them — never by typing a DID. The identity is the session\'s; ' +
+          'the removal form names only the subject.' },
   { path: '/portal/app-passwords', group: 'User portal',
     name: 'Your app passwords, for the doors that take only a password',
     specs: ['rfc4513', 'rfc7617', 'rfc7030'],
@@ -7126,6 +7178,15 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin-api/users/create-app-password makes one, returned once; ' +
           '/admin-api/users/revoke-app-password takes one away. Mirrors the ' +
           'App passwords block on the person\'s /admin/users page.' },
+  { path: '/admin-api/users/self-issued-subjects', group: 'Management API',
+    name: 'One person\'s self-issued (SIOPv2) subjects', specs: ['siopv2'],
+    what: 'NON-SPEC (#129). The DIDs and JWK thumbprints enrolled for a ' +
+          'person, each with its label and who enrolled it, beside whether ' +
+          'oid4vp.signInSelfIssued is on. POST ' +
+          '/admin-api/users/enrol-self-issued-subject enrols one by value; ' +
+          '/admin-api/users/remove-self-issued-subject takes one away. ' +
+          'Mirrors the Self-issued IDs block on the person\'s /admin/users ' +
+          'page.' },
   { path: '/admin-api/users/verifications', group: 'Management API',
     name: 'One person\'s identity verifications', specs: ['oidc-ida'],
     what: 'NON-SPEC (#127). The identity verifications recorded for a ' +
@@ -8915,7 +8976,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'and it then answers 403 saying so rather than 404.' },
   { path: '/authn/wallet', group: 'Authentication',
     name: 'Sign in with a wallet',
-    specs: ['oid4vp', 'dc-api', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'oidc'],
+    specs: ['oid4vp', 'dc-api', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'oidc',
+            'siopv2'],
     effect: 'builds an OpenID4VP request bound to the pending sign-in (or to ' +
             'a second-factor step), sets the browser-binding cookie and ' +
             'redirects to the wait page',
@@ -9688,8 +9750,10 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Response ' +
       'URI',
     specs: ['oid4vp', 'sd-jwt', 'sd-jwt-vc', 'di-bbs', 'rdf-c14n', 'vcdm',
-             'di-jcs'],
-    what: 'Where the wallet POSTs the vp_token, and where it is really ' +
+             'di-jcs', 'siopv2'],
+    what: 'Where the wallet POSTs the vp_token — and, for a SIOPv2 request ' +
+          '(#129), the self-issued id_token, by direct_post or through the ' +
+          'browser by form_post — and where it is really ' +
           'verified: issuer signature (post-quantum included), every ' +
           'Disclosure digest against _sd, the Key Binding JWT including ' +
           'sd_hash — or the VP JWT, or the Data Integrity holder proof — ' +
@@ -9703,6 +9767,15 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Verification verdict (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
           'verdict for a presentation.' },
+  { path: '/.well-known/openid-federation',
+    group: 'VC Presentation (OID4VP)',
+    name: 'OpenID Federation Entity Configuration',
+    specs: ['openid-federation', 'oid4vp', 'siopv2'],
+    what: 'This realm as a federation entity (#129): a self-signed ' +
+          'entity-statement+jwt naming its key and its ' +
+          'openid_credential_verifier metadata, which a wallet resolves ' +
+          'when a signed request\'s Client Identifier is ' +
+          'openid_federation:<this realm\'s base URL>. no-store.' },
   { path: '/oid4vp/done', group: 'VC Presentation (OID4VP)',
     name: 'Presentation ' +
       'complete page',
@@ -10355,7 +10428,7 @@ const PROTOCOLS: Protocol[] = [
              'Decentralized Identifiers'],
     specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core',
             'token-status-list', 'bitstring-status-list', 'dc-api',
-            'di-jcs'],
+            'di-jcs', 'siopv2', 'openid-federation'],
     what: 'Both sides of it: an issuer (three credential formats, Credential ' +
           'Offers, pre-authorized codes, deferred and batch issuance, ' +
           'notifications, status lists, key attestations) and a verifier ' +

@@ -721,6 +721,11 @@ const JOBS = [
   // /admin-api. `local: true`: this repository's endpoint and API.
   { file: 'sts_spiffe_broker.js',        browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
+  // SIOPv2 AS THE RELYING PARTY (#129, 2026-09-23): the Entity
+  // Configuration, a key enrolled by an administrator and by proof, the
+  // self-issued sign-in and its refusals, and the Verifier's form_post.
+  // `local: true`: this repository's own door.
+  { file: 'sts_siop.js',                 browser: false, local: true },
   // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
   // foreign credential naming none refused unless its issuer is exempted by
   // certificate thumbprint or the rule is own-only, the ldp_vc query asking
