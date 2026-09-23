@@ -243,6 +243,8 @@ import introspectionJwt = require('./introspection_jwt');
 // token, and the registration endpoint asks it whether a client that
 // registered `id_token_encrypted_response_alg` gave a key to encrypt to.
 import idTokenEncryption = require('./id_token_encryption');
+// JARM (#139, #143): the JWT-secured authorization response.
+import jarm = require('./jarm');
 // OIDC Core section 8's pairwise subjects (#118). A LIBRARY that requires
 // nothing here back.
 import pairwiseSubjects = require('./pairwise_subjects');
@@ -423,6 +425,7 @@ interface OAuth2ServerDeps {
   jwtAccessToken: typeof jwtAccessToken;
   introspectionJwt: typeof introspectionJwt;
   idTokenEncryption: typeof idTokenEncryption;
+  jarm: typeof jarm;
   pairwiseSubjects: typeof pairwiseSubjects;
   stepUp: typeof stepUp;
   requestObject: typeof requestObject;
@@ -1189,6 +1192,11 @@ const USERINFO_SIGNING_ALGS = USERINFO_RSA_ALGS
 // whole purpose is to be verified.
 const ID_TOKEN_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS;
 
+// The algorithms `helpers.signJwt()` signs with this realm's own RSA or curve
+// key in process (#139) — every other one is post-quantum (the pool) or HMAC
+// (the client's secret) and goes through `signJwtAsAsync()`.
+const OWN_SYNC_SIGNING = /^(RS|PS|ES)(256|384|512)$|^ES256K$|^EdDSA$/;
+
 // ---------------------------------------------------------------------------
 // TWO REDEMPTIONS OF ONE CODE AT ONCE (2026-09-14, #46).
 //
@@ -1462,6 +1470,7 @@ class OAuth2Server {
       jwtAccessToken: jwtAccessToken,
       introspectionJwt: introspectionJwt,
       idTokenEncryption: idTokenEncryption,
+      jarm: jarm,
       pairwiseSubjects: pairwiseSubjects,
       stepUp: stepUp,
       requestObject: requestObject,
@@ -1683,7 +1692,14 @@ class OAuth2Server {
       // response ending up in browser history, in the address bar and in the
       // Referer of whatever the landing page fetches, and a form POST puts it
       // in a request body where none of that happens.
-      response_modes_supported: ['query', 'fragment', 'form_post'],
+      // JARM's four (#139, #143) beside the three plain ones.
+      response_modes_supported: ['query', 'fragment', 'form_post']
+        .concat(jarm.MODES),
+      // JARM section 4: what a JWT-secured authorization response may be
+      // signed and encrypted with.
+      authorization_signing_alg_values_supported: jarm.SIGNING_ALGS,
+      authorization_encryption_alg_values_supported: jarm.ENCRYPTION_ALGS,
+      authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
       // Only what the token endpoint below actually implements — the metadata
       // should not promise a grant this server would refuse. (No device_code:
       // there is no device authorization endpoint to start that flow.)
@@ -1874,6 +1890,21 @@ class OAuth2Server {
     if (!config.value('oauth2.pushedAuthorizationRequests')) {
       delete metadata.pushed_authorization_request_endpoint;
     }
+    // RFC 8705 SECTION 5 (#139, FAPI 1.0 Advanced item 6): where the main port
+    // asks for a client certificate, every endpoint that reads one is its own
+    // mTLS alias — this service has no second listener for them, and
+    // publishing the same URLs is what the section permits. The OpenID
+    // Provider Configuration adds UserInfo's.
+    if (mtls.available()) {
+      const aliases: Json = {};
+      ['token_endpoint', 'revocation_endpoint', 'introspection_endpoint',
+       'pushed_authorization_request_endpoint'].forEach(function (name) {
+        if ((metadata as Json)[name]) {
+          aliases[name] = (metadata as Json)[name];
+        }
+      });
+      (metadata as Json).mtls_endpoint_aliases = aliases;
+    }
     // RFC 9700 mode, when it is on, narrows three of the members above:
     // response_types_supported loses everything that would issue an access
     // token from the authorization endpoint, grant_types_supported loses
@@ -1917,7 +1948,11 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.fapiReport().");
     const view = Object.assign({ authorization_server: this.profileOf(req),
                                  server_setting: this.fapiOf(
-                                   this.profileOf(req)) || null },
+                                   this.profileOf(req)) || null,
+                                 // What this server signs its access tokens
+                                 // with now (#139).
+                                 access_token_signing_alg:
+                                   this.accessTokenAlg(req) },
                                fapi.state());
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(view, null, 2));
@@ -1928,6 +1963,56 @@ class OAuth2Server {
   // A named authorization server's own FAPI profile (#138): the `fapi` member
   // of its profile, which is published in no document. '' when it has none,
   // and `none` when it opts out of its realm's.
+  // -------------------------------------------------------------------------
+  // THE ALGORITHM THIS SERVER SIGNS ITS ACCESS AND REFRESH TOKENS WITH (#139).
+  // A named authorization server's own `access_token_signing_alg` first, then
+  // `oauth2.accessTokenSigningAlg`, then the FAPI profile's default (PS256
+  // under Advanced), then RS256 — what it always was. Under FAPI 1.0 Advanced
+  // an algorithm section 8.6 does not allow is replaced by the profile's
+  // default rather than used: this is the server's own signature, and nothing
+  // a client did asked for it.
+  // -------------------------------------------------------------------------
+  accessTokenAlg(req?: Req): string {
+    const { log, config, fapi, authorizationServers } = this.deps;
+    log.debug("Entering OAuth2Server.accessTokenAlg().");
+    const profileId = req ? this.profileOf(req) : '';
+    const own = profileId && profileId !== authorizationServers.DEFAULT_ID
+      ? authorizationServers.capabilitiesOf(profileId, {}, 'server') : null;
+    const named = String((own && own.access_token_signing_alg) || '');
+    const set = String(config.value('oauth2.accessTokenSigningAlg') ||
+                       'default');
+    let alg = named || (set !== 'default' ? set : '') ||
+              fapi.defaultSigningAlg() || 'RS256';
+    if (!fapi.signingAlgAllowed(alg)) {
+      log.debug("OAuth2Server.accessTokenAlg(): " + alg + " is not allowed " +
+                "under the FAPI profile; " + fapi.defaultSigningAlg() +
+                " instead.");
+      alg = fapi.defaultSigningAlg();
+    }
+    log.debug("Leaving OAuth2Server.accessTokenAlg(). " + alg);
+    return alg;
+  }
+
+  // The `alg` of a compact JWS's protected header, or '' when it cannot be
+  // read. Read BEFORE verification, to refuse by algorithm.
+  headerAlgOf(jws: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.headerAlgOf().");
+    let alg = '';
+    try {
+      alg = String(JSON.parse(Buffer.from(String(jws).split('.')[0],
+                                          'base64url').toString('utf8'))
+        .alg || '');
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.headerAlgOf(): " +
+                ((e && e.message) || e));
+      // Unreadable: no algorithm, which no profile allows.
+      alg = '';
+    }
+    log.debug("Leaving OAuth2Server.headerAlgOf(). " + alg);
+    return alg;
+  }
+
   fapiOf(profileId: string): string {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering OAuth2Server.fapiOf().");
@@ -2347,7 +2432,8 @@ class OAuth2Server {
       // name (#118) — an ID Token carries those only for response_type
       // id_token, and the UserInfo endpoint for the scopes granted.
       claims_supported: ['iss', 'sub', 'aud', 'exp', 'iat', 'nbf', 'auth_time',
-                         'nonce', 'azp', 'jti', 'at_hash', 'c_hash', 'amr',
+                         'nonce', 'azp', 'jti', 'at_hash', 'c_hash',
+                         's_hash', 'amr',
                          'acr', 'sid'].concat(
                            USERINFO_SCOPE_CLAIMS.profile,
                            USERINFO_SCOPE_CLAIMS.email,
@@ -2436,6 +2522,26 @@ class OAuth2Server {
     // went on answering with its own would leave two documents from one process
     // disagreeing about who issued the tokens they describe.
     if (issuer && !config.value('oauth2.issuer')) metadata.issuer = issuer;
+    // FAPI, AGAIN (#139), for the profile's reason below: the merge above put
+    // back the OIDC members Advanced narrows — the ID Token and UserInfo
+    // algorithm lists — and UserInfo reads a client certificate too. Inside a
+    // named server's own profile, as asMetadata() builds it.
+    const ownFapi = self.fapiOf(self.profileOf(req));
+    const reapply = function (): void {
+      log.debug("Entering reapply().");
+      self.deps.fapi.applyToMetadata(metadata);
+      log.debug("Leaving reapply().");
+    };
+    if (ownFapi) {
+      self.deps.fapi.withProfile(ownFapi, reapply);
+    } else {
+      reapply();
+    }
+    if (metadata.mtls_endpoint_aliases && metadata.userinfo_endpoint) {
+      metadata.mtls_endpoint_aliases = Object.assign({},
+        metadata.mtls_endpoint_aliases,
+        { userinfo_endpoint: metadata.userinfo_endpoint });
+    }
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3094,7 +3200,8 @@ class OAuth2Server {
     // signJwt() also signs the refresh token, which is not an access token.
     const token = signJwt(payloadWithCustom, self.issuanceContext(opts),
                           { certificateHeader: 'access-token',
-                            header: jwtAccessToken.header() });
+                            header: jwtAccessToken.header(),
+                            algorithm: self.accessTokenAlg(opts.request) });
     log.debug("Leaving OAuth2Server.accessToken().");
     return token;
   }
@@ -3195,7 +3302,10 @@ class OAuth2Server {
     const token = refreshTokenCrypto.seal(signJwt(payload,
                                                   self.issuanceContext(opts),
                                                   { certificateHeader:
-                                                      'refresh-token' }));
+                                                      'refresh-token',
+                                                    algorithm:
+                                                      self.accessTokenAlg(
+                                                        opts.request) }));
     // RFC 9700 section 2.2.2. `parent_refresh_jti` is set only by the refresh
     // grant, so an empty one means this token is the root of its own family:
     // any grant minting its first refresh token. A no-op while rotation is not
@@ -3368,7 +3478,10 @@ class OAuth2Server {
     // 3.3.2.11), so it has to be known before they are. The refusal of an
     // unsupported one stays where it was, below.
     const registered = applications.registrationOf(opts.client_id) || {};
-    const idAlg = String(registered.id_token_signed_response_alg || 'RS256');
+    // PS256 under FAPI 1.0 Advanced when the client registered none (section
+    // 8.6, #139); RS256 otherwise, as Core section 3.1.3.7 says.
+    const idAlg = String(registered.id_token_signed_response_alg ||
+                         self.deps.fapi.defaultSigningAlg() || 'RS256');
     // -----------------------------------------------------------------------
     // WHAT THE PAYLOAD CARRIES, AND WHAT IT STOPPED CARRYING ON 2026-09-22
     // (#118).
@@ -3457,6 +3570,10 @@ class OAuth2Server {
       payload.at_hash = self.halfHash(opts.access_token, idAlg);
     }
     if (opts.code) payload.c_hash = self.halfHash(opts.code, idAlg);
+    if (opts.state !== undefined && opts.state !== null &&
+        String(opts.state) !== '') {
+      payload.s_hash = self.halfHash(String(opts.state), idAlg);
+    }
     // The ID Token's own custom claim set, separate from the access token's:
     // the two go to different readers (a client reads the ID Token, a resource
     // server reads the access token) and configuring them together would mean
@@ -3510,7 +3627,8 @@ class OAuth2Server {
     // Refused rather than downgraded, for the reason the UserInfo endpoint
     // refuses: a client that registered an algorithm and got RS256 has no way
     // to notice, and would verify against a key that was never going to match.
-    if (ID_TOKEN_SIGNING_ALGS.indexOf(idAlg) === -1) {
+    if (ID_TOKEN_SIGNING_ALGS.indexOf(idAlg) === -1 ||
+        !self.deps.fapi.signingAlgAllowed(idAlg)) {
       log.debug("Leaving OAuth2Server.idToken(). Unsupported " +
                 "id_token_signed_response_alg.");
       throw new Error('This client registered id_token_signed_response_alg="' +
@@ -3518,15 +3636,17 @@ class OAuth2Server {
         ID_TOKEN_SIGNING_ALGS.join(', ') +
         ' (see id_token_signing_alg_values_supported).');
     }
-    const token = idAlg === 'RS256'
+    const token = OWN_SYNC_SIGNING.test(idAlg)
       // The default keeps going through signJwt(), which is what records the
-      // token in the admin console's count — see the note on that function.
+      // token in the admin console's count — see the note on that function —
+      // and since #139 so does every RSA or curve algorithm it can sign with
+      // (PS256 is FAPI 1.0 Advanced's default).
       // The KIND goes with it (#118): an ID Token carries no `typ` claim for
       // the register to read it off, so the one place that knows says so.
       ? signJwt(payloadWithCustom,
                 Object.assign({}, self.issuanceContext(opts),
                               { kind: 'id_token' }),
-                { certificateHeader: 'id-token' })
+                { certificateHeader: 'id-token', algorithm: idAlg })
       // `session` is the pool's routing hint — this person's `sub`, so that one
       // session's signatures queue behind each other rather than across the
       // pool.
@@ -5694,6 +5814,11 @@ class OAuth2Server {
         auth_time: authTime,
         amr: amr, acr: acr, session_id: sessionId, grant: flow, set_id: setId,
         access_token: out.access_token, code: out.code,
+        // FAPI 1.0 Part 2 section 5.2.2.1 item 5 (#139): the ID Token from
+        // the authorization endpoint is a detached signature over the state
+        // too, when the client sent one. Added in every mode — a claim a
+        // relying party does not know is one it ignores.
+        state: query.state,
         claims: claimsRequest,
         // OIDC Core section 5.4: the scope-requested claims go in the ID
         // Token only when NO access token is issued — response_type=id_token
@@ -5912,6 +6037,12 @@ class OAuth2Server {
     // RFC 9207 on every response, in every mode: a form POST is still an
     // authorization response and a client that requires `iss` requires it here.
     fields.iss = base;
+    // JARM (#139, #143): every one of the fields above goes into ONE signed
+    // JWT, sent as `response` — `iss` becomes its claim.
+    if (self.deps.jarm.isJarm(mode)) {
+      log.debug("Leaving OAuth2Server.redirectBack(). A JARM response.");
+      return self.jarmRedirect(res, base, redirectUri, fields, String(mode));
+    }
     if (String(mode || '') === 'form_post') {
       log.debug("Leaving OAuth2Server.redirectBack(). Answering with a form " +
                 "POST.");
@@ -5922,6 +6053,62 @@ class OAuth2Server {
     const sep = fragment ? '#' : (redirectUri.indexOf('?') >= 0 ? '&' : '?');
     res.redirect(302, redirectUri + sep + usp.toString());
     log.debug("Leaving OAuth2Server.redirectBack().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE JWT-SECURED AUTHORIZATION RESPONSE (JARM, #139, #143), sent. The
+  // client and its response type are the request's, remembered on
+  // `res.locals.stsJarm` by `authorizeRequest()` before any answer; the JWT is
+  // `jarm.ts`'s. A response that cannot be made — a registration this service
+  // can no longer honour — is answered here as a 400 rather than sent
+  // unsecured: a client that asked for JARM reads nothing else.
+  // ---------------------------------------------------------------------------
+  jarmUrl(res: Res, issuer: Json, redirectUri: Json, fields: Json,
+          mode: string): Promise<Json> {
+    const { log, applications, jarm } = this.deps;
+    log.debug("Entering OAuth2Server.jarmUrl(). " + mode);
+    const held = (res.locals && res.locals.stsJarm) || {};
+    const clientId = String(held.clientId || '');
+    const registered = applications.registrationOf(clientId) || {};
+    log.debug("Leaving OAuth2Server.jarmUrl(). Signing.");
+    return jarm.respond(fields, { clientId: clientId, issuer: issuer,
+                                  registered: registered })
+      .then(function (jwt: string): Json {
+        const transport = jarm.transportOf(mode, held.types);
+        // A form_post.jwt response has a URL too, in the query, for the one
+        // place a link has to stand in for a POST: the interstitial page.
+        const sep = transport === 'fragment' ? '#'
+          : (String(redirectUri).indexOf('?') >= 0 ? '&' : '?');
+        return { formPost: transport === 'form_post', response: jwt,
+                 url: redirectUri + sep + 'response=' +
+                      encodeURIComponent(jwt) };
+      });
+  }
+
+  jarmRedirect(res: Res, issuer: Json, redirectUri: Json, fields: Json,
+               mode: string): Promise<void> {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.jarmRedirect().");
+    log.debug("Leaving OAuth2Server.jarmRedirect(). Answering.");
+    return self.jarmUrl(res, issuer, redirectUri, fields, mode)
+      .then(function (target: Json): void {
+        if (target.formPost) {
+          self.formPostResponse(res, redirectUri,
+                                { response: target.response });
+          return;
+        }
+        res.redirect(302, target.url);
+      }).catch(function (e: Json): void {
+        log.error(errorCodes.tag(errorCodes.codeOf(e) || 'STS-OAUTH-0588') +
+                  'oauth2: a JARM response could not be made: ' +
+                  ((e && e.message) || e));
+        if (!res.headersSent) {
+          errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-OAUTH-0588');
+          self.oauthError(res, 400, 'invalid_request',
+                          String((e && e.message) || e));
+        }
+      });
   }
 
   // ---------------------------------------------------------------------------
@@ -6014,6 +6201,7 @@ class OAuth2Server {
                         outer.request_uri !== '');
     if (!jwtSecured && !config.value('oauth2.requireSignedRequestObject') &&
         !client.require_signed_request_object &&
+        !self.deps.fapi.requiresSignedRequestObject() &&
         self.capabilitiesFor(req).require_signed_request_object !== true) {
       log.debug("Leaving OAuth2Server.authorizeEndpoint(). Not a " +
                 "JWT-secured request.");
@@ -6482,6 +6670,17 @@ class OAuth2Server {
       }
     }
 
+    // JARM section 2.3.1 (#139, #143): `query.jwt` carries no token in clear.
+    const jarmProblem = self.deps.jarm.modeProblem(q.response_mode,
+                                                   q.response_type,
+                                                   registeredClient);
+    if (jarmProblem) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). JARM " +
+                "refused the response mode.");
+      return redirectable(jarmProblem.errorCode, jarmProblem.error,
+                          jarmProblem.description);
+    }
+
     // The same for the PKCE methods. A server advertising S256 alone refuses
     // `plain` HERE, whatever the other authorization servers in this process
     // do.
@@ -6614,7 +6813,11 @@ class OAuth2Server {
     // of every client, nonce with openid, state without it, and a redirect_uri
     // that was SENT and is https. The last is answered here as a 400 rather
     // than at the address it concerns.
-    const fapiCheck = fapi.authorizationRefusal(q);
+    // Advanced (#139) asks PKCE only of a PUSHED request: one arriving at
+    // /oauth2/par now, or at this endpoint by a PAR request_uri.
+    const fapiCheck = fapi.authorizationRefusal(q, {
+      pushed: !!opts.input || !!(req.stsJar && req.stsJar.source === 'par')
+    });
     if (fapiCheck) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). FAPI " +
                 "refused the authorization request (" + fapiCheck.requirement +
@@ -6790,8 +6993,10 @@ class OAuth2Server {
     const alg = String((header && header.alg) || '');
     let verified: Json = null;
     try {
-      if (alg === 'RS256') {
-        verified = helpers.verifyOwnCompactJws(hint, { algorithms: ['RS256'] });
+      if (/^(RS|PS)(256|384|512)$/.test(alg)) {
+        // The RSA key signs RS* and PS* alike (PS256 is FAPI 1.0 Advanced's
+        // default, #139).
+        verified = helpers.verifyOwnCompactJws(hint, { algorithms: [alg] });
       } else if (/^HS(256|384|512)$/.test(alg)) {
         const registered = applications.registrationOf(clientId) || {};
         if (!registered.client_secret) {
@@ -6855,6 +7060,12 @@ class OAuth2Server {
     // response and every token minted below name the server the client is
     // talking to.
     const base = self.asBaseOf(req);
+    // What a JARM response (#139, #143) is signed for, whichever answer below
+    // sends it: the client and its response type, from the request as it
+    // stands now — the resolved request object's, where there was one.
+    res.locals.stsJarm = { clientId: String((req.query || {}).client_id || ''),
+                           types: String((req.query || {}).response_type ||
+                                         '') };
 
     // RFC 9126's two policies, before anything in the request is believed. See
     // pushedRequestPolicyRefusal().
@@ -6906,7 +7117,7 @@ class OAuth2Server {
         log.debug("Leaving the authorization endpoint. Showing " + error +
                   " rather than redirecting it (" + policy.requirement + ").");
         log.debug("Leaving fail().");
-        return self.sendRedirectInterstitial(res, {
+        const shown = {
           error: error, description: description, redirectUri: redirectUri,
           clientId: q.client_id, state: q.state, why: policy.why,
           // The link the person can choose. It carries the same parameters the
@@ -6917,7 +7128,28 @@ class OAuth2Server {
                                         error_description: description },
                                       self.usesFragment(q.response_type,
                                                         q.response_mode))
-        });
+        };
+        // A JARM request's link carries the JWT-secured error (#139, #143),
+        // which is what its client reads.
+        if (self.deps.jarm.isJarm(q.response_mode)) {
+          const fields: Json = { error: error,
+                                 error_description: description, iss: base };
+          if (q.state !== undefined) {
+            fields.state = q.state;
+          }
+          return self.jarmUrl(res, base, redirectUri, fields,
+                              String(q.response_mode))
+            .then(function (target: Json): Json {
+              return self.sendRedirectInterstitial(res,
+                Object.assign(shown, { target: target.url }));
+            }).catch(function (e: Json): void {
+              log.debug("Caught in fail(): " + ((e && e.message) || e));
+              errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-OAUTH-0588');
+              self.oauthError(res, 400, 'invalid_request',
+                              String((e && e.message) || e));
+            });
+        }
+        return self.sendRedirectInterstitial(res, shown);
       }
       log.debug("Leaving the authorization endpoint. Reporting " + error + " " +
           "to the client" +
@@ -7807,7 +8039,8 @@ class OAuth2Server {
       return { contentType: 'application/json',
                body: JSON.stringify(body, null, 2) };
     }
-    if (signAlg !== 'none' && USERINFO_SIGNING_ALGS.indexOf(signAlg) === -1) {
+    if (signAlg !== 'none' && (USERINFO_SIGNING_ALGS.indexOf(signAlg) === -1 ||
+        !self.deps.fapi.signingAlgAllowed(signAlg))) {
       // Refused rather than downgraded to JSON: silently ignoring the algorithm
       // a client registered would leave it verifying a signature that is not
       // there.
@@ -9357,6 +9590,35 @@ class OAuth2Server {
       errorCodes.mark(res, fapiAuth.errorCode || 'STS-OAUTH-0580');
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return self.oauthError(res, 401, fapiAuth.error, fapiAuth.description);
+    }
+    // FAPI 1.0 Advanced section 8.6 (#139): a client assertion is signed PS256
+    // or ES256, whatever the client registered.
+    if (client.assertion) {
+      const assertionAlg = self.headerAlgOf(client.assertion);
+      const fapiAlg = fapi.signingAlgRefusal(assertionAlg,
+                                             'the client assertion');
+      if (fapiAlg) {
+        log.debug("Leaving the token endpoint. FAPI refused the client " +
+                  "assertion's algorithm.");
+        errorCodes.mark(res, fapiAlg.errorCode || 'STS-OAUTH-0586');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 401, 'invalid_client',
+                               fapiAlg.description);
+      }
+    }
+    // FAPI 1.0 Advanced section 5.2.2 items 5-6 (#139): every access token is
+    // sender-constrained — by the client certificate this connection
+    // presented, or (unless oauth2.fapiRequireMtls) by the DPoP proof checked
+    // above. Refused before any grant is spent.
+    const fapiBound = fapi.senderConstraintRefusal({
+      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) });
+    if (fapiBound) {
+      log.debug("Leaving the token endpoint. FAPI: the token would be " +
+                "unconstrained.");
+      errorCodes.mark(res, fapiBound.errorCode || 'STS-OAUTH-0583');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 400, fapiBound.error,
+                             fapiBound.description);
     }
 
     // OAUTH 2.1 — WHAT THE CLIENT PRESENTED. A credential that was included
@@ -12841,6 +13103,8 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.jarmMetadataProblem(metadata) ||
+      self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||

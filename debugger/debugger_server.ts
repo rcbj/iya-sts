@@ -1051,11 +1051,22 @@ class DebuggerServer {
             callbackBase: self.debuggerBaseOf(req),
             authorizationBase: self.authorizationBaseOf(req)
           });
-          if (begun && begun.ok === false && !res.headersSent) {
-            errorCodes.mark(res, errorCodes.codeOf(begun) || 'STS-DBG-0017');
-            self.sendPage(res, begun.reason === 'no-client' ? 500 : 403,
-                          'The debugger cannot sign you in',
-                          '<p>' + self.esc(begun.why) + '</p>');
+          // A promise under FAPI 1.0 Advanced (#139); a value otherwise.
+          const refusedIfSo = function (answer: any): void {
+            log.debug("Entering refusedIfSo().");
+            if (answer && answer.ok === false && !res.headersSent) {
+              errorCodes.mark(res, errorCodes.codeOf(answer) ||
+                                   'STS-DBG-0017');
+              self.sendPage(res, answer.reason === 'no-client' ? 500 : 403,
+                            'The debugger cannot sign you in',
+                            '<p>' + self.esc(answer.why) + '</p>');
+            }
+            log.debug("Leaving refusedIfSo().");
+          };
+          if (begun && typeof begun.then === 'function') {
+            begun.then(refusedIfSo);
+          } else {
+            refusedIfSo(begun);
           }
           log.debug("Leaving the debugger gate. Sent to sign in.");
           return;

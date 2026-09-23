@@ -62,6 +62,16 @@ response type or endpoint that would be refused.
   section 2.1). **An error goes where the success would have gone**, so an
   implicit or hybrid request gets its error in the fragment. An explicit
   `response_mode=query` is ignored for a response type that returns a token.
+* **JWT-secured responses (JARM)**: the response modes `query.jwt`,
+  `fragment.jwt`, `form_post.jwt` and `jwt` (a query for `code`, a fragment
+  otherwise) answer with one `response` parameter, a JWT carrying what the
+  response would have carried plus `iss`, `aud` and `exp`. It is signed with
+  the client's `authorization_signed_response_alg` (RS256 by default, PS256
+  under FAPI 1.0 Advanced), and encrypted to its `jwks` where it registered
+  `authorization_encrypted_response_alg`. Errors are answered the same way.
+  `query.jwt` is refused with a token or ID Token in clear.
+* A hybrid response's ID Token carries **`s_hash`** as well as `c_hash`
+  whenever the client sent `state` (FAPI 1.0 Advanced's detached signature).
 * The **`iss` authorization response parameter**
   ([RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)) is on every
   authorization response, errors included.
@@ -354,6 +364,13 @@ minted at `localhost` is therefore refused at `127.0.0.1`. Set
 `global.publicBaseUrl` for a service reached under several names. Scopes naming
 two APIs, or an API the request did not address, are refused (section 3).
 
+Access and refresh tokens are signed **RS256** by default.
+`oauth2.accessTokenSigningAlg` chooses another algorithm this realm holds a key
+for (`PS256`, `ES256`, `EdDSA` and the rest of the RSA and elliptic-curve
+table), and a named authorization server can set its own
+`access_token_signing_alg`. Under FAPI 1.0 Advanced the default is **PS256**,
+and anything other than PS256 or ES256 is replaced by it.
+
 ### Token exchange (RFC 8693)
 
 With no `actor_token`, an exchange is **impersonation**: the token that comes
@@ -535,6 +552,8 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.signedMetadataCacheS` | `STS_OAUTH2_SIGNED_METADATA_CACHE_S` | `60` | yes | How long one signature over an unchanged metadata document is reused; 0 signs per request. |
 | `oauth2.maxSignedMetadataEntries` | `STS_OAUTH2_MAX_SIGNED_METADATA_ENTRIES` | `64` | yes | How many distinct signed metadata documents are cached (the key includes the Host the request arrived on). |
 | `oauth2.signedMetadataCertificateHeader` | `STS_OAUTH2_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | Whether `signed_metadata` names its signing certificate chain: `x5u`, `x5c`, `both` or `none`. |
+| `oauth2.accessTokenSigningAlg` | `STS_OAUTH2_ACCESS_TOKEN_SIGNING_ALG` | `default` | yes | The JWS algorithm of access and refresh tokens. `default` is RS256, or PS256 under FAPI 1.0 Advanced. |
+| `oauth2.jarmResponseLifetimeS` | `STS_OAUTH2_JARM_RESPONSE_LIFETIME_S` | `600` | yes | The `exp` of a JARM response, in seconds after it is signed (at most 600). |
 | `oauth2.eddsaCurve` | `STS_OAUTH2_EDDSA_CURVE` | `Ed25519` | yes | Which Edwards curve an `EdDSA` signature uses; both keys are published in the JWKS under different kids. |
 | `oauth2.basicAuthRealm` | `STS_OAUTH2_BASIC_AUTH_REALM` | `sts` | yes | The `realm` in the `WWW-Authenticate: Basic` challenge the token endpoint sends on a failed `client_secret_basic`. |
 

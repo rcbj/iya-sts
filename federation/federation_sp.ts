@@ -3152,7 +3152,7 @@ class FederationSp {
         // not become directory attributes. `sub` is handled separately as the
         // subject; the rest are about the token.
         if (['iss', 'aud', 'exp', 'iat', 'nbf', 'jti', 'nonce', 'at_hash',
-             'c_hash',
+             'c_hash', 's_hash',
              'azp', 'auth_time', 'sid', 'sub', 'acr', 'amr'].indexOf(
                  name) !== -1) return;
         bag[name] = payload[name];
