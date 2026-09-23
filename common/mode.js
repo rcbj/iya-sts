@@ -843,7 +843,11 @@ const REQUIREMENTS = [
     product: 'A risk Deny is kept: an authentication the policy refuses on ' +
              'risk (HIGH, by default) is refused, and one it asks a step-up ' +
              'of (MEDIUM) is asked for a second factor or a security key ' +
-             'where the door can ask, and refused where it cannot.',
+             'where the door can ask, and refused where it cannot. When a ' +
+             'person\'s risk changes, the reactions the risk-response ' +
+             'policy permits are taken — ending everything at HIGH, RISC ' +
+             'credential-compromise; development announces the change and ' +
+             'records the rest as observed.',
     where: 'risk/risk_engine.ts, xacml/xacml_role_pep.ts, ' +
            'common/issuance_gate.js, authn/authn.ts' },
   { id: 'token-exchange-tokens',

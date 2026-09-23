@@ -9150,10 +9150,14 @@ const SETTINGS = [
     label: 'Which acts emit automatically',
     env: 'STS_CAEP_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'session-established,session-presented,session-revoked,' +
-          'credential-change,assurance-level-change,token-claims-change',
+          'credential-change,assurance-level-change,token-claims-change,' +
+          'risk-level-change',
     runtime: true,
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
-                 'itself, out of the six acts it can actually observe: a ' +
+                 'itself, out of the seven acts it can actually observe — ' +
+                 'the seventh, since #62 P4, a person\'s RISK LEVEL ' +
+                 'changing, which emits risk-level-change where the ' +
+                 'risk-response policy permits announcing it: a ' +
                  'session starting, a session being presented, a session ' +
                  'ending, a person re-authenticating on a session they ' +
                  'already hold with a different acr (a step-up or ' +
@@ -9168,13 +9172,12 @@ const SETTINGS = [
                  'write that moves a claim of a person who holds live ' +
                  'tokens or assertions (an attribute the claim catalogue ' +
                  'maps, or a group joined, left or renamed), which emits ' +
-                 'token-claims-change. The other two are things nothing ' +
-                 'here does — no device reports compliance to this service ' +
-                 '(#164) and no risk engine talks to it (#62) — so they are ' +
-                 'emitted BY HAND from /admin/caep or POST ' +
-                 '/admin-api/caep/emit, and a row naming one of them here is ' +
-                 'dropped with a warning rather than producing an event ' +
-                 'nothing can cause.' },
+                 'token-claims-change. The eighth is a thing nothing here ' +
+                 'does — no device reports compliance to this service ' +
+                 '(#164) — so device-compliance-change is emitted BY HAND ' +
+                 'from /admin/caep or POST /admin-api/caep/emit, and a row ' +
+                 'naming it here is dropped with a warning rather than ' +
+                 'producing an event nothing can cause.' },
 
   { key: 'caep.eventsSupported', group: 'CAEP',
     label: 'CAEP event types offered', env: 'STS_CAEP_EVENTS_SUPPORTED',
@@ -9330,6 +9333,19 @@ const SETTINGS = [
                  'person made HIGH at the browser is not issued a ticket ' +
                  'elsewhere. Older than this, the issuance carries no risk ' +
                  'facts and the roles decide.' },
+
+  { key: 'risk.rescoreEveryS', group: 'Risk',
+    label: 'Re-check live sessions every (seconds)',
+    env: 'STS_RISK_RESCORE_EVERY_S', type: 'int', dflt: 300, min: 30,
+    max: 86400, runtime: true,
+    description: 'How often the risk.rescore job re-checks every live ' +
+                 'sign-on session against the active datasets and the ' +
+                 'failure history (#62 P4): a session whose address has ' +
+                 'since become a Tor exit or been denied, or whose person\'s ' +
+                 'password is being guessed, is raised, every token on it ' +
+                 'is decided on the new risk, and a person crossing into ' +
+                 'HIGH is answered by the risk-response policy. Only ever ' +
+                 'upward.' },
 
   { key: 'risk.standingCacheSize', group: 'Risk',
     label: 'People whose standing each process holds',
@@ -9891,6 +9907,22 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+
+  { key: 'xacml.riskResponsePolicy', group: 'XACML',
+    label: 'The policy a change of risk is answered with',
+    env: 'STS_XACML_RISK_RESPONSE_POLICY', type: 'string',
+    dflt: 'risk-response', runtime: true,
+    description: 'The directory entry name of the policy the embedded PEP ' +
+                 'asks when a person\'s risk level changes (#62 P4): one ' +
+                 'question per reaction — announce it over CAEP, end ' +
+                 'everything they hold, tell RISC a credential is ' +
+                 'compromised, disable the account — and a Permit means do ' +
+                 'it. The `risk-response` policy is BUILT IN and never ' +
+                 'seeded: it announces every change, ends everything at ' +
+                 'HIGH, tells RISC on evidence about a credential, and never ' +
+                 'disables anybody. A repository entry with this name, ' +
+                 'written into a realm\'s ou=policies, overrides it in that ' +
+                 'realm; disabling that entry takes no reaction at all.' },
 
   { key: 'xacml.issuancePolicy', group: 'XACML',
     label: 'The policy issuance decisions are made with',

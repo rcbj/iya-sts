@@ -114,23 +114,24 @@ var config = {
 
   // --- XACML -----------------------------------------------------------
   xacml: {
-    enforceAccess: true,             // Decide access with policy
-    accessPolicy: "access-control",  // Access policy name
-    enabled: true,                   // XACML enabled
-    maxPolicies: 200,                // Policies the repository may hold
-    pepBias: "deny-biased",          // What the embedded PEP does with a non-Permit
-    returnPolicyIdList: false,       // Always return the applicable policy identifiers
-    remotePeps: true,                // Remote Policy Enforcement Points may register
-    pepRequireCertificate: true,     // A registering PEP must present a client certificate
-    pipMaxPerWindow: 600,            // PIP queries one caller may make per rate-limit window
-    pipMaxDesignators: 50,           // Attributes one PIP query may ask about
-    maxPeps: 50,                     // Remote PEPs the register may hold
-    pepStaleAfterS: 300,             // Seconds before a registered PEP is reported stale
-    pepNotify: true,                 // Nudge a registered PEP when the repository changes
-    pepNotifyAllowedHosts: "",       // Notify endpoint allowlist
-    pepNotifyAllowInsecure: false,   // Allow http:// and untrusted TLS for a nudge
-    pepNotifyTimeoutMs: 2000,        // Nudge timeout (ms)
-    issuancePolicy: "role-issuance"  // The policy issuance decisions are made with
+    enforceAccess: true,                 // Decide access with policy
+    accessPolicy: "access-control",      // Access policy name
+    enabled: true,                       // XACML enabled
+    maxPolicies: 200,                    // Policies the repository may hold
+    pepBias: "deny-biased",              // What the embedded PEP does with a non-Permit
+    returnPolicyIdList: false,           // Always return the applicable policy identifiers
+    remotePeps: true,                    // Remote Policy Enforcement Points may register
+    pepRequireCertificate: true,         // A registering PEP must present a client certificate
+    pipMaxPerWindow: 600,                // PIP queries one caller may make per rate-limit window
+    pipMaxDesignators: 50,               // Attributes one PIP query may ask about
+    maxPeps: 50,                         // Remote PEPs the register may hold
+    pepStaleAfterS: 300,                 // Seconds before a registered PEP is reported stale
+    pepNotify: true,                     // Nudge a registered PEP when the repository changes
+    pepNotifyAllowedHosts: "",           // Notify endpoint allowlist
+    pepNotifyAllowInsecure: false,       // Allow http:// and untrusted TLS for a nudge
+    pepNotifyTimeoutMs: 2000,            // Nudge timeout (ms)
+    riskResponsePolicy: "risk-response", // The policy a change of risk is answered with
+    issuancePolicy: "role-issuance"      // The policy issuance decisions are made with
   },
 
   // --- Web security ----------------------------------------------------
@@ -766,7 +767,7 @@ var config = {
   caep: {
     enabled: true,                                                                                                                                                                    // CAEP enabled
     autoEmit: true,                                                                                                                                                                   // Emit events when something really happens
-    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change",                                              // Which acts emit automatically
+    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change,assurance-level-change,token-claims-change,risk-level-change",                            // Which acts emit automatically
     eventsSupported: "session-revoked,session-established,session-presented,token-claims-change,credential-change,assurance-level-change,device-compliance-change,risk-level-change", // CAEP event types offered
     assuranceNamespace: "NIST-AAL",                                                                                                                                                   // Assurance namespace
     defaultRiskLevel: "MEDIUM",                                                                                                                                                       // Default risk level
@@ -791,6 +792,7 @@ var config = {
     assessSignIns: true,           // Assess every sign-in
     enforceInDevelopment: false,   // Enforce risk decisions in development mode
     standingValidMinutes: 720,     // A person's standing answers for (minutes)
+    rescoreEveryS: 300,            // Re-check live sessions every (seconds)
     standingCacheSize: 20000,      // People whose standing each process holds
     mediumScorePercent: 100,       // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,        // HIGH from (percent of a score of 1)

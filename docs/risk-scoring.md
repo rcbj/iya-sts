@@ -173,6 +173,49 @@ template with `decideRisk` set to `no` gives the roles-only policy.
 and that realm then refuses nothing on risk. The console says so on the
 policy's status.
 
+## When a person's risk changes
+
+Every assessment updates the person's **standing**: their current level.
+When the level changes, a second built-in policy, **`risk-response`**, is
+asked what should happen. It is asked once for each possible reaction, and a
+Permit means the reaction is taken:
+
+| Reaction | The built-in policy takes it when |
+|---|---|
+| **Announce** a CAEP `risk-level-change`, naming the person | the level changes, except a person's first level being LOW |
+| **End everything the person holds** — every session and token, with back-channel Logout Tokens | the level crosses into HIGH |
+| **Tell RISC a credential is compromised** (`credential-compromise`) | the level crosses into HIGH on evidence about a credential (`account-failures` by default) |
+| **Disable the account** (RISC reason `hijacking`) | never, unless you build the policy with a score (`disableFromScore`): anyone who can make a person's sign-ins look risky could otherwise lock them out |
+
+Each reaction is taken once per assessment, however many times the change is
+seen. In development mode only the announcement is made; the other reactions
+are recorded as observed, unless `risk.enforceInDevelopment` is on. The
+console and portal are receivers of this service's own Shared Signals, so an
+announcement also reaches their signal inboxes.
+
+Like the issuance policy, `risk-response` is an ordinary policy on **XACML →
+Policies**, named by `xacml.riskResponsePolicy`. A realm's own override
+decides for that realm, and disabling the override takes no reaction at all.
+
+### Live sessions
+
+A session's risk is not fixed at sign-in:
+
+- **A session presented from a different device, TLS client or network** is
+  assessed again in the background. A different device means a different
+  browser or operating system; a browser that updated itself is not one. The
+  new assessment becomes the session's risk, so the next token issued on it
+  is decided on it. A cookie replayed from another machine is the case this
+  is for, and it usually scores HIGH.
+- **The `risk.rescore` job** re-checks every live session, every
+  `risk.rescoreEveryS` seconds, against the active datasets and the failure
+  history. A session whose address has since become a Tor exit or been
+  denied, or whose person's password is being guessed, is raised, never
+  lowered.
+
+Both update the person's standing, so a change is answered by `risk-response`
+as any other is.
+
 ## Datasets
 
 **iya-sts distributes no third-party dataset.** None is in the repository,
@@ -317,6 +360,8 @@ kept in step with `common/config.js`.
 |---|---|---|---|
 | `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | Score and record every sign-in, and give the issuance policy its risk. |
 | `risk.enforceInDevelopment` | `STS_RISK_ENFORCE_IN_DEVELOPMENT` | `false` | Enforce the policy's risk decisions in development mode too. |
+| `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | How often the `risk.rescore` job re-checks every live session. |
+| `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | The policy asked what happens when a person's risk changes. |
 | `risk.standingValidMinutes` | `STS_RISK_STANDING_VALID_MINUTES` | `720` | How long a person's last assessed risk stands in for an issuance with no session. |
 | `risk.standingCacheSize` | `STS_RISK_STANDING_CACHE_SIZE` | `20000` | How many people's standing each process holds. |
 | `risk.mediumScorePercent` | `STS_RISK_MEDIUM_SCORE_PERCENT` | `100` | The score, in hundredths, from which a sign-in is MEDIUM. |
@@ -355,12 +400,7 @@ kept in step with `common/config.js`.
 The next phases of [issue #62](https://github.com/rcbj/iya-sts/issues/62)
 will do the following:
 
-- **Act when a person's risk crosses HIGH.** This emits a CAEP
-  `risk-level-change`, and a RISC `credential-compromise` when the evidence
-  is about a credential. It also ends all of the person's sessions. Past a
-  separate threshold (off by default) it also disables the account.
 - **Add more checks.**
-  - Watch live sessions for changes of network or device.
   - Use FIDO authenticator metadata.
   - Check new passwords against Pwned Passwords with a probabilistic filter.
   - Add optional browser fingerprinting. It will be off by default, with its
@@ -377,7 +417,7 @@ will do the following:
   `POST /admin-api/risk/import`, `activate`, `rollback`, `delete` and
   `accept-terms`, described in the
   [OpenAPI document](management-api.md).
-- **Error codes** `STS-RISK-0001` to `STS-RISK-0019` are listed on
+- **Error codes** `STS-RISK-0001` to `STS-RISK-0021` are listed on
   [Error codes](error-codes.md).
 
 ## Related

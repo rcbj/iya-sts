@@ -28,7 +28,8 @@ policy*, below.
 | P1 | **Done**: schema version 7, the datasets, the failure history, the page. |
 | P2 | **Done** (2026-09-23): the model (a port of Freeman et al. from `das-group/rba-algorithm`, MIT), `sts_risk_assessments`, `sts_risk_feature_counts`, `sts_risk_subjects`, `sts_risk_session_context`, device signals (`bowser`, `isbot`). Observe only. |
 | P3 | **Done** (2026-09-22): the risk facts in every issuance request, three risk rules in the built-in `role-issuance` policy, step-up at the doors that can ask, enforced in product and observed in development. The design change is on #62 (comment 5787912263). |
-| P4–P6 | Continuous evaluation and the reactions to HIGH, MDS3, fingerprinting and the breached-password filter — the plan comment. |
+| P4 | **Done** (2026-09-22): the `risk-response` policy and the reactions it permits, taken once per assessment; continuous evaluation of a live session's device, TLS client and network; the `risk.rescore` job; CAEP risk-level-change emitted on its own. |
+| P5–P6 | MDS3, fingerprinting and the breached-password filter — the plan comment. |
 
 ## THE LICENCE BOUNDARY: NOTHING THIRD-PARTY IS SHIPPED (2026-09-22)
 
@@ -344,6 +345,56 @@ session (a door that assessed nothing) keeps `observe`.
 nothing on risk; `issuancePolicyState()` says so on the console rather than
 rewriting the operator's document.
 
+## A CHANGE OF RISK IS ANSWERED BY POLICY TOO (P4, 2026-09-22)
+
+**The reactions are rules**, for P3's reason: ending somebody's access is an
+authorization decision. When an assessment moves a person's standing
+(`sts_risk_subjects`) to a new level, `risk_engine.ts`'s `noteChange()` asks
+the built-in **`risk-response`** policy (`xacml/xacml_risk_pep.ts`,
+`xacml.riskResponsePolicy`) — ONCE PER REACTION, the action-id naming it
+(`RISK_RESPONSE` in `xacml_templates.ts`) and a Permit meaning do it:
+`risk-announce` (CAEP risk-level-change, `ssf.ts`'s `riskAutoEmit()`),
+`risk-end-sessions` (`account_state.endEverything()`),
+`risk-credential-compromise` (RISC, `account_signals.ts`) and `risk-disable`
+(`account_state.setDisabled()`, RISC reason `hijacking`). **Not one question
+with a list of obligations**: a combining algorithm that stops at its first
+Permit returns that rule's obligations only, and a reaction dropped by the
+combining is the worst way for this to fail.
+
+**The built-in document** announces every change but a person's first LOW
+(every new person's second sign-in), ends everything on crossing into HIGH,
+tells RISC on crossing into HIGH with a credential signal
+(`credentialSignals`, default `account-failures`), and **builds no disable
+rule** unless `disableFromScore` is given: a reaction an attacker can aim at
+somebody else is the operator's decision.
+
+**ONCE PER ASSESSMENT**: `claimAction()` records, per reaction, the
+assessment it was last taken for (`sts_risk_subjects.actions`; a
+conditional UPDATE on postgres), so a retry or a second node answering the
+same change takes nothing. **Development announces and observes the rest**
+(`enforced()`), one `risk.response` audit row either way.
+
+**A reaction happens only where somebody proved the password**: a sign-in is
+assessed after its credential verified, so an attacker who knows a name and
+not the password cannot end its owner's sessions by signing in badly.
+
+**CONTINUOUS EVALUATION.** `authn.ts`'s `sessionOf()` compares every
+presented session with the authentication it rests on — the device FAMILY
+(`familyOf()`: browser and OS without versions, carried on `session.risk`),
+the JA4 and the /24 or /48 — and on a change assesses it again in the
+background, `phase: 'session'`: scored against the history and NOT counted
+into it, since a replayed cookie's context is not where the person signs
+in. The answer becomes `session.risk` (`adoptSessionRisk()`). A context is
+assessed once (`riskDriftKey`). A browser updating itself is not a new
+device; that was the first false positive the test found.
+
+**THE `risk.rescore` JOB** (`risk.rescoreEveryS`, a cluster job) re-checks
+every live session against the lists and the failure history and RAISES one
+that gained a signal (`rescoreSession()`, `phase: 'rescore'`) — never lowers
+it: a list that rotated an address out is not a reason to trust a session
+more than its sign-in did. The device and the model cannot move without a
+request, which is continuous evaluation's business.
+
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 
 The four libraries and the page are built at **18j** in
@@ -379,6 +430,11 @@ hit the same trap through `request_pool.js` in P0.
   one, a session at HIGH issued no code, a MEDIUM session with a device
   signal sent back for a key, an operator deny list refused — and observed
   in development.
+* `tests/risk_response.js` (P4) — the `risk-response` policy in both shapes
+  and its round trips, its decisions, sessions ended once per assessment,
+  development observing, a realm override that disables, CAEP's new act, a
+  browser update not assessed and a replayed cookie assessed and ended, and
+  the rescore job raising a session whose address became a Tor exit.
 
 **Not tested yet**: a real DB-IP or IPinfo release at full size — and it will
 not be tested with one in this repository, because none may be committed; a

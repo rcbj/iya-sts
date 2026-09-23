@@ -56,7 +56,10 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskRecordAssessment', 'riskListAssessments',
                     'riskUpsertSubject', 'riskListSubjects',
                     'riskUpsertSessionContext', 'riskPurgeHistory',
-                    'riskRecordAcceptance', 'riskListAcceptances'];
+                    'riskRecordAcceptance', 'riskListAcceptances',
+                    // #62 P3 and P4.
+                    'riskSettleAssessment', 'riskSubjectOf',
+                    'riskClaimAction'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -847,6 +850,34 @@ class RiskStore {
     return Promise.resolve(false);
   }
 
+  // A reaction to a change of risk, claimed once per assessment (#62 P4) —
+  // see the driver's `riskClaimAction()`. True when this caller may take it.
+  claimAction(realm: string, subject: string, reaction: string,
+              assessmentId: string, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.claimAction(). " + reaction);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.claimAction(). Database.");
+      return Promise.resolve(this.driver.riskClaimAction(realm, subject,
+                                                         reaction,
+                                                         assessmentId));
+    }
+    const held = this.subjectStates.get(String(realm || ''));
+    const row = held ? held.get(subject) : null;
+    if (!row) {
+      log.debug("Leaving RiskStore.claimAction(). Nobody to claim on.");
+      return Promise.resolve(false);
+    }
+    row.actions = row.actions || {};
+    if (row.actions[reaction] === assessmentId) {
+      log.debug("Leaving RiskStore.claimAction(). Already taken.");
+      return Promise.resolve(false);
+    }
+    row.actions[reaction] = assessmentId;
+    log.debug("Leaving RiskStore.claimAction(). Claimed.");
+    return Promise.resolve(true);
+  }
+
   // One person's standing, or null.
   subjectOf(realm: string, subject: string,
             sealing: boolean): Promise<Json | null> {
@@ -881,6 +912,9 @@ class RiskStore {
       lastAssessment: s.lastAssessment || '',
       crossedAt: !before || before.level !== s.level ? s.updatedAt
         : before.crossedAt,
+      // The reactions already taken (#62 P4) survive a new standing, as
+      // the database's ON CONFLICT leaves `actions` alone.
+      actions: before && before.actions ? before.actions : {},
       updatedAt: s.updatedAt });
     log.debug("Leaving RiskStore.upsertSubject(). Memory.");
     return Promise.resolve(true);
@@ -1074,6 +1108,7 @@ export = {
   upsertSubject: slot.forward('upsertSubject'),
   settleAssessment: slot.forward('settleAssessment'),
   subjectOf: slot.forward('subjectOf'),
+  claimAction: slot.forward('claimAction'),
   listSubjects: slot.forward('listSubjects'),
   upsertSessionContext: slot.forward('upsertSessionContext'),
   sessionContextOf: slot.forward('sessionContextOf'),

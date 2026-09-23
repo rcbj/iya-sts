@@ -9643,6 +9643,16 @@ const CODES = [
       'assessment and the issuance went ahead. risk.enforceInDevelopment ' +
       'turns enforcement on.',
     spec: '' },
+  { code: 'STS-RISK-0020',
+    summary: 'A person\'s risk level changed and no reaction could be ' +
+      'decided: the risk-response policy is disabled or does not load. The ' +
+      'change is recorded; nothing is announced, ended or disabled.',
+    spec: '' },
+  { code: 'STS-RISK-0021',
+    summary: 'A reaction the risk-response policy permitted (announce, end ' +
+      'sessions, RISC credential-compromise, disable) failed part-way. The ' +
+      'others were still taken; the change of risk is recorded.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

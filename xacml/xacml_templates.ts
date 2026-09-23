@@ -211,7 +211,35 @@ const RISK_ATTRIBUTE = {
   // what it reads to know which factor to ask for.
   OBLIGATION: 'urn:sts:xacml:obligation:risk',
   ACTION: 'urn:sts:xacml:risk-action',
-  FACTOR: 'urn:sts:xacml:risk-step-up-factor'
+  FACTOR: 'urn:sts:xacml:risk-step-up-factor',
+  // The level the person's standing moved FROM (#62 P4) — the
+  // `risk-response` policy's question is about a CHANGE, and a level with
+  // nothing to compare it to is the person's first. Absent then.
+  PREVIOUS_LEVEL: 'urn:sts:xacml:risk-previous-level'
+};
+
+// ---------------------------------------------------------------------------
+// WHAT A CHANGE OF RISK CAN LEAD TO (#62 P4, 2026-09-22) — the action-ids the
+// `risk-response` policy is asked about, one question per reaction. A Permit
+// means DO IT. Asked one at a time rather than as one question whose Permit
+// carries a list of obligations, because a combining algorithm that stops at
+// its first Permit returns that rule's obligations and no other's, and a
+// reaction silently dropped by the combining is the worst way for this to
+// fail. One question per reaction also reads in the policy as what it is: a
+// rule per thing that happens.
+// ---------------------------------------------------------------------------
+const RISK_RESPONSE = {
+  // CAEP risk-level-change, to every stream that takes it — this service's
+  // own console and portal among them (their signal inboxes).
+  ANNOUNCE: 'risk-announce',
+  // End everything the person holds: every session, every token, the
+  // back-channel Logout Tokens.
+  END_SESSIONS: 'risk-end-sessions',
+  // RISC credential-compromise: the evidence is about a CREDENTIAL, so the
+  // relying parties are told it is no longer to be trusted.
+  CREDENTIAL_COMPROMISE: 'risk-credential-compromise',
+  // Disable the account (pwdAccountLockedTime), RISC reason `hijacking`.
+  DISABLE: 'risk-disable'
 };
 
 // ---------------------------------------------------------------------------
@@ -585,6 +613,166 @@ const TEMPLATES: TemplateRow[] = [
           condition: condition,
           obligations: [], advice: []
         }]),
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // THE RISK RESPONSE POLICY (#62 P4, 2026-09-22) — the third of this
+    // service's own, and like the other two built in rather than seeded.
+    //
+    // `role-issuance` decides what is ISSUED on an authentication's risk.
+    // This decides what HAPPENS when a person's risk CHANGES: whether the
+    // change is announced (CAEP risk-level-change), whether everything they
+    // hold is ended, whether RISC is told a credential is compromised, and
+    // whether the account is disabled. rcbj's directive is that every
+    // authorization decision is policy, and ending someone's access is one.
+    //
+    // `xacml/xacml_risk_pep.ts` asks it once per reaction (`RISK_RESPONSE`'s
+    // action-ids) with the person as the subject and the change as the
+    // environment; a Permit means do it. deny-unless-permit, so a reaction no
+    // rule speaks to does not happen.
+    //
+    // **DISABLING IS OFF UNTIL SOMEBODY BUILDS IT IN.** The rule exists only
+    // when `disableFromScore` is given: locking a person out on a score is the
+    // one reaction an attacker can aim at somebody else (sign in as them from
+    // a Tor exit, repeatedly), so it is the operator's decision, made in the
+    // policy, with the threshold written where it is read.
+    // -----------------------------------------------------------------------
+    id: 'risk-response',
+    label: 'Risk response (this service\'s own)',
+    blurb: 'What happens when a person\'s risk level changes: announced ' +
+           'over CAEP, everything they hold ended at HIGH, RISC told when ' +
+           'the evidence is about a credential, and — only if you set a ' +
+           'score — the account disabled.',
+    what: 'Produces one Permit rule per reaction, each for its own ' +
+          'action-id (risk-announce, risk-end-sessions, ' +
+          'risk-credential-compromise, risk-disable), under ' +
+          'deny-unless-permit. The embedded PEP asks one question per ' +
+          'reaction with the person as the subject and the change — the ' +
+          'level, the level before, the score and the signals — as the ' +
+          'environment.',
+    parameters: [
+      { name: 'credentialSignals',
+        label: 'Signals that are evidence about a CREDENTIAL',
+        dflt: 'account-failures', type: 'string',
+        help: 'Comma separated. Crossing into HIGH with one of them sends ' +
+              'RISC credential-compromise: the password is being guessed or ' +
+              'has been, and relying parties should stop trusting it.' },
+      { name: 'disableFromScore',
+        label: 'Disable the account from this score (empty: never)',
+        dflt: '', type: 'string',
+        help: 'A number. Empty builds no disable rule at all, which is the ' +
+              'default: an attacker who can make somebody\'s sign-ins look ' +
+              'risky could otherwise lock them out. With a value, crossing ' +
+              'into HIGH at that score or above disables the account, with ' +
+              'RISC reason hijacking.' }
+    ],
+    build: function (answers, options) {
+      log.debug('Entering buildRiskResponse().');
+      const given = answers || {};
+      const credentialSignals = B.listOf(given.credentialSignals);
+      const disableFrom = String(given.disableFromScore || '').trim();
+      const env = model.CATEGORY.ENVIRONMENT;
+      const actionIs = function (action: string): any {
+        log.debug("Entering actionIs().");
+        log.debug("Leaving actionIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, action),
+          B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                       TYPE.STRING)]);
+      };
+      const levelIs = function (id: string, level: string): any {
+        log.debug("Entering levelIs().");
+        log.debug("Leaving levelIs().");
+        return B.apply(F1 + 'string-is-in', [B.value(TYPE.STRING, level),
+          B.designator(env, id, TYPE.STRING)]);
+      };
+      const crossedIntoHigh = [levelIs(RISK_ATTRIBUTE.LEVEL, 'HIGH'),
+        B.apply(F1 + 'not', [levelIs(RISK_ATTRIBUTE.PREVIOUS_LEVEL, 'HIGH')])];
+      const rule = function (slug: string, description: string,
+                             conjuncts: any[]): any {
+        log.debug("Entering rule().");
+        log.debug("Leaving rule().");
+        return { id: options.idBase + ':rule:' + slug,
+                 effect: model.EFFECT.PERMIT, description: description,
+                 target: null,
+                 condition: B.apply(F1 + 'and', conjuncts),
+                 obligations: [], advice: [] };
+      };
+      const rules = [
+        rule('announce', 'Announce every change of level over CAEP ' +
+             '(risk-level-change): a level is known, it is not the level ' +
+             'before, and it is not a person\'s FIRST level being LOW — ' +
+             'every new person\'s second sign-in is that, and announcing ' +
+             'it would be noise a receiver learns to ignore.', [
+          actionIs(RISK_RESPONSE.ANNOUNCE),
+          B.apply(F1 + 'or', [
+            B.apply(F1 + 'integer-equal', [
+              B.apply(F1 + 'string-bag-size', [
+                B.designator(env, RISK_ATTRIBUTE.PREVIOUS_LEVEL,
+                             TYPE.STRING)]),
+              B.value(TYPE.INTEGER, '1')]),
+            B.apply(F1 + 'not', [levelIs(RISK_ATTRIBUTE.LEVEL, 'LOW')])]),
+          B.apply(F1 + 'integer-equal', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(env, RISK_ATTRIBUTE.LEVEL, TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '1')]),
+          B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(env, RISK_ATTRIBUTE.LEVEL, TYPE.STRING),
+            B.designator(env, RISK_ATTRIBUTE.PREVIOUS_LEVEL, TYPE.STRING)])])
+        ]),
+        rule('end-sessions', 'On crossing into HIGH, end everything the ' +
+             'person holds.',
+             [actionIs(RISK_RESPONSE.END_SESSIONS)].concat(crossedIntoHigh))
+      ];
+      if (credentialSignals.length) {
+        rules.push(rule('credential-compromise', 'On crossing into HIGH on ' +
+          'evidence about a credential (' + credentialSignals.join(', ') +
+          '), tell RISC the credential is compromised.',
+          [actionIs(RISK_RESPONSE.CREDENTIAL_COMPROMISE)]
+            .concat(crossedIntoHigh).concat([
+              B.apply(F3 + 'any-of-any', [
+                { kind: 'function', functionId: F1 + 'string-equal' },
+                B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
+                B.apply(F1 + 'string-bag',
+                        credentialSignals.map(function (one) {
+                          return B.value(TYPE.STRING, one);
+                        }))])])));
+      }
+      if (disableFrom && isFinite(Number(disableFrom))) {
+        rules.push(rule('disable', 'On crossing into HIGH at a score of ' +
+          disableFrom + ' or more, disable the account.',
+          [actionIs(RISK_RESPONSE.DISABLE)].concat(crossedIntoHigh).concat([
+            B.apply(F1 + 'double-greater-than-or-equal', [
+              B.apply(F1 + 'double-one-and-only', [
+                B.designator(env, RISK_ATTRIBUTE.SCORE, TYPE.DOUBLE)]),
+              B.value(TYPE.DOUBLE, String(Number(disableFrom)))])])));
+      }
+      log.debug('Leaving buildRiskResponse(). ' + rules.length + ' rule(s).');
+      return {
+        kind: 'Policy',
+        id: options.idBase,
+        version: '1.0',
+        description: 'THE RISK RESPONSE POLICY. The embedded PEP asks it, ' +
+                     'once per reaction, when a person\'s risk level ' +
+                     'changes. It announces every change over CAEP, ends ' +
+                     'everything the person holds on crossing into HIGH' +
+                     (credentialSignals.length
+                        ? ', tells RISC a credential is compromised when the ' +
+                          'evidence is about one (' +
+                          credentialSignals.join(', ') + ')'
+                        : '') +
+                     (disableFrom
+                        ? ', and disables the account from a score of ' +
+                          disableFrom
+                        : ', and never disables the account') +
+                     '. Anything no rule permits does not happen.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        target: null,
+        variables: {},
+        rules: rules,
         obligations: [], advice: []
       };
     }
@@ -1160,6 +1348,7 @@ const TEMPLATES: TemplateRow[] = [
 class XacmlTemplates {
   static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
   static readonly RISK_ATTRIBUTE = RISK_ATTRIBUTE;
+  static readonly RISK_RESPONSE = RISK_RESPONSE;
   static readonly TEMPLATES = TEMPLATES;
 
   constructor(private readonly deps: XacmlTemplatesDeps) {
@@ -1272,6 +1461,7 @@ export = {
   PolicyBuilders: PolicyBuilders,
   ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
+  RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   TEMPLATES: XacmlTemplates.TEMPLATES,
   lookup: slot.forward('lookup'),
   build: slot.forward('build'),

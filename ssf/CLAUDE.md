@@ -1177,9 +1177,11 @@ the half a reader cannot discover from a protocol trace.
   (2026-09-13, every door since #145) and `assurance-level-change`
   (2026-09-14) have automatic triggers too, and `token-claims-change` goes out
   for a directory change to a claim somebody's live tokens carry (#145) and a
-  modified GNAP grant; the other two describe things nothing here does — no
-  device reports compliance to this service (#164) and no risk engine talks to
-  it (#62) — so those are still emitted only when asked for.
+  modified GNAP grant, and `risk-level-change` (#62 P4) when a person's risk
+  level changes and the `risk-response` policy permits announcing it
+  (`riskAutoEmit()`); `device-compliance-change` describes a thing nothing here
+  does — no device reports compliance to this service (#164) — so it is still
+  emitted only when asked for.
 * **It does not retry a failed push unless `ssf.pushRetries` says to.** See
   above.
 * **It is not a receiver of anybody else's transmitter** (#153). It discovers
@@ -1746,8 +1748,7 @@ it by default.
 fingerprint, as CAEP defines the member, and not the header.
 
 **Not here:**
-* `device-compliance-change` has no source (#164) and `risk-level-change` none
-  (#62).
+* `device-compliance-change` has no source (#164).
 * Acting on a RECEIVED event is #153 and #117.
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)

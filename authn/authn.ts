@@ -1524,6 +1524,7 @@ class Authn {
       return null;
     }
     this.noteSessionUsed(sessions.realmMap(), id, session);
+    this.noticeRiskDrift(session, req);
     log.debug("Leaving Authn.sessionOf(). Signed in as " +
               session.user.username + ".");
     return session;
@@ -3095,6 +3096,7 @@ class Authn {
     try {
       require('../risk/risk_engine').assess({
         realm: realms.currentId(), subject: session.user.sub,
+        username: String(session.user.username || ''),
         sessionId: session.id, door: String(via || event.via || ''),
         clientId: String(detail.application || ''),
         context: event.context || {},
@@ -3139,6 +3141,157 @@ class Authn {
       engine.settle(realms.currentId(), risk.assessmentId, outcome);
     }
     log.debug("Leaving Authn.settleRisk().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A LIVE SESSION WHOSE CONTEXT MOVED IS ASSESSED AGAIN (#62 P4) —
+  // continuous evaluation. Every request that presents a session is compared
+  // with the authentication it rests on: the User-Agent's fingerprint, the
+  // TLS client (JA4) and the network (/24 or /48). A cookie replayed from
+  // another machine changes at least one. When one moved, the session is
+  // assessed in the background (`phase: 'session'` — scored against the
+  // person's history and not added to it), and the answer becomes the
+  // session's risk, so the NEXT issuance on it is decided on where it is
+  // now; a change of the person's level is answered by the risk-response
+  // policy. Nothing here waits: the request that noticed is answered on the
+  // risk the session already had.
+  //
+  // A HOT PATH — every request that carries a session — so it compares three
+  // strings and stops, and assesses a given context once
+  // (`riskDriftKey`), not on every request made from it.
+  // ---------------------------------------------------------------------------
+  private noticeRiskDrift(session, req) {
+    const { realms, log } = this.deps;
+    const events = session && Array.isArray(session.events) ? session.events
+                                                            : [];
+    const last = events.length ? events[events.length - 1] : null;
+    if (!req || !session.risk || session.credentialKey ||
+        session.authenticated === false || !last || !last.context ||
+        !session.user || !session.user.sub) {
+      return;
+    }
+    const engine = this.riskEngine();
+    if (!engine) {
+      return;
+    }
+    // Both helpers below are on this hot path, and no Entering/Leaving pair
+    // on either would say anything a reader of the log could use.
+    let prefixOf = function (address: string): string {
+      return address;
+    };
+    try {
+      prefixOf = require('../risk/risk_store').prefixOf;
+    } catch (e) {
+      log.debug("Caught in Authn.noticeRiskDrift(): " +
+                ((e && e.message) || e));
+      // No risk store in this process: the whole address stands in for
+      // its network, which only makes the comparison stricter.
+    }
+    const now = this.eventContext({ request: req });
+    const keyOf = function (c: any): string {
+      return [String(c.uaFingerprint || ''), String(c.ja4 || ''),
+              c.address ? prefixOf(String(c.address)) : ''].join('|');
+    };
+    const is = keyOf(now);
+    if (is === keyOf(last.context) || is === session.riskDriftKey) {
+      return;
+    }
+    log.debug("Entering Authn.noticeRiskDrift(). " + session.id);
+    const moved = [];
+    // A DIFFERENT DEVICE IS A DIFFERENT BROWSER OR OPERATING SYSTEM, not a
+    // different User-Agent string: a browser that updated itself mid-session
+    // sends a new one. Where the session knows its sign-in's device family,
+    // that is compared; a session from before P4 has only the fingerprint.
+    if (String(now.uaFingerprint || '') !==
+        String(last.context.uaFingerprint || '')) {
+      const known = session.risk.device;
+      const nowFamily = known ? engine.familyOf(engine.deviceOf(
+        String((req.headers || {})['user-agent'] || ''))) : null;
+      if (!known || nowFamily.browser !== known.browser ||
+          nowFamily.os !== known.os) {
+        moved.push('device');
+      }
+    }
+    if (String(now.ja4 || '') !== String(last.context.ja4 || '')) {
+      moved.push('TLS client');
+    }
+    if (is.split('|')[2] !== keyOf(last.context).split('|')[2]) {
+      moved.push('network');
+    }
+    session.riskDriftKey = is;
+    sessions.set(session.id, session);
+    if (!moved.length) {
+      // Only the device's version moved: remembered, so it is not
+      // compared again, and not assessed.
+      log.debug("Leaving Authn.noticeRiskDrift(). A new version of the " +
+                "same device.");
+      return;
+    }
+    const self = this;
+    const headers = req.headers || {};
+    engine.assess({
+      realm: realms.currentId(), subject: String(session.user.sub),
+      username: String(session.user.username || ''), sessionId: session.id,
+      door: 'a live session whose ' + moved.join(' and ') + ' changed',
+      clientId: '', context: now, phase: 'session',
+      userAgent: String(headers['user-agent'] || '') })
+      .then(function (assessment: any): void {
+        if (assessment) {
+          self.adoptSessionRisk(session.id, engine.riskOf(assessment));
+        }
+      }, function (e: any): void {
+        log.debug("Caught in Authn.noticeRiskDrift(): " +
+                  ((e && e.message) || e));
+        // assess() never rejects; the session keeps the risk it had.
+      });
+    log.info('authn: session ' + session.id + ' of "' +
+             session.user.username + '" was presented with its ' +
+             moved.join(' and ') + ' changed; assessing it again.');
+    log.debug("Leaving Authn.noticeRiskDrift().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A SESSION'S RISK, REPLACED (#62 P4) — by a re-assessment of its moved
+  // context, or by the `risk.rescore` job. In the ambient realm; written
+  // through the store so every process sees it. A session that has ended
+  // since is left ended.
+  // -------------------------------------------------------------------------
+  adoptSessionRisk(id: string, risk: any): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.adoptSessionRisk(). " + id);
+    const session = sessions.get(String(id || ''));
+    if (!session || !risk || this.sessionEnded(session)) {
+      log.debug("Leaving Authn.adoptSessionRisk(). No live session.");
+      return false;
+    }
+    session.risk = risk;
+    sessions.set(session.id, session);
+    log.debug("Leaving Authn.adoptSessionRisk(). " + risk.level + ".");
+    return true;
+  }
+
+  // Every live, person-held session that carries a risk, in every realm —
+  // what the `risk.rescore` job re-checks (#62 P4). `realm` is the realm
+  // object `realms.run()` takes.
+  sessionsForRisk(): any[] {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sessionsForRisk().");
+    const out = [];
+    realms.list().forEach(function (realm) {
+      const store = sessions.realmMap(realm.id);
+      if (!store || !store.size) {
+        return;
+      }
+      store.forEach(function (session, id) {
+        if (session && session.risk && !session.credentialKey &&
+            session.authenticated !== false && !self.sessionEnded(session)) {
+          out.push({ realm: realm, id: id, session: session });
+        }
+      });
+    });
+    log.debug("Leaving Authn.sessionsForRisk(). " + out.length + ".");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -9655,6 +9808,8 @@ export = {
   finishWithWallet: slot.forward('finishWithWallet'),
   beginSecondFactorAfterWallet: slot.forward('beginSecondFactorAfterWallet'),
   assessSignIn: slot.forward('assessSignIn'),
+  adoptSessionRisk: slot.forward('adoptSessionRisk'),
+  sessionsForRisk: slot.forward('sessionsForRisk'),
   pendingFor: slot.forward('pendingFor'),
   completeAuthentication: slot.forward('completeAuthentication')
 };

@@ -148,12 +148,13 @@ cached, so each decision makes a fresh query.
 
 ### The embedded PEPs: this service's own issuance and access
 
-Three PEPs are built into the process:
+Four PEPs are built into the process:
 
 | PEP | Decides | Policy |
 |---|---|---|
 | **issuance** | every one of the nine kinds of issuance: session, access token, ID token, refresh token, authorization code, SAML assertion, WS-Federation token, WS-Trust token and Kerberos ticket | `xacml.issuancePolicy` (`role-issuance`) |
 | **access** | who may reach the admin console, the management API, the User Portal, SCIM, the SPIRE Server API, the embedded debugger and the `/xacml` surface | `xacml.accessPolicy` (`access-control`) |
+| **risk response** | what happens when a person's risk level changes: a CAEP announcement, ending everything they hold, a RISC credential-compromise, disabling the account — one question per reaction, a Permit meaning do it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) | `xacml.riskResponsePolicy` (`risk-response`) |
 | **demonstration** | `GET /xacml/protected` | the repository root |
 
 The issuance PEP builds a request in which the subject is the party being
@@ -177,7 +178,7 @@ enforces a risk Deny, and development mode records it and lets the issuance
 through. [Risk scoring](risk-scoring.md#how-a-score-decides) has the rules and
 how to change them.
 
-Both service policies are **built in and called directly, not seeded**. The
+The three service policies are **built in and called directly, not seeded**. The
 same built-in document applies in every realm. A realm that wants something
 different writes a repository entry with the name in the setting, and that
 override applies only to its own realm. Delete the entry and the built-in
@@ -285,6 +286,7 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.enforceAccess` | `STS_XACML_ENFORCE_ACCESS` | `true` | yes | Whether the gated surfaces ask the embedded PDP. The role checks underneath still apply. |
 | `xacml.accessPolicy` | `STS_XACML_ACCESS_POLICY` | `access-control` | yes | The policy the access PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.issuancePolicy` | `STS_XACML_ISSUANCE_POLICY` | `role-issuance` | yes | The policy the issuance PEP evaluates. A repository entry with this name overrides the built-in one. |
+| `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked what happens when a person's risk level changes. A repository entry with this name overrides the built-in one. |
 | `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many entries `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. |
 | `xacml.pepBias` | `STS_XACML_PEP_BIAS` | `deny-biased` | yes | The demonstration PEP's bias (section 7.2): `deny-biased` or `permit-biased`. |
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |

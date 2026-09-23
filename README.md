@@ -1690,6 +1690,8 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `risk.highScorePercent` | `STS_RISK_HIGH_SCORE_PERCENT` | `1000` | yes | The score, in hundredths, from which a sign-in is HIGH. |
 | `risk.assessmentRetentionDays` | `STS_RISK_ASSESSMENT_RETENTION_DAYS` | `90` | yes | How long an assessment is kept. |
 | `risk.historyRetentionDays` | `STS_RISK_HISTORY_RETENTION_DAYS` | `180` | yes | How long the model remembers a value nobody has signed in with since — an address, a network, a device. |
+| `risk.rescoreEveryS` | `STS_RISK_RESCORE_EVERY_S` | `300` | yes | How often the `risk.rescore` job re-checks every live sign-on session against the datasets and the failure history, raising (never lowering) one that became riskier (#62 P4). |
+| `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked, once per reaction, what happens when a person's risk level changes: a CAEP risk-level-change, everything they hold ended, a RISC credential-compromise, the account disabled. Built in; a realm's entry of this name overrides it. |
 | `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` | **restart** — the store is opened and READ before the HTTP listener binds, so a mode changed at runtime would leave a service whose directory came from one place and whose writes went to another | Where the embedded directory, the trust realm registry and the runtime setting changes are written down. `memory` writes nothing and is what this service did until 2026-08-27. `ldif` writes an RFC 2849 file per realm plus two JSON files into `dataDir` and needs no database. `postgres` writes six tables. What this service MINTS — sessions, tokens, codes, artifacts, Kerberos principals, the replay caches, the counters and the audit log — is persisted in PRODUCT mode on `postgres` and in no other configuration, each row encrypted under the same key-encryption key as the signing keys; development mode persists none of it, because the signing key is regenerated on every start there. See *Persistence* above. |
 | `persistence.dataDir` | `STS_PERSISTENCE_DATA_DIR` | `./data` | **restart** — same reason | Where `ldif` mode writes. A relative path resolves against the package root rather than the working directory, for the reason `CONFIG_FILE` does. Ignored in the other two modes. In a container this is what a volume mounts over. |
 | `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` | **restart** — the connection pool is opened before the listener binds | The connection string `postgres` mode dials. **The default names an OWNER and the compose stack does not**: the default is for a local database with nothing in it, which this service builds for itself, while the stack dials the least-privileged `sts_app` that `postgres/schema.sql` created — see *Building the schema*. The default is a LOCAL DEVELOPMENT one matching the Postgres service in this repository's `docker-compose.yml` (user, password and database all `sts`), so turning persistence on against a local database is one setting rather than two. **It is never dialled unless `persistence.mode` is `postgres`**, which is not the default, so it is inert on an ordinary run. The compose stack sets this variable itself with `postgres` as the host, that being the service name on its network. It carries a password, so this service never echoes it back — `/admin/persistence` reports the host, port, database and user parsed out of it. |
@@ -8291,8 +8293,15 @@ MEDIUM for a second factor — a security key where a signal is about the
 device — in the same evaluation as the roles. Product mode enforces it;
 development records it and lets the issuance through
 (`risk.enforceInDevelopment`). The rules are changed in the policy, not the
-code: `docs/risk-scoring.md` has them. Every assessment, with the decision it
-met, is listed on Monitoring → Risk and returned by `GET /admin-api/risk`.
+code: `docs/risk-scoring.md` has them. **What a CHANGE of a person's level
+leads to is policy too (#62 P4)**: the built-in `risk-response` policy
+announces it over CAEP, ends everything the person holds on crossing into
+HIGH, tells RISC a credential is compromised on evidence about one, and
+disables nobody unless an operator builds it to. A live session presented
+from another device, TLS client or network is assessed again, and the
+`risk.rescore` job raises a session whose address has since become risky.
+Every assessment, with the decision it met, is listed on Monitoring → Risk
+and returned by `GET /admin-api/risk`.
 
 ### Third-party datasets: supplied by you, never shipped
 

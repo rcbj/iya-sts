@@ -4395,6 +4395,24 @@ function create(options) {
       });
     },
 
+    // A REACTION TO A CHANGE OF RISK, CLAIMED ONCE (#62 P4): `actions` holds
+    // one key per reaction naming the assessment it was last taken for, and
+    // the claim succeeds only where that is not already this one — so a
+    // retry, or a second node reading the same change, does not end
+    // somebody's sessions twice. Bounded by the number of reactions.
+    riskClaimAction: function (realm, subject, reaction, assessmentId) {
+      log.debug("Entering riskClaimAction(). " + reaction);
+      log.debug("Leaving riskClaimAction().");
+      return pool.query(
+        'UPDATE sts_risk_subjects SET actions = actions || ' +
+        'jsonb_build_object($3::text, $4::text) WHERE realm = $1 AND ' +
+        'subject = $2 AND (actions->>$3::text) IS DISTINCT FROM $4::text',
+        [realm || '', subject || '', reaction, assessmentId || '']
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
     // One person's standing, or null — what an issuance with no session to
     // read its risk from stands on (#62 P3).
     riskSubjectOf: function (realm, subject) {
