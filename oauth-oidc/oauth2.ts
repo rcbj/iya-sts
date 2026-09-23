@@ -2930,6 +2930,23 @@ class OAuth2Server {
     return metadata;
   }
 
+  // THIS REALM'S PROTOCOL METADATA AS AN OPENID FEDERATION ENTITY (#132):
+  // the two documents its Entity Configuration carries under the
+  // `openid_provider` and `oauth_authorization_server` entity types (OpenID
+  // Federation for OpenID Connect 1.1, 5.1.2 and 5.1.3). Unsigned — the
+  // Entity Configuration is their signature — and the default authorization
+  // server's, whose `issuer` is the realm's Entity Identifier.
+  federationMetadata(req: Req): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.federationMetadata().");
+    const op = this.oidcMetadata(req);
+    const as = this.asMetadata(req);
+    delete op.signed_metadata;
+    delete as.signed_metadata;
+    log.debug("Leaving OAuth2Server.federationMetadata().");
+    return { openid_provider: op, oauth_authorization_server: as };
+  }
+
   // signed_metadata is an RFC 8414 member and OpenID Connect Discovery does not
   // define it. It is included anyway: the two documents share one member
   // registry, an OIDC client ignores members it does not know, and a signed
@@ -16445,6 +16462,7 @@ export = {
   installInstance: (instance: OAuth2Server): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   asMetadata: slot.forward('asMetadata'),
+  federationMetadata: slot.forward('federationMetadata'),
   // THE TWO ADVERTISED SIGNING LISTS, for `admin-ui/crypto_metadata.ts`.
   // They are already in the discovery document, so exporting them
   // publishes nothing new; what it buys is that the crypto page reports the

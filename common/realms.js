@@ -3171,6 +3171,16 @@ function realmSupport() {
             'one realm, and a certificate another realm issued fails the ' +
             'Intermediate check. What is shared is EST\'s per-address rate ' +
             'limit, which is keyed by the client address and not the realm.' },
+    { family: 'OpenID Federation', state: 'full', by: 'path',
+      cards: ['OpenID Federation'],
+      note: 'Each realm is a federation entity of its own: its Entity ' +
+            'Identifier is its issuer, its Federation Entity Keys, ' +
+            'subordinates, Trust Anchors and Trust Marks are entries in its ' +
+            'own ou=oidfed, and its endpoints are under its own prefix. What ' +
+            'crosses realms is DELIBERATE and signed: with ' +
+            'oidfed.realmsAreSubordinates on, the default realm vouches for ' +
+            'every other realm and they trust it, each chain verified like ' +
+            'any other — resolved in process rather than over HTTP.' },
     { family: 'TLS certificate', state: 'none', by: 'shared',
       cards: ['PKI / X.509'],
       note: 'ONE CERTIFICATE FOR THE PROCESS, presented by the main port, ' +

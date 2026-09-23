@@ -55,9 +55,9 @@ const compiledTree = require('../common/compiled_tree');
 const CHECKED_DIRS = ['acme', 'admin-core', 'admin-ui', 'authn', 'cluster',
                       'common', 'debugger', 'est', 'federation', 'gnap',
                       'home', 'kerberos', 'ldap', 'logout', 'mgmt-api',
-                      'oauth-oidc', 'oid4vc', 'persistence', 'pki', 'portal',
-                      'risk', 'saml', 'scep', 'scim', 'spiffe', 'ssf', 'tls',
-                      'ws-federation', 'ws-trust', 'xacml'];
+                      'oauth-oidc', 'oid4vc', 'oidfed', 'persistence', 'pki',
+                      'portal', 'risk', 'saml', 'scep', 'scim', 'spiffe',
+                      'ssf', 'tls', 'ws-federation', 'ws-trust', 'xacml'];
 const CHECKED_FILES = ['server.js'];
 const ROOT_SOURCES = ['sts_metadata.ts'];
 const NOT_OURS = ['kerberos/krb5_primitives.js', 'kerberos/krb5_asn1.js',

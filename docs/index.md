@@ -77,6 +77,7 @@ documents it.
 | SCIM | `/admin/scim` | [SCIM 2.0](scim.md) |
 | Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) |
 | Federation | `/admin/federation` | [Federation](federation.md) |
+| OpenID Federation | `/admin/oidfed` | [OpenID Federation](oidfed.md) |
 | GNAP | `/admin/gnap` | [GNAP](gnap.md) |
 | TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md) |
 | Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) |
@@ -152,6 +153,7 @@ the diagram and a walk through each layer.
 | SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}`, `/saml11/rp` | [saml11](saml11.md) |
 | SAML 2.0 and SAML 1.1 assertions | inside all four above | [saml2-sso](saml2-sso.md) |
 | **Federation** — this service as either end of a relationship with a foreign identity service, in five of those protocols | `/federation`, `/admin/federation` | [federation](federation.md) |
+| **OpenID Federation 1.1** — every realm a federation entity (Trust Anchor, Intermediate or Leaf) with its own Federation Entity Keys; Subordinate Statements with metadata policy and constraints, Trust Chain resolution, Trust Marks, and the section 8 endpoints | `/.well-known/openid-federation`, `/oidfed/*`, `/admin/oidfed` | [oidfed](oidfed.md) |
 | **JWT assertions (RFC 7521, RFC 7523)** — both halves: an assertion instead of a client secret, and an assertion instead of an authorization code | the token endpoint | [jwt-assertions](jwt-assertions.md) |
 | **SAML 2.0 assertions (RFC 7521, RFC 7522)** — the same framework's other profile: a signed `<saml:Assertion>` instead of a client secret, and instead of an authorization code. A **separate key pair per application** from the JWT one, and neither can sign for the other | the token endpoint | [saml-assertions](saml-assertions.md) |
 | **A certificate authority** — ONE Root for the service, an Intermediate per trust realm and per the process, an Issuing CA per use case, and **every key pair this service generates as a leaf of it** | `/admin/pki`, `/admin-api/pki` | [pki](pki.md) |

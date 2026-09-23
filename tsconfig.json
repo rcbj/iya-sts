@@ -30,6 +30,7 @@
     "mgmt-api/*.js", "mgmt-api/*.ts",
     "oauth-oidc/*.js", "oauth-oidc/*.ts",
     "oid4vc/*.js", "oid4vc/*.ts",
+    "oidfed/*.js", "oidfed/*.ts",
     "persistence/*.js", "persistence/*.ts",
     "pki/*.js", "pki/*.ts",
     "portal/*.js", "portal/*.ts",
