@@ -1008,7 +1008,8 @@ const SECTIONS = [
                    'assertion\'s clock skew — and the deliberate defect ' +
                    '<code>oauth2.breakIdTokenNonce</code>, which makes this ' +
                    'service return an ID Token whose <code>nonce</code> is ' +
-                   'wrong so that a client can find out whether it checks. ' +
+                   'wrong so that a client can find out whether it checks ' +
+                   '(development mode only). ' +
                    'The five a CLIENT may answer for itself — the three ' +
                    'lifetimes, the refresh idle timeout and whether a ' +
                    'sign-out revokes refresh tokens — moved to ' +
@@ -5393,8 +5394,14 @@ class AdminConsole {
     const inner = '<div class="err"><strong>' + this.esc(title) + '</strong> ' +
                   this.esc(message) + '</div>' +
       (detail.html || '');
+    // THROUGH `withCsrf()` LIKE EVERY OTHER PAGE (2026-09-23). The shell draws
+    // the Sign out form for anybody with a session, and a refusal page is
+    // exactly where the gate says a refused person must still be able to sign
+    // out — without the token the gate's own exemption refused that POST as
+    // `csrf (missing)`, so a person refused a role could not leave.
     res.status(status).type('text/html')
-       .send(this.page(title, '', inner, null, gateStateFor(req), req));
+       .send(this.withCsrf(req, this.page(title, '', inner, null,
+                                          gateStateFor(req), req)));
     log.debug("Leaving AdminConsole.refuse(). Answered HTML.");
   }
 
@@ -24182,6 +24189,68 @@ class AdminConsole {
   // no specification. Everything in it is a decision this service made, and the
   // page says which decision and why rather than citing a document.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // WHAT THE KDC DOES ABOUT PRE-AUTHENTICATION, IN THIS REALM (#173,
+  // 2026-09-22) — the `status` member of `/admin/kerberos`, and so of
+  // `GET /admin-api/kerberos` (rule 7). Whether a password alone gets a
+  // two-factor account a ticket is `global.mode`'s answer
+  // (`mode.issuesTicketsOnPasswordAlone()`), and it is drawn here rather than
+  // left to the mode page because it is the KDC's behaviour somebody comes to
+  // this page to find. The FAST provider is `kerberos/krb5_fast.ts`, reached
+  // through the principal database's key source; a process without the
+  // directory has none, and says so.
+  // ---------------------------------------------------------------------------
+  kerberosPreauthStatusBlock() {
+    const { log, mode } = this.deps;
+    log.debug("Entering AdminConsole.kerberosPreauthStatusBlock().");
+    const provider = krb5Principals.preauthProvider();
+    const refuses = !mode.issuesTicketsOnPasswordAlone();
+    const info = provider ? provider.policy() : {
+      fast: false,
+      passwordAloneForSecondFactorAccounts: refuses ? 'refused' : 'accepted',
+      note: 'no FAST provider is installed in this process (it arrives with ' +
+            'the directory), so FAST and OTP pre-authentication are not ' +
+            'offered'
+    };
+    const row = (what: string, answer: string) => {
+      return '<tr><th>' + this.esc(what) + '</th><td>' + answer + '</td></tr>';
+    };
+    const html =
+      '<h3>Pre-authentication, and a second factor</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      row('A password alone, for a person who holds or owes a second factor',
+          refuses
+            ? '<span class="state-valid">refused</span> — ' +
+              '<code>KDC_ERR_POLICY</code> (12), only after the password ' +
+              'verified; a wrong one is <code>KDC_ERR_PREAUTH_FAILED</code> ' +
+              'as for anybody (product mode)'
+            : '<span class="state-none">accepted</span> — development mode ' +
+              'issues a ticket on any password it accepts') +
+      row('FAST (RFC 6113)', info.fast
+        ? '<span class="state-valid">yes</span> — armor ' +
+          'FX_FAST_ARMOR_AP_REQUEST: a TGT the client host got with its own ' +
+          'keytab (a service principal from <a href="/admin/kerberos/' +
+          'principals">Principals</a>)'
+        : '<span class="state-none">no</span> — ' + this.esc(info.note)) +
+      row('Second factor over Kerberos', info.fast
+        ? 'RFC 6560 OTP pre-authentication inside FAST: the password as the ' +
+          'PIN and the person\'s authenticator app code, checked by the ' +
+          'sign-in screen\'s own verifier and once-only step ' +
+          '(<code>kinit -T &lt;armor ccache&gt;</code>). A security key over ' +
+          'Kerberos (PKINIT) is not supported.'
+        : 'none') +
+      row('What the ticket says', info.fast
+        ? 'the RFC 8129 authentication indicator <code>' +
+          this.esc(info.otpIndicator || 'otp') + '</code>, carried into ' +
+          'service tickets; <code>/authn/spnego</code> counts it as the ' +
+          'second factor (<code>amr</code> pwd, otp; <code>acr</code> mfa)'
+        : '—') +
+      '</table>';
+    const json = Object.assign({ passwordAloneRefused: refuses }, info);
+    log.debug("Leaving AdminConsole.kerberosPreauthStatusBlock().");
+    return { html: html, json: json };
+  }
+
   backupCodesMechanismBlock() {
     const { log, backupCodes } = this.deps;
     log.debug("Entering AdminConsole.backupCodesMechanismBlock().");
@@ -24728,7 +24797,12 @@ class AdminConsole {
       this.esc(json.authentication.assertedSelectorHeader) + '</code>) are ' +
       (json.authentication.acceptAssertedSelectors
         ? '<strong>believed</strong>, and nothing verifies them.'
-        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off).')) +
+        : 'ignored (<code>spiffe.acceptAssertedSelectors</code> is off, ' +
+          'or this realm is in product mode, where it is never in force).') +
+      ' Both switches are what is IN FORCE: in product mode ' +
+      '<code>spiffe.attestWorkloads</code> is always on and asserted ' +
+      'selectors are never believed, whatever is stored, and neither can ' +
+      'be changed to the looser value there.') +
       '<h3>The per-method table</h3>' +
       this.note('Copied from SPIRE\'s own <code>policy_data.json</code> ' +
       'rather than reasoned out: a table derived from what each method ' +
@@ -40462,7 +40536,10 @@ const PROTOCOL_SETTINGS_PAGES = [
            'It is the same device as the reserved password ' +
            '<code>invalid</code> and the Kerberos names that stay unknown: a ' +
            'permissive server is hard to write error handling against, so ' +
-           'the errors have to be reachable deliberately.'],
+           'the errors have to be reachable deliberately. <strong>In ' +
+           'development mode only</strong>: a realm in product mode ' +
+           'ignores it where the ID Token is built, logs that once ' +
+           '(STS-CORE-0106), and refuses turning it on (STS-CORE-0103).'],
     links: [['/.well-known/openid-configuration', 'the discovery document'],
             ['/oauth2/rfc9700', 'what RFC 9700 mode enforces'],
             ['/oauth2/oauth21', 'what OAuth 2.1 mode enforces'],
@@ -40594,6 +40671,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'every application here. With it off that endpoint answers 403 ' +
            'naming this setting, and <code>/spnego/protected</code> still ' +
            'performs the whole handshake and gives no session.'],
+    status: slot.forward('kerberosPreauthStatusBlock'),
     links: [['/krb5/principals', 'the principal database'],
             ['/krb5/service', 'the protected service'],
             ['/spnego', 'what SPNEGO is, for a person'],

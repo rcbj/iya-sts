@@ -53,7 +53,10 @@
 //     `entitledEntries()` with no caller) narrows by it. It used to be
 //     implemented and unused here, because there was nothing to match against.
 //     There is now. `spiffe.attestWorkloads` off restores the old answer —
-//     every entry to every caller.
+//     every entry to every caller — in DEVELOPMENT MODE ONLY (#104,
+//     `mode.servesUnattestedEntries()`): `auth.attestWorkloads()` reads it
+//     through `mode.valueInForce()`, so a product realm narrows whatever is
+//     stored.
 //
 //   * **Any caller that can reach the TCP port can still obtain an
 //     identity** (and, on the socket, any process when the native module is

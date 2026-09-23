@@ -5257,11 +5257,16 @@ function oidcRegistrationProblem(values) {
   const has = function (grant) {
     return lists.grant_types.indexOf(grant) >= 0;
   };
+  // `response_type=none` (#125) issues nothing, so it needs no grant and
+  // contradicts none: a client registering only it is not refused for the
+  // authorization_code grant RFC 7591 defaults it to.
+  const onlyNone = lists.response_types.length > 0 &&
+    lists.response_types.every(function (one) { return one === 'none'; });
   const clash = usesCode && !has('authorization_code')
     ? 'a response type with code needs the authorization_code grant'
     : usesToken && !has('implicit')
       ? 'a response type with token needs the implicit grant'
-      : has('authorization_code') && !usesCode
+      : has('authorization_code') && !usesCode && !onlyNone
         ? 'the authorization_code grant needs a response type with code'
         : has('implicit') && !usesImplicit
           ? 'the implicit grant needs a response type with token or id_token'

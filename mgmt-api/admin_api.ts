@@ -1088,8 +1088,10 @@ class AdminApi {
                      'four lifetimes `GET /token-lifetimes` also reports — ' +
                      'and `oauth2.breakIdTokenNonce`, which makes this ' +
                      'service return an ID Token whose `nonce` is WRONG so ' +
-                     'that a client can be shown to check ' +
-                     'it.\n\n`oauth2.rfc9700` is restart-only and says so in ' +
+                     'that a client can be shown to check it — in ' +
+                     'development mode only; a product realm ignores it and ' +
+                     'refuses setting it.\n\n`oauth2.rfc9700` is ' +
+                     'restart-only and says so in ' +
                      '`restartReason`: `global.https` derives from it and a ' +
                      'listener\'s scheme is settled when the socket is ' +
                      'bound. A TRUST REALM can carry it while the process ' +
@@ -1243,7 +1245,16 @@ class AdminApi {
                      '`KDC_ERR_C_PRINCIPAL_UNKNOWN` — every other name gets ' +
                      'an account — and `krb5.clockOffset` moves this KDC\'s ' +
                      'idea of now so a client can be shown `KRB_AP_ERR_SKEW` ' +
-                     'without anybody touching a system clock.' },
+                     'without anybody touching a system clock.\n\nAND A ' +
+                     '`status` MEMBER (#173): what the KDC does about ' +
+                     'pre-authentication in this realm — whether a password ' +
+                     'alone gets a ticket for a person who holds or must hold ' +
+                     'a second factor (`passwordAloneRefused`; product ' +
+                     'refuses it with KDC_ERR_POLICY after the password ' +
+                     'verified), whether RFC 6113 FAST is served (`fast`, ' +
+                     'with its armor types and factors), and the RFC 8129 ' +
+                     'indicator an OTP pre-authentication puts in a ticket ' +
+                     '(`otpIndicator`).' },
       { path: '/ldap', console: '/admin/ldap', tag: 'LDAP',
         operationId: 'getLdapSettings',
         summary: 'The embedded directory\'s own settings',

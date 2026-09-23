@@ -86,12 +86,16 @@
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route, so its position in the require
 // order is not a position. It requires only `config`, which requires only two
-// leaves here, so it is a LEAF and must stay one: everything above it may
-// require it and it may never require any of them back. Every predicate takes
-// no argument and reads the AMBIENT realm, exactly as `config.value()` does.
+// leaves here, and `error_codes`, which requires nothing (since #104, for the
+// code of an ignored value), so it is a LEAF and must stay one: everything
+// above it may require it and it may never require any of them back. Every
+// predicate takes no argument and reads the AMBIENT realm, exactly as
+// `config.value()` does.
 // ---------------------------------------------------------------------------
 
 const config = require('./config');
+// A leaf that requires nothing here, for the code of an ignored value.
+const errorCodes = require('./error_codes');
 
 // This module's own logger rather than the shared one in helpers.js, which
 // requires this module: a require back would close a cycle. So the level is
@@ -185,6 +189,51 @@ function requiresWorkloadAttestation() {
   log.debug("Entering requiresWorkloadAttestation().");
   log.debug("Leaving requiresWorkloadAttestation().");
   return isProduct();
+}
+
+// May `spiffe.attestWorkloads` OFF answer a Workload API caller with entries
+// its selectors do not match (#104, 2026-09-23)? Development says yes: off is
+// the answer this service gave before selectors decided anything, and a
+// client's "I was handed every identity" path is exercised with it. Product
+// says no whatever the setting says — every caller would be handed every
+// registration entry, which makes #40's attestation meaningless — so the
+// Workload API narrows on selectors there always.
+function servesUnattestedEntries() {
+  log.debug("Entering servesUnattestedEntries().");
+  log.debug("Leaving servesUnattestedEntries().");
+  return !isProduct();
+}
+
+// May a caller on the SPIRE Server API's Unix socket be the `local` entity
+// with nothing verified but the socket's existence (#104, 2026-09-23)?
+// `spiffe.trustLocalSocket` (on by default) is SPIRE's own model — the local
+// caller is trusted and the socket's filesystem permissions are the boundary.
+// Development trusts the socket as it always did. Product VERIFIES the
+// boundary instead of assuming it: the socket must have been made 0600 and
+// must sit in a directory other users cannot reach, and the peer's kernel uid
+// (SO_PEERCRED, `spiffe/spiffe_peer.ts`) must be this service's own. A caller
+// failing either is not `local`, and needs an administrator's X509-SVID on
+// the TCP port like anybody else. `spiffe/spiffe_auth.ts` asks it.
+function trustsUnverifiedLocalSocket() {
+  log.debug("Entering trustsUnverifiedLocalSocket().");
+  log.debug("Leaving trustsUnverifiedLocalSocket().");
+  return !isProduct();
+}
+
+// May a DELIBERATE DEFECT make a response wrong (#104, 2026-09-23)? Three
+// settings exist to spoil something on purpose, so that a client's handling of
+// a wrong answer can be exercised against a server that is otherwise right:
+// `oauth2.breakIdTokenNonce` (a wrong nonce in every ID Token),
+// `ssf.breakSetSignature` (one character of every SET's signature changed) and
+// `ssf.legacySubClaim` (the `sub` claim RFC 8417 discourages, beside
+// `sub_id`). Development honours them. Product does not: each is IGNORED
+// where it is read — the mode can be flipped at runtime, so the read is the
+// guard — said once per process (STS-CORE-0106, `valueInForce()` below), and
+// refused on write (the `onlyWhile` marker, STS-CORE-0103).
+function spoilsOnPurpose() {
+  log.debug("Entering spoilsOnPurpose().");
+  log.debug("Leaving spoilsOnPurpose().");
+  return !isProduct();
 }
 
 // May a user, application, service principal or authorization server be created
@@ -612,6 +661,23 @@ function acceptsPasswordAloneFromSecondFactorAccounts() {
   return !isProduct();
 }
 
+// May the KDC issue a ticket-granting ticket on a PASSWORD ALONE to a person
+// who holds, or is required to hold, a second factor (#173, 2026-09-22)? The
+// AS exchange is the sixth password door #101 found, and the one that CAN ask
+// for more: RFC 6113 FAST carries RFC 6560 OTP pre-authentication, so a
+// person proves their password AND their authenticator app's code in one AS
+// exchange. Development says yes, as it accepts every password. Product says
+// no: an AS-REQ pre-authenticated with the password alone (PA-ENC-TIMESTAMP,
+// or FAST's PA-ENCRYPTED-CHALLENGE) is refused KDC_ERR_POLICY — AFTER the
+// password verified, so a wrong one is still KDC_ERR_PREAUTH_FAILED and the
+// refusal tells nobody without the password anything. `kerberos/krb5_kdc.js`
+// asks it, through the key source (`kerberos/krb5_person_keys.ts`).
+function issuesTicketsOnPasswordAlone() {
+  log.debug("Entering issuesTicketsOnPasswordAlone().");
+  log.debug("Leaving issuesTicketsOnPasswordAlone().");
+  return !isProduct();
+}
+
 // May a federation partner's asserted NAME be matched straight onto an
 // existing local person, which is `fedSubjectPolicy: any-existing` (#109,
 // 2026-09-22)? Development says yes — it is what this service did before the
@@ -1004,6 +1070,22 @@ const REQUIREMENTS = [
              'accept the password anyway, which lowers every such person to ' +
              'one factor there.',
     where: 'common/credentials.ts, common/app_passwords.ts' },
+  { id: 'kerberos-second-factor',
+    what: 'A person who holds or must hold a second factor gets no Kerberos ' +
+          'ticket on a password alone',
+    development: 'The KDC issues a TGT to an AS-REQ pre-authenticated with ' +
+                 'the password alone (PA-ENC-TIMESTAMP, or FAST\'s ' +
+                 'PA-ENCRYPTED-CHALLENGE), as it takes every password.',
+    product: 'That AS-REQ is refused KDC_ERR_POLICY (12), STS-KRB-0135, ' +
+             'after the password verified (a wrong one is still ' +
+             'KDC_ERR_PREAUTH_FAILED), whenever the person holds an ' +
+             'authenticator app or a security key in the mfa role, or a ' +
+             'second factor is required of them. A person with an ' +
+             'authenticator app gets a ticket through RFC 6113 FAST armor ' +
+             'with RFC 6560 OTP pre-authentication — password and code in ' +
+             'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
+             'app password is never a Kerberos key.',
+    where: 'kerberos/krb5_kdc.js, kerberos/krb5_fast.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -1036,6 +1118,21 @@ const REQUIREMENTS = [
     where: 'common/outbound_tls.ts, gnap/gnap_http.ts, ssf/ssf_http.ts, ' +
            'federation/federation_http.ts, xacml/xacml_pep_http.ts, ' +
            'spiffe/spiffe_workload_attestor_k8s.ts' },
+  // #104 (2026-09-23).
+  { id: 'deliberate-defects',
+    what: 'A deliberate defect does not make a response wrong',
+    development: 'oauth2.breakIdTokenNonce puts a wrong nonce in every ID ' +
+                 'Token that should carry one, ssf.breakSetSignature changes ' +
+                 'one character of every SET\'s signature, and ' +
+                 'ssf.legacySubClaim adds the `sub` claim RFC 8417 ' +
+                 'discourages beside `sub_id` — each while it is on, so that ' +
+                 'a client\'s handling of a wrong answer can be exercised.',
+    product: 'All three are IGNORED where they are read — a realm switched ' +
+             'to product with one still stored answers correctly — logged ' +
+             'once per process (STS-CORE-0106), and refused on write ' +
+             'through /admin, /admin-api and a realm\'s settings ' +
+             '(STS-CORE-0103).',
+    where: 'common/mode.js, oauth-oidc/oauth2.ts, ssf/ssf_events.js' },
   { id: 'realm-chooser',
     what: 'The realm chooser before sign-in lists every realm',
     development: 'A browser with no session at /admin or /portal, on a ' +
@@ -1376,6 +1473,23 @@ const REQUIREMENTS = [
     product: 'The same, over a registry that no longer mints an entry for ' +
              'whoever asks.',
     where: 'spiffe/spiffe_auth.ts' },
+  // #104 (2026-09-23): SPIRE's model, with the boundary verified.
+  { id: 'spire-local-socket',
+    what: 'A caller on the SPIRE Server API\'s Unix socket is the trusted ' +
+          '`local` entity only where the socket\'s boundary holds',
+    development: 'Every caller on the socket is `local` while ' +
+                 'spiffe.trustLocalSocket is on (the default): the socket\'s ' +
+                 'filesystem permissions are assumed to be the boundary, as ' +
+                 'a real spire-server assumes.',
+    product: 'The boundary is VERIFIED per connection: the socket must have ' +
+             'been made 0600 and sit in a directory with no group or other ' +
+             'bits (STS-SPIFFE-0117), and the peer\'s kernel uid, read with ' +
+             'SO_PEERCRED through the native module, must be this ' +
+             'service\'s own (STS-SPIFFE-0118; unreadable, STS-SPIFFE-0119). ' +
+             'A caller failing either is not `local` and needs an ' +
+             'administrator\'s X509-SVID on the TCP port.',
+    where: 'spiffe/spiffe_auth.ts, spiffe/spiffe_grpc.ts, ' +
+           'spiffe/spiffe_server.ts' },
   // #40 (2026-09-21): what node and workload attestation check, by mode.
   { id: 'spiffe-node-attestation',
     what: 'SPIFFE node attestation (AttestAgent)',
@@ -1392,10 +1506,16 @@ const REQUIREMENTS = [
                  'the native module is built; without it the socket is served ' +
                  'on transport selectors alone and says so. Asserted ' +
                  'selectors are believed when spiffe.acceptAssertedSelectors ' +
-                 'is on.',
+                 'is on, and spiffe.attestWorkloads off answers every caller ' +
+                 'with every entry.',
     product: 'Without the native module the Workload API socket is NOT ' +
-             'served. Asserted selectors are never believed.',
-    where: 'spiffe/spiffe_peer.ts, spiffe/spiffe_auth.ts' },
+             'served. Asserted selectors are never believed, and a caller ' +
+             'is answered only with the entries its selectors match, ' +
+             'whatever spiffe.attestWorkloads says; both settings are ' +
+             'ignored where they are read (logged once, STS-CORE-0106) and ' +
+             'refused on write (STS-CORE-0103).',
+    where: 'spiffe/spiffe_peer.ts, spiffe/spiffe_auth.ts, ' +
+           'spiffe/spiffe_workload.ts' },
   // 2026-09-12. The one row here whose two columns differ in what is REFUSED
   // for a reason that is not "development checks nothing": both modes consult
   // the register, and the difference is what an UNREACHABLE foreign CRL costs.
@@ -1623,6 +1743,110 @@ const NOT_YET = [
           'design.' },
 ];
 
+// ---------------------------------------------------------------------------
+// A SETTING THE MODE DOES NOT ALLOW, AS IT IS IN FORCE (#104, 2026-09-23).
+//
+// A row in `config.js` carrying `onlyWhile: '<predicate>'` may hold a value
+// other than its default only while that predicate answers true. The WRITE is
+// refused there (`modeWriteProblem()`, STS-CORE-0103); this is the READ, and
+// the read is the guard, because `global.mode` is itself a runtime setting and
+// a realm can be switched to product with a development-only value still
+// stored. So a reader asks `valueInForce(key)` rather than `config.value(key)`
+// and gets the row's DEFAULT whenever the predicate says no — with a warning,
+// once per process and setting, naming it (STS-CORE-0106). "Once" is a set of
+// at most one entry per marked row, bounded by the table, so it is not a cache
+// in `common/cache_registry.js`'s sense and not periodic work.
+//
+// The four `…SkipTlsVerification` rows and SPIRE's kubelet skip carry the
+// marker too and are read through `common/outbound_tls.ts`, which says so
+// with each family's own code; nothing else reads them.
+// ---------------------------------------------------------------------------
+const ignoredAnnounced = new Set();
+let rowsByKey = null;
+
+// The configuration row for `key`, or null. Indexed on first use: `config.js`
+// is loaded before this file, and its table does not change after.
+function rowOf(key) {
+  log.debug("Entering rowOf(). key=" + key);
+  if (!rowsByKey) {
+    rowsByKey = {};
+    config.SETTINGS.forEach(function (row) {
+      rowsByKey[row.key] = row;
+    });
+  }
+  log.debug("Leaving rowOf().");
+  return rowsByKey[key] || null;
+}
+
+// Does the mode allow `key` to hold `value`? True for a row with no marker,
+// for the row's default, and wherever the marker's predicate answers true.
+function allowsValue(key, value) {
+  log.debug("Entering allowsValue(). key=" + key);
+  const row = rowOf(key);
+  if (!row || !row.onlyWhile || value === row.dflt) {
+    log.debug("Leaving allowsValue(). Unmarked, or the default.");
+    return true;
+  }
+  const predicate = module.exports[row.onlyWhile];
+  if (typeof predicate !== 'function') {
+    // A marker naming no predicate is a defect in config.js; refusing the
+    // value is the direction that cannot loosen anything.
+    log.debug("Leaving allowsValue(). The marker names no predicate.");
+    return false;
+  }
+  const allowed = !!predicate();
+  log.debug("Leaving allowsValue(). " + allowed);
+  return allowed;
+}
+
+// The value of `key` as the ambient realm's mode lets it be: the setting's own
+// value, or its default where the mode refuses a development-only value.
+function valueInForce(key) {
+  log.debug("Entering valueInForce(). key=" + key);
+  const value = config.value(key);
+  if (allowsValue(key, value)) {
+    log.debug("Leaving valueInForce(). As set.");
+    return value;
+  }
+  const row = rowOf(key);
+  if (!ignoredAnnounced.has(key)) {
+    ignoredAnnounced.add(key);
+    log.warn(errorCodes.tag('STS-CORE-0106') + 'mode: ' + key + ' is set ' +
+             'to ' + JSON.stringify(value) + ' and is IGNORED, because this ' +
+             'realm is in product mode (global.mode=product): ' +
+             writeRefusalReason(row.onlyWhile) + ' It is read as ' +
+             JSON.stringify(row.dflt) + ' until it is reset. Said once per ' +
+             'process.');
+  }
+  log.debug("Leaving valueInForce(). The default, in product.");
+  return row.dflt;
+}
+
+// WHY a marked row's value is not allowed, by the predicate the row names:
+// the sentence the write refusal and the ignored-value warning both end with.
+const WRITE_REFUSALS = {
+  skipsOutboundTlsVerification:
+    'verifying the certificate of whoever answers an outbound request is ' +
+    'not optional there. Name a private CA in the matching CA file setting ' +
+    'instead.',
+  spoilsOnPurpose:
+    'a deliberate defect may not make a response wrong there. Exercise a ' +
+    'client against it in a development realm.',
+  believesAssertedSelectors:
+    'a selector a workload asserts about itself is a claim nothing checked, ' +
+    'and product never believes one.',
+  servesUnattestedEntries:
+    'the Workload API answers a caller only with the registration entries ' +
+    'its attested selectors match there, never with every entry.'
+};
+
+function writeRefusalReason(predicate) {
+  log.debug("Entering writeRefusalReason(). " + predicate);
+  log.debug("Leaving writeRefusalReason().");
+  return WRITE_REFUSALS[predicate] ||
+    'the setting is for development mode only.';
+}
+
 // The whole answer, for the console page, the management API and the metadata
 // report. One function so the three cannot disagree.
 function report() {
@@ -1650,6 +1874,9 @@ module.exports = {
   autoCreates: autoCreates,
   believesAssertedSelectors: believesAssertedSelectors,
   requiresWorkloadAttestation: requiresWorkloadAttestation,
+  servesUnattestedEntries: servesUnattestedEntries,
+  trustsUnverifiedLocalSocket: trustsUnverifiedLocalSocket,
+  spoilsOnPurpose: spoilsOnPurpose,
   requiresConfidentialClientAuthentication:
     requiresConfidentialClientAuthentication,
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
@@ -1679,6 +1906,7 @@ module.exports = {
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
+  issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
   matchesFederatedNames: matchesFederatedNames,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
@@ -1695,6 +1923,9 @@ module.exports = {
   gatesSharedSignals: gatesSharedSignals,
   gatesSpireServerApi: gatesSpireServerApi,
   observesRiskOnly: observesRiskOnly,
+  allowsValue: allowsValue,
+  valueInForce: valueInForce,
+  writeRefusalReason: writeRefusalReason,
   REQUIREMENTS: REQUIREMENTS,
   NOT_YET: NOT_YET,
   report: report

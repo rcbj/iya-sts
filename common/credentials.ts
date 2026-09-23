@@ -963,15 +963,14 @@ class Credentials {
                 'stands.');
       return null;
     }
-    if (!this.isPersonEntry(name)) {
+    const demand = this.secondFactorDemand(name);
+    if (!demand.person) {
       log.debug('Leaving Credentials.secondFactorRefusal(). Not a person.');
       return null;
     }
-    const holds = this.keysOf(name).some((one) => {
-      return one.role === 'mfa';
-    }) || !!this.totpOf(name);
-    const requirement = this.mfaRequirementFor(name);
-    if (!holds && !requirement.required) {
+    const holds = demand.holds;
+    const requirement = { required: demand.required, byUser: demand.byUser };
+    if (!demand.needed) {
       log.debug('Leaving Credentials.secondFactorRefusal(). No second ' +
                 'factor held or required.');
       return null;
@@ -1003,6 +1002,52 @@ class Credentials {
       detail: 'the password is right and ' + why + ', and ' + via + ' ' +
               'cannot ask for one: make an app password for this door on ' +
               '/portal/app-passwords' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // DOES THIS PERSON HOLD, OR OWE, A SECOND FACTOR? (#173, 2026-09-22)
+  //
+  // The question `secondFactorRefusal()` asks at the five password-only doors,
+  // answered on its own for a door that asks it WITHOUT a password in hand:
+  // the KDC, which verifies the password as a Kerberos key and never calls
+  // `verify()` (`kerberos/krb5_person_keys.ts` asks this through the key
+  // source). One answer for both, so the two doors cannot come to disagree
+  // about who is a two-factor account.
+  //
+  //   person    the entry is a PERSON (`isPersonEntry()`), not an application
+  //   totp      they hold an authenticator app — the second factor the KDC
+  //             can ASK for, as RFC 6560 OTP pre-authentication
+  //   key       they hold a security key in the `mfa` role
+  //   holds     totp or key
+  //   required  one is required of them (`mfaRequirementFor()`), and
+  //             `byUser` says whether by their entry or by the realm
+  //   needed    person, and holds or required
+  //
+  // Mode-free: whether `needed` REFUSES anything is each door's predicate.
+  // ---------------------------------------------------------------------------
+  secondFactorDemand(username) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.secondFactorDemand().');
+    const name = String(username || '').trim();
+    const none = { person: false, totp: false, key: false, holds: false,
+                   required: false, byUser: false, needed: false };
+    if (!name || !this.isPersonEntry(name)) {
+      log.debug('Leaving Credentials.secondFactorDemand(). Not a person.');
+      return none;
+    }
+    const key = this.keysOf(name).some((one) => {
+      return one.role === 'mfa';
+    });
+    const totp = !!this.totpOf(name);
+    const requirement = this.mfaRequirementFor(name);
+    const holds = key || totp;
+    const answer = { person: true, totp: totp, key: key, holds: holds,
+                     required: !!requirement.required,
+                     byUser: !!requirement.byUser,
+                     needed: holds || !!requirement.required };
+    log.debug('Leaving Credentials.secondFactorDemand(). needed=' +
+              answer.needed);
+    return answer;
   }
 
   // Is this entry a PERSON? The directory decides, by placement, never by
@@ -5960,6 +6005,7 @@ export = {
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   mechanismsFor: slot.forward('mechanismsFor'),
+  secondFactorDemand: slot.forward('secondFactorDemand'),
   bootstrap: slot.forward('bootstrap'),
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,

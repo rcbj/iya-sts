@@ -66,8 +66,10 @@ async function askTheIframe(script, cookie, origin, message) {
             source: { postMessage: function (text, to) {
               answers.push({ text: text, to: to });
             } } });
-  for (let i = 0; i < 20 && !answers.length; i++) {
-    await new Promise(function (resolve) { setTimeout(resolve, 5); });
+  // Up to five seconds: Web Crypto's digest is asynchronous, and a full
+  // suite's load once took it past the 100 ms this waited at first.
+  for (let i = 0; i < 500 && !answers.length; i++) {
+    await new Promise(function (resolve) { setTimeout(resolve, 10); });
   }
   log.debug("Leaving askTheIframe().");
   return answers[0] || { text: '(no answer)', to: '' };
@@ -236,6 +238,24 @@ function childMain() {
     });
   }
 
+  // RP-Initiated Logout asks the person to confirm a sign-out that carries
+  // no hint for this session (#124): the page's own form, submitted.
+  const confirmSignOut = async function (first, submit) {
+    const text = String((first && first.text) || '');
+    if (!/name="confirm_for"/.test(text)) {
+      return first;
+    }
+    const form = {};
+    (text.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
+      const name = /name="([^"]+)"/.exec(tag);
+      const value = /value="([^"]*)"/.exec(tag);
+      if (name) {
+        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
+      }
+    });
+    form.confirm = 'yes';
+    return submit(form);
+  };
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
@@ -368,7 +388,10 @@ function childMain() {
          String(r.headers.location || ''));
     const heldState = p.get('session_state');
 
-    const afterLogout = await request(port, 'GET', '/oauth2/logout');
+    const afterLogout = await confirmSignOut(
+      await request(port, 'GET', '/oauth2/logout'), function (form) {
+        return request(port, 'POST', '/oauth2/logout', { form: form });
+      });
     note(jar[sm.COOKIE] === '' || jar[sm.COOKIE] === undefined,
          '3f. a sign-out clears the browser state',
          afterLogout.status + ' bs=' + jar[sm.COOKIE] + ' ' +
