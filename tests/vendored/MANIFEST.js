@@ -294,6 +294,11 @@ const JOBS = [
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
   { file: 'sts_discovery_realms.js',     browser: false, local: true },
+  // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
+  // mode, another client's token refused invalid_grant, the token types, an
+  // unknown hint, and a refresh token taking its grant with it. `local:
+  // true`: this repository's own authorization server, in a throwaway realm.
+  { file: 'sts_token_revocation.js',     browser: false, local: true },
   // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
   // by default, then the discovery member, the OP iframe's narrowed
   // frame-ancestors and its script, and prompt=none's session_state checked

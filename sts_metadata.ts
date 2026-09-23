@@ -1291,8 +1291,15 @@ const SPECS: Spec[] = [
               'server.' },
   { id: 'rfc7009', name: 'RFC 7009 — Token Revocation',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7009',
-    coverage: 'full: revocation takes effect — a revoked token is reported ' +
-              'inactive by introspection.' },
+    coverage: 'full: section 2.1 in product mode — a confidential client ' +
+              'authenticates, a public one names its registered client_id, ' +
+              'and a client revokes only its own tokens (invalid_grant ' +
+              'otherwise); development authenticates only a caller that ' +
+              'presents a credential. Access and refresh tokens are ' +
+              'revocable, anything else is unsupported_token_type; an ' +
+              'unknown token_type_hint is ignored; a refresh token takes ' +
+              'its whole grant, access tokens included; a revoked token is ' +
+              'reported inactive by introspection (#102).' },
   { id: 'rfc7515', name: 'RFC 7515/7516/7517/7518 — JWS, JWE, JWK, JWA',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7515',
     coverage: 'partial: RS256 signatures throughout; RSA-OAEP-256 with ' +
@@ -8961,7 +8968,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oauth2/revoke', group: 'OAuth 2.0 / OIDC', name: 'Revocation ' +
       'endpoint',
     specs: ['rfc7009'], what: 'Revocation that takes effect: introspection ' +
-                              'then reports inactive.' },
+                              'then reports inactive. The client ' +
+                              'authenticates (in development only when it ' +
+                              'presents a credential), revokes only its ' +
+                              'own tokens, and a refresh token takes its ' +
+                              'grant with it.' },
   { path: '/oauth2/register', group: 'OAuth 2.0 / OIDC', name: 'Dynamic ' +
       'client registration',
     specs: ['rfc7591', 'rfc9700', 'oidc-registration'],

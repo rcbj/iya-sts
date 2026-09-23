@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3038** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3045** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 200
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 481
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 488
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -1571,6 +1571,13 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
 | `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
 | `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
+| `STS-OAUTH-0602` | An RFC 7009 revocation request named no token: section 2.1 makes the token parameter REQUIRED (#102). In both modes. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0603` | An RFC 7009 revocation request from a registered client did not authenticate: in product mode a confidential client presented no credential, or (in either mode) a credential that did not verify, or an entry that declares no method presented none (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0604` | Product mode: an RFC 7009 revocation request named no client this realm has registered — no client_id at all, or one with no entry — so there is no client to validate (#102). | invalid_client (HTTP 401, RFC 7009 section 2.1) |
+| `STS-OAUTH-0605` | An RFC 7009 revocation request presented a token this realm signed that is neither an access token nor a refresh token — an ID Token, a logout token, a SET — which this server does not revoke (#102). | unsupported_token_type (HTTP 400, RFC 7009 section 2.2.1) |
+| `STS-OAUTH-0606` | An RFC 7009 revocation request from an authenticated or identified client presented a token issued to another client. Refused and nothing revoked; the audit row names both clients (#102). | invalid_grant (HTTP 400, RFC 7009 section 2.1 and RFC 6749 section 5.2) |
+| `STS-OAUTH-0607` | A client authenticating at the revocation endpoint declares a token_endpoint_auth_method the selected authorization server does not list in revocation_endpoint_auth_methods_supported (#102). | invalid_client (HTTP 401) |
+| `STS-OAUTH-0608` | The revocation endpoint failed with an unexpected error outside every refusal it makes (#102). | server_error (HTTP 500) |
 
 ## STS-SAML
 
