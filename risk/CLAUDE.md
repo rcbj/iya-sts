@@ -254,7 +254,13 @@ read off that record before P3 lets anything be decided by them.
 
 **THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (100,
 a score of 1 — the model's even odds), HIGH from `risk.highScorePercent`
-(1000); UNSCORED for a first sign-in with no signal. The person's standing
+(1000); UNSCORED for a first sign-in with no signal — **and for every
+sign-in before the person has `risk.minimumHistory` (5) earlier ones**
+(2026-09-23, rcbj): with one or two sign-ins the model is mostly the
+population's prior, and a new person's second sign-in read as MEDIUM and was
+asked for a security key. `new-device` and `new-tls-stack` wait for the same
+history; the evidence signals (lists, an automated client, refused passwords,
+a compromised security key) apply however new the person is. The person's standing
 (`sts_risk_subjects`) keeps the level it came from, which is what P4's
 `risk-level-change` will say.
 
