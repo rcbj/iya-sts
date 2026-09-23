@@ -12026,7 +12026,400 @@ const SETTINGS = [
                  'does afterwards is fenced out. A job may state a longer ' +
                  'limit of its own — signer rotation, whose post-quantum ' +
                  'keys are slow to make, does — and this is the limit of ' +
-                 'every job that does not.' }
+                 'every job that does not.' },
+
+  // -------------------------------------------------------------------------
+  // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.
+  //
+  // **ONE TRANSPORT FOR THE SERVICE, WHICH A REALM MAY OVERRIDE** (rcbj's
+  // decision on #63): every row here is an ordinary realm-overridable row, so
+  // the default realm's value is the service's and a realm that sets its own
+  // sends through that. **A SECRET IS NEVER A VALUE HERE**: the SMTP password,
+  // the DKIM key, the Azure connection string and the Gmail service account
+  // are each a provider, a location and a field, read through
+  // `common/secrets.js` exactly as the database password is — and an empty
+  // location means *wherever the key-encryption key is*, with the field
+  // telling the secrets apart inside one JSON value.
+  // -------------------------------------------------------------------------
+  { key: 'mail.transport', group: 'Mail', label: 'Mail transport',
+    env: 'STS_MAIL_TRANSPORT', type: 'enum',
+    enumValues: ['default', 'capture', 'smtp', 'ses', 'acs', 'gmail', 'off'],
+    dflt: 'default', runtime: true,
+    description: 'How a message this service sends leaves it. `default` is ' +
+                 'the mode\'s: in DEVELOPMENT the capture transport, which ' +
+                 'keeps the message and shows it on Monitoring → Mail instead ' +
+                 'of sending it; in PRODUCT nothing (`off`). `smtp` is a ' +
+                 'self-hosted relay (or the Google Workspace SMTP relay, or ' +
+                 'the Amazon SES SMTP interface — see mail.smtpPreset), `ses` ' +
+                 'Amazon SES v2, `acs` Azure Communication Services Email, ' +
+                 '`gmail` the Gmail API as a Workspace mailbox. The three ' +
+                 'cloud transports need their SDK installed (an optional ' +
+                 'peer, like the secret-store SDKs).\n\n**`capture` is ' +
+                 'REFUSED in product mode**: a captured message carries its ' +
+                 'body, and a password reset link on the console is a ' +
+                 'credential shown to whoever may read it. A product service ' +
+                 'whose configured transport cannot be built does not start ' +
+                 '(STS-MAIL-0002).' },
+  { key: 'mail.from', group: 'Mail', label: 'From address',
+    env: 'STS_MAIL_FROM', type: 'string', dflt: '', runtime: true,
+    description: 'The address every message is sent from. Empty means ' +
+                 '`no-reply@` the realm\'s DNS domain. The provider must be ' +
+                 'allowed to send as it: a verified identity in SES, a ' +
+                 'MailFrom address of a connected domain in Azure, the ' +
+                 'impersonated mailbox (or one of its send-as aliases) for ' +
+                 'Gmail — and SPF, DKIM and DMARC for its domain are ' +
+                 'docs/mail.md\'s subject.' },
+  { key: 'mail.fromName', group: 'Mail', label: 'From display name',
+    env: 'STS_MAIL_FROM_NAME', type: 'string', dflt: '', runtime: true,
+    description: 'The display name beside the From address. Empty means ' +
+                 'none.' },
+  { key: 'mail.defaultLanguage', group: 'Mail',
+    label: 'Default message language',
+    env: 'STS_MAIL_DEFAULT_LANGUAGE', type: 'string', dflt: 'en',
+    runtime: true,
+    description: 'The language a message is written in when the recipient\'s ' +
+                 'entry names no preferredLanguage this realm has a template ' +
+                 'for. A BCP 47 tag; every built-in template exists in `en`.' },
+
+  { key: 'mail.smtpPreset', group: 'Mail', label: 'SMTP preset',
+    env: 'STS_MAIL_SMTP_PRESET', type: 'enum',
+    enumValues: ['custom', 'google-workspace-relay', 'aws-ses-smtp'],
+    dflt: 'custom', runtime: true,
+    description: 'A known relay, which fills in the host (and port) when ' +
+                 'mail.smtpHost is empty. `google-workspace-relay` is ' +
+                 'smtp-relay.gmail.com:587 with STARTTLS — Google Cloud has ' +
+                 'no transactional mail API of its own, and this relay, ' +
+                 'authenticated by the sending IP address in the Workspace ' +
+                 'admin console or by SMTP AUTH, is one of its two ' +
+                 'Google-native routes (the Gmail API transport is the ' +
+                 'other). `aws-ses-smtp` is email-smtp.<mail.sesRegion>.' +
+                 'amazonaws.com:587, with SES SMTP credentials as the ' +
+                 'username and password.' },
+  { key: 'mail.smtpHost', group: 'Mail', label: 'SMTP host',
+    env: 'STS_MAIL_SMTP_HOST', type: 'string', dflt: '', runtime: true,
+    description: 'The relay\'s host name. Its certificate is verified against ' +
+                 'this name (or mail.smtpServerName) and against the system ' +
+                 'trust store or mail.smtpCaFile. The ADMINISTRATOR\'s ' +
+                 'address, never one a request supplies — the only address ' +
+                 'this transport dials.' },
+  { key: 'mail.smtpPort', group: 'Mail', label: 'SMTP port',
+    env: 'STS_MAIL_SMTP_PORT', type: 'int', dflt: 587, min: 1, max: 65535,
+    runtime: true,
+    description: 'The relay\'s port: 587 for STARTTLS (submission), 465 for ' +
+                 'implicit TLS (submissions, RFC 8314).' },
+  { key: 'mail.smtpTls', group: 'Mail', label: 'SMTP TLS',
+    env: 'STS_MAIL_SMTP_TLS', type: 'enum',
+    enumValues: ['starttls', 'implicit'], dflt: 'starttls', runtime: true,
+    description: 'How the connection is protected. `starttls` REQUIRES the ' +
+                 'upgrade and refuses a server that does not offer it; ' +
+                 '`implicit` is TLS from the first byte (RFC 8314, which ' +
+                 'prefers it). **There is no cleartext value, in either ' +
+                 'mode**, and no switch that turns certificate verification ' +
+                 'off: a private CA is named in mail.smtpCaFile.' },
+  { key: 'mail.smtpCaFile', group: 'Mail', label: 'SMTP trust anchor file',
+    env: 'STS_MAIL_SMTP_CA_FILE', type: 'string', dflt: '', runtime: true,
+    description: 'A PEM file of the CA certificate(s) the relay\'s ' +
+                 'certificate must chain to. Empty means the system trust ' +
+                 'store.' },
+  { key: 'mail.smtpServerName', group: 'Mail',
+    label: 'SMTP certificate name',
+    env: 'STS_MAIL_SMTP_SERVER_NAME', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The name the relay\'s certificate must carry, when it is ' +
+                 'not mail.smtpHost (an address, or a name behind a load ' +
+                 'balancer). Sent as SNI as well.' },
+  { key: 'mail.smtpAuth', group: 'Mail', label: 'SMTP authentication',
+    env: 'STS_MAIL_SMTP_AUTH', type: 'enum',
+    enumValues: ['none', 'plain', 'login', 'xoauth2'], dflt: 'none',
+    runtime: true,
+    description: 'SMTP AUTH (RFC 4954) after TLS is up: `plain` or `login` ' +
+                 'with mail.smtpUser and the password secret, `xoauth2` with ' +
+                 'an OAuth 2.0 bearer (the secret holds either an access ' +
+                 'token or a JSON object with clientId, clientSecret, ' +
+                 'refreshToken and accessUrl). `none` for a relay that ' +
+                 'authenticates the sending address (the Google Workspace ' +
+                 'relay\'s IP allowlist) or a client certificate.' },
+  { key: 'mail.smtpUser', group: 'Mail', label: 'SMTP username',
+    env: 'STS_MAIL_SMTP_USER', type: 'string', dflt: '', runtime: true,
+    description: 'The SMTP AUTH username (or the XOAUTH2 mailbox). Not a ' +
+                 'secret; the password is.' },
+  { key: 'mail.smtpPasswordProvider', group: 'Mail',
+    label: 'Where the SMTP password is read from',
+    env: 'STS_MAIL_SMTP_PASSWORD_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: true,
+    description: 'The secret store the SMTP AUTH password (or XOAUTH2 ' +
+                 'credential) is read from — the providers keys.kekProvider ' +
+                 'offers, through common/secrets.js. It is read when the ' +
+                 'transport is built and never shown, logged or put in a ' +
+                 'setting value.' },
+  { key: 'mail.smtpPasswordRef', group: 'Mail',
+    label: 'The SMTP password\'s location',
+    env: 'STS_MAIL_SMTP_PASSWORD_REF', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A path for `file`, a name or ARN for `aws`, a resource ' +
+                 'name for `gcp`, a secret name for `azure`, a read path for ' +
+                 '`vault`. EMPTY MEANS THE KEY-ENCRYPTION KEY\'S location, ' +
+                 'with mail.smtpPasswordField naming the member.' },
+  { key: 'mail.smtpPasswordField', group: 'Mail',
+    label: 'The SMTP password\'s field',
+    env: 'STS_MAIL_SMTP_PASSWORD_FIELD', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The member of a JSON value to take. Empty means ' +
+                 '`smtpPassword`; a value that is not JSON is taken whole ' +
+                 'unless its location is shared with the key-encryption key.' },
+  { key: 'mail.smtpClientCertFile', group: 'Mail',
+    label: 'SMTP client certificate file',
+    env: 'STS_MAIL_SMTP_CLIENT_CERT_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM certificate this service presents to the relay, for ' +
+                 'a relay that authenticates its clients by certificate. ' +
+                 'Needs mail.smtpClientKeyFile.' },
+  { key: 'mail.smtpClientKeyFile', group: 'Mail',
+    label: 'SMTP client key file',
+    env: 'STS_MAIL_SMTP_CLIENT_KEY_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The PEM private key of mail.smtpClientCertFile, as a ' +
+                 'mounted file the way a listener\'s key is.' },
+
+  { key: 'mail.dkimDomain', group: 'Mail', label: 'DKIM signing domain',
+    env: 'STS_MAIL_DKIM_DOMAIN', type: 'string', dflt: '', runtime: true,
+    description: 'The d= of a DKIM-Signature (RFC 6376) this service puts on ' +
+                 'every message it sends through the SMTP transport. Empty ' +
+                 '(the default) signs nothing — which is right when the ' +
+                 'relay signs, as SES, Azure and Google Workspace all do. ' +
+                 'The signature is made by common/crypto.js, never by the ' +
+                 'mail library.' },
+  { key: 'mail.dkimSelector', group: 'Mail', label: 'DKIM selector',
+    env: 'STS_MAIL_DKIM_SELECTOR', type: 'string', dflt: '', runtime: true,
+    description: 'The s= of the signature: the public key is published at ' +
+                 '<selector>._domainkey.<domain>.' },
+  { key: 'mail.dkimAlgorithm', group: 'Mail', label: 'DKIM algorithm',
+    env: 'STS_MAIL_DKIM_ALGORITHM', type: 'enum',
+    enumValues: ['rsa-sha256', 'ed25519-sha256'], dflt: 'rsa-sha256',
+    runtime: true,
+    description: '`rsa-sha256` (RFC 6376; a 2048-bit key or larger, per RFC ' +
+                 '8301) or `ed25519-sha256` (RFC 8463). Many receivers still ' +
+                 'verify only RSA, so a domain moving to Ed25519 publishes ' +
+                 'both and signs twice elsewhere. DKIM has no post-quantum ' +
+                 'algorithm registered yet; docs/mail.md says so.' },
+  { key: 'mail.dkimKeyProvider', group: 'Mail',
+    label: 'Where the DKIM private key is read from',
+    env: 'STS_MAIL_DKIM_KEY_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: true,
+    description: 'The secret store the PEM private key of the DKIM selector ' +
+                 'is read from.' },
+  { key: 'mail.dkimKeyRef', group: 'Mail',
+    label: 'The DKIM private key\'s location',
+    env: 'STS_MAIL_DKIM_KEY_REF', type: 'string', dflt: '', runtime: true,
+    description: 'Its location in that store; empty means the ' +
+                 'key-encryption key\'s, with mail.dkimKeyField naming the ' +
+                 'member.' },
+  { key: 'mail.dkimKeyField', group: 'Mail',
+    label: 'The DKIM private key\'s field',
+    env: 'STS_MAIL_DKIM_KEY_FIELD', type: 'string', dflt: '', runtime: true,
+    description: 'The member of a JSON value to take. Empty means `dkimKey`.' },
+
+  { key: 'mail.sesRegion', group: 'Mail', label: 'Amazon SES region',
+    env: 'STS_MAIL_SES_REGION', type: 'string', dflt: '', runtime: true,
+    description: 'The AWS region of the SES v2 endpoint (and of the ' +
+                 '`aws-ses-smtp` preset). Empty means the SDK\'s own ' +
+                 'resolution (AWS_REGION). Credentials come from the default ' +
+                 'provider chain — the task role on ECS Fargate — never from ' +
+                 'a setting.' },
+  { key: 'mail.sesConfigurationSet', group: 'Mail',
+    label: 'Amazon SES configuration set',
+    env: 'STS_MAIL_SES_CONFIGURATION_SET', type: 'string', dflt: '',
+    runtime: true,
+    description: 'An SES configuration set to send under, for its event ' +
+                 'destinations and suppression settings. Empty sends ' +
+                 'without one.' },
+  { key: 'mail.acsEndpoint', group: 'Mail',
+    label: 'Azure Communication Services endpoint',
+    env: 'STS_MAIL_ACS_ENDPOINT', type: 'string', dflt: '', runtime: true,
+    description: 'https://<resource>.communication.azure.com — used with ' +
+                 'mail.acsAuth `managed-identity`.' },
+  { key: 'mail.acsAuth', group: 'Mail',
+    label: 'Azure Communication Services authentication',
+    env: 'STS_MAIL_ACS_AUTH', type: 'enum',
+    enumValues: ['managed-identity', 'connection-string'],
+    dflt: 'managed-identity', runtime: true,
+    description: '`managed-identity` (the default, and the one with no ' +
+                 'secret to hold) authenticates with @azure/identity\'s ' +
+                 'DefaultAzureCredential against mail.acsEndpoint. ' +
+                 '`connection-string` reads the resource\'s connection ' +
+                 'string, which carries its access key, from the secret ' +
+                 'store below.' },
+  { key: 'mail.acsConnectionStringProvider', group: 'Mail',
+    label: 'Where the Azure connection string is read from',
+    env: 'STS_MAIL_ACS_CONNECTION_STRING_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: true,
+    description: 'The secret store the Communication Services connection ' +
+                 'string is read from, when mail.acsAuth is ' +
+                 '`connection-string`.' },
+  { key: 'mail.acsConnectionStringRef', group: 'Mail',
+    label: 'The Azure connection string\'s location',
+    env: 'STS_MAIL_ACS_CONNECTION_STRING_REF', type: 'string', dflt: '',
+    runtime: true,
+    description: 'Its location; empty means the key-encryption key\'s.' },
+  { key: 'mail.acsConnectionStringField', group: 'Mail',
+    label: 'The Azure connection string\'s field',
+    env: 'STS_MAIL_ACS_CONNECTION_STRING_FIELD', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The member of a JSON value to take. Empty means ' +
+                 '`acsConnectionString`.' },
+  { key: 'mail.gmailSender', group: 'Mail', label: 'Gmail API mailbox',
+    env: 'STS_MAIL_GMAIL_SENDER', type: 'string', dflt: '', runtime: true,
+    description: 'The Workspace mailbox the service account impersonates ' +
+                 '(domain-wide delegation of the gmail.send scope). Empty ' +
+                 'means the From address.' },
+  { key: 'mail.gmailKeyProvider', group: 'Mail',
+    label: 'Where the Gmail service account key is read from',
+    env: 'STS_MAIL_GMAIL_KEY_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: true,
+    description: 'The secret store the service account\'s JSON key ' +
+                 '(client_email and private_key) is read from.' },
+  { key: 'mail.gmailKeyRef', group: 'Mail',
+    label: 'The Gmail service account key\'s location',
+    env: 'STS_MAIL_GMAIL_KEY_REF', type: 'string', dflt: '', runtime: true,
+    description: 'Its location; empty means the key-encryption key\'s.' },
+  { key: 'mail.gmailKeyField', group: 'Mail',
+    label: 'The Gmail service account key\'s field',
+    env: 'STS_MAIL_GMAIL_KEY_FIELD', type: 'string', dflt: '', runtime: true,
+    description: 'The member of a JSON value to take. Empty means ' +
+                 '`gmailServiceAccount`; a key file that is itself the ' +
+                 'service account JSON is taken whole.' },
+
+  { key: 'mail.deliverS', group: 'Mail', label: 'Outbox sweep (seconds)',
+    env: 'STS_MAIL_DELIVER_S', type: 'int', dflt: 15, min: 0, max: 3600,
+    runtime: true, perProcess: true,
+    description: 'How often the scheduler job `mail.deliver` sends every ' +
+                 'message that is due — a retry whose backoff has passed, a ' +
+                 'lease that lapsed, a row restored after a restart. A ' +
+                 'message is attempted as soon as it is queued as well, so ' +
+                 'this is the safety net and not the delay. 0 turns the job ' +
+                 'off.' },
+  { key: 'mail.attempts', group: 'Mail', label: 'Delivery attempts',
+    env: 'STS_MAIL_ATTEMPTS', type: 'int', dflt: 5, min: 1, max: 20,
+    runtime: true,
+    description: 'How many times one message is tried before it becomes a ' +
+                 'DEAD LETTER. Only a failure worth repeating is retried — a ' +
+                 'timeout, a connection failure, an SMTP 4xx reply, a ' +
+                 'provider\'s throttling or 5xx. A permanent refusal is ' +
+                 'final at once.' },
+  { key: 'mail.backoffS', group: 'Mail', label: 'Retry backoff (seconds)',
+    env: 'STS_MAIL_BACKOFF_S', type: 'int', dflt: 60, min: 1, max: 86400,
+    runtime: true,
+    description: 'The wait before the second attempt, doubling after each.' },
+  { key: 'mail.timeoutMs', group: 'Mail', label: 'Send timeout (ms)',
+    env: 'STS_MAIL_TIMEOUT_MS', type: 'int', dflt: 30000, min: 1000,
+    max: 300000, runtime: true,
+    description: 'How long one attempt may take, connection and TLS ' +
+                 'included — for Azure, the whole long-running send.' },
+  { key: 'mail.leaseMs', group: 'Mail', label: 'Attempt lease (ms)',
+    env: 'STS_MAIL_LEASE_MS', type: 'int', dflt: 120000, min: 5000,
+    max: 3600000, runtime: true,
+    description: 'How long a node holds the claim on one attempt. A node ' +
+                 'that dies mid-send leaves it to lapse and another node ' +
+                 'sends the same attempt. Never less than mail.timeoutMs and ' +
+                 'a second.' },
+  { key: 'mail.concurrency', group: 'Mail', label: 'Sends in flight',
+    env: 'STS_MAIL_CONCURRENCY', type: 'int', dflt: 4, min: 1, max: 64,
+    runtime: true,
+    description: 'How many messages one process sends at once from a sweep.' },
+  { key: 'mail.retentionS', group: 'Mail', label: 'Outbox retention (seconds)',
+    env: 'STS_MAIL_RETENTION_S', type: 'int', dflt: 604800, min: 3600,
+    max: 31536000, runtime: true,
+    description: 'How long a row stays in the outbox after it was queued, ' +
+                 'finished or not: a message still pending this long is ' +
+                 'dead-lettered, and a finished one is removed. A SENT ' +
+                 'message keeps no body — only who, which template and ' +
+                 'when — and a captured one keeps its body, because the ' +
+                 'body is all it is for.' },
+  { key: 'mail.maxRows', group: 'Mail', label: 'Outbox rows per realm',
+    env: 'STS_MAIL_MAX_ROWS', type: 'int', dflt: 10000, min: 10,
+    max: 1000000, runtime: true,
+    description: 'The cap on the outbox, per realm: the oldest FINISHED row ' +
+                 'is dropped first, and a pending one never.' },
+  { key: 'mail.ratePerRecipient', group: 'Mail',
+    label: 'Messages per recipient per window',
+    env: 'STS_MAIL_RATE_PER_RECIPIENT', type: 'int', dflt: 20, min: 1,
+    max: 10000, runtime: true,
+    description: 'The ceiling on messages to one person in ' +
+                 'mail.rateWindowS, whatever their category — so that a ' +
+                 'storm of risk events or an attacker pressing a button ' +
+                 'cannot turn this service into a mail cannon. A message ' +
+                 'over it is not queued (STS-MAIL-0010) and the refusal is ' +
+                 'audited.' },
+  { key: 'mail.ratePerCategory', group: 'Mail',
+    label: 'Messages per recipient per category per window',
+    env: 'STS_MAIL_RATE_PER_CATEGORY', type: 'int', dflt: 5, min: 1,
+    max: 10000, runtime: true,
+    description: 'The ceiling on one category (security, account, ' +
+                 'notification) to one person in mail.rateWindowS.' },
+  { key: 'mail.rateWindowS', group: 'Mail', label: 'Rate window (seconds)',
+    env: 'STS_MAIL_RATE_WINDOW_S', type: 'int', dflt: 3600, min: 60,
+    max: 604800, runtime: true,
+    description: 'The window both ceilings count over. It is counted from ' +
+                 'the outbox, which every node shares, so the ceiling is ' +
+                 'the cluster\'s and not each node\'s.' },
+  { key: 'mail.dedupWindowS', group: 'Mail',
+    label: 'Duplicate suppression window (seconds)',
+    env: 'STS_MAIL_DEDUP_WINDOW_S', type: 'int', dflt: 600, min: 0,
+    max: 86400, runtime: true,
+    description: 'A notice that names what it is about (the same act on the ' +
+                 'same account) is sent once in this window, however many ' +
+                 'doors reported it. 0 turns suppression off.' },
+
+  { key: 'mail.selfServiceReset', group: 'Mail',
+    label: 'Self-service password reset',
+    env: 'STS_MAIL_SELF_SERVICE_RESET', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Offer "Forgot your password?" on the sign-in screen and ' +
+                 'at /portal/forgot-password: a person names their account ' +
+                 'and a single-use /portal/reset-password link is mailed to ' +
+                 'the address on its entry. The answer is the same whether ' +
+                 'or not the account exists, and the current password keeps ' +
+                 'working until the link is used. Offered only while a ' +
+                 'transport is available and the mode verifies passwords.' },
+  { key: 'mail.resetRequiresVerifiedAddress', group: 'Mail',
+    label: 'Self-service reset needs a verified address',
+    env: 'STS_MAIL_RESET_REQUIRES_VERIFIED_ADDRESS', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Mail a self-service reset link only to an address the ' +
+                 'person has VERIFIED (a link they followed from it). On by ' +
+                 'default, because the link is the account: an address an ' +
+                 'import or a provisioning feed wrote, and nobody ever ' +
+                 'proved, is not somewhere to send it. **Turning it off is a ' +
+                 'weaker setting**, for a directory whose addresses are ' +
+                 'trusted as written; docs/mail.md carries the warning.' },
+  { key: 'mail.verificationTtlMinutes', group: 'Mail',
+    label: 'Address verification link lifetime (minutes)',
+    env: 'STS_MAIL_VERIFICATION_TTL_MINUTES', type: 'int', dflt: 1440,
+    min: 5, max: 43200, runtime: true,
+    description: 'How long an address verification link works. It is ' +
+                 'single-use, stored hashed, and bound to the address it ' +
+                 'was sent to: changing the address unverifies it.' },
+  { key: 'mail.securityNotices', group: 'Mail', label: 'Security notices',
+    env: 'STS_MAIL_SECURITY_NOTICES', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Tell a person, at the address on their entry, when their ' +
+                 'account is disabled, their sessions are ended by an ' +
+                 'administrator, their password is changed or reset, their ' +
+                 'credential is marked compromised or recovery is started. ' +
+                 'A person cannot opt out of these; an operator can turn ' +
+                 'them off here.' },
+  { key: 'mail.notifyAdministrators', group: 'Mail',
+    label: 'Tell administrators of system acts',
+    env: 'STS_MAIL_NOTIFY_ADMINISTRATORS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When the SERVICE, not a person, marks a credential ' +
+                 'compromised or disables an account (risk scoring), also ' +
+                 'mail every member of the realm\'s Admin Write roster that ' +
+                 'has an address.' }
 ];
 
 // Indexed once. A linear scan per read would be invisible on a mock and the
@@ -12114,6 +12507,21 @@ function replacedBy(key) {
 function modeWriteProblem(key, raw) {
   log.debug("Entering modeWriteProblem(). key=" + key);
   const setting = byKey[key];
+  // THE CAPTURE TRANSPORT IN PRODUCT (#63): an enum value, not a true value,
+  // so it is asked here by name rather than through `onlyWhile`. A captured
+  // message keeps its body, and a password reset link on the console is a
+  // credential shown to whoever may read it (common/mode.js,
+  // capturesMail()).
+  if (key === 'mail.transport' &&
+      String(raw == null ? '' : raw).trim() === 'capture' &&
+      !require('./mode').capturesMail()) {
+    log.debug("Leaving modeWriteProblem(). Capture in product.");
+    return '"mail.transport" cannot be "capture" here: this realm is in ' +
+      'product mode (global.mode=product), where a captured message would ' +
+      'put its body — a password reset link, a verification link — on the ' +
+      'console. Configure smtp, ses, acs or gmail, or leave it "default" ' +
+      '(off).';
+  }
   if (!setting || !setting.onlyWhile) {
     log.debug("Leaving modeWriteProblem(). No marker.");
     return null;
@@ -12148,7 +12556,8 @@ function checkWrite(key, raw, forRealm) {
 function checkWriteCode(key, raw, forRealm) {
   log.debug("Entering checkWriteCode(). key=" + key);
   const code = checkOverrideCode(key, raw, forRealm) ||
-    (modeWriteProblem(key, raw) ? 'STS-CORE-0103' : '');
+    (modeWriteProblem(key, raw)
+      ? (key === 'mail.transport' ? 'STS-MAIL-0003' : 'STS-CORE-0103') : '');
   log.debug("Leaving checkWriteCode().");
   return code;
 }

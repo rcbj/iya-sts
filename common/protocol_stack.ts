@@ -308,6 +308,16 @@ class ProtocolStack {
     this.build('portal/portal_kerberos',
                require('../portal/portal_kerberos'),
                'PortalKerberos');
+    // THE MAIL CHANNEL (#63, 2026-09-22): two LIBRARIES (rule 3) that
+    // register no route — the channel and its uses — built here, before the
+    // portal whose `/portal/email`, `/portal/verify-email` and
+    // `/portal/forgot-password` (`portal_mail.ts`, registered by the portal's
+    // own `registerRoutes()`) call them. The directory fills the channel's
+    // slot at 21; the delivery job is registered by the channel's wire step.
+    this.build('common/mail', require('./mail'), 'Mail');
+    this.build('common/mail_uses', require('./mail_uses'), 'MailUses');
+    this.build('portal/portal_mail', require('../portal/portal_mail'),
+               'PortalMail');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
@@ -851,6 +861,15 @@ class ProtocolStack {
                'RiskAdmin');
     this.register(app, require('../admin-ui/risk_admin'),
                   'admin-ui/risk_admin');
+    // 18k. MAIL (#63, 2026-09-22): Server configuration → Mail and
+    // Monitoring → Mail outbox, one module for both. 18a's placement and 18a's
+    // reason: the console's shell and the channel (built with the portal,
+    // above) already here, and `mgmt-api/admin_api` requires it.
+    require('../admin-ui/mail_admin');
+    this.build('admin-ui/mail_admin', require('../admin-ui/mail_admin'),
+               'MailAdmin');
+    this.register(app, require('../admin-ui/mail_admin'),
+                  'admin-ui/mail_admin');
     // The management API: everything that console shows and everything it can
     // change, at /admin-api, over JSON. It must come AFTER admin.js and the
     // order is a dependency rather than a preference — it requires that module

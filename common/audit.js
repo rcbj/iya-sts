@@ -241,7 +241,17 @@ const CATEGORIES = [
     what: 'Failures of something this service does on its own rather than ' +
           'in answer to one request: persistence, coordination between ' +
           'processes, the worker pools, key and secret handling, background ' +
-          'tasks and outbound requests. Every row carries an error code.' }
+          'tasks and outbound requests. Every row carries an error code.' },
+  // THE MAIL CHANNEL (#63, 2026-09-22). Its own layer because what an
+  // auditor asks of it is its own question — "what did this service tell
+  // whom, and when" — and a row names the recipient and the category and
+  // NEVER the body: a reset link in the audit log would be a credential in
+  // the audit log.
+  { category: 'mail', label: 'Mail',
+    what: 'A message was queued, sent, captured, dead-lettered or refused ' +
+          '(a rate ceiling, an opt-out, no address), and the mail ' +
+          'channel\'s own acts: a retry, a test message, a template saved. ' +
+          'A row names the recipient and the category, never the body.' }
 ];
 
 const ACTIONS = [
@@ -388,6 +398,30 @@ const ACTIONS = [
   // THE SCHEDULER (2026-09-22, #49). A row per run when it finishes —
   // succeeded, failed or abandoned — and one when a run is queued by hand;
   // never one per tick. `cluster/scheduler.ts`.
+  // THE MAIL CHANNEL (#63). One row when a message is QUEUED and one when it
+  // reaches its final state — sent, captured or dead — never one per
+  // attempt; and one per message the channel REFUSED to queue.
+  // `common/mail.ts`.
+  { action: 'mail.queued', category: 'mail',
+    label: 'A message was queued for a recipient' },
+  { action: 'mail.sent', category: 'mail',
+    label: 'A message was accepted by the transport, or captured' },
+  { action: 'mail.dead', category: 'mail',
+    label: 'A message was not delivered and is a dead letter' },
+  { action: 'mail.refused', category: 'mail',
+    label: 'A message was not queued (rate ceiling, opt-out, no address, ' +
+           'no transport)' },
+  { action: 'mail.reset-requested', category: 'mail',
+    label: 'A person asked for a self-service password reset link; the row ' +
+           'says whether one was sent, and the form never does' },
+  { action: 'mail.retry', category: 'mail',
+    label: 'A dead letter was queued again by an administrator' },
+  { action: 'mail.template', category: 'mail',
+    label: 'A realm\'s message template was saved or reset' },
+  { action: 'mail.verified', category: 'mail',
+    label: 'A person verified the address on their entry' },
+  { action: 'mail.preferences', category: 'mail',
+    label: 'A person changed which optional messages they receive' },
   { action: 'scheduler.run', category: 'service',
     label: 'A scheduled job ran, was queued by hand, or was taken over' },
   { action: 'scheduler.step-down', category: 'service',

@@ -5135,7 +5135,233 @@ function sessionStateHash(clientId, origin, browserState, salt) {
   return digest + '.' + chosen;
 }
 
+// ===========================================================================
+// SECTION 10 — DKIM (RFC 6376, RFC 8463), FOR THE MAIL CHANNEL (#63).
+//
+// **WHY HERE AND NOT IN THE MAIL LIBRARY.** `common/mail.ts`'s SMTP transport
+// is built on nodemailer, which has a DKIM signer of its own; it is not used,
+// for the one-crypto-module rule this file's header argues — a second signer
+// with its own key handling and its own canonicalization is exactly the
+// drift that header records. So the MESSAGE is composed by the library, and
+// its signature is made here.
+//
+// Both halves of the signature scheme are here, the canonicalization with the
+// signing, for the same reason XML canonicalization sits with XML signing: a
+// canonicalization that disagrees with the verifier's is a signature that
+// fails with nothing to say why, and that is a property of the signature,
+// not of the message.
+//
+// **relaxed/relaxed ONLY** (section 3.4.2 and 3.4.4). `simple` breaks on any
+// relay that rewraps a header, and nothing here needs it.
+//
+// Two algorithms: `rsa-sha256` (section 3.3.1; RFC 8301 made it the only RSA
+// one and set 1024 bits as the floor — this refuses less than 2048, the
+// size RFC 8301 recommends) and `ed25519-sha256` (RFC 8463: PureEdDSA over the
+// SHA-256 of the canonicalized header data, NOT over the data itself). DKIM
+// has no post-quantum algorithm registered; when one is, it is a row below.
+// ===========================================================================
+const DKIM_ALGORITHMS = ['rsa-sha256', 'ed25519-sha256'];
+
+// The headers signed when present, in this order (section 5.4.1's list, less
+// the ones this service never writes). `From` is REQUIRED (section 5.4) and
+// the signature is refused without it.
+const DKIM_SIGNED_HEADERS = ['from', 'reply-to', 'subject', 'date', 'to',
+                             'cc', 'message-id', 'mime-version',
+                             'content-type', 'content-transfer-encoding',
+                             'in-reply-to', 'references'];
+
+// Section 3.4.4: WSP runs to one SP, trailing WSP off every line, every
+// trailing empty line off the body, and a non-empty body ends in CRLF. An
+// empty body canonicalizes to the empty string.
+function dkimRelaxedBody(body) {
+  log.debug('Entering dkimRelaxedBody().');
+  const text = Buffer.isBuffer(body) ? body.toString('binary')
+                                     : String(body == null ? '' : body);
+  const lines = text.replace(/\r?\n/g, '\r\n').split('\r\n').map(
+    function (line) {
+      return line.replace(/[ \t]+/g, ' ').replace(/ +$/, '');
+    });
+  while (lines.length && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  log.debug('Leaving dkimRelaxedBody().');
+  return lines.length ? lines.join('\r\n') + '\r\n' : '';
+}
+
+// Section 3.4.2: the name lower-cased, the value unfolded, WSP runs to one
+// SP, WSP off both ends of the value, no WSP around the colon.
+function dkimRelaxedHeader(name, value) {
+  log.debug('Entering dkimRelaxedHeader().');
+  const unfolded = String(value == null ? '' : value)
+    .replace(/\r?\n(?=[ \t])/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+  log.debug('Leaving dkimRelaxedHeader().');
+  return String(name).trim().toLowerCase() + ':' + unfolded;
+}
+
+// Splits a raw RFC 5322 message into its header fields (name, raw value with
+// folding kept) and its body. Exported for the tests' verifier.
+function dkimSplitMessage(raw) {
+  log.debug('Entering dkimSplitMessage().');
+  const text = Buffer.isBuffer(raw) ? raw.toString('binary') : String(raw);
+  const at = text.search(/\r?\n\r?\n/);
+  const head = at < 0 ? text : text.slice(0, at);
+  const body = at < 0 ? '' : text.slice(at).replace(/^\r?\n\r?\n/, '');
+  const fields = [];
+  head.split(/\r?\n(?![ \t])/).forEach(function (line) {
+    const colon = line.indexOf(':');
+    if (colon > 0) {
+      fields.push({ name: line.slice(0, colon),
+                    value: line.slice(colon + 1) });
+    }
+  });
+  log.debug('Leaving dkimSplitMessage(). ' + fields.length + ' field(s).');
+  return { fields: fields, body: body };
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNATURE. `raw` is the whole message as it will be sent; what comes
+// back is the complete `DKIM-Signature:` field (no trailing CRLF), for the
+// caller to put in front of the message. Throws on a key or an option that
+// cannot make a valid signature.
+//
+// Where a header occurs more than once, section 5.4.2 signs the LAST
+// instance for each name listed once — and the list here names each once.
+// ---------------------------------------------------------------------------
+function dkimSign(raw, opts) {
+  log.debug('Entering dkimSign().');
+  const o = opts || {};
+  const algorithm = String(o.algorithm || 'rsa-sha256');
+  if (DKIM_ALGORITHMS.indexOf(algorithm) < 0) {
+    log.debug('Leaving dkimSign(). Unknown algorithm.');
+    throw new Error('DKIM algorithm "' + algorithm + '" is not one of ' +
+                    DKIM_ALGORITHMS.join(', '));
+  }
+  const domain = String(o.domain || '').trim().toLowerCase();
+  const selector = String(o.selector || '').trim().toLowerCase();
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+    .test(domain) ||
+      !/^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/.test(selector)) {
+    log.debug('Leaving dkimSign(). Bad domain or selector.');
+    throw new Error('a DKIM signature needs a domain (d=) and a selector ' +
+                    '(s=) that are DNS labels');
+  }
+  const key = nodeCrypto.createPrivateKey(o.privateKeyPem);
+  const keyType = key.asymmetricKeyType;
+  if (algorithm === 'rsa-sha256') {
+    const bits = keyType === 'rsa' && key.asymmetricKeyDetails
+      ? Number(key.asymmetricKeyDetails.modulusLength) : 0;
+    if (keyType !== 'rsa' || bits < 2048) {
+      log.debug('Leaving dkimSign(). Not an RSA key of 2048 bits or more.');
+      throw new Error('rsa-sha256 needs an RSA key of at least 2048 bits ' +
+                      '(RFC 8301); this key is ' + (keyType || 'unknown') +
+                      (bits ? ', ' + bits + ' bits' : ''));
+    }
+  } else if (keyType !== 'ed25519') {
+    log.debug('Leaving dkimSign(). Not an Ed25519 key.');
+    throw new Error('ed25519-sha256 needs an Ed25519 key; this key is ' +
+                    (keyType || 'unknown'));
+  }
+  const message = dkimSplitMessage(raw);
+  const bodyHash = nodeCrypto.createHash('sha256')
+    .update(dkimRelaxedBody(message.body), 'binary').digest('base64');
+  const lastOf = {};
+  message.fields.forEach(function (field) {
+    lastOf[field.name.trim().toLowerCase()] = field;
+  });
+  if (!lastOf['from']) {
+    log.debug('Leaving dkimSign(). No From.');
+    throw new Error('a DKIM signature must cover From (RFC 6376 section ' +
+                    '5.4), and the message has none');
+  }
+  const signed = DKIM_SIGNED_HEADERS.filter(function (name) {
+    return !!lastOf[name];
+  });
+  const timestamp = Math.floor(Number(o.timestamp) ||
+                               Date.now() / 1000);
+  const tags = 'v=1; a=' + algorithm + '; c=relaxed/relaxed; d=' + domain +
+    '; s=' + selector + '; t=' + timestamp + '; h=' + signed.join(':') +
+    '; bh=' + bodyHash + '; b=';
+  const data = signed.map(function (name) {
+    return dkimRelaxedHeader(name, lastOf[name].value) + '\r\n';
+  }).join('') + dkimRelaxedHeader('DKIM-Signature', tags);
+  let signature;
+  if (algorithm === 'rsa-sha256') {
+    signature = nodeCrypto.sign('sha256', Buffer.from(data, 'binary'), key);
+  } else {
+    // RFC 8463 section 3: the SHA-256 of the data is what Ed25519 signs.
+    const digest = nodeCrypto.createHash('sha256')
+      .update(data, 'binary').digest();
+    signature = nodeCrypto.sign(null, digest, key);
+  }
+  log.debug('Leaving dkimSign(). ' + algorithm + ', d=' + domain + ', s=' +
+            selector + ', ' + signed.length + ' header(s).');
+  return 'DKIM-Signature: ' + tags + signature.toString('base64');
+}
+
+// ---------------------------------------------------------------------------
+// A VERIFIER, for this service's own tests and for the console's "is my DKIM
+// key the one DNS publishes" check — never for a message somebody else sent,
+// because this service receives no mail. `publicKeyPem` is the selector's key
+// (the p= of its DNS record, as a PEM). Answers `{ ok, why }`.
+// ---------------------------------------------------------------------------
+function dkimVerify(raw, publicKeyPem) {
+  log.debug('Entering dkimVerify().');
+  const message = dkimSplitMessage(raw);
+  const field = message.fields.filter(function (one) {
+    return one.name.trim().toLowerCase() === 'dkim-signature';
+  })[0];
+  if (!field) {
+    log.debug('Leaving dkimVerify(). No signature.');
+    return { ok: false, why: 'no DKIM-Signature field' };
+  }
+  const tags = {};
+  field.value.replace(/\r?\n[ \t]/g, '').split(';').forEach(function (part) {
+    const eq = part.indexOf('=');
+    if (eq > 0) {
+      tags[part.slice(0, eq).trim()] = part.slice(eq + 1).replace(/\s+/g, '');
+    }
+  });
+  const bodyHash = nodeCrypto.createHash('sha256')
+    .update(dkimRelaxedBody(message.body), 'binary').digest('base64');
+  if (bodyHash !== tags.bh) {
+    log.debug('Leaving dkimVerify(). Body hash differs.');
+    return { ok: false, why: 'the body hash does not match bh=' };
+  }
+  const lastOf = {};
+  message.fields.forEach(function (one) {
+    lastOf[one.name.trim().toLowerCase()] = one;
+  });
+  const withoutB = field.value.replace(/(;\s*b=)[^;]*$/, '$1');
+  const data = String(tags.h || '').split(':').map(function (name) {
+    const one = lastOf[name.trim().toLowerCase()];
+    return one ? dkimRelaxedHeader(name, one.value) + '\r\n' : '';
+  }).join('') + dkimRelaxedHeader('DKIM-Signature', withoutB);
+  const signature = Buffer.from(String(tags.b || ''), 'base64');
+  let ok = false;
+  try {
+    const key = nodeCrypto.createPublicKey(publicKeyPem);
+    ok = tags.a === 'ed25519-sha256'
+      ? nodeCrypto.verify(null, nodeCrypto.createHash('sha256')
+        .update(data, 'binary').digest(), key, signature)
+      : nodeCrypto.verify('sha256', Buffer.from(data, 'binary'), key,
+                          signature);
+  } catch (e) {
+    log.debug('Caught in dkimVerify(): ' + ((e && e.message) || e));
+    ok = false;
+  }
+  log.debug('Leaving dkimVerify(). ' + ok);
+  return { ok: ok, why: ok ? '' : 'the signature does not verify' };
+}
+
 module.exports = {
+  // --- section 10: DKIM (#63) ---
+  DKIM_ALGORITHMS: DKIM_ALGORITHMS,
+  dkimSign: dkimSign,
+  dkimVerify: dkimVerify,
+  dkimRelaxedBody: dkimRelaxedBody,
+  dkimRelaxedHeader: dkimRelaxedHeader,
   sessionStateHash: sessionStateHash,
   userAgentFingerprint: userAgentFingerprint,
   credentialFingerprint: credentialFingerprint,

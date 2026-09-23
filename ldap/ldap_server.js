@@ -1928,6 +1928,11 @@ const OWN_NAMES = [
   // (2026-09-13) — see readPersonFlags(): a second factor required of them, and
   // the hash of a password reset link.
   'stsMfaRequired', 'stsPasswordResetToken', 'stsPasswordResetExpires',
+  // THE MAIL CHANNEL'S ADDRESS VERIFICATION (#63, 2026-09-22) — see
+  // readPersonFlags(): the address a person proved they receive mail at, and
+  // the pending link's hash, expiry and the address it was sent to.
+  'stsMailVerified', 'stsMailVerifyToken', 'stsMailVerifyExpires',
+  'stsMailVerifyAddress',
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so
@@ -7733,6 +7738,8 @@ const SECRET_ATTRIBUTES = [
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
+  // An address verification link's hash (#63), for the same reason.
+  'stsmailverifytoken',
   'stskrb5keys', 'krb5servicekeys',
   // Certificate enrollment (2026-09-13): a private key this service generated
   // for an enrolled certificate, an ACME EAB key and a SCEP challenge record.
@@ -8494,6 +8501,69 @@ if (typeof portal.setDirectory === 'function') {
 }
 
 // ---------------------------------------------------------------------------
+// THE MAIL CHANNEL'S SLOT (#63, 2026-09-22), for the portal's reason and in
+// the portal's shape: `common/mail.ts` is a library loaded long before this
+// module, so it cannot require it without loading these routes out of order
+// (rule 1, rule 3e). It is handed the AMBIENT realm's entries, as the portal
+// is, and a writer narrowed to the four verification flags — the channel may
+// record that an address was verified and nothing else about a person.
+//
+// `personByMail()` is what lets somebody name their account by its address on
+// the forgot-password form. It walks the realm's people, which is what an
+// unindexed lookup costs; the form is rate-limited and the answer is the same
+// whether or not it found anybody.
+// ---------------------------------------------------------------------------
+const MAIL_FLAGS = ['stsMailVerified', 'stsMailVerifyToken',
+                    'stsMailVerifyExpires', 'stsMailVerifyAddress'];
+const mailChannel = require('../common/mail');
+if (typeof mailChannel.setDirectory === 'function') {
+  mailChannel.setDirectory({
+    personEntry: function (username) {
+      log.debug('Entering personEntry(). username=' + username);
+      const located = locateEntry(String(username || ''));
+      if (!located.stored || !usernameOfEntry(located.stored)) {
+        log.debug('Leaving personEntry(). No person.');
+        return null;
+      }
+      log.debug('Leaving personEntry().');
+      return { dn: located.stored.dn,
+               attributes: Object.assign({}, located.stored.attributes) };
+    },
+    personByMail: function (address) {
+      log.debug('Entering personByMail().');
+      const wanted = String(address || '').trim().toLowerCase();
+      let found = '';
+      if (wanted) {
+        allPersons().some(function (entry) {
+          const values = (entry.attributes && entry.attributes.mail) || [];
+          if (values.some(function (v) {
+            return String(v).trim().toLowerCase() === wanted;
+          })) {
+            found = usernameOfEntry(entry) || '';
+          }
+          return !!found;
+        });
+      }
+      log.debug('Leaving personByMail(). ' + (found ? 'Found.' : 'None.'));
+      return found;
+    },
+    writeMailFlag: function (username, name, value) {
+      log.debug('Entering writeMailFlag(). ' + name);
+      if (MAIL_FLAGS.indexOf(name) < 0) {
+        log.debug('Leaving writeMailFlag(). Not a mail flag.');
+        return false;
+      }
+      log.debug('Leaving writeMailFlag().');
+      return writePersonFlag(String(username || ''), name, value);
+    }
+  });
+} else {
+  log.warn('ldap: common/mail.ts offers no setDirectory(), so the mail ' +
+           'channel has no recipients: every message is refused as having ' +
+           'nobody to go to.');
+}
+
+// ---------------------------------------------------------------------------
 // THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
 // in `ou=users` be an RFC 7523 issuer.
 //
@@ -8969,6 +9039,13 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 //                              (2026-09-13). The token is a SECRET_ATTRIBUTE:
 //                              it is a hash, and still one this directory never
 //                              hands to a reader.
+//   stsMailVerified            the ADDRESS a person proved they receive mail
+//                              at (#63, 2026-09-22). Verified means it equals
+//                              `mail` today, so a changed address is
+//                              unverified with nothing to clear.
+//   stsMailVerifyToken         a pending verification link's scrypt hash (a
+//   stsMailVerifyExpires       SECRET_ATTRIBUTE), when it stops working, and
+//   stsMailVerifyAddress       the address it was sent to.
 //
 // One reader and one writer for them, narrowed to exactly these names, so that
 // neither slot below becomes a general attribute writer.
@@ -8976,7 +9053,9 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
                       'stsConsoleClaimedAt', 'stsMfaRequired',
                       'stsPasswordResetToken', 'stsPasswordResetExpires',
-                      'pwdAccountLockedTime'];
+                      'pwdAccountLockedTime', 'stsMailVerified',
+                      'stsMailVerifyToken', 'stsMailVerifyExpires',
+                      'stsMailVerifyAddress'];
 
 // The value an administrator's lock is written with: the draft's "locked
 // permanently, until a password administrator unlocks it".
@@ -14216,6 +14295,26 @@ function noteAccountChange(kind, dn, before, after, options) {
                 'was removed from ' + dn + ' and the sessions that partner ' +
                 'made could not be ended with it: ' +
                 ((e && e.message) || e));
+    }
+  }
+  // AN ADDRESS THAT CHANGED (#63, 2026-09-22) is told to the address the
+  // entry HAD — the mail channel's one message not sent to `mail` as it is,
+  // and the directory's own value as it was, never a request's. Lazily
+  // required, for account_state's reason.
+  const mailBefore = String(((before && before.mail) || [])[0] || '');
+  const mailAfter = String(((after && after.mail) || [])[0] || '');
+  if (mailBefore && mailBefore.toLowerCase() !== mailAfter.toLowerCase() &&
+      String(kind).indexOf('deleted') !== 0) {
+    try {
+      const realm = realmFor(dn);
+      realms.run(realm, function () {
+        require('../common/mail_uses').addressChanged(
+          canonicalUsernameOfDn(dn), mailBefore, mailAfter);
+      });
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-MAIL-0031') + 'ldap: the address of ' + dn +
+               ' changed and its former address could not be told: ' +
+               ((e && e.message) || e));
     }
   }
   if (!accountObserver) {
