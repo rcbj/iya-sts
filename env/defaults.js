@@ -810,6 +810,7 @@ var config = {
     assessSignIns: true,                                   // Assess every sign-in
     enforceInDevelopment: false,                           // Enforce risk decisions in development mode
     standingValidMinutes: 720,                             // A person's standing answers for (minutes)
+    fingerprinting: false,                                 // Fingerprint the browser at sign-in
     breachCheck: "on",                                     // Refuse passwords known from data breaches
     breachCheckAtSignIn: true,                             // Ask a breached password to be changed at sign-in
     breachApiUrl: "https://api.pwnedpasswords.com/range/", // Pwned Passwords range API

@@ -1405,6 +1405,30 @@ token there would refuse a credential the policy had just allowed.
 
 ---
 
+## THE SIGN-IN SCREEN MAY CARRY ONE SCRIPT: THE BROWSER FINGERPRINT (2026-09-22, #62 P6)
+
+**Only while `risk.fingerprinting` is on in the realm — off by default**
+(rcbj's decision). The argument the root CLAUDE.md asks for, made from
+scratch: **a browser fingerprint cannot be computed without a script** — it
+is the canvas, audio and font behaviour of the browser, which no form field
+reports — and **the screen does not need it to work**. The script
+(`/authn/fingerprint.js`: FingerprintJS v5, MIT, its usage ping turned off,
+then eight lines of glue) only fills a hidden `device_fp` field; with the
+script blocked the field is empty, the real submit button signs the person
+in exactly as before, and an empty field decides nothing. `sendLoginPage()`
+relaxes `script-src` to `'self'` through `app.contentSecurityPolicy()` and
+only while the setting is on; the script answers 404 (STS-AUTHN-0225) while
+it is off, so nothing serves a script no page asks for.
+
+**The value is never kept**: `eventContext()` reads it from the posted form
+and keeps `device`, a keyed digest (`credentialFingerprint('device:' …)`),
+beside the User-Agent's. The risk engine scores a digest this person never
+signed in from as `new-device` (×2).
+
+**Turning it on is the operator's decision**, after the privacy impact
+assessment `docs/risk-scoring.md` sets out: a browser fingerprint is personal
+data about the device, collected without the person doing anything.
+
 ## EVERY SIGN-IN SCREEN ANSWERS A REFUSED SESSION, AND THE REFUSAL SAYS WHY (2026-09-22, #62 P0)
 
 `startSession()` refuses by returning null (the section above), and **three

@@ -91,6 +91,7 @@ on a new device scores well above 1.
 | `operator-allow` | ×0.2 | the address is on this realm's operator allow list |
 | `automated-client` | ×10 | the User-Agent belongs to an automated client |
 | `new-tls-stack` | ×2 | the connection's TLS client fingerprint (JA4) is one this person has not signed in with before |
+| `new-device` | ×2 | the browser's fingerprint is one this person has not signed in from before (only with `risk.fingerprinting` on) |
 | `account-failures` | ×3 | five or more refused passwords for this person in the last hour |
 | `network-failures` | ×3 | twenty or more refused passwords from this network in the last hour |
 | `authenticator-compromised` | ×50 | the security key's model is reported revoked or compromised in the FIDO metadata |
@@ -234,6 +235,33 @@ with what browser and system, and at what level. Each has two buttons:
 
 Each sign-in can be answered once. Administrators see the answers on
 Monitoring → Risk.
+
+## Browser fingerprinting (optional, off by default)
+
+With `risk.fingerprinting` on in a realm, the sign-in screen runs one
+script, [FingerprintJS](https://github.com/fingerprintjs/fingerprintjs)
+(MIT). It computes an identifier from what the browser exposes (its canvas,
+audio and font behaviour, and similar) and puts it in a hidden field of the
+form. The script sends nothing anywhere, and the form works exactly as before
+if the script is blocked. The service keeps only a keyed digest of the
+identifier, never the identifier. A browser this person has never signed in
+from is the signal `new-device` (×2).
+
+**A browser fingerprint is personal data** about the person's device,
+collected without them doing anything, so turning it on is your decision to
+make and document. Before you turn it on, complete a privacy impact
+assessment. At least:
+
+| Question | What to record |
+|---|---|
+| Purpose | Detecting sign-ins from a browser the person has not used before, as one input to the risk score. |
+| Lawful basis | Yours to decide: legitimate interest in account security is the usual one. Record the balancing test. |
+| Data collected | A digest of the FingerprintJS identifier, per sign-in, in the risk history. No raw identifier is kept. |
+| Retention | `risk.assessmentRetentionDays` and `risk.historyRetentionDays`. |
+| Who can see it | Administrators, on Monitoring → Risk (as a digest), and the person, on `/portal/sign-ins` (as a device). |
+| Notice | What the people who sign in are told, and where. |
+| Alternatives considered | Security keys and passkeys identify a device far better and are not personal data in the same way. JA4 and the User-Agent are already scored without a script. |
+| Opt-out | The setting is per realm; there is no per-person opt-out. |
 
 ## Breached passwords
 
@@ -443,6 +471,7 @@ kept in step with `common/config.js`.
 |---|---|---|---|
 | `risk.assessSignIns` | `STS_RISK_ASSESS_SIGN_INS` | `true` | Score and record every sign-in, and give the issuance policy its risk. |
 | `risk.enforceInDevelopment` | `STS_RISK_ENFORCE_IN_DEVELOPMENT` | `false` | Enforce the policy's risk decisions in development mode too. |
+| `risk.fingerprinting` | `STS_RISK_FINGERPRINTING` | `false` | Fingerprint the browser at the sign-in screen. Complete the privacy impact assessment first. |
 | `risk.breachCheck` | `STS_RISK_BREACH_CHECK` | `on` | Refuse a password known from a data breach (product mode). |
 | `risk.breachCheckAtSignIn` | `STS_RISK_BREACH_CHECK_AT_SIGN_IN` | `true` | Also ask for a breached password to be changed at sign-in. |
 | `risk.breachApiUrl` | `STS_RISK_BREACH_API_URL` | `https://api.pwnedpasswords.com/range/` | Where the five-character prefix is sent. |
@@ -488,12 +517,15 @@ kept in step with `common/config.js`.
 
 ## What is coming
 
-The next phases of [issue #62](https://github.com/rcbj/iya-sts/issues/62)
-will do the following:
+The remaining work on [issue #62](https://github.com/rcbj/iya-sts/issues/62):
 
-- **Add more checks.**
-  - Add optional browser fingerprinting. It will be off by default, with its
-    own switch per realm.
+- **Calibration**: a report of the levels and signals real sign-ins have
+  been given, with the thresholds and factors it suggests.
+- **A realm's own administrators** see their realm's risk page.
+- **Each person's current risk on their user page** in the console.
+- **Monitoring → Risk Scoring**: metrics about the scoring itself.
+- **The console and portal acting on the risk signals they receive**, with
+  issues #153 and #117.
 
 ## In the running service
 

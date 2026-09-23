@@ -772,6 +772,10 @@ const LOGIN_FORM = vz.object({
   action: vt.opt(vt.oneOf(['login', 'cancel', 'anonymous'])),
   username: vt.opt(vt.name),
   password: vz.string().max(1024).optional(),
+  // THE BROWSER FINGERPRINT (#62 P6), where `risk.fingerprinting` put the
+  // script on the page and it ran: FingerprintJS's visitorId, hex. Empty
+  // when the script did not run, which is the page working without it.
+  device_fp: vz.string().max(64).regex(/^[A-Za-z0-9]*$/).optional(),
   use_webauthn: vt.opt(vt.flag),
   webauthn_only: vt.opt(vt.flag),
   csrf_token: vt.opt(vt.token)
@@ -845,6 +849,22 @@ const MFA_SETUP_FORM = vz.object({
 // the SAME script, and a path written out three times is two chances to move
 // one of them.
 const WEBAUTHN_SCRIPT_PATH = '/authn/webauthn.js';
+// THE BROWSER FINGERPRINT'S SCRIPT (#62 P6): FingerprintJS (MIT, v5 — it
+// runs in the browser and sends nothing anywhere; `monitoring: false` turns
+// off the one usage ping the library makes, which this service's CSP would
+// block regardless) followed by the few lines that put its visitorId in the
+// sign-in form. Served only while `risk.fingerprinting` is on.
+const FINGERPRINT_SCRIPT_PATH = '/authn/fingerprint.js';
+const FINGERPRINT_GLUE = [
+  '(function () {',
+  '  var field = document.getElementById("device-fp");',
+  '  if (!field || typeof FingerprintJS === "undefined") { return; }',
+  '  FingerprintJS.load({ monitoring: false })',
+  '    .then(function (fp) { return fp.get(); })',
+  '    .then(function (result) { field.value = result.visitorId; })',
+  '    .catch(function () { field.value = ""; });',
+  '})();'
+].join('\n');
 
 // The ceremony script, as its own resource. Written with split/join rather than
 // regular expressions on purpose: this string passes through a JavaScript
@@ -2883,12 +2903,24 @@ class Authn {
     if (typeof given.backupState === 'boolean') {
       credential.backupState = given.backupState;
     }
+    // THE BROWSER FINGERPRINT (#62 P6), where the realm asked for one and
+    // the sign-in form carried it — as a digest, like the User-Agent: the
+    // value itself is personal data and is never kept.
+    let fp = '';
+    if (this.fingerprinting() && req && req.body) {
+      // The raw body, parsed here only when a fingerprint could be in it.
+      const posted: any = typeof req.body === 'string'
+        ? this.deps.parseBody(req) : req.body;
+      fp = /^[A-Za-z0-9]{8,64}$/.test(String((posted || {}).device_fp || ''))
+        ? String(posted.device_fp) : '';
+    }
     log.debug("Leaving Authn.eventContext().");
     return {
       address: String(detail.address || audit.currentAddress() || ''),
       uaFingerprint: stsCrypto.userAgentFingerprint(
         headers['user-agent'] || ''),
       ja4: hello ? hello.ja4 : '',
+      device: fp ? stsCrypto.credentialFingerprint('device:' + fp) : '',
       credential: credential
     };
   }
@@ -3314,6 +3346,13 @@ class Authn {
     });
     log.debug("Leaving Authn.sessionsForRisk(). " + out.length + ".");
     return out;
+  }
+
+  // Whether this realm fingerprints the browser at the sign-in screen (#62
+  // P6, `risk.fingerprinting`, off by default). Asked for every drawing of
+  // the screen, which is a hot path, so no Entering/Leaving pair.
+  private fingerprinting(): boolean {
+    return this.deps.config.value('risk.fingerprinting') === true;
   }
 
   // ---------------------------------------------------------------------------
@@ -5926,7 +5965,9 @@ class Authn {
         : '') +
       '<form method="post" action="' + LOGIN_PATH + '">' +
       '<input type="hidden" name="authn_id" value="' + xmlEscape(record.id) +
-      '"><label ' +
+      '">' + (this.fingerprinting()
+        ? '<input type="hidden" name="device_fp" id="device-fp" value="">'
+        : '') + '<label ' +
       'for="username">Username</label><input type="text" id="username" ' +
       'name="username" autocomplete="username" ' +
       (locked ? 'readonly ' : 'autofocus ') +
@@ -6106,14 +6147,25 @@ class Authn {
                '</code>' + (d.note ? ' (' + xmlEscape(d.note) + ')' :
                             '') + '</div>';
       }).join('') +
-      '</div></div></body></html>\n';
+      '</div></div>' + (this.fingerprinting()
+        ? '<script src="' + FINGERPRINT_SCRIPT_PATH + '"></script>' : '') +
+      '</body></html>\n';
     log.debug("Leaving Authn.loginPage().");
     return page;
   }
 
   private sendLoginPage(res, html) {
-    const { log } = this.deps;
+    const { log, app } = this.deps;
     log.debug("Entering Authn.sendLoginPage().");
+    // THE NINTH SCRIPTED PAGE, and only while `risk.fingerprinting` is on in
+    // this realm (#62 P6): `script-src 'self'` for `/authn/fingerprint.js`
+    // and nothing else, through the builder so the framing clauses stay.
+    // The form still works with the script blocked — the fingerprint is an
+    // extra field, and an empty one decides nothing.
+    if (this.fingerprinting()) {
+      res.set('Content-Security-Policy',
+              app.contentSecurityPolicy({ 'script-src': "'self'" }));
+    }
     res.status(200).type('text/html').set('Cache-Control', 'no-store')
       .send(html);
     log.debug("Leaving Authn.sendLoginPage().");
@@ -8837,6 +8889,34 @@ class Authn {
       this.returnToCaller(res, step.authn, null, null);
       log.debug('Leaving the second-factor set-up endpoint. Signed in.');
       return undefined;
+    });
+
+    // The browser fingerprint's script (#62 P6), served only while a realm
+    // has `risk.fingerprinting` on — otherwise nothing draws a page that asks
+    // for it, and a 404 says so.
+    app.get(FINGERPRINT_SCRIPT_PATH, (req, res) => {
+      log.debug('Entering the fingerprint script endpoint.');
+      if (!this.fingerprinting()) {
+        errorCodes.mark(res, 'STS-AUTHN-0225');
+        res.status(404).type('text/plain').send('Not found');
+        log.debug('Leaving the fingerprint script endpoint. Off.');
+        return;
+      }
+      let library = '';
+      try {
+        library = require('fs').readFileSync(require.resolve(
+          '@fingerprintjs/fingerprintjs/dist/fp.min.js'), 'utf8');
+      } catch (e) {
+        log.debug('Caught in the fingerprint script endpoint: ' +
+                  ((e && e.message) || e));
+        // The library is not installed: the glue finds no FingerprintJS and
+        // does nothing, so the form is sent without a fingerprint.
+        library = '';
+      }
+      res.status(200).type('application/javascript')
+        .set('Cache-Control', 'public, max-age=3600')
+        .send(library + '\n' + FINGERPRINT_GLUE + '\n');
+      log.debug('Leaving the fingerprint script endpoint.');
     });
 
     app.get(WEBAUTHN_SCRIPT_PATH, (req, res) => {

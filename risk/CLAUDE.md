@@ -30,7 +30,7 @@ policy*, below.
 | P3 | **Done** (2026-09-22): the risk facts in every issuance request, three risk rules in the built-in `role-issuance` policy, step-up at the doors that can ask, enforced in product and observed in development. The design change is on #62 (comment 5787912263). |
 | P4 | **Done** (2026-09-22): the `risk-response` policy and the reactions it permits, taken once per assessment; continuous evaluation of a live session's device, TLS client and network; the `risk.rescore` job; CAEP risk-level-change emitted on its own. |
 | P5 | **Done** (2026-09-22): FIDO MDS3 — the `fido.mds3` dataset, the BLOB verified to the FIDO root and its chain's revocation checked, a rollback refused, the latest BLOB only, and `authenticator-compromised` scored at sign-in and by the rescore job. Mail (#63) is its own ticket. |
-| P6 | In progress (2026-09-22). **Done: "this was me" / "this wasn't me"** on `/portal/sign-ins` (schema 9's `feedback`), and **breached passwords** by the Pwned Passwords k-anonymity range API (`common/breached_passwords.ts`). Next: optional fingerprinting, off by default. |
+| P6 | **Done** (2026-09-22): "this was me" / "this wasn't me" on `/portal/sign-ins` (schema 9's `feedback`); breached passwords by the Pwned Passwords k-anonymity range API (`common/breached_passwords.ts`); optional browser fingerprinting, off by default, scored `new-device` (`authn/CLAUDE.md` argues the script). |
 
 ## THE LICENCE BOUNDARY: NOTHING THIRD-PARTY IS SHIPPED (2026-09-22)
 

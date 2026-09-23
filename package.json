@@ -20,6 +20,7 @@
     "@digitalbazaar/ed25519-verification-key-2020": "^4.2.0",
     "@digitalbazaar/security-context": "^1.0.1",
     "@digitalbazaar/zcap": "^9.0.1",
+    "@fingerprintjs/fingerprintjs": "5.2.0",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
     "@noble/curves": "1.4.0",

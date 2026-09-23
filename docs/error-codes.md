@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3043** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3044** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 203
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 204
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 481
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
@@ -1084,6 +1084,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0222` | A password being set was refused because it has appeared in a data breach: Pwned Passwords lists it (#62 P6, product mode). | NIST SP 800-63B section 3.1.1.2 |
 | `STS-AUTHN-0223` | A password was set in product mode by a door that did not screen it against Pwned Passwords first, so no breach verdict was there to read. The door is named in the line; it needs a screen(). | — |
 | `STS-AUTHN-0224` | The Pwned Passwords range API did not answer (off, unreachable, refused by the outbound rules, or too slow); a password was set unscreened. | — |
+| `STS-AUTHN-0225` | The browser fingerprint script was asked for while risk.fingerprinting is off in the realm; nothing draws a page that uses it, so it is not served (#62 P6). | HTTP 404 |
 
 ## STS-OAUTH
 

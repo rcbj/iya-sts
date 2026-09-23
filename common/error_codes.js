@@ -4064,6 +4064,11 @@ const CODES = [
       'unreachable, refused by the outbound rules, or too slow); a password ' +
       'was set unscreened.',
     spec: '' },
+  { code: 'STS-AUTHN-0225',
+    summary: 'The browser fingerprint script was asked for while ' +
+      'risk.fingerprinting is off in the realm; nothing draws a page that ' +
+      'uses it, so it is not served (#62 P6).',
+    spec: 'HTTP 404' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

@@ -8610,6 +8610,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'page has NO SCRIPT and is served under the service-wide ' +
           'script-src \'none\' — a person reads digits and types them, so ' +
           'the exception the security-key page needs does not apply here.' },
+  { path: '/authn/fingerprint.js', group: 'Authentication',
+    name: 'Browser fingerprint script (optional)',
+    specs: [],
+    what: 'NON-SPEC (#62 P6). Served only while risk.fingerprinting is on in ' +
+          'the realm — 404 otherwise — and then the sign-in screen is the ' +
+          'ninth scripted page: FingerprintJS (MIT, v5; it runs in the ' +
+          'browser and sends nothing, its usage ping turned off) puts a ' +
+          'visitorId in a hidden field, and the service keeps only a keyed ' +
+          'digest of it, scored as a device this person never used. The ' +
+          'form works without it. Off by default: it is personal data, and ' +
+          'turning it on is the operator\'s decision, after the privacy ' +
+          'impact assessment the risk-scoring page describes.' },
   { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ' +
       'ceremony script',
     specs: ['webauthn'],

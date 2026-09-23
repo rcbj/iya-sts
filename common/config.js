@@ -9550,6 +9550,19 @@ const SETTINGS = [
                  'elsewhere. Older than this, the issuance carries no risk ' +
                  'facts and the roles decide.' },
 
+  { key: 'risk.fingerprinting', group: 'Risk',
+    label: 'Fingerprint the browser at sign-in',
+    env: 'STS_RISK_FINGERPRINTING', type: 'bool', dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT (#62 P6). On, the sign-in screen runs one ' +
+                 'script, FingerprintJS (MIT; it sends nothing anywhere), ' +
+                 'which computes an identifier from what the browser exposes ' +
+                 'and puts it in the form; the service keeps only a keyed ' +
+                 'digest, and a browser this person has never signed in ' +
+                 'from is the signal new-device (x2). A browser fingerprint ' +
+                 'is personal data: complete the privacy impact assessment ' +
+                 'in docs/risk-scoring.md, and tell the people who sign in, ' +
+                 'before turning it on. Per realm, like every setting.' },
+
   { key: 'risk.breachCheck', group: 'Risk',
     label: 'Refuse passwords known from data breaches',
     env: 'STS_RISK_BREACH_CHECK', type: 'enum', dflt: 'on',

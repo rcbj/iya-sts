@@ -81,6 +81,10 @@ const SIGNALS: Record<string, Json> = {
     what: 'the User-Agent is an automated client\'s' },
   'new-tls-stack': { factor: 2,
     what: 'a TLS client (JA4) this person has not signed in with before' },
+  // #62 P6, only where the realm turned `risk.fingerprinting` on.
+  'new-device': { factor: 2,
+    what: 'a browser (by its fingerprint) this person has not signed in ' +
+          'from before' },
   'account-failures': { factor: 3,
     what: 'refused passwords for this person in the last hour' },
   'network-failures': { factor: 3,
@@ -679,6 +683,13 @@ class RiskEngine {
           String(authenticator.model.description || credential.aaguid) +
           ' (' + String(authenticator.model.latestStatus || '') + ')');
     }
+    if (context.device && user.n > 0) {
+      const seenDevice = await store.featureCounts(realm, subject,
+        [{ feature: 'device', value: String(context.device) }], sealing);
+      if (!seenDevice.length) {
+        add('new-device', String(context.device).slice(0, 12));
+      }
+    }
     if (context.ja4 && user.n > 0) {
       const seen = await store.featureCounts(realm, subject,
         [{ feature: 'ja4', value: String(context.ja4) }], sealing);
@@ -787,6 +798,9 @@ class RiskEngine {
     move(POPULATION, 'user', subject);
     if (context.ja4) {
       move(subject, 'ja4', String(context.ja4));
+    }
+    if (context.device) {
+      move(subject, 'device', String(context.device));
     }
     if (credential.fingerprint || credential.kind) {
       move(subject, 'credential', String(credential.kind || '') + ':' +
