@@ -1644,10 +1644,13 @@ class OAuth2Server {
       // id_token, so `id_token token` belongs here too — OpenID Connect Dynamic
       // Registration names it as one an OP should support, and leaving it out
       // of the list while honouring it is the same drift as the reverse.
+      // `none` since #125: Multiple Response Type Encoding Practices section
+      // 4, a response carrying `state` and nothing issued.
       response_types_supported: ['code', 'token', 'id_token', 'code token',
                                  'code ' +
           'id_token',
-                                 'id_token token', 'code id_token token'],
+                                 'id_token token', 'code id_token token',
+                                 'none'],
       // --- RECOMMENDED / OPTIONAL ---
       jwks_uri: at + '/oauth2/jwks',
       // NON-SPEC (#42, D8): the realm's public crypto metadata document —
@@ -6265,8 +6268,11 @@ class OAuth2Server {
   // fragment-reading code never saw it. An explicit `fragment` is honoured
   // for any type; an explicit `query` only where nothing in the response can
   // be a token (section 2.1 of that document: "MUST NOT use the query
-  // encoding" for those) — so it is ignored for the rest rather than obeyed.
-  // `form_post` is redirectBack()'s own branch and never reaches here.
+  // encoding" for those) — and since #125 such a request is REFUSED in
+  // `vetAuthorizationRequest()` (STS-OAUTH-0607), so the refusal is the one
+  // place that decides this for a token-bearing type; `none` (section 4) is
+  // the query. `form_post` is redirectBack()'s own branch and never reaches
+  // here.
   // -------------------------------------------------------------------------
   usesFragment(types: Json, responseMode?: Json): boolean {
     const { log } = this.deps;
@@ -6919,7 +6925,21 @@ class OAuth2Server {
                           'client_id is required.');
     }
     const types = String(q.response_type || '').split(/\s+/).filter(Boolean);
-    const known = ['code', 'token', 'id_token'];
+    const known = ['code', 'token', 'id_token', 'none'];
+    // OAuth 2.0 Multiple Response Type Encoding Practices section 4 (#125):
+    // `none` asks for NOTHING to be issued — the response carries `state`
+    // (and RFC 9207's `iss`) alone — so it is not combined with any other
+    // value.
+    if (types.length > 1 && types.indexOf('none') >= 0) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). none " +
+                "combined.");
+      return redirectable('STS-OAUTH-0606', 'unsupported_response_type',
+        'response_type "none" asks for no credential at all (Multiple ' +
+        'Response Type Encoding Practices section 4), so it cannot be ' +
+        'combined with "' + types.filter(function (t) {
+          return t !== 'none';
+        }).join(' ') + '".');
+    }
     if (!types.length ||
         types.some(function (t) { return known.indexOf(t) < 0; })) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). " +
@@ -7001,6 +7021,23 @@ class OAuth2Server {
               'posts a message, receives one, or frames anything.'
             : ''));
       }
+    }
+
+    // MULTIPLE RESPONSE TYPE ENCODING PRACTICES section 2.1 (#125): a
+    // response type that returns a token or an ID Token "MUST NOT use the
+    // query encoding" — so an explicit `response_mode=query` for one is
+    // refused, in every mode. It was quietly overridden to the fragment since
+    // #118, which answered a request the client did not make. The refusal
+    // itself goes in the fragment, where the success would have gone.
+    if (String(q.response_mode || '') === 'query' &&
+        types.some(function (t) { return t === 'token' || t === 'id_token'; })) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). query for " +
+                "a token-bearing response type.");
+      return redirectable('STS-OAUTH-0607', 'invalid_request',
+        'response_mode=query cannot carry response_type "' +
+        String(q.response_type) + '": a response returning a token or an ID ' +
+        'Token MUST NOT use the query encoding (OAuth 2.0 Multiple Response ' +
+        'Type Encoding Practices section 2.1). Use fragment or form_post.');
     }
 
     // JARM section 2.3.1 (#139, #143): `query.jwt` carries no token in clear.
