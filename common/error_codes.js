@@ -10105,6 +10105,16 @@ const CODES = [
       'verifies the receiver\'s certificate whatever it says. Logged once ' +
       'per process (#171).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-SSF-0110',
+    summary: 'No reaction to a signal this service\'s own console or portal ' +
+      'received could be decided: the signal-response policy is disabled, ' +
+      'missing or does not load. The event is recorded and nothing is ended.',
+    spec: '' },
+  { code: 'STS-SSF-0111',
+    summary: 'A reaction the signal-response policy permitted to a received ' +
+      'signal failed: the receiving surface\'s sessions for the person could ' +
+      'not be ended.',
+    spec: '' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

@@ -4025,7 +4025,19 @@ class Portal {
             (row.verified
               ? 'signed by this identity provider and verified'
               : 'NOT VERIFIED — ' + self.esc(row.verificationNote)) +
-            '</span></td></tr>';
+            '</span>' +
+            // WHAT THIS PORTAL DID WITH IT (#62): signed you out here, if
+            // the signal-response policy said to.
+            (row.reactions || []).map(function (r) {
+              return '<span class="ident signal-reaction">' +
+                (r.failed ? 'this portal could not sign you out here'
+                  : (r.observed ? 'this portal would sign you out here ' +
+                                  '(development mode records it only)'
+                    : (Number(r.ended) > 0
+                        ? 'this portal signed you out here'
+                        : 'this portal had no session of yours to end'))) +
+                '</span>';
+            }).join('') + '</td></tr>';
         }).join('') + '</table>'
       : '<p class="note">Nothing has been reported about your account' +
         (st.held ? ' yet' : ' yet') + '. This list fills when this identity ' +

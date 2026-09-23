@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3097** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3099** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 101
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 103
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 26
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
@@ -2547,6 +2547,8 @@ Raised from: ssf/.
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
 | `STS-SSF-0108` | A push delivery endpoint was refused because it is plain http and the realm is in product mode, where RFC 8935 push goes over TLS whatever ssf.pushAllowHttp says (#171). | at stream creation HTTP 400 {err: invalid_request}; at push time none — a dead letter |
 | `STS-SSF-0109` | Product mode ignored ssf.pushSkipTlsVerification: a push verifies the receiver's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-SSF-0110` | No reaction to a signal this service's own console or portal received could be decided: the signal-response policy is disabled, missing or does not load. The event is recorded and nothing is ended. | — |
+| `STS-SSF-0111` | A reaction the signal-response policy permitted to a received signal failed: the receiving surface's sessions for the person could not be ended. | — |
 
 ## STS-RISK
 

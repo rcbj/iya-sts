@@ -157,6 +157,9 @@ const SURFACES = [
     // here: the audience of a stream is the identity of its receiver
     // (`ssf_streams.ts`, assignAudience()), and this is the surface's.
     audience: 'sts-admin-console',
+    // Its relying-party sessions' `rpSurface` (`common/oidc_rp.ts`): what a
+    // received signal may end (#62, `actOn()`).
+    rpSurface: 'admin',
     receivePath: '/admin/signals/receive',
     inboxPath: '/admin/signals',
     sees: 'all',
@@ -165,6 +168,7 @@ const SURFACES = [
   { id: 'user-portal',
     label: 'User portal',
     audience: 'sts-user-portal',
+    rpSurface: 'portal',
     receivePath: '/portal/signals/receive',
     inboxPath: '/portal/signals',
     sees: 'own',
@@ -835,6 +839,9 @@ class SsfReceivers {
     entry.issuerOk = !read.problem && String(claims.iss || '') ===
                      String(record.iss || '');
     entry.typOk = !read.problem && SsfReceivers.isSetTyp(read.header);
+    // WHAT THE SURFACE DOES WITH IT (#62), decided before the row is written
+    // so the row says it: rows are written once and never rewritten.
+    entry.reactions = this.actOn(surface, entry);
     this.record_(surface.id, entry);
     audit.audit({ action: 'ssf.event.receive', category: 'signals',
       protocol: 'SSF', channel: 'http',
@@ -909,6 +916,111 @@ class SsfReceivers {
     // that no receiver has to send.
     log.debug("Leaving SsfReceivers.accept(). Accepted.");
     return { status: 202, entry: entry, body: null };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ACTING ON A RECEIVED SIGNAL (#62, 2026-09-22; rcbj: "surfaces act on
+  // signals"). Until then both surfaces only recorded what arrived — which
+  // issue #117 noted was the one thing keeping an unverified SET harmless.
+  //
+  // **NOTHING ACTS ON A SET UNLESS IT VERIFIED**, #117's rule, and it is
+  // here rather than in the policy so that no policy can relax it: whatever
+  // `ssf.receiveRequireSignature` says about ACCEPTING one, an unverified
+  // SET — or one that failed any check above — is recorded and acted on in
+  // no way. `verified` is a signature against this service's own signing
+  // key, which is what a push from its own transmitter carries.
+  //
+  // **WHAT IT MAY DO IS POLICY**: `xacml/xacml_signal_pep.ts` asks the
+  // `signal-response` policy once per event type in the SET, and a Permit of
+  // `signal-end-sessions` ends THIS SURFACE'S OWN relying-party sessions for
+  // the person the event names — never the provider's, which are the
+  // transmitter's to end, and which it usually already has.
+  //
+  // **WHO IT IS ABOUT IS `isAbout()`**, the portal's fail-closed match: an
+  // identifier that does not resolve to the person holding a session ends
+  // nothing. Development observes (`mode.observesSignalsOnly()`).
+  //
+  // Answers what was done, per event type, for the row. Never throws.
+  // ---------------------------------------------------------------------------
+  private actOn(surface: Loose, entry: Loose): Loose[] {
+    const { log, mode, realms, audit, events } = this.deps;
+    log.debug("Entering SsfReceivers.actOn(). " + surface.id);
+    if (entry.problem || !entry.typOk || !entry.issuerOk ||
+        !entry.audienceOk || !entry.verified) {
+      log.debug("Leaving SsfReceivers.actOn(). " + (entry.verified
+        ? 'It failed a check.' : 'Unverified: nothing acts on it.'));
+      return [];
+    }
+    const payloads = (entry.claims && entry.claims.events) || {};
+    const observe = mode.observesSignalsOnly();
+    const out: Loose[] = [];
+    const self = this;
+    Object.keys(payloads).forEach(function (uri: string): void {
+      const family = uri.indexOf(events.CAEP_PREFIX) === 0 ? 'caep'
+        : (uri.indexOf(events.RISC_PREFIX) === 0 ? 'risc'
+          : (uri.indexOf(events.SSF_PREFIX) === 0 ? 'ssf' : ''));
+      const prefix = family === 'caep' ? events.CAEP_PREFIX
+        : (family === 'risc' ? events.RISC_PREFIX
+          : (family === 'ssf' ? events.SSF_PREFIX : ''));
+      const short = prefix ? uri.slice(prefix.length) : uri;
+      const body = payloads[uri] || {};
+      let decided: Loose = { reactions: [] };
+      try {
+        decided = require('../xacml/xacml_signal_pep').decide({
+          event: short, family: family, surface: surface.id,
+          level: String(body.current_level || '') });
+      } catch (e) {
+        log.debug("Caught in SsfReceivers.actOn(): " +
+                  ((e && e.message) || e));
+        // No XACML family in this process: nothing is decided, so nothing
+        // is done.
+        decided = { reactions: [] };
+      }
+      (decided.reactions || []).forEach(function (reaction: string): void {
+        if (observe) {
+          out.push({ event: short, reaction: reaction, observed: true });
+          return;
+        }
+        try {
+          const ended = require('../authn/authn').endRelyingPartySessions(
+            surface.rpSurface, realms.currentId(),
+            // The person as the portal composes one (`personOf()`): three
+            // names and no more.
+            function (user: Loose): boolean {
+              return self.isAbout(entry, { username: user.username,
+                                           sub: user.sub || '',
+                                           mail: user.email || '' });
+            },
+            'the ' + surface.label + ' received ' + short + ' (' +
+            entry.jti + ')');
+          out.push({ event: short, reaction: reaction, ended: ended });
+        } catch (e) {
+          log.warn(errorCodes.tag('STS-SSF-0111') + 'ssf: the ' +
+                   surface.label + ' could not act on ' + short + ' (' +
+                   entry.jti + '): ' + ((e && e.message) || e));
+          out.push({ event: short, reaction: reaction, failed: true });
+        }
+      });
+    });
+    const ended = out.reduce(function (n: number, r: Loose): number {
+      return n + (Number(r.ended) || 0);
+    }, 0);
+    if (out.length) {
+      audit.audit({ action: 'ssf.event.act', category: 'signals',
+        protocol: 'SSF', channel: 'internal', target: entry.jti,
+        errorCode: out.some(function (r: Loose): boolean {
+          return !!r.failed;
+        }) ? 'STS-SSF-0111' : undefined,
+        summary: 'The ' + surface.label + ' ' + (observe
+          ? 'would have ended its own sessions for the person named ' +
+            '(development observes)'
+          : 'ended ' + ended + ' of its own session(s) for the person ' +
+            'named'),
+        detail: { surface: surface.id, reactions: out } });
+    }
+    log.debug("Leaving SsfReceivers.actOn(). " + out.length +
+              " reaction(s), " + ended + " ended.");
+    return out;
   }
 
   // Whether a JOSE header carries SSF's explicit type (section 4.1.1), with
@@ -1326,6 +1438,8 @@ class SsfReceivers {
       payload: uris.length ? (claims.events[uris[0]] || {}) : {},
       verified: !!entry.verified,
       verificationNote: entry.verificationNote,
+      // What the surface did with it (#62, `actOn()`).
+      reactions: Array.isArray(entry.reactions) ? entry.reactions : [],
       contentType: entry.contentType,
       correctMediaType: !!entry.correctMediaType,
       problem: entry.problem || ''
