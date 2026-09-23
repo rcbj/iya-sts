@@ -960,6 +960,11 @@ async function test() {
   // 6. MUTUAL TLS (RFC 9635 section 7.3.2), with a self-signed certificate.
   // =========================================================================
   log.info("=== 6. mutual TLS ===");
+  // THE PINNED MODEL, SAID (#107): this section's certificate is SELF-SIGNED,
+  // which `gnap.mtlsTrust=pki` — product's `auto` — refuses. The PKI model and
+  // both modes' defaults are `sts_gnap_mtls.js`'s; what this section asks is
+  // how a bound token behaves at the RS, so the realm pins, in both modes.
+  await h.setting("gnap.mtlsTrust", "pinned");
   const forge = require("node-forge");
   const pair = forge.pki.rsa.generateKeyPair(2048);
   const cert = forge.pki.createCertificate();
@@ -1017,6 +1022,7 @@ async function test() {
         "connection with no certificate, is invalid_client", function () {
     h.refused(r, "invalid_client", "an mtls key with no client certificate");
   });
+  await h.setting("gnap.mtlsTrust", "auto");
 
   // =========================================================================
   // 7. THE RESOURCE SERVER DISCOVERY DOCUMENT FOLLOWS THE SETTINGS.

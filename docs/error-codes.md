@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3151** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3159** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -76,14 +76,14 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 103
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 26
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 276
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 183
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 64
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 127
+* [Registries (`STS-REG`)](#sts-reg) — 129
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -2816,6 +2816,12 @@ Raised from: gnap/.
 | `STS-GNAP-0284` | A GNAP request that must carry a Detached-JWS header (a detached JWS proof, a content-less jws request, or a detached JWS key rotation) has none. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0285` | A GNAP request proved by an attached JWS (or an attached-JWS key rotation) does not send a JWS as its content. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0286` | In a GNAP httpsig key rotation, the new key's signature does not cover the old key's Signature and Signature-Input. | HTTP 401 GNAP invalid_rotation |
+| `STS-GNAP-0287` | Under the PKI trust model (gnap.mtlsTrust or the entry's gnapMtlsTrust is pki), the TLS client certificate proving a GNAP key did not verify: no chain to the client truststore, or a certificate this service issued that is not a TLS client identity in this realm (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0288` | Under the PKI trust model, a GNAP client's TLS client certificate verified but was not issued to its application entry by this realm, and the entry registers no RFC 8705 certificate subject to bind it by (or no entry holds the key at all) (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0289` | Under the PKI trust model, a GNAP client's application entry registers more than one RFC 8705 certificate subject parameter, so there is no single subject to bind the certificate by (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0290` | Under the PKI trust model, a GNAP client's TLS client certificate does not carry the RFC 8705 certificate subject its application entry registers (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0291` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to a different person or application (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0292` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to its entry that the entry's record no longer lists (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0300` | A GNAP token model's access is not a non-empty array of access rights. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0301` | A GNAP token model's access element is an empty reference, or neither a reference string nor a typed object. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0302` | A GNAP token model's access element has an array dimension or an identifier of the wrong type. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
@@ -3539,6 +3545,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0192` | A consent was withdrawn and its tokens revoked, but the withdrawal instant could not be written onto the person's or the application's entry, so a re-consent could revive a refresh token the revocation did not reach (#172). | none — logged |
 | `STS-REG-0193` | A write setting an application's override of a development-only setting — saml2SignAssertion, saml11SignAssertion or saml11SignResponse to FALSE, or saml2KeyTransportAlgorithm to rsa-1_5 — was refused because the realm is in product mode, where the value would be ignored (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-REG-0194` | A write of a delegation policy attribute was refused (#108): appTrustedToImpersonate that is not TRUE or FALSE, or an appDelegationSubjectGroup value that is not a DN. | console: the page's error list; /admin-api: HTTP 400 |
+| `STS-REG-0195` | A write of gnapMtlsTrust on an application was refused: the value is neither pki nor pinned (#107). | console: the page's error list; /admin-api: HTTP 400 |
+| `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
 
 ## STS-DBG
 

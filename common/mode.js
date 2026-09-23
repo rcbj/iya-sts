@@ -701,6 +701,30 @@ function refusesUnrevocableCertificates() {
   return isProduct();
 }
 
+// Does a GNAP key proved by MUTUAL TLS need a certificate a trusted authority
+// issued, rather than one merely registered (#107, 2026-09-23)? This is what
+// `gnap.mtlsTrust=auto` resolves to: product answers yes (`pki`), development
+// answers no (`pinned`).
+//
+// RFC 9635 section 7.3.2 allows both: the verifier compares the certificate
+// with the key it expected, and "in many instances ... will not do a full
+// certificate chain validation", the trust coming from "a static registration
+// or trust-on-first-use". Section 11.4 is why product takes the other one: "an
+// AS using PKI to validate the MTLS connection would need to ensure that the
+// presented certificate was issued by a trusted certificate authority", and
+// only that model lets a key be "revoked and rotated through management at the
+// certificate authority without requiring additional registration or
+// management at the AS". A pinned self-signed certificate can be withdrawn
+// only by editing the entry that pins it. Development keeps `pinned` because a
+// client under test brings the self-signed certificate it generated a minute
+// ago. REVOCATION IS CONSULTED IN BOTH, whatever this answers:
+// `gnap/gnap_proof.ts` argues it.
+function requiresPkiForGnapMtls() {
+  log.debug("Entering requiresPkiForGnapMtls().");
+  log.debug("Leaving requiresPkiForGnapMtls().");
+  return isProduct();
+}
+
 // Must an ACME or EST request arrive over TLS (2026-09-13)? RFC 8555 section
 // 6.1 says ACME MUST be HTTPS and RFC 7030 section 3.2 puts EST on TLS by
 // definition, so product answers yes and refuses a request that reached the
@@ -2068,6 +2092,26 @@ const REQUIREMENTS = [
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
+  { id: 'gnap-mtls-trust',
+    what: 'A GNAP key proved by mutual TLS is a certificate a trusted ' +
+          'authority issued to the client',
+    development: 'PINNED (gnap.mtlsTrust=auto): the TLS client certificate ' +
+                 'must be the one the key names — by thumbprint, or the ' +
+                 'same public key — and a self-signed one is accepted (RFC ' +
+                 '9635 section 7.3.2). No chain is built. A certificate this ' +
+                 'service or another authority REVOKED is refused all the ' +
+                 'same (pki.revocationCheck).',
+    product: 'PKI (gnap.mtlsTrust=auto, RFC 9635 section 11.4): the ' +
+             'certificate must build a chain to the client truststore, pass ' +
+             'the revocation check, and be BOUND to the client\'s ' +
+             'application entry — issued to it by this realm\'s TLS client ' +
+             'authority, or carrying the one RFC 8705 subject parameter the ' +
+             'entry registers (oauthTlsClientAuth*). A new certificate from ' +
+             'the authority is accepted without re-registration, and its ' +
+             'thumbprint is recorded on the entry. gnap.mtlsTrust=pinned ' +
+             'turns this off for a realm; an entry may ask for pki where the ' +
+             'realm does not, never the reverse.',
+    where: 'gnap/gnap_proof.ts, gnap/gnap_grants.ts, common/applications.js' },
   { id: 'protocol-debugger',
     what: 'The identity protocol debugger is embedded, and what its api may ' +
           'dial',
@@ -2559,6 +2603,7 @@ module.exports = {
   sendsWeakerThanAsked: sendsWeakerThanAsked,
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   refusesUnrevocableCertificates: refusesUnrevocableCertificates,
+  requiresPkiForGnapMtls: requiresPkiForGnapMtls,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
   opensRevocation: opensRevocation,

@@ -100,8 +100,10 @@ one. What happens to a certificate that is presented:
   truststore is *known*; one that chains to nothing still completes the
   handshake and can still bind a token under RFC 8705 section 3.
 * **It is refused where it is used**: RFC 8705 client authentication at the
-  token endpoint, `/xacml`, `/scim/v2` and `/tls/sign-in` each decide for
-  themselves, carrying OpenSSL's own reason (`authorizationError`) out whole.
+  token endpoint, `/xacml`, `/scim/v2`, `/tls/sign-in` and a GNAP key proved by
+  mutual TLS under `gnap.mtlsTrust=pki` ([GNAP](gnap.md#mutual-tls-trust)) each
+  decide for themselves, carrying OpenSSL's own reason (`authorizationError`)
+  out whole.
 * **A verified certificate is recorded as an authentication** when the
   connection is established — once per connection, not per request — under
   protocol `TLS` on `/admin/users`.

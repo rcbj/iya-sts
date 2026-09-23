@@ -2867,6 +2867,17 @@ const SCHEMA = {
       what: 'The proofing method a key reference is bound to (section 7.1.1: ' +
             '"MUST be bound to a single proofing mechanism"): httpsig, jwsd ' +
             'or jws. Default httpsig.' },
+    { name: 'gnapMtlsTrust', kind: 'single', from: 'the console, or by hand',
+      what: 'How a key this client proves by mutual TLS is trusted, for ' +
+            'this client alone (#107): `pki` or `pinned`, as the realm\'s ' +
+            'gnap.mtlsTrust. It can only make the realm STRICTER — `pki` ' +
+            'where the realm is pinned — and `pinned` is refused where the ' +
+            'realm is pki (STS-REG-0196) and ignored if the realm is made ' +
+            'pki afterwards. Empty follows the realm. Under pki the ' +
+            'certificate must chain to the client truststore and be issued ' +
+            'to this entry by this realm, or carry the one RFC 8705 subject ' +
+            'parameter it registers (oauthTlsClientAuthSubjectDn or an ' +
+            'oauthTlsClientAuthSan* attribute).' },
     { name: 'gnapSymmetricKey', kind: 'single', from: 'the console, or by hand',
       sensitive: true,
       what: 'A SHARED SECRET for a key reference, base64url, at least 32 ' +
@@ -3372,6 +3383,7 @@ const EDITABLE = {
   gnapKey: 'set',
   gnapKeyReference: 'set',
   gnapKeyProof: 'set',
+  gnapMtlsTrust: 'set',
   gnapSymmetricKey: 'set',
   gnapSymmetricAlg: 'set',
   gnapClassId: 'set',
@@ -5757,6 +5769,76 @@ function mtlsAttributeProblem(attribute, value, fields) {
 }
 
 // ---------------------------------------------------------------------------
+// GNAP MUTUAL TLS: WHICH TRUST MODEL A CLIENT'S CERTIFICATE IS HELD TO (#107,
+// 2026-09-23).
+//
+// The realm's `gnap.mtlsTrust` (`auto` asks `mode.requiresPkiForGnapMtls()`)
+// and an entry's `gnapMtlsTrust`, combined in ONE place so the proof, the
+// grant engine and the write door below cannot disagree about which is in
+// force. The combination is the stricter of the two: an operator may hold one
+// client to a PKI in a realm that pins, and no client may pin itself in a
+// realm that requires a PKI — that would be a client choosing to be checked
+// less, which is not a client's choice. `gnap/gnap_proof.ts` argues the two
+// models.
+//
+//   STS-REG-0195  gnapMtlsTrust is neither pki nor pinned
+//   STS-REG-0196  gnapMtlsTrust=pinned in a realm whose setting is pki
+// ---------------------------------------------------------------------------
+const GNAP_MTLS_TRUSTS = ['pki', 'pinned'];
+
+function gnapRealmMtlsTrust() {
+  log.debug("Entering gnapRealmMtlsTrust().");
+  const set = String(config.value('gnap.mtlsTrust') || 'auto');
+  if (GNAP_MTLS_TRUSTS.indexOf(set) >= 0) {
+    log.debug("Leaving gnapRealmMtlsTrust(). " + set);
+    return set;
+  }
+  log.debug("Leaving gnapRealmMtlsTrust(). auto.");
+  return mode.requiresPkiForGnapMtls() ? 'pki' : 'pinned';
+}
+
+// `fields` is an entry's fields (or null for a caller with no entry yet).
+// Answers `{ trust, realm, entry }`, `entry` being what the entry asked for
+// ('' for nothing, or a value that is not honoured).
+function gnapMtlsTrustFor(fields) {
+  log.debug("Entering gnapMtlsTrustFor().");
+  const realm = gnapRealmMtlsTrust();
+  const asked = String(valuesOf((fields || {}).gnapMtlsTrust)[0] || '')
+    .trim().toLowerCase();
+  const trust = realm === 'pki' || asked === 'pki' ? 'pki' : 'pinned';
+  log.debug("Leaving gnapMtlsTrustFor(). " + trust);
+  return { trust: trust, realm: realm, entry: asked };
+}
+
+// The write door's question about `gnapMtlsTrust`. A clear is never refused.
+// Answers `{ code, message }` or null.
+function gnapMtlsTrustProblem(attribute, value) {
+  log.debug("Entering gnapMtlsTrustProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'gnapMtlsTrust' || !text) {
+    log.debug("Leaving gnapMtlsTrustProblem(). Not asked.");
+    return null;
+  }
+  if (GNAP_MTLS_TRUSTS.indexOf(text) < 0) {
+    log.debug("Leaving gnapMtlsTrustProblem(). Not a trust model.");
+    return { code: 'STS-REG-0195',
+             message: 'gnapMtlsTrust: "' + text + '" is not pki or pinned.' };
+  }
+  if (text === 'pinned' && gnapRealmMtlsTrust() === 'pki') {
+    log.debug("Leaving gnapMtlsTrustProblem(). Weaker than the realm.");
+    return { code: 'STS-REG-0196',
+             message: 'gnapMtlsTrust: this realm holds every GNAP key ' +
+               'proved by mutual TLS to a PKI (gnap.mtlsTrust resolves to ' +
+               'pki), and an application may make that stricter for itself, ' +
+               'never weaker. A pinned certificate cannot be revoked or ' +
+               'rotated at a certificate authority (RFC 9635 section 11.4).' };
+  }
+  log.debug("Leaving gnapMtlsTrustProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // RFC 9396: WHAT AN ENTRY MAY SAY ABOUT authorization_details (2026-09-13).
 //
 // This module owns what a value of its attributes may be, for the introspection
@@ -6382,6 +6464,14 @@ function normaliseFields(value) {
     if (subjectProblem) {
       errors.push(subjectProblem);
       code = code || 'STS-REG-0168';
+      return;
+    }
+    // GNAP's mutual TLS trust model (#107): a value, and never weaker than
+    // the realm.
+    const gnapTrustProblem = gnapMtlsTrustProblem(name, values[0]);
+    if (gnapTrustProblem) {
+      errors.push(gnapTrustProblem.message);
+      code = code || gnapTrustProblem.code;
       return;
     }
     // RFC 8705's six, read against the create's OTHER subject parameters,
@@ -8639,6 +8729,16 @@ function updateApplication(identifier, change) {
                                          loaded.record.fields);
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable RFC 8705 value.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
+  // GNAP's mutual TLS trust model (#107), on a SET that carries a value.
+  if (mode === 'set' && value) {
+    const problem = gnapMtlsTrustProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable GNAP mutual TLS " +
+                "trust model.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
     }
@@ -11485,6 +11585,8 @@ module.exports = {
   delegationAttributeProblem: delegationAttributeProblem,
   mtlsMetadataProblem: mtlsMetadataProblem,
   mtlsAttributeProblem: mtlsAttributeProblem,
+  gnapMtlsTrustFor: gnapMtlsTrustFor,
+  gnapMtlsTrustProblem: gnapMtlsTrustProblem,
   TLS_SUBJECT_ATTRIBUTES: TLS_SUBJECT_ATTRIBUTES,
   TLS_BOUND_TOKENS_ATTRIBUTE: TLS_BOUND_TOKENS_ATTRIBUTE,
   // RFC 9396 — what an entry may say about authorization_details, and the

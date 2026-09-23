@@ -762,9 +762,14 @@ because in GNAP the key IS the client.
   and is refused `invalid_client` in product until it is registered.
 * **The resource owner is whoever the authentication service let in** — in
   product somebody who proved it, in development anybody.
-* **A self-signed client certificate proves itself** in both modes: mutual TLS
-  binds to the certificate the handshake completed with, by thumbprint or key,
-  and no chain or revocation is consulted.
+* **A key proved by mutual TLS is held to a PKI in product and pinned in
+  development** (`gnap.mtlsTrust=auto`). In product the certificate must chain
+  to the client truststore and be bound to the client's application entry:
+  issued to it by this realm, or carrying the RFC 8705 subject the entry
+  registers. In development the certificate the key names proves itself,
+  self-signed included. **A revoked certificate is refused in both.**
+  `gnap.mtlsTrust=pinned` weakens a product realm, and is documented with a
+  warning — see [mutual TLS trust](gnap.md#mutual-tls-trust).
 * **A push finish** must go to a registered URI in product. It dials `http`
   only with `gnap.pushAllowHttp` — any host in development, a loopback address
   only in product (RFC 9635 section 2.5.2.1) — and only hosts in
@@ -967,5 +972,3 @@ These are true in a product deployment today, and are tracked as issues:
 * **The directory has no per-identity read authorization**: anybody who has bound
   reads every non-credential attribute of every entry in the realm
   ([#106](https://github.com/rcbj/iya-sts/issues/106)).
-* **A GNAP client's self-signed certificate** is matched by thumbprint with no
-  chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).

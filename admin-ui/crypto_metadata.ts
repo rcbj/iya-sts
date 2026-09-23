@@ -1174,7 +1174,10 @@ class CryptoMetadata {
         verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, by the key it ' +
                   'presented: an RFC 9421 HTTP message signature (with the ' +
                   'body covered by an RFC 9530 Content-Digest), a mutual TLS ' +
-                  'certificate, a detached JWS over the body or an attached ' +
+                  'certificate (revocation consulted; a chain to the client ' +
+                  'truststore and a binding to the application entry under ' +
+                  'gnap.mtlsTrust=pki, product\'s default), a detached JWS ' +
+                  'over the body or an attached ' +
                   'JWS carrying it. A key rotation is verified under BOTH ' +
                   'keys. A resource server calling introspection or ' +
                   'registration is proofed the same way, and every token ' +

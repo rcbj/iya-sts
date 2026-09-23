@@ -2889,7 +2889,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'its key, the user, and how an interaction may start and finish. ' +
           'Every request is proofed with the key it presents — an HTTP ' +
           'message signature, mutual TLS, a detached or an attached JWS — ' +
-          'and the body is held to a JSON Schema before it is read. The ' +
+          'and the body is held to a JSON Schema before it is read. A ' +
+          'mutual TLS certificate is checked for revocation, and under ' +
+          'gnap.mtlsTrust=pki (product\'s default) must chain to the ' +
+          'client truststore and be bound to the client\'s application ' +
+          'entry (RFC 9635 section 11.4); pinned (development\'s) takes ' +
+          'the certificate the key names, self-signed included. The ' +
           'answer is access tokens, subject information, an interaction to ' +
           'start, a continuation, or an error from section 3.6. OPTIONS is ' +
           'the discovery document of section 9: what this authorization ' +

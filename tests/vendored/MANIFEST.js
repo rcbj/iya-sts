@@ -270,6 +270,12 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // #107: a key proved by mutual TLS under the pinned and PKI trust models,
+  // revocation in both, the binding to an application entry, rotation at the
+  // authority, the per-client override and the product default. Presents
+  // client certificates on the main port; the foreign leaf names a CRL this
+  // job serves (test_crl_host.js).
+  { file: 'sts_gnap_mtls.js',            browser: false, local: true },
   // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
   // independent client written from its RFC with no code from acme/, est/ or
   // scep/, each in a throwaway realm it leaves behind.

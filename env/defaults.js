@@ -83,6 +83,7 @@ var config = {
     interactionStartModes: "redirect,app,user_code,user_code_uri",         // Interaction start modes
     finishMethods: "redirect,push",                                        // Interaction finish methods
     keyProofs: "httpsig,mtls,jwsd,jws",                                    // Key proofing methods
+    mtlsTrust: "auto",                                                     // Mutual TLS key proof trust
     subIdFormats: "opaque,iss_sub,email,account,uri,phone_number,aliases", // Subject identifier formats
     assertionFormats: "id_token,saml2",                                    // Subject assertion formats
     assertionMaxAgeS: 300,                                                 // Grace for an expired user assertion (seconds)
