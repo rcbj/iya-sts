@@ -10,20 +10,21 @@ what is not here yet.
 | `risk_store.ts` | Where risk scoring keeps what it keeps. The postgres driver's `risk*` methods when the driver has every one (`RISK_GROUP`); the same methods over maps in this process otherwise. The address arithmetic (`addressNumber`, `addressText`, `rangeOf`, `prefixOf`) every lookup rests on. |
 | `risk_datasets.ts` | The external datasets: the catalogue, the formats, import, verification, activation, rollback, deletion, retention, the dataset directory, lookups, and the two scheduler jobs. |
 | `risk_failures.ts` | Every refused password, attributed to a person or a name's digest and a network. |
+| `risk_model.ts` | **The Freeman et al. score, ported** from das-group's notebook (MIT; the notice is at its head and in `LICENSE.md`). Pure: it reads counts and answers a number. |
+| `risk_engine.ts` | **Assessing one sign-in**: enrichment, the device, the history read before it is moved, the model, the evaluators, the level, and every row it writes. Observe only. |
 | `risk_install.ts` | **The install-time loader**: an operator's CLI, not part of the running service, that pulls each dataset into the database under the provider terms the operator accepts by name. |
 
 `admin-ui/risk_admin.ts` is Monitoring → Risk; `/admin-api/risk` and
-`/admin-api/risk/:action` are its rule 7 twins. **P1 scores nothing yet**:
-there is no model, no assessment and no decision. What is here is what the
-model will read.
+`/admin-api/risk/:action` are its rule 7 twins. **Since P2 every sign-in is
+scored and recorded, and nothing is decided by a score**: that is P3.
 
 ## Phases, and where this directory is
 
 | Phase | State |
 |---|---|
 | P0 | **Done** (2026-09-22): every refused session answered (`authn/CLAUDE.md`), authentication events with context, JA4 on the main port (`tls/CLAUDE.md`). |
-| P1 | **This directory**: schema version 7, the datasets, the failure history, the page. |
-| P2 | The model (a port of Freeman et al. from `das-group/rba-algorithm`, MIT), `sts_risk_assessments` and `sts_risk_feature_counts`, device signals (`bowser`, `isbot`). Observe only. |
+| P1 | **Done**: schema version 7, the datasets, the failure history, the page. |
+| P2 | **Done** (2026-09-23): the model (a port of Freeman et al. from `das-group/rba-algorithm`, MIT), `sts_risk_assessments`, `sts_risk_feature_counts`, `sts_risk_subjects`, `sts_risk_session_context`, device signals (`bowser`, `isbot`). Observe only. |
 | P3–P6 | The decision through XACML, continuous evaluation, fetching, MDS3, fingerprinting — the plan comment. |
 
 ## THE LICENCE BOUNDARY: NOTHING THIRD-PARTY IS SHIPPED (2026-09-22)
@@ -157,16 +158,70 @@ prefix; the address only sealed; never the name as typed. **It goes to the
 database only where it can be sealed** — a key-encryption key exists, which
 product mode requires — and is held in the process otherwise.
 
+## EVERY SIGN-IN IS SCORED, AND NOTHING IS DECIDED BY IT (P2, 2026-09-23)
+
+`authn/authn.ts`'s `assessRisk()` hands every session that is established or
+re-authenticated to `risk_engine.ts`'s `assess()`, and does not wait. A keyed
+API caller (SCIM, SPIRE) and an unauthenticated session are not assessed.
+Token-only grants (the password grant, an LDAP bind) make no session and are
+not assessed yet; they reach the decision in P3 through the issuance gate.
+
+**THE MODEL IS A PORT, AND THE TEST SAYS SO.** `risk_model.ts` follows the
+notebook's code — its weightings, its unsmoothed user side, its smoothing at
+the first level only, its quarter of the population likelihood for a value
+the person never used, its refusal to score a first sign-in. Its own test
+vectors come from das-group's RBA dataset, which is third-party data and not
+here, so `tests/risk_model.js` holds the port to the notebook's functions,
+run unchanged on a synthetic seeded history: all 82 scores reproduced exactly.
+**That is why its MIT notice travels with the file**; had it been written from
+the paper alone, the review on #62 would have wanted that recorded instead.
+
+**THE FEATURES**, the notebook's two hierarchies:
+
+| Feature | Levels (weight) | Where the value comes from |
+|---|---|---|
+| address | the address (0.6), its ASN (0.3), its country (0.1) | a KEYED DIGEST of the address — never the address — and the active datasets |
+| browser | the User-Agent (0.539), browser and major version (0.268), OS and version (0.188), device type (0.005) | the event's `uaFingerprint`, and `bowser` on the header, read and dropped |
+
+The history is `sts_risk_feature_counts`: a row per (subject, level, value)
+for the person and for the realm's population (`'*'`), the population's
+combination rows (`ip>asn`, valued `<address digest>|<asn>`) for the one
+distinct count the smoothing needs, and a `user` row per person for the
+number of users. It is read BEFORE the sign-in is counted — the notebook's
+order — and moved with one statement, so two nodes never lose a count.
+
+**THE EVALUATORS** are factors on the score, in `SIGNALS`: a Tor exit (×5),
+the reputation list (×5), the operator's deny list (×50) and allow list
+(×0.2), an automated client (×10), a JA4 this person never signed in with
+(×2), five refused passwords for the person in the last hour (×3), twenty from
+the network (×3). **They are a first calibration and deliberately visible**:
+every assessment on the page lists its signals, and what they should be is
+read off that record before P3 lets anything be decided by them.
+
+**THE LEVEL** is CAEP's own: LOW, MEDIUM from `risk.mediumScorePercent` (100,
+a score of 1 — the model's even odds), HIGH from `risk.highScorePercent`
+(1000); UNSCORED for a first sign-in with no signal. The person's standing
+(`sts_risk_subjects`) keeps the level it came from, which is what P4's
+`risk-level-change` will say.
+
+**WHAT IS KEPT is personal data, so it follows the failures' rule**: in the
+database only where the key-encryption key can seal and digest it, in the
+process otherwise. An assessment holds the address sealed and as a prefix,
+the provider attributions with the values (DB-IP's link travels with every
+row that shows a location), the dataset versions that answered, and the
+signals. `risk.assessmentRetentionDays` and `risk.historyRetentionDays` bound
+it, through the `risk.retention` job.
+
 ## THE REQUIRE ORDER, AND THE TRAP IT HIT
 
-The three libraries and the page are built at **18j** in
+The four libraries and the page are built at **18j** in
 `common/protocol_stack.ts`, after the scheduler page. **Nothing may require
 them before the root does**: a module on the `InstanceSlot` pattern that is
 loaded before `deferToRoot()` builds its own default instance, and the root's
-install then throws. `persistence.js` and `credentials.ts` are loaded long
-before 18j, so both reach this directory with a `require()` inside the function
-that runs at request or start time. `tls/client_hello.ts` hit the same trap
-through `request_pool.js` in P0.
+install then throws. `persistence.js`, `credentials.ts` and `authn.ts` are
+loaded long before 18j, so each reaches this directory with a `require()`
+inside the function that runs at request or start time. `tls/client_hello.ts`
+hit the same trap through `request_pool.js` in P0.
 
 ## Tests
 
@@ -179,6 +234,12 @@ through `request_pool.js` in P0.
   `cluster` a version activated on one node is answered by both.
 * `tests/postgres_schema.js` — the thirteen tables are in both copies of the
   DDL.
+* `tests/risk_model.js` — the port against the notebook, on a synthetic
+  history.
+* `tests/risk_engine.js` — the device, UNSCORED then LOW, the evaluators to
+  HIGH, nothing kept in the clear, the standing and the session context, and
+  never a rejection. `tests/authn_session_refusals.js` C7: a real sign-in is
+  assessed.
 
 **Not tested yet**: a real DB-IP or IPinfo release at full size — and it will
 not be tested with one in this repository, because none may be committed; a

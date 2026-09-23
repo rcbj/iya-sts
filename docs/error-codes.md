@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2915** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2916** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 99
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 12
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 13
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -2442,6 +2442,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0010` | An attributable failure could not be recorded in the store. The refusal it describes stands; only its record is lost. | — |
 | `STS-RISK-0011` | A Monitoring → Risk action or its /admin-api twin was refused: a read-only session, an unknown action, or a field it needs is missing. | — |
 | `STS-RISK-0012` | The install-time dataset loader (risk/risk_install.ts) could not import an entry: no database was named, the provider's terms were not accepted with --accept-terms, or the download failed. The other entries are imported and the loader exits non-zero. | — |
+| `STS-RISK-0013` | A sign-in could not be assessed for risk (the store or a dataset lookup failed part-way). The sign-in stands; only its assessment is missing. | — |
 
 ## STS-GNAP
 

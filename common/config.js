@@ -9170,6 +9170,50 @@ const SETTINGS = [
     description: 'How long a recorded failure is kept before the ' +
                  'risk.retention job deletes it.' },
 
+  { key: 'risk.assessSignIns', group: 'Risk',
+    label: 'Assess every sign-in', env: 'STS_RISK_ASSESS_SIGN_INS',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether every sign-in that starts or re-authenticates a ' +
+                 'session is scored (#62 P2): the Freeman et al. model ' +
+                 'against the person\'s history and the realm\'s, and the ' +
+                 'evaluators — Tor, reputation and operator lists, an ' +
+                 'automated client, a TLS stack never seen, recent refused ' +
+                 'passwords. OBSERVE ONLY: an assessment is recorded and ' +
+                 'decides nothing yet, and a sign-in never waits for it.' },
+
+  { key: 'risk.mediumScorePercent', group: 'Risk',
+    label: 'MEDIUM from (percent of a score of 1)',
+    env: 'STS_RISK_MEDIUM_SCORE_PERCENT', type: 'int', dflt: 100, min: 1,
+    max: 1000000, runtime: true,
+    description: 'The score, in hundredths, at which a sign-in is MEDIUM ' +
+                 'risk: 100 is a score of 1, where the Freeman et al. model ' +
+                 'says the sign-in is as likely an attacker\'s as the ' +
+                 'person\'s. Familiar sign-ins score far below it.' },
+
+  { key: 'risk.highScorePercent', group: 'Risk',
+    label: 'HIGH from (percent of a score of 1)',
+    env: 'STS_RISK_HIGH_SCORE_PERCENT', type: 'int', dflt: 1000, min: 1,
+    max: 1000000, runtime: true,
+    description: 'The score, in hundredths, at which a sign-in is HIGH ' +
+                 'risk: 1000 is a score of 10.' },
+
+  { key: 'risk.assessmentRetentionDays', group: 'Risk',
+    label: 'Keep assessments (days)',
+    env: 'STS_RISK_ASSESSMENT_RETENTION_DAYS', type: 'int', dflt: 90,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a sign-in\'s assessment is kept before the ' +
+                 'risk.retention job deletes it.' },
+
+  { key: 'risk.historyRetentionDays', group: 'Risk',
+    label: 'Keep the model\'s history (days)',
+    env: 'STS_RISK_HISTORY_RETENTION_DAYS', type: 'int', dflt: 180,
+    min: 1, max: 3650, runtime: true,
+    description: 'How long a feature value nobody has signed in with is ' +
+                 'remembered — an address, a network, a device a person used ' +
+                 'once — and how long a session\'s last context is kept. ' +
+                 'Shorter forgets habits sooner, and scores more sign-ins ' +
+                 'as new.' },
+
   { key: 'caep.defaultRiskLevel', group: 'CAEP',
     label: 'Default risk level', env: 'STS_CAEP_DEFAULT_RISK_LEVEL',
     type: 'string', dflt: 'MEDIUM', runtime: true,

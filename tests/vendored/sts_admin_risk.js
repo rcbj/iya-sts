@@ -26,6 +26,8 @@
 //      password `invalid`, refused in every mode) is recorded for the door,
 //      under a digest of a name that matched nobody — and the typed name is
 //      nowhere in the answer.
+//   7. SIGN-INS ARE ASSESSED (P2): the console sign-in this job made is an
+//      assessment — observed, deciding nothing — with its person's standing.
 //
 // Every list here is the default realm's own operator deny list, and each
 // run's content differs (the stamp is in a comment), so a run against a
@@ -340,6 +342,32 @@ async function theFailureHistory() {
   log.debug("Leaving theFailureHistory().");
 }
 
+async function signInsAreAssessed(cookie) {
+  log.debug("Entering signInsAreAssessed().");
+  log.info("=== 7. sign-ins are assessed (#62 P2) ===");
+  if (!cookie) {
+    log.info("  (the console gate is off in this stack: nobody signed in " +
+             "through the sign-in screen, so there is nothing assessed to " +
+             "look for)");
+    log.debug("Leaving signInsAreAssessed(). Gate off.");
+    return;
+  }
+  const found = await until("the console sign-in's assessment",
+                            async function () {
+    const r = await api("GET", "/admin-api/risk?realm=" + REALM);
+    const rows = (r.body.assessments && r.body.assessments.rows) || [];
+    return rows.length ? r.body : null;
+  });
+  check("the console sign-in above was assessed — observed, deciding " +
+        "nothing — and its standing kept", function () {
+          const a = found.assessments.rows[0];
+          assert.strictEqual(a.decision, "observe", JSON.stringify(a));
+          assert.ok(a.level, JSON.stringify(a));
+          assert.ok(found.subjects.length > 0, JSON.stringify(found.subjects));
+        });
+  log.debug("Leaving signInsAreAssessed().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "risk-admin-" + STAMP;
@@ -351,6 +379,7 @@ async function main() {
   await aSecondVersionThenRollback();
   await ruleSeven();
   await theFailureHistory();
+  await signInsAreAssessed(cookie);
   log.info("sts_admin_risk: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

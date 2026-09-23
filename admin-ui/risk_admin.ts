@@ -41,6 +41,7 @@ import realms = require('../common/realms');
 import InstanceSlot = require('../common/instance_slot');
 import riskDatasets = require('../risk/risk_datasets');
 import riskFailures = require('../risk/risk_failures');
+import riskEngine = require('../risk/risk_engine');
 
 type Req = any;
 type Res = any;
@@ -62,6 +63,7 @@ interface RiskAdminDeps {
   realms: typeof realms;
   datasets: typeof riskDatasets;
   failures: typeof riskFailures;
+  engine: typeof riskEngine;
   parseBody: typeof helpers.parseBody;
   now(): number;
 }
@@ -85,6 +87,7 @@ class RiskAdmin {
       realms: realms,
       datasets: riskDatasets,
       failures: riskFailures,
+      engine: riskEngine,
       parseBody: helpers.parseBody,
       now: function (): number {
         return Date.now();
@@ -109,7 +112,7 @@ class RiskAdmin {
   // failures.
   // -------------------------------------------------------------------------
   async riskView(query: Json): Promise<Json> {
-    const { log, datasets, failures, now } = this.deps;
+    const { log, datasets, failures, engine, now } = this.deps;
     log.debug("Entering RiskAdmin.riskView().");
     const q = query || {};
     const realm = this.realmOf(q);
@@ -120,6 +123,8 @@ class RiskAdmin {
       offset: offset });
     const address = String(q.address || '').trim();
     const lookup = address ? await datasets.lookup(address, realm) : null;
+    const assessed = await engine.view(realm, { level: q.level || '',
+                                               offset: q.aoffset || 0 });
     log.debug("Leaving RiskAdmin.riskView().");
     return {
       realm: realm,
@@ -130,6 +135,10 @@ class RiskAdmin {
       providers: registry.providers,
       redistribution: registry.redistribution,
       lookup: lookup,
+      assessments: assessed.assessments,
+      subjects: assessed.subjects,
+      signals: assessed.signals,
+      assessmentsInDatabase: assessed.inDatabase,
       failures: {
         store: failures.describe(), windowDays: FAILURE_WINDOW_MS / 86400000,
         total: history.total, offset: offset, limit: FAILURES_PER_PAGE,
@@ -334,10 +343,83 @@ class RiskAdmin {
           '</small></td><td>' + (p.supported ? 'supported' : 'not yet') +
           '</td></tr>';
       }).join('') + '</tbody></table>';
+    const assessments = this.assessmentsHtml(view);
     log.debug("Leaving RiskAdmin.html().");
-    return tiles + about + '<h3>Look up an address</h3>' + lookupForm +
-      rows + importForm + providers + failures + '<h2>Settings</h2>' +
-      admin.configFormsFor(PAGE);
+    return tiles + about + assessments + '<h3>Look up an address</h3>' +
+      lookupForm + rows + importForm + providers + failures +
+      '<h2>Settings</h2>' + admin.configFormsFor(PAGE);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ASSESSMENTS (#62 P2): every sign-in scored in the last week, newest
+  // first, with what went in and what came out — and the people by current
+  // standing. Observe only: the Decision column says `observe` until P3.
+  // The providers whose data a row shows are credited under the table, as
+  // DB-IP's licence asks of every page that displays its results.
+  // ---------------------------------------------------------------------------
+  private assessmentsHtml(view: Json): string {
+    const { log, admin } = this.deps;
+    const self = this;
+    log.debug("Entering RiskAdmin.assessmentsHtml().");
+    // Called for every value drawn: a hot path, with no Entering/Leaving.
+    const esc = function (v: unknown): string {
+      return admin.esc(v);
+    };
+    const credits = new Map<string, Json>();
+    const rows = view.assessments.rows.map(function (a: Json): string {
+      ((a.datasets && a.datasets.attributions) || [])
+        .forEach(function (c: Json): void {
+          credits.set(c.text, c);
+        });
+      const signals = (a.signals || []).filter(function (x: Json): boolean {
+        return x.signal !== 'model';
+      }).map(function (x: Json): string {
+        return esc(x.signal) + ' ×' + esc(x.factor);
+      }).join(', ');
+      return '<tr><td><small>' + esc(self.when(a.at)) + '</small></td><td>' +
+        '<code>' + esc(a.subject) + '</code><br><small>' + esc(a.door) +
+        '</small></td><td><code>' + esc(a.addressPrefix) + '</code>' +
+        (a.asn ? '<br><small>AS' + a.asn + ' ' + esc(a.asOrg) + '</small>'
+               : '') + (a.country ? '<br><small>' + esc(a.city ? a.city +
+                                                     ', ' : '') +
+                                    esc(a.country) + '</small>' : '') +
+        '</td><td><small>' + esc([a.uaFamily, a.uaOs, a.uaPlatform]
+          .filter(Boolean).join(' / ') || '—') +
+        (a.bot ? ' (automated)' : '') + '<br>' + esc(a.credentialKind) +
+        '</small></td><td class="num">' +
+        esc(Number(a.score).toPrecision(3)) + '</td><td><strong>' +
+        esc(a.level) + '</strong></td><td><small>' + (signals || '—') +
+        '</small></td><td>' + esc(a.decision) + '</td></tr>';
+    }).join('');
+    const people = view.subjects.map(function (p: Json): string {
+      return '<tr><td><code>' + esc(p.subject) + '</code></td><td>' +
+        '<strong>' + esc(p.level) + '</strong>' +
+        (p.previousLevel && p.previousLevel !== p.level
+          ? ' <small>(was ' + esc(p.previousLevel) + ')</small>' : '') +
+        '</td><td class="num">' + esc(Number(p.score).toPrecision(3)) +
+        '</td><td><small>' + esc(p.reason) + '</small></td><td><small>' +
+        esc(self.when(p.updatedAt)) + '</small></td></tr>';
+    }).join('');
+    let credit = '';
+    credits.forEach(function (c: Json): void {
+      credit += '<p class="attribution"><small>' + self.credit(c.text, c.url) +
+        '</small></p>';
+    });
+    log.debug("Leaving RiskAdmin.assessmentsHtml().");
+    return '<h3>Sign-ins assessed <small>(the last 7 days; observe only)' +
+      '</small></h3><p>' + (view.assessmentsInDatabase
+        ? 'Held in the database.'
+        : 'Held in this process: there is no database with a key to seal ' +
+          'them under.') + ' ' + view.assessments.total +
+      ' assessment(s).</p><table class="grid" id="risk-assessments"><thead>' +
+      '<tr><th>When</th><th>Who</th><th>Network</th><th>Device</th>' +
+      '<th>Score</th><th>Level</th><th>Signals</th><th>Decision</th></tr>' +
+      '</thead><tbody>' + (rows || '<tr><td colspan="8">None yet.</td></tr>') +
+      '</tbody></table>' + credit + '<h3>People by current standing</h3>' +
+      '<table class="grid" id="risk-subjects"><thead><tr><th>Who</th>' +
+      '<th>Level</th><th>Score</th><th>Why</th><th>Updated</th></tr>' +
+      '</thead><tbody>' + (people || '<tr><td colspan="5">None yet.</td>' +
+                          '</tr>') + '</tbody></table>';
   }
 
   // A provider's attribution as its terms want it: the sentence, LINKED to

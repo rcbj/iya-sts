@@ -833,6 +833,8 @@ class ProtocolStack {
                'RiskDatasets');
     this.build('risk/risk_failures', require('../risk/risk_failures'),
                'RiskFailures');
+    this.build('risk/risk_engine', require('../risk/risk_engine'),
+               'RiskEngine');
     require('../admin-ui/risk_admin');
     this.build('admin-ui/risk_admin', require('../admin-ui/risk_admin'),
                'RiskAdmin');

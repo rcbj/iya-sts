@@ -9493,6 +9493,11 @@ const CODES = [
       'were not accepted with --accept-terms, or the download failed. The ' +
       'other entries are imported and the loader exits non-zero.',
     spec: '' },
+  { code: 'STS-RISK-0013',
+    summary: 'A sign-in could not be assessed for risk (the store or a ' +
+      'dataset lookup failed part-way). The sign-in stands; only its ' +
+      'assessment is missing.',
+    spec: '' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

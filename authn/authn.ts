@@ -3023,10 +3023,51 @@ class Authn {
     });
     this.notifySession('reauthenticated', session, { via: event.via,
       previous: previous, req: (res && res.req) || null });
+    this.assessRisk(session, event, event.via, extra);
     log.debug("Leaving Authn.reauthenticateSession(). " +
               session.events.length +
               " event(s).");
     return session;
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY SIGN-IN IS ASSESSED FOR RISK, AND NOTHING WAITS FOR IT (#62 P2,
+  // 2026-09-23). OBSERVE ONLY.
+  //
+  // A session just established or re-authenticated is handed to
+  // `risk/risk_engine.ts` with its event's context and the request's
+  // User-Agent (which the engine reads and drops). Not awaited, and never a
+  // reason a sign-in fails: the engine records what it found and decides
+  // nothing until P3. Two kinds of session are not assessed: a keyed API
+  // caller (SCIM, SPIRE — a credential per request, not a person signing
+  // in) and an unauthenticated one (nobody to assess). Required LAZILY: the
+  // risk modules are built by the composition root long after this file.
+  // ---------------------------------------------------------------------------
+  private assessRisk(session, event, via, extra) {
+    const { log, audit, realms } = this.deps;
+    log.debug("Entering Authn.assessRisk().");
+    const detail = extra || {};
+    if (!session || !session.user || !session.user.sub || detail.key ||
+        detail.authenticated === false) {
+      log.debug("Leaving Authn.assessRisk(). Not a person signing in.");
+      return;
+    }
+    const req = detail.request || audit.currentRequest();
+    const headers = (req && req.headers) || {};
+    try {
+      require('../risk/risk_engine').assess({
+        realm: realms.currentId(), subject: session.user.sub,
+        sessionId: session.id, door: String(via || event.via || ''),
+        clientId: String(detail.application || ''),
+        context: event.context || {},
+        userAgent: String(headers['user-agent'] || '') });
+    } catch (e) {
+      log.debug("Caught in Authn.assessRisk(): " + ((e && e.message) || e));
+      // The risk modules are not loaded in this process (a test that loads
+      // this file alone): there is nothing to assess with, and the sign-in
+      // stands.
+    }
+    log.debug("Leaving Authn.assessRisk().");
   }
 
   // ---------------------------------------------------------------------------
@@ -3571,6 +3612,7 @@ class Authn {
       // function is given. See the note in dropSession() for why the observer
       // needs one at all.
       req: (res && res.req) || null });
+    this.assessRisk(session, firstEvent, via, extra);
     log.debug("Leaving Authn.startSession(). " + username +
               " is signed in (amr " +
               (amr || []).join(',') + ").");

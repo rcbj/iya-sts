@@ -1160,7 +1160,9 @@ class RiskDatasets {
       title: 'Risk retention',
       describe: 'Deletes the rows of dataset versions superseded more than ' +
                 'risk.supersededRetentionDays ago and of refused versions, ' +
-                'and the failures older than risk.failureRetentionDays.',
+                'the failures older than risk.failureRetentionDays, and the ' +
+                'assessments and the model\'s history past ' +
+                'risk.assessmentRetentionDays and risk.historyRetentionDays.',
       owner: 'risk/risk_datasets.ts',
       kind: 'cluster',
       everyMs: function (): number {
@@ -1171,8 +1173,11 @@ class RiskDatasets {
         return self.retainVersions().then(function (versions: Json): Json {
           return require('./risk_failures').purge().then(
             function (failures: number): Json {
-              return { versions: versions.versions, rows: versions.rows,
-                       failures: failures };
+              return require('./risk_engine').purge().then(
+                function (history: Json): Json {
+                  return { versions: versions.versions, rows: versions.rows,
+                           failures: failures, history: history };
+                });
             });
         }).catch(function (e: Json): never {
           self.deps.log.warn(errorCodes.tag('STS-RISK-0009') + 'risk: the ' +

@@ -51,7 +51,14 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskInsertRows', 'riskFinishVersion', 'riskActivate',
                     'riskDeleteRows', 'riskMarkRowsDeleted', 'riskLookupRange',
                     'riskRecordFailure', 'riskListFailures',
-                    'riskPurgeFailures'];
+                    'riskPurgeFailures', 'riskFeatureCounts',
+                    'riskDistinctValues', 'riskIncrementCounts',
+                    'riskRecordAssessment', 'riskListAssessments',
+                    'riskUpsertSubject', 'riskListSubjects',
+                    'riskUpsertSessionContext', 'riskPurgeHistory'];
+
+// The most assessments one realm holds in memory, as for failures.
+const MAX_MEMORY_ASSESSMENTS = 50000;
 
 // The most failures one realm holds in memory; the oldest go first. A bound
 // on a process, not a retention policy — `risk.failureRetentionDays` is that.
@@ -84,6 +91,12 @@ class RiskStore {
   private readonly unsorted = new Set<string>();
   private readonly failures = new Map<string, Json[]>();
   private failureSeq = 0;
+  // The model's history, held here when it is not in the database:
+  // realm -> subject -> feature\0value -> { count, firstAt, lastAt }.
+  private readonly counts = new Map<string, Map<string, Map<string, Json>>>();
+  private readonly assessments = new Map<string, Json[]>();
+  private readonly subjectStates = new Map<string, Map<string, Json>>();
+  private readonly sessionContexts = new Map<string, Map<string, Json>>();
   private readonly listeners: Array<(realm: string, dataset: string) => void> =
     [];
 
@@ -670,6 +683,255 @@ class RiskStore {
     return Promise.resolve(removed);
   }
 
+  // ===== THE MODEL'S HISTORY (#62 P2) ======================================
+  //
+  // Personal data like a failure row — an address digest, a device, a
+  // person's habits — so the same rule: in the database only where it can
+  // be sealed (`failuresInDatabase()`), and in this process otherwise.
+
+  private countsOf(realm: string, subject: string): Map<string, Json> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.countsOf().");
+    const r = String(realm || '');
+    if (!this.counts.has(r)) {
+      this.counts.set(r, new Map());
+    }
+    const bySubject = this.counts.get(r);
+    if (!bySubject.has(subject)) {
+      bySubject.set(subject, new Map());
+    }
+    log.debug("Leaving RiskStore.countsOf().");
+    return bySubject.get(subject);
+  }
+
+  featureCounts(realm: string, subject: string, pairs: Json[],
+                sealing: boolean): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.featureCounts(). " + pairs.length);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.featureCounts(). Database.");
+      return Promise.resolve(this.driver.riskFeatureCounts(realm, subject,
+                                                            pairs));
+    }
+    const held = this.countsOf(realm, subject);
+    const out = [];
+    pairs.forEach(function (p: Json): void {
+      const row = held.get(RiskStore.key(p.feature, p.value));
+      if (row) {
+        out.push({ feature: p.feature, value: p.value, count: row.count });
+      }
+    });
+    log.debug("Leaving RiskStore.featureCounts(). Memory.");
+    return Promise.resolve(out);
+  }
+
+  distinctValues(realm: string, subject: string, feature: string,
+                 prefix: string, sealing: boolean): Promise<number> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.distinctValues(). " + feature);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.distinctValues(). Database.");
+      return Promise.resolve(this.driver.riskDistinctValues(realm, subject,
+                                                             feature,
+                                                             prefix));
+    }
+    const lead = RiskStore.key(feature, '');
+    let n = 0;
+    this.countsOf(realm, subject).forEach(function (row: Json,
+                                                     k: string): void {
+      if (k.indexOf(lead) === 0 &&
+          (!prefix || k.slice(lead.length).indexOf(prefix) === 0)) {
+        n += 1;
+      }
+    });
+    log.debug("Leaving RiskStore.distinctValues(). Memory.");
+    return Promise.resolve(n);
+  }
+
+  incrementCounts(realm: string, rows: Json[], at: number,
+                  sealing: boolean): Promise<number> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.incrementCounts(). " + rows.length);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.incrementCounts(). Database.");
+      return Promise.resolve(this.driver.riskIncrementCounts(realm, rows,
+                                                              at));
+    }
+    const self = this;
+    rows.forEach(function (r: Json): void {
+      const held = self.countsOf(realm, r.subject);
+      const k = RiskStore.key(r.feature, r.value);
+      const row = held.get(k);
+      if (row) {
+        row.count += 1;
+        row.lastAt = at;
+      } else {
+        held.set(k, { count: 1, firstAt: at, lastAt: at });
+      }
+    });
+    log.debug("Leaving RiskStore.incrementCounts(). Memory.");
+    return Promise.resolve(rows.length);
+  }
+
+  recordAssessment(a: Json, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.recordAssessment().");
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.recordAssessment(). Database.");
+      return Promise.resolve(this.driver.riskRecordAssessment(a));
+    }
+    const realm = String(a.realm || '');
+    const held = this.assessments.get(realm) || [];
+    held.push(Object.assign({}, a, { realm: realm }));
+    if (held.length > MAX_MEMORY_ASSESSMENTS) {
+      held.splice(0, held.length - MAX_MEMORY_ASSESSMENTS);
+    }
+    this.assessments.set(realm, held);
+    log.debug("Leaving RiskStore.recordAssessment(). Memory.");
+    return Promise.resolve(true);
+  }
+
+  listAssessments(realm: string, opts: Json,
+                  sealing: boolean): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.listAssessments().");
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.listAssessments(). Database.");
+      return Promise.resolve(this.driver.riskListAssessments(realm, opts));
+    }
+    const o = opts || {};
+    const matched = (this.assessments.get(String(realm || '')) || [])
+      .filter(function (a: Json): boolean {
+        return a.at >= (Number(o.since) || 0) &&
+          (!o.subject || a.subject === o.subject) &&
+          (!o.level || a.level === o.level);
+      }).reverse();
+    const offset = Number(o.offset) || 0;
+    const limit = Number(o.limit) || 50;
+    log.debug("Leaving RiskStore.listAssessments(). Memory.");
+    return Promise.resolve({
+      total: matched.length,
+      rows: matched.slice(offset, offset + limit).map(function (a: Json) {
+        const copy = Object.assign({}, a);
+        delete copy.addressSealed;
+        return copy;
+      }) });
+  }
+
+  upsertSubject(s: Json, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.upsertSubject().");
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.upsertSubject(). Database.");
+      return Promise.resolve(this.driver.riskUpsertSubject(s));
+    }
+    const realm = String(s.realm || '');
+    if (!this.subjectStates.has(realm)) {
+      this.subjectStates.set(realm, new Map());
+    }
+    const held = this.subjectStates.get(realm);
+    const before = held.get(s.subject);
+    held.set(s.subject, {
+      subject: s.subject, score: Number(s.score), level: s.level,
+      previousLevel: before ? before.level : '', reason: s.reason || '',
+      lastAssessment: s.lastAssessment || '',
+      crossedAt: !before || before.level !== s.level ? s.updatedAt
+        : before.crossedAt,
+      updatedAt: s.updatedAt });
+    log.debug("Leaving RiskStore.upsertSubject(). Memory.");
+    return Promise.resolve(true);
+  }
+
+  listSubjects(realm: string, opts: Json, sealing: boolean): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.listSubjects().");
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.listSubjects(). Database.");
+      return Promise.resolve(this.driver.riskListSubjects(realm, opts));
+    }
+    const out = [];
+    (this.subjectStates.get(String(realm || '')) || new Map())
+      .forEach(function (row: Json): void {
+        out.push(Object.assign({}, row));
+      });
+    out.sort(function (a: Json, b: Json): number {
+      return (b.score - a.score) || (b.updatedAt - a.updatedAt);
+    });
+    log.debug("Leaving RiskStore.listSubjects(). Memory.");
+    return Promise.resolve(out.slice(0, Number((opts || {}).limit) || 50));
+  }
+
+  upsertSessionContext(c: Json, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.upsertSessionContext().");
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.upsertSessionContext(). Database.");
+      return Promise.resolve(this.driver.riskUpsertSessionContext(c));
+    }
+    const realm = String(c.realm || '');
+    if (!this.sessionContexts.has(realm)) {
+      this.sessionContexts.set(realm, new Map());
+    }
+    this.sessionContexts.get(realm).set(c.sessionId, Object.assign({}, c));
+    log.debug("Leaving RiskStore.upsertSessionContext(). Memory.");
+    return Promise.resolve(true);
+  }
+
+  // The session context held in this process, for the tests; the database
+  // one is read by P4.
+  sessionContextOf(realm: string, sessionId: string): Json | null {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.sessionContextOf().");
+    const held = this.sessionContexts.get(String(realm || ''));
+    log.debug("Leaving RiskStore.sessionContextOf().");
+    return held && held.has(sessionId)
+      ? Object.assign({}, held.get(sessionId)) : null;
+  }
+
+  purgeHistory(table: string, beforeMs: number, limit: number,
+               sealing: boolean): Promise<number> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.purgeHistory(). " + table);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.purgeHistory(). Database.");
+      return Promise.resolve(this.driver.riskPurgeHistory(table, beforeMs,
+                                                           limit));
+    }
+    let removed = 0;
+    if (table === 'assessments') {
+      this.assessments.forEach(function (held: Json[], realm: string,
+                                         all: Map<string, Json[]>): void {
+        const kept = held.filter(function (a: Json): boolean {
+          return a.at >= beforeMs;
+        });
+        removed += held.length - kept.length;
+        all.set(realm, kept);
+      });
+    } else if (table === 'counts') {
+      this.counts.forEach(function (bySubject): void {
+        bySubject.forEach(function (held): void {
+          held.forEach(function (row: Json, k: string): void {
+            if (row.lastAt < beforeMs) {
+              held.delete(k);
+              removed += 1;
+            }
+          });
+        });
+      });
+    } else if (table === 'sessions') {
+      this.sessionContexts.forEach(function (held): void {
+        held.forEach(function (row: Json, k: string): void {
+          if (row.updatedAt < beforeMs) {
+            held.delete(k);
+            removed += 1;
+          }
+        });
+      });
+    }
+    log.debug("Leaving RiskStore.purgeHistory(). Memory, " + removed + ".");
+    return Promise.resolve(removed);
+  }
+
   // For tests: forget everything held in this process.
   reset(): void {
     const { log } = this.deps;
@@ -680,6 +942,10 @@ class RiskStore {
     this.unsorted.clear();
     this.failures.clear();
     this.failureSeq = 0;
+    this.counts.clear();
+    this.assessments.clear();
+    this.subjectStates.clear();
+    this.sessionContexts.clear();
     log.debug("Leaving RiskStore.reset().");
   }
 }
@@ -723,5 +989,15 @@ export = {
   recordFailure: slot.forward('recordFailure'),
   listFailures: slot.forward('listFailures'),
   purgeFailures: slot.forward('purgeFailures'),
+  featureCounts: slot.forward('featureCounts'),
+  distinctValues: slot.forward('distinctValues'),
+  incrementCounts: slot.forward('incrementCounts'),
+  recordAssessment: slot.forward('recordAssessment'),
+  listAssessments: slot.forward('listAssessments'),
+  upsertSubject: slot.forward('upsertSubject'),
+  listSubjects: slot.forward('listSubjects'),
+  upsertSessionContext: slot.forward('upsertSessionContext'),
+  sessionContextOf: slot.forward('sessionContextOf'),
+  purgeHistory: slot.forward('purgeHistory'),
   reset: slot.forward('reset')
 };

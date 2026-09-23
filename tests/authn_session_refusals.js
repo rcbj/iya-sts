@@ -237,6 +237,25 @@ function childMain() {
          'plain-HTTP port', JSON.stringify(context.credential) + ' ja4=' +
          context.ja4);
 
+    // THE SIGN-IN WAS ASSESSED FOR RISK (#62 P2), without the door waiting.
+    const riskEngine = require(ROOT + '/risk/risk_engine');
+    let assessed = null;
+    for (let i = 0; i < 40 && !assessed && session; i++) {
+      const view = await riskEngine.view('default', {});
+      assessed = view.assessments.rows.filter(function (a) {
+        return a.subject === session.user.sub;
+      })[0] || null;
+      if (!assessed) {
+        await new Promise(function (r) { setTimeout(r, 50); });
+      }
+    }
+    note(assessed && assessed.decision === 'observe' &&
+         assessed.door && assessed.credentialKind === 'password',
+         'C7. the sign-in was assessed for risk — observed, with its door ' +
+         'and its credential — and decided nothing',
+         JSON.stringify(assessed && { level: assessed.level,
+                                      door: assessed.door }));
+
     // --- B and C, through startSession() directly ----------------------------
     const res = { set: function () { return res; },
                   append: function () { return res; },

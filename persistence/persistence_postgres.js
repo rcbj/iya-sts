@@ -4195,6 +4195,252 @@ function create(options) {
       });
     },
 
+    // ===== THE MODEL'S HISTORY (#62 P2) =====================================
+
+    // The counts of the given (feature, value) pairs for one subject — a
+    // person's sub, or '*' for the realm's population. A pair never seen has
+    // no row and is left out; the caller reads it as 0.
+    riskFeatureCounts: function (realm, subject, pairs) {
+      log.debug("Entering riskFeatureCounts(). pairs=" + pairs.length);
+      log.debug("Leaving riskFeatureCounts().");
+      return pool.query(
+        'SELECT c.feature, c.value, c.count FROM sts_risk_feature_counts c ' +
+        'JOIN unnest($3::text[], $4::text[]) AS p(feature, value) ' +
+        'ON c.feature = p.feature AND c.value = p.value ' +
+        'WHERE c.realm = $1 AND c.subject = $2',
+        [realm || '', subject, pairs.map(function (p) {
+          return p.feature;
+        }), pairs.map(function (p) {
+          return p.value;
+        })]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { feature: row.feature, value: row.value,
+                   count: Number(row.count) || 0 };
+        });
+      });
+    },
+
+    // How many distinct values a feature has for one subject, optionally
+    // only those beginning with `prefix` — which is how a combination
+    // feature (`ip>asn`, valued `<ip>|<asn>`) answers "how many networks has
+    // this address been seen in".
+    riskDistinctValues: function (realm, subject, feature, prefix) {
+      log.debug("Entering riskDistinctValues(). " + feature);
+      log.debug("Leaving riskDistinctValues().");
+      return pool.query(
+        'SELECT count(*) AS n FROM sts_risk_feature_counts WHERE realm = $1 ' +
+        'AND subject = $2 AND feature = $3 AND ($4 = \'\' OR ' +
+        'starts_with(value, $4))',
+        [realm || '', subject, feature, prefix || '']
+      ).then(function (r) {
+        return Number((r.rows[0] || {}).n) || 0;
+      });
+    },
+
+    // One sign-in counted: each (subject, feature, value) goes up by one, in
+    // ONE statement, so two nodes counting at once never lose a count. The
+    // caller has made the rows distinct (a statement may touch a row once).
+    riskIncrementCounts: function (realm, rows, at) {
+      log.debug("Entering riskIncrementCounts(). rows=" + rows.length);
+      log.debug("Leaving riskIncrementCounts().");
+      return pool.query(
+        'INSERT INTO sts_risk_feature_counts (realm, subject, feature, value, ' +
+        'count, first_at, last_at) SELECT $1, u.subject, u.feature, u.value, ' +
+        '1, $5, $5 FROM unnest($2::text[], $3::text[], $4::text[]) AS ' +
+        'u(subject, feature, value) ON CONFLICT (realm, subject, feature, ' +
+        'value) DO UPDATE SET count = sts_risk_feature_counts.count + 1, ' +
+        'last_at = EXCLUDED.last_at',
+        [realm || '', rows.map(function (r) {
+          return r.subject;
+        }), rows.map(function (r) {
+          return r.feature;
+        }), rows.map(function (r) {
+          return r.value;
+        }), Number(at)]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // One assessment, as `risk/risk_engine.ts` builds it. The address comes
+    // sealed and as a prefix, as a failure's does.
+    riskRecordAssessment: function (a) {
+      log.debug("Entering riskRecordAssessment(). " + a.id);
+      log.debug("Leaving riskRecordAssessment().");
+      return pool.query(
+        'INSERT INTO sts_risk_assessments (realm, id, at, phase, door, ' +
+        'subject, session_id, client_id, address_sealed, address_prefix, ' +
+        'asn, as_org, country, subdivision, city, latitude, longitude, ' +
+        'accuracy_km, ip_lists, ua_hash, ua_family, ua_os, ua_platform, bot, ' +
+        'ja4, credential_kind, credential_hash, aaguid, authenticator_cert, ' +
+        'backup_eligible, backup_state, jkt, cert_fingerprint, datasets, ' +
+        'signals, score, level, decision, policy_id, error_code, origin) ' +
+        'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::cidr, $11, $12, ' +
+        '$13, $14, $15, $16, $17, $18, $19::text[], $20, $21, $22, $23, $24, ' +
+        '$25, $26, $27, $28, $29, $30, $31, $32, $33, $34::jsonb, ' +
+        '$35::jsonb, $36, $37, $38, $39, $40, $41) ON CONFLICT DO NOTHING',
+        [a.realm || '', a.id, Number(a.at), a.phase, a.door, a.subject || '',
+         a.sessionId || '', a.clientId || '', a.addressSealed || '',
+         a.addressPrefix, Number(a.asn) || 0, a.asOrg || '', a.country || '',
+         a.subdivision || '', a.city || '',
+         a.latitude === null || a.latitude === undefined ? null
+           : Number(a.latitude),
+         a.longitude === null || a.longitude === undefined ? null
+           : Number(a.longitude),
+         Number(a.accuracyKm) || 0, a.ipLists || [], a.uaHash || '',
+         a.uaFamily || '', a.uaOs || '', a.uaPlatform || '', !!a.bot,
+         a.ja4 || '', a.credentialKind || '', a.credentialHash || '',
+         a.aaguid || '', a.authenticatorCert || '',
+         typeof a.backupEligible === 'boolean' ? a.backupEligible : null,
+         typeof a.backupState === 'boolean' ? a.backupState : null,
+         a.jkt || '', a.certFingerprint || '',
+         JSON.stringify(a.datasets || {}), JSON.stringify(a.signals || []),
+         Number(a.score), a.level, a.decision, a.policyId || '',
+         a.errorCode || '', processId]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // A page of one realm's assessments, newest first, optionally one
+    // subject's or one level's; with the matching count. Never the sealed
+    // address.
+    riskListAssessments: function (realm, opts) {
+      log.debug("Entering riskListAssessments(). realm=" + realm);
+      const o = opts || {};
+      const where = 'WHERE realm = $1 AND at >= $2 AND ($3 = \'\' OR ' +
+        'subject = $3) AND ($4 = \'\' OR level = $4)';
+      const params = [realm || '', Number(o.since) || 0, o.subject || '',
+                      o.level || ''];
+      log.debug("Leaving riskListAssessments().");
+      return Promise.all([
+        pool.query(
+          'SELECT id, at, phase, door, subject, session_id, client_id, ' +
+          'host(address_prefix) || \'/\' || masklen(address_prefix) AS ' +
+          'address_prefix, asn, as_org, country, subdivision, city, ' +
+          'ip_lists, ua_family, ua_os, ua_platform, bot, ja4, ' +
+          'credential_kind, aaguid, backup_eligible, backup_state, ' +
+          'datasets, signals, score, level, decision FROM ' +
+          'sts_risk_assessments ' + where +
+          ' ORDER BY at DESC, id DESC LIMIT $5 OFFSET $6',
+          params.concat([Number(o.limit) || 50, Number(o.offset) || 0])),
+        pool.query('SELECT count(*) AS total FROM sts_risk_assessments ' +
+                   where, params)
+      ]).then(function (answers) {
+        return {
+          total: Number((answers[1].rows[0] || {}).total) || 0,
+          rows: answers[0].rows.map(function (r) {
+            return { id: r.id, at: Number(r.at), phase: r.phase,
+                     door: r.door, subject: r.subject,
+                     sessionId: r.session_id, clientId: r.client_id,
+                     addressPrefix: String(r.address_prefix),
+                     asn: Number(r.asn) || 0, asOrg: r.as_org,
+                     country: r.country, subdivision: r.subdivision,
+                     city: r.city, ipLists: r.ip_lists || [],
+                     uaFamily: r.ua_family, uaOs: r.ua_os,
+                     uaPlatform: r.ua_platform, bot: !!r.bot, ja4: r.ja4,
+                     credentialKind: r.credential_kind, aaguid: r.aaguid,
+                     backupEligible: r.backup_eligible,
+                     backupState: r.backup_state,
+                     datasets: r.datasets || {}, signals: r.signals || [],
+                     score: Number(r.score), level: r.level,
+                     decision: r.decision };
+          })
+        };
+      });
+    },
+
+    // A person's current standing, replaced whole.
+    riskUpsertSubject: function (s) {
+      log.debug("Entering riskUpsertSubject().");
+      log.debug("Leaving riskUpsertSubject().");
+      return pool.query(
+        'INSERT INTO sts_risk_subjects (realm, subject, score, level, ' +
+        'previous_level, reason, last_assessment, crossed_at, actions, ' +
+        'feedback, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ' +
+        '$9::jsonb, $10, $11) ON CONFLICT (realm, subject) DO UPDATE SET ' +
+        'score = EXCLUDED.score, level = EXCLUDED.level, previous_level = ' +
+        'sts_risk_subjects.level, reason = EXCLUDED.reason, last_assessment ' +
+        '= EXCLUDED.last_assessment, crossed_at = CASE WHEN ' +
+        'sts_risk_subjects.level <> EXCLUDED.level THEN EXCLUDED.updated_at ' +
+        'ELSE sts_risk_subjects.crossed_at END, updated_at = ' +
+        'EXCLUDED.updated_at',
+        [s.realm || '', s.subject, Number(s.score), s.level, '', s.reason || '',
+         s.lastAssessment || '', Number(s.updatedAt), JSON.stringify({}), '',
+         Number(s.updatedAt)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // The realm's people by current standing, highest score first.
+    riskListSubjects: function (realm, opts) {
+      log.debug("Entering riskListSubjects(). realm=" + realm);
+      const o = opts || {};
+      log.debug("Leaving riskListSubjects().");
+      return pool.query(
+        'SELECT subject, score, level, previous_level, reason, ' +
+        'last_assessment, crossed_at, updated_at FROM sts_risk_subjects ' +
+        'WHERE realm = $1 ORDER BY score DESC, updated_at DESC LIMIT $2',
+        [realm || '', Number(o.limit) || 50]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { subject: row.subject, score: Number(row.score),
+                   level: row.level, previousLevel: row.previous_level,
+                   reason: row.reason, lastAssessment: row.last_assessment,
+                   crossedAt: Number(row.crossed_at) || 0,
+                   updatedAt: Number(row.updated_at) || 0 };
+        });
+      });
+    },
+
+    // The last context a live session was assessed in, replaced whole — what
+    // continuous evaluation (P4) compares a later request with.
+    riskUpsertSessionContext: function (c) {
+      log.debug("Entering riskUpsertSessionContext().");
+      log.debug("Leaving riskUpsertSessionContext().");
+      return pool.query(
+        'INSERT INTO sts_risk_session_context (realm, session_id, subject, ' +
+        'address_prefix, asn, country, ua_hash, ja4, jkt, score, level, ' +
+        'updated_at) VALUES ($1, $2, $3, $4::cidr, $5, $6, $7, $8, $9, $10, ' +
+        '$11, $12) ON CONFLICT (realm, session_id) DO UPDATE SET subject = ' +
+        'EXCLUDED.subject, address_prefix = EXCLUDED.address_prefix, asn = ' +
+        'EXCLUDED.asn, country = EXCLUDED.country, ua_hash = ' +
+        'EXCLUDED.ua_hash, ja4 = EXCLUDED.ja4, jkt = EXCLUDED.jkt, score = ' +
+        'EXCLUDED.score, level = EXCLUDED.level, updated_at = ' +
+        'EXCLUDED.updated_at',
+        [c.realm || '', c.sessionId, c.subject, c.addressPrefix,
+         Number(c.asn) || 0, c.country || '', c.uaHash || '', c.ja4 || '',
+         c.jkt || '', Number(c.score), c.level, Number(c.updatedAt)]
+      ).then(function (r) {
+        return r.rowCount > 0;
+      });
+    },
+
+    // Assessments, feature counts and session contexts past their
+    // retention, a batch at a time.
+    riskPurgeHistory: function (table, beforeMs, limit) {
+      log.debug("Entering riskPurgeHistory(). " + table);
+      const column = { assessments: 'at', counts: 'last_at',
+                       sessions: 'updated_at' }[table];
+      const name = { assessments: 'sts_risk_assessments',
+                     counts: 'sts_risk_feature_counts',
+                     sessions: 'sts_risk_session_context' }[table];
+      if (!column) {
+        log.debug("Leaving riskPurgeHistory(). Unknown table.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving riskPurgeHistory().");
+      return pool.query(
+        'DELETE FROM ' + name + ' WHERE ctid IN (SELECT ctid FROM ' + name +
+        ' WHERE ' + column + ' < $1 LIMIT $2)',
+        [Number(beforeMs), Number(limit) || 10000]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
     mergeKeys: function (realmId, ciphertext, merge) {
       log.debug("Entering mergeKeys(). realm=" + realmId);
       const id = String(realmId);

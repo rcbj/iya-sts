@@ -783,7 +783,12 @@ var config = {
     geoStaleAfterDays: 45,         // Geolocation and ASN data is stale after (days)
     ipListStaleAfterHours: 24,     // Tor and reputation lists are stale after (hours)
     recordFailures: true,          // Record attributable failures
-    failureRetentionDays: 30       // Keep failures (days)
+    failureRetentionDays: 30,      // Keep failures (days)
+    assessSignIns: true,           // Assess every sign-in
+    mediumScorePercent: 100,       // MEDIUM from (percent of a score of 1)
+    highScorePercent: 1000,        // HIGH from (percent of a score of 1)
+    assessmentRetentionDays: 90,   // Keep assessments (days)
+    historyRetentionDays: 180      // Keep the model's history (days)
   },
 
   // --- RISC ------------------------------------------------------------
