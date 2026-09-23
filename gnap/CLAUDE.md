@@ -222,6 +222,7 @@ empty-store control accepts, and a proof another node accepted is refused.
 | 0650–0699 | the console, the monitor, application entries |
 | 0700–0709 | signals |
 | 0710–0719 | single-use values spent across the cluster (#46) |
+| 0720 | the push finish's transport: `gnap.pushSkipTlsVerification` ignored in product (#171) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.
@@ -234,7 +235,8 @@ failure patterns.
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
-| `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code |
+| `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code. Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
+| `tests/outbound_tls.js`, `tests/vendored/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
 | `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
 
@@ -248,6 +250,29 @@ the published key. The default suite is now `eddsa-jcs-2022` and the job checks
 the proof itself: RFC 8785, two SHA-256 hashes, node's Ed25519. The
 compatibility suite is still checked only by the service, which is one of the
 reasons it is not the default.
+
+## The push finish verifies the client's certificate (#171, 2026-09-23)
+
+`gnap.pushAllowInsecure` allowed a plain-http finish URI AND turned
+certificate verification off for every https one, and product mode honoured
+it: a push to a registered `https://` URI went to whoever answered the
+handshake, carrying the `interact_ref` and `hash` of an approved grant. RFC
+9635 section 11.1 gives an unverified session none of its protection.
+
+Three settings now, asked through `common/outbound_tls.ts` (shared with SSF,
+federation and XACML — its header argues the placement):
+
+* `gnap.pushAllowHttp` — plain http: any host in development; in product a
+  loopback address only, because RFC 9635 section 2.5.2.1 names it. That is
+  `STS-GNAP-0103`'s rule, and a refusal of it at PUSH time carries the same
+  code as at grant time (one code per condition); `gnap_http.ts`'s
+  `urlVerdict()` answers the code and `gnap_grants.ts` uses it.
+* `gnap.pushSkipTlsVerification` — development only. Ignored in product
+  (`STS-GNAP-0720`, logged once per process) and refused on write
+  (`STS-CORE-0103`).
+* `gnap.pushCaFile` — the client's private CA, beside node's store; a file
+  that cannot be read refuses the push (`STS-CORE-0104`) and is recorded on the
+  grant's history like any failed push.
 
 ## ZCAP PROOF SUITES (2026-09-22, #43)
 

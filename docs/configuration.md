@@ -161,6 +161,10 @@ sender-constrained tokens by mutual TLS or DPoP, codes of 60 seconds, no
 refresh-token rotation, and PS256, ES256 or EdDSA. See [OAuth
 security](oauth-security.md#fapi-20-security-profile).
 
+`2-message-signing` is FAPI 2.0 Message Signing on top of that: a signed
+request object at PAR, JARM required, and signed introspection responses.
+See [OAuth security](oauth-security.md#fapi-20-message-signing).
+
 ### Sender constraints — five settings that ask for more than either mode
 
 **Neither OAuth 2.1 nor RFC 9700 requires DPoP**, and that is worth saying once
@@ -643,13 +647,26 @@ deployment with no egress: SAML, SAML 1.1 and WS-Federation need no back channel
 at all, and an OpenID Connect partner can still be used with
 `fedResponseType: id_token` and its keys pasted into `fedJwks`.
 
-`federation.outboundAllowInsecure` is **OFF by default, which is the one place
-this service is stricter than a mock would ordinarily be.** What travels on those
-requests is a client secret and an authorization code, at somebody else's
-service. ON accepts an `http://` endpoint and a certificate nothing here trusts —
-which is what federating against another mock on localhost needs — and every
-request made under it is logged as insecure, rather than the setting being logged
-once at startup and forgotten.
+**A partner's certificate is always verified in product mode, and plain http is
+never used there** (#171). What travels on those requests is a client secret and
+an authorization code, at somebody else's service. Three settings govern it, all
+off or empty by default:
+
+* `federation.outboundAllowHttp` accepts an `http://` endpoint — in development
+  mode only;
+* `federation.outboundSkipTlsVerification` accepts a certificate nothing here
+  trusts — in development mode only, which is what federating against another
+  mock on localhost needs. Product ignores it and refuses to set it;
+* `federation.outboundCaFile` names a PEM file of CA certificates a partner may
+  chain to, beside node's own store, which is how product reaches a partner
+  certified by a private CA.
+
+Every request made insecurely is logged as such, rather than the setting being
+logged once at startup and forgotten. GNAP push (`gnap.push…`), Shared Signals
+push (`ssf.push…`) and the XACML PEP nudge (`xacml.pepNotify…`) have the same
+three settings each. The old single `…AllowInsecure` switches were removed and
+a service whose configuration still names one refuses to start
+(`STS-CORE-0105`).
 
 Everything else about a relationship is not a setting at all: it is an entry
 under `ou=federations`, configured at `/admin/federation`, through `POST
@@ -863,13 +880,25 @@ security-key sign-in is refused while it is on. An administrator can place the
 same requirement on one person with **Require MFA** on their `/admin/users`
 page, which writes `stsMfaRequired` on the entry.
 
-**It is enforced at the sign-in screen and nowhere else.** A federated
-assertion, a SPNEGO ticket, a TLS client certificate, the OAuth password grant,
-an LDAP bind, WS-Trust and SCIM Basic authenticate somebody without that screen,
+**The sign-in screen is the one door that can ask for it.** In product mode
+the five doors that take a password and nothing else — an LDAP bind, a WS-Trust
+UsernameToken, SCIM, Shared Signals and EST Basic — refuse the person's own
+password instead, answered as a wrong password, and accept an app password
+scoped to the door. A federated assertion, a SPNEGO ticket or a Kerberos
+AS-REQ, and a TLS client certificate authenticate somebody without that screen,
 and a session that already exists is not ended. If both mechanisms are switched
 off (`totp.enabled`, and `webauthn.enabled` or `webauthn.mfaAllowed`), the
 screen refuses the sign-in and names those settings rather than silently not
 asking.
+
+**`authn.passwordAloneDoors`** (empty, runtime, per realm; product only) lists
+the password-only doors — `ldap`, `wstrust`, `scim`, `ssf`, `est` — that still
+accept such a person's own password. **Every door listed lowers every such
+person to one factor there** (NIST SP 800-63B section 4.2); prefer app
+passwords. **`appPasswords.enabled`** (on) lets people make app passwords on
+`/portal/app-passwords` and administrators make them on `/admin/users` and
+`/admin-api`; turning it off stops new ones and leaves the made ones working.
+**`appPasswords.maxPerPerson`** (10, 1–50) caps how many one person holds.
 
 **`security.passwordResetTtlMinutes`** (60) is how long a reset link issued with
 **Send a reset link** on a person's `/admin/users` page stays usable at

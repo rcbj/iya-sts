@@ -71,14 +71,18 @@
 //    sets the list. Hosts rather than URLs, because a component legitimately
 //    moves its path and does not legitimately move to another host.
 //
-// 3. **https ONLY UNLESS `xacml.pepNotifyAllowInsecure` SAYS OTHERWISE.** What
-//    travels here is weaker than what travels on either of the other two — no
-//    credential and no event — and it is still off by default, because a
-//    request this service makes in the clear is a request somebody else can
-//    answer for, and a PEP that acted on a forged nudge would pull from
-//    wherever it was told to pull from. What protects it is that the PEP holds
-//    the PDP's address itself and a nudge cannot change it; what the setting
-//    protects is the rest.
+// 3. **https, WITH THE PEP'S CERTIFICATE VERIFIED.** What travels here is
+//    weaker than what travels on either of the other two — no credential and
+//    no event — and it is still held to TLS, because a request this service
+//    makes in the clear is a request somebody else can answer for, and a PEP
+//    that acted on a forged nudge would pull from wherever it was told to
+//    pull from. What protects it is that the PEP holds the PDP's address
+//    itself and a nudge cannot change it; what TLS protects is the rest.
+//    Since #171 the policy is `common/outbound_tls.ts`'s: plain http only
+//    with `xacml.pepNotifyAllowHttp`, and never in product mode; verification
+//    off only with `xacml.pepNotifySkipTlsVerification`, and only in
+//    development; a PEP certified by a private CA through
+//    `xacml.pepNotifyCaFile`.
 //
 // 4. **NO REDIRECTS, A CAPPED BODY AND A TIMEOUT**, for federation's reasons.
 //    A 302 from a notify endpoint is not a protocol this service speaks.
@@ -116,6 +120,7 @@ import InstanceSlot = require('../common/instance_slot');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
 import version = require('../common/version');
+import OutboundTls = require('../common/outbound_tls');
 
 const { URL } = url;
 
@@ -162,6 +167,18 @@ interface PepNotifierDeps {
 // object a broken one might send and is still a bound.
 const MAX_BODY_BYTES = 16 * 1024;
 
+// THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
+// No plain http in product: nothing about a nudge names loopback.
+const NOTIFY_TRANSPORT = {
+  what: 'an XACML PEP nudge',
+  allowHttpKey: 'xacml.pepNotifyAllowHttp',
+  skipTlsKey: 'xacml.pepNotifySkipTlsVerification',
+  caFileKey: 'xacml.pepNotifyCaFile',
+  loopbackHttpInProduct: false,
+  httpRefusedCode: 'STS-XACML-0073',
+  skipIgnoredCode: 'STS-XACML-0074'
+};
+
 class PepNotifier {
   static readonly MAX_BODY_BYTES = MAX_BODY_BYTES;
 
@@ -192,12 +209,12 @@ class PepNotifier {
     return on;
   }
 
-  allowInsecure(): boolean {
-    const { log, config } = this.deps;
-    log.debug('Entering PepNotifier.allowInsecure().');
-    const on = !!config.value('xacml.pepNotifyAllowInsecure');
-    log.debug('Leaving PepNotifier.allowInsecure(). ' + on);
-    return on;
+  // The three transport settings as they are IN FORCE in this realm (#171).
+  transportSettings(): ReturnType<typeof OutboundTls.describe> {
+    const { log } = this.deps;
+    log.debug('Entering PepNotifier.transportSettings().');
+    log.debug('Leaving PepNotifier.transportSettings().');
+    return OutboundTls.describe(NOTIFY_TRANSPORT);
   }
 
   timeoutMs(): number {
@@ -231,45 +248,61 @@ class PepNotifier {
   // -------------------------------------------------------------------------
   urlProblem(raw: unknown): string | null {
     const { log } = this.deps;
-    log.debug('Entering PepNotifier.urlProblem(). raw=' + raw);
+    log.debug('Entering PepNotifier.urlProblem().');
+    log.debug('Leaving PepNotifier.urlProblem().');
+    return this.urlVerdict(raw).why || null;
+  }
+
+  // The same answer with `STS-XACML-0073` when the refusal is plain http in
+  // product mode, and '' for every other (whose code is STS-XACML-0066).
+  urlVerdict(raw: unknown): { why: string; errorCode: string } {
+    const { log } = this.deps;
+    log.debug('Entering PepNotifier.urlVerdict(). raw=' + raw);
     if (!raw) {
-      log.debug('Leaving PepNotifier.urlProblem(). Empty.');
-      return 'There is no notify URL on this PEP, so it is never nudged. ' +
-             'That is not a fault: the nudge is an optimisation and the PEP ' +
-             'still pulls on its own interval.';
+      log.debug('Leaving PepNotifier.urlVerdict(). Empty.');
+      return { why: 'There is no notify URL on this PEP, so it is never ' +
+               'nudged. That is not a fault: the nudge is an optimisation ' +
+               'and the PEP still pulls on its own interval.',
+               errorCode: '' };
     }
     let parsed: InstanceType<typeof URL>;
     try {
       parsed = new URL(String(raw));
     } catch (error) {
-      log.debug("Caught in PepNotifier.urlProblem(): " +
+      log.debug("Caught in PepNotifier.urlVerdict(): " +
                 ((error && error.message) || error));
       // Not a URL. The parser's own message adds nothing a person reading the
       // console row needs, so the refusal is the one sentence below.
-      log.debug('Leaving PepNotifier.urlProblem(). Unparseable.');
-      return 'That is not a URL.';
+      log.debug('Leaving PepNotifier.urlVerdict(). Unparseable.');
+      return { why: 'That is not a URL.', errorCode: '' };
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      log.debug('Leaving PepNotifier.urlProblem(). Wrong scheme.');
-      return 'A notify URL is http or https; this one is "' +
-             parsed.protocol.replace(/:$/, '') + '".';
+      log.debug('Leaving PepNotifier.urlVerdict(). Wrong scheme.');
+      return { why: 'A notify URL is http or https; this one is "' +
+               parsed.protocol.replace(/:$/, '') + '".', errorCode: '' };
     }
-    if (parsed.protocol === 'http:' && !this.allowInsecure()) {
-      log.debug('Leaving PepNotifier.urlProblem(). Insecure.');
-      return 'This notify URL is plain http and ' +
-             'xacml.pepNotifyAllowInsecure is off. A nudge carries no ' +
-             'credential and no event, so this is the mildest of this ' +
-             'service\'s three outbound refusals — but a request made in the ' +
-             'clear is a request somebody else can answer for.';
+    if (parsed.protocol === 'http:') {
+      const verdict = OutboundTls.httpVerdict(NOTIFY_TRANSPORT,
+                                              parsed.hostname);
+      if (!verdict.ok) {
+        log.debug('Leaving PepNotifier.urlVerdict(). Plain http refused.');
+        return { why: 'This notify URL is plain http: ' + verdict.why +
+                 '. A nudge carries no credential and no event, so this is ' +
+                 'the mildest of this service\'s outbound refusals — but a ' +
+                 'request made in the clear is a request somebody else can ' +
+                 'answer for.',
+                 errorCode: verdict.errorCode };
+      }
     }
     const list = this.allowedHosts();
     if (list.length && list.indexOf(parsed.hostname.toLowerCase()) < 0) {
-      log.debug('Leaving PepNotifier.urlProblem(). Not on the allowlist.');
-      return 'The host "' + parsed.hostname + '" is not in ' +
-             'xacml.pepNotifyAllowedHosts (' + list.join(', ') + ').';
+      log.debug('Leaving PepNotifier.urlVerdict(). Not on the allowlist.');
+      return { why: 'The host "' + parsed.hostname + '" is not in ' +
+               'xacml.pepNotifyAllowedHosts (' + list.join(', ') + ').',
+               errorCode: '' };
     }
-    log.debug('Leaving PepNotifier.urlProblem(). None.');
-    return null;
+    log.debug('Leaving PepNotifier.urlVerdict(). None.');
+    return { why: '', errorCode: '' };
   }
 
   // -------------------------------------------------------------------------
@@ -315,18 +348,39 @@ class PepNotifier {
                        'PEP converges on its next poll.' });
         return;
       }
-      const problem = self.urlProblem(url);
-      if (problem) {
+      const problem = self.urlVerdict(url);
+      if (problem.why) {
         log.debug('Leaving nudge(). Refused before dialling.');
-        self.recordUndelivered('STS-XACML-0066', '',
-                               'A change nudge was not sent: ' +
-                               'the PEP\'s notify URL is outside this ' +
-                               'service\'s outbound bounds.');
-        resolve({ ok: false, status: 0, why: problem });
+        if (problem.errorCode === 'STS-XACML-0073') {
+          self.recordUndelivered('STS-XACML-0073', '',
+                                 'A change nudge was not sent: the PEP\'s ' +
+                                 'notify URL is plain http and this realm ' +
+                                 'is in product mode.');
+        } else {
+          self.recordUndelivered('STS-XACML-0066', '',
+                                 'A change nudge was not sent: ' +
+                                 'the PEP\'s notify URL is outside this ' +
+                                 'service\'s outbound bounds.');
+        }
+        resolve({ ok: false, status: 0, why: problem.why });
         return;
       }
       const parsed = new URL(String(url));
       const insecure = parsed.protocol === 'http:';
+      // The certificate policy (#171): node's store and
+      // `xacml.pepNotifyCaFile`, skipped only in development with
+      // `xacml.pepNotifySkipTlsVerification` on. A PEP's certificate is its
+      // own and this service is not the authority for it.
+      const policy = insecure ? null :
+        OutboundTls.tlsVerdict(NOTIFY_TRANSPORT, parsed.origin);
+      if (policy && !policy.ok) {
+        log.debug('Leaving nudge(). ' + policy.why);
+        self.recordUndelivered('STS-CORE-0104', parsed.origin,
+                               'A change nudge was not sent: the CA file ' +
+                               'xacml.pepNotifyCaFile names cannot be used.');
+        resolve({ ok: false, status: 0, why: policy.why });
+        return;
+      }
       const body = JSON.stringify({
         event: 'policy-repository-changed',
         at: new Date().toISOString(),
@@ -337,10 +391,10 @@ class PepNotifier {
         // federation's reason: a check disabled six months ago and forgotten
         // is the worst kind of leftover.
         log.warn('xacml: nudging ' + parsed.origin + ' over plain http ' +
-                 '(xacml.pepNotifyAllowInsecure is on).');
+                 '(xacml.pepNotifyAllowHttp is on).');
       }
       const transport = insecure ? http : https;
-      const request = transport.request({
+      const request = transport.request(Object.assign({
         method: 'POST',
         hostname: parsed.hostname,
         port: parsed.port || (insecure ? 80 : 443),
@@ -356,12 +410,13 @@ class PepNotifier {
                    // form; common/version.js owns the product token.
                    'User-Agent': userAgent },
         timeout: self.timeoutMs(),
-        // A PEP's certificate is its own and this service is not the
-        // authority for it. `allowInsecure` covers both halves of "insecure"
-        // on purpose — it is one decision, and two settings would let
-        // somebody turn off the half they did not mean to.
-        rejectUnauthorized: !self.allowInsecure()
-      }, function (response) {
+        // Two settings since #171, where there was one that turned off both
+        // halves of "insecure" at once — and product mode honoured it. The
+        // policy above decides this; `ca` is added only when a CA file names
+        // one, because node reads that option by value.
+        rejectUnauthorized: !policy || policy.rejectUnauthorized
+      }, policy && policy.ca ? { ca: policy.ca } : {}),
+      function (response) {
         let received = 0;
         const chunks: Buffer[] = [];
         response.on('data', function (chunk: Buffer) {
@@ -485,7 +540,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   MAX_BODY_BYTES: PepNotifier.MAX_BODY_BYTES,
   notifyAllowed: slot.forward('notifyAllowed'),
-  allowInsecure: slot.forward('allowInsecure'),
+  transportSettings: slot.forward('transportSettings'),
+  urlVerdict: slot.forward('urlVerdict'),
+  NOTIFY_TRANSPORT: NOTIFY_TRANSPORT,
   allowedHosts: slot.forward('allowedHosts'),
   timeoutMs: slot.forward('timeoutMs'),
   urlProblem: slot.forward('urlProblem'),

@@ -65,14 +65,15 @@
 // forms with another whole-valued attribute (a password and its history).
 const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
-                'stsactivationexpires', 'appregistrationjson'];
+                'stsactivationexpires', 'appregistrationjson',
+                'stsapppassword'];
 
 // Always merged by value: lists this service appends to itself.
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                'description', 'oauthconsent', 'stswebauthncredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
-               'federationrelationship', 'federationsubject'];
+               'federationrelationship', 'federationlink'];
 
 // A HOT PATH, AND EVERY FUNCTION IN THIS FILE IS ON IT: `same()`, `uuidOf()`,
 // `countOf()`, `listOf()`, `mergeValues()`, `mergeAttributes()`,

@@ -594,6 +594,41 @@ function enrolsKeysOnFirstUse() {
   return !isProduct();
 }
 
+// May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
+// is required to hold, a second factor (#101, 2026-09-22)? An LDAP simple
+// bind, a WS-Security UsernameToken, SCIM and SSF HTTP Basic and EST Basic
+// each authenticate with a password and have nowhere to ask for anything
+// more (RFC 4513 section 5.1.3, the UsernameToken Profile, RFC 7617, RFC 7030
+// section 3.2.3). So the rule comes from the ACCOUNT: NIST SP 800-63B section
+// 4.2 puts an account bound to two factors at AAL2, and a verifier that takes
+// one of them alone brings it down to AAL1. Development accepts the password
+// there, as it accepts every password. Product refuses the person's own
+// password at those doors — answered exactly as a wrong one — and accepts an
+// APP PASSWORD scoped to the door instead (`common/app_passwords.ts`).
+// `common/credentials.ts` asks it, in `secondFactorRefusal()`.
+function acceptsPasswordAloneFromSecondFactorAccounts() {
+  log.debug("Entering acceptsPasswordAloneFromSecondFactorAccounts().");
+  log.debug("Leaving acceptsPasswordAloneFromSecondFactorAccounts().");
+  return !isProduct();
+}
+
+// May a federation partner's asserted NAME be matched straight onto an
+// existing local person, which is `fedSubjectPolicy: any-existing` (#109,
+// 2026-09-22)? Development says yes — it is what this service did before the
+// policy existed, and a client whose partner sends only a name can still be
+// exercised. Product says no, whatever the relationship says: OpenID Connect
+// Core section 5.7 makes `iss` and `sub` the only claims a relying party may
+// rely on as a stable identifier, and a name match lets any partner whose
+// signature verifies sign in any local account it can name — `admin`
+// included. `federation/federation_sp.ts` refuses such a sign-in
+// (STS-FED-0094) and `federation/federation.js` refuses setting the value
+// (STS-FED-0095).
+function matchesFederatedNames() {
+  log.debug("Entering matchesFederatedNames().");
+  log.debug("Leaving matchesFederatedNames().");
+  return !isProduct();
+}
+
 // May a request object be UNSIGNED — `alg: none` — at the authorization
 // endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
 // signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
@@ -696,6 +731,41 @@ function limitsDebuggerDestinations() {
 function dialsInternalAddresses() {
   log.debug("Entering dialsInternalAddresses().");
   log.debug("Leaving dialsInternalAddresses().");
+  return !isProduct();
+}
+
+// May an outbound request go out over TLS WITHOUT verifying the certificate
+// of whoever answers (#171, 2026-09-23)? Four families send something across
+// the network to an address somebody configured or registered — GNAP's push
+// finish, SSF push delivery, federation's back channels and the XACML PEP
+// nudge — and each has a `…SkipTlsVerification` setting for the one case it
+// exists for: a listener on a developer's machine with a certificate nothing
+// trusts. Development answers yes and the setting is honoured, with a warning
+// on every request. Product answers no: the setting is IGNORED (logged once
+// with the family's code) and refused on write, because RFC 9635 section
+// 11.1, RFC 8935 and BCP 195 (RFC 9325) all require the peer to be
+// authenticated, and an unverified session gives none of that protection. A
+// private CA is reached with the family's `…CaFile` instead, with
+// verification on. SPIRE's `skip_kubelet_verification`
+// (`spiffe.k8sSkipKubeletVerification`) asks this too. `common/outbound_tls.ts`
+// is the one place it is asked.
+function skipsOutboundTlsVerification() {
+  log.debug("Entering skipsOutboundTlsVerification().");
+  log.debug("Leaving skipsOutboundTlsVerification().");
+  return !isProduct();
+}
+
+// May an outbound request go out over PLAIN HTTP to an address that is not
+// this host (#171)? The same four families, each with a `…AllowHttp` setting.
+// Development answers yes where that setting is on. Product answers no, and
+// the one exception is decided by the family, not here: GNAP's push finish may
+// still go to a loopback address, because RFC 9635 section 2.5.2.1 (and RFC
+// 8252 for native clients) names loopback as a legitimate place for a client
+// instance to listen — `STS-GNAP-0103`'s rule, unchanged. SSF, federation and
+// XACML have no such text and refuse plain http outright in product.
+function dialsPlainHttpOutbound() {
+  log.debug("Entering dialsPlainHttpOutbound().");
+  log.debug("Leaving dialsPlainHttpOutbound().");
   return !isProduct();
 }
 
@@ -889,6 +959,23 @@ const REQUIREMENTS = [
              'oauth2.delegatedPermissionsEnforced says: the grant is ' +
              '`oauthDelegatedPermission` on the client\'s entry.',
     where: 'oauth-oidc/oauth2.ts, common/app_permissions.ts' },
+  { id: 'federated-name-match',
+    what: 'A federation partner signs in only the person its subject is ' +
+          'linked to',
+    development: 'A relationship may set fedSubjectPolicy to any-existing, ' +
+                 'which matches the name the partner asserted straight onto ' +
+                 'a local person — any person, an administrator included ' +
+                 'unless fedMayAssertAdministrators is off (the default). ' +
+                 'Every other policy behaves as it does in product.',
+    product: 'any-existing is refused, at the relationship (STS-FED-0095) ' +
+             'and at the sign-in (STS-FED-0094). A partner signs in the ' +
+             'entry its (issuer, subject) is linked to; an unlinked subject ' +
+             'naming an existing person must first sign in here as that ' +
+             'person (link-at-first-sign-in, the default), or is refused ' +
+             '(pre-linked). Development and product both keep the rules and ' +
+             'the console-administrator refusal.',
+    where: 'federation/federation_sp.ts, federation/federation_links.ts, ' +
+           'federation/federation.js' },
   { id: 'passkey-first-use',
     what: 'The sign-in screen does not enrol a security key for somebody ' +
           'who has not proved who they are',
@@ -898,6 +985,25 @@ const REQUIREMENTS = [
     product: 'It is refused. A primary key is added on /portal/keys behind ' +
              'a session, by an activation link, or by an operator.',
     where: 'authn/authn.ts' },
+  // #101 (2026-09-22).
+  { id: 'second-factor-doors',
+    what: 'A person who holds or must hold a second factor is refused their ' +
+          'password alone at the password-only doors',
+    development: 'An LDAP simple bind, a WS-Security UsernameToken, SCIM and ' +
+                 'SSF HTTP Basic and EST Basic accept the password as they ' +
+                 'accept every password; the sign-in screen still asks for ' +
+                 'the second factor.',
+    product: 'At those five doors the person\'s own password is refused — ' +
+             'answered exactly as a wrong password, and counted against the ' +
+             'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
+             'log only) — whenever they hold an authenticator app or a ' +
+             'security key in the mfa role, or a second factor is required ' +
+             'of them (stsMfaRequired, authn.mfaRequired). An APP PASSWORD ' +
+             'they made on /portal/app-passwords, scoped to the door, is ' +
+             'accepted instead. authn.passwordAloneDoors names doors that ' +
+             'accept the password anyway, which lowers every such person to ' +
+             'one factor there.',
+    where: 'common/credentials.ts, common/app_passwords.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -910,6 +1016,26 @@ const REQUIREMENTS = [
              'resolved once and the connection pinned to the address that ' +
              'was checked. A malformed document is refused in both modes.',
     where: 'oauth-oidc/protected_resource_metadata.ts' },
+  { id: 'outbound-tls',
+    what: 'An outbound request verifies the certificate of whoever answers, ' +
+          'and does not go out over plain http',
+    development: 'GNAP push finishes, SSF push deliveries, federation\'s ' +
+                 'back channels and XACML PEP nudges honour their ' +
+                 '…SkipTlsVerification settings (verification off, warned on ' +
+                 'every request) and their …AllowHttp settings (plain http to ' +
+                 'any host). SPIRE\'s spiffe.k8sSkipKubeletVerification is ' +
+                 'honoured too.',
+    product: 'Every …SkipTlsVerification setting, and ' +
+             'spiffe.k8sSkipKubeletVerification, is IGNORED — logged once ' +
+             'with its code — and refused on write through /admin and ' +
+             '/admin-api (STS-CORE-0103); a private CA is reached through ' +
+             'the family\'s …CaFile with verification on. Plain http is ' +
+             'refused for SSF, federation and XACML whatever …AllowHttp ' +
+             'says, and allowed for a GNAP push finish only to a loopback ' +
+             'address (RFC 9635 section 2.5.2.1).',
+    where: 'common/outbound_tls.ts, gnap/gnap_http.ts, ssf/ssf_http.ts, ' +
+           'federation/federation_http.ts, xacml/xacml_pep_http.ts, ' +
+           'spiffe/spiffe_workload_attestor_k8s.ts' },
   { id: 'realm-chooser',
     what: 'The realm chooser before sign-in lists every realm',
     development: 'A browser with no session at /admin or /portal, on a ' +
@@ -1547,6 +1673,9 @@ module.exports = {
   grantsUndeclaredScopes: grantsUndeclaredScopes,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
+  acceptsPasswordAloneFromSecondFactorAccounts:
+    acceptsPasswordAloneFromSecondFactorAccounts,
+  matchesFederatedNames: matchesFederatedNames,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
   acceptsUnsignedSamlRequests: acceptsUnsignedSamlRequests,
@@ -1554,6 +1683,8 @@ module.exports = {
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,
+  skipsOutboundTlsVerification: skipsOutboundTlsVerification,
+  dialsPlainHttpOutbound: dialsPlainHttpOutbound,
   acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,
   gatesScim: gatesScim,

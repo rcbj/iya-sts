@@ -1709,13 +1709,62 @@ after computing `factor`:
   second factor may add one at sign-in, because there is none an attacker with
   the password could be bypassing.**
 
-**IT IS ENFORCED AT THIS SCREEN AND NOWHERE ELSE**, and the setting's
-description says which doors it does not reach: a federated assertion, SPNEGO,
-a TLS client certificate, the OAuth password grant, an LDAP bind, WS-Trust and
-SCIM Basic. A session that already exists is not ended. **The enrolment emits
+**THIS SCREEN IS THE ONLY DOOR THAT CAN ASK FOR IT**, and since #101 the
+five that cannot are no longer a gap: they REFUSE the password (the section
+below). What it still does not reach is a federated assertion, SPNEGO or a
+Kerberos AS-REQ (#173), and a TLS client certificate. A session that already
+exists is not ended. **The enrolment emits
 no CAEP event**, because the signals the request asked for are the ADMIN doors'
 (`admin-core/admin_actions.ts`); the portal's own enrolment pages do not emit
 either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
+
+## THE PASSWORD-ONLY DOORS REFUSE A SECOND-FACTOR PERSON'S PASSWORD, AND APP PASSWORDS ARE WHAT THEY TAKE (2026-09-22, #101)
+
+**This file owns the rule; `common/credentials.ts` implements it** —
+`secondFactorRefusal()` beside `resetRefusal()` in `verify()` and
+`verifyAsync()` — and each door carries one line pointing here.
+
+* **THE FIVE DOORS**: an LDAP simple bind, a WS-Security UsernameToken, SCIM
+  and SSF HTTP Basic, EST Basic. None of their specifications (RFC 4513 section
+  5.1.3, the UsernameToken Profile, RFC 7617, RFC 7030 section 3.2.3) defines a
+  second factor, so the rule is the ACCOUNT's: NIST SP 800-63B section 4.2 —
+  an account bound to two factors is AAL2, and a verifier that accepts one of
+  them alone brings it to AAL1. In product (`mode.
+  acceptsPasswordAloneFromSecondFactorAccounts()` false) a PERSON who holds an
+  authenticator app or an `mfa` key, or of whom one is required
+  (`mfaRequirementFor()`), is refused their RIGHT password there
+  (`STS-AUTHN-0213`). The entry's KIND decides — `isPerson()` on the
+  directory slot, by placement — so an application's secret is untouched.
+* **REFUSE BY DEFAULT.** A caller is exempt only by declaring
+  `secondFactor: 'asked-next'` (this screen, and the wallet's password-factor
+  screen, where the password IS the second factor) or `'session-held'` (the
+  portal's password change). A door added tomorrow that says nothing is
+  covered. Each of the five passes `door:` beside its `via:`.
+* **THE ANSWER IS A WRONG PASSWORD'S, BYTE FOR BYTE**, and it counts against
+  every rate limit a wrong password counts against — otherwise it is a
+  password oracle. The code rides the verdict to the audit row and the log.
+  `tests/vendored/sts_second_factor_doors.js` compares the two answers as
+  strings at all five doors.
+* **APP PASSWORDS** (`common/app_passwords.ts`, the records in
+  `credentials.ts`): generated, shown once, scrypt-hashed on the entry
+  (`stsAppPassword`, withheld from every LDAP read), named, scoped to one or
+  more of the five doors, looked up by a public four-character id so a
+  presented value costs ONE scrypt. Accepted only at a door it names
+  (`reason: 'app-password'`, one factor, and the door says so on its
+  authentication row); **never at this screen**, whose call passes no `door`
+  — `STS-AUTHN-0214` wherever it is out of scope. Refused on a disabled
+  account (that check comes first); untouched by a password reset (it is not
+  derived from the password); last use written at most once a minute. Made on
+  `/portal/app-passwords` behind a full sign-in, or by an administrator on
+  `/admin/users` and `POST /admin-api/users/create-app-password`; revoked on
+  the same pages; each make and revoke a CAEP `credential-change`.
+* **`authn.passwordAloneDoors`** is the documented weaker option: a listed door
+  accepts the password alone, at one factor, and the log says so each time.
+* **No `password || OTP` concatenation** (rcbj, #101): ambiguous to parse, it
+  spends a TOTP step per connection a pooled client cannot manage, and no
+  specification describes it. **The Kerberos AS-REQ is not one of the five** —
+  the KDC derives keys from the password and never calls `verify()`, and the
+  locked `krb5_kdc.js` offers no hook (#173).
 
 ## SEVERAL NODES: A SIGN-OUT HOLDS, AND TWO COPIES OF A SESSION MERGE (2026-09-14, #46 section 3)
 
@@ -1928,3 +1977,32 @@ for each is `common/CLAUDE.md`'s *Several nodes* section; what is this file's is
 that **a refusal after a verification that passed is still a refusal of the
 step, not an error page**, and that a catch sits on each promise because
 Express 4 does not look at what a handler returns (`STS-AUTHN-0182`).
+
+## A SIGN-IN AS ONE NAMED PERSON: FEDERATION'S LINKING STEP (#109, 2026-09-22)
+
+`beginAuthentication({ lockedUsername })` mints a pending record whose NAME is
+fixed: `federation_sp.ts`'s `link-at-first-sign-in` sends a person here when a
+partner named an existing account its subject is not linked to yet, and the
+account holder must prove they are that person before the link is made
+(`../federation/CLAUDE.md`, *WHICH PEOPLE A PARTNER MAY ASSERT*). Four things
+follow, and each is the record deciding rather than the markup:
+
+* **the POST reads the name off the record**, and a typed name is not read at
+  all — the screen draws it `readonly` for the person, which is a suggestion to
+  a browser and nothing more;
+* **no passwordless key** (`STS-AUTHN-0212`) and **no anonymous session**: the
+  linking rests on the password, and a key a person could enrol at this very
+  screen in development is no proof of anything;
+* **a second factor is asked exactly as for anybody** — held, required by the
+  account or the realm, enrolled where required and held by none — because
+  `finishPasswordSignIn()` is not told this is a linking sign-in; that is the
+  point;
+* **none of the other doors** (the partner buttons, SPNEGO, the wallet) is drawn.
+
+What comes back is an ordinary local session and a 303 to the pending record's
+`returnTo`, `/federation/link/{handle}`, which reads the session's LATEST
+authentication event — its `via` is the record's `protocol`, `Federation link` —
+to know the sign-in it is shown was made through this screen, as that person,
+just now. Development checks no password here any more than anywhere (the
+reserved `invalid` is refused); product verifies it.
+

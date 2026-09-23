@@ -57,10 +57,11 @@
 //     ask this service to dial an address of their choosing, which is the
 //     difference between a metadata fetcher and an open proxy.
 //   * THE SCHEME IS CHECKED. https always; http only with
-//     `federation.outboundAllowInsecure` on. That setting is REUSED rather than
-//     copied: a deployment has decided once whether this service may make a
-//     request in the clear, and a second setting would be a second answer to
-//     one question.
+//     `federation.outboundAllowHttp` on, in development mode (#171). That
+//     setting is REUSED rather than copied: a deployment has decided once
+//     whether this service may make a request in the clear, and a second
+//     setting would be a second answer to one question. The same goes for the
+//     certificate check — `federation_http.ts`'s `tlsFor()`.
 //   * IT TIMES OUT, on `federation.outboundTimeoutMs`, for the same reason.
 //
 // What it does NOT do is follow redirects or accept anything but XML, and
@@ -74,8 +75,9 @@
 //   * `federation.outbound` — the switch a deployment with no egress sets so
 //     that THIS SERVICE DIALS NOTHING — was never read here, so a refresh
 //     dialled out of an air-gapped deployment that believed it could not;
-//   * `federation.outboundAllowInsecure` was applied to the SCHEME and not to
-//     the CERTIFICATE, the opposite half from the other requester: an https
+//   * `federation.outboundAllowInsecure` (since split in three, #171) was
+//     applied to the SCHEME and not to the CERTIFICATE, the opposite half
+//     from the other requester: an https
 //     metadata host with a certificate nothing trusts was refused even with the
 //     setting on, and the setting's own description promises otherwise;
 //   * no User-Agent was sent, where the CLAUDE.md rule is that every outbound
@@ -759,22 +761,33 @@ class SpMetadata {
       log.debug("Leaving done().");
     };
     const cap = self.maxMetadataBytes();
-    const insecure = fedHttp.allowInsecure();
     if (parsed.protocol !== 'https:') {
       // Every insecure request, not only the setting — federation_http.ts's
       // rule.
       log.warn('saml2: fetching SP metadata from ' + parsed.origin +
                ' over plain http because ' +
-               'federation.outboundAllowInsecure is ON.');
+               'federation.outboundAllowHttp is ON.');
+    }
+    // THE CERTIFICATE CHECK, federation's policy (#171): node's store and
+    // `federation.outboundCaFile`, off only in development with
+    // `federation.outboundSkipTlsVerification` on — the half the copy of this
+    // policy never applied.
+    const policy = parsed.protocol === 'https:'
+      ? fedHttp.tlsFor(parsed.origin) : null;
+    if (policy && !policy.ok) {
+      log.debug("Leaving SpMetadata.dial(). " + policy.why);
+      done({ ok: false, errorCode: policy.errorCode, why: policy.why });
+      return;
     }
     const options: any = {
       headers: { accept: 'application/samlmetadata+xml, application/xml, ' +
                          'text/xml',
                  'user-agent': USER_AGENT },
-      // THE CERTIFICATE CHECK, and `federation.outboundAllowInsecure` is what
-      // turns it off — the half the copy of this policy never applied.
-      rejectUnauthorized: !insecure
+      rejectUnauthorized: !policy || policy.rejectUnauthorized
     };
+    if (policy && policy.ca) {
+      options.ca = policy.ca;
+    }
     if (vetted.address) {
       // PINNED to the address that was checked; the Host header and the TLS
       // server name still come from the URL.
@@ -976,8 +989,9 @@ class SpMetadata {
   // what that means, because this writes signing certificates that every
   // later request from the service provider is verified against. A refresh
   // dials ONLY the `samlSpMetadataUrl` an administrator put on the entry, over
-  // https with the certificate checked unless
-  // `federation.outboundAllowInsecure` says otherwise, and only when an
+  // https with the certificate checked (in development,
+  // `federation.outboundSkipTlsVerification` may turn that off), and only
+  // when an
   // administrator presses the button; an
   // upload is a document an administrator chose. That is the same act as
   // pasting the certificate into the entry by hand, which is what every

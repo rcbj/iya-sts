@@ -398,9 +398,10 @@ asserts the refusal rather than the match.
 **3. THE ANCHOR IS PINNED RATHER THAN THE CHECK RELAXED.** The listener's
 certificate is issued by this service's own Root (or, with none, is
 self-signed per start) — nobody a public truststore knows — so the ordinary
-check would refuse every internal push, and `ssf.pushAllowInsecure` is NOT the
-way round it, because that setting turns the check off for every receiver in
-the world to fix a connection to ourselves. Our own trust anchor
+check would refuse every internal push, and `ssf.pushSkipTlsVerification` is
+NOT the way round it, because that setting turns the check off for every
+receiver in the world to fix a connection to ourselves — and is not honoured in
+product mode at all (#171). Our own trust anchor
 (`tls_server.serverCertificate().trustAnchorPem`), the hostname check skipped:
 `oidc_rp.js`'s back channel does exactly this and these are the same three
 lines.
@@ -720,12 +721,21 @@ address a caller chose, and these are the four bounds:
    this usable as a mock. It is a HOST list rather than a URL list on purpose: a
    receiver legitimately moves its endpoint path and does not legitimately move
    to another host.
-3. **https only unless `ssf.pushAllowInsecure`.** What travels on a push is not
-   a credential, it is an EVENT — that somebody's session was revoked, that an
-   account was disabled — which is somebody's security posture in transit, and
-   the receiver's own `authorization_header` travels beside it. Both halves want
-   TLS, and every insecure request is LOGGED rather than only the setting being
-   logged once.
+3. **https only, with the receiver's certificate verified** (#171, 2026-09-23).
+   What travels on a push is not a credential, it is an EVENT — that somebody's
+   session was revoked, that an account was disabled — which is somebody's
+   security posture in transit, and the receiver's own `authorization_header`
+   travels beside it. Both halves want TLS, and RFC 8935 requires the receiver
+   authenticated. It was ONE setting, `ssf.pushAllowInsecure`, that allowed
+   plain http AND turned verification off, and product mode honoured it. Three
+   now, asked through `common/outbound_tls.ts` (shared with GNAP, federation
+   and XACML): `ssf.pushAllowHttp` (development only; product refuses plain
+   http, `STS-SSF-0108`), `ssf.pushSkipTlsVerification` (development only;
+   ignored in product, `STS-SSF-0109`, and refused on write, `STS-CORE-0103`)
+   and `ssf.pushCaFile` (a private CA beside node's store; unreadable refuses,
+   `STS-CORE-0104`). This service's own receivers are exempt from all three —
+   the pin in point 3 above is what that connection checks. Every insecure
+   request is LOGGED rather than only the setting being logged once.
 4. **No redirects, a capped body and a timeout.** A 302 from a push endpoint is
    not a protocol this service speaks, and following one would post the event —
    and the receiver's authorization header — wherever the Location said.
@@ -1758,3 +1768,14 @@ update naming the NEW one. Where no row holds that name, the entry's subject (of
 snapshot) finds the row already recorded under the old name; it is re-keyed, its counts
 and state move with it, and the old name joins `formerIdentifiers` so an event naming it
 still matches. `tests/stable_subject.js` D13.
+
+## A SECOND-FACTOR PERSON'S BASIC PASSWORD, AND APP PASSWORDS OVER CAEP (2026-09-22, #101)
+
+`attemptBasic()` passes `door: 'ssf'`, so in product a person who holds or must
+hold a second factor is refused their own password with the one `STS-SSF-0009`
+401 a wrong password gets, and uses an app password scoped to `ssf`.
+`authn/CLAUDE.md` owns the rule. Making or revoking an app password — on
+`/portal/app-passwords` (`initiating_entity` `user`) or on `/admin/users` and
+`/admin-api` (`admin`) — is a `credential-change` (`password`, `create` or
+`revoke`, the app password's name as `friendly_name`) through
+`account_signals.ts`.

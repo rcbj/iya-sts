@@ -293,9 +293,11 @@ const JOBS = [
   // `local: true`: this repository's own authorization server, in a throwaway
   // realm it leaves behind.
   { file: 'sts_oidc_core.js',            browser: false, local: true },
+  { file: 'sts_discovery_realms.js',     browser: false, local: true },
   { file: 'sts_fapi_baseline.js',        browser: false, local: true },
   { file: 'sts_fapi_advanced.js',        browser: false, local: true },
   { file: 'sts_fapi2.js',                browser: false, local: true },
+  { file: 'sts_fapi2_message_signing.js', browser: false, local: true },
   // OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE (#122, 2026-09-22):
   // the discovery member, section 2's origin rule at registration, at
   // /admin-api and when a sign-out reads a stored URI, the iss of a named
@@ -533,6 +535,17 @@ const JOBS = [
   // would otherwise be asserting against a store the other job is still
   // filling.
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
+  // THE FIVE PASSWORD-ONLY DOORS AND APP PASSWORDS (#101, 2026-09-22): a
+  // second-factor person's own password refused at an LDAPS bind, a WS-Trust
+  // UsernameToken, SCIM, SSF and EST Basic in product — with a wrong
+  // password's answer, byte for byte — and accepted in development; an app
+  // password made on /portal/app-passwords and on /admin-api accepted only at
+  // its doors, never at the sign-in screen, revoked with a CAEP
+  // credential-change. `local: true` for the ownership reason: the portal
+  // page, the API operations and the five doors are this repository's. In a
+  // throwaway realm, so the settings it moves (authn.passwordAloneDoors) move
+  // nobody else's; it reaches 636 as `sts_ldaps.js` does.
+  { file: 'sts_second_factor_doors.js',  browser: false, local: true },
   { file: 'sts_pki_workbench.js',        browser: false, local: true },
   // AN APPLICATION'S CREDENTIALS (2026-09-13): its key pair replaced by an
   // issue from this realm's CA or by an uploaded certificate — an external
@@ -603,6 +616,15 @@ const JOBS = [
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   { file: 'sts_federation_realms.js',    browser: false, local: true },
+  // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): the subject
+  // policies, the linking sign-in, the administrator refusal, the links set
+  // and removed through /admin-api and SCIM — over HTTP, in either mode.
+  { file: 'sts_federation_subject_policy.js', browser: false, local: true },
+  // #171 (2026-09-23): the outbound transport policy over HTTP — the write
+  // doors in a product realm, SSF push to this job's own listeners in both
+  // modes (a skip ignored in product, a CA file honoured), the RFC 9728
+  // import under federation's policy, and XACML's in-force view.
+  { file: 'sts_outbound_tls.js',         browser: false, local: true },
   { file: 'vc_did.js',                   browser: false },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
@@ -751,7 +773,13 @@ const LOCAL_HELPERS = [
   'oauth_fixtures.js',
   // What the service under test IS — its mode, its Kerberos realm, its base DN
   // — read from /admin-api/config rather than assumed (2026-09-18).
-  'service_facts.js'
+  'service_facts.js',
+  // A CA MADE AT RUN TIME (#171): a listener certificate the service can be
+  // told to trust through a `…CaFile` setting, for the jobs that run a push
+  // or notify listener of their own — product mode ignores every skip of
+  // verification — and the directory shared with the service its certificate
+  // is written to. The vendored PKI encoder; no key material is committed.
+  'outbound_test_ca.js'
 ];
 
 // ---------------------------------------------------------------------------

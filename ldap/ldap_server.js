@@ -1863,7 +1863,13 @@ const OWN_NAMES = [
   // — so without this there is no way to tell a real email address a partner
   // sent from one this service made up, which is exactly the question a
   // federated directory entry raises. Nothing reads it; it is there to be read.
-  'federationRelationship', 'federationIssuer', 'federationSubject',
+  //
+  // `federationLink` (#109, 2026-09-22) is the one that DECIDES anything: a
+  // partner's subject paired with the relationship it came through,
+  // `<relationship> <issuer> <subject>` — see `federation/federation_links.ts`.
+  // It replaced `federationSubject`, which recorded subjects without saying
+  // which partner asserted each and so could not be a link.
+  'federationRelationship', 'federationIssuer', 'federationLink',
   'federationLastSeen', 'federationAttribute',
 
   // WHAT THIS PERSON AGREED AN APPLICATION MAY ASK FOR ON THEIR BEHALF, one
@@ -1992,7 +1998,13 @@ const OWN_NAMES = [
   // every mode (`cert_enrollment.withheldValues()`); the certificates and the
   // host names are public.
   'stsEnrolledCertificate', 'stsEnrolledPrivateKey', 'stsAcmeEabKey',
-  'stsScepChallenge', 'stsCertificateHostName'
+  'stsScepChallenge', 'stsCertificateHostName',
+
+  // AND A NINTH SINCE 2026-09-22 (#101): a person's APP PASSWORDS — one JSON
+  // value holding each one's name, scope, scrypt hash and last use. A
+  // verifier like `userPassword`, and withheld from every read like it
+  // (SECRET_ATTRIBUTES). `common/credentials.ts` keeps them.
+  'stsAppPassword'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -4543,7 +4555,7 @@ function applyFederatedAttributes(stored, info, how) {
     return false;
   }
   let changed = false;
-  // The three facts about WHERE they came from. Multi-valued and accumulated,
+  // The facts about WHERE they came from. Multi-valued and accumulated,
   // because one person can federate through two partners and the second must
   // not erase the first — the same reason `description` accumulates one line
   // per protocol.
@@ -4552,9 +4564,13 @@ function applyFederatedAttributes(stored, info, how) {
   if (federated.peer &&
       addValues(stored, 'federationIssuer',
                 [String(federated.peer)])) changed = true;
-  if (federated.subject &&
-      addValues(stored, 'federationSubject',
-                [String(federated.subject)])) changed = true;
+  // THE LINK (#109), written only once `federation_sp.ts` has decided this
+  // sign-in may land here — which is why it arrives on the payload rather
+  // than being derived from the subject: the decision, not the directory,
+  // says whether this person is the one the partner's subject names.
+  if (federated.link &&
+      addValues(stored, 'federationLink',
+                [String(federated.link)])) changed = true;
 
   const attributes = updates ? (federated.attributes || {}) : {};
   if (!updates) {
@@ -5150,10 +5166,16 @@ function autoCreateUser(detail) {
   // of now, so off means exactly "do not CREATE one": an existing entry is
   // used and updated, and a missing one is left missing for
   // `authn.startSession()` to refuse.
-  if (!existing && info.federation && info.federation.autocreate === false) {
-    log.debug('Leaving autoCreateUser(). fedAutocreateUsers is off on ' +
-              info.federation.id + ' and nobody was provisioned at ' + dn +
-              ', so nothing is created.');
+  //
+  // **AND SINCE #109 THE RELATIONSHIP'S DECISION, NOT ONLY THE SWITCH.**
+  // `federation_sp.ts`'s `subjectDecision()` says whether this sign-in may
+  // CREATE anybody — `fedAutocreateUsers` is one input to it; the subject
+  // policy is the other — and a sign-in it sent to an existing person must
+  // never create one because the entry vanished in between.
+  if (!existing && info.federation && info.federation.create !== true) {
+    log.debug('Leaving autoCreateUser(). The federated sign-in through ' +
+              info.federation.id + ' may not create anybody and nobody was ' +
+              'provisioned at ' + dn + ', so nothing is created.');
     return null;
   }
   // What the entry's description says about why it exists. A plan may state its
@@ -7705,6 +7727,9 @@ const SECRET_ATTRIBUTES = [
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
+  // A person's app passwords (#101): scrypt hashes, a verifier like
+  // userPassword and withheld like it.
+  'stsapppassword',
   // A password reset link's hash (2026-09-13), for the activation token's
   // reason beside it.
   'stspasswordresettoken',
@@ -8157,6 +8182,47 @@ function writeBackupCodes(key, value) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// THE APP PASSWORDS (#101, 2026-09-22). SINGLE-VALUED, like the recovery codes
+// above: one JSON value carrying every one the person holds, which
+// `common/credentials.ts` writes whole. A `null` value DELETES.
+// ---------------------------------------------------------------------------
+function readAppPasswords(key) {
+  log.debug('Entering readAppPasswords(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readAppPasswords(). No entry.');
+    return '';
+  }
+  const value = (stored.attributes.stsapppassword || [])[0];
+  log.debug('Leaving readAppPasswords(). ' + (value ? 'Held.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeAppPasswords(key, value) {
+  log.debug('Entering writeAppPasswords(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    // NOT created here, for `writeTotp()`'s reason.
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no app ' +
+             'password was recorded.');
+    log.debug('Leaving writeAppPasswords(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsapppassword;
+  } else {
+    stored.attributes.stsapppassword = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeAppPasswords(). ' +
+            (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
 // THE ACTIVATION TOKEN, hashed. It is the one credential in this service that
 // completes an account setup on its own, so a leaked one is an account
 // takeover — which is why it is stored the way a password is and never in the
@@ -8230,6 +8296,20 @@ if (typeof credentials.setDirectory === 'function') {
     // `ensureBackupCodes()` reports `no-store` rather than throwing.
     readBackupCodes: readBackupCodes,
     writeBackupCodes: writeBackupCodes,
+    // App passwords (#101), checked where they are used for the reason the
+    // pair above is.
+    readAppPasswords: readAppPasswords,
+    writeAppPasswords: writeAppPasswords,
+    // IS THIS ENTRY A PERSON (#101)? By placement, `isPersonEntry()`'s rule —
+    // never by name. The second-factor refusal at the password-only doors is
+    // about a person's account, and an application's secret is not one.
+    isPerson: function (key) {
+      log.debug("Entering isPerson().");
+      const located = locateEntry(String(key || ''));
+      const person = !!(located.stored && isPersonEntry(located.stored));
+      log.debug("Leaving isPerson(). " + person);
+      return person;
+    },
     // WHO IS IN THIS REALM, for `secondFactorHolders()` — the operator's view
     // on `/admin/users`. It hands over NAMES and not entries, deliberately:
     // what the credential store needs is a list to ask itself about, and
@@ -10780,10 +10860,19 @@ server.bind('', function (req, res, next) {
   // both modes, and `reason: 'verified'` is the only answer that means a hash
   // was compared.
   let verified = false;
+  // WHICH APP PASSWORD, where one was what matched (#101) — for the two rows.
+  let appPassword = null;
   if (dn) {
+    // `door: 'ldap'` (#101): a password-only door, so in product a person
+    // with a second factor is refused their password here and an app password
+    // scoped to `ldap` is accepted instead (`common/credentials.ts`).
     const checked = credentials.verify(dn, credentials_value,
-                                       { via: 'an LDAP simple bind' });
-    verified = !!(checked && checked.ok && checked.reason === 'verified');
+                                       { via: 'an LDAP simple bind',
+                                         door: 'ldap' });
+    verified = !!(checked && checked.ok && (checked.reason === 'verified' ||
+                                            checked.reason === 'app-password'));
+    appPassword = checked && checked.ok && checked.appPassword
+      ? checked.appPassword : null;
     if (!checked.ok) {
       log.info('ldap: refusing the bind for ' + dn + ' (' + checked.reason +
                '): ' + checked.detail);
@@ -10852,7 +10941,12 @@ server.bind('', function (req, res, next) {
     detail: { anonymous: !dn,
               entryExists: dn ? !!getEntry(dn) : false,
               passwordVerified: verified,
-              note: verified
+              appPassword: appPassword
+                ? { id: appPassword.id, name: appPassword.name } : undefined,
+              note: appPassword
+                ? 'an app password scoped to LDAP ("' + appPassword.name +
+                  '") was verified — one factor'
+                : verified
                 ? 'the password was verified against this entry\'s userPassword'
                 : !dn
                   ? 'an anonymous bind: RFC 4511 section 5.1.1 defines it as ' +
@@ -10863,8 +10957,11 @@ server.bind('', function (req, res, next) {
   stats.recordAuthentication({
     presented: dn || '(anonymous)',
     protocol: 'ldap',
-    method: dn ? 'simple bind' : 'anonymous simple bind',
-    note: verified ? 'the password was verified' : 'no password was checked'
+    method: dn ? (appPassword ? 'simple bind (app password)' : 'simple bind')
+      : 'anonymous simple bind',
+    note: appPassword
+      ? 'an app password ("' + appPassword.name + '") was verified'
+      : verified ? 'the password was verified' : 'no password was checked'
   });
   // WHEN THIS CONNECTION BECAME THIS PERSON'S SESSION (2026-09-04). In LDAP the
   // connection IS the session (RFC 4511 section 4.2), and until this line there
@@ -13494,6 +13591,148 @@ function auditFederationDirectory(action, dn, attributes, created) {
   log.debug("Leaving auditFederationDirectory().");
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE A PARTNER'S SUBJECTS ARE LINKED TO (#109, 2026-09-22) — the
+// directory half of `federation/federation_links.ts`, handed to the register
+// on the same object its relationship functions are (see its header for why
+// that is not a new slot). This file owns where a link is stored and the one
+// rule only the store can keep: a link names ONE person.
+// ---------------------------------------------------------------------------
+function federationPerson(name) {
+  log.debug('Entering federationPerson().');
+  const located = locateEntry(String(name || ''));
+  const stored = located.stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving federationPerson(). Nobody.');
+    return null;
+  }
+  const username = usernameOfEntry(stored);
+  const membership = groupsOfUser(username);
+  log.debug('Leaving federationPerson(). ' + stored.dn);
+  return {
+    username: username,
+    dn: stored.dn,
+    mail: (stored.attributes.mail || []).slice(0),
+    links: (stored.attributes.federationlink || []).slice(0),
+    groups: (membership.groups || []).map(function (group) {
+      return { cn: group.cn, dn: group.dn };
+    })
+  };
+}
+
+// Every person in this realm carrying `value`. A walk, as
+// `entryBySpiffeSubject()` is: a federated sign-in asks once, and an index
+// that four doors (the sign-in, the console, SCIM, `ldapmodify`) would each
+// have to keep current is the stale answer this file refuses everywhere else.
+function peopleByFederationLink(value) {
+  log.debug('Entering peopleByFederationLink().');
+  const wanted = String(value || '');
+  const out = [];
+  if (!wanted) {
+    log.debug('Leaving peopleByFederationLink(). No value.');
+    return out;
+  }
+  eachEntryInRealm(function (stored) {
+    if ((stored.attributes.federationlink || []).indexOf(wanted) >= 0 &&
+        isPersonEntry(stored)) {
+      out.push({ username: usernameOfEntry(stored), dn: stored.dn });
+    }
+  });
+  log.debug('Leaving peopleByFederationLink(). ' + out.length);
+  return out;
+}
+
+// Every link made through one relationship, for the relationship's page.
+function federationLinksThrough(fedId) {
+  log.debug('Entering federationLinksThrough(). ' + fedId);
+  const prefix = String(fedId || '') + ' ';
+  const out = [];
+  if (prefix === ' ') {
+    log.debug('Leaving federationLinksThrough(). No relationship.');
+    return out;
+  }
+  eachEntryInRealm(function (stored) {
+    (stored.attributes.federationlink || []).forEach(function (value) {
+      if (String(value).indexOf(prefix) === 0 && isPersonEntry(stored)) {
+        out.push({ username: usernameOfEntry(stored), dn: stored.dn,
+                   value: String(value) });
+      }
+    });
+  });
+  out.sort(function (a, b) {
+    return a.username < b.username ? -1 : (a.username > b.username ? 1 : 0);
+  });
+  log.debug('Leaving federationLinksThrough(). ' + out.length);
+  return out;
+}
+
+// Where an entry created for `name` would go — for `fedSubjectPattern`, which
+// is tested against a DN and must have one for a person not created yet. It
+// is namePlan()'s answer without the persona it invents.
+function plannedPersonDn(name) {
+  log.debug('Entering plannedPersonDn().');
+  const already = existingUserEntry(String(name || ''));
+  log.debug('Leaving plannedPersonDn().');
+  return already ? already.dn : 'uid=' + String(name || '') + ',' + usersDn();
+}
+
+// ADD OR REMOVE ONE LINK ON ONE PERSON — the console's, `/admin-api`'s and
+// SCIM's write. A value already carried by SOMEBODY ELSE is refused
+// (STS-FED-0107): a link that names two people is a partner's subject that
+// signs in whichever the walk finds first, which is the name match this
+// replaced. A removal is handed to `noteAccountChange()` like every write of a
+// person, and that is what ends the sessions the partner made.
+function writeFederationLink(name, value, add, options) {
+  log.debug('Entering writeFederationLink(). add=' + !!add);
+  const located = locateEntry(String(name || ''));
+  const stored = located.stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving writeFederationLink(). No such person.');
+    return coded('STS-FED-0104', { ok: false, errors: ['There is no person ' +
+      'called "' + name + '" in this realm\'s directory.'] });
+  }
+  const have = (stored.attributes.federationlink || []).slice(0);
+  const at = have.indexOf(value);
+  if (!add && at < 0) {
+    log.debug('Leaving writeFederationLink(). Not carried.');
+    return coded('STS-FED-0108', { ok: false, errors: [usernameOfEntry(
+      stored) + ' carries no link "' + value + '".'] });
+  }
+  if (add && at >= 0) {
+    log.debug('Leaving writeFederationLink(). Already there.');
+    return { ok: true, changed: false, dn: stored.dn,
+             username: usernameOfEntry(stored), links: have };
+  }
+  if (add) {
+    const others = peopleByFederationLink(value).filter(function (one) {
+      return normalizeDn(one.dn) !== normalizeDn(stored.dn);
+    });
+    if (others.length) {
+      log.debug('Leaving writeFederationLink(). Somebody else holds it.');
+      return coded('STS-FED-0107', { ok: false, errors: ['That link is ' +
+        'already carried by ' + others.map(function (one) {
+          return one.username;
+        }).join(', ') + '. A partner\'s subject names one person here; ' +
+        'unlink it there first.'] });
+    }
+  }
+  const before = attributeSnapshot(stored);
+  const after = add ? have.concat([value])
+                    : have.filter(function (one) { return one !== value; });
+  if (after.length) {
+    stored.attributes.federationlink = after;
+  } else {
+    delete stored.attributes.federationlink;
+  }
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  noteAccountChange('updated', stored.dn, before, attributeSnapshot(stored),
+                    { linkKind: String((options && options.via) || '') });
+  log.debug('Leaving writeFederationLink(). Written.');
+  return { ok: true, changed: true, dn: stored.dn,
+           username: usernameOfEntry(stored), links: after };
+}
+
 federation.setDirectory({
   readFederation: readFederation,
   writeFederation: writeFederation,
@@ -13505,7 +13744,13 @@ federation.setDirectory({
     log.debug("Leaving containerDn().");
     return federationsDn();
   },
-  maxFederations: maxFederations
+  maxFederations: maxFederations,
+  // The people a partner's subjects are linked to (#109). See above.
+  federationPerson: federationPerson,
+  peopleByFederationLink: peopleByFederationLink,
+  federationLinksThrough: federationLinksThrough,
+  plannedPersonDn: plannedPersonDn,
+  writeFederationLink: writeFederationLink
 });
 
 // AND THE TWO APPLICATIONS THAT ARE THIS PROCESS, immediately after — because
@@ -13949,6 +14194,28 @@ function noteAccountChange(kind, dn, before, after, options) {
       log.error(errorCodes.tag('STS-LDAP-0097') + 'ldap: the lock on ' + dn +
                 ' changed and what the person holds could not be ended ' +
                 'with it: ' + ((e && e.message) || e));
+    }
+  }
+  // A FEDERATION LINK THAT WENT (#109, 2026-09-22) ends the sessions that
+  // partner signed the person in to — `federation/federation_links.ts`'s act,
+  // lazily required for account_state's reason, after this write returns. A
+  // DELETED entry takes its sessions with it by other means.
+  const linksBefore = (before && before.federationlink) || [];
+  const linksAfter = (after && after.federationlink) || [];
+  const unlinked = linksBefore.filter(function (value) {
+    return linksAfter.indexOf(value) < 0;
+  });
+  if (unlinked.length && String(kind).indexOf('deleted') !== 0) {
+    try {
+      require('../federation/federation_links').linksRemoved({
+        username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
+        removed: unlinked,
+        kind: String((options && options.linkKind) || kind) });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-FED-0110') + 'ldap: a federation link ' +
+                'was removed from ' + dn + ' and the sessions that partner ' +
+                'made could not be ended with it: ' +
+                ((e && e.message) || e));
     }
   }
   if (!accountObserver) {

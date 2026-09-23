@@ -1393,9 +1393,10 @@ class CryptoMetadata {
                 'vendored table below.',
         whatItDoesNot: 'It does not decrypt an assertion a partner ' +
                        'encrypted, and it does not consume a federated ' +
-                       'sign-out. THE GATE IS ON THE SIGNER AND NOT ON THE ' +
-                       'SUBJECT: past a verified signature any username is ' +
-                       'accepted. This is the one surface here where a ' +
+                       'sign-out. THE GATE IS ON THE SIGNER AND ON THE ' +
+                       'SUBJECT (#109): past a verified signature only the ' +
+                       'person the partner\'s subject is linked to is ' +
+                       'signed in. This is the one surface here where a ' +
                        'missing check is an authentication bypass for every ' +
                        'protocol in the process — see federation/CLAUDE.md.',
         envelopes: ['xmldsig', 'c14n', 'jws'],
@@ -1759,7 +1760,9 @@ class CryptoMetadata {
                   'permits a JWE-wrapped SET and neither this service nor ' +
                   'any deployed transmitter emits one, so what protects an ' +
                   'event in transit is TLS on the delivery endpoint, which ' +
-                  'is why `ssf.pushAllowInsecure` ships OFF.',
+                  'is why the receiver\'s certificate is verified — and, ' +
+                  'since #171, verified in product mode whatever ' +
+                  '`ssf.pushSkipTlsVerification` says.',
         decrypts: 'Nothing, for the same reason.',
         hashes: 'Whatever the chosen signature algorithm implies, and ' +
                 'nothing of its own: a SET carries no digest of anything the ' +

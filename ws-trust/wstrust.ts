@@ -620,8 +620,12 @@ class WsTrust {
       // distinguished "no such user" from "wrong password" would be the account
       // enumeration answer over a protocol whose whole audience is machines;
       // the reason goes to the log instead.
+      // `door: 'wstrust'` (#101): a password-only door, so in product a
+      // person with a second factor is refused their password here — with
+      // this same fault — and an app password scoped to `wstrust` is
+      // accepted instead.
       const checked = credentials.verify(user, pass, {
-        via: 'a WS-Security UsernameToken'
+        via: 'a WS-Security UsernameToken', door: 'wstrust'
       });
       if (!checked.ok) {
         log.info('wstrust: the UsernameToken for "' + user + '" was refused (' +
@@ -633,9 +637,16 @@ class WsTrust {
       }
       log.debug("Leaving WsTrust.requesterCredential(). A UsernameToken " +
                 "for " + user + ".");
-      return { ok: true, subject: user, method: 'WS-Security UsernameToken',
+      // AN APP PASSWORD IS SAID SO (#101): one factor, and the row names it.
+      const viaApp = checked.reason === 'app-password' && checked.appPassword;
+      return { ok: true, subject: user,
+               method: viaApp ? 'WS-Security UsernameToken (app password)'
+                 : 'WS-Security UsernameToken',
                kind: 'password',
-               note: mode.verifiesCredentials()
+               note: viaApp
+                 ? 'An app password scoped to WS-Trust ("' +
+                   checked.appPassword.name + '") was verified.'
+                 : mode.verifiesCredentials()
                  ? 'The password was verified against the stored userPassword.'
                  : 'The password is not checked in development mode, except ' +
                    'for the reserved string "invalid".' };

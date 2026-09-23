@@ -757,9 +757,25 @@ Now an existing entry is used and updated, and a missing one is left missing for
 `authn.startSession()` to refuse (`STS-AUTHN-0180`; the relationship's own page answers
 `STS-FED-0090`). **`fedUpdateUserAttributes`** (on by default) is the second switch:
 `applyFederatedAttributes()` takes `{ created }` and writes the partner's values on a
-returning person only while it is on, while the three facts about where the person came
+returning person only while it is on, while the facts about where the person came
 from are recorded either way. `tests/federation_provisioning.js` drives both shapes
 through a real OIDC federated sign-in.
+
+**`federationLink` (#109, 2026-09-22) is the one of those attributes that DECIDES
+anything**: `<relationship> <issuer> <subject>`, the partner's stable identifier for
+the person paired with the relationship it came through, and what a partner signs in
+by — `../federation/CLAUDE.md`, *WHICH PEOPLE A PARTNER MAY ASSERT*. It replaced
+`federationSubject`, which recorded subjects without their partner. This file keeps
+the one rule only the store can keep, **a link names one person** — `writeFederationLink()`
+refuses a value somebody else carries (`STS-FED-0107`) — and hands every REMOVED value,
+from any door, `ldapmodify` included, to `federation_links.ts`'s `linksRemoved()` from
+`noteAccountChange()`, which ends the sessions that partner made. `applyFederatedAttributes()`
+writes the link it is handed and derives none; `autoCreateUser()` creates a federated
+person only when the payload says `create: true`, which is the subject decision's call.
+The five functions the register reads (`federationPerson()`, `peopleByFederationLink()`,
+`federationLinksThrough()`, `plannedPersonDn()`, `writeFederationLink()`) ride on the
+object `federation.setDirectory()` already takes — the same door, not a new slot. A
+lookup by link is a walk of the realm, as `entryBySpiffeSubject()` is.
 
 ## `entryUUID`: THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES, AND A PERSON'S `sub` (2026-09-14)
 
@@ -2529,3 +2545,16 @@ the handler), a SCIM create of a User or a Group, and `POST
   subject there; a single process keeps random values.
   `directory_create_claims.ts`'s header has it, and
   `tests/cluster_autocreate_subject.js` holds both halves.
+
+## A SECOND-FACTOR PERSON'S BIND, AND `stsAppPassword` (2026-09-22, #101)
+
+The simple bind passes `door: 'ldap'` to `credentials.verify()`, so in product
+a person who holds or must hold a second factor is refused their own password
+with the same 49 a wrong one gets, counted against the bind limit as one, and
+binds with an app password scoped to `ldap`; both audit rows then say an app
+password was used. `authn/CLAUDE.md` owns the rule. This module adds three
+hooks to `credentials.setDirectory()` — `readAppPasswords`, `writeAppPasswords`
+(one single-valued JSON value, assigned whole, `null` deletes) and `isPerson`
+(`isPersonEntry()` by placement, never a name) — and `stsAppPassword` is on
+`OWN_NAMES`, `SECRET_ATTRIBUTES` (withheld from every read, a verifier like
+`userPassword`) and `persistence/directory_merge.js`'s `SINGLE`.

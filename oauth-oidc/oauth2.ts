@@ -336,6 +336,8 @@ import websecurity = require('../common/websecurity');
 import clusterClaims = require('../cluster/cluster_claims');
 import clusterBarrier = require('../cluster/cluster_barrier');
 import capabilities = require('../cluster/cluster_capabilities');
+// A leaf: a client's registered `jwks_uri`, fetched and cached (#120).
+import clientJwks = require('./client_jwks');
 
 // A loose JSON-shaped object: the tokens, records, requests and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -1195,6 +1197,9 @@ const ID_TOKEN_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS;
 // The algorithms `helpers.signJwt()` signs with this realm's own RSA or curve
 // key in process (#139) — every other one is post-quantum (the pool) or HMAC
 // (the client's secret) and goes through `signJwtAsAsync()`.
+// OpenID Connect Discovery section 2's link relation (#119).
+const WEBFINGER_ISSUER_REL = 'http://openid.net/specs/connect/1.0/issuer';
+
 const OWN_SYNC_SIGNING = /^(RS|PS|ES)(256|384|512)$|^ES256K$|^EdDSA$/;
 
 // ---------------------------------------------------------------------------
@@ -2159,6 +2164,199 @@ class OAuth2Server {
   // the first segment: a profile id is one segment by construction (see
   // ID_SHAPE), so `/tenant1/extra/.well-known/...` selects `tenant1` rather
   // than nothing.
+  // -------------------------------------------------------------------------
+  // WHICH REALM AND WHICH AUTHORIZATION SERVER A DISCOVERY PATH NAMES (#119,
+  // rcbj's decision: discovery follows the realm model on the common
+  // listener).
+  //
+  // An issuer here is `https://host[/realm/<id>][/<server>]`, and the two
+  // discovery shapes put that path in two places. OIDC Discovery section 4
+  // APPENDS the well-known segment, so `/realm/acme/t1/.well-known/…` arrives
+  // with the realm already entered by `app.js` and only `t1` left. RFC 8414
+  // section 3.1 INSERTS it, so `/.well-known/…/realm/acme/t1` arrives at the
+  // host root with the whole issuer path after it — which, until #119, was
+  // answered from the DEFAULT realm with an authorization server called
+  // `realm` created on the spot, so a realm's RFC 8414 document named the
+  // wrong issuer and the wrong keys.
+  //
+  // So one grammar for both: `[realm/<id>][/<server>]`, a realm that exists
+  // (named only where no realm is entered yet) and at most one server segment
+  // of `authorization_servers.ts`'s shape. Anything else — an unknown realm,
+  // `/t1/x`, a nested `realm/` — names nothing, and the answer is Express's
+  // 404 with no server created: a document claiming an issuer nothing issues
+  // from is what Discovery section 4.3 tells a client to refuse.
+  // -------------------------------------------------------------------------
+  issuerPathTarget(raw: unknown): Json {
+    const { log, realms, authorizationServers } = this.deps;
+    log.debug("Entering OAuth2Server.issuerPathTarget().");
+    let segments = String(raw || '').split('/').filter(Boolean);
+    let realm: Json = realms.current();
+    if (segments[0] === 'realm') {
+      const named = segments.length >= 2 && realms.isDefault()
+        ? realms.get(segments[1]) : null;
+      if (!named || segments[1] === realms.DEFAULT_ID) {
+        log.debug("Leaving OAuth2Server.issuerPathTarget(). No such realm.");
+        return null;
+      }
+      realm = named;
+      segments = segments.slice(2);
+    }
+    if (segments.length > 1 || (segments.length === 1 &&
+        !authorizationServers.ID_SHAPE.test(segments[0]))) {
+      log.debug("Leaving OAuth2Server.issuerPathTarget(). Not an issuer " +
+                "path.");
+      return null;
+    }
+    log.debug("Leaving OAuth2Server.issuerPathTarget().");
+    return { realm: realm, server: segments[0] || '' };
+  }
+
+  // Answers a discovery request for the issuer path `raw` with `send`, inside
+  // the realm the path names — or passes it on to Express's 404.
+  private discoveryForPath(req: Req, res: Res, next: Json, raw: unknown,
+                           send: (req: Req, res: Res) => void): void {
+    const { log, realms, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.discoveryForPath().");
+    const target = self.issuerPathTarget(raw);
+    if (!target) {
+      errorCodes.mark(res, 'STS-OAUTH-0594');
+      log.debug("Leaving OAuth2Server.discoveryForPath(). Names nothing.");
+      next();
+      return;
+    }
+    realms.run(target.realm, function () {
+      req.__asProfile = self.profileFromPath(target.server);
+      send(req, res);
+    });
+    log.debug("Leaving OAuth2Server.discoveryForPath().");
+  }
+
+  // -------------------------------------------------------------------------
+  // WEBFINGER — OPENID CONNECT DISCOVERY SECTION 2 AND RFC 7033 (#119).
+  //
+  // At the host root, as RFC 7033 section 4 requires, and answering for every
+  // realm, because each realm has a DNS domain of its own and a WebFinger
+  // resource names a domain. rcbj's decisions:
+  //
+  //   * `acct:alice@acme.example`, a bare `alice@acme.example`, and a host
+  //     (`acme.example`, `acme.example:443`) resolve BY DOMAIN to the realm
+  //     whose domain it is — the default realm's is `global.domain` — and
+  //     answer that realm's issuer. **The person is never looked up**, so the
+  //     endpoint cannot enumerate accounts: every name at a known domain gets
+  //     the same answer, and an unknown domain gets 404.
+  //   * An `https:` URL on THIS service resolves by its PATH, the realm model
+  //     on the common listener: `https://host/realm/acme` is realm acme's
+  //     issuer, `https://host/` the default realm's. An `https:` URL whose host
+  //     is a realm's domain resolves by that domain.
+  //
+  // RFC 7033 section 5 makes CORS a MUST and recommends `*`; the answer is a
+  // public issuer URL with no credential behind it, so this is the one place
+  // `common/cors.js`'s allowlist is overruled, on purpose.
+  // -------------------------------------------------------------------------
+  webfingerTarget(req: Req, resource: string): Json {
+    const { log, realms, baseUrlOf } = this.deps;
+    log.debug("Entering OAuth2Server.webfingerTarget().");
+    const text = String(resource || '').trim();
+    let host = '';
+    let path = '';
+    let isUrl = false;
+    if (/^acct:/i.test(text) || /^[^:/]+@[^@/]+$/.test(text)) {
+      host = text.replace(/^acct:/i, '').split('@').pop() || '';
+    } else if (/^https?:\/\//i.test(text)) {
+      try {
+        const url = new URL(text);
+        host = url.host;
+        path = url.pathname;
+        isUrl = true;
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.webfingerTarget(): " +
+                  ((e && e.message) || e));
+        // Not a URL: nothing it names.
+        host = '';
+      }
+    } else if (/^[A-Za-z0-9.-]+(:\d+)?$/.test(text)) {
+      host = text;
+    }
+    if (!host) {
+      log.debug("Leaving OAuth2Server.webfingerTarget(). Unreadable.");
+      return { malformed: true };
+    }
+    const bare = host.toLowerCase().replace(/:\d+$/, '');
+    const byDomain = realms.list().filter(function (one: Json) {
+      return String(realms.domainOf(one) || '').toLowerCase() === bare;
+    })[0];
+    if (byDomain) {
+      log.debug("Leaving OAuth2Server.webfingerTarget(). By domain.");
+      return { realm: byDomain };
+    }
+    let ownHost = '';
+    try {
+      ownHost = new URL(baseUrlOf(req)).host.toLowerCase();
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.webfingerTarget(): " +
+                ((e && e.message) || e));
+      // No base to compare with: only a domain can match.
+      ownHost = '';
+    }
+    if (isUrl && host.toLowerCase() === ownHost) {
+      const match = /^\/realm\/([^/]+)/.exec(path);
+      const realm = match ? realms.get(decodeURIComponent(match[1]))
+                          : realms.get(realms.DEFAULT_ID);
+      log.debug("Leaving OAuth2Server.webfingerTarget(). By path.");
+      return realm ? { realm: realm } : {};
+    }
+    log.debug("Leaving OAuth2Server.webfingerTarget(). Unknown.");
+    return {};
+  }
+
+  private webfingerEndpoint(req: Req, res: Res): void {
+    const { log, realms, baseUrlOf, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering the WebFinger endpoint.");
+    // RFC 7033 section 5.
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'no-store');
+    const query = req.query || {};
+    const resource = query.resource;
+    if (typeof resource !== 'string' || !resource) {
+      errorCodes.mark(res, 'STS-OAUTH-0592');
+      log.debug("Leaving the WebFinger endpoint. No single resource.");
+      res.status(400).type('text/plain')
+        .send('RFC 7033 section 4.2: the query must carry the resource ' +
+              'parameter exactly once.');
+      return;
+    }
+    const target = self.webfingerTarget(req, resource);
+    if (target.malformed) {
+      errorCodes.mark(res, 'STS-OAUTH-0592');
+      log.debug("Leaving the WebFinger endpoint. Malformed.");
+      res.status(400).type('text/plain')
+        .send('The resource is not an acct: URI, an e-mail address, an ' +
+              'https URL or a host (OpenID Connect Discovery section 2.1).');
+      return;
+    }
+    if (!target.realm) {
+      errorCodes.mark(res, 'STS-OAUTH-0593');
+      log.debug("Leaving the WebFinger endpoint. Unknown.");
+      res.status(404).type('text/plain')
+        .send('This service holds no information about that resource ' +
+              '(RFC 7033 section 4.2).');
+      return;
+    }
+    const rels = ([] as string[]).concat(query.rel === undefined ? []
+                                                               : query.rel)
+      .map(String);
+    const issuer = realms.run(target.realm, function () {
+      return self.issuerOf(baseUrlOf(req));
+    });
+    const links = (!rels.length || rels.indexOf(WEBFINGER_ISSUER_REL) >= 0)
+      ? [{ rel: WEBFINGER_ISSUER_REL, href: issuer }] : [];
+    res.status(200).type('application/jrd+json')
+      .send(JSON.stringify({ subject: resource, links: links }, null, 2));
+    log.debug("Leaving the WebFinger endpoint. " + issuer);
+  }
+
   private profileFromPath(raw: unknown): string {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering OAuth2Server.profileFromPath().");
@@ -2349,9 +2547,8 @@ class OAuth2Server {
   //     which says exactly the right thing. (`acr_values_supported` left this
   //     list on 2026-09-13, when RFC 9470 made acr_values something the
   //     authorization endpoint honours; asMetadata() publishes it.)
-  //   * WebFinger (section 2). Issuer discovery from an e-mail address is a
-  //     separate endpoint (/.well-known/webfinger) and this service does not
-  //     have one; the issuer is expected to be known already.
+  //   (WebFinger, section 2, is its own endpoint since #119 —
+  //   webfingerEndpoint().)
   //
   // One honesty note that has no metadata member to live in, so it lives here:
   // since #118 the ID Token carries the scope claims only for
@@ -6329,7 +6526,9 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.authorizationReturnQuery().");
     const jar = req.stsJar;
-    const stepping = stepUp.requirementOf(q).present;
+    // With the client's registered defaults (#120).
+    const stepping = stepUp.requirementOf(q,
+      this.deps.applications.registrationOf(q.client_id)).present;
     if (!jar) {
       log.debug("Leaving OAuth2Server.authorizationReturnQuery(). A plain " +
                 "request.");
@@ -6862,6 +7061,21 @@ class OAuth2Server {
     // Note where this sits: above the session check, so it is answered on the
     // first pass and the person is never sent to sign in for a request that was
     // going to be refused when they came back.
+    // RFC 7591 SECTION 2 (#120, in every mode): a client that REGISTERED its
+    // response_types is held to them — unauthorized_client, RFC 6749 section
+    // 4.1.2.1's word for a client not allowed this method.
+    const registeredFlows = applications.registeredFlowsOf(q.client_id);
+    const askedType = String(q.response_type || '').split(/\s+/)
+      .filter(Boolean).sort().join(' ');
+    if (registeredFlows && registeredFlows.response_types &&
+        registeredFlows.response_types.indexOf(askedType) < 0) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A response " +
+                "type the client did not register.");
+      return redirectable('STS-OAUTH-0597', 'unauthorized_client',
+        'Client "' + q.client_id + '" registered response_types ' +
+        JSON.stringify(registeredFlows.response_types) + ', and this ' +
+        'request asks for "' + q.response_type + '" (RFC 7591 section 2).');
+    }
     const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
                                                          client:
                                                            registeredClient });
@@ -7363,7 +7577,10 @@ class OAuth2Server {
     // requirements` in every mode. `prompt=none` cannot send anybody anywhere
     // and is answered `login_required`. `step_up.ts` decides all four.
     // -------------------------------------------------------------------------
-    const stepUpNeed = stepUp.requirementOf(q);
+    // OpenID Connect Registration section 2's default_max_age and
+    // default_acr_values apply where the request names neither (#120).
+    const stepUpNeed = stepUp.requirementOf(q,
+      applications.registrationOf(q.client_id));
     const stepUpHonoured = String(((req.stsJar && req.stsJar.outer) || q)
       .step_up_honoured || '') === '1';
     const promptNone = String(q.prompt || '').split(/\s+/).indexOf('none') >= 0;
@@ -9120,7 +9337,30 @@ class OAuth2Server {
     const grant = String(body.grant_type || '');
     res.set('Cache-Control', 'no-store');
     const presented = self.presentedClientAuthentication(req, body);
-    const registeredClient = applications.clientConfigOf(client.client_id);
+    let registeredClient = applications.clientConfigOf(client.client_id);
+    // A KEY WRITTEN BY ANOTHER PROCESS A MOMENT AGO (2026-09-23). The console
+    // and the portal issue their private_key_jwt key on first use (#138) and
+    // then ask for a token over the back channel inside the same request, so
+    // the key is on the entry in the process that wrote it and — until the
+    // change log reaches this one — not here: in a fresh realm in the
+    // single-node suite the sign-in was refused as a client with nothing on
+    // file (`sts_hosted_surface_renewal`). A confidential client that presents
+    // an assertion and has nothing to check it against is exactly that case,
+    // so this process catches up once, proving everything committed before now
+    // is applied, and reads the entry again. Nothing else pays for it.
+    if (registeredClient && registeredClient.known && body.client_assertion &&
+        bcp.isConfidential(registeredClient) &&
+        !bcp.credentialOnFile(registeredClient)) {
+      try {
+        await require('../persistence/persistence').syncNow();
+      } catch (e) {
+        // A store that cannot be read leaves the entry as this process holds
+        // it, and the refusal below says what that is.
+        log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                  ((e && e.message) || e));
+      }
+      registeredClient = applications.clientConfigOf(client.client_id);
+    }
 
     // FAPI (#138): one client, however many ways the request names it.
     const identified = fapi.clientIdentifierRefusal(
@@ -9657,6 +9897,24 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return self.oauthError(res, 401, fapiAuth.error, fapiAuth.description);
     }
+    // RFC 7591 SECTION 2 (#120, in every mode, rcbj's decision): a client
+    // that REGISTERED its grant_types is held to them. A client_id nobody
+    // registered, and a registration naming no list, are not.
+    const registeredFlows = client.client_id
+      ? applications.registeredFlowsOf(client.client_id) : null;
+    if (registeredFlows && registeredFlows.grant_types &&
+        registeredFlows.grant_types.indexOf(
+          String(body.grant_type || '')) < 0) {
+      log.debug("Leaving the token endpoint. A grant type the client did " +
+                "not register.");
+      errorCodes.mark(res, 'STS-OAUTH-0598');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 400, 'unauthorized_client',
+        'Client "' + client.client_id + '" registered grant_types ' +
+        JSON.stringify(registeredFlows.grant_types) + ', and this request ' +
+        'is the ' + String(body.grant_type || '') + ' grant (RFC 7591 ' +
+        'section 2).');
+    }
     // FAPI 1.0 Advanced section 8.6 (#139): a client assertion is signed PS256
     // or ES256, whatever the client registered.
     // FAPI 2.0 section 5.3.2.1 item 13 (#140): a client assertion's iat or
@@ -9934,6 +10192,20 @@ class OAuth2Server {
                  'with an access token and no refresh token — a refresh ' +
                  'chain belonging to no client could not be checked against ' +
                  'the client redeeming it.');
+        opts.withRefresh = false;
+      }
+      // RFC 7591 SECTION 2 (#120): a client that registered its grant_types
+      // without `refresh_token` gets no refresh token — RECORDED AND NOT
+      // REFUSED, for 0298's reason. Issuing one it could never redeem (the
+      // grant is refused above, 0598) is the half a token set #34 refuses to
+      // hand out.
+      if (opts.withRefresh !== false && registeredFlows &&
+          registeredFlows.grant_types &&
+          registeredFlows.grant_types.indexOf('refresh_token') < 0) {
+        log.info(errorCodes.tag('STS-OAUTH-0600') + 'oauth2: "' +
+                 client.client_id + '" registered no refresh_token grant, ' +
+                 'so the ' + grant + ' grant is answered with no refresh ' +
+                 'token.');
         opts.withRefresh = false;
       }
       // THE ROLE GATE, HERE FOR THE REASON THE PARAGRAPH ABOVE GIVES ABOUT THE
@@ -12966,7 +13238,7 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.clientRecord(). client_id=" + clientId);
     const issuedAt = nowSec();
-    const record = Object.assign({}, metadata, {
+    const record = Object.assign({}, self.withRegistrationDefaults(metadata), {
       client_id: clientId,
       client_id_issued_at: issuedAt,
       client_secret: secret,
@@ -12975,8 +13247,132 @@ class OAuth2Server {
       registration_access_token: token,
       registration_client_uri: base + '/oauth2/register/' + clientId
     });
+    // A PUBLIC CLIENT IS ISSUED NO SECRET (#120): `none` authenticates with
+    // nothing, and a secret it holds is a credential nobody checks.
+    if (record.token_endpoint_auth_method === 'none') {
+      delete record.client_secret;
+      delete record.client_secret_expires_at;
+    }
     log.debug("Leaving OAuth2Server.clientRecord().");
     return record;
+  }
+
+  // -------------------------------------------------------------------------
+  // Every client a request NAMES, read unverified, for the key prefetch
+  // above (#120): `client_id` in the query or a form body, the Basic user, a
+  // client assertion's `sub`, and the `client_id` claim of a presented access
+  // token (UserInfo has no other). Chooses what is fetched and nothing else.
+  // -------------------------------------------------------------------------
+  presentedClientIdsOf(req: Req): string[] {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.presentedClientIdsOf().");
+    const ids: string[] = [];
+    const add = function (value: any): void {
+      const id = typeof value === 'string' ? value : '';
+      if (id && id.length <= 512 && ids.indexOf(id) < 0) {
+        ids.push(id);
+      }
+    };
+    const payloadOf = function (jwt: any): any {
+      try {
+        return JSON.parse(Buffer.from(String(jwt || '').split('.')[1] || '',
+                                      'base64url').toString('utf8'));
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.presentedClientIdsOf(): " +
+                  ((e && e.message) || e));
+        // Not a JWT: it names nobody.
+        return null;
+      }
+    };
+    const query = req.query || {};
+    add(query.client_id);
+    const type = String((req.headers || {})['content-type'] || '');
+    if (/^application\/x-www-form-urlencoded/i.test(type) &&
+        typeof req.body === 'string') {
+      const form = new URLSearchParams(req.body);
+      add(form.get('client_id'));
+      const assertion = payloadOf(form.get('client_assertion'));
+      add(assertion && assertion.sub);
+      const token = payloadOf(form.get('access_token'));
+      add(token && token.client_id);
+    }
+    const authorization = String((req.headers || {}).authorization || '');
+    const basic = /^Basic\s+(\S+)$/i.exec(authorization);
+    if (basic) {
+      const user = Buffer.from(basic[1], 'base64').toString('utf8')
+        .split(':')[0];
+      try {
+        add(decodeURIComponent(user));
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.presentedClientIdsOf(): " +
+                  ((e && e.message) || e));
+        // Not form-encoded: taken as it is.
+        add(user);
+      }
+    }
+    const bearer = /^(?:Bearer|DPoP)\s+(\S+)$/i.exec(authorization);
+    if (bearer) {
+      const token = payloadOf(bearer[1]);
+      add(token && token.client_id);
+    }
+    log.debug("Leaving OAuth2Server.presentedClientIdsOf(). " + ids.length +
+              " client(s).");
+    return ids;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ENCRYPTION-KEY READERS ARE SYNCHRONOUS (#120), so a registration whose
+  // keys are at a `jwks_uri` and which asks for an encrypted response (the ID
+  // Token, UserInfo, RFC 9701 introspection, JARM) has the set fetched here,
+  // before the key checks read `client_jwks.js`'s cache. Only an https URI:
+  // anything else is refused by `oidcRegistrationProblem()` below and is not
+  // dialled first. A failed fetch refuses nothing by itself — the key check
+  // that needed it does, naming the fetch.
+  // -------------------------------------------------------------------------
+  async prefetchRegisteredKeys(metadata: Json): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.prefetchRegisteredKeys().");
+    const m = metadata || {};
+    const wantsKey = ['id_token_encrypted_response_alg',
+                      'userinfo_encrypted_response_alg',
+                      'introspection_encrypted_response_alg',
+                      'authorization_encrypted_response_alg']
+      .some(function (member: string): boolean {
+        return !!m[member];
+      });
+    if (!wantsKey || m.jwks || typeof m.jwks_uri !== 'string' ||
+        !/^https:\/\//i.test(m.jwks_uri)) {
+      log.debug("Leaving OAuth2Server.prefetchRegisteredKeys(). Nothing to " +
+                "fetch.");
+      return;
+    }
+    await clientJwks.ensure(m.jwks_uri, '');
+    log.debug("Leaving OAuth2Server.prefetchRegisteredKeys().");
+  }
+
+  // -------------------------------------------------------------------------
+  // RFC 7591 SECTION 3.2.1 (#120): "the authorization server MUST return all
+  // registered metadata about the client, including any fields provisioned by
+  // the authorization server itself" — so the defaults section 2 and OpenID
+  // Connect Registration section 2 name are APPLIED, stored and returned:
+  // `token_endpoint_auth_method` client_secret_basic, `grant_types`
+  // authorization_code, `response_types` code, `application_type` web. The
+  // grant and response types are what the endpoints then hold the client to.
+  // -------------------------------------------------------------------------
+  withRegistrationDefaults(metadata: Json): Json {
+    const { log, applications } = this.deps;
+    log.debug("Entering OAuth2Server.withRegistrationDefaults().");
+    const lists = applications.grantsAndResponseTypesOf(metadata);
+    const out = Object.assign({}, metadata, {
+      token_endpoint_auth_method:
+        String((metadata || {}).token_endpoint_auth_method ||
+               'client_secret_basic'),
+      grant_types: lists.grant_types,
+      response_types: lists.response_types,
+      application_type: String((metadata || {}).application_type || 'web')
+    });
+    log.debug("Leaving OAuth2Server.withRegistrationDefaults().");
+    return out;
   }
 
   // THE WRAPPER, because the endpoint below is asynchronous since software
@@ -13201,6 +13597,9 @@ class OAuth2Server {
     // service cannot sign or encrypt with would be accepted and then fail at
     // every JWT introspection response, which is the client finding out at the
     // wrong endpoint.
+    // A `jwks_uri` whose keys an encrypted response would need is fetched
+    // now (#120), so the key checks below find them in the cache.
+    await self.prefetchRegisteredKeys(metadata);
     const addressProblem =
       applications.registrationUriProblem(metadata) ||
       applications.introspectionResponseProblem(metadata) ||
@@ -13211,6 +13610,7 @@ class OAuth2Server {
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
+      applications.oidcRegistrationProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
       applications.authorizationDetailsMetadataProblem(metadata) ||
@@ -13262,7 +13662,10 @@ class OAuth2Server {
                             '') +
                      randomId(Number(
                        config.value('oauth2.registeredClientIdBytes')) || 8);
-    const record = self.clientRecord(base, metadata, clientId,
+    // The management URI names the authorization server the client
+    // registered at (#120): `/{id}/oauth2/register/{client_id}` for a named
+    // one, which is where its RFC 7592 routes are.
+    const record = self.clientRecord(self.asBaseOf(req), metadata, clientId,
                                      randomId(secretBytes),
                                      randomId(secretBytes));
     // Into the directory, under ou=applications. The response below is composed
@@ -13298,15 +13701,20 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.withRegisteredClient(). client_id=" +
               named.value.client_id);
     const record = applications.registrationOf(named.value.client_id);
+    const auth = (req.headers['authorization'] || '')
+      .replace(/^Bearer\s+/i, '');
+    // RFC 7592 SECTION 2 (#120): an unknown client is a 401, not a 404 — so
+    // the answer does not say which client_ids exist — and the token used
+    // "SHOULD be immediately revoked", being another client's.
     if (!record) {
+      applications.revokeRegistrationAccessToken(auth);
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
       log.debug("Leaving OAuth2Server.withRegisteredClient(). No such client.");
       errorCodes.mark(res, 'STS-OAUTH-0235');
       log.debug("Leaving OAuth2Server.withRegisteredClient().");
-      return self.oauthError(res, 404, 'invalid_client',
-                             'No such registered client.');
+      return self.oauthError(res, 401, 'invalid_token',
+                             'The registration access token does not match.');
     }
-    const auth = (req.headers['authorization'] || '')
-      .replace(/^Bearer\s+/i, '');
     // CONSTANT TIME, AND NEVER AGAINST AN EMPTY TOKEN (2026-09-12, in every
     // mode). This was `auth !== record.registration_access_token`: a comparison
     // whose running time leaks how much of a guess was right, and — the sharper
@@ -13375,6 +13783,28 @@ class OAuth2Server {
       return self.statementRefused(res, bound);
     }
     const metadata = resolved.metadata;
+    // RFC 7592 SECTION 2.2 (#120): the update carries the client's own
+    // client_id, and a client_secret only if it is the one issued — either
+    // was overwritten silently until this date.
+    if (String(metadata.client_id || '') !== String(record.client_id)) {
+      log.debug("Leaving the client update endpoint. The client_id does not " +
+                "match.");
+      errorCodes.mark(res, 'STS-OAUTH-0595');
+      log.debug("Leaving OAuth2Server.updateClient().");
+      return self.oauthError(res, 400, 'invalid_request',
+        'RFC 7592 section 2.2: the update must carry client_id, and it must ' +
+        'be "' + record.client_id + '".');
+    }
+    if (metadata.client_secret !== undefined &&
+        String(metadata.client_secret) !== String(record.client_secret || '')) {
+      log.debug("Leaving the client update endpoint. The client_secret does " +
+                "not match.");
+      errorCodes.mark(res, 'STS-OAUTH-0595');
+      log.debug("Leaving OAuth2Server.updateClient().");
+      return self.oauthError(res, 400, 'invalid_request',
+        'RFC 7592 section 2.2: a client_secret in the update must be the one ' +
+        'this server issued.');
+    }
     if (metadata.redirect_uris && !Array.isArray(metadata.redirect_uris)) {
       log.debug("Leaving the client update endpoint. redirect_uris is not an " +
                 "array.");
@@ -13383,6 +13813,9 @@ class OAuth2Server {
       return self.oauthError(res, 400, 'invalid_redirect_uri',
                         'redirect_uris must be an array.');
     }
+    // A `jwks_uri` whose keys an encrypted response would need is fetched
+    // now (#120), so the key checks below find them in the cache.
+    await self.prefetchRegisteredKeys(metadata);
     const addressProblem =
       applications.registrationUriProblem(metadata) ||
       applications.introspectionResponseProblem(metadata) ||
@@ -13391,6 +13824,7 @@ class OAuth2Server {
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
+      applications.oidcRegistrationProblem(metadata) ||
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
       applications.authorizationDetailsMetadataProblem(metadata) ||
@@ -13422,7 +13856,7 @@ class OAuth2Server {
       return self.oauthError(res, 400, registrationCheck.error,
                         registrationCheck.description);
     }
-    const updated = Object.assign({}, metadata, {
+    const updated = Object.assign({}, self.withRegistrationDefaults(metadata), {
       client_id: record.client_id,
       client_id_issued_at: record.client_id_issued_at,
       client_secret: record.client_secret,
@@ -13437,6 +13871,57 @@ class OAuth2Server {
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify(updated, null, 2));
     log.debug("Leaving OAuth2Server.updateClient().");
+  }
+
+  // RFC 7592's three operations, as methods so that `/oauth2/register/...`
+  // and `/{id}/oauth2/register/...` (#120) are the same handlers.
+  private registrationRead(req: Req, res: Res): void {
+    const { log } = this.deps;
+    log.debug("Entering the client read endpoint.");
+    this.withRegisteredClient(req, res, function (record) {
+      // `no-store`: the document carries the client_secret and the
+      // registration access token (RFC 7592 section 2.1), which the POST that
+      // minted them already sent with this header and these two did not until
+      // 2026-09-13.
+      res.status(200)
+         .type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(record, null, 2));
+    });
+    log.debug("Leaving the client read endpoint.");
+  }
+
+  private registrationUpdate(req: Req, res: Res): void {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering the client update endpoint.");
+    self.withRegisteredClient(req, res, function (record) {
+      self.updateClient(req, res, record).catch(function (e) {
+        log.error(errorCodes.tag('STS-OAUTH-0228') + 'the client update ' +
+                  'endpoint failed: ' + (e && e.stack ? e.stack : e));
+        if (!res.headersSent) {
+          errorCodes.mark(res, 'STS-OAUTH-0228');
+          self.oauthError(res, 500, 'server_error', e.message);
+        }
+      });
+    });
+    log.debug("Leaving the client update endpoint.");
+  }
+
+  private registrationDelete(req: Req, res: Res): void {
+    const { log, applications } = this.deps;
+    log.debug("Entering the client delete endpoint.");
+    this.withRegisteredClient(req, res, function (record) {
+      // The REGISTRATION goes and the application entry stays, with
+      // appRegistered FALSE and the credentials stripped off it. See
+      // forgetRegistration(): this registry records what this service has
+      // seen, and losing that an application was ever here because its
+      // registration was withdrawn would be losing the fact rather than the
+      // configuration.
+      applications.forgetRegistration(record.client_id);
+      res.status(204).end();
+    });
+    log.debug("Leaving the client delete endpoint.");
   }
 
   // -------------------------------------------------------------------------
@@ -13480,18 +13965,51 @@ class OAuth2Server {
     // -------------------------------------------------------------------------
     app.use(dpop.proofClaims());
 
+    // -------------------------------------------------------------------------
+    // A CLIENT'S `jwks_uri`, FETCHED BEFORE AN ENDPOINT THAT MAY ENCRYPT TO IT
+    // (#120). The key readers behind an encrypted ID Token, UserInfo response,
+    // RFC 9701 introspection response and JARM response are synchronous, so
+    // the five endpoints that produce them wait here for `client_jwks.js` to
+    // hold the set — which dials nothing for a client that registered `jwks`,
+    // no `jwks_uri`, or no encrypted response. The client ids are read
+    // UNVERIFIED and choose only what is fetched; nothing is decided on them.
+    // Never refuses: a failed fetch is refused, by name, where the key was
+    // needed.
+    // -------------------------------------------------------------------------
+    app.use(['/oauth2/authorize', '/oauth2/token', '/oauth2/par',
+             '/oauth2/userinfo', '/oauth2/introspect',
+             '/:as/oauth2/authorize', '/:as/oauth2/token', '/:as/oauth2/par',
+             '/:as/oauth2/userinfo', '/:as/oauth2/introspect'],
+            function (req: Req, res: Res, next: () => void): void {
+      log.debug("Entering the client key prefetch.");
+      Promise.all(self.presentedClientIdsOf(req).map(function (id: string) {
+        return clientJwks.ensureFor(id, '');
+      })).then(function () {
+        log.debug("Leaving the client key prefetch.");
+        next();
+      }, function (e: any) {
+        log.debug("Caught in the client key prefetch: " +
+                  ((e && e.message) || e));
+        // ensureFor() never rejects; the request goes on regardless.
+        next();
+      });
+    });
+
     app.get('/.well-known/oauth-authorization-server',
             self.sendAsMetadata.bind(self));
 
     // Issuer-with-path form, e.g.
     // /.well-known/oauth-authorization-server/tenant1 — and that path component
     // now names the PROFILE as well as the issuer.
-    app.get('/.well-known/oauth-authorization-server/*', function (req, res) {
-      req.__asProfile = self.profileFromPath(req.params[0]);
-      log.debug("The RFC 8414 inserted-path form selected profile " +
-                req.__asProfile + ".");
-      self.sendAsMetadata(req, res);
+    app.get('/.well-known/oauth-authorization-server/*',
+            function (req, res, next) {
+      // `[realm/<id>][/<server>]` (#119) — see issuerPathTarget().
+      self.discoveryForPath(req, res, next, req.params[0],
+                            self.sendAsMetadata.bind(self));
     });
+
+    // WebFinger (#119): at the host root, answering for every realm.
+    app.get('/.well-known/webfinger', self.webfingerEndpoint.bind(self));
 
     app.get('/.well-known/openid-configuration', function (req, res) {
       log.debug("Entering the OpenID Connect Discovery endpoint.");
@@ -13519,22 +14037,34 @@ class OAuth2Server {
     // oauth-authorization-server route above answers it — with the request's
     // base URL as the issuer — so the two behave alike.
     // -------------------------------------------------------------------------
-    app.get('/.well-known/openid-configuration/*', function (req, res) {
+    app.get('/.well-known/openid-configuration/*', function (req, res, next) {
       log.debug("Entering the OpenID Connect Discovery endpoint (RFC 8414 " +
                 "inserted-path form).");
-      req.__asProfile = self.profileFromPath(req.params[0]);
-      self.sendOidcMetadata(req, res);
+      // `[realm/<id>][/<server>]` (#119) — see issuerPathTarget().
+      self.discoveryForPath(req, res, next, req.params[0], function (q, r) {
+        self.sendOidcMetadata(q, r);
+      });
       log.debug("Leaving the OpenID Connect Discovery endpoint (RFC 8414 " +
                 "inserted-path form).");
     });
 
-    app.get('/*/.well-known/openid-configuration', function (req, res) {
+    app.get('/*/.well-known/openid-configuration', function (req, res, next) {
       log.debug("Entering the OpenID Connect Discovery endpoint (issuer-path " +
                 "form).");
-      // req.params[0] is everything before /.well-known — the issuer's path
-      // component, one segment or several.
+      // req.params[0] is everything before /.well-known that the realm
+      // prefix left — the server's segment. `app.js` has entered a realm the
+      // path named; one it could not find leaves `realm/<id>` here, and
+      // issuerPathTarget() refuses that and any second segment (#119).
       const path = String(req.params[0] || '').replace(/^\/+|\/+$/g, '');
-      req.__asProfile = self.profileFromPath(path);
+      const target = self.issuerPathTarget(path);
+      if (!target || path.split('/')[0] === 'realm') {
+        errorCodes.mark(res, 'STS-OAUTH-0594');
+        log.debug("Leaving the OpenID Connect Discovery endpoint (issuer-" +
+                  "path form). Names nothing.");
+        next();
+        return;
+      }
+      req.__asProfile = self.profileFromPath(target.server);
       self.sendOidcMetadata(req, res,
                             baseUrlOf(req) + (path ? '/' + path : ''));
       log.debug("Leaving the OpenID Connect Discovery endpoint (issuer-path " +
@@ -13783,6 +14313,14 @@ class OAuth2Server {
       ['post', '/:as/oauth2/introspect', self.introspectEndpoint.bind(self)],
       ['post', '/:as/oauth2/revoke', self.revokeEndpoint.bind(self)],
       ['post', '/:as/oauth2/register', self.registerEndpoint.bind(self)],
+      // RFC 7592 at a named server (#120): where its registration_client_uri
+      // points.
+      ['get', '/:as/oauth2/register/:client_id',
+       self.registrationRead.bind(self)],
+      ['put', '/:as/oauth2/register/:client_id',
+       self.registrationUpdate.bind(self)],
+      ['delete', '/:as/oauth2/register/:client_id',
+       self.registrationDelete.bind(self)],
       ['get', '/:as/oauth2/jwks', self.jwksEndpoint.bind(self)],
       ['get', '/:as/oauth2/fapi', self.fapiReport.bind(self)]
     ].forEach(function (route) {
@@ -13795,50 +14333,12 @@ class OAuth2Server {
 
     app.post('/oauth2/register', self.registerEndpoint.bind(self));
 
-    app.get('/oauth2/register/:client_id', function (req, res) {
-      log.debug("Entering the client read endpoint.");
-      self.withRegisteredClient(req, res, function (record) {
-        // `no-store`: the document carries the client_secret and the
-        // registration access token (RFC 7592 section 2.1), which the POST that
-        // minted them already sent with this header and these two did not until
-        // 2026-09-13.
-        res.status(200)
-           .type('application/json')
-           .set('Cache-Control', 'no-store')
-           .send(JSON.stringify(record, null, 2));
-      });
-      log.debug("Leaving the client read endpoint.");
-    });
-
-    app.put('/oauth2/register/:client_id', function (req, res) {
-      log.debug("Entering the client update endpoint.");
-      self.withRegisteredClient(req, res, function (record) {
-        self.updateClient(req, res, record).catch(function (e) {
-          log.error(errorCodes.tag('STS-OAUTH-0228') + 'the client update ' +
-                    'endpoint failed: ' + (e && e.stack ? e.stack : e));
-          if (!res.headersSent) {
-            errorCodes.mark(res, 'STS-OAUTH-0228');
-            self.oauthError(res, 500, 'server_error', e.message);
-          }
-        });
-      });
-      log.debug("Leaving the client update endpoint.");
-    });
-
-    app.delete('/oauth2/register/:client_id', function (req, res) {
-      log.debug("Entering the client delete endpoint.");
-      self.withRegisteredClient(req, res, function (record) {
-        // The REGISTRATION goes and the application entry stays, with
-        // appRegistered FALSE and the credentials stripped off it. See
-        // forgetRegistration(): this registry records what this service has
-        // seen, and losing that an application was ever here because its
-        // registration was withdrawn would be losing the fact rather than the
-        // configuration.
-        applications.forgetRegistration(record.client_id);
-        res.status(204).end();
-      });
-      log.debug("Leaving the client delete endpoint.");
-    });
+    app.get('/oauth2/register/:client_id',
+            self.registrationRead.bind(self));
+    app.put('/oauth2/register/:client_id',
+            self.registrationUpdate.bind(self));
+    app.delete('/oauth2/register/:client_id',
+               self.registrationDelete.bind(self));
 
     // --- the documents the metadata links to --------------------------------
     app.get('/docs', function (req, res) {

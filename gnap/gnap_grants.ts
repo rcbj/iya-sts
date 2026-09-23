@@ -1145,12 +1145,16 @@ class GnapGrants {
                               gnapFinishUri: finish.uri } });
       }
       if (finish.method === 'push') {
-        const problem = transport.urlProblem(finish.uri);
-        if (problem) {
+        // `urlVerdict()` rather than `urlProblem()` since #171: plain http
+        // refused because this realm is in product mode is `STS-GNAP-0103`,
+        // the condition the check below names for every finish method.
+        const problem = transport.urlVerdict(finish.uri);
+        if (problem.why) {
           log.debug("Leaving GnapGrants.startInteraction(). Push URI cannot " +
                     "be dialled.");
-          return this.refusal('STS-GNAP-0102', problem + ' (RFC 9635 section ' +
-                              '11.34).', 'invalid_interaction');
+          return this.refusal(problem.errorCode || 'STS-GNAP-0102',
+                              problem.why + ' (RFC 9635 section 11.34).',
+                              'invalid_interaction');
         }
       }
       if (!/^https:/i.test(finish.uri) &&

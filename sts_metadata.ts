@@ -1331,9 +1331,14 @@ const SPECS: Spec[] = [
               'as this realm. The registered scope (section 2) is the list ' +
               'the client may be issued (oauthAllowedScope) and is returned; ' +
               'a registration may not declare this service\'s own protected ' +
-              'scopes. An initial access token (section 3) is not ' +
-              'issued; a trusted software statement is this service\'s ' +
-              'answer to a closed endpoint.' },
+              'scopes. Section 2\'s defaults are applied, stored and ' +
+              'returned (client_secret_basic, authorization_code, code), grant_types ' +
+              'and response_types are checked against each other and ' +
+              'ENFORCED at the token and authorization endpoints, jwks and ' +
+              'jwks_uri together are refused, and a jwks_uri is fetched ' +
+              'under the outbound policy and cached (#120). An initial ' +
+              'access token (section 3) is not issued; a trusted software ' +
+              'statement is this service\'s answer to a closed endpoint.' },
   { id: 'rfc9728', name: 'RFC 9728 — OAuth 2.0 Protected Resource Metadata',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9728',
     coverage: 'partial: CONSUMED, not published. /admin/applications/new ' +
@@ -1347,7 +1352,12 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7592',
     coverage: 'full for the three operations: read, update and delete a ' +
               'registered client, each guarded by the registration access ' +
-              'token issued with it.' },
+              'token issued with it, at /oauth2/register/{client_id} and ' +
+              'under every named authorization server. An update must name ' +
+              'the client_id and any client_secret it was issued (section ' +
+              '2.2) and is returned with the defaults applied; a token for a ' +
+              'client that no longer exists is revoked and answered 401 ' +
+              'invalid_token (section 3).' },
   { id: 'rfc7636', name: 'RFC 7636 — PKCE',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7636',
     coverage: 'partial: S256 and plain are advertised and the challenge is ' +
@@ -1473,6 +1483,17 @@ const SPECS: Spec[] = [
               'this issuer does not verify a token the separate ' +
               'authorization server signed — the check is real only for ' +
               'tokens this service issued.' },
+  { id: 'rfc7033', name: 'RFC 7033 — WebFinger',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc7033',
+    coverage: 'partial, as OpenID Connect Discovery uses it (#119): ' +
+              '/.well-known/webfinger at the host root with the resource ' +
+              'parameter (400 without exactly one, 404 for a resource this ' +
+              'service knows nothing of), rel filtering, a JRD as ' +
+              'application/jrd+json, and Access-Control-Allow-Origin: * ' +
+              '(section 5). The one link relation served is the OpenID ' +
+              'issuer; no other rel is known, and no properties or aliases ' +
+              'are returned.' },
   { id: 'rfc8414', name: 'RFC 8414 — Authorization Server Metadata',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8414',
     coverage: 'full: every member section 2 defines, plus a genuinely signed ' +
@@ -1821,7 +1842,7 @@ const SPECS: Spec[] = [
               'response, discovery, token entropy, acr honoured. GET ' +
               '/oauth2/fapi lists every requirement. NOT covered: the OpenID ' +
               'Foundation conformance suite has not been run (#176); FAPI ' +
-              '2.0 Message Signing is #141.' },
+              '2.0 is the fapi2-* cards.' },
   { id: 'fapi1-advanced', name: 'FAPI 1.0 Part 2: Advanced Security ' +
                                'Profile (final)',
     where: 'OpenID Foundation',
@@ -1866,6 +1887,19 @@ const SPECS: Spec[] = [
               'requirements; docs/oauth-security.md maps each attacker ' +
               'class to what stops it. The console, portal and debugger ' +
               'conform. NOT covered: the conformance suite (#176).' },
+  { id: 'fapi2-message-signing', name: 'FAPI 2.0 Message Signing (final)',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/fapi-message-signing-2_0.html',
+    coverage: 'full for the authorization server, AND OFF BY DEFAULT — the ' +
+              'PROFILE oauth2.fapi=2-message-signing, the Security Profile ' +
+              'plus all three components (#141, rcbj\'s decision): a ' +
+              'JAR-signed request object required at PAR, with aud the ' +
+              'issuer and exp and nbf within 60 minutes (5.3); JARM ' +
+              'required, iss inside the JWT (5.4); RFC 9701 introspection ' +
+              'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
+              'guidance, answered in docs/oauth-security.md. The console, ' +
+              'portal and debugger conform. RFC 9421 HTTP signatures are NOT ' +
+              'part of the final specification and are #178.' },
   { id: 'jarm', name: 'JWT Secured Authorization Response Mode for OAuth ' +
                      '2.0 (JARM)',
     where: 'OpenID Foundation',
@@ -2018,8 +2052,8 @@ const SPECS: Spec[] = [
               'section 2.8), taken over when the node sending it dies, and ' +
               'dead-lettered on a final failure — listed, paged and retried ' +
               'from /admin/logout and /admin-api/logout. Through the ' +
-              'outbound policy (https unless ' +
-              'federation.outboundAllowInsecure, no internal address in ' +
+              'outbound policy (https with the certificate verified, no ' +
+              'internal address in ' +
               'product mode); one audit row per outcome and a periodic ' +
               'summary line. Front-channel logout cannot follow an expiry: ' +
               'it needs the browser. oauth2.backchannelLogout turns the ' +
@@ -2037,9 +2071,14 @@ const SPECS: Spec[] = [
               'and pairwise, all four prompt values, ' +
               'display_values_supported, ' +
               'claims_locales_supported, the address and phone scopes and ' +
-              'every claim they name. check_session_iframe is absent (#121); ' +
-              'WebFinger issuer discovery (section 2) is not implemented ' +
-              '(#119).' },
+              'every claim they name. WebFinger (section 2, #119) resolves ' +
+              'an acct:, e-mail or host resource by the realm whose DNS ' +
+              'domain it is and an https URL by its /realm/<id> path, never ' +
+              'looking the person up; the inserted and appended discovery ' +
+              'forms both read [realm/<id>][/<server>] and 404 anything ' +
+              'else, so every document names an issuer something issues ' +
+              'from. ' +
+              'check_session_iframe is absent (#121).' },
   { id: 'oidc-registration',
     name: 'OpenID Connect Dynamic Client Registration 1.0',
     where: 'OpenID Foundation',
@@ -2053,10 +2092,15 @@ const SPECS: Spec[] = [
               'id_token_encrypted_response_alg/enc, ' +
               'userinfo_signed_response_alg and its encryption members, the ' +
               'request object members, and the front- and back-channel ' +
-              'logout members. NOT covered (#120): default_max_age, ' +
-              'require_auth_time, default_acr_values, initiate_login_uri, ' +
-              'enforcing grant_types and response_types, and RFC 7592\'s ' +
-              '401 for an unknown client.' },
+              'logout members; and (#120) application_type (web, native) ' +
+              'with its redirect URI rules, grant_types and response_types ' +
+              'enforced, default_max_age and default_acr_values applied to a ' +
+              'request that names neither, require_auth_time (auth_time is ' +
+              'carried whenever known), jwks_uri fetched, and ' +
+              'initiate_login_uri launched from the user portal with iss ' +
+              'and login_hint (Core section 4). Not covered: policy_uri and ' +
+              'tos_uri are stored and returned but not drawn on the consent ' +
+              'screen.' },
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
@@ -4838,6 +4882,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'directory entry, shown once on a 200 page — lists the certificates ' +
           'ACME, EST and SCEP issued them, and revokes one. The identity is ' +
           'the session\'s; nothing on the form names a person.' },
+  { path: '/portal/app-passwords', group: 'User portal',
+    name: 'Your app passwords, for the doors that take only a password',
+    specs: ['rfc4513', 'rfc7617', 'rfc7030'],
+    effect: 'makes and revokes the signed-in person\'s own app passwords',
+    what: 'NON-SPEC page (#101). In product mode a person who holds a ' +
+          'second factor, or of whom one is required, is refused their own ' +
+          'password at the five doors that cannot ask for one — an LDAP ' +
+          'bind (RFC 4513), a WS-Security UsernameToken, SCIM and SSF HTTP ' +
+          'Basic (RFC 7617) and EST Basic (RFC 7030 section 3.2.3). Here ' +
+          'they make an APP PASSWORD for such a client instead: generated, ' +
+          'SHOWN ONCE on the 200 that answers the form, stored as a scrypt ' +
+          'hash, named, and scoped to one or more of those doors — accepted ' +
+          'there and NEVER at a browser sign-in. It lists each one with its ' +
+          'last use and revokes one (a CAEP credential-change). The identity ' +
+          'is the session\'s; nothing on the form names a person. A real ' +
+          'submit button and no script.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -6629,6 +6689,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'of what is editable. Note that ?kind= does not partition the ' +
           'list, since a record commonly carries two. Mirrors GET and POST ' +
           '/admin/applications.' },
+  { path: '/admin-api/users/app-passwords', group: 'Management API',
+    name: 'One person\'s app passwords', specs: ['rfc4513', 'rfc7617'],
+    what: 'NON-SPEC (#101). The app passwords a person holds, PAGED (`page`, ' +
+          '`per`): each one\'s public id, name, the password-only doors it ' +
+          'is scoped to, when and by whom it was made, and when and where it ' +
+          'was last used — never the password and never its hash — and ' +
+          'which of the five doors refuse the person\'s own password. POST ' +
+          '/admin-api/users/create-app-password makes one, returned once; ' +
+          '/admin-api/users/revoke-app-password takes one away. Mirrors the ' +
+          'App passwords block on the person\'s /admin/users page.' },
   { path: '/admin-api/users/new', group: 'Management API',
     name: 'New user form', specs: ['rfc4511', 'rfc4519'],
     what: 'NON-SPEC. THE CLOSED ATTRIBUTE CATALOGUE A CREATE TAKES, as JSON: ' +
@@ -8012,6 +8082,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'the person\'s sign-in already succeeded at the partner and the ' +
           'only interesting question is what this service disliked about the ' +
           'answer.' },
+  { path: '/federation/link/:handle', group: 'Federation',
+    name: 'Link a partner\'s subject at first sign-in',
+    specs: ['oidc', 'saml2', 'saml2-profiles', 'ws-federation', 'rfc6749'],
+    effect: 'records a federationLink on the person\'s entry, writes the ' +
+            'partner\'s attributes and STARTS the federated session — only ' +
+            'after a local sign-in as that person',
+    what: 'Where the local sign-in of fedSubjectPolicy link-at-first-sign-in ' +
+          'returns (#109). A partner named an existing person whose account ' +
+          'is not linked to its subject; a name is not an identifier (OpenID ' +
+          'Connect Core section 5.7; SAML 2.0 Core section 8.3.7 links a ' +
+          'persistent NameID rather than matching it), so the person signs ' +
+          'in HERE as themselves first — password, and a second factor ' +
+          'where one is held or required — and this path records the link. ' +
+          'The handle is single-use and server-side, and bound by a cookie ' +
+          'to the browser the partner\'s response arrived in (STS-FED-0111, ' +
+          'the account-linking CSRF); it refuses a Cancel ' +
+          '(STS-FED-0099), a spent or unknown handle (STS-FED-0100) and any ' +
+          'browser whose latest sign-in is not that local one, as that ' +
+          'person, just now (STS-FED-0101), and asks the subject policy, the ' +
+          'rules and the administrator refusal again before writing ' +
+          'anything.' },
   { path: '/federation/metadata/:id', group: 'Federation',
     name: 'This service\'s OWN SAML metadata, per partner',
     specs: ['saml2-metadata', 'saml2', 'saml11'],
@@ -8038,7 +8129,20 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Authorization Server Metadata (issuer with a path)', specs: [
       'rfc8414'],
     what: 'The same document at the section 3.1 shape, where the issuer ' +
-          'identifier carries a path.' },
+          'identifier carries a path. The path is read as ' +
+          '[realm/<id>][/<server>] and answered INSIDE that realm (#119), so ' +
+          'a realm\'s document names the realm\'s issuer and keys; anything ' +
+          'else is a 404 and creates no server.' },
+  { path: '/.well-known/webfinger', group: 'OAuth 2.0 / OIDC',
+    name: 'WebFinger issuer discovery', specs: ['oidc-discovery', 'rfc7033'],
+    what: 'OpenID Connect Discovery section 2 (#119): the issuer for an ' +
+          'acct: URI, an e-mail address or a host, resolved by the realm ' +
+          'whose DNS domain it is, and for an https URL on this service by ' +
+          'its /realm/<id> path. The person is never looked up, so no ' +
+          'account can be enumerated; an unknown domain is a 404. A JRD with ' +
+          'the http://openid.net/specs/connect/1.0/issuer link, rel ' +
+          'filtering, and Access-Control-Allow-Origin: * (RFC 7033 section ' +
+          '5).' },
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
     specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
@@ -8049,15 +8153,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'subject_types_supported, id_token_signing_alg_values_supported, ' +
           'claims_supported, the request/claims parameter booleans and ' +
           'end_session_endpoint. Built from the same source as the RFC 8414 ' +
-          'document so the two cannot drift. No userinfo_endpoint: there is ' +
-          'no userinfo endpoint, and the claims are in the id_token.' },
+          'document so the two cannot drift. userinfo_endpoint names ' +
+          '/oauth2/userinfo.' },
   { path: '/.well-known/openid-configuration/*', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration (RFC 8414 inserted-path form)',
     specs: ['oidc-discovery', 'rfc8414'],
     what: 'The same document where the well-known segment is INSERTED before ' +
           'the issuer\'s path, which is RFC 8414 section 3.1\'s shape rather ' +
-          'than OIDC\'s. Answered like the oauth-authorization-server route: ' +
-          'the issuer is the base URL the request arrived on.' },
+          'than OIDC\'s. The path is [realm/<id>][/<server>], answered ' +
+          'inside that realm, and anything else is a 404 (#119).' },
   { path: '/*/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration (issuer with a path)',
     specs: ['oidc-discovery'],
@@ -8632,6 +8736,13 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Registers a client, which may then use ANY authorization server ' +
           'here — nothing restricts a client to the one it registered at, ' +
           'and /admin/applications records which ones it has actually used.' },
+  { path: '/:as/oauth2/register/:client_id', group: 'OAuth 2.0 / OIDC',
+    name: 'Registered client management (a named authorization server)',
+    specs: ['rfc7592', 'rfc6750'],
+    what: 'The RFC 7592 read, update and delete at the address a ' +
+          'registration made here returns as registration_client_uri ' +
+          '(#120). The registry is one, so this is the same client as at ' +
+          '/oauth2/register/{client_id}.' },
   { path: '/:as/oauth2/logout', group: 'OAuth 2.0 / OIDC',
     name: 'Session end (a named authorization server)',
     specs: ['oidc', 'oidc-logout'],
@@ -8657,7 +8768,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'through POST /admin-api/config like everything else configurable.' },
   { path: '/oauth2/fapi', group: 'OAuth 2.0 / OIDC',
     name: 'FAPI profile report (not a spec endpoint)',
-    specs: ['fapi1-baseline', 'fapi1-advanced', 'fapi2-security'],
+    specs: ['fapi1-baseline', 'fapi1-advanced', 'fapi2-security',
+            'fapi2-message-signing'],
     what: 'NON-SPEC: FAPI defines no document saying which profile a server ' +
           'follows. The profile in force (oauth2.fapi, off by default), ' +
           'every requirement of FAPI 1.0 Part 1 section 5.2.2 by item, and ' +
@@ -8819,7 +8931,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'registration access token. An update applies a software ' +
           'statement as registration does, and a client admitted by a ' +
           'trusted statement at an otherwise closed endpoint must present a ' +
-          'trusted statement from the same issuer with every update.' },
+          'trusted statement from the same issuer with every update. An ' +
+          'update names its own client_id and any client_secret it was ' +
+          'issued; a token for a client that no longer exists is revoked ' +
+          'and answered 401 (section 3, #120).' },
 
   // --- OID4VCI ---
   { path: '/.well-known/openid-credential-issuer', group: 'VC Issuance ' +
@@ -9364,8 +9479,11 @@ const PROTOCOLS: Protocol[] = [
              'the push finish method: the interaction reference is POSTed to ' +
              'a finish URI registered on the client\'s application entry. ' +
              'gnap.pushFinish turns it off, gnap.pushAllowedHosts narrows ' +
-             'it, and plain http is refused unless gnap.pushAllowInsecure is ' +
-             'set.' },
+             'it, and plain http is refused unless gnap.pushAllowHttp is ' +
+             'set (and in product mode is allowed to loopback only). The ' +
+             'client\'s certificate is verified — against node\'s store and ' +
+             'gnap.pushCaFile — and gnap.pushSkipTlsVerification turns that ' +
+             'off in development mode only (#171).' },
   { name: 'XACML', groups: ['XACML'],
     specs: ['xacml30', 'xacmljson'],
     what: 'A Policy Decision Point, a policy repository that IS ' +

@@ -15,7 +15,7 @@
 //      throws is reported and does not stop the others; `eject` must be a
 //      function.
 //   B. THE LIST. Exactly the stores whose entries expire carry an ejector —
-//      twenty-four — and the two that do not, on purpose, are named.
+//      twenty-five — and the two that do not, on purpose, are named.
 //   C. THE JOB is registered, per-process and quiet.
 //   D. AN EJECTOR DELETES WHAT ITS READER WOULD REFUSE AND NOTHING ELSE:
 //      through two replay stores' own doors (ACME's spent nonces and GNAP's
@@ -102,7 +102,7 @@ function childMain() {
       'acme.nonces', 'dpop.nonces', 'dpop.proof-ids',
       'federation.release-index', 'gnap.signatures',
       'krb5.authenticator-replay', 'oauth2.redeemed-codes',
-      'oauth2.request-uri', 'oauth2.signed-metadata',
+      'oauth2.client-jwks', 'oauth2.request-uri', 'oauth2.signed-metadata',
       'oauth2.used-assertions', 'oid4vci.nonces', 'oid4vci.status-entries',
       'oid4vci.status-list-tokens', 'oid4vp.sign-in-register',
       'oid4vp.status-lists-fetched', 'oid4vp.transactions',

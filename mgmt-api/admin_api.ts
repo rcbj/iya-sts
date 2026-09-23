@@ -2944,7 +2944,11 @@ class AdminApi {
             description: 'Tokens issued with no browser session at all: the ' +
                          'grants that never involve one.' },
           { name: 'artifacts',
-            description: 'SAML assertions, Kerberos tickets and credentials.' }
+            description: 'SAML assertions, Kerberos tickets and credentials.' },
+          { name: 'federationLinks',
+            description: 'The federation partners\' subjects linked to ' +
+                         'this person (#109), each `{ link, relationship, ' +
+                         'issuer, subject, relationshipExists }`.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -2972,6 +2976,35 @@ class AdminApi {
       // writes are the ones `invent: true` on a create has always written
       // directly. An operation that returned form values to nobody would be an
       // operation with no act behind it.
+      // APP PASSWORDS, ONE PERSON'S, PAGED (#101). The list the App passwords
+      // block on /admin/users draws, and the one `/portal/app-passwords`
+      // draws for the person themselves.
+      { method: 'GET', path: BASE + '/users/app-passwords', tag: 'Users',
+        operationId: 'getUserAppPasswords',
+        summary: 'One person\'s app passwords, and which password-only ' +
+                 'doors refuse their own password',
+        description: 'Each app password the person holds — its public ' +
+                     '`id`, `name`, the `doors` it is accepted at, when it ' +
+                     'was made and by whom, and when and where it was last ' +
+                     'used. **Never the password and never its hash.** ' +
+                     'Beside them, `passwordOnlyDoors` says which of the ' +
+                     'five doors refuse this person\'s own password (in ' +
+                     'product mode, while they hold or must hold a second ' +
+                     'factor, less `authn.passwordAloneDoors`), and ' +
+                     '`doors` is the catalogue a scope is chosen from.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ].concat(this.pagingParameters()),
+        responseDescription: 'The page of app passwords and its paging.',
+        handler: function (req, res) {
+          log.debug("Entering the management API app-passwords endpoint.");
+          self.sendJson(res, 200, adminViews.appPasswordsJson(req.query));
+          log.debug("Leaving the management API app-passwords endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/users/new', tag: 'Users',
         operationId: 'getNewUserForm',
         summary: 'Every attribute a person may be created with, and the four ' +
@@ -3598,12 +3631,17 @@ class AdminApi {
                          'step to enrol an authenticator app or a security ' +
                          'key before any session is started. A passwordless ' +
                          'security-key sign-in is refused while it is ' +
-                         'required.\n\n**What it does not reach** is every ' +
-                         'sign-in that never meets that screen: federation, ' +
-                         'SPNEGO, a TLS client certificate, the OAuth ' +
-                         'password grant, an LDAP bind, WS-Trust and SCIM ' +
-                         'Basic. `authn.mfaRequired` is the same requirement ' +
-                         'for every person in the realm.',
+                         'required.\n\nIn product mode it also refuses ' +
+                         'their own password at the five password-only ' +
+                         'doors — an LDAP bind, a WS-Trust UsernameToken, ' +
+                         'SCIM, SSF and EST Basic — answered as a wrong ' +
+                         'password; an app password (`create-app-password`) ' +
+                         'is what they use there (#101). **What it does not ' +
+                         'reach** is a sign-in that is neither that screen ' +
+                         'nor one of those doors: federation, SPNEGO or a ' +
+                         'Kerberos AS-REQ, a TLS client certificate. ' +
+                         '`authn.mfaRequired` is the same requirement for ' +
+                         'every person in the realm.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -3719,6 +3757,190 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'Whether anything changed.' },
+
+          // #109 (2026-09-22): which partners' subjects sign a person in.
+          { action: 'federation-link', operationId: 'linkUserFederation',
+            summary: 'Link a federation partner\'s subject to a person',
+            description: 'Adds a `federationLink` — `<relationship> ' +
+                         '<issuer> <subject>` — to the person\'s entry, so ' +
+                         'that the partner of that service-provider-side ' +
+                         'relationship signs them in when it asserts that ' +
+                         'subject. The subject is the partner\'s STABLE ' +
+                         'identifier for them (OpenID Connect `sub`, a SAML ' +
+                         'persistent NameID), never a name or an address, ' +
+                         'and the issuer is the relationship\'s `fedPeer` ' +
+                         'when omitted. Refused when another person already ' +
+                         'carries the link (a subject names one person), ' +
+                         'for a relationship that is not service-provider ' +
+                         'side, or for a subject that cannot be written. ' +
+                         'A console administrator is still refused at the ' +
+                         'sign-in unless the relationship sets ' +
+                         '`fedMayAssertAdministrators`. The person\'s ' +
+                         'links are `federationLinks` (paged by ' +
+                         '`federationLinksPage`) on `GET /admin-api/users?' +
+                         'user=`, and a relationship\'s are `links` on `GET ' +
+                         '/admin-api/federation?relationship=`. SCIM sets ' +
+                         'the same values through the ' +
+                         '`urn:ietf:params:scim:schemas:extension:iya-sts:' +
+                         '2.0:User` extension.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                relationship: { type: 'string',
+                                description: 'The service-provider-side ' +
+                                  'relationship the link is through.' },
+                subject: { type: 'string',
+                           description: 'The partner\'s identifier for ' +
+                             'the person.' },
+                issuer: { type: 'string',
+                          description: 'The partner\'s entity ID or ' +
+                            '`iss`; the relationship\'s fedPeer when ' +
+                            'omitted, and refused if it differs from it.' }
+              },
+              required: ['user', 'relationship', 'subject'],
+              examples: [{ user: 'alice', relationship: 'partner-oidc',
+                           subject: '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link, whether it was added, and the ' +
+                                 'person\'s links now.' },
+
+          { action: 'federation-unlink', operationId: 'unlinkUserFederation',
+            summary: 'Remove a federation partner\'s link from a person, ' +
+                     'and end the sessions it made',
+            description: 'Removes one `federationLink` value, named either ' +
+                         'whole as `link` (as `federationLinks` lists it) or ' +
+                         'as `relationship` and `subject` (and `issuer`). ' +
+                         'The next sign-in through that relationship ' +
+                         'no longer finds the person, and **every live ' +
+                         'sign-on session that partner signed them in to ' +
+                         'is ended** — each with its CAEP ' +
+                         '`session-revoked` and back-channel Logout Tokens — ' +
+                         'after the write is answered. Sessions they made ' +
+                         'any other way are untouched. Removing a link ' +
+                         'through SCIM or an `ldapmodify` has the same ' +
+                         'consequence.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                link: { type: 'string',
+                        description: 'The whole value, as ' +
+                          '`federationLinks[].link` shows it.' },
+                relationship: { type: 'string',
+                                description: 'Instead of `link`.' },
+                subject: { type: 'string',
+                           description: 'Instead of `link`.' },
+                issuer: { type: 'string',
+                          description: 'Instead of `link`; the ' +
+                            'relationship\'s fedPeer when omitted.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           link: 'partner-oidc https://idp.example ' +
+                                 '248289761001' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The link removed and the person\'s links ' +
+                                 'now; the sessions are ended after the ' +
+                                 'answer.' },
+
+          // -----------------------------------------------------------------
+          // APP PASSWORDS (#101, 2026-09-22), mirroring the App passwords
+          // block on a person's /admin/users page — which is also where the
+          // person's own `/portal/app-passwords` points an administrator.
+          // -----------------------------------------------------------------
+          { action: 'create-app-password',
+            operationId: 'createUserAppPassword',
+            summary: 'Make an app password for somebody, returned once',
+            description: 'Generates an APP PASSWORD for the person — ' +
+                         'twenty-four characters, printed in groups of four ' +
+                         '— names it, scopes it to one or more of the five ' +
+                         'password-only doors (`ldap`, `wstrust`, `scim`, ' +
+                         '`ssf`, `est`), stores a scrypt hash of it on their ' +
+                         'entry and **returns it ONCE** in `appPassword`. ' +
+                         'Nothing can show it again.\n\n**What it is ' +
+                         'for**: in product mode a person who holds a ' +
+                         'second factor, or of whom one is required, is ' +
+                         'refused their own password at those five doors, ' +
+                         'which cannot ask for the second factor; an app ' +
+                         'password scoped to a door is accepted there ' +
+                         'instead. It is ONE factor, it is accepted ONLY at ' +
+                         'the doors it names, and NEVER at the sign-in ' +
+                         'screen or any browser sign-in. A disabled account ' +
+                         'refuses it; a password reset leaves it ' +
+                         'alone.\n\n**Shared Signals**: a CAEP ' +
+                         '`credential-change` (`password`, `create`) with ' +
+                         'its name as `friendly_name`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                name: { type: 'string',
+                        description: 'What it is for — the client it goes ' +
+                                     'in. At most 64 characters, unique ' +
+                                     'among this person\'s.' },
+                doors: { type: 'array',
+                         items: { type: 'string',
+                                  enum: ['ldap', 'wstrust', 'scim', 'ssf',
+                                         'est'] },
+                         description: 'The doors it is accepted at. At ' +
+                                      'least one.' }
+              },
+              required: ['user', 'name', 'doors'],
+              examples: [{ user: 'alice', name: 'Thunderbird address book',
+                           doors: ['ldap'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The app password ONCE (`appPassword`), ' +
+                                 'its public four-character `id`, name, ' +
+                                 'doors and when it was made.' },
+
+          { action: 'revoke-app-password',
+            operationId: 'revokeUserAppPassword',
+            summary: 'Revoke one of somebody\'s app passwords',
+            description: 'Removes the app password with this `id` — the ' +
+                         'four characters `GET ' +
+                         '/admin-api/users/app-passwords` lists — from the ' +
+                         'person\'s entry. A client still sending it is ' +
+                         'refused at its next authentication.\n\n**Shared ' +
+                         'Signals**: a CAEP `credential-change` ' +
+                         '(`password`, `revoke`) with its name as ' +
+                         '`friendly_name`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The app password\'s public id.' }
+              },
+              required: ['user', 'id'],
+              examples: [{ user: 'alice', id: 'K7QD' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was revoked — its id, name and ' +
+                                 'doors; never its hash.' },
 
           { action: 'clear-key', operationId: 'clearUserSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
@@ -6898,13 +7120,21 @@ class AdminApi {
                      '`/saml2` and the admin console all read. So a ' +
                      'relationship is created DISABLED, and an assertion is ' +
                      'refused unless it verifies against the certificate ' +
-                     'configured on it.\n\n**The gate is on the SIGNER, not ' +
-                     'on the subject.** Once a relationship is enabled and ' +
-                     'configured, everything downstream is as permissive as ' +
-                     'the rest of this service: any username in the ' +
-                     'assertion is accepted, any attribute is mapped, and a ' +
-                     'directory entry is created for the ' +
-                     'person.\n\n`?relationship=<id>` returns one of them, ' +
+                     'configured on it.\n\n**And the gate is on the ' +
+                     'SUBJECT too (#109).** A partner signs in only the ' +
+                     'person its (issuer, subject) is linked to — a ' +
+                     '`federationLink` on the entry — and what happens to ' +
+                     'a subject nobody linked is the relationship\'s ' +
+                     '`fedSubjectPolicy`: a local sign-in as the person it ' +
+                     'names before linking (`link-at-first-sign-in`, the ' +
+                     'default), a refusal (`pre-linked`), a new namespaced ' +
+                     'entry (`jit-namespaced`), or, in development only, ' +
+                     'the old name match (`any-existing`). ' +
+                     '`fedSubjectGroup`, `fedSubjectDomain` and ' +
+                     '`fedSubjectPattern` narrow it further, and a console ' +
+                     'administrator is refused unless ' +
+                     '`fedMayAssertAdministrators` is on.\n\n' +
+                     '`?relationship=<id>` returns one of them, ' +
                      'with everything it holds and the URLs to configure at ' +
                      'the partner. It answers 200 with `found: false` for an ' +
                      'id that is not registered.\n\nThis resource holds ' +
@@ -6924,7 +7154,12 @@ class AdminApi {
             description: 'Only the relationships in which this service takes ' +
                          'that role. `service-provider` is the direction ' +
                          'that CONSUMES somebody else\'s assertions.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'links',
+            description: 'With `relationship`: the people whose ' +
+                         'federationLink is through it (#109), each ' +
+                         '`{ username, dn, link, issuer, subject }`.' }
+        ])),
         responseDescription: 'The relationships with the paging that found ' +
                              'them, or one of them with its endpoints, its ' +
                              'fields and what has crossed it.',
@@ -8755,9 +8990,10 @@ class AdminApi {
                          'IS THE ONLY OPERATION IN THIS API THAT MAKES AN ' +
                          'OUTBOUND REQUEST, and the second surface in this ' +
                          'service that makes one at all — federation is the ' +
-                         'other. The same refusals apply: https only unless ' +
-                         '`federation.outboundAllowInsecure` is on, a ' +
-                         'timeout of `federation.outboundTimeoutMs`, no ' +
+                         'other. The same refusals apply: https with the ' +
+                         'certificate verified (the three ' +
+                         '`federation.outbound…` transport settings, #171), ' +
+                         'a timeout of `federation.outboundTimeoutMs`, no ' +
                          'redirects followed, and a size cap.\n\nISSUING ' +
                          'NEVER FETCHES. This writes the certificate onto ' +
                          'the entry and an assertion reads the entry, so no ' +
@@ -8811,8 +9047,8 @@ class AdminApi {
                          '`anyUnmatched` otherwise. A mismatch is reported ' +
                          'and is NOT a refusal.\n\n**A FETCH FOLLOWS THE ' +
                          'OUTBOUND POLICY**: `federation.outbound` must be ' +
-                         'on, https unless ' +
-                         '`federation.outboundAllowInsecure`, no redirect ' +
+                         'on, https with the certificate verified (#171), ' +
+                         'no redirect ' +
                          'followed, `federation.maxResponseBytes` and ' +
                          '`federation.outboundTimeoutMs`. In product mode ' +
                          'the host may not resolve to a loopback, private, ' +

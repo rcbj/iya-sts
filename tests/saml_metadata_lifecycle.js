@@ -145,7 +145,7 @@ async function run(t) {
     server.listen(0, '127.0.0.1', resolve);
   });
   const base = 'http://127.0.0.1:' + server.address().port;
-  config.setOverride('federation.outboundAllowInsecure', true);
+  config.setOverride('federation.outboundAllowHttp', true);
   config.setOverride('federation.outbound', true);
 
   const codeOf = function (res) {
@@ -462,8 +462,24 @@ async function run(t) {
             JSON.stringify(notFound.errors));
     const prodName = 'https://prod-' + stamp + '.md.test/saml';
     const prodBefore = hits['/mdq/entities/' + prodName] || 0;
-    const prodRefused = await kit.withSettings(config,
+    // IN PRODUCT PLAIN HTTP IS REFUSED FIRST (#171), whatever
+    // federation.outboundAllowHttp says; the address rule is then asked of
+    // the same responder over https, which is refused before any connection
+    // is opened and so needs no listener that speaks it.
+    const prodPlain = await kit.withSettings(config,
       { 'global.mode': 'product' },
+      function () {
+        return spMetadata.mdqImport(prodName);
+      });
+    t.check(!prodPlain.ok &&
+            /product mode/.test(JSON.stringify(prodPlain.errors || '')) &&
+            (hits['/mdq/entities/' + prodName] || 0) === prodBefore,
+            'in PRODUCT mode a plain-http responder is refused whatever ' +
+            'federation.outboundAllowHttp says, and nothing is dialled',
+            JSON.stringify(prodPlain.errors));
+    const prodRefused = await kit.withSettings(config,
+      { 'global.mode': 'product',
+        'saml2.mdqBaseUrl': base.replace(/^http:/, 'https:') + '/mdq/' },
       function () {
         return spMetadata.mdqImport(prodName);
       });
@@ -473,6 +489,9 @@ async function run(t) {
             'in PRODUCT mode the loopback responder is refused by the ' +
             'outbound policy, STS-SAML-0079, and nothing is dialled',
             JSON.stringify(prodRefused.errors));
+    // withSettings() CLEARS what it set, so the responder the rest of this
+    // file uses is set again.
+    config.setOverride('saml2.mdqBaseUrl', base + '/mdq/');
     // MDQ-sourced metadata is refreshable by the sweep.
     served['/mdq/entities/' + mdqName] = { status: 200,
       body: entity(mdqName, { acs: 'https://mdq2.test/acs',
@@ -596,7 +615,7 @@ async function run(t) {
     });
   } finally {
     config.clearOverride('saml2.mdqBaseUrl');
-    config.clearOverride('federation.outboundAllowInsecure');
+    config.clearOverride('federation.outboundAllowHttp');
     config.clearOverride('federation.outbound');
     created.forEach(function (id) {
       if (applications.get(id)) {

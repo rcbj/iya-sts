@@ -161,6 +161,10 @@ import softwareStatement = require('../oauth-oidc/software_statement');
 // that registers no route.
 import tlsClientCertificates = require('../common/tls_client_certificates');
 import federation = require('../federation/federation');
+// The link between a partner's subject and a person (#109): its format and
+// the one place a requested link is checked, shared with SCIM. A static
+// utility class; it registers nothing.
+import fedLinks = require('../federation/federation_links');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
@@ -310,7 +314,12 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'disable-primary-keys', 'disable-mfa',
                        'require-mfa', 'stop-requiring-mfa',
                        // A disabled account (2026-09-17).
-                       'disable', 'enable'];
+                       'disable', 'enable',
+                       // A partner's subject linked to, or unlinked from,
+                       // a person (#109, 2026-09-22).
+                       'federation-link', 'federation-unlink',
+                       // App passwords (#101, 2026-09-22).
+                       'create-app-password', 'revoke-app-password'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -342,8 +351,16 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 // this decides who asked, what is audited and what is said. Answers null for
 // an action that is not one of the six, so `usersAction()` carries on.
 // ---------------------------------------------------------------------------
+//
+// **AND TWO FOR APP PASSWORDS (#101, 2026-09-22)**: `create-app-password`
+// makes one for the person — named, scoped to one or more of the five
+// password-only doors, generated, and returned ONCE — and
+// `revoke-app-password` takes one away by its id. Each says so with a CAEP
+// credential-change (`password`, with the app password's name as
+// `friendly_name`). `common/credentials.ts` keeps the records.
 const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
-  'disable-primary-keys', 'disable-mfa', 'require-mfa', 'stop-requiring-mfa'];
+  'disable-primary-keys', 'disable-mfa', 'require-mfa', 'stop-requiring-mfa',
+  'create-app-password', 'revoke-app-password'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -716,6 +733,7 @@ interface AdminActionsDeps {
   softwareStatement: typeof softwareStatement;
   tlsClientCertificates: typeof tlsClientCertificates;
   federation: typeof federation;
+  fedLinks: typeof fedLinks;
   spiffeCa: typeof spiffeCa;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeIdLib: typeof spiffeIdLib;
@@ -767,6 +785,7 @@ class AdminActions {
       softwareStatement: softwareStatement,
       tlsClientCertificates: tlsClientCertificates,
       federation: federation,
+      fedLinks: fedLinks,
       spiffeCa: spiffeCa,
       spiffeRegistry: spiffeRegistry,
       spiffeIdLib: spiffeIdLib,
@@ -1949,6 +1968,80 @@ class AdminActions {
                           : 'A password alone signs them in now.') };
     }
 
+    if (action === 'create-app-password') {
+      // A JSON `doors` array or comma-separated string, or the console's one
+      // checkbox per door (`door_ldap=on`, ...) — a form parser keeps the
+      // last of a repeated name, so the boxes are named apart.
+      const doors = [].concat(body.doors === undefined ? [] : body.doors)
+        .concat(['ldap', 'wstrust', 'scim', 'ssf', 'est'].filter(function (
+          door) {
+          return ['on', 'true', '1', 'yes'].indexOf(
+            String(body['door_' + door] || '')) >= 0;
+        }));
+      const made = credentials.createAppPassword(who, {
+        name: body.name, doors: doors, createdBy: ctx.actor || ctx.via });
+      audited('admin.app-password.created',
+              (made.ok ? 'made' : 'could not make') + ' an app password for ' +
+              who, { id: made.ok ? made.id : undefined,
+                     name: made.ok ? made.name : String(body.name || ''),
+                     doors: made.ok ? made.doors : undefined,
+                     errors: made.ok ? undefined : (made.errors || []) },
+              made.ok ? 'success' : 'failure');
+      if (!made.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). The app " +
+                  "password was refused.");
+        return this.refusedBy('STS-ADMIN-0800', made);
+      }
+      accountSignals.credentialChanged({ username: who,
+        credentialType: 'password', changeType: 'create',
+        friendlyName: made.name, via: ctx.via,
+        reasonAdmin: 'An administrator made the app password "' + made.name +
+                     '" for ' + who + ', for ' + made.doors.join(', ') + '.',
+        reasonUser: 'An app password called "' + made.name + '" was added ' +
+                    'to your account.' });
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "create-app-password.");
+      // `appPassword` and not `password`: this answer is not a reset, and
+      // the console's one-time page tells the two apart by the member.
+      const answer = Object.assign({}, made);
+      delete answer.password;
+      return Object.assign(answer, {
+        appPassword: made.password,
+        message: 'The app password "' + made.name + '" for ' + who + ' is ' +
+                 'made, for ' + made.doors.join(', ') + '. IT IS SHOWN ONCE ' +
+                 '— this service stores only a hash. Give it to them by a ' +
+                 'channel you trust; it works at those doors only, never at ' +
+                 'the sign-in screen.' });
+    }
+
+    if (action === 'revoke-app-password') {
+      const gone = credentials.revokeAppPassword(who, String(body.id || ''));
+      audited('admin.app-password.revoked',
+              (gone.ok ? 'revoked' : 'could not revoke') + ' an app ' +
+              'password of ' + who, { id: String(body.id || ''),
+                name: gone.ok ? gone.revoked.name : undefined,
+                errors: gone.ok ? undefined : (gone.errors || []) },
+              gone.ok ? 'success' : 'failure');
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). The " +
+                  "revocation was refused.");
+        return this.refusedBy('STS-ADMIN-0801', gone);
+      }
+      accountSignals.credentialChanged({ username: who,
+        credentialType: 'password', changeType: 'revoke',
+        friendlyName: gone.revoked.name, via: ctx.via,
+        reasonAdmin: 'An administrator revoked the app password "' +
+                     gone.revoked.name + '" of ' + who + '.',
+        reasonUser: 'The app password called "' + gone.revoked.name +
+                    '" was revoked.' });
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "revoke-app-password.");
+      return { ok: true, username: who, revoked: gone.revoked,
+               message: 'The app password "' + gone.revoked.name + '" of ' +
+                        who + ' is revoked. A client still sending it is ' +
+                        'refused at its next authentication.' };
+    }
+
     // require-mfa and stop-requiring-mfa
     const wanted = action === 'require-mfa';
     const result = credentials.setMfaRequired(who, wanted);
@@ -1979,6 +2072,86 @@ class AdminActions {
                  'their account.' + (mech.mfaRequirement.byRealm
                    ? ' The REALM still requires one (authn.mfaRequired).' : '')
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // LINK OR UNLINK A PARTNER'S SUBJECT AND A PERSON (#109, 2026-09-22) — the
+  // console's person page and `POST /admin-api/users/federation-link` and
+  // `/federation-unlink`. What a link may be is
+  // `federation/federation_links.ts`'s `resolveRequest()`, which SCIM asks
+  // too; the refusal of one person's link on another is the directory's. An
+  // UNLINK ends the sessions that partner signed the person in to — through
+  // the directory, which hands every removal on whichever door made it.
+  //
+  // `relationship`, `subject` and optionally `issuer` (the relationship's
+  // fedPeer when omitted) name a link; an unlink may name the stored value
+  // instead, as `link`, which is how the console's Remove button posts.
+  // ---------------------------------------------------------------------------
+  private federationLinkAction(action, body, ctx) {
+    const { log, federation, fedLinks, auditLog, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.federationLinkAction(). " + action);
+    const add = action === 'federation-link';
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving AdminActions.federationLinkAction(). Nobody.");
+      return this.refused('STS-FED-0104', { ok: false, errors: ['Name the ' +
+        'person in `user`.'] });
+    }
+    let value = '';
+    if (!add && String(body.link || '')) {
+      value = String(body.link);
+    } else {
+      const resolved = fedLinks.resolveRequest({
+        relationship: body.relationship, issuer: body.issuer,
+        subject: body.subject });
+      if (!resolved.ok) {
+        log.debug("Leaving AdminActions.federationLinkAction(). " +
+                  resolved.code);
+        return this.refused(resolved.code, { ok: false,
+                                             errors: [resolved.why] });
+      }
+      value = resolved.value;
+    }
+    const written = federation.writeFederationLink(who, value, add,
+                                                   { via: ctx.via });
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.federationLinkAction(). The " +
+                "directory refused.");
+      return this.refused(errorCodes.codeOf(written) || 'STS-FED-0109',
+                          { ok: false, errors: written.errors ||
+                            ['The directory would not write the link.'] });
+    }
+    const parsed = fedLinks.parse(value) || {};
+    auditLog.record({
+      category: 'admin', action: add ? 'federation.link.add' :
+                                       'federation.link.remove',
+      actor: ctx.actor, target: written.username, outcome: 'success',
+      summary: written.username + ' was ' + (add ? 'linked to' :
+                                             'unlinked from') +
+               ' the subject ' + parsed.subject + ' of ' + parsed.issuer +
+               ' through ' + parsed.relationship + ' (' + ctx.via + ')' +
+               (written.changed ? '' : '; it already was'),
+      detail: { username: written.username, via: ctx.via,
+                relationship: String(parsed.relationship || ''),
+                issuer: String(parsed.issuer || ''),
+                subject: String(parsed.subject || ''),
+                changed: written.changed ? 'yes' : 'no' }
+    });
+    log.debug("Leaving AdminActions.federationLinkAction(). " +
+              (written.changed ? 'Changed.' : 'Unchanged.'));
+    return { ok: true, username: written.username, link: value,
+             changed: !!written.changed, links: written.links || [],
+             message: add
+               ? (written.changed
+                   ? written.username + ' is linked to ' + parsed.subject +
+                     ' at ' + parsed.issuer + ': that partner, through ' +
+                     parsed.relationship + ', now signs them in.'
+                   : written.username + ' already carried that link.')
+               : written.username + ' is no longer linked to ' +
+                 parsed.subject + ' at ' + parsed.issuer + '. The next ' +
+                 'sign-in through ' + parsed.relationship + ' does not ' +
+                 'find them, and every session that partner signed them in ' +
+                 'to is being ended.' };
   }
 
   usersAction(body, context?) {
@@ -2036,6 +2209,12 @@ class AdminActions {
       return { ok: true, username: who, disabled: answer.disabled,
                changed: answer.changed, ended: answer.ended || null,
                message: answer.message };
+    }
+
+    // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
+    if (action === 'federation-link' || action === 'federation-unlink') {
+      log.debug("Leaving AdminActions.usersAction(). A federation link.");
+      return this.federationLinkAction(action, body, ctx);
     }
 
     const credentialAnswer = this.credentialAdminAction(action, body, ctx);
@@ -4584,9 +4763,11 @@ class AdminActions {
       // Checked first, every one of them, and only then written. A section that
       // applied its first three fields and refused the fourth would leave the
       // service in a state nobody asked for and the page showing it.
+      // `checkWrite()` since #171, so a value the realm's mode does not allow
+      // (a TLS-verification skip in product) is refused here, before any.
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {
@@ -4724,7 +4905,7 @@ class AdminActions {
       }
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {
@@ -4846,7 +5027,7 @@ class AdminActions {
       }
       const errors = [];
       wanted.forEach(function (key) {
-        const problem = config.checkOverride(key, body[key]);
+        const problem = config.checkWrite(key, body[key]);
         if (problem) errors.push(problem);
       });
       if (errors.length) {

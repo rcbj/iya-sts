@@ -701,12 +701,24 @@ way, the whole argument goes with it.** The body is three members; keep it that
 way or move the argument.
 
 Its four bounds are `ssf.push*`'s four, deliberately — an off switch, a host
-allowlist empty by default meaning any, an https-only rule with an escape, and
-a timeout — because two families making one outbound request each should be
+allowlist empty by default meaning any, an https-only rule with an escape in
+development only, and a timeout — because two families making one outbound
+request each should be
 configured the same way or the second is a surprise to anybody who read the
 first. The timeout is SHORTER (2s against SSF's 10s) and that is the difference
 that follows from the argument: a lost push is a lost event, so SSF waits; a
 lost nudge costs one polling interval, so waiting is the expensive mistake.
+
+**The https rule is `common/outbound_tls.ts`'s since #171 (2026-09-23)**, shared
+with GNAP, SSF and federation. `xacml.pepNotifyAllowInsecure` allowed plain
+http AND turned the PEP's certificate check off, and product mode honoured it.
+Three settings now: `xacml.pepNotifyAllowHttp` (development only; product
+refuses a plain-http nudge, `STS-XACML-0073`), `xacml.pepNotifySkipTlsVerification`
+(development only; ignored in product, `STS-XACML-0074`, and refused on write,
+`STS-CORE-0103`) and `xacml.pepNotifyCaFile` (a PEP certified by a private CA,
+beside node's store; unreadable refuses the nudge, `STS-CORE-0104`).
+`GET /admin-api/xacml/peps`' `notify.transport` reports the three as they are
+IN FORCE, so a skip stored in a product realm reads false there.
 
 **On an active-active node the nudge waits for the COMMIT, and only there
 (2026-09-15, #46).** It is fired from inside `xacml_store.write()`, and the PEP

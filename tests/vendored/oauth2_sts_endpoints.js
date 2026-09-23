@@ -1396,7 +1396,9 @@ async function testRegistration(meta) {
   const updated = await fetch(reg.registration_client_uri, {
     method: "PUT",
         headers: Object.assign({ "Content-Type": "application/json" }, authed),
+    // RFC 7592 section 2.2: the update carries the client's own client_id.
     body: JSON.stringify({ software_statement: STATEMENT, client_name: "Renamed Client",
+                         client_id: reg.client_id,
                          redirect_uris: [REDIRECT_URI] })
   });
   assert.strictEqual(updated.status, 200, "updating the registration failed.");
@@ -1410,9 +1412,13 @@ async function testRegistration(meta) {
       headers: authed });
   assert.strictEqual(deleted.status, 204,
                      "deleting the registration should answer 204.");
+  // RFC 7592 section 3: a client that does not exist is 401, and the
+  // registration access token is revoked. An sts older than iya-sts #120
+  // answered 404, and this job runs against a pinned sts too.
   const gone = await fetch(reg.registration_client_uri, { headers: authed });
-  assert.strictEqual(gone.status, 404,
-                     "the client should be gone after a delete.");
+  assert.ok(gone.status === 401 || gone.status === 404,
+            "the client should be gone after a delete (401; 404 before " +
+            "iya-sts #120). Got " + gone.status);
   log.info("[register] OK — register, read, update and delete, with the " +
            "management calls protected.");
   log.debug("Leaving testRegistration().");
@@ -1552,6 +1558,7 @@ async function testNativeRedirectsRegistrationAndRefreshScope(meta) {
     method: "PUT",
     headers: Object.assign({ "Content-Type": "application/json" }, authed),
     body: JSON.stringify({ software_statement: STATEMENT, redirect_uris: [native],
+                           client_id: reg.client_id,
                            frontchannel_logout_uri: "javascript:alert(1)" })
   });
   assert.strictEqual(framed.status, 400,

@@ -64,7 +64,7 @@ any of them would be a broken implementation rather than a lenient one:
 
 | It does not | In product mode | In development mode |
 |---|---|---|
-| Check an end user's password | **Verified**, against the hashed `userPassword` on the person's entry, at every door that takes one: the sign-in screen, an LDAP bind, a WS-Trust UsernameToken, SCIM, Shared Signals and EST Basic. The sign-in screen rate-limits by name and by address, across the cluster. A person with no stored password cannot sign in (`STS-AUTHN-0052`), and one flagged `pwdReset` must choose a new password first | Any password but `invalid` is accepted, and the name typed at `/authn/login` becomes the identity in every token and assertion |
+| Check an end user's password | **Verified**, against the hashed `userPassword` on the person's entry, at every door that takes one: the sign-in screen, an LDAP bind, a WS-Trust UsernameToken, SCIM, Shared Signals and EST Basic. The sign-in screen rate-limits by name and by address, across the cluster. A person with no stored password cannot sign in (`STS-AUTHN-0052`), and one flagged `pwdReset` must choose a new password first. **A person who holds or must hold a second factor is refused their own password at the five password-only doors** — answered as a wrong password (`STS-AUTHN-0213`, recorded only) — and uses an app password there; `authn.passwordAloneDoors` lists doors that accept the password anyway, at one factor | Any password but `invalid` is accepted, and the name typed at `/authn/login` becomes the identity in every token and assertion |
 | Issue without asking — **this row runs the other way** | Consent is asked: the first time a person signs in to a `client_id` for a scope, `/oauth2/consent` is drawn and nothing is issued until they answer. `oauth2.consentRequired` is ON by default in both modes. See [Consent](#consent-is-asked-in-both-modes) | The same |
 | Hold a new password to a policy | **Enforced**, from the realm's policy (Directory → Policies, `/admin/policies`): a minimum length, a symbol count, an uppercase letter, a number, and none of the current password or the last five. At every door that sets one: the console and `/admin/users/new`, `/admin-api` (including `users/create`), `/portal/password`, `/portal/activate`, the forced change at sign-in, and an LDAP add or modify of `userPassword`. SCIM carries no password. A password already stored is not re-checked | Any password is set. The history is recorded in both modes, and a generated password meets the policy in both |
 | Offer the OAuth 2.0 password grant | **It does not exist**: `unsupported_grant_type` (RFC 9700 section 2.4), because product mode implies RFC 9700 mode | Any password but `invalid` is accepted, as at the sign-in screen — unless `oauth2.rfc9700` or `oauth2.oauth21` is on, which removes the grant here too |
@@ -85,7 +85,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Count a wallet as more than one factor | A presentation proves possession of one key: `amr ["pop"]`, `acr "1"`. A verified key attestation for hardware storage adds `hwk`; `acr "mfa"` needs the attestation to say the key is guarded by the person's own authentication as well. A second factor after the presentation — an authenticator app, a security key or the person's password — is asked when the request, the realm or the account demands two | The same, except that the password offered as that second factor is not checked, so a wallet and any password make `acr "mfa"` |
 | Verify anything in an issued credential's values | Nothing is invented: the values come from the access token and then the directory entry, and an attribute neither holds is absent — from the credential, a claims request, and the ID Token and UserInfo profile claims. `email_verified` is never asserted | What the entry lacks is invented from the username |
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `active: false` writes `pwdAccountLockedTime`, the same state **Disable** on `/admin/users` writes. Every door then refuses the person — a password anywhere (an LDAP bind included), any sign-in, a session they already hold, a Kerberos AS-REQ or S4U2Self, every token grant and refresh, the issuance of any SAML, WS-Federation, WS-Trust or GNAP artifact, and the management API — and everything they hold is ended and their wallet credentials disowned. `active: true` enables them again | The same |
-| Restrict which people a federation partner may assert | A person must already exist; one who does not is refused (`STS-FED-0090`), and the partner's attributes are written onto the one who does. **Any existing person may be asserted** by any enabled partner — nothing ties a partner to a set of subjects | An entry is created for a name nobody provisioned, unless the relationship's `fedAutocreateUsers` is off. `fedUpdateUserAttributes` decides whether a returning person's attributes are overwritten |
+| ~~Restrict which people a federation partner may assert~~ — reversed 2026-09-22 ([#109](https://github.com/rcbj/iya-sts/issues/109)) | A partner signs in only the person its subject is **linked** to — a `federationLink` of the relationship, the partner's issuer and its `sub` or persistent NameID. An unlinked subject naming an existing person must first sign in here as that person, password and second factor, before the link is made (`fedSubjectPolicy` `link-at-first-sign-in`, the default); `pre-linked` refuses it (`STS-FED-0091`); `jit-namespaced` never reaches an existing person; **`any-existing`, the old name match, is refused** (`STS-FED-0094`, `STS-FED-0095`). Nothing is written onto an entry before that. Group, domain and DN-pattern rules narrow it further (`STS-FED-0092`), and a console administrator is refused even with a link unless `fedMayAssertAdministrators` is on (`STS-FED-0093`). Nothing is created for a subject naming nobody (`STS-FED-0090`) | The same, except that `any-existing` may be set and matches the name, and a subject naming nobody gets an entry named `<relationship>~<name>`, linked at creation, unless `fedAutocreateUsers` is off. No password is checked at the linking sign-in (the reserved `invalid` is refused) |
 | ~~Verify a SAML `AuthnRequest`'s signature, or consume a service provider's metadata~~ — reversed 2026-09-17 | A signed `AuthnRequest`, `LogoutRequest`, `LogoutResponse` or `ArtifactResolve` is verified against the service provider's **registered** certificates — never the one the request carries — and refused if it does not verify. An **unsigned** request is refused (`saml2.requireSignedAuthnRequests`, `auto`). `WantAssertionsSigned` is honoured. SHA-1 needs `saml.allowSha1Signatures`; MD5, a MAC and a stateful hash-based signature are refused as not checkable. Consumed metadata registers the provider's endpoints, certificates and `NameIDFormat`s; its `validUntil` is enforced, it is refreshed after `cacheDuration`, and it must verify against `saml2.metadataTrustAnchors` when any is set. A metadata or MDQ fetch to an internal address is refused. An artifact is resolved only for the provider it was issued to | A present signature is verified in both modes. An unsigned request is accepted unless the provider's metadata says `AuthnRequestsSigned="true"`. `WantAssertionsSigned` is warned about rather than honoured. Internal addresses may be fetched |
 | Check which entityID a SAML service provider claims | An unknown entityID is not registered by its request: the request is refused, having no registered return address and no signature. **An MDQ responder can register it** — with `saml2.mdqBaseUrl` set, a request from an unknown provider queues a lookup, and a document the responder publishes creates the application, so a later request succeeds. `GET /saml2/metadata/{sp}` still answers for any `{sp}` | Any entityID is accepted, and the first `AuthnRequest` from one creates its application entry |
 | Check where a SAML response or WS-Federation token is delivered | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` must be **registered** on the application (`samlAssertionConsumerService`, `wsfedReplyUrl`) and match exactly, with no mock fallback. An address development recorded is marked *observed* (`appReturnAddressObserved`) and refused until an administrator confirms it — **Confirm** and **Discard** under Applications, or `POST /admin-api/applications/confirm-address` and `/discard-address`. A provider whose metadata was consumed is answered only at an endpoint that metadata registered | The address a request names is used as it stands; with none, the registered one or a built-in mock. A consumed-metadata provider is held to its endpoints here too |
@@ -96,6 +96,7 @@ any of them would be a broken implementation rather than a lenient one:
 | ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP is still not attested** — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, and `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
 | Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on |
+| Verify the certificate of whoever answers an outbound request — a GNAP push finish, an SSF push, a federation back channel (and the SAML metadata, RFC 9728, Logout Token and status-list fetches that share its policy), an XACML PEP nudge, a kubelet | **Always verified, since 2026-09-23 (#171)**: every `…SkipTlsVerification` setting and `spiffe.k8sSkipKubeletVerification` is ignored (logged once with its family's code) and cannot be turned on (`STS-CORE-0103`). A private CA is trusted through the family's `…CaFile`. Plain http is refused for SSF, federation and XACML whatever `…AllowHttp` says, and allowed for a GNAP push finish to a loopback address only | `…SkipTlsVerification` turns verification off, warned on every request, and `…AllowHttp` admits plain http to any host. Both are off by default |
 | ~~Tie a scope to a client~~ — **reversed 2026-09-22 (#110)** | A client is issued only the scopes its `oauthAllowedScope` declares — or, declaring none, the default set: `openid`, `profile`, `email`, `address`, `phone`, `offline_access` and the realm's OpenID4VCI scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`); a scope naming an application or a delegated permission keeps its own rules. See [Scopes](#a-scope-is-tied-to-the-client) | Any scope is issued — except this service's own protected scopes (`admin:read`, `admin:write`, the SCIM and Shared Signals scopes, the debugger permission), which are held to the declaration in both modes (`STS-OAUTH-0577`) |
 
 **Recorded is not the same claim as authenticated, and the two are kept apart
@@ -234,10 +235,13 @@ an authenticator integration to test against.
   enrolment cannot also sign anybody in, and it is refused *as a repeat*, not as
   a wrong code.
 * **A person who has enrolled one cannot sign in at `/authn/login` without it.**
-  **That is the only door that asks for it**: an LDAP bind, a WS-Trust
-  UsernameToken, SCIM, Shared Signals and EST Basic take the password alone,
-  in product too. See
-  [What product mode still does not check](#what-product-mode-still-does-not-check).
+  That is the only door that can ASK for it. The five doors that take a
+  password and nothing else — an LDAP bind, a WS-Trust UsernameToken, SCIM,
+  Shared Signals and EST Basic — cannot, so in product they **refuse that
+  person's own password**, answered exactly as a wrong password and counted
+  against the rate limit as one, and accept an **app password** scoped to the
+  door instead (see [App passwords](#app-passwords-at-the-password-only-doors)).
+  Development accepts the password there as it accepts every password.
 * **A second factor can be required** of a person (`stsMfaRequired`, set from
   `/admin/users`) or of a realm (`authn.mfaRequired`); somebody who holds none is
   then asked to enrol one at `/authn/mfa-setup` before the sign-in completes.
@@ -251,6 +255,42 @@ an authenticator integration to test against.
 
 In development the password in front of the code is not checked, and any name
 may enrol. In product the password is verified first.
+
+## App passwords at the password-only doors
+
+An LDAP simple bind, a WS-Security UsernameToken, SCIM and Shared Signals HTTP
+Basic and EST Basic take a password and have nowhere to ask for anything more
+(RFC 4513 section 5.1.3, the UsernameToken Profile, RFC 7617, RFC 7030 section
+3.2.3). NIST SP 800-63B section 4.2 puts an account bound to two factors at
+AAL2, and a door that accepts one of them alone brings it down to AAL1. So, **in
+product mode**, a person who holds an authenticator app or a security key in
+the `mfa` role, or of whom a second factor is required (`stsMfaRequired`,
+`authn.mfaRequired`), is refused their own password at those five doors:
+
+* **The answer is a wrong password's**, byte for byte — LDAP
+  `invalidCredentials` (49), the WS-Trust fault, SCIM's, Shared Signals' and
+  EST's 401 — and it counts against the rate limit as a wrong password does.
+  Anything else would tell a guesser the password was right.
+* **An app password is accepted instead.** A person makes one on
+  `/portal/app-passwords` after signing in, or an administrator makes one for
+  them on their `/admin/users` page or with `POST
+  /admin-api/users/create-app-password`. It is generated here (twenty-four
+  characters), shown once, stored as a scrypt hash, named, and scoped to one or
+  more of `ldap`, `wstrust`, `scim`, `ssf` and `est`. It is accepted only at
+  those doors and **never at `/authn/login`** or any other browser sign-in. It
+  is one factor, and the door records that an app password was used.
+* **Each one can be revoked**, on the same pages or with `POST
+  /admin-api/users/revoke-app-password`; making or revoking one sends a CAEP
+  `credential-change`. Its last use is recorded. A disabled account refuses it;
+  a password reset leaves it working.
+* **`authn.passwordAloneDoors`** names doors that accept the password alone
+  anyway. Every door listed is ONE factor for every such person, so it is the
+  weaker option and documented as one.
+
+Development mode checks no password at those doors, so it refuses nothing
+there. A Kerberos AS-REQ pre-authenticated with the person's password-derived
+keys is the one password door not covered yet
+([#173](https://github.com/rcbj/iya-sts/issues/173)).
 
 ## A WebAuthn ceremony is verified, and the authenticator behind it is not
 
@@ -314,10 +354,9 @@ something to run against:
 - **A SAML artifact resolves exactly once**, across the cluster. A refused caller
   does not spend it.
 - **A URL a caller hands over to fetch a credential from is never followed**:
-  WS-Federation's `wreqptr`, a client's registered `jwks_uri`, and a foreign
-  SPIFFE bundle URL. The addresses this service does dial are ones an
-  administrator wrote down, one a client registered in advance (an RFC 9101
-  `request_uri`), or ones inside something that has already verified — a status
+  WS-Federation's `wreqptr` and a foreign SPIFFE bundle URL. The addresses this
+  service does dial are ones an administrator wrote down, ones a client
+  registered in advance (an RFC 9101 `request_uri`, a `jwks_uri`), or ones inside something that has already verified — a status
   list named in a credential signed by a trusted issuer, and the CRL and OCSP
   addresses in a certificate whose chain verified.
 
@@ -350,10 +389,21 @@ the one feature here that **has to be configured before it will do anything**:
   restriction is refused. `fedLocalEntityId` says what this service is called to
   a partner that knows it by another name.
 
-**The gate is on the SIGNER, not on the subject.** In product the person must
-already exist; in development an entry is created for them unless the
-relationship says otherwise. In neither is the partner limited to a set of
-people.
+**The gate is on the signer AND on the subject (#109).** A verified
+assertion signs in only the person its partner's subject is linked to: a
+`federationLink` value of the relationship, the partner's issuer and its
+stable identifier for the person — OpenID Connect's `iss` and `sub` (Core
+section 5.7 makes that pair the only identifier a relying party may rely on),
+a SAML persistent NameID qualified by the partner's entity ID (SAML 2.0 Core
+section 8.3.7). A name alone never signs anybody in. What happens to a subject
+nobody linked is the relationship's `fedSubjectPolicy`: the person it names
+signs in here first and is then linked (`link-at-first-sign-in`, the
+default), it is refused (`pre-linked`), or it gets a new entry of its own
+(`jit-namespaced`); the old name match (`any-existing`) is development only.
+Group, domain and DN-pattern rules apply on top of every policy, and a console
+administrator is refused unless the relationship allows it. Nothing is written
+onto an entry until all of that has passed. In product a subject naming nobody
+is refused; in development it gets an entry `<relationship>~<name>`.
 
 **Federation dials out, and it is not the only thing that does.** The OpenID
 Connect and OAuth 2.0 relationships call the partner's token endpoint, UserInfo
@@ -385,7 +435,8 @@ the ISSUER has to be configured before anything is believed:
   that arrives WITH the signature is not evidence on its own;
 * the certificate behind that key has its **whole chain validated** every time
   it verifies an assertion, and is checked for revocation;
-* `jwks_uri` is **never followed**;
+* a registered `jwks_uri` is **fetched under the outbound policy** (https, no
+  redirect, internal addresses refused in product mode) and cached;
 * a **person** as issuer may assert only about themselves.
 
 **The gate is on the SIGNER.** In product the `sub` must be somebody this realm
@@ -582,9 +633,13 @@ because in GNAP the key IS the client.
 * **A self-signed client certificate proves itself** in both modes: mutual TLS
   binds to the certificate the handshake completed with, by thumbprint or key,
   and no chain or revocation is consulted.
-* **A push finish** must go to a registered URI in product. It may dial `http`
-  only with `gnap.pushAllowInsecure`, which also turns off TLS verification, and
-  only hosts in `gnap.pushAllowedHosts` when that list is set.
+* **A push finish** must go to a registered URI in product. It dials `http`
+  only with `gnap.pushAllowHttp` — any host in development, a loopback address
+  only in product (RFC 9635 section 2.5.2.1) — and only hosts in
+  `gnap.pushAllowedHosts` when that list is set. **The client's certificate is
+  verified in product whatever `gnap.pushSkipTlsVerification` says** (#171);
+  a client certified by a private CA is reached through `gnap.pushCaFile`.
+  In development that setting still turns verification off.
 * **Macaroon third-party caveats, Biscuit third-party blocks and ZCAP invocation
   proofs are not implemented**; a token that needs one is refused.
 * **A zcap token's proof is checked only in the suite the realm is set to.**
@@ -744,10 +799,11 @@ grant that names no client is refused.
 
 These are true in a product deployment today, and are tracked as issues:
 
-* **A second factor is asked for only at `/authn/login`.** An LDAP bind, a
-  WS-Trust UsernameToken, SCIM, Shared Signals and EST Basic accept the password
-  alone from somebody who has enrolled a second factor or is required to have
-  one ([#101](https://github.com/rcbj/iya-sts/issues/101)).
+* **A Kerberos AS-REQ asks for no second factor.** Pre-authenticated with the
+  keys derived from a person's password, it signs in somebody who holds or must
+  hold a second factor with the password alone. The five other password-only
+  doors refuse that (see [App passwords](#app-passwords-at-the-password-only-doors));
+  the KDC is [#173](https://github.com/rcbj/iya-sts/issues/173).
 * **`/oauth2/revoke` authenticates no client** and does not check that the token
   belongs to the caller (RFC 7009 section 2.1). Anybody holding a token string
   can revoke it ([#102](https://github.com/rcbj/iya-sts/issues/102)).
@@ -763,9 +819,8 @@ These are true in a product deployment today, and are tracked as issues:
   ([#106](https://github.com/rcbj/iya-sts/issues/106)).
 * **A GNAP client's self-signed certificate** is matched by thumbprint with no
   chain or revocation check ([#107](https://github.com/rcbj/iya-sts/issues/107)).
-* **No rule decides who may act for whom** in WS-Trust or RFC 8693, and nothing
-  ties a federation partner to the people it may assert ([#108](https://github.com/rcbj/iya-sts/issues/108),
-  [#109](https://github.com/rcbj/iya-sts/issues/109)).
+* **No rule decides who may act for whom** in WS-Trust or RFC 8693
+  ([#108](https://github.com/rcbj/iya-sts/issues/108)).
 * **A Workload API caller over TCP is not attested** — only one on the Unix
   socket is, since #40 made node attestation verified or refused
   ([#40](https://github.com/rcbj/iya-sts/issues/40)).

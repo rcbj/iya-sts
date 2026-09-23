@@ -92,6 +92,16 @@ when registered).
   construction (the gate required Admin Write for the POST); the API principal
   is `admin-api` (the token gate required `admin:write`).
 
+## A second-factor person's Basic password (2026-09-22, #101)
+
+`common/cert_enrollment.ts`'s three verifications (`authenticatePerson()` and
+both halves of `adminFor()`) pass `door: 'est'`, so in product a person who
+holds or must hold a second factor — an administrator enrolling for somebody
+else included — is refused their own password with the one 401 a wrong
+password gets, counted by the enrollment throttle as one, and uses an app
+password scoped to `est` or a realm-issued client certificate. The principal
+records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
+
 ## RFC coverage
 
 | RFC 7030 section | Status |

@@ -686,7 +686,10 @@ function childMain() {
     const register = function (metadata) {
       return request('POST', '/oauth2/register', { json: metadata });
     };
+    // grant_types names client_credentials, which 3j3 uses: a registered
+    // list is enforced since #120.
     r = await register({ redirect_uris: ['https://mtls.example/cb'],
+      grant_types: ['authorization_code', 'client_credentials'],
       token_endpoint_auth_method: 'tls_client_auth',
       tls_client_auth_san_dns: 'ext.example.com',
       tls_client_certificate_bound_access_tokens: true });

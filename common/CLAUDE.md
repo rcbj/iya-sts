@@ -38,6 +38,7 @@ more than one family needs it, not because it felt general.
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
 | `realm_chooser.ts` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
 | `account_state.ts` | **A DISABLED ACCOUNT — THE ONE PLACE ONE IS DISABLED, ENABLED AND ASKED ABOUT (2026-09-17).** `pwdAccountLockedTime` on the person's entry, written by the console's Disable button, `POST /admin-api/users/disable` and SCIM's `active: false` alike; a disable ENDS everything the person holds through the same global logout. A LIBRARY (rule 3at) that finds `logout/logout.ts` in `require.cache` and never requires it. |
+| `outbound_tls.ts` | **WHETHER AN OUTBOUND REQUEST MAY BE PLAIN HTTP, AND WHETHER THE CERTIFICATE OF WHOEVER ANSWERS IS VERIFIED (#171, 2026-09-23)** — one policy for GNAP's push finish, SSF push, federation's back channels (and every requester that borrows them) and the XACML nudge, each handing in its three settings and two codes. A static utility class. See *`outbound_tls.ts`* below. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -6643,6 +6644,54 @@ account's claim bound to a password, and the closed console logged at startup.
 The one thing it needed from here is `oidc_rp.ts` recording, beside the ID
 Token's `amr`, the sign-on session's `signInAuthority` on the console session.
 
+**NOR, SINCE 2026-09-23 (#171), DOES IT SEND ANYTHING OVER TLS IT DID NOT
+VERIFY** (`skipsOutboundTlsVerification()`, and `dialsPlainHttpOutbound()` for
+plain http; the `outbound-tls` row). See *`outbound_tls.ts`* below.
+
+## `outbound_tls.ts`: THE TRANSPORT OF AN OUTBOUND REQUEST (#171, 2026-09-23)
+
+Four families dial an address somebody else answers — GNAP's push finish, SSF
+push delivery, federation's back channels, the XACML PEP nudge — and each had
+ONE `…AllowInsecure` switch that allowed plain http AND turned verification
+off, which product mode honoured. Each is three settings now, and this module
+is where all four ask; the module header argues why it is one module and why
+in `common/` (rcbj's rule that TLS code lives in a shared module, and GNAP,
+SSF and XACML not requiring the federation module for their transport).
+
+* **`httpVerdict(family, host)`** — `…AllowHttp` off refuses; development
+  (`mode.dialsPlainHttpOutbound()`) allows; product allows loopback only where
+  the family says a spec names it (GNAP) and otherwise refuses with the
+  family's code.
+* **`tlsVerdict(family, origin)`** — `rejectUnauthorized` and `ca`. A skip is
+  honoured only while `mode.skipsOutboundTlsVerification()` says so, with a
+  warning per request; in product it is ignored and said ONCE per setting per
+  process (`skipsVerification()`, which SPIRE's kubelet skip asks directly).
+  `…CaFile` is read on EVERY request (no cache — a handshake costs more, and a
+  rotated file is in force at once) and added BESIDE `tls.rootCertificates`;
+  a file that cannot be used refuses the request, `STS-CORE-0104`.
+* **`describe(family)`** — the three as they are IN FORCE, for the console and
+  `/admin-api` views, where a skip stored in a product realm reads false.
+
+**THE WRITE IS REFUSED IN `config.js`, NOT HERE.** A row carrying
+`onlyWhile: '<mode predicate>'` may be set TRUE only while that predicate
+answers true (`modeWriteProblem()`, `STS-CORE-0103`), asked by
+`setOverride()`, by `checkWrite()` — which `admin-core/admin_actions.ts`'s
+all-or-nothing sections ask before writing anything — and by `realms.js` for a
+realm set, create or update with THAT realm ambient. **It is deliberately not
+in `checkOverride()`**, which is also what a start and a restore validate a
+STORED value with: refusing there would refuse to restore a realm that holds
+one, where the rule is that a stored value is ignored where it is read. The
+lazy `require('./mode')` inside `modeWriteProblem()` closes no cycle: both
+modules are loaded by the time anything writes.
+
+**THE OLD KEYS ARE REFUSED AT START, WITH NO SHIM.** `config.js`'s
+`REPLACED_SETTINGS`: an appconfig file or an environment variable naming one
+stops the start and names the three replacements (`STS-CORE-0105`), because a
+deployment that set one would otherwise start and dial nothing; a stored
+override naming one is refused as an unknown key (`STS-CORE-0008`) with the
+replacement named. There is no mapping from old to new, because which half an
+operator meant is the question the split exists to make them answer.
+
 ## ALL FIVE GATED SURFACES ASK THE POLICY, AND THEY ALL SIGN IN THROUGH ONE STORE (2026-09-06)
 
 `common/access_gate.ts` declared five resources from the day it was written and
@@ -7457,6 +7506,56 @@ on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
 `risc.autoEmitTypes` names `account-credential-change-required` and
 `recovery-information-changed` — `ssf/CLAUDE.md` has the table of which door
 sends what.
+
+## 3ax. `app_passwords.ts` and `credentials.ts`'s `secondFactorRefusal()`: the password-only doors and what they take instead (#101, 2026-09-22)
+
+`authn/CLAUDE.md` owns the RULE (a second-factor person's own password is
+refused at the five password-only doors in product, as a wrong password is).
+What is this directory's is where it is decided and what an app password is.
+
+* **`secondFactorRefusal(answer, name, opts)`** runs right after
+  `resetRefusal()` in `verify()` and `verifyAsync()`, only on a `verified`
+  answer, only in product (`mode.acceptsPasswordAloneFromSecondFactorAccounts()`
+  — the named predicate, and a `REQUIREMENTS` row `second-factor-doors`), only
+  for a PERSON (the slot's `isPerson`; where the hook is missing the answer is
+  yes — refuse by default), only when they hold an `mfa` key or an
+  authenticator app or `mfaRequirementFor()` says required, and never for a
+  caller declaring `secondFactor: 'asked-next'` or `'session-held'`. A `door`
+  listed in `authn.passwordAloneDoors` passes, with a WARN per use. The
+  refusal is `STS-AUTHN-0213`, shaped exactly as a wrong password's verdict,
+  and the Kerberos password observer is not called for it.
+* **`passwordOnlyDoors(username)`** answers the whole table at once for the
+  pages that say it — `/portal/app-passwords`, `/portal/mfa`, the person's
+  `/admin/users` page and the API — so a page cannot promise a door the
+  verifier refuses.
+* **`app_passwords.ts` is a LIBRARY (rule 3)** in `backup_codes.ts`'s shape and
+  for rule 3y's reasons: the SHAPE (twenty-four characters of the thirty-two
+  unconfusable ones, six groups of four; the first four are a PUBLIC ID), the
+  five door ids, the scope and name rules, and the hash — `crypto.hashSecret()`
+  (rule 3r), because an app password is verify-only. **The id is what makes a
+  presented value cost ONE scrypt**: the record is found by it and only its
+  hash is checked, where a constant-time walk would cost one per record on
+  every wrong password, on every bind a pooled client makes.
+* **The records live in `credentials.ts`** (`stsAppPassword`, one JSON value,
+  single-valued): `createAppPassword()` (refusals `0214` name, `0215` doors,
+  `0216` the cap `appPasswords.maxPerPerson`, `0217` `appPasswords.enabled`
+  off, `0219` an unreadable value it will not write over, `0220` not a
+  person), `revokeAppPassword()` (`0218`), `appPasswordsOf()` (never a hash).
+  **In `verify()` the app password is asked FIRST**, and only when the
+  presented value has the shape AND names one of the person's ids; a match at
+  a door outside its scope — or with no door, which is the sign-in screen — is
+  `0213`, and a non-match falls through to the ordinary password check (a
+  password that happens to look like one is still a password). It is asked
+  after the disabled check and the development pass, so a disabled account
+  refuses it and development checks nothing. Last use is written at most once
+  a minute per password.
+* **Three settings**, all in the *Second-factor requirement* group (drawn on
+  `/admin/totp` and `/admin/webauthn`, no new `SETTING_HOMES` row):
+  `authn.passwordAloneDoors`, `appPasswords.enabled`,
+  `appPasswords.maxPerPerson`.
+
+`tests/second_factor_doors.js` is the in-process half;
+`tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
 
 ## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
 

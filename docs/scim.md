@@ -194,7 +194,7 @@ checked.
 | | Product | Development |
 |---|---|---|
 | OAuth tokens | Verified; the scope decides | Verified; the scope decides |
-| Basic | The password is verified against the person's hashed `userPassword` (off the request thread) | Any username, any password except `invalid` |
+| Basic | The password is verified against the person's hashed `userPassword` (off the request thread). A person who holds or must hold a second factor is refused their own password with the same `401` a wrong one gets, and uses an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `scim` | Any username, any password except `invalid` |
 | Digest | **Not offered**, and refused (`STS-SCIM-0056`). A salted scrypt hash cannot answer an RFC 7616 exchange | Any username with the one shared password, `scim.digestPassword` |
 | HOBA registration | Only the signed-in owner of an **existing** account may register a key for it (`STS-SCIM-0069`). A registration never creates an account | Anybody may register any key for any name |
 | The shared Digest password in a `401` | Never printed | Printed, as a test aid |

@@ -169,3 +169,12 @@ OAuth 2.0 grants follow (`STS-OAUTH-0510`): a bare name is a `sub` a relying par
 on and a person created later under the name would inherit. An `anonymous` request names
 nobody by design and is unaffected, and so is a SAML assertion, whose `NameID` is the
 username. A process with no directory still uses the name. `tests/stable_subject.js` D5b.
+
+## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
+
+`requesterCredential()` passes `door: 'wstrust'`, so in product a person who
+holds or must hold a second factor is refused their own password with the one
+`STS-WSTRUST-0003` fault a wrong password gets, and presents an app password
+scoped to `wstrust` instead; the authentication row's method then says
+`(app password)`. `authn/CLAUDE.md` owns the rule. WS-Trust has no rate limit
+of its own for a refused UsernameToken, so there is nothing further to count.

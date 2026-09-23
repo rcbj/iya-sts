@@ -222,6 +222,9 @@ class ProtocolStack {
     require('../authn/authn');
     this.build('common/totp', require('./totp'), 'Totp');
     this.build('common/backup_codes', require('./backup_codes'), 'BackupCodes');
+    // #101: app passwords, which `credentials.ts` keeps on the entry.
+    this.build('common/app_passwords', require('./app_passwords'),
+               'AppPasswords');
     this.build('common/password_policy', require('./password_policy'),
                'PasswordPolicy');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
@@ -299,6 +302,9 @@ class ProtocolStack {
     this.build('portal/portal_certificates',
                require('../portal/portal_certificates'),
                'PortalCertificates');
+    this.build('portal/portal_app_passwords',
+               require('../portal/portal_app_passwords'),
+               'PortalAppPasswords');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and

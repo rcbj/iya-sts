@@ -944,10 +944,8 @@ const REQUIREMENTS = [
           'asymmetric registers `jwks` instead, or has a certificate subject ' +
           'DN or thumbprint put on its entry. The credentials live on that ' +
           'entry in the directory, which is the one store (see ' +
-          '/admin/applications) — and `jwks_uri` is RECORDED AND NEVER ' +
-          'FOLLOWED, because fetching a URL somebody registered in order to ' +
-          'verify a credential is a server-side request forgery with a ' +
-          'specification citation attached. True with the mode off, since ' +
+          '/admin/applications) — or a `jwks_uri`, fetched under the ' +
+          'outbound policy since #120. True with the mode off, since ' +
           'the endpoint is always there.' },
 
   { id: 'asymmetric-client-auth', section: '2.5', level: 'RECOMMENDED',

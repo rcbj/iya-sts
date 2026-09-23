@@ -103,6 +103,8 @@ import credentials = require('../common/credentials');
 import totp = require('../common/totp');
 import webauthnPolicy = require('../authn/webauthn_policy');
 import backupCodes = require('../common/backup_codes');
+// App passwords (#101): a LIBRARY, for the scope catalogue and the settings.
+import appPasswords = require('../common/app_passwords');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -184,6 +186,8 @@ import requestSignature = require('../saml/request_signature');
 import spMetadata = require('../saml/sp_metadata');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import federation = require('../federation/federation');
+// A federationLink's format (#109): a static utility class.
+import fedLinks = require('../federation/federation_links');
 // The receiver half of Shared Signals, which the three reports below draw
 // this service's own registered streams from.
 import signals = require('../ssf/ssf_receivers');
@@ -392,6 +396,7 @@ interface AdminViewsDeps {
   totp: typeof totp;
   webauthnPolicy: typeof webauthnPolicy;
   backupCodes: typeof backupCodes;
+  appPasswords: typeof appPasswords;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -433,6 +438,7 @@ interface AdminViewsDeps {
   saml11: typeof saml11;
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
+  fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeCa: typeof spiffeCa;
@@ -464,6 +470,7 @@ class AdminViews {
       totp: totp,
       webauthnPolicy: webauthnPolicy,
       backupCodes: backupCodes,
+      appPasswords: appPasswords,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -505,6 +512,7 @@ class AdminViews {
       saml11: saml11,
       authorizationServers: authorizationServers,
       federation: federation,
+      fedLinks: fedLinks,
       signals: signals,
       spiffeRegistry: spiffeRegistry,
       spiffeCa: spiffeCa,
@@ -5729,7 +5737,8 @@ class AdminViews {
   // AND the ones the resource publishes — computed once so a partner reading
   // the document and an operator reading the page are told the same endpoint.
   federationDetailJson(req, id) {
-    const { log, baseUrlOf, realms, federation } = this.deps;
+    const { log, baseUrlOf, realms, federation, fedLinks } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.federationDetailJson(). id=" + id);
     const record = federation.get(id);
     if (!record) {
@@ -5783,16 +5792,29 @@ class AdminViews {
       // "yes" and "1" into — and one of those is how a relationship stays
       // disabled while the page says it is on.
       return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
-              'fedSignRequest', 'fedAllowUnsolicited'].indexOf(field.name) ===
-                                -1;
+              'fedMayAssertAdministrators', 'fedSignRequest',
+              'fedAllowUnsolicited'].indexOf(field.name) === -1;
     });
     const multiFields = federation.fieldsForRole(row.role, 'multi');
+    // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
+    // relationship with ten thousand linked people is an ordinary one, and a
+    // page drawing all of them is not. Service-provider side only: an
+    // identity-provider-side relationship asserts, and nobody is linked to it.
+    const linkPage = this.pagedRows(req.query,
+      row.role === 'service-provider'
+        ? federation.linkedThrough(record.fedId).map(function (one) {
+            const parts = fedLinks.parse(one.value) || {};
+            return { username: one.username, dn: one.dn, link: one.value,
+                     issuer: parts.issuer, subject: parts.subject };
+          })
+        : [],
+      { name: 'links', noun: 'links' });
 
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
       record: record, row: row, base: base, acs: acs, login: login,
       metadata: metadata, loginPath: loginPath,
-      setFields: setFields, multiFields: multiFields,
+      setFields: setFields, multiFields: multiFields, linkPage: linkPage,
       json: (function () {
       return Object.assign({ found: true }, row, {
           endpoints: { assertionConsumerService: acs, login: loginPath,
@@ -5816,7 +5838,11 @@ class AdminViews {
             });
             return out;
           })(),
-          editable: federation.fieldsForRole(row.role)
+          editable: federation.fieldsForRole(row.role),
+          // Who this partner's subjects are linked to (#109): the page, and
+          // the paging a caller walks it with.
+          links: linkPage.shown,
+          linksPaging: self.pagingJson(linkPage.paging)
       });
       }())
     };
@@ -6237,6 +6263,27 @@ class AdminViews {
   // One person: their sessions, what was issued on each, and the credentials
   // they hold. The four paged lists come with the computation although the page
   // declares them among its markup — the resource publishes each one's paging.
+  // One person's federation links as rows, paged (#109). Shared by the
+  // console's panel and the JSON beside it, so the two cannot disagree.
+  federationLinksOf(query, key) {
+    const { log, federation, fedLinks } = this.deps;
+    log.debug("Entering AdminViews.federationLinksOf().");
+    const person = federation.federatedPerson(key);
+    const rows = (person ? person.links : []).map(function (value) {
+      const parts = fedLinks.parse(value) || {};
+      const record = parts.relationship ? federation.get(parts.relationship)
+                                        : null;
+      return { link: value, relationship: String(parts.relationship || ''),
+               issuer: String(parts.issuer || ''),
+               subject: String(parts.subject || ''),
+               relationshipExists: !!record &&
+                                   record.fedRole === 'service-provider' };
+    });
+    log.debug("Leaving AdminViews.federationLinksOf(). " + rows.length);
+    return this.pagedRows(query || {}, rows,
+                          { name: 'federationLinks', noun: 'links' });
+  }
+
   userDetailJson(req, key) {
     const { log, subjectForName, stats } = this.deps;
     const self = this;
@@ -6354,6 +6401,12 @@ class AdminViews {
                                              noun: 'tokens' });
     const artifactPage = this.pagedRows(req.query, detail.artifacts,
                                    { name: 'artifacts', noun: 'artifacts' });
+    // THE PARTNERS' SUBJECTS THIS PERSON IS LINKED TO (#109), paged like the
+    // five lists above. Read off the entry, one row per federationLink value,
+    // with whether the relationship it names is still registered here — a
+    // link through a deleted relationship matches nothing, and saying so is
+    // cheaper than leaving a reader to wonder why it does nothing.
+    const federationLinkPage = this.federationLinksOf(req.query, key);
     log.debug("Leaving AdminViews.userDetailJson().");
     return {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -6367,6 +6420,7 @@ class AdminViews {
       sessionPage: sessionPage, sessionTokenPages: sessionTokenPages,
       endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                                 artifactPage,
+      federationLinkPage: federationLinkPage,
       json: (function () {
       return {
           user: row,
@@ -6410,7 +6464,12 @@ class AdminViews {
           // THE ASSERTION KEY PAIRS (2026-09-13) — `credentials`, the member
           // name an application's drill-down uses for its own. No private key,
           // for the reason personCredentialsState() gives.
-          credentials: credentialsState.json
+          credentials: credentialsState.json,
+          // Which partners' subjects sign this person in (#109). Set and
+          // removed with POST /admin-api/users/federation-link and
+          // /federation-unlink.
+          federationLinks: federationLinkPage.shown,
+          federationLinksPaging: self.pagingJson(federationLinkPage.paging)
       };
       }())
     };
@@ -6505,6 +6564,13 @@ class AdminViews {
       // together are the answer to "why can they not enrol one" — and a caller
       // that had to fetch /admin-api/webauthn as well would be reading a
       // second request's answer against this one's.
+      // APP PASSWORDS (#101): name, scope, when made and last used — never
+      // a hash — bounded by appPasswords.maxPerPerson (at most fifty), so not
+      // paged here; `GET /admin-api/users/app-passwords` is the paged list.
+      appPasswords: credentials.appPasswordsOf(key).passwords,
+      // WHICH PASSWORD-ONLY DOORS REFUSE THIS PERSON'S OWN PASSWORD (#101),
+      // the one sentence the page and the API both say.
+      passwordOnlyDoors: this.passwordOnlyDoorsFor(key),
       policy: { totpEnabled: totpLive.enabled,
                 backupCodesEnabled: recoveryLive.enabled,
                 backupCodesCount: recoveryLive.count,
@@ -6512,6 +6578,83 @@ class AdminViews {
                 primaryAllowed: keyLive.primaryAllowed,
                 mfaAllowed: keyLive.mfaAllowed,
                 maxKeysPerPerson: keyLive.maxKeysPerPerson }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PASSWORD-ONLY DOORS FOR ONE PERSON (#101, 2026-09-22): which of the
+  // five refuse their own password — every one not listed in
+  // `authn.passwordAloneDoors`, in product mode, while they hold or must hold
+  // a second factor — and which accept it, from
+  // `credentials.passwordOnlyDoors()`, with the sentence the page and the API
+  // both carry.
+  // ---------------------------------------------------------------------------
+  passwordOnlyDoorsFor(key) {
+    const { log, credentials, appPasswords } = this.deps;
+    log.debug("Entering AdminViews.passwordOnlyDoorsFor().");
+    const doors = credentials.passwordOnlyDoors(key);
+    const label = function (door) {
+      return appPasswords.doorLabel(door);
+    };
+    log.debug("Leaving AdminViews.passwordOnlyDoorsFor().");
+    return {
+      secondFactor: doors.secondFactor,
+      refused: doors.refused,
+      accepted: doors.accepted,
+      passwordAloneDoors: doors.alone,
+      sentence: !doors.secondFactor
+        ? 'They hold no second factor and none is required of them, so ' +
+          'their password is accepted at every password-only door.'
+        : !doors.applies
+          ? 'This service is in development mode, which checks no password ' +
+            'at the password-only doors; in product mode their own password ' +
+            'would be refused there while they hold or must hold a second ' +
+            'factor.'
+          : (doors.refused.length
+              ? 'Their own password is REFUSED at ' +
+                doors.refused.map(label).join(', ') + ', which cannot ask ' +
+                'for a second factor; an app password scoped to the door is ' +
+                'what they use there.'
+              : 'Their own password is still accepted at every ' +
+                'password-only door.') +
+            (doors.alone.length
+              ? ' authn.passwordAloneDoors lets it through at ' +
+                doors.alone.map(label).join(', ') + ' — ONE factor there.'
+              : '')
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE PERSON'S APP PASSWORDS, PAGED (#101) — `GET
+  // /admin-api/users/app-passwords`, the list the person's /admin/users page
+  // draws and `/portal/app-passwords` draws for themselves. Never a hash.
+  // ---------------------------------------------------------------------------
+  appPasswordsJson(query) {
+    const { log, credentials, appPasswords } = this.deps;
+    log.debug("Entering AdminViews.appPasswordsJson().");
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const live = appPasswords.settings();
+    const held = who ? credentials.appPasswordsOf(who)
+      : { ok: true, unreadable: false, passwords: [] };
+    // A FLAT list, so `page` and `per` — the parameters every list here
+    // pages on — rather than a drill-down's `<name>Page`.
+    const page = this.pagedRows(query || {}, held.passwords,
+                                { noun: 'app passwords' });
+    log.debug("Leaving AdminViews.appPasswordsJson(). " +
+              held.passwords.length + " held.");
+    return {
+      user: who,
+      enabled: live.enabled,
+      maxPerPerson: live.maxPerPerson,
+      unreadable: !!held.unreadable,
+      doors: appPasswords.DOORS.map(function (one) {
+        return { id: one.id, label: one.label, what: one.what };
+      }),
+      passwordOnlyDoors: this.passwordOnlyDoorsFor(who),
+      passwords: page.shown,
+      page: page.paging.page, pages: page.paging.pages,
+      perPage: page.paging.perPage, total: page.paging.total,
+      paging: this.pagingJson(page.paging)
     };
   }
 
@@ -6853,6 +6996,8 @@ export = {
   // answer the JSON half's `subject` member carries.
   userDetailSubject: helpers.subjectForName,
   mfaJson: slot.forward('mfaJson'),
+  appPasswordsJson: slot.forward('appPasswordsJson'),
+  passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
   personCredentialsState: slot.forward('personCredentialsState'),
   usersJson: slot.forward('usersJson'),

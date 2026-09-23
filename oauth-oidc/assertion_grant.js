@@ -192,6 +192,8 @@ const GRANT_ERROR = 'invalid_grant';
 // now rather than one per cache.
 // ---------------------------------------------------------------------------
 const usedAssertions = require('../common/used_assertions');
+// A leaf: the fetched `jwks_uri` key sets (#120).
+const clientJwks = require('./client_jwks');
 
 function skewSeconds() {
   log.debug("Entering skewSeconds().");
@@ -504,11 +506,11 @@ function unwrapAssertion(presented, opts) {
 // silently end the first the moment somebody pressed a button on a page about
 // the second.
 //
-// `jwks_uri` IS STILL NOT DEREFERENCED. Following a URL somebody registered in
-// order to verify a credential is a server-side request forgery with a
-// specification citation attached, and it is the same refusal WS-Federation's
-// `wreqptr` gets. That position is `client_auth.js`'s, made once for both
-// sections.
+// ~~`jwks_uri` IS STILL NOT DEREFERENCED.~~ — REVERSED BY #120: a registered
+// `jwks_uri` is fetched under `federation_http.ts`'s outbound policy and
+// cached (`client_jwks.js`); `ensurePartyKeys()` below fetches it for an
+// asynchronous verifier and `keysForParty()` reads the cache. `client_auth.js`
+// argues the reversal, once for both sections.
 // ---------------------------------------------------------------------------
 //
 // **AND A PERSON'S KEY LIVES SOMEWHERE ELSE ENTIRELY**, which is why this
@@ -540,15 +542,50 @@ function keysForParty(fields, kind) {
       found.push(Object.assign({ source: name }, one));
     });
   });
+  // A REGISTERED `jwks_uri`, AS FETCHED (#120). Read only where the client
+  // registered no `jwks` — RFC 7591 section 2 allows one or the other — and
+  // only from `client_jwks.js`'s cache: this reader is synchronous, so an
+  // asynchronous caller asks `ensurePartyKeys()` first and every other
+  // endpoint prefetches. A PERSON has no `jwks_uri`: it is an application's
+  // registration member and no person attribute holds one.
+  const uri = String(kind) !== 'person' && fields && fields.oauthJwksUri &&
+              !fields.oauthJwks ? String(fields.oauthJwksUri) : '';
+  let fetched = false;
+  if (uri) {
+    const held = clientJwks.cachedKeys(uri);
+    const read = held ? keysFrom(JSON.stringify(held)) : null;
+    if (read && read.error) {
+      problems.push('oauthJwksUri: ' + read.error);
+    } else if (read) {
+      fetched = true;
+      read.keys.forEach(function (one) {
+        found.push(Object.assign({ source: 'oauthJwksUri' }, one));
+      });
+    }
+  }
   log.debug('Leaving keysForParty(). ' + found.length + ' key(s).');
   return { keys: found, problems: problems,
-           // A PERSON CANNOT BE IN THIS STATE. `jwks_uri` is an application's
-           // registration member and there is no person attribute that holds
-           // one, so reporting it for a person would be a sentence about a
-           // registration nobody made.
-           jwksUriOnly: String(kind) !== 'person' &&
-                        !!(fields && fields.oauthJwksUri && !fields.oauthJwks &&
-                           !fields.oauthAssertionJwks) };
+           // A `jwks_uri` whose keys could not be had — never fetched, or
+           // the fetch refused — and nothing else to verify with.
+           jwksUriOnly: !!uri && !fetched && !fields.oauthAssertionJwks };
+}
+
+// For an ASYNCHRONOUS verifier: fetch the party's `jwks_uri` (under
+// `federation_http.ts`'s outbound policy) where it registered one and no
+// `jwks`, so that `keysForParty()` finds the keys. `kid` is the one the
+// document names, which fetches again when the cached set lacks it. Never
+// rejects.
+async function ensurePartyKeys(fields, kind, kid) {
+  log.debug('Entering ensurePartyKeys().');
+  if (String(kind) === 'person' || !fields || !fields.oauthJwksUri ||
+      fields.oauthJwks) {
+    log.debug('Leaving ensurePartyKeys(). Nothing to fetch.');
+    return null;
+  }
+  const answer = await clientJwks.ensure(String(fields.oauthJwksUri),
+                                         kid ? String(kid) : '');
+  log.debug('Leaving ensurePartyKeys(). ok=' + answer.ok);
+  return answer;
 }
 
 // The application entry that is allowed to issue assertions under this `iss`.
@@ -842,17 +879,16 @@ async function verify(opts) {
   let issuerProblem = '';
   let issuerProblemCode = 'STS-OAUTH-0046';
   if (party) {
+    const fetched = await ensurePartyKeys(party.fields, party.kind,
+                                          header && header.kid);
     const read = keysForParty(party.fields, party.kind);
     read.keys.forEach(function (one) { candidates.push(one); });
     if (read.jwksUriOnly) {
       issuerProblemCode = 'STS-OAUTH-0044';
       issuerProblem = 'the application registered for this issuer has a ' +
-                      'jwks_uri and no jwks. This service will NOT fetch a ' +
-                      'URL somebody registered in order to verify a ' +
-                      'credential — that is a server-side request forgery ' +
-                      'with a specification citation attached. Register the ' +
-                      'keys by value, as `jwks`, or have this service issue ' +
-                      'a key pair from /admin/pki.';
+                      'jwks_uri and no jwks, and its keys could not be ' +
+                      'fetched' + (fetched && fetched.why
+                        ? ': ' + fetched.why : '') + '.';
     } else if (read.problems.length) {
       issuerProblemCode = 'STS-OAUTH-0045';
       issuerProblem = read.problems.join('; ') + '.';
@@ -1356,6 +1392,7 @@ module.exports = {
   // and `oauthAssertionJwks` would be a second answer to "which of this party's
   // keys may sign".
   keysForParty: keysForParty,
+  ensurePartyKeys: ensurePartyKeys,
   unwrapAssertion: unwrapAssertion,
   // The certificate-chain path, for section 2.2 as well. A client that was
   // issued a key pair from /admin/pki can present its certificate in the `x5c`

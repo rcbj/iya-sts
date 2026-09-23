@@ -102,7 +102,9 @@ var config = {
     resourceRegistration: true,                                            // Offer resource set registration
     tokenDerivation: true,                                                 // Allow downstream token derivation
     pushFinish: true,                                                      // Deliver push interaction finishes
-    pushAllowInsecure: false,                                              // Allow http:// and untrusted TLS for push
+    pushAllowHttp: false,                                                  // Allow http:// for push
+    pushSkipTlsVerification: false,                                        // Skip TLS verification for push (development only)
+    pushCaFile: "",                                                        // CA certificates for push
     pushAllowedHosts: "",                                                  // Push host allowlist
     pushTimeoutMs: 5000,                                                   // Push timeout (ms)
     jweEnc: "A256GCM",                                                     // jwt-encrypted content encryption
@@ -128,7 +130,9 @@ var config = {
     pepStaleAfterS: 300,                 // Seconds before a registered PEP is reported stale
     pepNotify: true,                     // Nudge a registered PEP when the repository changes
     pepNotifyAllowedHosts: "",           // Notify endpoint allowlist
-    pepNotifyAllowInsecure: false,       // Allow http:// and untrusted TLS for a nudge
+    pepNotifyAllowHttp: false,           // Allow http:// for a nudge (development only)
+    pepNotifySkipTlsVerification: false, // Skip TLS verification for a nudge (development only)
+    pepNotifyCaFile: "",                 // CA certificates for a nudge
     pepNotifyTimeoutMs: 2000,            // Nudge timeout (ms)
     riskResponsePolicy: "risk-response", // The policy a change of risk is answered with
     issuancePolicy: "role-issuance"      // The policy issuance decisions are made with
@@ -154,6 +158,7 @@ var config = {
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
     mfaRequired: false,             // Require a second factor of everybody
+    passwordAloneDoors: "",         // Password-only doors that accept a password alone
     unauthenticatedSessions: false  // Offer "Continue without signing in"
   },
 
@@ -168,6 +173,12 @@ var config = {
   // --- Web security ----------------------------------------------------
   credentials: {
     factorScanLimit: 5000  // People read for the second-factor roster
+  },
+
+  // --- Second-factor requirement ---------------------------------------
+  appPasswords: {
+    enabled: true,    // Let people make app passwords
+    maxPerPerson: 10  // App passwords per person
   },
 
   // --- TOTP MFA --------------------------------------------------------
@@ -335,6 +346,8 @@ var config = {
     requireRequestObjectIssuerAudience: false,   // Require iss and aud in a request object
     requestObjectJtiOnce: true,                  // A request object's jti is accepted once
     requestObjectJtiRetentionS: 3600,            // How long a request object's jti is kept without exp (s)
+    clientJwksCacheS: 300,                       // Client jwks_uri cache (s)
+    clientJwksRefetchS: 30,                      // Client jwks_uri refetch interval (s)
     requestUriCacheS: 0,                         // request_uri content cache (s)
     requestObjectEncryptionKeyBits: 2048,        // Request object encryption: RSA key size (bits)
     requestObjectEncryptionCurve: "P-256",       // Request object encryption: EC curve
@@ -484,7 +497,9 @@ var config = {
     loginButtons: true,                                                      // Offer partners at the sign-in screen
     outbound: true,                                                          // Make back-channel requests to partners
     outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
-    outboundAllowInsecure: false,                                            // Allow http:// and untrusted TLS to a partner
+    outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
+    outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
+    outboundCaFile: "",                                                      // CA certificates for outbound requests
     requestTtlMin: 10,                                                       // Outbound request lifetime (minutes)
     maxContexts: 500,                                                        // Sign-ins in flight per realm
     maxApplicationLength: 256,                                               // Longest application a sign-in may name
@@ -730,7 +745,9 @@ var config = {
     eventsSupported: "https://schemas.openid.net/secevent/ssf/event-type/verification,https://schemas.openid.net/secevent/ssf/event-type/stream-updated", // Event types offered
     pushDelivery: true,                                                                                                                                   // Make outbound push requests
     pushAllowedHosts: "",                                                                                                                                 // Push endpoint allowlist
-    pushAllowInsecure: false,                                                                                                                             // Allow http:// and untrusted TLS to a receiver
+    pushAllowHttp: false,                                                                                                                                 // Allow http:// to a receiver (development only)
+    pushSkipTlsVerification: false,                                                                                                                       // Skip TLS verification to a receiver (development only)
+    pushCaFile: "",                                                                                                                                       // CA certificates for push delivery
     pushTimeoutMs: 10000,                                                                                                                                 // Push timeout (ms)
     pushMaxResponseBytes: 65536,                                                                                                                          // Largest push response read (bytes)
     pushRetries: 0,                                                                                                                                       // Push retries
@@ -931,7 +948,7 @@ var config = {
     k8sPrivateKeyFile: "",                                        // k8s: kubelet client key file
     k8sUseAnonymousAuthentication: false,                         // k8s: anonymous to the kubelet
     k8sTokenFile: "",                                             // k8s: kubelet bearer token file
-    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification
+    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification (development only)
     k8sKubeletCaFile: "",                                         // k8s: kubelet CA file
     k8sMaxPollAttempts: 60,                                       // k8s: pod list attempts
     k8sPollRetryIntervalMs: 500,                                  // k8s: pod list retry interval (ms)

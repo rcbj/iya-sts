@@ -29,6 +29,7 @@ libraries that decide things on its behalf.
 | `id_token_encryption.ts` | **The encrypted ID Token (OIDC Core 10.2, 2026-09-17)** — signed then encrypted to the key in the client's inline `jwks`, and the same protection on a back-channel Logout Token. See 3as. |
 | `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.ts` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
 | `fapi.js` | **The FAPI profiles over RFC 9700 mode: FAPI 1.0 Part 1 Baseline (#138) and Part 2 Advanced (#139), 2026-09-22.** `oauth2.fapi` per realm, or a named authorization server's own `fapi` member, made AMBIENT per request; the checks each profile asks beyond RFC 9700 mode, as tables of requirements with a check citing each. A leaf. See 3av. |
+| `client_jwks.js` | **A client's registered `jwks_uri`, fetched and cached (#120, 2026-09-22).** Under `federation_http.ts`'s outbound policy; per realm; refetched for an unknown `kid`. A leaf. See *OpenID Connect Registration*. |
 | `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
@@ -614,6 +615,24 @@ so must `admin-ui/admin.ts`.
    `tests/fapi2_units.js` and `tests/vendored/sts_fapi2.js` hold it; the
    Attacker Model's mapping is in `docs/oauth-security.md`.
 
+   **FAPI 2.0 MESSAGE SIGNING (#141, 2026-09-22) IS THE FOURTH VALUE,
+   `2-message-signing`: the Security Profile PLUS ALL THREE COMPONENTS** —
+   rcbj's choice over a switch per component, though the specification lets
+   an ecosystem adopt one, two or three. `fapi2()` is true for it, so every
+   2.0 rule holds, and `messageSigning()` adds: a signed request object
+   required (`requiresSignedRequestObject()`, so a push of plain parameters is
+   `STS-OAUTH-0415`) held to Advanced's exp/nbf/aud rule
+   (`requestObjectRefusal()` — section 5.3.2 asks the same three things);
+   JARM required (`STS-OAUTH-0591`, and discovery lists JARM's modes alone);
+   and RFC 9701's signed introspection, which every JWT introspection response
+   here already was. Section 5.2's non-repudiation is guidance, answered in
+   `docs/oauth-security.md` (keep the retired keys and the audit log). **THE
+   FINAL SPECIFICATION HAS NO RFC 9421 SECTIONS**, though the #45 review was
+   written against a draft that did; rcbj split HTTP signatures on the resource
+   servers out to #178. The surfaces ask for JARM under this profile as under
+   Advanced. `tests/fapi2_message_signing_units.js` and
+   `tests/vendored/sts_fapi2_message_signing.js` hold it.
+
 3aw. **`jarm.ts` IS JARM, THE JWT-SECURED AUTHORIZATION RESPONSE (#143, BUILT
    IN #139, 2026-09-22), IN EVERY MODE.** FAPI 1.0 Advanced needs it, and it
    is a final specification of its own that any client may ask for, so it is
@@ -649,8 +668,8 @@ so must `admin-ui/admin.ts`.
    (`STS-REG-0180`). Discovery lists the four modes and the three
    `authorization_*_values_supported` members.
 
-   **NOT DONE**: JARM for the device and CIBA flows (not built here), and a
-   `jwks_uri` for the encryption key (never fetched, as everywhere).
+   **NOT DONE**: JARM for the device and CIBA flows (not built here). The
+   encryption key may come from a fetched `jwks_uri` since #120.
 
 3i. **`client_auth.js` verifies all six token-endpoint methods, and it is the
    PROTOCOL half of section 2.5.** `oauth2_bcp.js` decides whether a client has
@@ -678,11 +697,10 @@ so must `admin-ui/admin.ts`.
    verified against that client's keys with `iss` and `sub` required to match.
    Do not read anything else out of an unverified assertion.
 
-   **`jwks_uri` IS RECORDED AND NEVER FOLLOWED**, which is the same refusal
-   `wsfed.ts` gives `wreqptr`: fetching a URL somebody registered in order to
-   verify a credential is a server-side request forgery with a citation
-   attached. Holding that position in one file and not the other would be no
-   position at all.
+   ~~**`jwks_uri` IS RECORDED AND NEVER FOLLOWED**, which is the same refusal
+   `wsfed.ts` gives `wreqptr`.~~ **REVERSED BY #120 (2026-09-22)**: a
+   registered `jwks_uri` is fetched — see *OpenID Connect Registration*
+   below. `wreqptr` keeps its refusal, because it arrives on the request.
 
    **THREE SOURCES OF KEY SINCE 2026-09-10, AND THEY ARE ORed.** What the client
    REGISTERED (`oauthJwks`), what this service ISSUED it from its own
@@ -1333,7 +1351,7 @@ so must `admin-ui/admin.ts`.
    an `ldapmodify` wrote (`STS-OAUTH-0293`, 500 with the reason). The lists are
    `common/crypto.js`'s: every JWS algorithm, HMAC keyed by the client secret,
    never `none` (section 5's "MUST be cryptographically secured"); the
-   ASYMMETRIC JWE list only, to the client's inline `jwks`, never a `jwks_uri`.
+   ASYMMETRIC JWE list only, to the client's `jwks` (or, since #120, its fetched `jwks_uri`).
    An `enc` with no `alg` is refused at every write and, left behind by a clear,
    fails the response rather than sending it unencrypted. **An RFC 7592 update
    that omits a member CLEARS it** — unlike the older members — because the
@@ -2009,6 +2027,113 @@ getters — and they rotate with the set. A token minted in one realm does not o
 in another. `tests/refresh_token_encryption.js` pins it; the parent project's
 `oauth2_sts_endpoints.js` and `sts_dpop.js` stopped decoding the refresh token
 the same day and read it at introspection instead.
+
+## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)
+
+The review on #45 found registration accepted most OpenID Connect client
+metadata and honoured little of it. rcbj's answers:
+
+| Asked | Chosen |
+|---|---|
+| A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
+| `grant_types` / `response_types` | Enforced in every mode, for a registered client |
+| `initiate_login_uri` | Validated, and launched from the user portal |
+
+**`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
+7591 registration and RFC 7592 update beside the other metadata checks, in
+every mode: `application_type` (`STS-REG-0181`) and its redirect-URI rules
+(`0182`), `grant_types` against `response_types` (`0183` — a response
+type carrying `token` needs the implicit grant; `code id_token` does not,
+because RFC 9700 mode refuses that grant and FAPI 1.0 Advanced needs the
+hybrid; `code` is the default response type only beside a redirecting
+grant), redirect URIs
+required for the redirect grants (`0184`), the two signing algorithms
+(`0185`), `jwks` with `jwks_uri` or a non-https `jwks_uri` (`0186`),
+`default_max_age` / `require_auth_time` / `default_acr_values` (`0187`) and
+an https `initiate_login_uri` (`0188`). `withRegistrationDefaults()` applies
+section 2's defaults, which are stored and returned (RFC 7591 section 3.2.1).
+
+**ENFORCEMENT READS `appRegistrationJson` ONLY** (`registeredFlowsOf()`),
+because `oauthGrantType` and `oauthResponseType` also record what a client
+was OBSERVED doing — a sighting is not a registration, and a client created
+by hand declares nothing and is not restricted. A response type not
+registered is a redirected `unauthorized_client` (`STS-OAUTH-0597`, in
+`vetAuthorizationRequest()`, so PAR asks it too); a grant is 400
+`unauthorized_client` (`0598`) above the grant switch — and a client that
+registered no `refresh_token` grant is issued no refresh token (`0600`,
+recorded in `issue()`, for #34's half-a-token-set reason).
+
+**`default_acr_values` and `default_max_age`** are `step_up.ts`'s
+`requirementOf(query, registered)`, each overridden by the request's own —
+`acr_values` or an essential `acr` for the first, `max_age` for the second
+(OpenID Connect Registration section 2). `require_auth_time` needs
+nothing new — `auth_time` is carried whenever a sign-in is behind the token.
+
+**RFC 7592**: an update must name its own `client_id` and any
+`client_secret` it was issued (`0595`); a registration access token for a
+client that no longer exists is revoked and answered 401 `invalid_token`
+(`0596` logs it, `0235` marks it); and the three operations exist under every
+named authorization server (`/:as/oauth2/register/:client_id`).
+
+**THE `jwks_uri` IS FETCHED WHERE A KEY IS NEEDED.** `client_jwks.js` holds
+it: `federation_http.fetchPublished()` (https, no redirect, the cap, the kill
+switch, internal addresses refused and the connection pinned in product
+mode), a per-realm cache of 256 sets for `oauth2.clientJwksCacheS`, and a
+fetch again for a `kid` the set lacks at most every
+`oauth2.clientJwksRefetchS`. A failed fetch logs `STS-OAUTH-0599` and the
+verification that needed it refuses with its own code. Two kinds of reader:
+
+* **the verifiers are asynchronous and fetch for themselves** —
+  `client_auth.js`'s client assertion, the RFC 7523 grant, a request object,
+  a software statement's publisher — through
+  `assertion_grant.ensurePartyKeys()`, then `keysForParty()` reads the cache;
+* **`introspection_jwt.recipientKey()` is synchronous**, and every encrypted
+  response (ID Token, UserInfo, RFC 9701, JARM, Logout Token) goes through
+  it. So a middleware above the authorize, token, PAR, UserInfo and
+  introspection routes calls `ensureFor()` for each client the request names
+  (`presentedClientIdsOf()`, read unverified), which dials only for a client
+  that registered an encrypted response and a `jwks_uri`; registration
+  prefetches for its own key checks (`prefetchRegisteredKeys()`), and the
+  back-channel delivery before it encrypts.
+
+**THE PORTAL'S SIGN-IN LINK** is OpenID Connect Core section 4: a GET to the
+registered `initiate_login_uri` with `iss` and `login_hint`, drawn only
+beside an application that registered one (`portal/portal.ts`,
+`initiateLoginLink()`). `applications.initiateLoginUriOf()` re-checks https,
+because `ldapmodify` reaches the document.
+
+**NOT DONE**: `target_link_uri` is not sent; `policy_uri` and `tos_uri` are
+not drawn on the consent screen. `tests/oidc_registration.js` holds it.
+
+## DISCOVERY ON THE REALM MODEL, AND WEBFINGER (#119, 2026-09-22)
+
+**An issuer here is `https://host[/realm/<id>][/<server>]`, and every
+discovery path is read with that one grammar** (rcbj's decision: discovery
+follows the realm model on the common listener). OIDC Discovery's APPENDED
+form reaches the realm through `app.js`'s prefix and leaves only the server
+segment; RFC 8414's INSERTED form arrives at the host root with the whole
+issuer path after `.well-known/<document>`, so `issuerPathTarget()` parses
+`[realm/<id>][/<server>]` and `discoveryForPath()` answers inside that realm
+(`realms.run()`), where `baseUrlOf()` and `issuerOf()` give the realm's
+issuer. **Until #119 the inserted form was answered from the DEFAULT realm**,
+with an authorization server called `realm` created on the spot, so a realm's
+RFC 8414 document named the wrong issuer and keys. Anything that does not
+parse — an unknown realm, a second server segment, a `realm/` inside a realm —
+goes to Express's 404 (`STS-OAUTH-0594`) and creates no server, which also
+closed the multi-segment mismatch the review found (`/t1/x/...` advertised an
+issuer tokens never carried).
+
+**WEBFINGER** (`webfingerEndpoint()`) is at the host root, as RFC 7033 section
+4 requires. An `acct:`, a bare e-mail address or a host resolves by the realm
+whose DNS domain it is (`realms.domainOf()`; the default realm's is
+`global.domain`) and **never looks the person up**, so it cannot enumerate
+accounts (rcbj's decision); an `https` URL on this service resolves by its
+`/realm/<id>` path. 400 without exactly one readable resource (`0592`), 404 for
+a domain or path no realm has (`0593`), `rel` filtering, a JRD. **It sends
+`Access-Control-Allow-Origin: *` itself**: RFC 7033 section 5 makes CORS a
+MUST, the answer is a public URL, and so this is the one response
+`common/cors.js`'s allowlist does not decide. `tests/vendored/sts_discovery_realms.js`
+holds all of it.
 
 ## `signed_metadata` is signed once a minute, not once a request
 
@@ -2692,8 +2817,7 @@ produced is one good for a day and renewable.
    and an RFC 9701 introspection response had been encrypted to a client's own
    key for weeks. Four decisions, each the one those two already made:
    the ASYMMETRIC families only (`common/crypto.js`'s `JWE_ASYMMETRIC_ALGS`),
-   an INLINE `jwks` only (a `jwks_uri` is never fetched — the root CLAUDE.md's
-   non-goal), REFUSED rather than downgraded (at registration with
+   the client's `jwks`, or since #120 its fetched `jwks_uri`, REFUSED rather than downgraded (at registration with
    `invalid_client_metadata`, `STS-REG-0164` for the grammar and `-0165` for a
    missing key; at issuance with `STS-OAUTH-0546`), and NO post-quantum key
    encapsulation — the signature inside may be ML-DSA or SLH-DSA, the JWE
