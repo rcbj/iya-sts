@@ -27,7 +27,8 @@
 // PS256 under FAPI 1.0 Advanced, whose section 8.6 also refuses anything but
 // PS256 and ES256), and `authorization_encrypted_response_alg` / `_enc`
 // (A128CBC-HS256 when only the alg is named) to the key in the client's
-// inline `jwks` — the ID Token's arrangement, `recipientKey()` included. An
+// `jwks` or its fetched `jwks_uri` (#120) — the ID Token's arrangement,
+// `recipientKey()` included. An
 // HMAC algorithm is keyed by the client secret. `common/applications.js`'s
 // `jarmMetadataProblem()` owns the grammar at registration.
 //

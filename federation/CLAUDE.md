@@ -722,9 +722,9 @@ needs to change it is a separate argument in a separate function, never a fourth
 name quietly added to that array.
 
 Five more things are enforced there and each is a different failure:
-`federation.outbound` turns it all off; **https only** unless
-`federation.outboundAllowInsecure` says otherwise, warned per REQUEST and not
-merely per setting; **no redirects are followed** (a 302 from a token endpoint
+`federation.outbound` turns it all off; **https only, with the partner's
+certificate verified** — see *The transport policy* below — warned per REQUEST
+and not merely per setting wherever it is relaxed; **no redirects are followed** (a 302 from a token endpoint
 would hand the credential in the `Authorization` header to whatever `Location`
 said — the same SSRF arriving through the front door); the body is capped and the
 request is timed out, because a browser is waiting on it; and **nothing that
@@ -762,13 +762,43 @@ that was checked.** That check and that resolution MOVED HERE on the same day
 them made this module — the owner of the outbound policy — the place for one
 copy; `oauth-oidc/protected_resource_metadata.ts` now asks for them and keeps
 its own refusal codes. Everything else above holds for `deliverForm()` too:
-the kill switch, https unless `federation.outboundAllowInsecure`, no redirect,
+the kill switch, the transport policy, no redirect,
 the cap, a timeout (the caller's, `oauth2.backchannelLogoutTimeoutMs`). **Its
 URL comes off a record by an attribute name from its OWN list, `SENDABLE`**
 (`oauthBackchannelLogoutUri`), and it refuses a name from `DIALLABLE` exactly as
 `fetchJson()` refuses one from `SENDABLE`: neither list borrows the other's
 names. It answers a `kind` rather than a code, so the caller names each
 failure in its own subsystem (`STS-OAUTH-0532..0540`).
+
+### The transport policy: three settings where there was one (#171, 2026-09-23)
+
+`federation.outboundAllowInsecure` allowed plain http AND turned certificate
+verification off, and product mode honoured it — on the one family where a
+client secret and an authorization code leave the process. It is three
+settings now, asked through `common/outbound_tls.ts` (shared with GNAP, SSF and
+XACML; its header argues why the policy lives in `common/` and not here):
+
+* `federation.outboundAllowHttp` — plain http, **development only**. Product
+  refuses it whatever the setting says (`STS-FED-0112`): no specification a
+  partner speaks names a loopback exception, and GNAP's is GNAP's.
+* `federation.outboundSkipTlsVerification` — verification off, **development
+  only**, warned on every request. In product it is ignored (`STS-FED-0113`,
+  once per process) and refused on write (`STS-CORE-0103`, `common/config.js`'s
+  `onlyWhile` marker).
+* `federation.outboundCaFile` — a PEM file of CA certificates a partner may
+  chain to, beside node's store. A file that cannot be read refuses the request
+  (`STS-CORE-0104`, and `kind: 'ca-file'` from `deliverForm()`,
+  `fetchPublished()` and `requestConfigured()`).
+
+**Every requester that borrows this policy asks `tlsFor(origin)` here** — the
+SAML SP metadata refresh, the RFC 9728 import, the Logout Token, a status list,
+the SPIFFE node attestors — rather than reading a setting of its own.
+`requestConfigured()` keeps one difference: an `opts.ca` the attestor passes (a
+cluster's CA) REPLACES node's store as it always did, and the CA file is asked
+only when there is none. `opts.skipVerify` (SPIRE's `skip_kubelet_verification`)
+is honoured only while `mode.skipsOutboundTlsVerification()` says so; the
+attestor asks first, and says once when product ignores it (`STS-SPIFFE-0116`).
+The removed key refuses to start (`STS-CORE-0105`).
 
 ### `fetchPublished()`: the third function, and a URL a CALLER supplied (2026-09-17)
 
@@ -788,8 +818,8 @@ credential of ours naming somebody else's list is refused rather than followed.
 What comes back is verified against the same certificate, so nothing that
 arrives is believed on its own say-so (point 5 above).
 
-It keeps every other rule here — the kill switch, https unless
-`federation.outboundAllowInsecure`, the internal-address check with the
+It keeps every other rule here — the kill switch, the transport policy, the
+internal-address check with the
 connection pinned in product mode, the body cap, the timeout — and it follows
 NO REDIRECT, which the status-list draft's section 8.2 says a client SHOULD do
 and its section 11.4 says is where the risk is: a list that has moved is a

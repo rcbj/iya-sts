@@ -264,8 +264,13 @@ endpoint (`fedTokenUrl`), UserInfo (`fedUserinfoUrl`) and JWKS (`fedJwksUri`).
 The rules:
 
 * `federation.outbound` turns every one of them off;
-* **https only** unless `federation.outboundAllowInsecure`, and that exception
-  is logged on every request;
+* **https only, with the partner's certificate verified.** In development,
+  `federation.outboundAllowHttp` admits plain http and
+  `federation.outboundSkipTlsVerification` turns verification off, each logged
+  on every request. **In product mode neither is honoured** (#171): plain http
+  is refused (`STS-FED-0112`), a stored skip is ignored (`STS-FED-0113`) and
+  cannot be set. A partner certified by a private CA is reached by naming that
+  CA in `federation.outboundCaFile`;
 * **no redirect is followed** — a 302 from a token endpoint would hand the
   client credential to whatever `Location` said;
 * the body is capped (`federation.maxResponseBytes`) and the request timed out
@@ -313,7 +318,9 @@ this*.
 | `federation.loginButtons` | `STS_FEDERATION_LOGIN_BUTTONS` | `true` | yes | Show a button per usable service-provider-side relationship on `/authn/login`. |
 | `federation.outbound` | `STS_FEDERATION_OUTBOUND` | `true` | yes | Whether this service may call a partner's token, UserInfo or JWKS endpoint at all. |
 | `federation.outboundTimeoutMs` | `STS_FEDERATION_OUTBOUND_TIMEOUT_MS` | `15000` | yes | How long to wait for a partner before the sign-in fails with an error naming the timeout. |
-| `federation.outboundAllowInsecure` | `STS_FEDERATION_OUTBOUND_ALLOW_INSECURE` | `false` | yes | Accept an `http://` partner endpoint and an untrusted certificate, logged on every request. |
+| `federation.outboundAllowHttp` | `STS_FEDERATION_OUTBOUND_ALLOW_HTTP` | `false` | yes | Accept an `http://` partner endpoint, logged on every request. Development only: product refuses plain http. |
+| `federation.outboundSkipTlsVerification` | `STS_FEDERATION_OUTBOUND_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Accept a partner certificate nothing here trusts, logged on every request. Ignored in product, and refused on write there. |
+| `federation.outboundCaFile` | `STS_FEDERATION_OUTBOUND_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a partner may chain to, beside node's own store. How product reaches a privately certified partner. |
 | `federation.requestTtlMin` | `STS_FEDERATION_REQUEST_TTL_MIN` | `10` | yes | How long an outbound sign-in's context is remembered; a later response is refused as unsolicited. |
 | `federation.maxContexts` | `STS_FEDERATION_MAX_CONTEXTS` | `500` | yes | How many in-flight sign-in contexts are held per trust realm; past it the oldest is dropped. |
 | `federation.maxApplicationLength` | `STS_FEDERATION_MAX_APPLICATION_LENGTH` | `256` | yes | The longest `?application=` a federated login carries across the round trip. |

@@ -1760,7 +1760,9 @@ class CryptoMetadata {
                   'permits a JWE-wrapped SET and neither this service nor ' +
                   'any deployed transmitter emits one, so what protects an ' +
                   'event in transit is TLS on the delivery endpoint, which ' +
-                  'is why `ssf.pushAllowInsecure` ships OFF.',
+                  'is why the receiver\'s certificate is verified — and, ' +
+                  'since #171, verified in product mode whatever ' +
+                  '`ssf.pushSkipTlsVerification` says.',
         decrypts: 'Nothing, for the same reason.',
         hashes: 'Whatever the chosen signature algorithm implies, and ' +
                 'nothing of its own: a SET carries no digest of anything the ' +

@@ -59,7 +59,7 @@ function childMain() {
   const ROOT = process.env.FSP_ROOT;
   const OUT = process.env.FSP_OUT;
   const MODE = process.env.FSP_MODE;
-  const http = require('http');
+  const https = require('https');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: '[' + MODE + '] ' + what,
@@ -84,10 +84,26 @@ function childMain() {
     const federation = require(ROOT + '/federation/federation');
     const fedSp = require(ROOT + '/federation/federation_sp');
 
-    const server = http.createServer(app);
+    // HTTPS UNDER A CA OF THIS CHILD'S OWN (#171). The relationship is to
+    // this service's own OpenID Provider, and product mode refuses a plain
+    // http back channel whatever federation.outboundAllowHttp says — so the
+    // listener serves a certificate from a CA this child makes now (the
+    // shared run-time CA helper, `tests/vendored/outbound_test_ca.js`), and
+    // federation.outboundCaFile names the CA, which is how product reaches a
+    // privately certified partner.
+    const testCa = require(ROOT + '/tests/vendored/outbound_test_ca');
+    const ca = await testCa.makeCa();
+    const leaf = await testCa.listenerCertificate(ca, '127.0.0.1');
+    const caPem = ca.certPem;
+    const caFile = require('path').join(require('os').tmpdir(),
+      'fsp-ca-' + process.pid + '.crt');
+    require('fs').writeFileSync(caFile, caPem);
+    config.setOverride('federation.outboundCaFile', caFile);
+    const server = https.createServer({ key: leaf.key, cert: leaf.cert },
+                                      app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
-    const base = 'http://127.0.0.1:' + port;
+    const base = 'https://127.0.0.1:' + port;
     const SP = 'fsp' + (MODE === 'product' ? 'p' : 'd');
     const REL = 'fsp-oidc';
     const PASSWORD = 'Fed-Link-Passw0rd!2026';
@@ -113,7 +129,8 @@ function childMain() {
             ? 'application/scim+json' : 'application/x-www-form-urlencoded';
           headers['content-length'] = Buffer.byteLength(body);
         }
-        const req = http.request({ host: '127.0.0.1', port: port,
+        const req = https.request({ host: '127.0.0.1', port: port,
+          ca: caPem,
           path: url.pathname + url.search, method: method, headers: headers },
         function (res) {
           [].concat(res.headers['set-cookie'] || []).forEach(function (line) {
@@ -298,7 +315,6 @@ function childMain() {
     }
 
     // --- the partner, the realm and the relationship ------------------------
-    config.setOverride('federation.outboundAllowInsecure', 'true');
     config.setOverride('oauth2.consentRequired', 'false');
     config.setOverride('security.rateLimitPerAddress', '100000');
     config.setOverride('security.rateLimitPerIdentity', '100000');

@@ -96,6 +96,7 @@ any of them would be a broken implementation rather than a lenient one:
 | ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP is still not attested** — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, and `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
 | Decide who may delegate to whom, in two of the three families that can | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`, and in product no such rule exists unless an operator writes one, so S4U2Proxy is refused. WS-Trust requires the requester to authenticate but has no rule on who may act for whom. RFC 8693 has no policy: `may_act` is neither issued nor read. An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-policed-in-one-family-out-of-three) | The KDC holds fixture delegation rules. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on |
+| Verify the certificate of whoever answers an outbound request — a GNAP push finish, an SSF push, a federation back channel (and the SAML metadata, RFC 9728, Logout Token and status-list fetches that share its policy), an XACML PEP nudge, a kubelet | **Always verified, since 2026-09-23 (#171)**: every `…SkipTlsVerification` setting and `spiffe.k8sSkipKubeletVerification` is ignored (logged once with its family's code) and cannot be turned on (`STS-CORE-0103`). A private CA is trusted through the family's `…CaFile`. Plain http is refused for SSF, federation and XACML whatever `…AllowHttp` says, and allowed for a GNAP push finish to a loopback address only | `…SkipTlsVerification` turns verification off, warned on every request, and `…AllowHttp` admits plain http to any host. Both are off by default |
 | ~~Tie a scope to a client~~ — **reversed 2026-09-22 (#110)** | A client is issued only the scopes its `oauthAllowedScope` declares — or, declaring none, the default set: `openid`, `profile`, `email`, `address`, `phone`, `offline_access` and the realm's OpenID4VCI scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`); a scope naming an application or a delegated permission keeps its own rules. See [Scopes](#a-scope-is-tied-to-the-client) | Any scope is issued — except this service's own protected scopes (`admin:read`, `admin:write`, the SCIM and Shared Signals scopes, the debugger permission), which are held to the declaration in both modes (`STS-OAUTH-0577`) |
 
 **Recorded is not the same claim as authenticated, and the two are kept apart
@@ -379,10 +380,9 @@ something to run against:
 - **A SAML artifact resolves exactly once**, across the cluster. A refused caller
   does not spend it.
 - **A URL a caller hands over to fetch a credential from is never followed**:
-  WS-Federation's `wreqptr`, a client's registered `jwks_uri`, and a foreign
-  SPIFFE bundle URL. The addresses this service does dial are ones an
-  administrator wrote down, one a client registered in advance (an RFC 9101
-  `request_uri`), or ones inside something that has already verified — a status
+  WS-Federation's `wreqptr` and a foreign SPIFFE bundle URL. The addresses this
+  service does dial are ones an administrator wrote down, ones a client
+  registered in advance (an RFC 9101 `request_uri`, a `jwks_uri`), or ones inside something that has already verified — a status
   list named in a credential signed by a trusted issuer, and the CRL and OCSP
   addresses in a certificate whose chain verified.
 
@@ -461,7 +461,8 @@ the ISSUER has to be configured before anything is believed:
   that arrives WITH the signature is not evidence on its own;
 * the certificate behind that key has its **whole chain validated** every time
   it verifies an assertion, and is checked for revocation;
-* `jwks_uri` is **never followed**;
+* a registered `jwks_uri` is **fetched under the outbound policy** (https, no
+  redirect, internal addresses refused in product mode) and cached;
 * a **person** as issuer may assert only about themselves.
 
 **The gate is on the SIGNER.** In product the `sub` must be somebody this realm
@@ -658,9 +659,13 @@ because in GNAP the key IS the client.
 * **A self-signed client certificate proves itself** in both modes: mutual TLS
   binds to the certificate the handshake completed with, by thumbprint or key,
   and no chain or revocation is consulted.
-* **A push finish** must go to a registered URI in product. It may dial `http`
-  only with `gnap.pushAllowInsecure`, which also turns off TLS verification, and
-  only hosts in `gnap.pushAllowedHosts` when that list is set.
+* **A push finish** must go to a registered URI in product. It dials `http`
+  only with `gnap.pushAllowHttp` — any host in development, a loopback address
+  only in product (RFC 9635 section 2.5.2.1) — and only hosts in
+  `gnap.pushAllowedHosts` when that list is set. **The client's certificate is
+  verified in product whatever `gnap.pushSkipTlsVerification` says** (#171);
+  a client certified by a private CA is reached through `gnap.pushCaFile`.
+  In development that setting still turns verification off.
 * **Macaroon third-party caveats, Biscuit third-party blocks and ZCAP invocation
   proofs are not implemented**; a token that needs one is refused.
 * **A zcap token's proof is checked only in the suite the realm is set to.**

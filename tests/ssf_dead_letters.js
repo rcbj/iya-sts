@@ -58,7 +58,7 @@ function child() {
   (async function () {
     const config = require(ROOT + '/common/config');
     [['ssf.enabled', 'true'], ['ssf.pushDelivery', 'true'],
-     ['ssf.pushAllowInsecure', 'true'], ['ssf.deadStreamTimeoutS', '300'],
+     ['ssf.pushAllowHttp', 'true'], ['ssf.deadStreamTimeoutS', '300'],
      ['ssf.deadLetterMaxPerStream', '3'], ['ssf.pushConcurrency', '2'],
      ['ssf.pushBacklog', '1'], ['ssf.pushTimeoutMs', '2000']]
       .forEach(function (pair) {

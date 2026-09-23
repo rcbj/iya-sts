@@ -345,7 +345,7 @@ are reconciled, which happens whenever one of the realm's settings changes.
 | `spiffe.k8sPrivateKeyFile` | `STS_SPIFFE_K8S_PRIVATE_KEY_FILE` | (empty) | yes | That certificate's private key file. |
 | `spiffe.k8sUseAnonymousAuthentication` | `STS_SPIFFE_K8S_USE_ANONYMOUS_AUTHENTICATION` | `false` | yes | Present no token and no certificate on the secure port. |
 | `spiffe.k8sTokenFile` | `STS_SPIFFE_K8S_TOKEN_FILE` | (empty) | yes | The token file; empty is the in-cluster service account's. |
-| `spiffe.k8sSkipKubeletVerification` | `STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION` | `false` | yes | Do not verify the kubelet's certificate. |
+| `spiffe.k8sSkipKubeletVerification` | `STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION` | `false` | yes | Do not verify the kubelet's certificate. **Development only** (#171): ignored in product mode, and refused on write there. |
 | `spiffe.k8sKubeletCaFile` | `STS_SPIFFE_K8S_KUBELET_CA_FILE` | (empty) | yes | The kubelet's CA file; empty is the service account's `ca.crt`. |
 | `spiffe.k8sMaxPollAttempts` | `STS_SPIFFE_K8S_MAX_POLL_ATTEMPTS` | `60` | yes | How often the pod list is read before a missing container fails attestation. |
 | `spiffe.k8sPollRetryIntervalMs` | `STS_SPIFFE_K8S_POLL_RETRY_INTERVAL_MS` | `500` | yes | The wait between pod list reads. |

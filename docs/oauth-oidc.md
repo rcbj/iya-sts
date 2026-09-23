@@ -184,7 +184,10 @@ development mode only; product mode refuses an unregistered client.
 
 A client's keys come from its registered JWKS, from key pairs this service's
 certificate authority issued it, or from an `x5c` chain to this realm's Root.
-**A `jwks_uri` is recorded and never fetched.** The mutual TLS methods are
+**A registered `jwks_uri` is fetched** when a key is needed, under the
+outbound policy (https, no redirects, a size cap, internal addresses refused in
+product mode). The key set is cached for `oauth2.clientJwksCacheS` and fetched
+again for an unknown `kid` at most every `oauth2.clientJwksRefetchS`. The mutual TLS methods are
 described in [OAuth security](oauth-security.md#mutual-tls-rfc-8705).
 
 **Client secrets expire and rotate.** A secret past `oauthClientSecretExpiresAt`
@@ -480,14 +483,36 @@ registration refuses too. The registered `scope` is the list the client may be
 issued (`oauthAllowedScope`, see [Scopes](#scopes-a-client-may-be-issued)), and
 it may not name this service's own protected scopes.
 
+**Registration applies OpenID Connect Registration's rules in every mode.**
+
+* The defaults are stored and returned: `client_secret_basic`,
+  `authorization_code`, `code` and `application_type` `web`.
+* A `native` client's redirect URIs must be loopback `http` or a private-use
+  scheme. A `web` client using the implicit grant must use `https` and not
+  `localhost`.
+* `grant_types` and `response_types` must agree. They are then **enforced**:
+  a response type the client did not register is `unauthorized_client` at the
+  authorization endpoint, and so is an unregistered grant at the token
+  endpoint. A client that did not register `refresh_token` gets no refresh
+  token.
+* `jwks` and `jwks_uri` together are refused.
+* `default_max_age` and `default_acr_values` apply unless the request names
+  its own `max_age`, or its own `acr_values` or essential `acr`.
+* An `initiate_login_uri` must be `https`. The user portal (`/portal/applications`) shows a
+  **Sign in** link to it, carrying `iss` and `login_hint` (Core section 4).
+
+An RFC 7592 update must name the client's own `client_id` and, if it sends a
+`client_secret`, the one it was issued. A registration access token for a
+client that no longer exists is revoked and answered `401 invalid_token`.
+
 A **software statement** (RFC 7591 section 2.3) is trusted when this realm
 issued it (from an application's page or
 `POST /admin-api/applications/issue-software-statement`), or when an
 application declares its issuer on `oauthSoftwareStatementIssuer` and holds the
 signing key. A trusted statement's claims take precedence over the JSON. A
 client admitted through a closed endpoint by a statement must present a
-statement from the same issuer with every update. A `jwks_uri` is not fetched,
-and no initial access token is issued.
+statement from the same issuer with every update. A publisher's `jwks_uri` is
+fetched like a client's. No initial access token is issued.
 
 Applications can also be created by hand on `/admin/applications/new`, which can
 import an [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728) protected resource
@@ -536,7 +561,6 @@ what it reaches.
 * The device authorization grant: there is no device authorization endpoint.
 * `check_session_iframe` (Session Management, #121).
 * Aggregated and distributed claims (#147) and a Self-Issued OP (#129).
-* Fetching any `jwks_uri`.
 * Enforcing `value`/`values` or `essential` in a claims request, other than
   for `acr`.
 * Encrypted access tokens, and the RFC 9068 `roles` and `entitlements` claims.
@@ -671,6 +695,8 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.requestObjectJtiRetentionS` | `STS_OAUTH2_REQUEST_OBJECT_JTI_RETENTION_S` | `3600` | yes | How long a spent `jti` is remembered when its object has no `exp`. |
 | `oauth2.requestUriTimeoutMs` | `STS_OAUTH2_REQUEST_URI_TIMEOUT_MS` | `5000` | yes | How long a registered `request_uri` may take to answer. |
 | `oauth2.requestUriMaxBytes` | `STS_OAUTH2_REQUEST_URI_MAX_BYTES` | `65536` | yes | The largest answer a `request_uri` may give. |
+| `oauth2.clientJwksCacheS` | `STS_OAUTH2_CLIENT_JWKS_CACHE_S` | `300` | yes | How long a key set fetched from a client's `jwks_uri` is reused. |
+| `oauth2.clientJwksRefetchS` | `STS_OAUTH2_CLIENT_JWKS_REFETCH_S` | `30` | yes | The least time between two fetches of one `jwks_uri` for a `kid` the cached set lacks. |
 | `oauth2.requestUriCacheS` | `STS_OAUTH2_REQUEST_URI_CACHE_S` | `0` | yes | How long a fetched `request_uri` answer is reused; 0 fetches every time. |
 | `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
 | `oauth2.requestObjectEncryptionCurve` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_CURVE` | `P-256` | yes | The curve of the EC key each realm publishes for ECDH-ES request object encryption. |
@@ -745,10 +771,9 @@ be set per [trust realm](trust-realms.md).
 * **A metadata member is a promise.** A switched-off grant, endpoint or
   capability is removed from discovery, and a named authorization server's
   enforced members drive its endpoints. The document is the behaviour.
-* **No URL a caller supplied is fetched to verify something.** A `jwks_uri` is
-  recorded and never followed, because that would be a server-side request
-  forgery. A `request_uri` is fetched only when the client registered that
-  exact address.
+* **No URL a request supplies is fetched to verify something.** A `jwks_uri`
+  and a `request_uri` are fetched only because the client REGISTERED them,
+  under the outbound policy.
 * **Consent is on by default, unlike every other policy here.** Every real
   authorization server shows a consent screen at first sign-in, and a client
   that has never met one has never run the code that handles it. The screen adds

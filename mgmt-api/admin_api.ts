@@ -8999,9 +8999,10 @@ class AdminApi {
                          'IS THE ONLY OPERATION IN THIS API THAT MAKES AN ' +
                          'OUTBOUND REQUEST, and the second surface in this ' +
                          'service that makes one at all — federation is the ' +
-                         'other. The same refusals apply: https only unless ' +
-                         '`federation.outboundAllowInsecure` is on, a ' +
-                         'timeout of `federation.outboundTimeoutMs`, no ' +
+                         'other. The same refusals apply: https with the ' +
+                         'certificate verified (the three ' +
+                         '`federation.outbound…` transport settings, #171), ' +
+                         'a timeout of `federation.outboundTimeoutMs`, no ' +
                          'redirects followed, and a size cap.\n\nISSUING ' +
                          'NEVER FETCHES. This writes the certificate onto ' +
                          'the entry and an assertion reads the entry, so no ' +
@@ -9055,8 +9056,8 @@ class AdminApi {
                          '`anyUnmatched` otherwise. A mismatch is reported ' +
                          'and is NOT a refusal.\n\n**A FETCH FOLLOWS THE ' +
                          'OUTBOUND POLICY**: `federation.outbound` must be ' +
-                         'on, https unless ' +
-                         '`federation.outboundAllowInsecure`, no redirect ' +
+                         'on, https with the certificate verified (#171), ' +
+                         'no redirect ' +
                          'followed, `federation.maxResponseBytes` and ' +
                          '`federation.outboundTimeoutMs`. In product mode ' +
                          'the host may not resolve to a loopback, private, ' +

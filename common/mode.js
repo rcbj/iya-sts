@@ -751,6 +751,41 @@ function dialsInternalAddresses() {
   return !isProduct();
 }
 
+// May an outbound request go out over TLS WITHOUT verifying the certificate
+// of whoever answers (#171, 2026-09-23)? Four families send something across
+// the network to an address somebody configured or registered — GNAP's push
+// finish, SSF push delivery, federation's back channels and the XACML PEP
+// nudge — and each has a `…SkipTlsVerification` setting for the one case it
+// exists for: a listener on a developer's machine with a certificate nothing
+// trusts. Development answers yes and the setting is honoured, with a warning
+// on every request. Product answers no: the setting is IGNORED (logged once
+// with the family's code) and refused on write, because RFC 9635 section
+// 11.1, RFC 8935 and BCP 195 (RFC 9325) all require the peer to be
+// authenticated, and an unverified session gives none of that protection. A
+// private CA is reached with the family's `…CaFile` instead, with
+// verification on. SPIRE's `skip_kubelet_verification`
+// (`spiffe.k8sSkipKubeletVerification`) asks this too. `common/outbound_tls.ts`
+// is the one place it is asked.
+function skipsOutboundTlsVerification() {
+  log.debug("Entering skipsOutboundTlsVerification().");
+  log.debug("Leaving skipsOutboundTlsVerification().");
+  return !isProduct();
+}
+
+// May an outbound request go out over PLAIN HTTP to an address that is not
+// this host (#171)? The same four families, each with a `…AllowHttp` setting.
+// Development answers yes where that setting is on. Product answers no, and
+// the one exception is decided by the family, not here: GNAP's push finish may
+// still go to a loopback address, because RFC 9635 section 2.5.2.1 (and RFC
+// 8252 for native clients) names loopback as a legitimate place for a client
+// instance to listen — `STS-GNAP-0103`'s rule, unchanged. SSF, federation and
+// XACML have no such text and refuse plain http outright in product.
+function dialsPlainHttpOutbound() {
+  log.debug("Entering dialsPlainHttpOutbound().");
+  log.debug("Leaving dialsPlainHttpOutbound().");
+  return !isProduct();
+}
+
 // Is an RFC 9728 protected resource metadata document that fails a MUST a
 // client applies accepted with a warning (2026-09-13)? Two of them: section
 // 3.3's `resource` matching the well-known URL the document was fetched from,
@@ -983,6 +1018,26 @@ const REQUIREMENTS = [
              'resolved once and the connection pinned to the address that ' +
              'was checked. A malformed document is refused in both modes.',
     where: 'oauth-oidc/protected_resource_metadata.ts' },
+  { id: 'outbound-tls',
+    what: 'An outbound request verifies the certificate of whoever answers, ' +
+          'and does not go out over plain http',
+    development: 'GNAP push finishes, SSF push deliveries, federation\'s ' +
+                 'back channels and XACML PEP nudges honour their ' +
+                 '…SkipTlsVerification settings (verification off, warned on ' +
+                 'every request) and their …AllowHttp settings (plain http to ' +
+                 'any host). SPIRE\'s spiffe.k8sSkipKubeletVerification is ' +
+                 'honoured too.',
+    product: 'Every …SkipTlsVerification setting, and ' +
+             'spiffe.k8sSkipKubeletVerification, is IGNORED — logged once ' +
+             'with its code — and refused on write through /admin and ' +
+             '/admin-api (STS-CORE-0103); a private CA is reached through ' +
+             'the family\'s …CaFile with verification on. Plain http is ' +
+             'refused for SSF, federation and XACML whatever …AllowHttp ' +
+             'says, and allowed for a GNAP push finish only to a loopback ' +
+             'address (RFC 9635 section 2.5.2.1).',
+    where: 'common/outbound_tls.ts, gnap/gnap_http.ts, ssf/ssf_http.ts, ' +
+           'federation/federation_http.ts, xacml/xacml_pep_http.ts, ' +
+           'spiffe/spiffe_workload_attestor_k8s.ts' },
   { id: 'realm-chooser',
     what: 'The realm chooser before sign-in lists every realm',
     development: 'A browser with no session at /admin or /portal, on a ' +
@@ -1631,6 +1686,8 @@ module.exports = {
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,
+  skipsOutboundTlsVerification: skipsOutboundTlsVerification,
+  dialsPlainHttpOutbound: dialsPlainHttpOutbound,
   acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,
   gatesScim: gatesScim,

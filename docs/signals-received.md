@@ -128,7 +128,7 @@ delivery cannot be cleared at all.
 | `ssf.pushDelivery` | `true` | make outbound push requests **at all**, these two included |
 | `ssf.maxReceivedEvents` | `200` | how many delivered events each inbox keeps, per realm |
 
-`ssf.pushAllowedHosts` and `ssf.pushAllowInsecure` do **not** apply to these two:
+`ssf.pushAllowedHosts`, `ssf.pushAllowHttp` and `ssf.pushSkipTlsVerification` do **not** apply to these two:
 the address is this process's own, computed rather than named by anybody, and a
 request that does not leave the host is not a Security Event Token in transit.
 Every other receiver is bound by both.

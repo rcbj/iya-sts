@@ -386,6 +386,8 @@ const CSS =
   // underline removed — which reads as a link that has been visited.
   '.grid td strong .home{color:#2c5cc5}' +
   '.grid td strong .unlinked{color:#8a8a96;cursor:help}' +
+  '.grid td strong a.launch{font-size:.85em;font-weight:normal;' +
+  'margin-left:.5em}' +
   // A BLOCK, because two of them follow the application's name in one cell —
   // the identifier and the description — and inline they run together into
   // one line that reads as a single fact.
@@ -3643,6 +3645,8 @@ class Portal {
         // a link. An entry with no home page is drawn with its name greyed out
         // and the foot of the page says who can fix that.
         homePage: applications.homePageOf(one),
+        // OpenID Connect Core section 4's `initiate_login_uri`, or '' (#120).
+        initiateLogin: applications.initiateLoginUriOf(one),
         // The first description on the entry, if it carries one. An application
         // registered by a client has none; one an operator created usually
         // does.
@@ -3710,7 +3714,9 @@ class Portal {
   // who can make it one. `title` carries that sentence for a reader who hovers,
   // because a grey name with no explanation reads as something broken.
   //
-  // **IT IS STILL NOT A LAUNCH BUTTON**, and the card below the table keeps
+  // **IT IS STILL NOT A LAUNCH BUTTON** (the one launch is
+  // `initiateLoginLink()`, OpenID Connect Core section 4, #120), and the card
+  // below the table keeps
   // that argument: this service implements identity-provider-initiated sign-on
   // in none of the four browser profiles, so a link that STARTED a sign-in
   // would have to invent a request the application never asked for. This link
@@ -3739,10 +3745,48 @@ class Portal {
       self.esc(row.name) + '</a>';
   }
 
-  private applicationsPage(session, message, error, wanted) {
+  // ---------------------------------------------------------------------------
+  // THE ONE LAUNCH THERE IS: OPENID CONNECT CORE SECTION 4 (#120, rcbj's
+  // decision). A relying party that REGISTERED `initiate_login_uri` has asked
+  // for a third party to start its sign-in, so this link is not an invented
+  // request: it is a GET to the address the application gave, with section
+  // 4's `iss` (this realm's issuer, which the relying party must know and
+  // must check) and `login_hint` (the person looking at the page, who chose
+  // to click). The relying party then sends an ordinary authorization request
+  // here. `target_link_uri` is not sent — this page has no deep link to name.
+  // ---------------------------------------------------------------------------
+  private initiateLoginLink(row, issuer, username) {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering Portal.initiateLoginLink().");
+    if (!row.initiateLogin || !issuer) {
+      log.debug("Leaving Portal.initiateLoginLink(). None registered.");
+      return '';
+    }
+    const url = new URL(row.initiateLogin);
+    url.searchParams.set('iss', issuer);
+    url.searchParams.set('login_hint', username);
+    log.debug("Leaving Portal.initiateLoginLink().");
+    return '<a class="launch" rel="noopener" href="' +
+      self.esc(url.toString()) + '">Sign in</a>';
+  }
+
+  private applicationsPage(session, message, error, wanted, base) {
     const self = this;
     const { log } = this.deps;
     log.debug('Entering Portal.applicationsPage().');
+    let issuer = '';
+    try {
+      // Lazily, `common/oidc_rp.ts`'s arrangement: this module is required
+      // (8a) before the authorization server's libraries are wired.
+      issuer = base ? require('../oauth-oidc/jwt_access_token')
+        .issuerFor(base) : '';
+    } catch (e) {
+      log.debug("Caught in Portal.applicationsPage(): " +
+                ((e && e.message) || e));
+      // No issuer: no section 4 link is drawn.
+      issuer = '';
+    }
     const found = self.applicationsFor(session.user.username);
     const pages = Math.max(1, Math.ceil(found.rows.length / PER_PAGE));
     const at = Math.min(Math.max(1, wanted || 1), pages);
@@ -3752,7 +3796,10 @@ class Portal {
       ? '<table class="grid"><tr><th>Application</th><th>Sign-in</th>' +
         '<th>You would be issued</th></tr>' +
         shown.map(function (row) {
+          const launch = self.initiateLoginLink(row, issuer,
+                                                session.user.username);
           return '<tr><td><strong>' + self.linkedName(row) + '</strong>' +
+            (launch ? ' ' + launch : '') +
             '<span class="ident"><code>' + self.esc(row.identifier) +
             '</code></span>' +
             (row.description
@@ -3827,12 +3874,15 @@ class Portal {
       'yourself, and a sign-in starts there. A name in grey means this ' +
       'identity provider has not been told where that application lives; ' +
       'whoever administers this service can set a home page on its entry, ' +
-      'and until then there is nothing to link to. Neither is a button that ' +
-      'starts a sign-in for you: this service implements no ' +
-      'identity-provider-initiated sign-on in any of the four browser ' +
-      'profiles — <code>/saml2</code> says so on its own page — so a link ' +
-      'that began one would have to invent a request the application never ' +
-      'asked for and is not expecting.</p></div>');
+      'and until then there is nothing to link to. <strong>Sign in</strong> ' +
+      'appears only beside an OpenID Connect application that registered ' +
+      'an <code>initiate_login_uri</code>: it asks that application to start ' +
+      'a sign-in here, naming this identity provider and you (OpenID ' +
+      'Connect Core section 4). Nothing else starts a sign-in for you: this ' +
+      'service implements no identity-provider-initiated sign-on in the ' +
+      'browser profiles — <code>/saml2</code> says so on its own page — so ' +
+      'such a link would have to invent a request the application never ' +
+      'asked for.</p></div>');
     log.debug('Leaving Portal.applicationsPage(). Page ' + at + ' ' +
       'of ' + pages + '.');
     return html;
@@ -4611,7 +4661,7 @@ class Portal {
                 session.user.username + '.');
       return self.send(res, 200, self.applicationsPage(session,
         asked.value.done ? String(asked.value.done) : null, null,
-        asked.value.page || 1));
+        asked.value.page || 1, baseUrlOf(req)));
     });
 
     // -------------------------------------------------------------------------

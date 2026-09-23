@@ -346,7 +346,7 @@ module.exports = {
     const local = JSON.stringify({ resource: origin + '/api',
                                    scopes_supported: ['read'] });
     try {
-      await withSetting(config, 'federation.outboundAllowInsecure', true,
+      await withSetting(config, 'federation.outboundAllowHttp', true,
                         async function () {
         server.handler = function (req, res) {
           if (req.url === '/.well-known/oauth-protected-resource/api') {
@@ -397,7 +397,22 @@ module.exports = {
         });
         await withSetting(config, 'global.mode', 'product', async function () {
           const before = server.hits;
-          const blocked = await prm.load({ url: origin + '/.well-known/' +
+          // PLAIN HTTP IS REFUSED FIRST IN PRODUCT (#171), whatever
+          // federation.outboundAllowHttp says — so the address rule below is
+          // asked of the same addresses over https, which is refused before
+          // any connection is opened and so needs no listener that speaks it.
+          const plain = await prm.load({ url: origin + '/.well-known/' +
+                                              'oauth-protected-resource/' +
+                                              'api' }, ctx);
+          t.check(codeOf(errorCodes, plain) === 'STS-REG-0079' &&
+                  /product mode/.test(JSON.stringify(plain.errors || '')) &&
+                  server.hits === before,
+                  'PRODUCT: plain http is refused whatever ' +
+                  'federation.outboundAllowHttp says, and nothing is dialled',
+                  codeOf(errorCodes, plain) + ' ' +
+                  JSON.stringify(plain.errors || ''));
+          const secureOrigin = origin.replace(/^http:/, 'https:');
+          const blocked = await prm.load({ url: secureOrigin + '/.well-known/' +
                                                 'oauth-protected-resource/' +
                                                 'api' }, ctx);
           t.check(codeOf(errorCodes, blocked) === 'STS-REG-0080' &&
@@ -405,7 +420,7 @@ module.exports = {
                   'PRODUCT: a URL on loopback is refused and NO REQUEST ' +
                   'REACHED THE SERVER', codeOf(errorCodes, blocked) + ' hits ' +
                   (server.hits - before));
-          const byName = await prm.load({ url: 'http://localhost:' +
+          const byName = await prm.load({ url: 'https://localhost:' +
                                                server.port + '/x' }, ctx);
           t.check(codeOf(errorCodes, byName) === 'STS-REG-0080' &&
                   server.hits === before,
@@ -415,7 +430,7 @@ module.exports = {
       });
       const insecureOff = await prm.load({ url: origin + '/x' }, ctx);
       t.equal(codeOf(errorCodes, insecureOff), 'STS-REG-0079',
-              'plain http with federation.outboundAllowInsecure off is ' +
+              'plain http with federation.outboundAllowHttp off is ' +
               'refused before anything is dialled');
     } finally {
       server.server.close();

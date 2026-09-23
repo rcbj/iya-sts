@@ -304,10 +304,13 @@ changes, which brings a change down in tens of milliseconds instead of up to
 a change, and the nudge body is not read and nothing in it is trusted.
 
 By default the compose service's nudge is **refused**, because its notify URL is
-plain `http` and `xacml.pepNotifyAllowInsecure` is off. That is the design
+plain `http` and `xacml.pepNotifyAllowHttp` is off. That is the design
 demonstrating itself: no nudge is delivered, the PDP says why on the PEP's row,
 and the PEP converges on its poll anyway. Set
-`STS_XACML_PEP_NOTIFY_ALLOW_INSECURE=true` on the mock to watch the other half.
+`STS_XACML_PEP_NOTIFY_ALLOW_HTTP=true` on a mock in development mode to watch
+the other half; product mode refuses a plain-http nudge whatever it says
+(#171), and a PEP it nudges must serve https with a certificate that verifies,
+against node's store or `xacml.pepNotifyCaFile`.
 
 ## When the PDP goes away
 

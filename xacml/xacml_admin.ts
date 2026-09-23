@@ -629,7 +629,10 @@ class XacmlAdmin {
       notify: {
         on: pepHttp.notifyAllowed(),
         allowedHosts: pepHttp.allowedHosts(),
-        allowInsecure: pepHttp.allowInsecure(),
+        // #171: `xacml.pepNotifyAllowHttp`, the certificate check and the CA
+        // file, as they are IN FORCE here — a skip stored in a product realm
+        // reads false.
+        transport: pepHttp.transportSettings(),
         timeoutMs: pepHttp.timeoutMs()
       },
       peps: rows,

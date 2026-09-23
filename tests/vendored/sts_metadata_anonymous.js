@@ -928,6 +928,10 @@ const WELL_KNOWN_ELSEWHERE = {
     "the same handler as /.well-known/gnap-as-rs for a NAMED authorization " +
     "server profile, which only exists once somebody creates one; the " +
     "unnamed form is the row in DOCUMENTS.",
+  "/.well-known/webfinger":
+    "RFC 7033 WebFinger (#119): it answers only with a resource parameter, " +
+    "and sts_discovery_realms.js fetches it anonymously for every form of " +
+    "resource, with its JRD, its CORS header and its 400 and 404.",
   "/.well-known/hoba/register":
     "NOT a document — it is where a client REGISTERS a HOBA key, and it is a " +
     "POST that changes state. sts_admin_console.js and the SCIM jobs are " +

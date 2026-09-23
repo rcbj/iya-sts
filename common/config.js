@@ -1163,14 +1163,44 @@ const SETTINGS = [
     description: 'Section 4.2.2: an HTTP POST to a URI the CLIENT supplied. ' +
                  'Off makes no outbound request at all and stops advertising ' +
                  'push.' },
-  { key: 'gnap.pushAllowInsecure', group: 'GNAP', label: 'Allow http:// and ' +
-      'untrusted TLS for push',
-    path: 'gnap.pushAllowInsecure', env: 'STS_GNAP_PUSH_ALLOW_INSECURE',
+  // THE THREE PUSH TRANSPORT SETTINGS (#171). They were ONE,
+  // `gnap.pushAllowInsecure`, which allowed plain http AND turned certificate
+  // verification off, and which product mode honoured. `REPLACED_SETTINGS`
+  // below refuses to start while anything still names it;
+  // `common/outbound_tls.ts` is where the three are asked.
+  { key: 'gnap.pushAllowHttp', group: 'GNAP', label: 'Allow http:// for push',
+    path: 'gnap.pushAllowHttp', env: 'STS_GNAP_PUSH_ALLOW_HTTP',
     type: 'bool', dflt: false,
     runtime: true,
-    description: 'Push to a plain http URI, or to an https one whose ' +
-                 'certificate does not verify. Every such request is logged ' +
-                 'as a warning.' },
+    description: 'Push to a plain http finish URI. In development, to any ' +
+                 'host; in product mode, to a loopback address only (RFC ' +
+                 '9635 section 2.5.2.1, STS-GNAP-0103). Every such request ' +
+                 'is logged as a warning: the interaction reference travels ' +
+                 'in clear.' },
+  { key: 'gnap.pushSkipTlsVerification', group: 'GNAP',
+    label: 'Skip TLS verification for push (development only)',
+    path: 'gnap.pushSkipTlsVerification',
+    env: 'STS_GNAP_PUSH_SKIP_TLS_VERIFICATION',
+    type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On sends a push finish to ' +
+                 'an https URI WITHOUT verifying the certificate of whoever ' +
+                 'answers, so the interaction reference goes to anybody who ' +
+                 'can intercept the connection (RFC 9635 section 11.1). ' +
+                 'Every such request is logged as a warning. In product mode ' +
+                 'it is ignored (STS-GNAP-0720, logged once) and cannot be ' +
+                 'set (STS-CORE-0103): name a private CA in gnap.pushCaFile ' +
+                 'instead.' },
+  { key: 'gnap.pushCaFile', group: 'GNAP', label: 'CA certificates for push',
+    path: 'gnap.pushCaFile', env: 'STS_GNAP_PUSH_CA_FILE',
+    type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates a client instance\'s push ' +
+                 'listener may chain to, BESIDE node\'s own CA store — how a ' +
+                 'client certified by a private CA is reached with ' +
+                 'verification on. Read on every push; a file that cannot be ' +
+                 'read or holds no certificate refuses the push ' +
+                 '(STS-CORE-0104).' },
   { key: 'gnap.pushAllowedHosts', group: 'GNAP', label: 'Push host allowlist',
     path: 'gnap.pushAllowedHosts', env: 'STS_GNAP_PUSH_ALLOWED_HOSTS',
     type: 'csv', dflt: '',
@@ -5142,6 +5172,29 @@ const SETTINGS = [
                  'that wants its request objects refused for good sends ' +
                  '`exp`.' },
 
+  // A CLIENT'S jwks_uri, FETCHED (#120, rcbj's decision). How long a fetched
+  // key set is used before it is fetched again, and the least time between
+  // two fetches that an unknown `kid` may force — the second is what keeps a
+  // stream of made-up kids from turning this service into a load generator
+  // against somebody's key endpoint.
+  { key: 'oauth2.clientJwksCacheS', group: 'OAuth 2.0 / OIDC',
+    label: 'Client jwks_uri cache (s)',
+    env: 'STS_OAUTH2_CLIENT_JWKS_CACHE_S', type: 'int', dflt: 300,
+    min: 0, max: 86400, runtime: true,
+    description: 'How long the key set a client\'s registered jwks_uri ' +
+                 'answered with is used before it is fetched again. ZERO ' +
+                 'fetches it for every request that needs a key. A key ' +
+                 'set lacking the kid an assertion names is fetched again ' +
+                 'sooner (oauth2.clientJwksRefetchS).' },
+  { key: 'oauth2.clientJwksRefetchS', group: 'OAuth 2.0 / OIDC',
+    label: 'Client jwks_uri refetch interval (s)',
+    env: 'STS_OAUTH2_CLIENT_JWKS_REFETCH_S', type: 'int', dflt: 30,
+    min: 0, max: 3600, runtime: true,
+    description: 'The least time between two fetches of one jwks_uri that ' +
+                 'an unknown kid may force, so a client that rotated its ' +
+                 'keys is picked up quickly and a stream of invented kids ' +
+                 'cannot make this service fetch on every request.' },
+
   { key: 'oauth2.requestUriCacheS', group: 'OAuth 2.0 / OIDC',
     label: 'request_uri content cache (s)',
     env: 'STS_OAUTH2_REQUEST_URI_CACHE_S', type: 'int', dflt: 0,
@@ -5399,8 +5452,8 @@ const SETTINGS = [
                  'backchannel_logout_uri is POSTed a Logout Token signed ' +
                  'like its ID Token. The POSTs go out after the sign-out has ' +
                  'answered, through the outbound policy ' +
-                 '(federation.outbound, https unless ' +
-                 'federation.outboundAllowInsecure, and no ' +
+                 '(federation.outbound, https with the certificate verified, ' +
+                 'and no ' +
                  'internal address in product mode), and each outcome is an ' +
                  'audit row. A session that EXPIRES sends too while ' +
                  'oauth2.backchannelLogoutOnExpiry is on, and so does one an ' +
@@ -5968,19 +6021,48 @@ const SETTINGS = [
                  'milliseconds — this is the budget for the one that arrives ' +
                  'while a realm is still being born.' },
 
-  { key: 'federation.outboundAllowInsecure', group: 'Federation',
-    label: 'Allow http:// and untrusted TLS to a partner',
-    env: 'STS_FEDERATION_OUTBOUND_ALLOW_INSECURE', type: 'bool', dflt: false,
+  // THE THREE OUTBOUND TRANSPORT SETTINGS (#171), which were ONE —
+  // `federation.outboundAllowInsecure` — honoured in product mode. They cover
+  // every request federation_http.ts makes and every requester that borrows
+  // its policy: the SAML SP metadata refresh, the RFC 9728 import, the
+  // back-channel Logout Token, a status list, SPIFFE's node attestors.
+  { key: 'federation.outboundAllowHttp', group: 'Federation',
+    label: 'Allow http:// to a partner (development only)',
+    env: 'STS_FEDERATION_OUTBOUND_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
     description: 'OFF by default, which is the one place this service is ' +
                  'stricter than a mock would ordinarily be: what travels on ' +
                  'these requests is a client secret and an authorization ' +
                  'code, at somebody else\'s service. ON accepts an http:// ' +
-                 'endpoint and a certificate nothing here trusts, which is ' +
-                 'what federating against another mock on localhost needs — ' +
-                 'and it is logged on every request rather than only here, ' +
-                 'because a setting that quietly disabled certificate ' +
-                 'checking would be the worst kind of leftover.' },
+                 'endpoint in DEVELOPMENT mode, which is what federating ' +
+                 'against another mock on localhost needs, and every such ' +
+                 'request is logged. In product mode plain http is refused ' +
+                 'whatever this says (STS-FED-0112).' },
+  { key: 'federation.outboundSkipTlsVerification', group: 'Federation',
+    label: 'Skip TLS verification to a partner (development only)',
+    env: 'STS_FEDERATION_OUTBOUND_SKIP_TLS_VERIFICATION', type: 'bool',
+    dflt: false, runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On dials a partner, a ' +
+                 'metadata URL or a back-channel logout URI over https ' +
+                 'WITHOUT verifying the certificate of whoever answers, so a ' +
+                 'client secret or an authorization code goes to anybody who ' +
+                 'can intercept the connection. Logged on every request ' +
+                 'rather than only here, because a setting that quietly ' +
+                 'disabled certificate checking would be the worst kind of ' +
+                 'leftover. In product mode it is ignored (STS-FED-0113, ' +
+                 'logged once) and cannot be set (STS-CORE-0103): name a ' +
+                 'private CA in federation.outboundCaFile instead.' },
+  { key: 'federation.outboundCaFile', group: 'Federation',
+    label: 'CA certificates for outbound requests',
+    env: 'STS_FEDERATION_OUTBOUND_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates a partner\'s certificate may ' +
+                 'chain to, BESIDE node\'s own CA store — how a partner ' +
+                 'certified by a private CA is reached with verification on. ' +
+                 'Read on every request; a file that cannot be read or holds ' +
+                 'no certificate refuses the request (STS-CORE-0104). A ' +
+                 'SPIFFE attestor\'s own CA, where one is configured, is ' +
+                 'used instead.' },
 
   { key: 'federation.requestTtlMin', group: 'Federation',
     label: 'Outbound request lifetime (minutes)',
@@ -8593,9 +8675,11 @@ const SETTINGS = [
                  'the reason SSF gives: a component legitimately moves its ' +
                  'path and does not legitimately move to another host.' },
 
-  { key: 'xacml.pepNotifyAllowInsecure', group: 'XACML',
-    label: 'Allow http:// and untrusted TLS for a nudge',
-    env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE', type: 'bool', dflt: false,
+  // THE THREE NUDGE TRANSPORT SETTINGS (#171), which were ONE —
+  // `xacml.pepNotifyAllowInsecure` — honoured in product mode.
+  { key: 'xacml.pepNotifyAllowHttp', group: 'XACML',
+    label: 'Allow http:// for a nudge (development only)',
+    env: 'STS_XACML_PEP_NOTIFY_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
     description: 'OFF by default, like federation\'s and SSF\'s equivalents ' +
                  '— and what travels here is WEAKER than either of those, ' +
@@ -8605,7 +8689,29 @@ const SETTINGS = [
                  'about to find out anyway. It is still off by default, ' +
                  'because the URL is one somebody configured and a request ' +
                  'this service makes in the clear is a request somebody can ' +
-                 'answer for.' },
+                 'answer for. ON allows an http:// notify URL in ' +
+                 'development; in product mode plain http is refused ' +
+                 'whatever this says (STS-XACML-0073).' },
+  { key: 'xacml.pepNotifySkipTlsVerification', group: 'XACML',
+    label: 'Skip TLS verification for a nudge (development only)',
+    env: 'STS_XACML_PEP_NOTIFY_SKIP_TLS_VERIFICATION', type: 'bool',
+    dflt: false, runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On nudges an https notify ' +
+                 'URL WITHOUT verifying the PEP\'s certificate, so anybody ' +
+                 'who can intercept the connection can answer for it. Every ' +
+                 'such request is logged as a warning. In product mode it is ' +
+                 'ignored (STS-XACML-0074, logged once) and cannot be set ' +
+                 '(STS-CORE-0103): name a private CA in ' +
+                 'xacml.pepNotifyCaFile instead.' },
+  { key: 'xacml.pepNotifyCaFile', group: 'XACML',
+    label: 'CA certificates for a nudge',
+    env: 'STS_XACML_PEP_NOTIFY_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates a PEP\'s notify listener may ' +
+                 'chain to, BESIDE node\'s own CA store — how a PEP ' +
+                 'certified by a private CA is nudged with verification on. ' +
+                 'Read on every nudge; a file that cannot be read or holds no ' +
+                 'certificate refuses the nudge (STS-CORE-0104).' },
 
   { key: 'xacml.pepNotifyTimeoutMs', group: 'XACML',
     label: 'Nudge timeout (ms)',
@@ -8630,9 +8736,10 @@ const SETTINGS = [
   // each Security Event Token to a URL the RECEIVER chose, which is a weaker
   // position than federation's outbound request and `ssf/ssf_http.ts` says so
   // at length rather than citing it. `ssf.pushDelivery`, `ssf.pushAllowedHosts`
-  // and `ssf.pushAllowInsecure` are the bounds. Poll delivery (RFC 8936) dials
-  // nothing at all — the receiver comes here — so a deployment that wants none
-  // of it turns push off and still speaks the whole of SSF.
+  // and the three transport settings (#171) are the bounds. Poll delivery
+  // (RFC 8936) dials nothing at all — the receiver comes here — so a
+  // deployment that wants none of it turns push off and still speaks the
+  // whole of SSF.
   //
   // THE SECOND IS THAT A SET IS A DURABLE RECORD. It says something HAPPENED,
   // RFC 8417 section 4.1.4 forbids it to expire, and it is therefore read long
@@ -8810,9 +8917,11 @@ const SETTINGS = [
                  'a receiver legitimately moves its endpoint path and does ' +
                  'not legitimately move to another host.' },
 
-  { key: 'ssf.pushAllowInsecure', group: 'SSF',
-    label: 'Allow http:// and untrusted TLS to a receiver',
-    env: 'STS_SSF_PUSH_ALLOW_INSECURE', type: 'bool', dflt: false,
+  // THE THREE PUSH TRANSPORT SETTINGS (#171), which were ONE —
+  // `ssf.pushAllowInsecure` — honoured in product mode.
+  { key: 'ssf.pushAllowHttp', group: 'SSF',
+    label: 'Allow http:// to a receiver (development only)',
+    env: 'STS_SSF_PUSH_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
     description: 'OFF by default, like federation\'s equivalent and for a ' +
                  'reason that is different in kind: what travels on a push ' +
@@ -8820,9 +8929,32 @@ const SETTINGS = [
                  'session was revoked, that an account was disabled — which ' +
                  'is somebody\'s security posture in transit, and the ' +
                  'receiver\'s own authorization_header travels beside it. ' +
-                 'ON accepts an http:// endpoint and a certificate nothing ' +
-                 'here trusts, and every request made under it is LOGGED as ' +
-                 'insecure rather than only the setting being logged once.' },
+                 'ON accepts an http:// endpoint in DEVELOPMENT mode, and ' +
+                 'every request made under it is LOGGED as insecure. In ' +
+                 'product mode plain http is refused whatever this says ' +
+                 '(STS-SSF-0108; RFC 8935 requires TLS). This service\'s own ' +
+                 'receivers on the loopback address are exempt in both.' },
+  { key: 'ssf.pushSkipTlsVerification', group: 'SSF',
+    label: 'Skip TLS verification to a receiver (development only)',
+    env: 'STS_SSF_PUSH_SKIP_TLS_VERIFICATION', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On pushes to an https ' +
+                 'receiver WITHOUT verifying its certificate, so the event ' +
+                 'and the receiver\'s authorization_header go to anybody ' +
+                 'who can intercept the connection — RFC 8935 requires the ' +
+                 'receiver to be authenticated. Every such request is ' +
+                 'logged. In product mode it is ignored (STS-SSF-0109, ' +
+                 'logged once) and cannot be set (STS-CORE-0103): name a ' +
+                 'private CA in ssf.pushCaFile instead.' },
+  { key: 'ssf.pushCaFile', group: 'SSF',
+    label: 'CA certificates for push delivery',
+    env: 'STS_SSF_PUSH_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates a receiver\'s certificate ' +
+                 'may chain to, BESIDE node\'s own CA store — how a receiver ' +
+                 'certified by a private CA is reached with verification on. ' +
+                 'Read on every push; a file that cannot be read or holds no ' +
+                 'certificate refuses the push (STS-CORE-0104).' },
 
   { key: 'ssf.pushTimeoutMs', group: 'SSF', label: 'Push timeout (ms)',
     env: 'STS_SSF_PUSH_TIMEOUT_MS', type: 'int', dflt: 10000,
@@ -10790,10 +10922,14 @@ const SETTINGS = [
                  'account\'s token.' },
 
   { key: 'spiffe.k8sSkipKubeletVerification', group: 'SPIFFE',
-    label: 'k8s: skip kubelet certificate verification',
+    label: 'k8s: skip kubelet certificate verification (development only)',
     env: 'STS_SPIFFE_K8S_SKIP_KUBELET_VERIFICATION', type: 'bool',
-    dflt: false, runtime: true,
-    description: 'SPIRE\'s skip_kubelet_verification.' },
+    dflt: false, runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'SPIRE\'s skip_kubelet_verification. WARNING — DEVELOPMENT ' +
+                 'MODE ONLY (#171): in product mode it is ignored ' +
+                 '(STS-SPIFFE-0116, logged once), the kubelet\'s ' +
+                 'certificate is verified against spiffe.k8sKubeletCaFile, ' +
+                 'and it cannot be set (STS-CORE-0103).' },
 
   { key: 'spiffe.k8sKubeletCaFile', group: 'SPIFFE',
     label: 'k8s: kubelet CA file', env: 'STS_SPIFFE_K8S_KUBELET_CA_FILE',
@@ -11792,6 +11928,119 @@ SETTINGS.forEach(function (setting) {
   byKey[setting.key] = setting;
 });
 
+// ---------------------------------------------------------------------------
+// SETTINGS THAT WERE REPLACED, AND WHAT REPLACED THEM (#171, 2026-09-23).
+//
+// Each `…AllowInsecure` switch allowed plain http AND turned certificate
+// verification off, and product mode honoured it. Each is three settings now
+// (`common/outbound_tls.ts`), and none of them is the old one: there is NO
+// SHIM — an old key does not map to a new one, because which half an operator
+// meant is exactly the question the split exists to make them answer.
+//
+// So an appconfig file or the environment that still names an old key is
+// REFUSED AT START, naming the replacements (STS-CORE-0105), rather than
+// warned about as an unknown key: a deployment that set one of these to
+// reach a partner would otherwise start, dial nothing, and say so only on
+// the first failed request. A STORED override naming one is refused as any
+// unknown key is (STS-CORE-0008), with the replacement named, and left in
+// the store.
+// ---------------------------------------------------------------------------
+const REPLACED_SETTINGS = [
+  { key: 'gnap.pushAllowInsecure', env: 'STS_GNAP_PUSH_ALLOW_INSECURE',
+    now: ['gnap.pushAllowHttp', 'gnap.pushSkipTlsVerification',
+          'gnap.pushCaFile'] },
+  { key: 'ssf.pushAllowInsecure', env: 'STS_SSF_PUSH_ALLOW_INSECURE',
+    now: ['ssf.pushAllowHttp', 'ssf.pushSkipTlsVerification',
+          'ssf.pushCaFile'] },
+  { key: 'federation.outboundAllowInsecure',
+    env: 'STS_FEDERATION_OUTBOUND_ALLOW_INSECURE',
+    now: ['federation.outboundAllowHttp',
+          'federation.outboundSkipTlsVerification',
+          'federation.outboundCaFile'] },
+  { key: 'xacml.pepNotifyAllowInsecure',
+    env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE',
+    now: ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifySkipTlsVerification',
+          'xacml.pepNotifyCaFile'] }
+];
+
+// The sentence for a replaced key, or '' for any other.
+function replacedBy(key) {
+  log.debug("Entering replacedBy().");
+  const row = REPLACED_SETTINGS.filter(function (one) {
+    return one.key === key;
+  })[0];
+  log.debug("Leaving replacedBy().");
+  return row
+    ? ' It was removed on 2026-09-23 (#171) and replaced by ' +
+      row.now.join(', ') + ': plain http, certificate verification (off in ' +
+      'development only) and a CA file are three settings now.'
+    : '';
+}
+
+// ---------------------------------------------------------------------------
+// A VALUE THE MODE DOES NOT ALLOW TO BE WRITTEN (#171).
+//
+// A row carrying `onlyWhile: '<predicate>'` names a `common/mode.js`
+// predicate that must answer true for the row to be SET TRUE. The four
+// `…SkipTlsVerification` rows and SPIRE's `spiffe.k8sSkipKubeletVerification`
+// carry `skipsOutboundTlsVerification`: in a product realm a write of `true`
+// is refused (STS-CORE-0103), through /admin and /admin-api alike — the
+// `set`, `set-many` and realm `set` doors. Writing `false` is always allowed,
+// which is how a stored value is taken back.
+//
+// **IT IS NOT PART OF `checkOverride()`**, and that is deliberate:
+// `checkOverride()` is also what a start and another process's change apply a
+// STORED override through, and what a restored realm's overrides are
+// validated with. A stored `true` in a product realm is IGNORED where it is
+// read and said once (`common/outbound_tls.ts`) — refusing it here would
+// refuse to restore the realm that holds it.
+//
+// `mode.js` requires THIS file, so the require here is LAZY: by the time any
+// write arrives both modules are loaded, and the require is a cache hit that
+// closes no cycle at load.
+// ---------------------------------------------------------------------------
+function modeWriteProblem(key, raw) {
+  log.debug("Entering modeWriteProblem(). key=" + key);
+  const setting = byKey[key];
+  if (!setting || !setting.onlyWhile) {
+    log.debug("Leaving modeWriteProblem(). No marker.");
+    return null;
+  }
+  if (TYPES[setting.type].check(raw, setting) ||
+      !TYPES[setting.type].parse(raw, setting)) {
+    log.debug("Leaving modeWriteProblem(). Not a true value.");
+    return null;
+  }
+  const mode = require('./mode');
+  if (mode[setting.onlyWhile]()) {
+    log.debug("Leaving modeWriteProblem(). The mode allows it.");
+    return null;
+  }
+  log.debug("Leaving modeWriteProblem(). Refused.");
+  return '"' + key + '" cannot be turned on here: this realm is in product ' +
+    'mode (global.mode=product), where it is ignored — verifying the ' +
+    'certificate of whoever answers an outbound request is not optional ' +
+    'there. Name a private CA in the matching CA file setting instead.';
+}
+
+// checkOverride() and then the mode rule above, for the doors that WRITE a
+// value somebody asked for — the console's and the API's.
+function checkWrite(key, raw, forRealm) {
+  log.debug("Entering checkWrite(). key=" + key);
+  const problem = checkOverride(key, raw, forRealm) ||
+    modeWriteProblem(key, raw);
+  log.debug("Leaving checkWrite().");
+  return problem;
+}
+
+function checkWriteCode(key, raw, forRealm) {
+  log.debug("Entering checkWriteCode(). key=" + key);
+  const code = checkOverrideCode(key, raw, forRealm) ||
+    (modeWriteProblem(key, raw) ? 'STS-CORE-0103' : '');
+  log.debug("Leaving checkWriteCode().");
+  return code;
+}
+
 // The runtime overrides, by key, holding the RAW value a caller supplied. Raw
 // rather than parsed so that `text()` can show it back exactly as it was set
 // and the environment's string and the file's number stay interchangeable.
@@ -12264,7 +12513,7 @@ function checkOverride(key, raw, forRealm) {
   const setting = byKey[key];
   if (!setting) {
     log.debug("Leaving checkOverride().");
-    return 'Unknown setting "' + key + '".';
+    return 'Unknown setting "' + key + '".' + replacedBy(key);
   }
   if (!setting.runtime && !(inRealm && setting.realmRuntime)) {
     log.debug("Leaving checkOverride().");
@@ -12321,13 +12570,15 @@ function setOverride(key, raw) {
   // the default one, and always for the two `realms.*` rows — so this is the
   // process-wide behaviour unchanged everywhere else.
   const realm = realmFor(key);
-  const problem = checkOverride(key, raw, !!realm);
+  const problem = checkWrite(key, raw, !!realm);
   // (Passed explicitly here because the realm is already in hand; the default
-  // above would compute the same answer.)
+  // above would compute the same answer.) `checkWrite()` rather than
+  // `checkOverride()` since #171: this is a door somebody writes through, so
+  // the mode rule applies — see modeWriteProblem().
   if (problem) {
     log.debug("Leaving setOverride(). Refused: " + problem);
     return errorCodes.mark({ ok: false, errors: [problem] },
-                           checkOverrideCode(key, raw, !!realm));
+                           checkWriteCode(key, raw, !!realm));
   }
   // ---------------------------------------------------------------------
   // A WRITE LANDS WHEREVER IT WAS MADE, AND THAT IS THE WHOLE OF WHAT MAKES
@@ -12779,6 +13030,45 @@ registerLogger(log);
 // start over a different key entirely.
 requireComplete();
 
+// ---------------------------------------------------------------------------
+// A REPLACED SETTING IN THE APPCONFIG FILE OR THE ENVIRONMENT STOPS THE START
+// (#171). See REPLACED_SETTINGS above for why this is a refusal and not the
+// unknown-key warning below. Read against `operatorConfig`, the file the
+// operator wrote, for the reason auditAppconfig() gives.
+// ---------------------------------------------------------------------------
+function refuseReplacedSettings() {
+  log.debug("Entering refuseReplacedSettings().");
+  const named = [];
+  REPLACED_SETTINGS.forEach(function (row) {
+    if (dig(operatorConfig, row.key) !== undefined) {
+      named.push('  ' + row.key + ' (in ' + (process.env.CONFIG_FILE ||
+                 'the appconfig file') + ') is now ' + row.now.join(', '));
+    }
+    if (process.env[row.env] !== undefined) {
+      named.push('  ' + row.env + ' (in the environment) is now ' +
+                 row.now.map(function (key) {
+                   return byKey[key].env;
+                 }).join(', '));
+    }
+  });
+  if (!named.length) {
+    log.debug("Leaving refuseReplacedSettings(). None named.");
+    return;
+  }
+  process.stderr.write(
+    '\n' + errorCodes.tag('STS-CORE-0105') + 'config: FATAL — ' +
+    named.length + ' setting(s) that were removed on 2026-09-23 (#171) are ' +
+    'still named:\n\n' + named.join('\n') + '\n\nEach allowed plain http ' +
+    'AND turned certificate verification off. They are three settings now — ' +
+    'plain http, certificate verification (off in development mode only) ' +
+    'and a CA file — and which of them was meant is for the operator to ' +
+    'say. Remove the old name and set the ones intended.\n\n');
+  log.debug("Leaving refuseReplacedSettings(). Refusing to start.");
+  process.exit(1);
+  log.debug("Leaving refuseReplacedSettings().");
+}
+refuseReplacedSettings();
+
 const audit = auditAppconfig();
 
 // IS THIS FILE EVEN THIS SERVICE'S? The test is whether it carries any key of
@@ -12906,6 +13196,10 @@ module.exports = {
   registerLogger: registerLogger,
   checkOverride: checkOverride,
   checkOverrideCode: checkOverrideCode,
+  checkWrite: checkWrite,
+  checkWriteCode: checkWriteCode,
+  modeWriteProblem: modeWriteProblem,
+  REPLACED_SETTINGS: REPLACED_SETTINGS,
   setOverride: setOverride,
   clearOverride: clearOverride,
   clearAllOverrides: clearAllOverrides,

@@ -284,7 +284,9 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.pepStaleAfterS` | `STS_XACML_PEP_STALE_AFTER_S` | `300` | yes | How long after its last heartbeat the console calls a PEP stale. The service behaves no differently. |
 | `xacml.pepNotify` | `STS_XACML_PEP_NOTIFY` | `true` | yes | Whether a repository change nudges registered PEPs. When off, changes take up to one poll interval longer to reach them. |
 | `xacml.pepNotifyAllowedHosts` | `STS_XACML_PEP_NOTIFY_ALLOWED_HOSTS` | *(empty)* | yes | Hosts that may be nudged. Empty means any host. |
-| `xacml.pepNotifyAllowInsecure` | `STS_XACML_PEP_NOTIFY_ALLOW_INSECURE` | `false` | yes | Allows nudging an `http://` notify URL. |
+| `xacml.pepNotifyAllowHttp` | `STS_XACML_PEP_NOTIFY_ALLOW_HTTP` | `false` | yes | Allows nudging an `http://` notify URL, in development mode only. |
+| `xacml.pepNotifySkipTlsVerification` | `STS_XACML_PEP_NOTIFY_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Nudges a PEP whose certificate does not verify. Ignored in product, and refused on write there. |
+| `xacml.pepNotifyCaFile` | `STS_XACML_PEP_NOTIFY_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a PEP's notify listener may chain to, beside node's own store. |
 | `xacml.pepNotifyTimeoutMs` | `STS_XACML_PEP_NOTIFY_TIMEOUT_MS` | `2000` | yes | How long to wait for a PEP to answer a nudge. |
 | `roles.enforceIssuance` | `STS_ROLES_ENFORCE_ISSUANCE` | `true` | yes | Whether issuance asks the issuance PEP. When off, everything is issued. |
 | `roles.remotePepGroup` | `STS_ROLES_REMOTE_PEP_GROUP` | `remote-peps` | yes | The group whose members hold `REMOTE_PEPS`. Empty closes those endpoints to everyone. |

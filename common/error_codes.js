@@ -738,6 +738,24 @@ const CODES = [
     summary: 'A cache or replay store could not eject its expired entries; ' +
       'the store still refuses an expired entry where it reads it.',
     spec: 'none — logged by the caches.eject-expired job' },
+  { code: 'STS-CORE-0103',
+    summary: 'A write turning on a development-only setting — a ' +
+      '…SkipTlsVerification, or spiffe.k8sSkipKubeletVerification — was ' +
+      'refused because the realm it lands in is in product mode (#171).',
+    spec: 'console: the page\'s error list; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-CORE-0104',
+    summary: 'An outbound request (a GNAP push, an SSF push, a federation ' +
+      'back channel or an XACML nudge) was not made because the CA file ' +
+      'its …CaFile setting names could not be read or holds no certificate.',
+    spec: 'none — the family\'s own failure record (a grant history, a ' +
+      'dead letter, a relationship\'s last error, a PEP row)' },
+  { code: 'STS-CORE-0105',
+    summary: 'The service did not start: the appconfig file or the ' +
+      'environment still names a setting removed on 2026-09-23 (#171) — ' +
+      'gnap.pushAllowInsecure, ssf.pushAllowInsecure, ' +
+      'federation.outboundAllowInsecure or xacml.pepNotifyAllowInsecure.',
+    spec: 'none — the process exits' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.',
@@ -4213,7 +4231,8 @@ const CODES = [
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0044',
     summary: 'The application declared as an RFC 7523 assertion issuer ' +
-      'registered only a jwks_uri, which this service will not fetch.',
+      'registered only a jwks_uri, and its keys could not be fetched ' +
+      '(#120; STS-OAUTH-0599 logs why).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0045',
     summary: 'The keys registered for an RFC 7523 assertion issuer could not ' +
@@ -4990,8 +5009,9 @@ const CODES = [
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0235',
     summary: 'The client configuration endpoint was asked about a client ' +
-      'that was never dynamically registered.',
-    spec: 'invalid_client (HTTP 404)' },
+      'that does not exist; since #120 the registration access token is ' +
+      'revoked and the answer is RFC 7592 section 3\'s.',
+    spec: 'HTTP 401 {error: invalid_token}' },
   { code: 'STS-OAUTH-0236',
     summary: 'The registration access token presented at the client ' +
       'configuration endpoint does not match.',
@@ -5843,7 +5863,8 @@ const CODES = [
   { code: 'STS-OAUTH-0533',
     summary: 'A back-channel Logout Token was not sent because the ' +
       'client\'s backchannel_logout_uri cannot be dialled: not http(s), ' +
-      'plain http with federation.outboundAllowInsecure off, or not a URL.',
+      'plain http refused (federation.outboundAllowHttp off, or product ' +
+      'mode), or not a URL.',
     spec: 'none — a logout.backchannel audit row and a dead letter on ' +
       '/admin/logout' },
   { code: 'STS-OAUTH-0534',
@@ -6164,6 +6185,36 @@ const CODES = [
       'an unknown realm, or more than one server segment. Answered with ' +
       'Express\'s 404 and no authorization server created (#119).',
     spec: 'HTTP 404' },
+  { code: 'STS-OAUTH-0595',
+    summary: 'An RFC 7592 update named a client_id other than the one it ' +
+      'updates, or a client_secret other than the one this server issued ' +
+      '(section 2.2) (#120).',
+    spec: 'HTTP 400 {error: invalid_request}' },
+  { code: 'STS-OAUTH-0596',
+    summary: 'A registration access token was presented for a client that ' +
+      'no longer exists; the token was revoked and refused (RFC 7592 ' +
+      'section 3) (#120). Logged at warn.',
+    spec: 'HTTP 401 {error: invalid_token}' },
+  { code: 'STS-OAUTH-0597',
+    summary: 'An authorization request asked for a response_type the ' +
+      'client did not register in response_types (OpenID Connect ' +
+      'Registration section 2) (#120).',
+    spec: 'redirect {error: unauthorized_client}' },
+  { code: 'STS-OAUTH-0598',
+    summary: 'A token request used a grant_type the client did not register ' +
+      'in grant_types (RFC 7591 section 2) (#120).',
+    spec: 'HTTP 400 {error: unauthorized_client}' },
+  { code: 'STS-OAUTH-0599',
+    summary: 'A client\'s registered jwks_uri could not be read: the ' +
+      'outbound policy refused it, it did not answer 200, or it did not ' +
+      'answer a JSON Web Key Set (#120). Logged at warn; the verification ' +
+      'or encryption that needed the key is refused with its own code.',
+    spec: 'none (log only)' },
+  { code: 'STS-OAUTH-0600',
+    summary: 'A client that registered grant_types without refresh_token ' +
+      'was answered with no refresh token (RFC 7591 section 2) (#120). ' +
+      'Recorded, not refused.',
+    spec: 'none (the token response omits refresh_token)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -6890,7 +6941,7 @@ const CODES = [
   { code: 'STS-FED-0048',
     summary: 'A back-channel URL on a federation relationship cannot be ' +
       'dialled: empty, not a URL, plain http with ' +
-      'federation.outboundAllowInsecure off, or another scheme.',
+      'federation.outboundAllowHttp off, or another scheme.',
     spec: 'HTTP 502 or 500 page for the federated sign-in it was part of' },
   { code: 'STS-FED-0049',
     summary: 'A federation partner answered a back-channel request with a ' +
@@ -7110,6 +7161,17 @@ const CODES = [
       'it: the cookie binding it to the browser the partner\'s response ' +
       'arrived in was absent or different.',
     spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0112',
+    summary: 'An outbound federation request (a back channel, a metadata or ' +
+      'status-list fetch, a Logout Token) was refused because its URL is ' +
+      'plain http and the realm is in product mode, whatever ' +
+      'federation.outboundAllowHttp says (#171).',
+    spec: 'the caller\'s failure: a sign-in page, a dead letter, a refusal' },
+  { code: 'STS-FED-0113',
+    summary: 'Product mode ignored federation.outboundSkipTlsVerification: ' +
+      'an outbound request verifies the certificate of whoever answers ' +
+      'whatever it says. Logged once per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
     summary: 'A cross-realm referral could not be issued because the trust ' +
@@ -8839,6 +8901,11 @@ const CODES = [
       'Intermediate CAs if the process that replaced the Root rebuilds it ' +
       'too.',
     spec: '' },
+  { code: 'STS-SPIFFE-0116',
+    summary: 'Product mode ignored spiffe.k8sSkipKubeletVerification: the ' +
+      'k8s workload attestor verifies the kubelet\'s certificate against ' +
+      'its CA whatever it says. Logged once per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -9416,7 +9483,7 @@ const CODES = [
   { code: 'STS-SSF-0012',
     summary: 'A push stream was refused at creation because its delivery ' +
       'endpoint cannot be dialled by this transmitter (not a URL, ' +
-      'wrong scheme, plain http with ssf.pushAllowInsecure off, or a ' +
+      'wrong scheme, plain http with ssf.pushAllowHttp off, or a ' +
       'host outside ssf.pushAllowedHosts).',
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0013',
@@ -9813,6 +9880,17 @@ const CODES = [
       'scope an operation needs, and the client it was issued to no longer ' +
       'declares that scope in its oauthAllowedScope.',
     spec: 'HTTP 403 {err: access_denied}' },
+  { code: 'STS-SSF-0108',
+    summary: 'A push delivery endpoint was refused because it is plain http ' +
+      'and the realm is in product mode, where RFC 8935 push goes over TLS ' +
+      'whatever ssf.pushAllowHttp says (#171).',
+    spec: 'at stream creation HTTP 400 {err: invalid_request}; at push time ' +
+      'none — a dead letter' },
+  { code: 'STS-SSF-0109',
+    summary: 'Product mode ignored ssf.pushSkipTlsVerification: a push ' +
+      'verifies the receiver\'s certificate whatever it says. Logged once ' +
+      'per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -10161,12 +10239,13 @@ const CODES = [
   { code: 'STS-GNAP-0102',
     summary: 'A GNAP push finish URI is not one this service will dial ' +
       '(not an absolute http(s) URL, plain http with ' +
-      'gnap.pushAllowInsecure off, or a host outside ' +
+      'gnap.pushAllowHttp off, or a host outside ' +
       'gnap.pushAllowedHosts).',
     spec: 'HTTP 400 GNAP invalid_interaction' },
   { code: 'STS-GNAP-0103',
     summary: 'In product mode, a GNAP finish URI uses plain http to a host ' +
-      'other than localhost.',
+      'other than localhost — refused at grant time, and a push finish ' +
+      'refused at push time for the same reason (#171).',
     spec: 'HTTP 400 GNAP invalid_interaction' },
   { code: 'STS-GNAP-0110',
     summary: 'A GNAP client proved its key with a proofing method this ' +
@@ -11109,6 +11188,11 @@ const CODES = [
       'reference string or an object of type ssf) that its application\'s ' +
       'oauthAllowedScope does not list.',
     spec: 'RFC 9635 section 3.6 (request_denied)' },
+  { code: 'STS-GNAP-0720',
+    summary: 'Product mode ignored gnap.pushSkipTlsVerification: a push ' +
+      'finish verifies the client\'s certificate whatever it says. Logged ' +
+      'once per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
@@ -11411,7 +11495,7 @@ const CODES = [
   { code: 'STS-XACML-0066',
     summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
       'outside the outbound bounds (not a URL, wrong scheme, plain ' +
-      'http without xacml.pepNotifyAllowInsecure, or a host not in ' +
+      'http without xacml.pepNotifyAllowHttp, or a host not in ' +
       'xacml.pepNotifyAllowedHosts).',
     spec: '' },
   { code: 'STS-XACML-0067',
@@ -11440,6 +11524,16 @@ const CODES = [
       'issued: the certificate authority refused it, or issuing threw.',
     spec: 'console: a page saying so; /admin-api: HTTP 400 ' +
       '{ ok: false, errors }, or 500 when issuing threw' },
+  { code: 'STS-XACML-0073',
+    summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
+      'plain http and the realm is in product mode, whatever ' +
+      'xacml.pepNotifyAllowHttp says (#171).',
+    spec: '' },
+  { code: 'STS-XACML-0074',
+    summary: 'Product mode ignored xacml.pepNotifySkipTlsVerification: a ' +
+      'nudge verifies the PEP\'s certificate whatever it says. Logged once ' +
+      'per process (#171).',
+    spec: 'none — a warning in the log' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -13230,7 +13324,8 @@ const CODES = [
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0079',
     summary: 'The URL an RFC 9728 document was to be fetched from is not a ' +
-      'URL, or not https while federation.outboundAllowInsecure is off.',
+      'URL, or not https while plain http is refused ' +
+      '(federation.outboundAllowHttp off, or product mode).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0080',
     summary: 'In product mode, the host of an RFC 9728 document URL resolves ' +
@@ -13455,6 +13550,40 @@ const CODES = [
     summary: 'A registration named authorization_encrypted_response_alg and ' +
       'its jwks holds no key to encrypt its authorization responses to ' +
       '(JARM section 3).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0181',
+    summary: 'A registration named an application_type other than web ' +
+      'or native (OpenID Connect Registration section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0182',
+    summary: 'A redirect URI does not suit the application_type: a native ' +
+      'client\'s must be a loopback http URL or a private-use scheme, a ' +
+      'web client using the implicit grant\'s must be https and not ' +
+      'localhost (OpenID Connect Registration section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_redirect_uri}' },
+  { code: 'STS-REG-0183',
+    summary: 'grant_types and response_types disagree (RFC 7591 ' +
+      'section 2.1): a response type needs the grant that redeems it (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0184',
+    summary: 'A client registered for authorization_code or implicit ' +
+      'named no redirect_uris (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0185',
+    summary: 'id_token_signed_response_alg or userinfo_signed_response_alg ' +
+      'names an algorithm this service does not sign with (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0186',
+    summary: 'A registration carried jwks together with jwks_uri, or a ' +
+      'jwks_uri that is not https (RFC 7591 section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0187',
+    summary: 'default_max_age, require_auth_time or default_acr_values ' +
+      'is not of its type (OpenID Connect Registration section 2) (#120).',
+    spec: 'HTTP 400 {error: invalid_client_metadata}' },
+  { code: 'STS-REG-0188',
+    summary: 'initiate_login_uri is not an https URL (OpenID Connect ' +
+      'Registration section 2) (#120).',
     spec: 'HTTP 400 {error: invalid_client_metadata}' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
