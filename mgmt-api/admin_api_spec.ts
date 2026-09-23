@@ -4993,9 +4993,9 @@ const SCHEMAS = {
       authorizedBy: {
         type: 'string',
         description: 'What PERMITTED it: the attribute AND the account it is ' +
-                     'on, in the KDC\'s own words. For the unpoliced ' +
-                     'mechanisms it says so and says why — that sentence is ' +
-                     'the point rather than a placeholder.'
+                     'on, in the KDC\'s own words — or, for WS-Trust and ' +
+                     'token exchange (#108), in the delegation policy\'s; ' +
+                     'in development, what WOULD have refused it.'
       },
       reason: {
         type: 'string',

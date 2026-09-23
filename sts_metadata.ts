@@ -1124,8 +1124,15 @@ const SPECS: Spec[] = [
     where: 'OASIS ws-sx',
     url: 'https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html',
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and ' +
-              '1.2. Request signatures are not verified and no delegation ' +
-              'policy is enforced. In PRODUCT mode (2026-09-12) every ' +
+              '1.2. Request signatures are not verified. OnBehalfOf and ' +
+              'ActAs ' +
+              'are decided by a delegation policy (#108) — only an ' +
+              'application entry may delegate, appAllowedToDelegateTo or ' +
+              'appAllowedToActOnBehalfOf must allow the AppliesTo, ' +
+              'OnBehalfOf needs appTrustedToImpersonate — and refused with a ' +
+              'wst:RequestFailed fault (section 11) in product mode; ' +
+              'development records what would have been refused. In PRODUCT ' +
+              'mode (2026-09-12) every ' +
               'operation needs a credential — a UsernameToken verified ' +
               'against the directory, or a SAML assertion this STS signed ' +
               'and inside its Conditions — and an OnBehalfOf/ActAs needs the ' +
@@ -1598,7 +1605,19 @@ const SPECS: Spec[] = [
   { id: 'rfc8693', name: 'RFC 8693 — Token Exchange',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8693',
     coverage: 'partial: the grant is accepted at the token endpoint and the ' +
-              'subject token becomes the identity in the issued token.' },
+              'subject token becomes the identity in the issued token. A ' +
+              'delegation policy decides who may act for whom (#108): the ' +
+              'client and actor against appAllowedToDelegateTo / ' +
+              'appAllowedToActOnBehalfOf, appTrustedToImpersonate for an ' +
+              'exchange with no actor_token, the subject\'s groups and ' +
+              'stsNotDelegated, and a deny-only issuance-policy layer — ' +
+              'invalid_request or invalid_target (section 2.2.2) in product ' +
+              'mode, recorded in development. `act` nests (section 4.1); ' +
+              '`may_act` (section 4.4) is issued from the person\'s own ' +
+              'stsMayAct and honoured in every mode; product refuses an ' +
+              'exchange that widens the subject_token\'s scope. Missing: ' +
+              'requested_token_type other than access and refresh tokens ' +
+              'is answered with an access token.' },
   { id: 'rfc9396', name: 'RFC 9396 — Rich Authorization Requests',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9396',
     coverage: 'full: authorization_details at the authorization, token and ' +
@@ -5049,6 +5068,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'directory entry, shown once on a 200 page — lists the certificates ' +
           'ACME, EST and SCEP issued them, and revokes one. The identity is ' +
           'the session\'s; nothing on the form names a person.' },
+  { path: '/portal/delegate', group: 'User portal',
+    name: 'Who may act for you — your RFC 8693 may_act',
+    specs: ['rfc8693'],
+    effect: 'names or clears the one party who may act for the signed-in ' +
+            'person (stsMayAct)',
+    what: 'NON-SPEC page (#108). A person names, by its DN, the one ' +
+          'person or ' +
+          'application who may act for them; every access token issued ' +
+          'about them then carries RFC 8693 section 4.4\'s may_act naming ' +
+          'that party, and a token exchange of one by anybody else is ' +
+          'refused invalid_request in every mode. The identity is the ' +
+          'session\'s; the form names only the delegate.' },
   { path: '/portal/app-passwords', group: 'User portal',
     name: 'Your app passwords, for the doors that take only a password',
     specs: ['rfc4513', 'rfc7617', 'rfc7030'],
@@ -5292,21 +5323,25 @@ const ENDPOINTS: EndpointEntry[] = [
           'of msDS-AllowedToDelegateTo on the front end and ' +
           'msDS-AllowedToActOnBehalfOfOtherIdentity on the back end, with ' +
           'the flags that stop delegation (NOT_DELEGATED) or enable protocol ' +
-          'transition (TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION) beside them. ' +
-          'That one is KERBEROS ONLY because Kerberos is the only family ' +
-          'here that polices delegation IN THE ACT, on every request, ' +
-          'whatever anything is set to: WS-Trust puts no authorization on ' +
-          'either element and this service adds none, and RFC 8693 leaves ' +
-          'the policy to the authorization server — what this one now has is ' +
-          'the permission register, which is policy it was configured with ' +
-          'rather than a check the protocol makes. Every act says which of ' +
-          'the two it was. NO CREDENTIAL IS EVER ON A ROW, only its kind and ' +
-          'identifier; a Kerberos ticket genuinely has none. In memory, ' +
+          'transition (TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION) beside them ' +
+          '— and, since #108, the same model for WS-Trust OnBehalfOf / ActAs ' +
+          'and the RFC 8693 token exchange on application entries ' +
+          '(appAllowedToDelegateTo, appAllowedToActOnBehalfOf, ' +
+          'appDelegationSubjectGroup, appTrustedToImpersonate) with the ' +
+          'people carrying stsNotDelegated or stsMayAct, ENFORCED in product ' +
+          'mode and recorded as "would have been refused" in development. ' +
+          'The permission register beside them is policy this service was ' +
+          'configured with about SCOPES, rather than about who may act for ' +
+          'whom. Every act says what allowed or refused it. NO CREDENTIAL IS ' +
+          'EVER ON A ROW, only its kind and identifier; a Kerberos ticket ' +
+          'genuinely has none. In memory, ' +
           'capped by delegation.maxRecords, gone on restart, with no clear ' +
           'control and no way to add a row by hand. Filtered by mechanism, ' +
           'kind, outcome, protocol and free text; paged; ?format=json ' +
           'carries the acts, the distinct CHAINS among them (one per edge of ' +
-          'the picture) and the policy.' },
+          'the picture), the Kerberos policy, and `delegationPolicy` — the ' +
+          'WS-Trust and token-exchange one, paged as GET ' +
+          '/admin-api/delegation/policy pages it.' },
   { path: '/admin/roles', group: 'Admin', name: 'Roles',
     // XACML because the decision is a XACML one, and rfc6749/oidc/saml because
     // those are the issuances a role gates. NOT the delegation page's four:
@@ -7231,6 +7266,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'of the two resources here that is: everything on it is an ' +
           'observation or somebody else\'s configuration, so there is ' +
           'nothing to change. Mirrors GET /admin/delegation.' },
+  { path: '/admin-api/delegation/policy', group: 'Management API',
+    name: 'Delegation policy (WS-Trust and token exchange)',
+    specs: ['ws-trust', 'rfc8693', 'ms-sfu'],
+    what: 'NON-SPEC (#108). Who may act for whom at WS-Trust OnBehalfOf / ' +
+          'ActAs and the RFC 8693 token exchange, as JSON: Kerberos\'s model ' +
+          'on application entries — appAllowedToDelegateTo on the ' +
+          'intermediary, appAllowedToActOnBehalfOf on the target, ' +
+          'appDelegationSubjectGroup and appTrustedToImpersonate — and the ' +
+          'people carrying stsNotDelegated or stsMayAct. Three paged lists. ' +
+          'Read only; the attributes are edited through ' +
+          '/admin-api/applications/update and /admin-api/users/set-not-' +
+          'delegated and /set-may-act. Mirrors GET /admin/delegation.' },
   { path: '/admin-api/permissions', group: 'Management API',
     name: 'Delegated permissions',
     // Not the four the delegation resource cites: those are four ways of

@@ -5682,6 +5682,160 @@ class Credentials {
   }
 
   // ---------------------------------------------------------------------------
+  // WHO MAY ACT FOR A PERSON (#108, 2026-09-23) — the person's half of the
+  // delegation policy, on their own entry beside the second-factor
+  // requirement: `stsNotDelegated` (Kerberos's NOT_DELEGATED, "sensitive and
+  // cannot be delegated") and `stsMayAct` (the one party they have named as
+  // their delegate, whose `sub` is RFC 8693 section 4.4's `may_act` in the
+  // access tokens issued about them). `common/delegation_policy.ts` decides
+  // what they MEAN; this is the store, reached through the directory's slot
+  // like everything else here. Every read is wrapped: a directory consulted
+  // during an issuance must never fail it.
+  // ---------------------------------------------------------------------------
+  delegationFactsFor(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.delegationFactsFor().");
+    const name = String(username || '').trim();
+    if (!name || !directory ||
+        typeof directory.readDelegationFacts !== 'function') {
+      log.debug("Leaving Credentials.delegationFactsFor(). No store.");
+      return null;
+    }
+    let facts = null;
+    try {
+      facts = directory.readDelegationFacts(name);
+    } catch (e) {
+      log.debug("Caught in Credentials.delegationFactsFor(): " +
+                ((e && e.message) || e));
+      facts = null;
+    }
+    log.debug("Leaving Credentials.delegationFactsFor().");
+    return facts;
+  }
+
+  delegationFlaggedPersons() {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.delegationFlaggedPersons().");
+    if (!directory ||
+        typeof directory.delegationFlaggedPersons !== 'function') {
+      log.debug("Leaving Credentials.delegationFlaggedPersons(). No store.");
+      return [];
+    }
+    let rows = [];
+    try {
+      rows = directory.delegationFlaggedPersons() || [];
+    } catch (e) {
+      log.debug("Caught in Credentials.delegationFlaggedPersons(): " +
+                ((e && e.message) || e));
+      rows = [];
+    }
+    log.debug("Leaving Credentials.delegationFlaggedPersons(). " +
+              rows.length);
+    return rows;
+  }
+
+  setNotDelegated(username, value) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.setNotDelegated(). value=" + !!value);
+    const name = String(username || '').trim();
+    if (!name || !directory ||
+        typeof directory.writeNotDelegated !== 'function') {
+      log.debug("Leaving Credentials.setNotDelegated(). No store.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['No credential ' +
+                                   'store is installed.'] });
+    }
+    if (!this.entryExists(name)) {
+      log.debug("Leaving Credentials.setNotDelegated(). Nobody by that name.");
+      return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+          'called "' + name + '" in this realm\'s directory.'] });
+    }
+    let written = false;
+    try {
+      written = !!directory.writeNotDelegated(name, !!value);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0226') + 'credentials: ' +
+                'stsNotDelegated for ' + name + ' could not be written: ' +
+                e.message);
+      written = false;
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.setNotDelegated(). Not written.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['stsNotDelegated ' +
+          'could not be written onto ' + name + '\'s entry.'] });
+    }
+    log.info('credentials: ' + name + ' is ' + (value ? 'now' : 'no longer') +
+             ' marked as one who cannot be delegated (stsNotDelegated).');
+    log.debug("Leaving Credentials.setNotDelegated(). Written.");
+    return { ok: true, username: name, notDelegated: !!value };
+  }
+
+  // `delegate` is a DN — of a person or of an application entry in this
+  // realm — or empty to clear. It is resolved before it is written, so an
+  // entry that names nobody (or the person themselves) is refused here
+  // rather than discovered at the token that would have carried it.
+  setMayAct(username, delegate) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.setMayAct().");
+    const name = String(username || '').trim();
+    const dn = String(delegate || '').trim();
+    if (!name || !directory || typeof directory.writeMayAct !== 'function' ||
+        typeof directory.readDelegationFacts !== 'function') {
+      log.debug("Leaving Credentials.setMayAct(). No store.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['No credential ' +
+                                   'store is installed.'] });
+    }
+    if (!this.entryExists(name)) {
+      log.debug("Leaving Credentials.setMayAct(). Nobody by that name.");
+      return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+          'called "' + name + '" in this realm\'s directory.'] });
+    }
+    if (dn) {
+      const self = this.delegationFactsFor(name) || {};
+      const named = this.delegationFactsFor(dn) || {};
+      const isApplication =
+        /,\s*ou=applications\s*,/i.test(String(named.dn || ''));
+      if (!/^[A-Za-z][A-Za-z0-9-]*=/.test(dn) || !named.found ||
+          (!named.person && !isApplication)) {
+        log.debug("Leaving Credentials.setMayAct(). Names nobody.");
+        return coded('STS-AUTHN-0227', { ok: false, errors: ['"' + dn +
+            '" is not the DN of a person or an application entry in this ' +
+            'realm\'s directory. A delegate is named by the DN its entry ' +
+            'has.'] });
+      }
+      if (self.dn && String(self.dn).toLowerCase() ===
+          String(named.dn).toLowerCase()) {
+        log.debug("Leaving Credentials.setMayAct(). Names themselves.");
+        return coded('STS-AUTHN-0227', { ok: false, errors: ['A person ' +
+            'cannot name themselves as the party who may act for them.'] });
+      }
+    }
+    let written = false;
+    try {
+      written = !!directory.writeMayAct(name, dn);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0226') + 'credentials: ' +
+                'stsMayAct for ' + name + ' could not be written: ' +
+                e.message);
+      written = false;
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.setMayAct(). Not written.");
+      return coded('STS-AUTHN-0226', { ok: false, errors: ['stsMayAct could ' +
+          'not be written onto ' + name + '\'s entry.'] });
+    }
+    log.info('credentials: ' + name + (dn ? ' named ' + dn + ' as the party ' +
+             'who may act for them (stsMayAct).' : ' has no delegate now.'));
+    log.debug("Leaving Credentials.setMayAct(). Written.");
+    return { ok: true, username: name, mayAct: dn };
+  }
+
+  // ---------------------------------------------------------------------------
   // A DISABLED ACCOUNT (2026-09-17, #36 follow-up).
   //
   // `pwdAccountLockedTime` on the person's entry — the same Internet-Draft
@@ -6042,6 +6196,11 @@ export = {
   disabledRefusal: slot.forward('disabledRefusal'),
   setAccountDisabled: slot.forward('setAccountDisabled'),
   setMfaRequired: slot.forward('setMfaRequired'),
+  // #108: the person's half of the delegation policy.
+  delegationFactsFor: slot.forward('delegationFactsFor'),
+  delegationFlaggedPersons: slot.forward('delegationFlaggedPersons'),
+  setNotDelegated: slot.forward('setNotDelegated'),
+  setMayAct: slot.forward('setMayAct'),
   removePrimaryKeys: slot.forward('removePrimaryKeys'),
   removeSecondFactors: slot.forward('removeSecondFactors'),
   // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46) — each is argued above

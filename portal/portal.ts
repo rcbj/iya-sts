@@ -538,7 +538,13 @@ const NAV = [
       // credential derived from their own password. Drawn by
       // `portal_kerberos.ts`.
       { path: BASE + '/kerberos', label: 'Kerberos',
-        heading: 'Your Kerberos principal and keytab' }
+        heading: 'Your Kerberos principal and keytab' },
+      // WHO MAY ACT FOR YOU (#108, 2026-09-23), in this section for the
+      // signing keys' reason: `stsMayAct` is on this person's own entry, and
+      // it is what their access tokens' `may_act` claim says. Drawn by
+      // `portal_delegate.ts`.
+      { path: BASE + '/delegate', label: 'Who may act for you',
+        heading: 'Who may act for you' }
     ] }
 ];
 
@@ -6122,6 +6128,8 @@ const portalKerberos = require('./portal_kerberos');
 const portalSignIns = require('./portal_sign_ins');
 // /portal/consents (#172), the same arrangement, registered after that.
 const portalConsents = require('./portal_consents');
+// /portal/delegate (#108), the same arrangement, registered after that.
+const portalDelegate = require('./portal_delegate');
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -6182,6 +6190,19 @@ export = {
       audit: audit, errorCodes: errorCodes, config: config
     });
     portalConsents.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: slot.forward('esc'),
+      shell: slot.forward('shell'),
+      send: slot.forward('send'),
+      requireSignIn: slot.forward('requireSignIn'),
+      refuseShape: slot.forward('refuseShape'),
+      innerCode: slot.forward('innerCode'),
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+    portalDelegate.register({
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),

@@ -2350,7 +2350,10 @@ thirds of the answer to hide.
 
 **TWO TABLES FROM TWO STORES, and the split is the point of the page.** What
 HAPPENED comes from `../common/delegation.js` (rule 3l). Who MAY DELEGATE TO WHOM
-comes from `../kerberos/krb5_principals.js`'s `delegationPolicy()`, required
+comes from `../kerberos/krb5_principals.js`'s `delegationPolicy()` for Kerberos
+and from `../common/delegation_policy.ts` (rule 3az, through
+`adminViews.delegationPolicyView()`) for WS-Trust and RFC 8693 since #108 — the
+first required
 directly — a plain require in the ordinary direction, and both tests that would
 force a slot pass: that module registers no route (the KDC's own are in
 `krb5_kdc.js`) and `server.js` loads the Kerberos modules before this one, so
@@ -2367,12 +2370,20 @@ Four things about it are decisions rather than defaults:
   else's configuration. A control that let a person TYPE a chain would put
   invented rows in a table whose entire worth is that its rows are what actually
   happened, and the table would then need a column saying which were which.
-* **The policy half is KERBEROS ONLY and the page says so loudly.** That is not
-  a gap being papered over: Kerberos is the only family here that polices
-  delegation at all, and each WS-Trust and RFC 8693 act says so in the same
-  column that names an attribute for a Kerberos one. **That asymmetry is the
-  most useful thing on the page** — the same picture, policed at one end and not
-  at the other — so do not "tidy" the unpoliced rows into an em dash.
+* **The policy half has TWO sections since #108 (2026-09-23)**: Kerberos's, from
+  `krb5_principals.js`, and *Who may act for whom — WS-Trust and token
+  exchange* (`#delegation-policy`), drawn by `delegationPolicySection()` from
+  `adminViews.delegationPolicyView()` — the function `GET
+  /admin-api/delegation/policy` answers with, so the two doors cannot disagree.
+  Three tables (pairs, intermediaries, people), each PAGED on a parameter of its
+  own (`policyPairsPage`, `intermediariesPage`, `peoplePage`) under the page's
+  one `per`. It is READ ONLY: every value is an attribute on an application or
+  a person, edited where every attribute of one is — the application's page and
+  the person's page (*Who may act for them*: `set-not-delegated`,
+  `set-may-act`) — so a form here would be a second door onto one attribute.
+  Every act says what allowed or refused it in the same column for all three
+  families, and in development what WOULD have refused it — do not "tidy" that
+  sentence into an em dash either.
 * **Ten columns, not twelve**, and the two that were merged were merged because
   the table became unreadable rather than merely wide. `td.who` breaks a long
   identifier anywhere (or one DN widens the page), so every extra column costs

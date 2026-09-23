@@ -20,6 +20,7 @@ more than one family needs it, not because it felt general.
 | `signing_history.ts` | **EVERY SIGNING KEY A REALM HAS EVER HELD (2026-09-22, #42's follow-up)** — the record that outlives the key. `signing.retire` drops a retired key past its grace and its private half is gone; this keeps the metadata and the CERTIFICATE, so a signature captured months ago can still be read back. Append-only, never swept, and DERIVED from the key set rather than from the rotation events — see below. A LIBRARY over `realms` and `error_codes`, with `helpers` and `pki` reached lazily. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
 | `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
+| `delegation_policy.ts` | **WHO MAY ACT FOR WHOM AT WS-TRUST AND RFC 8693 (2026-09-23, #108)** — Kerberos's model on application entries (four attributes) and the person's `stsNotDelegated` and `stsMayAct`, decided at the act, enforced in product and recorded in development, with a deny-only XACML layer on top. Rule 3az, below. |
 | `app_permissions.ts` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
 | `user_graph.ts` | ONE PERSON, END TO END: that register UNIONED with the issued one, so a picture can show every grant, flow, assertion, ticket and SVID in somebody's name beside every delegation naming them. |
 | `credential_graph.ts` | ONE CREDENTIAL, END TO END: where it came from — who held it, in whose name, to reach what — and every generation of exchange behind it, back to the issuance the line rests on. |
@@ -3166,7 +3167,11 @@ with `Cannot find module` naming a file the operator never mentioned.
    for keeping `presented` next to `key`.
 
    **The CONFIGURED half of `/admin/delegation` is NOT in this file.** Who may
-   delegate to whom is `krb5_principals.js`'s `delegationPolicy()`, because
+   delegate to whom at WS-Trust and RFC 8693 is `delegation_policy.ts` (rule
+   3az, #108) — the ACT log and the POLICY stay two files for
+   `app_permissions.ts`'s reason, intent and evidence kept apart; this file
+   only carries the policy's sentence on the row. For Kerberos it is
+   `krb5_principals.js`'s `delegationPolicy()`, because
    what those two attributes mean is a statement about the principal database
    and that store is over there. A `common/` module reaching into `kerberos/`
    would have been the layering inversion this directory's entry test exists to
@@ -3581,6 +3586,81 @@ declaration: add `admin:read admin:write` to its `oauthAllowedScope` on the
 console (the application's page — the console's own gate is a session, which
 this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
 tokens; or delete the entry and restart.
+
+## 3az. `delegation_policy.ts`: who may act for whom at WS-Trust and RFC 8693 (#108, 2026-09-23)
+
+Until #108 the two delegating families other than Kerberos decided nothing about
+the act: a WS-Trust requester that could authenticate got a token about anybody
+for any `AppliesTo` through `OnBehalfOf` or `ActAs`, and any client could
+exchange any verified token (RFC 8693) for one about its subject addressed
+anywhere. The act was recorded (3l) with "authorized by nothing". This file is
+the policy.
+
+**KERBEROS'S MODEL, BY NAME, ON THE ENTRIES THAT ALREADY EXIST.** No new store
+and no new object class — `ou=applications` and the person's entry are the
+store, so an `ldapmodify` IS a policy change and rule 7 holds by construction
+(`/admin/applications/<id>` and `POST /admin-api/applications/update`):
+
+| Attribute | On | Kerberos analogue |
+|---|---|---|
+| `appAllowedToDelegateTo` | the INTERMEDIARY | `msDS-AllowedToDelegateTo` |
+| `appAllowedToActOnBehalfOf` | the TARGET | `msDS-AllowedToActOnBehalfOfOtherIdentity` |
+| `appDelegationSubjectGroup` | the intermediary | (none — the people it may act for, by group DN; empty is anybody unprotected) |
+| `appTrustedToImpersonate` | the intermediary, default FALSE | `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` |
+| `stsNotDelegated` | the PERSON | `NOT_DELEGATED` |
+| `stsMayAct` | the PERSON | (none — RFC 8693 section 4.4's `may_act`, the person's own choice) |
+
+**THE ORDER OF `decide()` IS THE ARGUMENT.** A self case (a client exchanging its
+own token acts for nobody) needs nothing. Then the SUBJECT, because a protected
+person is refused whoever asks — `stsNotDelegated`, or a member of the console's
+Admin Read / Admin Write roster, COMPUTED from `admin.readGroup` /
+`admin.writeGroup` at decision time rather than seeded, so a role granted later
+is covered. Then the INTERMEDIARY must be an application entry. Then
+IMPERSONATION (`OnBehalfOf`, an exchange with no `actor_token`) needs the flag.
+Then the subject groups. Then every TARGET — resolved to the application that
+registered it first (`forAudience()`/`forClientId()` for OAuth,
+`forAppliesTo()` for WS-Trust, then `get()`), and allowed by either attribute,
+the raw string included so an unregistered audience can be named without
+inventing an entry. None named is refused: a token about somebody else with no
+audience restriction is one no attribute describes. Last, THE DENY-ONLY XACML
+LAYER: `issuance_gate.checkDelegation()` asks the issuance policy about
+action-id `delegate` with the intermediary as XACML 3.0's intermediary-subject,
+and only an explicit Deny refuses (`xacml/CLAUDE.md`). The attribute model stays
+the readable one; the policy engine is where an administrator writes something
+stricter.
+
+**`may_act` STANDS IN FOR TWO QUESTIONS, NEVER THE THIRD.** A verified
+subject_token naming the actor answers *may this party act for this subject*
+(the groups) and *may it do so invisibly* (the flag) — the subject said so. It
+does not answer *where*, so the targets are still checked. A mismatch is the
+token endpoint's refusal in EVERY mode, not this file's: the token itself says
+no. `mayActClaimFor()` is the ISSUING half, from `stsMayAct` only (the owner's
+decision on #108) — a person by `urn:uuid:`, an application by its client_id.
+
+**MODE-FREE, AND `enforced` SAYS WHETHER A REFUSAL REFUSES**
+(`mode.authorizesDelegation()`). Both doors ask in both modes; development
+issues and `rowText()` puts "WOULD HAVE BEEN REFUSED in product: …" on the act,
+which is Kerberos's development fixtures' arrangement. `refusal` names the kind
+so each door speaks its own protocol: `target` is RFC 8693's `invalid_target`,
+the rest `invalid_request`; WS-Trust answers every one with
+`wst:RequestFailed`, and an `intermediary` refusal there is "only an application
+may delegate" (`STS-WSTRUST-0019`).
+
+**THE PERSON'S HALF IS `credentials.ts`'s**, through the directory slot it
+already has (`readDelegationFacts`, `writeNotDelegated`, `writeMayAct`,
+`delegationFlaggedPersons` on `ldap_server.js`'s side) — one read answers the
+two flags, the groups and the delegate resolved. `setMayAct()` refuses a DN that
+names nobody in the realm, or the person themselves (`STS-AUTHN-0227`).
+
+**A LIBRARY (rule 3), built by the composition root** beside `scope_policy`. It
+requires `applications`, `config`, `mode`, `credentials` and `issuance_gate` —
+libraries every caller already requires — and adds NO slot (rule 3e): the
+groups come through the credential store's directory rather than the
+`admin_stats` group resolver, which answers claims and is off when
+`groups.claim` is. `list()` is the register `/admin/delegation`'s section and
+`GET /admin-api/delegation/policy` page through `adminViews.delegationPolicyView()`.
+`tests/delegation_policy.js` is the truth table; `tests/token_exchange_product.js`
+and `tests/vendored/sts_delegation_policy.js` the doors.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 

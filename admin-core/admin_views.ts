@@ -154,6 +154,10 @@ import errorCodes = require('../common/error_codes');
 // nothing here, so the require moves no route and closes no cycle.
 import usedAssertions = require('../common/used_assertions');
 import delegation = require('../common/delegation');
+// WHO MAY ACT FOR WHOM AT WS-TRUST AND THE TOKEN EXCHANGE (#108), for the
+// policy section of /admin/delegation and GET /admin-api/delegation/policy.
+// A library in `common/` that registers nothing.
+import delegationPolicy = require('../common/delegation_policy');
 import krb5Principals = require('../kerberos/krb5_principals');
 // Stored Kerberos keys (2026-09-12), a plain require for the reason
 // `admin_actions.ts` gives beside its own.
@@ -423,6 +427,7 @@ interface AdminViewsDeps {
   errorCodes: typeof errorCodes;
   usedAssertions: typeof usedAssertions;
   delegation: typeof delegation;
+  delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
   oauth2: typeof oauth2;
@@ -497,6 +502,7 @@ class AdminViews {
       errorCodes: errorCodes,
       usedAssertions: usedAssertions,
       delegation: delegation,
+      delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
       oauth2: oauth2,
@@ -2898,6 +2904,49 @@ class AdminViews {
         // flags that decide what delegation can do to somebody. Kerberos only,
         // because it is the only family here that polices this at all.
         policy: policy
+      }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE WS-TRUST AND TOKEN-EXCHANGE DELEGATION POLICY (#108, 2026-09-23), for
+  // the section on /admin/delegation and GET /admin-api/delegation/policy —
+  // one function for both doors, `delegationView()`'s reason. Three lists,
+  // each PAGED on a parameter of its own at the page's ten rows
+  // (`policyPairsPage`, `intermediariesPage`, `peoplePage`; `per` for all
+  // three), because the people list is a walk of the directory and has no
+  // natural bound. `common/delegation_policy.ts` builds the register; the
+  // attributes are EDITED where every application attribute is — the
+  // application's own page and POST /admin-api/applications/update — and
+  // the two person flags on the person's page and POST
+  // /admin-api/users/set-not-delegated and /set-may-act.
+  // ---------------------------------------------------------------------------
+  delegationPolicyView(query) {
+    const { log, delegationPolicy } = this.deps;
+    log.debug("Entering AdminViews.delegationPolicyView().");
+    const q = query || {};
+    const register = delegationPolicy.list();
+    const pairs = this.pagedRows(q, register.pairs,
+      { name: 'policyPairs', noun: 'pairs', defaultPer: DELEGATION_PER_PAGE });
+    const intermediaries = this.pagedRows(q, register.intermediaries,
+      { name: 'intermediaries', noun: 'intermediaries',
+        defaultPer: DELEGATION_PER_PAGE });
+    const people = this.pagedRows(q, register.people,
+      { name: 'people', noun: 'people', defaultPer: DELEGATION_PER_PAGE });
+    log.debug("Leaving AdminViews.delegationPolicyView().");
+    return {
+      register: register, pairs: pairs, intermediaries: intermediaries,
+      people: people,
+      json: {
+        enforced: register.enforced,
+        attributes: register.attributes,
+        protectedGroups: register.protectedGroups,
+        pairs: pairs.shown,
+        pairsPaging: this.pagingJson(pairs.paging),
+        intermediaries: intermediaries.shown,
+        intermediariesPaging: this.pagingJson(intermediaries.paging),
+        people: people.shown,
+        peoplePaging: this.pagingJson(people.paging)
       }
     };
   }
@@ -7147,6 +7196,7 @@ export = {
   errorCodesView: slot.forward('errorCodesView'),
   usedAssertionsView: slot.forward('usedAssertionsView'),
   delegationView: slot.forward('delegationView'),
+  delegationPolicyView: slot.forward('delegationPolicyView'),
   clusterSummary: slot.forward('clusterSummary'),
   permissionGroupsView: slot.forward('permissionGroupsView'),
   queryOne: slot.forward('queryOne'),

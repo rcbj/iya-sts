@@ -109,8 +109,20 @@ one chain. The token inside `OnBehalfOf` is recorded as consumed, so
 carrying both elements is attributed to `OnBehalfOf`. **A delegation starts no
 session** — the person named was not there.
 
-Nothing decides **who may act for whom**, and the delegation row says so. An
-`ActAs` token does not state in the assertion that a middle tier acted.
+**Who may act for whom** is decided by the delegation policy (#108), from
+attributes on application entries: the requester's `appAllowedToDelegateTo`,
+or the target's `appAllowedToActOnBehalfOf`, must allow the `AppliesTo`;
+`OnBehalfOf` needs `appTrustedToImpersonate` on the requester as well; the
+requester's `appDelegationSubjectGroup` narrows who it may act for; and a
+person carrying `stsNotDelegated` or on the console roster is never delegated.
+Only an **application** may delegate: the requester's name must be an
+application entry's identifier (its credential may be kept on a service account
+of the same name). In **product** mode a refusal is a SOAP Fault whose code is
+WS-Trust 1.4 section 11's `wst:RequestFailed` — the SOAP 1.2 Subcode under
+`soap:Sender`, or the SOAP 1.1 `faultcode`. In **development** the token is
+issued and the act on `/admin/delegation` says what would have been refused.
+The policy is listed at `GET /admin-api/delegation/policy`. An `ActAs` token
+does not state in the assertion that a middle tier acted.
 
 ### The `AppliesTo`
 
@@ -134,7 +146,8 @@ development and refused in product.
 
 Request signatures are not verified; `Validate` reports whether a token is
 **present**, not whether it verifies; `Cancel` recalls nothing already issued;
-no policy decides who may delegate to whom; and a SAML assertion presented as a
+refusals other than the delegation policy's send a generic SOAP Fault rather
+than one of section 11's `wst:` codes; and a SAML assertion presented as a
 credential is trusted only when **this** STS signed it — there is no register
 of foreign issuers.
 
@@ -146,6 +159,7 @@ of foreign issuers.
 | A UsernameToken password | any password but `invalid` | verified against the person's stored `userPassword`; a person who holds or must hold a second factor is refused their own password with the same fault a wrong one gets, and presents an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `wstrust` |
 | A SAML assertion as the credential | believed | must verify against this realm's own signing certificate (`/sts/cert`) and be inside its `Conditions` |
 | `OnBehalfOf` / `ActAs` | needs no requester credential | needs the requester's own credential, and the inner token must be an assertion this STS signed |
+| Who may act for whom | the delegation policy is asked and the act says what would have been refused; the token is issued | the requester must be an application whose attributes allow the `AppliesTo` (and `appTrustedToImpersonate` for `OnBehalfOf`), or a `wst:RequestFailed` fault |
 | An assertion with no NameID | subjects such as `saml-subject` are invented | refused |
 | `?encrypt=1` that cannot encrypt | plaintext, logged | refused |
 

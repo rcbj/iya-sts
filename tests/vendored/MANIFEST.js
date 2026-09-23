@@ -254,6 +254,11 @@ const JOBS = [
   // holding every other scope to it. `local: true`: the policy is ours. Its
   // realm is left standing.
   { file: 'sts_scope_policy.js',         browser: false, local: true },
+  // WHO MAY ACT FOR WHOM (#108, 2026-09-23): WS-Trust OnBehalfOf / ActAs and
+  // the RFC 8693 token exchange held to the delegation policy, may_act, the
+  // nested act and the policy resource. `local: true`: the policy is ours.
+  // Its realm is left standing.
+  { file: 'sts_delegation_policy.js',    browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no

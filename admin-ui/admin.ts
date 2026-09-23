@@ -215,6 +215,7 @@ const auditView = adminViews.auditView;
 const errorCodesView = adminViews.errorCodesView;
 const usedAssertionsView = adminViews.usedAssertionsView;
 const delegationView = adminViews.delegationView;
+const delegationPolicyView = adminViews.delegationPolicyView;
 const clusterSummary = adminViews.clusterSummary;
 const permissionGroupsView = adminViews.permissionGroupsView;
 const queryOne = adminViews.queryOne;
@@ -8195,6 +8196,141 @@ class AdminConsole {
   }
 
   // ---------------------------------------------------------------------------
+  // WHO MAY ACT FOR WHOM AT WS-TRUST AND THE TOKEN EXCHANGE (#108,
+  // 2026-09-23) — the section of /admin/delegation drawn from
+  // `adminViews.delegationPolicyView()`, the function GET
+  // /admin-api/delegation/policy answers with. READ ONLY here: each value is
+  // an attribute on an application or a person, so it is edited where every
+  // attribute of one is — the application's page (and POST
+  // /admin-api/applications/update) and the person's page (and POST
+  // /admin-api/users/set-not-delegated, /set-may-act). A second form here
+  // would be a second door onto the same attribute, which this console
+  // refuses everywhere else.
+  // ---------------------------------------------------------------------------
+  delegationPolicySection(req, view) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.delegationPolicySection().");
+    const navParams = pageParamsOf(req.query);
+    const pairsNav = self.pageNavPair('/admin/delegation', navParams,
+                                      view.pairs.paging);
+    const intermediariesNav = self.pageNavPair('/admin/delegation', navParams,
+                                               view.intermediaries.paging);
+    const peopleNav = self.pageNavPair('/admin/delegation', navParams,
+                                       view.people.paging);
+    const appLink = function (identifier) {
+      log.debug("Entering appLink().");
+      log.debug("Leaving appLink().");
+      return '<a href="' + self.esc('/admin/applications/' +
+        encodeURIComponent(String(identifier))) + '"><code>' +
+        self.esc(identifier) + '</code></a>';
+    };
+    const pairRows = view.pairs.shown.map(function (pair) {
+      return '<tr><td><code>' + self.esc(pair.mechanism) + '</code></td>' +
+        '<td class="who">' + appLink(pair.intermediary) +
+        (pair.impersonates ? '<br><span class="state-expired">may ' +
+          'impersonate</span>' : '') + '</td>' +
+        '<td class="who"><code>' + self.esc(pair.target) + '</code>' +
+        (pair.targetApplication && pair.targetApplication !== pair.target
+          ? '<br><span class="state-none">the application ' +
+            self.esc(pair.targetApplication) + '</span>' : '') + '</td>' +
+        '<td class="who"><code>' + self.esc(pair.attribute) + '</code><br>' +
+        '<span class="state-none">on the ' + self.esc(pair.setOnRole) +
+        ', ' + appLink(pair.setOn) + '</span></td>' +
+        '<td>' + (pair.subjectGroups.length
+          ? pair.subjectGroups.map(function (dn) {
+            return '<code>' + self.esc(dn) + '</code>';
+          }).join('<br>')
+          : 'anybody not protected') + '</td>' +
+        '<td>' + (pair.warning
+          ? '<span class="state-expired">' + self.esc(pair.warning) +
+            '</span>'
+          : '<span class="state-valid">nothing else is missing</span>') +
+        '</td></tr>';
+    }).join('');
+    const intermediaryRows = view.intermediaries.shown.map(function (row) {
+      return '<tr><td class="who">' + appLink(row.application) + '</td>' +
+        '<td>' + (row.trustedToImpersonate
+          ? '<code>appTrustedToImpersonate</code> TRUE' : '&mdash;') +
+        '</td><td>' + (row.subjectGroups.length
+          ? row.subjectGroups.map(function (dn) {
+            return '<code>' + self.esc(dn) + '</code>';
+          }).join('<br>') : 'anybody not protected') + '</td></tr>';
+    }).join('');
+    const peopleRows = view.people.shown.map(function (row) {
+      return '<tr><td class="who"><a href="' + self.esc('/admin/users/' +
+        encodeURIComponent(String(row.username))) + '">' +
+        self.esc(row.username) + '</a></td><td>' +
+        (row.notDelegated ? '<code>stsNotDelegated</code> — nobody may act ' +
+          'for them' : '&mdash;') + '</td><td>' +
+        (row.mayAct ? '<code>' + self.esc(row.mayAct) + '</code>'
+                    : '&mdash;') + '</td></tr>';
+    }).join('');
+    const register = view.register;
+    log.debug("Leaving AdminConsole.delegationPolicySection().");
+    return '<h2 id="delegation-policy">Who may act for whom &mdash; WS-Trust ' +
+      'and token exchange</h2>' +
+      self.note('<strong>Kerberos\'s model, on application entries</strong> ' +
+      '(#108). A WS-Trust <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
+      'an RFC 8693 token exchange are decided from four attributes: ' +
+      '<code>appAllowedToDelegateTo</code> on the INTERMEDIARY names the ' +
+      'targets it may reach as somebody else (the analogue of ' +
+      '<code>msDS-AllowedToDelegateTo</code>); ' +
+      '<code>appAllowedToActOnBehalfOf</code> on the TARGET names the ' +
+      'intermediaries it accepts (the resource-based one); ' +
+      '<code>appDelegationSubjectGroup</code> narrows who the intermediary ' +
+      'may act for; and <code>appTrustedToImpersonate</code> lets it ' +
+      'IMPERSONATE — <code>OnBehalfOf</code>, or an exchange with no ' +
+      '<code>actor_token</code> — as well as delegate. Only an application ' +
+      'may be an intermediary. A person carrying ' +
+      '<code>stsNotDelegated</code>, or a member of ' +
+      (register.protectedGroups.length
+        ? register.protectedGroups.map(function (one) {
+          return '<code>' + self.esc(one) + '</code>';
+        }).join(' or ')
+        : 'a console roster') +
+      ', is never delegated. When the attributes allow, the issuance policy ' +
+      'is asked about action-id <code>delegate</code> and only a Deny ' +
+      'refuses. ' + (register.enforced
+        ? '<strong>This realm is in product mode, so this is ' +
+          'ENFORCED</strong>: ' +
+          'a refusal is <code>wst:RequestFailed</code>, ' +
+          '<code>invalid_request</code> or <code>invalid_target</code>.'
+        : '<strong>This realm is in development mode, so nothing is ' +
+          'refused</strong>: the policy is asked and each act above says ' +
+          'what WOULD have been refused in product.') +
+      ' Edit an application\'s four on its own page, and a person\'s two ' +
+      'on theirs. <code>GET /admin-api/delegation/policy</code> is this ' +
+      'section as JSON.') +
+      pairsNav.head +
+      '<table><tr><th>Mechanism</th><th>Intermediary (who acts)</th>' +
+      '<th>Target (what is reached)</th><th>Attribute, and where it ' +
+      'lives</th><th>May act for</th><th>Anything missing?</th></tr>' +
+      (pairRows || '<tr><td colspan="6">No application here names a ' +
+        'delegation target or an intermediary it accepts, so every ' +
+        'WS-Trust and token-exchange delegation is ' +
+        (register.enforced ? 'refused' : 'one product would refuse') +
+        '.</td></tr>') + '</table>' + pairsNav.foot +
+      '<h3>Intermediaries</h3>' +
+      intermediariesNav.head +
+      '<table><tr><th>Application</th><th>May impersonate</th>' +
+      '<th>May act for</th></tr>' +
+      (intermediaryRows || '<tr><td colspan="3">No application carries ' +
+        '<code>appTrustedToImpersonate</code> or a subject group.</td></tr>') +
+      '</table>' + intermediariesNav.foot +
+      '<h3>People</h3>' +
+      self.note('<code>stsMayAct</code> is a person\'s own choice of the ' +
+      'one party who may act for them; the access tokens issued about them ' +
+      'carry it as RFC 8693\'s <code>may_act</code>, and a token exchange ' +
+      'of one by anybody else is refused in every mode.') +
+      peopleNav.head +
+      '<table><tr><th>Person</th><th>Cannot be delegated</th>' +
+      '<th>May act for them (stsMayAct)</th></tr>' +
+      (peopleRows || '<tr><td colspan="3">Nobody carries either flag.' +
+        '</td></tr>') + '</table>' + peopleNav.foot;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE CONFIGURED HALF OF /admin/delegation: DELEGATED PERMISSIONS.
   //
   // `common/app_permissions.ts` holds the model and this holds the HTML, the
@@ -12517,8 +12653,36 @@ class AdminConsole {
              'was taken over</option><option value="bulk-account">' +
              'bulk-account — one of many created in bulk</option>' +
              '</select></label></div>'));
+    // WHO MAY ACT FOR THEM (#108, 2026-09-23): the person's half of the
+    // WS-Trust and token-exchange delegation policy. POST
+    // /admin-api/users/set-not-delegated and /set-may-act are the same acts.
+    const facts = this.deps.credentials.delegationFactsFor(key) || {};
+    const delegationBlock = '<h3 id="delegation">Who may act for them</h3>' +
+      this.note('<code>stsNotDelegated</code> is Kerberos\'s ' +
+        '<code>NOT_DELEGATED</code> for WS-Trust <code>OnBehalfOf</code> / ' +
+        '<code>ActAs</code> and the RFC 8693 token exchange: while it is ' +
+        'set nobody may act for them, whatever any application\'s ' +
+        'delegation attributes say (enforced in product mode; see ' +
+        '<a href="/admin/delegation#delegation-policy">the policy</a>). It ' +
+        'is ' + (facts.notDelegated ? '<strong>set</strong>' : 'not set') +
+        '. <code>stsMayAct</code> names the one party who may act for them ' +
+        '— their access tokens carry it as <code>may_act</code> — and is ' +
+        (facts.mayAct ? '<code>' + this.esc(facts.mayAct) + '</code>'
+                      : 'empty') + '.') +
+      form('set-not-delegated', facts.notDelegated
+        ? 'Allow them to be delegated' : 'Never delegate this person',
+           'Writes stsNotDelegated.', !facts.notDelegated,
+           '<input type="hidden" name="value" value="' +
+           (facts.notDelegated ? 'false' : 'true') + '">') +
+      form('set-may-act', 'Set who may act for them',
+           'Writes stsMayAct; empty clears it.', false,
+           '<div class="formrow"><label>Delegate DN <input type="text" ' +
+           'name="delegate" size="60" value="' +
+           this.esc(facts.mayAct || '') + '" placeholder="uid=bob,ou=users,' +
+           '... or cn=app,ou=applications,..."></label></div>');
     log.debug("Leaving AdminConsole.userCredentialControlsSection().");
-    return heading + state + signalsNote + account + reset + passkeys + mfa;
+    return heading + state + signalsNote + account + reset + passkeys + mfa +
+      delegationBlock;
   }
 
   // -------------------------------------------------------------------------
@@ -29167,6 +29331,9 @@ class AdminConsole {
       const paging = view.paging;
       const summary = view.summary;
       const policy = view.policy;
+      // WS-Trust and token exchange (#108): the view GET
+      // /admin-api/delegation/policy answers with.
+      const exchangePolicy = delegationPolicyView(req.query);
       const known = knownUserKeys();
       // What every paging link on this page carries with it, for the reason the
       // tokens page gives: a "next" that dropped the filter would be page 2 of
@@ -29571,15 +29738,12 @@ class AdminConsole {
         'and in development only when ' +
         '<code>oauth2.delegatedPermissionsEnforced</code> is set; these two ' +
         'attributes are a KDC decision that has always been made, on every ' +
-        'S4U request, whatever anything is set to. WS-Trust puts no ' +
-        'authorization on <code>OnBehalfOf</code> or <code>ActAs</code> and ' +
-        'this service adds none; RFC 8693 leaves the policy to the ' +
-        'authorization server, and what this one now has is the register ' +
-        'above rather than nothing. All of that is stated on every row it ' +
-        'produces, in the same column that names an attribute for a Kerberos ' +
-        'row — <strong>the asymmetry is still the most useful thing on this ' +
-        'page</strong>: the same picture, policed at one end and not at the ' +
-        'other.') +
+        'S4U request, whatever anything is set to. WS-Trust and the RFC ' +
+        '8693 token exchange are decided by the same model since #108 — ' +
+        'the section below — ENFORCED in product mode and, in development, ' +
+        'asked and recorded as what would have been refused. Every row says ' +
+        'which attribute allowed it, in the same column for all three ' +
+        'families.') +
         self.note('The whole of the KDC\'s decision rests on two attributes ' +
         'on two OPPOSITE accounts, which is why they are in one table with a ' +
         'column saying which account carries the permission. Same messages, ' +
@@ -29620,6 +29784,8 @@ class AdminConsole {
           'flags.</td></tr>') +
         '</table>' +
         flagsNav.foot +
+
+        self.delegationPolicySection(req, exchangePolicy) +
 
         '<h3>The mechanisms</h3>' +
         self.note('Read off the same table this page records against, so a ' +
@@ -29742,7 +29908,10 @@ class AdminConsole {
                     { permissions: pagingJson(allowedState.permPage.paging),
                             grants: pagingJson(allowedState.grantPage.paging) }
                 },
-                settings: self.configSettingsJson('/admin/delegation')
+                settings: self.configSettingsJson('/admin/delegation'),
+                // WS-Trust and token exchange (#108), paged as GET
+                // /admin-api/delegation/policy pages it.
+                delegationPolicy: exchangePolicy.json
               }),
                    'Delegation', '/admin/delegation', inner);
       log.debug("Leaving the admin delegation page.");

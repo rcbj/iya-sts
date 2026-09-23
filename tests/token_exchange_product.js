@@ -28,6 +28,20 @@
 //      (0556), and with a verified one the `act` claim is the actor's sub;
 //   6. DEVELOPMENT is unchanged: the forged token is still exchanged, and
 //      says whose it claimed to be — the behaviour a client under test uses.
+//
+// AND WHO MAY ACT FOR WHOM (#108, 2026-09-23), at the endpoint:
+//   7. PRODUCT: an impersonation by a client with no delegation attributes is
+//      invalid_request (STS-OAUTH-0618); a delegation to a target nothing
+//      allows is invalid_target (0619); both are refused acts on
+//      /admin/delegation; with appTrustedToImpersonate and
+//      appAllowedToDelegateTo it is issued and the act names the attribute;
+//      a subject_token whose may_act names somebody else is refused (0620),
+//      and one naming the client stands in for the flag; `act` NESTS a prior
+//      actor (RFC 8693 section 4.1); a scope wider than the subject_token's
+//      is invalid_scope (0621); stsMayAct puts may_act on the token issued.
+//   8. DEVELOPMENT: the same impersonation is issued and the act says it
+//      WOULD have been refused; may_act is refused all the same; a wider
+//      scope is issued.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -135,6 +149,161 @@ function childMain() {
       crypto.sign('sha256', Buffer.from(signingInput), stranger.privateKey)
         .toString('base64url');
 
+    // --- #108's fixtures, made in DEVELOPMENT for the reason above ---------
+    const helpers = require(ROOT + '/common/helpers');
+    const dir = require(ROOT + '/ldap/ldap_server');
+    const credentials = require(ROOT + '/common/credentials');
+    const delegation = require(ROOT + '/common/delegation');
+    const MID_SECRET = 'txp-mid-secret-0123456789abcdef0123';
+    dir.createUser('txp-alice', { invent: false });
+    const aliceSub = helpers.subjectForName('txp-alice');
+    applications.createApplication({ identifier: 'txp-back',
+      protocols: ['oauth2'],
+      fields: { oauthClientId: 'txp-back',
+                oauthAudience: ['https://txp-back.example'],
+                appAllowedToActOnBehalfOf: ['txp-client'] } });
+    applications.createApplication({ identifier: 'txp-mid',
+      protocols: ['oauth2'],
+      fields: { oauthClientId: 'txp-mid', oauthClientSecret: MID_SECRET,
+                oauthTokenEndpointAuthMethod: 'client_secret_post',
+                oauthGrantType: ['client_credentials', EXCHANGE],
+                oauthAllowedScope: ['openid', 'api'],
+                appAllowedToDelegateTo: ['txp-back'],
+                appTrustedToImpersonate: 'TRUE' } });
+    const midAuth = { client_id: 'txp-mid', client_secret: MID_SECRET };
+    // A token this realm signed about txp-alice, as another client's grant
+    // would have produced it; `extra` adds `act`, `may_act`, a scope.
+    const aliceToken = function (extra) {
+      const now = Math.floor(Date.now() / 1000);
+      return helpers.signJwt(Object.assign({
+        iss: 'https://127.0.0.1:' + port, sub: aliceSub,
+        username: 'txp-alice', client_id: 'txp-elsewhere', typ: 'Bearer',
+        aud: 'https://127.0.0.1:' + port, scope: 'api',
+        iat: now, nbf: now, exp: now + 600,
+        jti: 'txp-alice-' + crypto.randomBytes(6).toString('hex') },
+      extra || {}));
+    };
+    // The newest act of a type: `delegation.list()` is newest first.
+    const lastAct = function (type) {
+      return delegation.list().filter(function (row) {
+        return row.type === type;
+      })[0] || null;
+    };
+    const policyChecks = async function (m) {
+      const product = m === 'product';
+      const P = product ? '7' : '8';
+      // An impersonation by a client with neither flag.
+      let r = await exchange(aliceToken(),
+                             { audience: 'https://txp-back.example' });
+      if (product) {
+        note(r.status === 400 && r.json.error === 'invalid_request' &&
+             codeRecorded('STS-OAUTH-0618'),
+             P + 'a. an IMPERSONATION by a client without ' +
+             'appTrustedToImpersonate is invalid_request (0618)',
+             r.status + ' ' + r.text.slice(0, 300));
+        const row = lastAct('oauth-impersonation');
+        note(row && row.outcome === 'refused' &&
+             /appTrustedToImpersonate/.test(row.reason),
+             P + 'b. and it is a REFUSED act on /admin/delegation, naming ' +
+             'the missing flag', JSON.stringify(row && [row.outcome, row.reason]));
+      } else {
+        const row = lastAct('oauth-impersonation');
+        note(r.status === 200 && row && row.outcome === 'issued' &&
+             /WOULD HAVE BEEN REFUSED/.test(row.authorizedBy),
+             P + 'a. DEVELOPMENT issues it, and the act says it WOULD have ' +
+             'been refused in product', r.status + ' ' +
+             JSON.stringify(row && row.authorizedBy));
+      }
+      // A delegation to a target nothing allows.
+      const cc = await post(port, Object.assign(
+        { grant_type: 'client_credentials' }, auth));
+      r = await exchange(aliceToken(), {
+        actor_token: String(cc.json.access_token || ''),
+        actor_token_type: ACCESS, audience: 'https://elsewhere.example' });
+      note(product ? (r.status === 400 && r.json.error === 'invalid_target' &&
+                      codeRecorded('STS-OAUTH-0619'))
+                   : r.status === 200,
+           P + 'c. a DELEGATION to a target no attribute allows is ' +
+           (product ? 'invalid_target (0619)' : 'issued in development'),
+           r.status + ' ' + r.text.slice(0, 300));
+      // The same client, allowed by the TARGET's attribute.
+      r = await exchange(aliceToken(), {
+        actor_token: String(cc.json.access_token || ''),
+        actor_token_type: ACCESS, audience: 'https://txp-back.example' });
+      const viaRbcd = lastAct('oauth-delegation');
+      note(r.status === 200 && viaRbcd &&
+           /appAllowedToActOnBehalfOf/.test(viaRbcd.authorizedBy),
+           P + 'd. appAllowedToActOnBehalfOf on the target allows it, and ' +
+           'the act says so', r.status + ' ' +
+           JSON.stringify(viaRbcd && viaRbcd.authorizedBy));
+      // A trusted intermediary impersonating.
+      const post2 = function (subjectToken, extra) {
+        return post(port, Object.assign({ grant_type: EXCHANGE,
+          subject_token: subjectToken, subject_token_type: ACCESS }, midAuth,
+        extra || {}));
+      };
+      r = await post2(aliceToken(), { audience: 'https://txp-back.example' });
+      const imp = lastAct('oauth-impersonation');
+      note(r.status === 200 && imp && imp.outcome === 'issued' &&
+           /appTrustedToImpersonate/.test(imp.authorizedBy) &&
+           /appAllowedToDelegateTo/.test(imp.authorizedBy),
+           P + 'e. with appTrustedToImpersonate and appAllowedToDelegateTo ' +
+           'the impersonation is issued, and the act names both',
+           r.status + ' ' + JSON.stringify(imp && imp.authorizedBy));
+      // may_act naming somebody else — every mode.
+      r = await post2(aliceToken({ may_act: { sub: 'somebody-else' } }),
+                      { audience: 'https://txp-back.example' });
+      note(r.status === 400 && r.json.error === 'invalid_request' &&
+           codeRecorded('STS-OAUTH-0620'),
+           P + 'f. a subject_token whose may_act names somebody else is ' +
+           'refused (0620) in ' + m, r.status + ' ' + r.text.slice(0, 300));
+      // may_act naming the client stands in for the flag.
+      r = await exchange(aliceToken({ may_act: { sub: 'txp-client' } }),
+                         { audience: 'https://txp-back.example' });
+      note(r.status === 200,
+           P + 'g. one naming the client itself stands in for ' +
+           'appTrustedToImpersonate', r.status + ' ' + r.text.slice(0, 300));
+      // act nests.
+      const midCc = await post(port, Object.assign(
+        { grant_type: 'client_credentials' }, midAuth));
+      r = await post2(aliceToken({ act: { sub: 'txp-prior-actor' } }), {
+        actor_token: String(midCc.json.access_token || ''),
+        actor_token_type: ACCESS, audience: 'https://txp-back.example' });
+      const nested = r.json.access_token ? claimsOf(r.json.access_token).act
+                                         : null;
+      note(r.status === 200 && nested && nested.act &&
+           nested.act.sub === 'txp-prior-actor' &&
+           nested.sub === claimsOf(String(midCc.json.access_token)).sub,
+           P + 'h. `act` NESTS: the new actor outermost, the ' +
+           'subject_token\'s actor beneath it (RFC 8693 section 4.1)',
+           r.status + ' ' + JSON.stringify(nested));
+      // A wider scope.
+      r = await post2(aliceToken({ scope: 'api' }),
+                      { audience: 'https://txp-back.example',
+                        scope: 'api openid' });
+      note(product ? (r.status === 400 && r.json.error === 'invalid_scope' &&
+                      codeRecorded('STS-OAUTH-0621'))
+                   : r.status === 200,
+           P + 'i. a scope WIDER than the subject_token\'s is ' +
+           (product ? 'invalid_scope (0621)' : 'issued in development'),
+           r.status + ' ' + r.text.slice(0, 300));
+      r = await post2(aliceToken({ scope: 'api openid' }),
+                      { audience: 'https://txp-back.example', scope: 'api' });
+      note(r.status === 200, P + 'j. and a narrower one is issued',
+           r.status + ' ' + r.text.slice(0, 300));
+      // stsMayAct puts may_act on what is issued about her.
+      credentials.setMayAct('txp-alice', applications.get('txp-mid').dn);
+      r = await post2(aliceToken(), { audience: 'https://txp-back.example' });
+      const claim = r.json.access_token
+        ? claimsOf(r.json.access_token).may_act : null;
+      credentials.setMayAct('txp-alice', '');
+      note(r.status === 200 && claim && claim.sub === 'txp-mid',
+           P + 'k. stsMayAct on the person puts may_act naming that party on ' +
+           'the access token issued about them', r.status + ' ' +
+           JSON.stringify(claim));
+      return true;
+    };
+
     config.setOverride('oauth2.consentRequired', false);
     config.setOverride('global.mode', 'product');
     try {
@@ -196,9 +365,15 @@ function childMain() {
            '5b. and with a VERIFIED actor_token the exchange succeeds and ' +
            '`act.sub` is the actor\'s own sub',
            r.status + ' ' + JSON.stringify(act));
+
+      // 7. The delegation policy (#108).
+      const policyIssued = await policyChecks('product');
+      note(policyIssued, '7. PRODUCT: the delegation policy checks ran');
     } finally {
       config.clearOverride('global.mode');
     }
+    const devRan = await policyChecks('development');
+    note(devRan, '8. DEVELOPMENT: the delegation policy checks ran');
 
     // 6. Development is what it was.
     const dev = await exchange(unsigned);

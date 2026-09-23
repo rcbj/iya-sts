@@ -248,6 +248,70 @@ function check(request) {
 // a test that loads the gate alone — has no facts, which decides on roles
 // alone. Synchronous, as `check()` must be.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE DELEGATION QUESTION (#108, 2026-09-23): action-id `delegate`, asked by
+// `common/delegation_policy.ts` AFTER its attribute rule has allowed a
+// WS-Trust OnBehalfOf / ActAs or an RFC 8693 exchange.
+//
+// **DENY-ONLY, AND THAT IS THE WHOLE DIFFERENCE FROM `check()`.** The
+// attributes on the entries are the policy and stay readable on their own —
+// Kerberos's model — and this is an administrator's layer ON TOP of them: a
+// Permit, a NotApplicable and an Indeterminate all leave the attribute rule's
+// answer standing, and only an explicit Deny refuses. So the built-in issuance
+// policy, which says nothing about `delegate`, changes nothing, and an
+// operator who writes a rule denying one intermediary, one subject or one
+// target gets exactly that and no more.
+//
+// NOT A MEMBER OF `ISSUANCE`: delegating is not an issuance of its own — the
+// token the act produces is still issued through the ordinary site and asked
+// about there — and every reader of `KINDS` lists issuances.
+//
+// `delegation`: { intermediary, subject, target, mode, protocol }.
+// ---------------------------------------------------------------------------
+const DELEGATE = 'delegate';
+
+function checkDelegation(delegation) {
+  log.debug('Entering checkDelegation().');
+  const asked = delegation || {};
+  if (!decider) {
+    log.debug('Leaving checkDelegation(). No decider is installed.');
+    return allow('The XACML role subsystem is not loaded in this process, ' +
+                 'so the delegation is not put to it.');
+  }
+  let answer;
+  try {
+    answer = decider({
+      kind: DELEGATE,
+      denyOnly: true,
+      application: String(asked.target || ''),
+      subject: { kind: 'user', name: String(asked.subject || ''),
+                 authenticated: true },
+      claims: null,
+      risk: null,
+      rolesWaived: true,
+      delegation: {
+        intermediary: String(asked.intermediary || ''),
+        subject: String(asked.subject || ''),
+        target: String(asked.target || ''),
+        mode: String(asked.mode || ''),
+        protocol: String(asked.protocol || '')
+      }
+    });
+  } catch (error) {
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw on a delegation question and ' +
+              'the attribute rule\'s answer stands; this is a defect in the ' +
+              'embedded PEP rather than a decision. ' + error.message);
+    log.debug("Leaving checkDelegation().");
+    return allow('The embedded PEP threw, which is a defect rather than a ' +
+                 'decision: ' + error.message);
+  }
+  const result = answer || allow('The embedded PEP answered nothing.');
+  log.debug('Leaving checkDelegation(). ' + (result.allowed ? 'Allowed.'
+    : 'DENIED: ' + result.why));
+  return result;
+}
+
 function riskFactsOf(asked) {
   log.debug("Entering riskFactsOf().");
   if (Object.prototype.hasOwnProperty.call(asked, 'risk')) {
@@ -292,5 +356,7 @@ module.exports = {
   KINDS: KINDS,
   setDecider: setDecider,
   deciderInstalled: deciderInstalled,
-  check: check
+  check: check,
+  DELEGATE: DELEGATE,
+  checkDelegation: checkDelegation
 };
