@@ -361,6 +361,254 @@ CREATE TABLE IF NOT EXISTS sts_change_readers (
   started_at  bigint NOT NULL,
   reported_at bigint NOT NULL);
 
+-- RISK SCORING (#62, 2026-09-22, schema version 7): the external datasets a
+-- score reads, by version, and the history the model keeps. A database built
+-- by an earlier copy of this file has none of them; running this file again
+-- as the owner adds them and changes nothing else.
+-- `persistence/persistence_postgres.js` and `risk/CLAUDE.md` argue them.
+CREATE TABLE IF NOT EXISTS sts_risk_datasets (
+  realm            text   NOT NULL DEFAULT '',
+  dataset          text   NOT NULL,
+  kind             text   NOT NULL,
+  active_version   text   NOT NULL DEFAULT '',
+  previous_version text   NOT NULL DEFAULT '',
+  state            text   NOT NULL,
+  updated_at       bigint NOT NULL,
+  PRIMARY KEY (realm, dataset));
+
+CREATE TABLE IF NOT EXISTS sts_risk_dataset_versions (
+  realm           text   NOT NULL DEFAULT '',
+  dataset         text   NOT NULL,
+  version         text   NOT NULL,
+  format          text   NOT NULL,
+  provider        text   NOT NULL,
+  licence         text   NOT NULL,
+  attribution     text   NOT NULL DEFAULT '',
+  source          text   NOT NULL,
+  source_uri      text   NOT NULL DEFAULT '',
+  sha256          text   NOT NULL,
+  byte_count      bigint NOT NULL,
+  row_count       bigint NOT NULL DEFAULT 0,
+  parameters      jsonb  NOT NULL DEFAULT '{}'::jsonb,
+  verification    text   NOT NULL,
+  published_at    bigint NOT NULL,
+  next_update_at  bigint NOT NULL DEFAULT 0,
+  fetched_at      bigint NOT NULL,
+  loaded_at       bigint NOT NULL DEFAULT 0,
+  activated_at    bigint NOT NULL DEFAULT 0,
+  superseded_at   bigint NOT NULL DEFAULT 0,
+  rows_deleted_at bigint NOT NULL DEFAULT 0,
+  state           text   NOT NULL,
+  refusal         text   NOT NULL DEFAULT '',
+  error_code      text   NOT NULL DEFAULT '',
+  origin          text   NOT NULL DEFAULT '',
+  PRIMARY KEY (realm, dataset, version));
+
+CREATE TABLE IF NOT EXISTS sts_risk_dataset_blobs (
+  realm   text    NOT NULL DEFAULT '',
+  dataset text    NOT NULL,
+  version text    NOT NULL,
+  part    integer NOT NULL,
+  content bytea   NOT NULL,
+  PRIMARY KEY (realm, dataset, version, part));
+
+CREATE TABLE IF NOT EXISTS sts_risk_geo_locations (
+  dataset     text   NOT NULL,
+  version     text   NOT NULL,
+  location_id bigint NOT NULL,
+  continent   text   NOT NULL DEFAULT '',
+  country     text   NOT NULL DEFAULT '',
+  subdivision text   NOT NULL DEFAULT '',
+  city        text   NOT NULL DEFAULT '',
+  time_zone   text   NOT NULL DEFAULT '',
+  PRIMARY KEY (dataset, version, location_id));
+
+CREATE TABLE IF NOT EXISTS sts_risk_geo_ranges (
+  dataset            text             NOT NULL,
+  version            text             NOT NULL,
+  range_start        inet             NOT NULL,
+  range_end          inet             NOT NULL,
+  location_id        bigint           NOT NULL DEFAULT 0,
+  continent          text             NOT NULL DEFAULT '',
+  country            text             NOT NULL DEFAULT '',
+  subdivision        text             NOT NULL DEFAULT '',
+  city               text             NOT NULL DEFAULT '',
+  registered_country text             NOT NULL DEFAULT '',
+  latitude           double precision,
+  longitude          double precision,
+  accuracy_km        integer          NOT NULL DEFAULT 0,
+  anonymous_proxy    boolean          NOT NULL DEFAULT false,
+  satellite          boolean          NOT NULL DEFAULT false,
+  PRIMARY KEY (dataset, version, range_start));
+
+CREATE TABLE IF NOT EXISTS sts_risk_asn_ranges (
+  dataset     text   NOT NULL,
+  version     text   NOT NULL,
+  range_start inet   NOT NULL,
+  range_end   inet   NOT NULL,
+  asn         bigint NOT NULL,
+  as_org      text   NOT NULL DEFAULT '',
+  as_domain   text   NOT NULL DEFAULT '',
+  PRIMARY KEY (dataset, version, range_start));
+
+CREATE TABLE IF NOT EXISTS sts_risk_ip_lists (
+  realm       text NOT NULL DEFAULT '',
+  dataset     text NOT NULL,
+  version     text NOT NULL,
+  range_start inet NOT NULL,
+  range_end   inet NOT NULL,
+  category    text NOT NULL,
+  note        text NOT NULL DEFAULT '',
+  PRIMARY KEY (realm, dataset, version, range_start));
+
+CREATE TABLE IF NOT EXISTS sts_risk_fido_authenticators (
+  dataset             text    NOT NULL,
+  version             text    NOT NULL,
+  key_kind            text    NOT NULL,
+  authenticator_key   text    NOT NULL,
+  description         text    NOT NULL DEFAULT '',
+  protocol_family     text    NOT NULL DEFAULT '',
+  certification_level text    NOT NULL DEFAULT '',
+  latest_status       text    NOT NULL DEFAULT '',
+  latest_status_at    bigint  NOT NULL DEFAULT 0,
+  compromised         boolean NOT NULL DEFAULT false,
+  status_reports      jsonb   NOT NULL DEFAULT '[]'::jsonb,
+  metadata_statement  jsonb   NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (dataset, version, key_kind, authenticator_key));
+
+CREATE INDEX IF NOT EXISTS sts_risk_fido_by_key ON sts_risk_fido_authenticators (key_kind, authenticator_key);
+
+CREATE TABLE IF NOT EXISTS sts_risk_assessments (
+  realm              text    NOT NULL,
+  id                 text    NOT NULL,
+  at                 bigint  NOT NULL,
+  phase              text    NOT NULL,
+  door               text    NOT NULL,
+  subject            text    NOT NULL DEFAULT '',
+  session_id         text    NOT NULL DEFAULT '',
+  client_id          text    NOT NULL DEFAULT '',
+  address_sealed     text    NOT NULL,
+  address_prefix     cidr    NOT NULL,
+  asn                bigint  NOT NULL DEFAULT 0,
+  as_org             text    NOT NULL DEFAULT '',
+  country            text    NOT NULL DEFAULT '',
+  subdivision        text    NOT NULL DEFAULT '',
+  city               text    NOT NULL DEFAULT '',
+  latitude           double precision,
+  longitude          double precision,
+  accuracy_km        integer NOT NULL DEFAULT 0,
+  ip_lists           text[]  NOT NULL DEFAULT '{}',
+  ua_hash            text    NOT NULL DEFAULT '',
+  ua_family          text    NOT NULL DEFAULT '',
+  ua_os              text    NOT NULL DEFAULT '',
+  ua_platform        text    NOT NULL DEFAULT '',
+  bot                boolean NOT NULL DEFAULT false,
+  ja4                text    NOT NULL DEFAULT '',
+  credential_kind    text    NOT NULL DEFAULT '',
+  credential_hash    text    NOT NULL DEFAULT '',
+  aaguid             text    NOT NULL DEFAULT '',
+  authenticator_cert text    NOT NULL DEFAULT '',
+  backup_eligible    boolean,
+  backup_state       boolean,
+  jkt                text    NOT NULL DEFAULT '',
+  cert_fingerprint   text    NOT NULL DEFAULT '',
+  datasets           jsonb   NOT NULL DEFAULT '{}'::jsonb,
+  signals            jsonb   NOT NULL DEFAULT '[]'::jsonb,
+  score              real    NOT NULL,
+  level              text    NOT NULL,
+  decision           text    NOT NULL,
+  policy_id          text    NOT NULL DEFAULT '',
+  error_code         text    NOT NULL DEFAULT '',
+  origin             text    NOT NULL DEFAULT '',
+  PRIMARY KEY (realm, id));
+
+CREATE INDEX IF NOT EXISTS sts_risk_assessments_subject ON sts_risk_assessments (realm, subject, at);
+
+CREATE INDEX IF NOT EXISTS sts_risk_assessments_session ON sts_risk_assessments (realm, session_id);
+
+CREATE INDEX IF NOT EXISTS sts_risk_assessments_at ON sts_risk_assessments (at);
+
+CREATE TABLE IF NOT EXISTS sts_risk_feature_counts (
+  realm    text   NOT NULL,
+  subject  text   NOT NULL,
+  feature  text   NOT NULL,
+  value    text   NOT NULL,
+  count    bigint NOT NULL,
+  first_at bigint NOT NULL,
+  last_at  bigint NOT NULL,
+  PRIMARY KEY (realm, subject, feature, value));
+
+CREATE INDEX IF NOT EXISTS sts_risk_feature_counts_age ON sts_risk_feature_counts (realm, last_at);
+
+CREATE TABLE IF NOT EXISTS sts_risk_failures (
+  realm          text      NOT NULL,
+  id             bigserial NOT NULL,
+  at             bigint    NOT NULL,
+  door           text      NOT NULL,
+  subject        text      NOT NULL DEFAULT '',
+  name_hmac      text      NOT NULL DEFAULT '',
+  address_sealed text      NOT NULL,
+  address_prefix cidr      NOT NULL,
+  asn            bigint    NOT NULL DEFAULT 0,
+  error_code     text      NOT NULL,
+  origin         text      NOT NULL DEFAULT '',
+  PRIMARY KEY (realm, id));
+
+CREATE INDEX IF NOT EXISTS sts_risk_failures_subject ON sts_risk_failures (realm, subject, at);
+
+CREATE INDEX IF NOT EXISTS sts_risk_failures_name ON sts_risk_failures (realm, name_hmac, at);
+
+CREATE INDEX IF NOT EXISTS sts_risk_failures_prefix ON sts_risk_failures (realm, address_prefix, at);
+
+CREATE INDEX IF NOT EXISTS sts_risk_failures_at ON sts_risk_failures (at);
+
+CREATE TABLE IF NOT EXISTS sts_risk_session_context (
+  realm          text   NOT NULL,
+  session_id     text   NOT NULL,
+  subject        text   NOT NULL,
+  address_prefix cidr   NOT NULL,
+  asn            bigint NOT NULL DEFAULT 0,
+  country        text   NOT NULL DEFAULT '',
+  ua_hash        text   NOT NULL DEFAULT '',
+  ja4            text   NOT NULL DEFAULT '',
+  jkt            text   NOT NULL DEFAULT '',
+  score          real   NOT NULL,
+  level          text   NOT NULL,
+  updated_at     bigint NOT NULL,
+  PRIMARY KEY (realm, session_id));
+
+CREATE TABLE IF NOT EXISTS sts_risk_subjects (
+  realm           text  NOT NULL,
+  subject         text  NOT NULL,
+  score           real  NOT NULL,
+  level           text  NOT NULL,
+  previous_level  text  NOT NULL DEFAULT '',
+  reason          text  NOT NULL DEFAULT '',
+  last_assessment text  NOT NULL DEFAULT '',
+  crossed_at      bigint NOT NULL DEFAULT 0,
+  actions         jsonb NOT NULL DEFAULT '{}'::jsonb,
+  feedback        text  NOT NULL DEFAULT '',
+  updated_at      bigint NOT NULL,
+  PRIMARY KEY (realm, subject));
+
+-- WHO ACCEPTED WHICH DATASET PROVIDER'S TERMS (#62, schema version 8,
+-- 2026-09-23): the audit trail the second licence review asked for. An import
+-- of a provider's data is refused without a row for its current terms.
+CREATE TABLE IF NOT EXISTS sts_risk_terms_acceptances (
+  id            bigserial NOT NULL,
+  provider      text      NOT NULL,
+  terms_digest  text      NOT NULL,
+  terms_text    text      NOT NULL,
+  accepted_by   text      NOT NULL,
+  accepted_via  text      NOT NULL,
+  deployment    text      NOT NULL DEFAULT '',
+  page_digest   text      NOT NULL DEFAULT '',
+  accepted_at   bigint    NOT NULL,
+  origin        text      NOT NULL DEFAULT '',
+  PRIMARY KEY (id));
+
+CREATE INDEX IF NOT EXISTS sts_risk_terms_acceptances_provider ON sts_risk_terms_acceptances (provider, accepted_at);
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -368,7 +616,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (6) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (8) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

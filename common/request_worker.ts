@@ -747,6 +747,9 @@ class RequestWorker {
     // off the request, and stripped before the app sees it — see below.
     const POOL_TICKET_HEADER = 'x-sts-pool-ticket';
     const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
+    // The JA4 reader (#62 P0), required here for persistence's reason below:
+    // by this line the stack is loaded and it is a cache hit.
+    const clientHello = require('../tls/client_hello');
 
     // The store, for the commit-before-answer block in the handler below.
     // Required HERE rather than at the top of this file for the reason every
@@ -767,6 +770,11 @@ class RequestWorker {
     this.announcer = announcer;
 
     const server = http.createServer(function (req, res) {
+      // THE CLIENT'S JA4 FINGERPRINT (#62 P0), forwarded beside the
+      // certificate and put on the REQUEST, for the keep-alive reason above.
+      // Stripped whether or not it is well formed; see
+      // tls/client_hello.ts's adoptForwarded().
+      clientHello.adoptForwarded(req);
       const encoded = req.headers[PEER_CERT_HEADER];
       if (encoded) {
         const cert = WorkerWire.decodePeer(encoded);

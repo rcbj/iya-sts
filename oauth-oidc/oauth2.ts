@@ -1993,6 +1993,25 @@ class OAuth2Server {
     return alg;
   }
 
+  // The claims of a compact JWS, UNVERIFIED — read only to REFUSE by (a FAPI
+  // 2.0 timestamp), never to grant anything. {} when unreadable.
+  unverifiedClaimsOf(jws: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.unverifiedClaimsOf().");
+    let claims: Json = {};
+    try {
+      claims = JSON.parse(Buffer.from(String(jws).split('.')[1] || '',
+                                      'base64url').toString('utf8')) || {};
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.unverifiedClaimsOf(): " +
+                ((e && e.message) || e));
+      // Unreadable: the verifier refuses it for that.
+      claims = {};
+    }
+    log.debug("Leaving OAuth2Server.unverifiedClaimsOf().");
+    return claims;
+  }
+
   // The `alg` of a compact JWS's protected header, or '' when it cannot be
   // read. Read BEFORE verification, to refuse by algorithm.
   headerAlgOf(jws: Json): string {
@@ -2851,8 +2870,10 @@ class OAuth2Server {
     const seconds = Number(config.value('oauth2.authorizationCodeTtlS'));
     log.debug("Leaving OAuth2Server.authCodeTtlMs().");
     // OAuth 2.1 mode caps it at ten minutes (section 4.1.2); a no-op otherwise.
-    return oauth21.codeTtlMs(isFinite(seconds) && seconds > 0 ?
-                             Math.floor(seconds) * 1000 : AUTH_CODE_TTL_MS);
+    // And FAPI 2.0 at sixty seconds (section 5.3.2.1 item 11, #140).
+    return this.deps.fapi.codeLifetimeMs(oauth21.codeTtlMs(
+      isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000
+                                       : AUTH_CODE_TTL_MS));
   }
 
   // The browser session, the login screen it comes out of and the WebAuthn step
@@ -6435,7 +6456,9 @@ class OAuth2Server {
         return refuse(idCheck.errorCode || 'STS-OAUTH-0158', idCheck.error,
                       idCheck.description);
       }
-      if (!q.redirect_uri) {
+      // Never under a FAPI profile, each of which requires redirect_uri to
+      // be SENT (Baseline item 9, FAPI 2.0 section 5.3.2.2 item 6, #140).
+      if (!q.redirect_uri && !fapi.enabled()) {
         const chosen = oauth21.defaultRedirectUri(registeredClient,
                                                   String(q.client_id));
         if (!chosen.ok) {
@@ -6868,7 +6891,9 @@ class OAuth2Server {
         : '',
       caps.require_pushed_authorization_requests === true
         ? 'the "' + self.profileOf(req) + '" authorization server\'s ' +
-          'require_pushed_authorization_requests' : ''
+          'require_pushed_authorization_requests' : '',
+      // FAPI 2.0 section 5.3.2.2 item 3 (#140).
+      self.deps.fapi.requiresPar() ? 'the FAPI 2.0 Security Profile' : ''
     ].filter(Boolean);
     if (!pushed && requiredBy.length) {
       oauthMonitor.record(clientId, 'par.required_refused',
@@ -9229,7 +9254,8 @@ class OAuth2Server {
     // checks after the signature so that the refusal names the audience.
     const assertionAudiences = [base + '/oauth2/token', self.issuerOf(base),
                                 base];
-    const strictAudience = oauth21.strictClientAssertionAudience() ?
+    const strictAudience = (oauth21.strictClientAssertionAudience() ||
+                            self.deps.fapi.strictAssertionAudience()) ?
                            self.issuerOf(base) : '';
     // RFC 9700 section 2.5 — the client's credential, checked in that mode (and
     // OAuth 2.1 mode) for a client whose entry declares a confidential method.
@@ -9593,6 +9619,19 @@ class OAuth2Server {
     }
     // FAPI 1.0 Advanced section 8.6 (#139): a client assertion is signed PS256
     // or ES256, whatever the client registered.
+    // FAPI 2.0 section 5.3.2.1 item 13 (#140): a client assertion's iat or
+    // nbf more than a minute in the future.
+    if (client.assertion) {
+      const ahead = fapi.futureTimestampRefusal(
+        self.unverifiedClaimsOf(client.assertion), 'the client assertion');
+      if (ahead) {
+        log.debug("Leaving the token endpoint. FAPI 2.0: a timestamp in the " +
+                  "future.");
+        errorCodes.mark(res, ahead.errorCode || 'STS-OAUTH-0590');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, ahead.error, ahead.description);
+      }
+    }
     if (client.assertion) {
       const assertionAlg = self.headerAlgOf(client.assertion);
       const fapiAlg = fapi.signingAlgRefusal(assertionAlg,
@@ -12058,7 +12097,8 @@ class OAuth2Server {
     // where that mode is on, as at the token endpoint.
     const assertionAudiences = [self.issuerOf(base), base + '/oauth2/token',
                                 base + '/oauth2/par', base];
-    const strictAudience = oauth21.strictClientAssertionAudience() ?
+    const strictAudience = (oauth21.strictClientAssertionAudience() ||
+                            self.deps.fapi.strictAssertionAudience()) ?
                            self.issuerOf(base) : '';
     const authentication = {
       clientId: clientId,
@@ -12110,6 +12150,28 @@ class OAuth2Server {
                     fapiAuth.errorCode,
                     presented.basic ?
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
+    }
+    // FAPI 2.0 section 5.3.2.2 item 4 (#140): a push authenticates its client.
+    const fapiPushed = fapi.parAuthenticationRefusal(
+      !!observation.authenticated);
+    if (fapiPushed) {
+      log.debug("Leaving OAuth2Server.parRequest(). FAPI 2.0: an " +
+                "unauthenticated push.");
+      return refuse(401, fapiPushed.error, fapiPushed.description,
+                    fapiPushed.errorCode, null);
+    }
+    // FAPI 2.0 section 5.3.2.1 item 13 (#140): the client assertion's iat or
+    // nbf more than a minute ahead.
+    if (body.client_assertion) {
+      const ahead = fapi.futureTimestampRefusal(
+        self.unverifiedClaimsOf(body.client_assertion),
+        'the client assertion');
+      if (ahead) {
+        log.debug("Leaving OAuth2Server.parRequest(). FAPI 2.0: a " +
+                  "timestamp in the future.");
+        return refuse(400, ahead.error, ahead.description, ahead.errorCode,
+                      null);
+      }
     }
     if (observation.authenticated) {
       const racedOut = await self.settleSecretSuccess(req, clientId, presented,
@@ -12631,7 +12693,8 @@ class OAuth2Server {
         request: req,
         audiences: [base + '/oauth2/introspect', base + '/oauth2/token',
                     self.issuerOf(base), base],
-        strictAudience: oauth21.strictClientAssertionAudience() ?
+        strictAudience: (oauth21.strictClientAssertionAudience() ||
+                         self.deps.fapi.strictAssertionAudience()) ?
                         self.issuerOf(base) : '',
         registered: registered
       });

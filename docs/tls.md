@@ -32,9 +32,22 @@ curl -k https://localhost:8081/tls/server-certificate > /tmp/sts.pem
 curl --cacert /tmp/sts.pem https://localhost:8081/healthcheck
 ```
 
-`tls.minVersion` (TLS 1.2 by default) and `tls.ciphers` (node's list by
-default) apply to the main port and LDAPS alike. A cipher list that matches
+`tls.minVersion` (TLS 1.2 by default) and `tls.ciphers` apply to the main
+port, LDAPS and the debugger's listener alike. A cipher list that matches
 nothing stops the service at startup, naming the setting.
+
+**The cipher list is BCP 195 by default.** TLS 1.3's three suites come
+first, and TLS 1.2 is limited to the four ECDHE AES-GCM suites RFC 9325
+section 4.2 recommends. The server's order wins, so a client that speaks TLS
+1.3 gets it. This is what the FAPI 2.0 Security Profile requires of a server
+(section 5.2.2), and it is the default for every listener, not only in a
+FAPI realm: a cipher suite belongs to the socket, not to a realm.
+`tls.minVersion=TLSv1.3` requires TLS 1.3 alone.
+
+> **Warning.** An empty `tls.ciphers` means node's own list, and any other
+> value replaces BCP 195's. Either can allow CBC-mode and non-forward-secret
+> suites that BCP 195 recommends against, and a FAPI 2.0 deployment then no
+> longer meets section 5.2.2. Widen it only to test an old client.
 
 ### The server certificate
 
@@ -204,7 +217,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.certificateFile` | `STS_TLS_CERT_FILE` | *(empty)* | no | Serve a certificate (or chain) somebody else issued; set with `tls.keyFile`. |
 | `tls.keyFile` | `STS_TLS_KEY_FILE` | *(empty)* | no | The unencrypted PKCS#8 or PKCS#1 key for `tls.certificateFile`. |
 | `tls.minVersion` | `STS_TLS_MIN_VERSION` | `TLSv1.2` | no | The lowest TLS version the main port and LDAPS negotiate. |
-| `tls.ciphers` | `STS_TLS_CIPHERS` | *(empty — node's list)* | no | An OpenSSL cipher list for those sockets; one matching nothing stops startup. |
+| `tls.ciphers` | `STS_TLS_CIPHERS` | BCP 195: the TLS 1.3 suites, then `ECDHE-{ECDSA,RSA}-AES{128,256}-GCM-SHA{256,384}` | no | An OpenSSL cipher list for those sockets, in the server's order; empty means node's own list (see the warning above). One matching nothing stops startup. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |
 | `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | no | Add this service's Root to the client truststore, so a certificate a person issued on the portal signs them in. |
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |

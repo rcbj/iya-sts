@@ -33,6 +33,7 @@
     "persistence/*.js", "persistence/*.ts",
     "pki/*.js", "pki/*.ts",
     "portal/*.js", "portal/*.ts",
+    "risk/*.js", "risk/*.ts",
     "saml/*.js", "saml/*.ts",
     "scep/*.js", "scep/*.ts",
     "scim/*.js", "scim/*.ts",

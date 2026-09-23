@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2956** of them, in **35** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2973** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 191
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 468
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 470
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 79
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -75,6 +75,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 87
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 99
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 275
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
@@ -1545,6 +1546,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0586` | Under FAPI 1.0 Advanced, a client assertion or request object was signed with an algorithm other than PS256 or ES256 (Part 2 section 8.6). | HTTP 401 {error: invalid_client}, or HTTP 400 {error: invalid_request_object} |
 | `STS-OAUTH-0587` | response_mode=query.jwt was asked for with a response type carrying token or id_token, and the client registered no encryption for its authorization responses (JARM section 2.3.1). | redirect: error=invalid_request |
 | `STS-OAUTH-0588` | A JWT-secured authorization response (JARM) could not be made: the client's registered algorithm cannot be honoured, or it named encryption and its jwks holds no key for it. Answered on this server rather than sent unsecured. | HTTP 400 {error: invalid_request} |
+| `STS-OAUTH-0589` | Under the FAPI 2.0 Security Profile, a pushed authorization request did not authenticate its client (section 5.3.2.2 item 4). | HTTP 401 {error: invalid_client} |
+| `STS-OAUTH-0590` | Under the FAPI 2.0 Security Profile, a client assertion, a request object or a DPoP proof carried an iat or nbf more than 60 seconds in the future (section 5.3.2.1 item 13). | HTTP 400 {error: invalid_request}, invalid_request_object, or invalid_dpop_proof |
 
 ## STS-SAML
 
@@ -2460,6 +2463,30 @@ Raised from: ssf/.
 | `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
 | `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
+
+## STS-RISK
+
+**Risk scoring.** The external datasets a risk score reads — their import, verification, activation, rollback and retention — and the attributable failure history (#62).
+
+Raised from: risk/, admin-ui/risk_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-RISK-0001` | A dataset import was refused before anything was loaded: the dataset, the format or the realm is not one this service knows, or the format is not one that dataset takes. | — |
+| `STS-RISK-0002` | A dataset import was refused: the file's SHA-256 is not the one its manifest or the caller named. Nothing was loaded and the active version stays. | — |
+| `STS-RISK-0003` | A dataset version was refused because it has fewer rows than risk.datasetShrinkLimitPercent allows against the active version — what a truncated download looks like. Its rows were deleted and the active version stays. | — |
+| `STS-RISK-0004` | A dataset version was refused because no line of the file was a row of its format. | — |
+| `STS-RISK-0005` | A dataset import failed in the store part-way through; the version is recorded as refused with the reason, its rows are deleted, and the active version stays. | — |
+| `STS-RISK-0006` | The store was asked to hold dataset rows of a kind it has no table for — a defect in the caller. | — |
+| `STS-RISK-0007` | A dataset version could not be activated or rolled back to: it is not one that loaded (it is loading, refused or deleted). | — |
+| `STS-RISK-0008` | The dataset directory could not be read, or a manifest in it is not JSON naming a dataset, a format and a file beside it; the manifest is skipped and the rest of the directory is imported. | — |
+| `STS-RISK-0009` | The risk retention job failed; superseded versions and old failures stay until its next run. | — |
+| `STS-RISK-0010` | An attributable failure could not be recorded in the store. The refusal it describes stands; only its record is lost. | — |
+| `STS-RISK-0011` | A Monitoring → Risk action or its /admin-api twin was refused: a read-only session, an unknown action, or a field it needs is missing. | — |
+| `STS-RISK-0012` | The install-time dataset loader (risk/risk_install.ts) could not import an entry: no database was named, the provider's terms were not accepted with --accept-terms, or the download failed. The other entries are imported and the loader exits non-zero. | — |
+| `STS-RISK-0013` | A sign-in could not be assessed for risk (the store or a dataset lookup failed part-way). The sign-in stands; only its assessment is missing. | — |
+| `STS-RISK-0014` | A dataset import was refused because nobody has accepted its provider's current terms (or the terms changed since they were accepted), or an acceptance was asked for a provider with none to accept. | — |
+| `STS-RISK-0015` | The install-time loader fetched a provider's terms page (--check-terms) and it differs from the page seen at the last acceptance: read it before relying on the acceptance. | — |
 
 ## STS-GNAP
 

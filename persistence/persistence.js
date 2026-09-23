@@ -1793,6 +1793,14 @@ function openStore(chosen, resolvedUrl) {
     // -------------------------------------------------------------------
     return usedAssertions.setStore(driver, activeMode);
   }).then(function () {
+    // AND RISK SCORING ITS TABLES (#62 P1): the external datasets by version
+    // and the failure history, in `sts_risk_*` on a store whose driver has
+    // them, and in the process otherwise — `risk/risk_store.ts` decides by
+    // the driver's method names. Required LAZILY: this file is loaded long
+    // before the composition root builds the risk modules, and a require at
+    // load would build their instance first.
+    require('../risk/risk_store').setDriver(driver, activeMode);
+  }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
     // WHAT THE SETTINGS TABLE HOLDS, which is what a flush diffs against. The
@@ -2134,6 +2142,10 @@ function stop() {
     // is closed underneath it.
     return usedAssertions.clearStore();
   }).then(function () {
+    // The risk store goes back to this process's own maps before the driver
+    // is closed underneath it.
+    require('../risk/risk_store').clearDriver();
+  }).then(function () {
     // LEAVING THE CLUSTER LAST, after every write this process owed has been
     // made under its membership — and before the pool closes, since leaving
     // is a statement. A standby that never held the lease leaves the same way.
@@ -2474,6 +2486,16 @@ function coordinate() {
     realms: applyRealmsChange,
     appconfig: applyAppconfigChange,
     keys: applyKeysChange,
+    // A RISK DATASET VERSION ACTIVATED ON ANOTHER NODE (#62 P1): the row is
+    // already in the table every node reads, so applying it is dropping what
+    // this process cached about the old version. The key is the dataset.
+    'risk-dataset': function (change) {
+      log.debug("Entering the risk-dataset applier.");
+      require('../risk/risk_store').noteActivated(change.realm || '',
+                                                  change.key || '');
+      log.debug("Leaving the risk-dataset applier.");
+      return null;
+    },
     // A FUNCTION WITH A `prepare` ON IT. The applier contract is a function —
     // `replication.js` checks `typeof applier === 'function'` — and `prepare`
     // is an optional property it looks for beside it, so this stays one

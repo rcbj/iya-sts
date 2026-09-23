@@ -3264,6 +3264,42 @@ function userAgentFingerprint(userAgent) {
 }
 
 // ---------------------------------------------------------------------------
+// A CREDENTIAL'S FINGERPRINT, for the authentication event (#62 P0,
+// 2026-09-22): the base64url SHA-256 of a credential identifier as the caller
+// holds it — a WebAuthn credential id (itself base64url), a certificate's
+// SHA-256 thumbprint. `userAgentFingerprint()`'s reason, one field over: the
+// event has to say WHICH key answered, so that a later sign-in can be told to
+// be the same one, and it has no business holding the identifier itself —
+// a session row is copied into logs, pages and the change log. '' for none.
+// ---------------------------------------------------------------------------
+function credentialFingerprint(identifier) {
+  log.debug('Entering credentialFingerprint().');
+  const text = String(identifier || '');
+  if (!text) {
+    log.debug('Leaving credentialFingerprint(). No identifier.');
+    return '';
+  }
+  log.debug('Leaving credentialFingerprint().');
+  return nodeCrypto.createHash('sha256').update(text, 'utf8')
+    .digest('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// THE FIRST `chars` HEX CHARACTERS OF A SHA-256, for JA4 (#62 P0,
+// 2026-09-22), whose second and third parts are "a 12 character truncated
+// sha256 hash" of a comma-joined list (FoxIO's JA4 specification). A
+// truncation of a digest this file computes, rather than a digest computed
+// by the caller: the rule is that this service hashes here.
+// ---------------------------------------------------------------------------
+function truncatedSha256Hex(text, chars) {
+  log.debug('Entering truncatedSha256Hex().');
+  const hex = nodeCrypto.createHash('sha256')
+    .update(String(text || ''), 'utf8').digest('hex');
+  log.debug('Leaving truncatedSha256Hex().');
+  return hex.slice(0, Math.max(0, Math.min(64, Number(chars) || 0)));
+}
+
+// ---------------------------------------------------------------------------
 // WHICH CERTIFICATE THIS IS, IN THE TWO STRINGS A RECEIVER MATCHES ON (#145,
 // 2026-09-22): the issuer's distinguished name and the serial number, the
 // pair RFC 5280 section 4.1.2.2 makes unique — a serial alone is unique only
@@ -5082,6 +5118,8 @@ async function sha256OfFile(file, limit) {
 
 module.exports = {
   userAgentFingerprint: userAgentFingerprint,
+  credentialFingerprint: credentialFingerprint,
+  truncatedSha256Hex: truncatedSha256Hex,
   certificateIdentifiers: certificateIdentifiers,
   // --- a credential several processes have to derive alike ---
   deriveSharedCredential: deriveSharedCredential,

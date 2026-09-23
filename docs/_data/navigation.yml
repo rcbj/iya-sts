@@ -41,6 +41,7 @@
     - { title: TLS and mutual TLS, url: /tls.html }
     - { title: Sessions, url: /sessions.html }
     - { title: Signing out, url: /signing-out.html }
+    - { title: Risk scoring, url: /risk-scoring.html }
 
 - section: Verifiable credentials
   items:

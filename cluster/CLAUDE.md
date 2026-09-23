@@ -546,6 +546,8 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `ssf.dead-letter-sweep` | per-process; `ssf.deadLetterSweepS` — its summary and history are the process's own | `ssf/ssf.ts` (P5) |
 | `ssf.stream-maintenance` | cluster, realm; `ssf.streamMaintenanceSweepS`, off while `ssf.inactivityTimeoutS` and `ssf.verificationEveryS` are both 0 — SSF 1.0's inactivity timeout and transmitter-initiated verification | `ssf/ssf.ts` (#144) |
 | `risc.opt-out-effective` | cluster, realm; every 5 minutes, off while `risc.enabled` is off — sends RISC `opt-out-effective` for each account whose holder opted out on `/portal/signals` at least `risc.optOutDelayHours` ago (RISC 1.0 section 2.8, #146) | `ssf/ssf.ts` |
+| `risk.dataset-directory` | cluster, service; `risk.datasetsDirectoryScanS`, off while `risk.datasetsDirectory` is empty — imports each manifest's dataset file once (#62) | `risk/risk_datasets.ts` |
+| `risk.retention` | cluster, service; hourly — deletes the rows of superseded and refused dataset versions and the failures past their retention (#62) | `risk/risk_datasets.ts` |
 | `saml2.sp-metadata-refresh` | cluster, service; `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |

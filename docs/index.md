@@ -46,6 +46,7 @@ console control reachable by a machine with an OAuth 2.0 access token.
 **Sessions and signals** —
 [Sessions](sessions.md) ·
 [Signing out](signing-out.md) ·
+[Risk scoring](risk-scoring.md) ·
 [CAEP events](caep-events.md) ·
 [Signals received](signals-received.md)
 

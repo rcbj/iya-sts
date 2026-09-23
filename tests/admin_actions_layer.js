@@ -440,6 +440,12 @@ function checkNothingRequiresItEarly(t) {
                    // who is asking. Required at 18i, after the console, so
                    // the require is a cache hit and moves no route.
                    'admin-ui/scheduler_admin.ts',
+                   // The risk page (#62, 2026-09-23), for the gate state
+                   // only — who accepted a dataset provider's terms, which
+                   // the second licence review asked to be recorded by name.
+                   // Required at 18j, after the console, so the require is a
+                   // cache hit and moves no route.
+                   'admin-ui/risk_admin.ts',
                    // The key pairs page (#48, 2026-09-22), for the gate
                    // state only — who asked for a rotation. Required LAZILY,
                    // in the request, and the page is 20a, after the console,
