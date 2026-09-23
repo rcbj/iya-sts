@@ -5116,8 +5116,7 @@ async function sha256OfFile(file, limit) {
   return hash.digest('hex');
 }
 
-// ====================================================================}
-
+// ===========================================================================
 // SECTION 9 — THE KERBEROS PSEUDO-RANDOM FUNCTION AND KRB-FX-CF2 (#173,
 // 2026-09-22).
 //
@@ -5314,7 +5313,8 @@ function krbFxCf2(key1, key2, pepper1, pepper2) {
   }
   log.debug("Leaving krbFxCf2().");
   return { etype: Number(key1.etype), key: new Uint8Array(out) };
-=======
+}
+
 // ---------------------------------------------------------------------------
 // OPENID CONNECT SESSION MANAGEMENT 1.0 SECTION 3's `session_state` (#121):
 // SHA-256 over `client_id + " " + origin + " " + browser_state + " " + salt`,
