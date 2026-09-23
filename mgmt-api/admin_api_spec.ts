@@ -1755,12 +1755,25 @@ const SCHEMAS = {
                      'POST-binding request into a GET so the SameSite=Lax ' +
                      'session cookie is visible. Same reading as above.'
       },
+      mdqRefused: {
+        type: 'array',
+        description: 'On the list reply. The entityIDs a request asked the ' +
+                     'Metadata Query responder to register and product ' +
+                     'mode refused (#112) — `entityId`, `errorCode` ' +
+                     '(STS-SAML-0080: no trust anchor, nothing fetched; ' +
+                     'STS-SAML-0081: the answer did not verify), `why`, ' +
+                     '`count`, `firstAt`, `lastAt` — newest first. This ' +
+                     'process\'s record since it started.',
+        items: openObject('One refused entityID.', {})
+      },
+      mdqRefusedPaging: pagingObject('mdqRefused'),
       found: {
         type: 'boolean',
         description: 'On the ?sp= reply only. FALSE for an entityID that is ' +
                      'not in the registry — whose metadata document is still ' +
                      'served, and whose AuthnRequest would still be ' +
-                     'answered, because this profile accepts any entityID.'
+                     'answered, in development; in product both are ' +
+                     'refused.'
       }
     }, PAGING_PROPERTIES)),
 

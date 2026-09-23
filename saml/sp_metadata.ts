@@ -123,6 +123,9 @@ import audit = require('../common/audit');
 // (2026-09-17). A leaf, so this require closes no cycle.
 import stsCrypto = require('../common/crypto');
 import applications = require('../common/applications');
+// WHAT A METADATA QUERY MAY REGISTER, by mode (#112): `mode.js` is a leaf of
+// `common/` that requires nothing reaching back here.
+import mode = require('../common/mode');
 // THE BACKGROUND REFRESH (#37 follow-up): it walks every trust realm, and
 // each document is refreshed by ONE process of a cluster, through a claim.
 // Both are libraries that require nothing reaching back here.
@@ -188,6 +191,7 @@ interface SpMetadataDeps {
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
   clusterClaims: typeof clusterClaims;
+  mode: typeof mode;
 }
 
 // What `freshness()` answers about the metadata consumed onto an entry.
@@ -233,7 +237,8 @@ class SpMetadata {
       fedHttp: fedHttp,
       stsCrypto: stsCrypto,
       realms: realms,
-      clusterClaims: clusterClaims
+      clusterClaims: clusterClaims,
+      mode: mode
     };
   }
 
@@ -1372,18 +1377,77 @@ class SpMetadata {
   // answered with a document that parses for that entity — and removed again
   // if consuming it is then refused — so a name nobody publishes leaves
   // nothing behind.
+  //
+  // **WHO STARTED IT DECIDES WHAT THE ANSWER MAY DO (2026-09-23, #112).**
+  // `options.origin` is `'operator'` for the console and the API, and
+  // `'request'` — the default, because it is the stricter — for the lookup an
+  // AuthnRequest starts. The entityID of a request-started lookup is chosen
+  // by whoever sent the request, which is anybody, so in PRODUCT
+  // (`mode.registersFromMetadataQuery()` false) a request never registers an
+  // entity on an answer nobody vouched for:
+  //
+  //   * request, entity unknown, no realm trust anchor: NOTHING IS FETCHED
+  //     (`STS-SAML-0080`) — an unverifiable answer could only be refused, so
+  //     asking would only spend the responder's time on an invented name;
+  //   * request, entity unknown, anchors set: the answer is VERIFIED against
+  //     the realm's anchors BEFORE the entry is created (`STS-SAML-0081`) —
+  //     the entry has no certificate of its own yet, so the realm's are the
+  //     only ones that can vouch for it;
+  //   * operator, no realm trust anchor: REFUSED (`STS-SAML-0084`) unless
+  //     `saml2.mdqImportWithoutAnchors` is on, whose description carries the
+  //     warning — the administrator's choice of entityID is then the only
+  //     thing standing in for the signature.
+  //
+  // draft-young-md-query-25 section 6.1 RECOMMENDS integrity checking of what
+  // a responder returns, and draft-young-md-query-saml-25 section 4.1 makes a
+  // signature embedded in the document the RECOMMENDED mechanism; an
+  // unsigned answer to a lookup an unauthenticated request started is
+  // exactly what neither asks anybody to trust. An entry that ALREADY EXISTS
+  // is refreshed from MDQ as before, in both modes: somebody registered it.
   mdqImport(entityId, options?) {
-    const { applications } = this.deps;
+    const { applications, config, mode } = this.deps;
     const { log } = this.deps.helpers;
     const self = this;
     const opts = options || {};
-    log.debug("Entering SpMetadata.mdqImport(). " + entityId);
+    const origin = opts.origin === 'operator' ? 'operator' : 'request';
+    log.debug("Entering SpMetadata.mdqImport(). " + entityId + ", origin=" +
+              origin);
     const url = this.mdqUrlFor(entityId);
     if (!url) {
       log.debug("Leaving SpMetadata.mdqImport(). Not configured.");
       return Promise.resolve(this.marked({ ok: false, errors: [
         'saml2.mdqBaseUrl is not set in this realm, so there is no Metadata ' +
         'Query responder to ask.'] }, 'STS-SAML-0075'));
+    }
+    const known = !!applications.get(entityId);
+    const realmAnchors = this.trustAnchorsFor({});
+    const vouched = mode.registersFromMetadataQuery();
+    if (origin === 'operator' && !vouched && !realmAnchors.length &&
+        !config.value('saml2.mdqImportWithoutAnchors')) {
+      this.refreshRefused('STS-SAML-0084', entityId, 'this realm is in ' +
+                          'product mode and has no metadata trust anchor ' +
+                          'to verify the answer with');
+      log.debug("Leaving SpMetadata.mdqImport(). Operator, no anchor.");
+      return Promise.resolve(this.marked({ ok: false, errors: [
+        'This realm is in product mode and has no ' +
+        'saml2.metadataTrustAnchors, so nothing could verify what the ' +
+        'Metadata Query responder answers — and what it answers becomes ' +
+        'the keys this service provider\'s requests are verified against ' +
+        'and the addresses assertions are sent to. Set a trust anchor (the ' +
+        'federation operator\'s metadata signing certificate), or turn on ' +
+        'saml2.mdqImportWithoutAnchors after reading its warning. Nothing ' +
+        'was fetched.'] }, 'STS-SAML-0084'));
+    }
+    const gated = origin === 'request' && !known && !vouched;
+    if (gated && !realmAnchors.length) {
+      this.recordMdqRefusal(entityId, 'STS-SAML-0080', 'no ' +
+                            'saml2.metadataTrustAnchors in this realm; ' +
+                            'nothing was fetched');
+      log.debug("Leaving SpMetadata.mdqImport(). Request, no anchor.");
+      return Promise.resolve(this.marked({ ok: false, errors: [
+        'A lookup a request started may not register "' + entityId + '" ' +
+        'in product mode without a trust anchor to verify the answer ' +
+        'with. Nothing was fetched.'] }, 'STS-SAML-0080'));
     }
     log.debug("Leaving SpMetadata.mdqImport(). Asking " + url);
     return this.fetchMetadata(url).then(function (answer) {
@@ -1409,6 +1473,22 @@ class SpMetadata {
           (parsed.why || 'it describes "' + parsed.entityId + '"') + '.'] },
           'STS-SAML-0052');
       }
+      // THE ANSWER IS VERIFIED BEFORE ANYTHING EXISTS: an entry created and
+      // then removed when consume() refused it would be a registration an
+      // anonymous request made, however briefly — visible to a concurrent
+      // request, and a directory write per invented entityID.
+      if (gated) {
+        const verdict = self.verifyAgainst(String(answer.xml), parsed,
+                                           realmAnchors);
+        if (!verdict.ok) {
+          self.recordMdqRefusal(entityId, 'STS-SAML-0081', 'the answer ' +
+                                'did not verify against a realm trust ' +
+                                'anchor: ' + verdict.why);
+          return self.marked({ ok: false, errors: ['The Metadata Query ' +
+            'responder\'s answer for "' + entityId + '" was not ' +
+            'registered: ' + verdict.why + '.'] }, 'STS-SAML-0081');
+        }
+      }
       let created = false;
       if (!applications.get(entityId)) {
         const made = applications.createApplication({
@@ -1430,6 +1510,20 @@ class SpMetadata {
       if (consumed.ok) {
         consumed.url = url;
         consumed.created = created;
+        if (!vouched && origin === 'operator' && !realmAnchors.length) {
+          // saml2.mdqImportWithoutAnchors let it through: say so on the
+          // reply and in the log, every time, because the reply is the
+          // administrator's only chance to notice what they consumed.
+          consumed.warnings = ['The document was consumed WITHOUT a ' +
+            'signature check (saml2.mdqImportWithoutAnchors is on and the ' +
+            'realm has no trust anchor). Its keys and endpoints are ' +
+            'whatever the responder answered.'];
+          consumed.message = consumed.warnings[0] + ' ' +
+                             String(consumed.message || '');
+          log.warn('saml2: imported "' + entityId + '" from the Metadata ' +
+                   'Query responder with NO signature check ' +
+                   '(saml2.mdqImportWithoutAnchors).');
+        }
       }
       return consumed;
     });
@@ -1442,13 +1536,26 @@ class SpMetadata {
   // registration. One lookup per entityID at a time, and a name that failed
   // is not asked again until the refresh interval has passed, so a stream of
   // invented entityIDs costs the responder one request each per interval.
+  //
+  // In PRODUCT with no realm trust anchor an unknown entityID is not queued
+  // at all (#112, `STS-SAML-0080`, see mdqImport()): it is recorded as
+  // refused and nothing is fetched.
   queueMdqLookup(entityId) {
-    const { realms } = this.deps;
+    const { applications, mode, realms } = this.deps;
     const { log } = this.deps.helpers;
     const self = this;
     log.debug("Entering SpMetadata.queueMdqLookup(). " + entityId);
     if (!entityId || !this.mdqUrlFor(entityId)) {
       log.debug("Leaving SpMetadata.queueMdqLookup(). Nothing to ask.");
+      return false;
+    }
+    if (!mode.registersFromMetadataQuery() &&
+        !applications.get(entityId) && !this.trustAnchorsFor({}).length) {
+      this.recordMdqRefusal(entityId, 'STS-SAML-0080', 'no ' +
+                            'saml2.metadataTrustAnchors in this realm; ' +
+                            'nothing was fetched');
+      log.debug("Leaving SpMetadata.queueMdqLookup(). Refused: product, " +
+                "unknown, no anchor.");
       return false;
     }
     const key = realms.currentId() + '\u0000' + entityId;
@@ -1462,14 +1569,108 @@ class SpMetadata {
     const realm = realms.current();
     setImmediate(function () {
       realms.run(realm, function () {
-        self.mdqImport(entityId, { quiet: true }).then(function (answer) {
-          mdqLookups.set(key, { pending: false, at: Date.now(),
-                                ok: !!answer.ok });
-        });
+        self.mdqImport(entityId, { quiet: true, origin: 'request' })
+          .then(function (answer) {
+            mdqLookups.set(key, { pending: false, at: Date.now(),
+                                  ok: !!answer.ok });
+          });
       });
     });
     log.debug("Leaving SpMetadata.queueMdqLookup(). Queued.");
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ENTITYIDS A REQUEST-STARTED LOOKUP WAS REFUSED FOR (#112), per realm
+  // and per process — the same kind of state as `refreshStatus()`, and drawn
+  // on the SAML 2.0 page and `GET /admin-api/saml2` (`mdqRefused`). A row per
+  // entityID, newest first, with how often and when; bounded by
+  // MDQ_REFUSALS_MAX (the oldest is dropped at the insert, which is the cap
+  // rather than housekeeping, so it is no scheduler job). Logged when a realm
+  // STARTS refusing and summarised at most hourly — never a line per request,
+  // because the requests are anybody's and a stream of invented entityIDs
+  // would otherwise be a stream of log lines. One audit row per entityID the
+  // first time it is refused, carrying the code.
+  // ---------------------------------------------------------------------------
+  private recordMdqRefusal(entityId, code, why) {
+    const { audit, realms } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.recordMdqRefusal(). " + code);
+    const realmId = realms.currentId();
+    const key = realmId + '\u0000' + String(entityId);
+    const now = new Date().toISOString();
+    const before = mdqRefusals.get(key);
+    if (before) {
+      mdqRefusals.delete(key);
+    } else if (mdqRefusals.size >= MDQ_REFUSALS_MAX) {
+      mdqRefusals.delete(mdqRefusals.keys().next().value);
+    }
+    mdqRefusals.set(key, {
+      realm: realmId, entityId: String(entityId), errorCode: code, why: why,
+      firstAt: before ? before.firstAt : now, lastAt: now,
+      count: before ? before.count + 1 : 1
+    });
+    refusalSummary.since++;
+    // The first refusal is logged below as the change it is, so the hourly
+    // summary starts counting from here rather than repeating it at once.
+    if (!refusalSummary.at) {
+      refusalSummary.at = Date.now();
+    }
+    if (!before) {
+      audit.audit({
+        // error-code: none — the helper's own row; both callers pass theirs
+        action: 'saml2.metadata.mdq', outcome: 'refused', errorCode: code,
+        protocol: 'SAML 2.0', channel: 'http', target: String(entityId),
+        summary: 'A Metadata Query lookup a request started for "' +
+                 entityId + '" registered nothing: ' + why,
+        detail: { realm: realmId }
+      });
+    }
+    if (!refusingRealms.has(realmId)) {
+      refusingRealms.add(realmId);
+      log.warn(this.deps.errorCodes.tag(code) + 'saml2: realm "' +
+               (realmId || '(default)') + '" is refusing Metadata Query ' +
+               'lookups that requests start for unregistered entityIDs ' +
+               '(product mode: ' + why + '). Logged once; the entityIDs ' +
+               'are listed on the SAML 2.0 page and summarised hourly.');
+    }
+    this.summariseRefusals();
+    log.debug("Leaving SpMetadata.recordMdqRefusal().");
+  }
+
+  // At most one line an hour while lookups are being refused.
+  private summariseRefusals() {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.summariseRefusals().");
+    if (refusalSummary.since &&
+        Date.now() - refusalSummary.at >= 3600000) {
+      log.warn(this.deps.errorCodes.tag('STS-SAML-0080') + 'saml2: ' +
+               refusalSummary.since + ' Metadata Query lookup(s) for ' +
+               'unregistered entityIDs refused since the last summary; ' +
+               mdqRefusals.size + ' entityID(s) listed.');
+      refusalSummary.at = Date.now();
+      refusalSummary.since = 0;
+    }
+    log.debug("Leaving SpMetadata.summariseRefusals().");
+  }
+
+  // The refused entityIDs of the ambient realm, newest first.
+  mdqRefusalList(): Array<Record<string, any>> {
+    const { realms } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.mdqRefusalList().");
+    const realmId = realms.currentId();
+    const out = [];
+    mdqRefusals.forEach(function (row) {
+      if (row.realm === realmId) {
+        out.push({ entityId: row.entityId, errorCode: row.errorCode,
+                   why: row.why, firstAt: row.firstAt, lastAt: row.lastAt,
+                   count: row.count });
+      }
+    });
+    out.reverse();
+    log.debug("Leaving SpMetadata.mdqRefusalList(). " + out.length);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -1754,6 +1955,7 @@ class SpMetadata {
                'still failing: ' + failing.slice(0, 10).join(', ') +
                (failing.length > 10 ? ', …' : '') + '.');
     }
+    this.summariseRefusals();
     log.debug("Leaving SpMetadata.summarise(). " + failing.length);
   }
 
@@ -1821,6 +2023,13 @@ const REFRESH_JOB = 'saml2.sp-metadata-refresh';
 const refresher: { summaryAt: number } = { summaryAt: 0 };
 const refreshStates = new Map<string, any>();
 const mdqLookups = new Map<string, any>();
+// The entityIDs a request-started lookup was refused for (#112): realm \0
+// entity, in the order last refused, at most MDQ_REFUSALS_MAX; which realms
+// have been logged as refusing; and the hourly summary's count.
+const MDQ_REFUSALS_MAX = 500;
+const mdqRefusals = new Map<string, any>();
+const refusingRealms = new Set<string>();
+const refusalSummary: { at: number, since: number } = { at: 0, since: 0 };
 
 const slot = new InstanceSlot<SpMetadata>(
   'saml/sp_metadata',
@@ -1850,6 +2059,7 @@ export = {
   mdqUrlFor: slot.forward('mdqUrlFor'),
   mdqImport: slot.forward('mdqImport'),
   queueMdqLookup: slot.forward('queueMdqLookup'),
+  mdqRefusalList: slot.forward('mdqRefusalList'),
   startRefresher: slot.forward('startRefresher'),
   stopRefresher: slot.forward('stopRefresher'),
   sweepOnce: slot.forward('sweepOnce'),

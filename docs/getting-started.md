@@ -171,7 +171,8 @@ A protocol you can drive end to end in a browser with nothing else installed is
 in with any username, and the mock service provider verifies the response it gets
 back check by check. `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its
-own for a service provider by that name, minted on the spot.
+own for a service provider by that name, minted on the spot — in development mode
+only. In product mode that is a 404 until the service provider is registered.
 
 `/admin/sts-metadata` is the sharper of the two. It reads the endpoint list off the
 live Express router, so it answers only once every protocol module has registered
