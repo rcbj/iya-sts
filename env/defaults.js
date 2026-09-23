@@ -565,18 +565,18 @@ var config = {
 
   // --- TLS -------------------------------------------------------------
   tls: {
-    trustIssuedClientCertificates: true,                 // Trust TLS client certificates issued on the user portal; restart to apply
-    hostnames: "localhost,sts,sts-mock,sts.example.com", // Certificate hostnames; restart to apply
-    ips: "127.0.0.1",                                    // Certificate IP addresses; restart to apply
-    certificateAlgorithms: "rsa",                        // Server certificate algorithms; restart to apply
-    certificateFile: "",                                 // Server certificate file; restart to apply
-    keyFile: "",                                         // Server private key file; restart to apply
-    minVersion: "TLSv1.2",                               // Minimum TLS version; restart to apply
-    ciphers: "",                                         // TLS cipher list; restart to apply
-    trustAnchorsFile: "",                                // Client certificate trust anchors file; restart to apply
-    selfSignedKeyBits: 2048,                             // Self-signed certificate RSA key size; restart to apply
-    selfSignedValidityYears: 2,                          // Self-signed certificate validity (years); restart to apply
-    selfSignedOrganization: "sts"                        // Self-signed certificate organization; restart to apply
+    trustIssuedClientCertificates: true,                                                                                                                                                                       // Trust TLS client certificates issued on the user portal; restart to apply
+    hostnames: "localhost,sts,sts-mock,sts.example.com",                                                                                                                                                       // Certificate hostnames; restart to apply
+    ips: "127.0.0.1",                                                                                                                                                                                          // Certificate IP addresses; restart to apply
+    certificateAlgorithms: "rsa",                                                                                                                                                                              // Server certificate algorithms; restart to apply
+    certificateFile: "",                                                                                                                                                                                       // Server certificate file; restart to apply
+    keyFile: "",                                                                                                                                                                                               // Server private key file; restart to apply
+    minVersion: "TLSv1.2",                                                                                                                                                                                     // Minimum TLS version; restart to apply
+    ciphers: "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384", // TLS cipher list; restart to apply
+    trustAnchorsFile: "",                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
+    selfSignedKeyBits: 2048,                                                                                                                                                                                   // Self-signed certificate RSA key size; restart to apply
+    selfSignedValidityYears: 2,                                                                                                                                                                                // Self-signed certificate validity (years); restart to apply
+    selfSignedOrganization: "sts"                                                                                                                                                                              // Self-signed certificate organization; restart to apply
   },
 
   // --- OID4VCI ---------------------------------------------------------

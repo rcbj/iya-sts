@@ -1149,6 +1149,15 @@ class RequestObject {
       return self.refusal(lifetime.errorCode, lifetime.error,
                           lifetime.description);
     }
+    // FAPI 2.0 section 5.3.2.1 item 13 (#140).
+    const ahead = self.deps.fapi.futureTimestampRefusal(claims,
+                                                        'the request object');
+    if (ahead) {
+      log.debug("Leaving RequestObject.verifyObject(). FAPI 2.0: a " +
+                "timestamp in the future.");
+      return self.refusal(ahead.errorCode, 'invalid_request_object',
+                          ahead.description);
+    }
     if (claims.client_id !== undefined &&
         String(claims.client_id) !== clientId) {
       log.debug("Leaving RequestObject.verifyObject(). client_id differs.");

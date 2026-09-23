@@ -199,6 +199,8 @@ function isAsymmetric(method) {
 // answer. A different document on the same request is verified afresh.
 // ---------------------------------------------------------------------------
 const usedAssertions = require('../common/used_assertions');
+// FAPI 2.0's "as a string" (#140). A leaf: it requires nothing here back.
+const fapi = require('./fapi');
 const VERIFIED_ON_REQUEST = Symbol('sts.clientAuth.verifiedAssertions');
 
 // The lifetime ceiling a client assertion is held to, in seconds, or 0 for
@@ -511,6 +513,16 @@ async function verifyAssertion(opts) {
                             'draft-ietf-oauth-rfc7523bis-11 section 4) — ' +
                             'the token endpoint URL may not be used — and ' +
                             'it names ' + JSON.stringify(aud) + '.' };
+    }
+    // FAPI 2.0 section 5.3.2.1 item 8 (#140): "as a string" — a one-element
+    // array names the right audience in the wrong shape.
+    if (fapi.strictAssertionAudience() && Array.isArray(aud)) {
+      log.debug("Leaving verifyAssertion(). FAPI 2.0: aud is an array.");
+      return { ok: false, errorCode: 'STS-OAUTH-0283',
+               description: 'the client_assertion must name this ' +
+                            'authorization server\'s issuer identifier as a ' +
+                            'STRING in aud (FAPI 2.0 section 5.3.2.1 item ' +
+                            '8), and it names an array.' };
     }
   }
   // THE REGISTERED KEY'S CHAIN, NOW THAT IT HAS VERIFIED SOMETHING

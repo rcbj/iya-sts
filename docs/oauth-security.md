@@ -168,8 +168,55 @@ verifies it, and binds its tokens with DPoP. With `oauth2.fapiRequireMtls`
 on, each also presents the client certificate the realm's CA issued with its
 signing key.
 
-Not covered yet: FAPI 2.0 (#140, #141), and running the OpenID Foundation's
-conformance suite against this service (#176).
+### FAPI 2.0 Security Profile
+
+`oauth2.fapi=2-security` enforces the FAPI 2.0 Security Profile (final). It
+is a profile of its own, not FAPI 1.0 with more rules. It turns RFC 9700
+mode on and adds:
+
+* **Confidential clients only**, authenticated by mutual TLS or
+  `private_key_jwt`. A client assertion's `aud` must be the issuer, as a
+  single string.
+* **Sender-constrained access tokens only**, by mutual TLS or DPoP. DPoP
+  server nonces stay optional (`oauth2.dpopNonceRequired`), as the profile
+  allows.
+* **Every authorization request pushed** to `/oauth2/par` by an
+  authenticated client, carrying `redirect_uri`, with `response_type=code`
+  and PKCE `S256`. A `request_uri` expires in under 600 seconds and a code in
+  60.
+* **No refresh-token rotation.** Setting `oauth2.refreshTokenRotation`
+  forces it anyway; that is the "extraordinary circumstance" section 5.3.2.1
+  allows.
+* **Timestamps.** A client assertion, request object or DPoP proof whose
+  `iat` or `nbf` is more than 60 seconds in the future is refused.
+* **PS256, ES256 or EdDSA** (Ed25519) for every signature, RSA keys of 2048
+  bits and elliptic-curve keys of 224. This server signs PS256 by default.
+* **The ordinary consent rules.** FAPI 1.0's "the person's own consent" rule
+  does not apply under 2.0.
+* **TLS**: BCP 195's cipher suites with TLS 1.3 preferred. This is every
+  listener's default (see [TLS](tls.md)), not a per-realm switch.
+
+The console, portal and debugger conform. Each pushes its request with
+`private_key_jwt`, receives a `code`, and binds its tokens with DPoP.
+
+#### The FAPI 2.0 Attacker Model, and what stops each attacker
+
+The Attacker Model has no normative requirements of its own; a deployment
+that enforces the profile meets its goals. Here is how:
+
+| Attacker | What it can do | What stops it here |
+|---|---|---|
+| A1, web attacker | Runs its own sites and clients, lures the user | Exact redirect URI matching, PKCE, client authentication and PAR bind a code to the client that pushed the request |
+| A1a, mix-up | Poses as an authorization server to a client that talks to several | The RFC 9207 `iss` on every response, and a client assertion addressed to this issuer alone |
+| A2, network attacker | Controls the network between parties | TLS everywhere, BCP 195's suites, TLS 1.3 preferred |
+| A3a, request leakage | Reads authorization requests (logs, referrers) | The request is pushed over the back channel, and the browser carries only a one-time `request_uri` |
+| A3b, response leakage | Reads authorization responses | A code lives 60 seconds, is spent once and is bound by PKCE, and a DPoP-bound request binds it to the client's key |
+| A5, token leakage | Obtains an access or refresh token | Every access token is sender-constrained (mTLS or DPoP), and so is the refresh token |
+| Code injection | Replays a stolen code into another session | PKCE S256 on every request, and single-use codes |
+| Open redirectors | Uses the server to redirect elsewhere | Refused in every mode that RFC 9700 mode governs |
+
+Not covered yet: FAPI 2.0 Message Signing (#141), and running the OpenID
+Foundation's conformance suite against this service (#176).
 
 ### DPoP (RFC 9449)
 
@@ -330,7 +377,7 @@ headers) are described on [Configuration](configuration.md) and
 |---|---|---|---|---|
 | `oauth2.rfc9700` | `STS_OAUTH2_RFC9700` | `false` | restart (a realm may carry it) | RFC 9700 mode: enforce the OAuth 2.0 Security BCP on the authorization flow, and bind the main port as HTTPS. |
 | `oauth2.oauth21` | `STS_OAUTH2_OAUTH21` | `false` | restart (a realm may carry it) | OAuth 2.1 mode (draft-ietf-oauth-v2-1-16): turns RFC 9700 mode on and adds the draft's own requirements. |
-| `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | restart (a realm, or a named authorization server, may carry it) | A FAPI security profile: `off`, `1-baseline` (FAPI 1.0 Part 1) or `1-advanced` (Part 2). Turns RFC 9700 mode on and adds the profile's requirements. |
+| `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | restart (a realm, or a named authorization server, may carry it) | A FAPI security profile: `off`, `1-baseline` (FAPI 1.0 Part 1), `1-advanced` (Part 2) or `2-security` (the FAPI 2.0 Security Profile). Turns RFC 9700 mode on and adds the profile's requirements. |
 | `oauth2.fapiRequireMtls` | `STS_OAUTH2_FAPI_REQUIRE_MTLS` | `false` | yes | Under FAPI 1.0 Advanced, accept only mutual TLS as the sender constraint; off, a DPoP-bound token counts too. |
 | `oauth2.redirectUris` | `STS_OAUTH2_REDIRECT_URIS` | *(empty)* | yes | The redirect URIs RFC 9700 mode compares against, by exact string, for a client that registered none of its own. |
 | `oauth2.loopbackPortWildcard` | `STS_OAUTH2_LOOPBACK_PORT_WILDCARD` | `true` | yes | In RFC 9700 mode, let a registered loopback redirect URI match on any port (RFC 8252 section 7.3). |

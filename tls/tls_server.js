@@ -256,9 +256,14 @@ function truststoreOpenToAnybody() {
 // HTTPS port among them — so one function is where the policy is stated;
 // `ldap/ldap_server.js` asks it for LDAPS.
 //
-// The defaults are node's own written down (TLSv1.2; an empty cipher string is
-// omitted, which means `tls.DEFAULT_CIPHERS`), so an unedited service
-// negotiates exactly what it did.
+// The floor is node's own (TLSv1.2). THE CIPHER LIST IS BCP 195 SINCE #140
+// (2026-09-22, rcbj's decision): the TLS 1.3 suites first, then only RFC 9325
+// section 4.2's four ECDHE AES-GCM suites for TLS 1.2 — FAPI 2.0 section
+// 5.2.2's requirement, made the default of every listener because a cipher
+// suite belongs to the socket and not to a realm. `honorCipherOrder` makes the
+// SERVER's order win, which is what puts TLS 1.3's and the strongest TLS 1.2
+// suites first whatever a client lists. An empty `tls.ciphers` still means
+// `tls.DEFAULT_CIPHERS`.
 //
 // **A CIPHER LIST THAT MATCHES NOTHING STOPS THE SERVICE HERE**, at require
 // time, naming the setting. Found any later it is a TypeError out of
@@ -271,7 +276,8 @@ function protocolOptions() {
   // `any`: the setting is a string, and the TLS types want a version literal.
   /** @type {any} */
   const options = { minVersion: String(config.value('tls.minVersion') ||
-                                       'TLSv1.2') };
+                                       'TLSv1.2'),
+                    honorCipherOrder: true };
   const ciphers = String(config.value('tls.ciphers') || '').trim();
   if (ciphers) {
     options.ciphers = ciphers;
@@ -1385,7 +1391,8 @@ function secureContextOptions() {
     // that a truststore change, which re-applies this whole object, cannot
     // quietly reset a listener to node's defaults.
     minVersion: protocolOptions().minVersion,
-    ciphers: protocolOptions().ciphers
+    ciphers: protocolOptions().ciphers,
+    honorCipherOrder: true
   };
 }
 
