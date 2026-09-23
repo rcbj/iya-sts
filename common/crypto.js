@@ -5116,6 +5116,205 @@ async function sha256OfFile(file, limit) {
   return hash.digest('hex');
 }
 
+// ===========================================================================
+// SECTION 9 — THE KERBEROS PSEUDO-RANDOM FUNCTION AND KRB-FX-CF2 (#173,
+// 2026-09-22).
+//
+// RFC 6113 FAST combines keys: the ARMOR key is KRB-FX-CF2 of an AP-REQ's
+// subkey and its ticket's session key, the encrypted challenge's two keys are
+// KRB-FX-CF2 of the armor key and the long-term key, and a reply key is
+// STRENGTHENED by KRB-FX-CF2 of a random key and itself. KRB-FX-CF2 (section
+// 5.1) is built on RFC 3961's `pseudo-random()`, which each enctype defines
+// for itself — and the vendored codec (`kerberos/krb5_crypto.js`) has
+// string-to-key, encryption and checksums but no PRF, and may not be edited
+// here. So the PRF is written HERE, for this file's reason (every primitive in
+// one place), and synchronously on node's own crypto, which is all three
+// definitions need:
+//
+//   * aes128/256-cts-hmac-sha1-96 (RFC 3962 section 4): the SHA-1 of the
+//     input, truncated to one AES block, encrypted under DK(key, "prf") —
+//     RFC 3961's derived key over the n-folded constant "prf";
+//   * aes128-cts-hmac-sha256-128 and aes256-cts-hmac-sha384-192 (RFC 8009
+//     section 5): KDF-HMAC-SHA2(key, "prf", input, 256 or 384);
+//   * arcfour-hmac-md5 (RFC 4757 section 3): HMAC-SHA1(key, input).
+//
+// **CHECKED AGAINST EXTERNAL ANSWERS, NOT AGAINST ITSELF**: RFC 3961's n-fold
+// vectors, MIT's `t_prf.c` PRF vectors for the four AES types and MIT's
+// `t_cf2.expected` for KRB-FX-CF2 over all five (`tests/kerberos_fast_otp.js`)
+// — a round trip through FAST with this file on both ends would agree with any
+// mistake made the same way twice.
+//
+// It stays a LEAF: node's `crypto` and nothing else.
+// ===========================================================================
+
+// The enctypes the PRF is defined for here, with their key size and PRF output
+// size in bytes. Anything else is refused by name.
+const KRB5_PRF_ETYPES = {
+  17: { keyBytes: 16, prfBytes: 16, family: 'aes-sha1', aes: 'aes-128-cbc' },
+  18: { keyBytes: 32, prfBytes: 16, family: 'aes-sha1', aes: 'aes-256-cbc' },
+  19: { keyBytes: 16, prfBytes: 32, family: 'aes-sha2', hash: 'sha256' },
+  20: { keyBytes: 32, prfBytes: 48, family: 'aes-sha2', hash: 'sha384' },
+  23: { keyBytes: 16, prfBytes: 20, family: 'rc4' }
+};
+
+function krb5PrfProfile(etype) {
+  log.debug("Entering krb5PrfProfile(). etype=" + etype);
+  const profile = KRB5_PRF_ETYPES[Number(etype)];
+  if (!profile) {
+    log.debug("Leaving krb5PrfProfile(). Unknown.");
+    // error-code: none — a programming error; every caller passes an enctype the KDC negotiated
+    throw new Error('crypto: no Kerberos pseudo-random function is defined ' +
+                    'here for enctype ' + etype);
+  }
+  log.debug("Leaving krb5PrfProfile().");
+  return profile;
+}
+
+// RFC 3961 section 5.1's n-fold, in bytes: MIT's krb5int_nfold(), which
+// rotates the input 13 bits per copy and adds the copies with end-around
+// carry. The RFC's own section A.1 vectors hold it.
+function krb5Nfold(input, outBytes) {
+  log.debug("Entering krb5Nfold(). in=" + input.length + " out=" + outBytes);
+  const inBytes = Buffer.from(input);
+  const inLen = inBytes.length;
+  let a = inLen;
+  let b = outBytes;
+  while (b !== 0) {
+    const t = b;
+    b = a % b;
+    a = t;
+  }
+  const lcm = (inLen * outBytes) / a;
+  const out = Buffer.alloc(outBytes);
+  let byte = 0;
+  for (let i = lcm - 1; i >= 0; i--) {
+    const msbit = (((inLen << 3) - 1) +
+                   (((inLen << 3) + 13) * Math.floor(i / inLen)) +
+                   ((inLen - (i % inLen)) << 3)) % (inLen << 3);
+    byte += (((inBytes[((inLen - 1) - (msbit >>> 3)) % inLen] << 8) |
+              inBytes[(inLen - (msbit >>> 3)) % inLen]) >>>
+             ((msbit & 7) + 1)) & 0xff;
+    byte += out[i % outBytes];
+    out[i % outBytes] = byte & 0xff;
+    byte >>>= 8;
+  }
+  if (byte) {
+    for (let i = outBytes - 1; i >= 0; i--) {
+      byte += out[i];
+      out[i] = byte & 0xff;
+      byte >>>= 8;
+    }
+  }
+  log.debug("Leaving krb5Nfold().");
+  return out;
+}
+
+// One AES block under a key, CBC with a zero IV and no padding — which for a
+// single block is the block cipher itself, and is what RFC 3961's DR and RFC
+// 3962's PRF both call E.
+function aesBlocks(cipherName, key, data) {
+  log.debug("Entering aesBlocks().");
+  const c = nodeCrypto.createCipheriv(cipherName, Buffer.from(key),
+                                      Buffer.alloc(16));
+  c.setAutoPadding(false);
+  const out = Buffer.concat([c.update(Buffer.from(data)), c.final()]);
+  log.debug("Leaving aesBlocks().");
+  return out;
+}
+
+// RFC 3961 section 5.1's DK for the AES-SHA1 profiles: DR — the n-folded
+// constant encrypted, fed back, until there are enough bytes — then
+// random-to-key, which is the identity for AES.
+function aesSha1DerivedKey(profile, key, constant) {
+  log.debug("Entering aesSha1DerivedKey().");
+  let block = krb5Nfold(Buffer.from(constant), 16);
+  const parts = [];
+  let have = 0;
+  while (have < profile.keyBytes) {
+    block = aesBlocks(profile.aes, key, block);
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving aesSha1DerivedKey().");
+  return Buffer.concat(parts).subarray(0, profile.keyBytes);
+}
+
+// RFC 3961 pseudo-random(key, octets) for `etype`. Answers a Buffer of that
+// enctype's PRF length.
+function krb5Prf(etype, key, octets) {
+  log.debug("Entering krb5Prf(). etype=" + etype);
+  const profile = krb5PrfProfile(etype);
+  const input = Buffer.from(octets);
+  if (Buffer.from(key).length !== profile.keyBytes) {
+    log.debug("Leaving krb5Prf(). Wrong key size.");
+    // error-code: none — a programming error; the key comes from the codec that negotiated its enctype
+    throw new Error('crypto: a key for enctype ' + etype + ' is ' +
+                    profile.keyBytes + ' bytes, not ' +
+                    Buffer.from(key).length);
+  }
+  let out;
+  if (profile.family === 'aes-sha1') {
+    const tmp = nodeCrypto.createHash('sha1').update(input).digest()
+      .subarray(0, 16);
+    out = aesBlocks(profile.aes,
+                    aesSha1DerivedKey(profile, key, Buffer.from('prf')), tmp);
+  } else if (profile.family === 'aes-sha2') {
+    const bits = profile.prfBytes * 8;
+    const k = Buffer.alloc(4);
+    k.writeUInt32BE(bits, 0);
+    out = nodeCrypto.createHmac(profile.hash, Buffer.from(key))
+      .update(Buffer.concat([Buffer.from([0, 0, 0, 1]), Buffer.from('prf'),
+                             Buffer.from([0]), input, k]))
+      .digest().subarray(0, profile.prfBytes);
+  } else {
+    out = nodeCrypto.createHmac('sha1', Buffer.from(key)).update(input)
+      .digest();
+  }
+  log.debug("Leaving krb5Prf().");
+  return out;
+}
+
+// RFC 6113 section 5.1's PRF+: pseudo-random(key, 1 || info) ||
+// pseudo-random(key, 2 || info) || ..., the counter one octet, truncated.
+function krb5PrfPlus(etype, key, info, outBytes) {
+  log.debug("Entering krb5PrfPlus().");
+  const parts = [];
+  let have = 0;
+  for (let counter = 1; have < outBytes; counter++) {
+    if (counter > 255) {
+      log.debug("Leaving krb5PrfPlus(). Too long.");
+      // error-code: none — a programming error; no Kerberos key is 255 PRF blocks long
+      throw new Error('crypto: PRF+ ran out of one-octet counters');
+    }
+    const block = krb5Prf(etype, key,
+                          Buffer.concat([Buffer.from([counter]),
+                                         Buffer.from(info)]));
+    parts.push(block);
+    have += block.length;
+  }
+  log.debug("Leaving krb5PrfPlus().");
+  return Buffer.concat(parts).subarray(0, outBytes);
+}
+
+// RFC 6113 section 5.1: KRB-FX-CF2(K1, K2, pepper1, pepper2) =
+// random-to-key(PRF+(K1, pepper1) XOR PRF+(K2, pepper2)), with K1's enctype
+// and key size. The keys are `{ etype, key }`, the peppers strings or bytes;
+// the answer is `{ etype, key }` (random-to-key is the identity for every
+// enctype above).
+function krbFxCf2(key1, key2, pepper1, pepper2) {
+  log.debug("Entering krbFxCf2(). etypes " + key1.etype + "/" + key2.etype);
+  const size = krb5PrfProfile(key1.etype).keyBytes;
+  krb5PrfProfile(key2.etype);
+  const a = krb5PrfPlus(key1.etype, key1.key, Buffer.from(pepper1), size);
+  const b = krb5PrfPlus(key2.etype, key2.key, Buffer.from(pepper2), size);
+  const out = Buffer.alloc(size);
+  for (let i = 0; i < size; i++) {
+    out[i] = a[i] ^ b[i];
+  }
+  log.debug("Leaving krbFxCf2().");
+  return { etype: Number(key1.etype), key: new Uint8Array(out) };
+}
+
 // ---------------------------------------------------------------------------
 // OPENID CONNECT SESSION MANAGEMENT 1.0 SECTION 3's `session_state` (#121):
 // SHA-256 over `client_id + " " + origin + " " + browser_state + " " + salt`,
@@ -5256,6 +5455,12 @@ module.exports = {
   tpmMakeCredential: tpmMakeCredential,
   verifyPkcs7SignedData: verifyPkcs7SignedData,
   sha256OfFile: sha256OfFile,
+  // --- section 9: the Kerberos PRF and KRB-FX-CF2 (#173) ---
+  KRB5_PRF_ETYPES: KRB5_PRF_ETYPES,
+  krb5Nfold: krb5Nfold,
+  krb5Prf: krb5Prf,
+  krb5PrfPlus: krb5PrfPlus,
+  krbFxCf2: krbFxCf2,
   // --- the algorithm URIs, so that there is one spelling of each in the
   //     process. Taken from the vendored module rather than re-declared.
   DS_NS: xmldsig.DS_NS,

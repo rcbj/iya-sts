@@ -253,7 +253,11 @@ function asRequest(realm, username, padata, nonce) {
     reqBody: {
       // A LIST OF BIT NUMBERS (krb5_drive.js says why that matters).
       kdcOptions: [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE],
-      cname: { type: msgs.NAME_TYPE.PRINCIPAL, name: [username] },
+      // A service-shaped name (`host/ws1.example.com`) is several
+      // components — the armor TGT for FAST is a HOST's (#173).
+      cname: String(username).indexOf("/") !== -1
+        ? { type: 3, name: String(username).split("/") }
+        : { type: msgs.NAME_TYPE.PRINCIPAL, name: [username] },
       realm: realm,
       sname: { type: msgs.NAME_TYPE.SRV_INST, name: ["krbtgt", realm] },
       till: new Date(now + 8 * 3600 * 1000),
@@ -335,10 +339,13 @@ async function asExchange(transport, realm, username, opts) {
 
   // RFC 3961 string-to-key over the password and the salt the KDC named.
   // ASYNCHRONOUS, like every call on a profile (krb5_drive.js says why that
-  // bites).
+  // bites). `opts.key` is a key from a KEYTAB instead — a host's (#173).
   const profile = kcrypto.etypeById(chosen.etype);
-  const key = given
-    ? Uint8Array.from(given[chosen.etype])
+  // A key from a keytab instead of a password: `opts.key`, one key for the
+  // enctype the KDC chose (a host's, #173), or `opts.keys`, a keytab's keys
+  // by enctype (a person's, #59).
+  const key = options.key ? options.key
+    : given ? Uint8Array.from(given[chosen.etype])
     : await profile.stringToKey(
       String(options.password), prim.utf8(chosen.salt || (realm + username)),
       chosen.s2kparams);
@@ -612,6 +619,499 @@ async function readNegotiate(header, ticket, built) {
   return out;
 }
 
+// ===========================================================================
+// FAST, OTP PRE-AUTHENTICATION AND AUTHENTICATION INDICATORS — THE CLIENT
+// HALF (#173, 2026-09-22), for `sts_kerberos_fast_otp.js`.
+//
+// **WRITTEN APART FROM THE SERVICE, ON PURPOSE.** The KDC's FAST is
+// `kerberos/krb5_fast.ts` and `krb5_fast_codec.ts` with the PRF in
+// `common/crypto.js`; none of those is used here. The DER below is written
+// out from RFC 6113 section 5.4, RFC 6560 section 4 and RFC 7751/8129 on the
+// vendored codec's tag-length-value primitives, and the pseudo-random
+// function and KRB-FX-CF2 from RFC 3961 section 5.1, RFC 3962 section 4, RFC
+// 8009 section 5 and RFC 6113 section 5.1 — n-fold as the RFC describes it
+// (rotate thirteen bits per copy, add with end-around carry) over BigInt,
+// rather than MIT's byte loop the service uses. So an assembly mistake the
+// KDC makes cannot make this client agree with it. What IS shared is the
+// vendored codec's encodings of the RFC 4120 structures, as for the rest of
+// this file.
+// ===========================================================================
+const nodeCrypto = require("crypto");
+
+const FAST = {
+  PA_FX_COOKIE: 133, PA_FX_FAST: 136, PA_FX_ERROR: 137,
+  PA_ENCRYPTED_CHALLENGE: 138, PA_OTP_CHALLENGE: 141, PA_OTP_REQUEST: 142,
+  KU_OTP_REQUEST: 45, KU_FAST_REQ_CHKSUM: 50, KU_FAST_ENC: 51,
+  KU_FAST_REP: 52, KU_FAST_FINISHED: 53, KU_ENC_CHALLENGE_CLIENT: 54,
+  KU_ENC_CHALLENGE_KDC: 55, KU_CAMMAC: 64,
+  AD_IF_RELEVANT: 1, AD_CAMMAC: 96, AD_AUTHENTICATION_INDICATOR: 97
+};
+
+// RFC 3961 section 5.1 n-fold, literally: the input replicated, each copy
+// rotated 13 bits right, to lcm(in, out) bits, then summed in out-bit chunks
+// with ones'-complement (end-around carry) addition.
+function nfold(input, outBytes) {
+  log.debug("Entering nfold().");
+  const inBits = input.length * 8;
+  const outBits = outBytes * 8;
+  let a = inBits;
+  let b = outBits;
+  while (b !== 0) {
+    const t = b;
+    b = a % b;
+    a = t;
+  }
+  const lcm = inBits / a * outBits;
+  const inValue = BigInt("0x" + Buffer.from(input).toString("hex"));
+  const inMask = (1n << BigInt(inBits)) - 1n;
+  const rotr = function (v, n) {
+    log.debug("Entering rotr().");
+    const k = BigInt(n % inBits);
+    log.debug("Leaving rotr().");
+    return ((v >> k) | (v << (BigInt(inBits) - k))) & inMask;
+  };
+  let whole = 0n;
+  for (let copy = 0; copy * inBits < lcm; copy++) {
+    whole = (whole << BigInt(inBits)) | rotr(inValue, 13 * copy);
+  }
+  const outMask = (1n << BigInt(outBits)) - 1n;
+  let sum = 0n;
+  for (let at = 0; at < lcm; at += outBits) {
+    sum += (whole >> BigInt(lcm - at - outBits)) & outMask;
+    while (sum > outMask) {
+      sum = (sum & outMask) + (sum >> BigInt(outBits));
+    }
+  }
+  log.debug("Leaving nfold().");
+  return Buffer.from(sum.toString(16).padStart(outBytes * 2, "0"), "hex");
+}
+
+// The pseudo-random function of the four AES enctypes (RFC 3962 section 4,
+// RFC 8009 section 5).
+function prf(etype, key, octets) {
+  log.debug("Entering prf(). " + etype);
+  const k = Buffer.from(key);
+  if (etype === 17 || etype === 18) {
+    const cipher = etype === 17 ? "aes-128-ecb" : "aes-256-ecb";
+    const enc = function (keyBytes, block) {
+      log.debug("Entering enc().");
+      const c = nodeCrypto.createCipheriv(cipher, keyBytes, null);
+      c.setAutoPadding(false);
+      log.debug("Leaving enc().");
+      return Buffer.concat([c.update(block), c.final()]);
+    };
+    // DK(key, "prf") = DR truncated: the n-folded constant encrypted and fed
+    // back until there are key-length bytes.
+    let block = nfold(Buffer.from("prf"), 16);
+    let dk = Buffer.alloc(0);
+    while (dk.length < k.length) {
+      block = enc(k, block);
+      dk = Buffer.concat([dk, block]);
+    }
+    const tmp = nodeCrypto.createHash("sha1").update(Buffer.from(octets))
+      .digest().subarray(0, 16);
+    log.debug("Leaving prf().");
+    return enc(dk.subarray(0, k.length), tmp);
+  }
+  if (etype === 19 || etype === 20) {
+    const bits = etype === 19 ? 256 : 384;
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(bits);
+    log.debug("Leaving prf().");
+    return nodeCrypto.createHmac(etype === 19 ? "sha256" : "sha384", k)
+      .update(Buffer.concat([Buffer.from([0, 0, 0, 1]), Buffer.from("prf"),
+                             Buffer.from([0]), Buffer.from(octets), len]))
+      .digest().subarray(0, bits / 8);
+  }
+  log.debug("Leaving prf(). Unsupported.");
+  // error-code: none — a test client's own refusal, not a service failure
+  throw new Error("krb5_wire: no PRF here for enctype " + etype);
+}
+
+// RFC 6113 section 5.1: KRB-FX-CF2, with K1's enctype and size.
+function cf2(k1, k2, pepper1, pepper2) {
+  log.debug("Entering cf2().");
+  const size = kcrypto.etypeById(k1.etype).keyBytes;
+  const prfPlus = function (key, pepper) {
+    log.debug("Entering prfPlus().");
+    let out = Buffer.alloc(0);
+    for (let i = 1; out.length < size; i++) {
+      out = Buffer.concat([out, prf(key.etype, key.key,
+        Buffer.concat([Buffer.from([i]), Buffer.from(pepper)]))]);
+    }
+    log.debug("Leaving prfPlus().");
+    return out.subarray(0, size);
+  };
+  const a = prfPlus(k1, pepper1);
+  const b = prfPlus(k2, pepper2);
+  const key = Buffer.alloc(size);
+  for (let i = 0; i < size; i++) {
+    key[i] = a[i] ^ b[i];
+  }
+  log.debug("Leaving cf2().");
+  return { etype: k1.etype, key: new Uint8Array(key) };
+}
+
+// DER of the few RFC 6113 and 6560 structures this client sends and reads.
+function tagged(fields) {
+  log.debug("Entering tagged().");
+  log.debug("Leaving tagged().");
+  return asn1.encTaggedSequence(fields);
+}
+
+function utf8String(text) {
+  log.debug("Entering utf8String().");
+  log.debug("Leaving utf8String().");
+  return asn1.tlv(0x0c, new Uint8Array(Buffer.from(String(text), "utf8")));
+}
+
+function fieldsOf(bytes) {
+  log.debug("Entering fieldsOf().");
+  const t = asn1.readTlv(bytes, 0);
+  log.debug("Leaving fieldsOf().");
+  return asn1.readTaggedSequence(t.value);
+}
+
+function padataList(t) {
+  log.debug("Entering padataList().");
+  log.debug("Leaving padataList().");
+  return asn1.decSequenceOf(t).map(msgs.readPaData);
+}
+
+// A keytab (MIT 0x502), read here for the host key the armor TGT needs: the
+// SPN's entries, `{ etype, kvno, key }`.
+function readKeytab(buf) {
+  log.debug("Entering readKeytab().");
+  const b = Buffer.from(buf);
+  if (b[0] !== 5 || b[1] !== 2) {
+    log.debug("Leaving readKeytab(). Not a keytab.");
+    throw new Error("krb5_wire: not an MIT 0x502 keytab");
+  }
+  const out = [];
+  let i = 2;
+  while (i + 4 <= b.length) {
+    let size = b.readInt32BE(i);
+    i += 4;
+    if (size < 0) {
+      i += -size;
+      continue;
+    }
+    const end = i + size;
+    const count = b.readUInt16BE(i);
+    i += 2;
+    const str = function () {
+      log.debug("Entering str().");
+      const n = b.readUInt16BE(i);
+      const v = b.subarray(i + 2, i + 2 + n).toString("latin1");
+      i += 2 + n;
+      log.debug("Leaving str().");
+      return v;
+    };
+    const realm = str();
+    const name = [];
+    for (let k = 0; k < count; k++) {
+      name.push(str());
+    }
+    i += 4 + 4;                      // name type, timestamp
+    let kvno = b[i];
+    i += 1;
+    const etype = b.readUInt16BE(i);
+    i += 2;
+    const keyLen = b.readUInt16BE(i);
+    const key = new Uint8Array(b.subarray(i + 2, i + 2 + keyLen));
+    i += 2 + keyLen;
+    if (end - i >= 4) {
+      kvno = b.readUInt32BE(i);
+    }
+    i = end;
+    out.push({ realm: realm, name: name, etype: etype, kvno: kvno, key: key });
+  }
+  log.debug("Leaving readKeytab(). " + out.length + " entries.");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ONE FAST-ARMORED AS EXCHANGE (RFC 6113 section 5.4).
+//
+// `armor` is a TGT from asExchange() — a host's, for krbtgt/REALM. A fresh
+// subkey per request, the armor key KRB-FX-CF2(subkey, ticket session key,
+// "subkeyarmor", "ticketarmor"), the inner request body under the armor key,
+// and a req-checksum over the outer body. `inner(armorKey)` answers the inner
+// padata. `opts.replyKey(armorKey)` is the reply key before the KDC's
+// strengthen-key (the long-term key for an encrypted challenge; the armor key
+// for OTP).
+//
+// Answers { ok: false, armored, code, eText, padata } for an error — the
+// PA-FX-ERROR's, read inside the armor — or { ok: true, tgt, finishedOk,
+// nonceOk, strengthened, padata } for an AS-REP.
+// ---------------------------------------------------------------------------
+async function fastAsExchange(transport, realm, username, armor, inner,
+                              opts) {
+  log.debug("Entering fastAsExchange(). " + username + "@" + realm);
+  const options = opts || {};
+  const subkey = { etype: 18, key: kcrypto.randomBytes(32) };
+  const armorKey = cf2(subkey, { etype: armor.etype, key: armor.sessionKey },
+                       "subkeyarmor", "ticketarmor");
+  const armorProfile = kcrypto.etypeById(armorKey.etype);
+  const now = new Date();
+  const authenticator = msgs.encAuthenticator({
+    crealm: armor.realm, cname: armor.client,
+    cusec: (now.getMilliseconds() * 1000 + Math.floor(Math.random() * 1000)) %
+           1000000,
+    ctime: new Date(Math.floor(now.getTime() / 1000) * 1000),
+    subkey: subkey });
+  const apReq = msgs.encApReq({ apOptions: [], ticket: armor.ticket,
+    authenticator: { etype: armor.etype,
+      cipher: await kcrypto.etypeById(armor.etype).encrypt(armor.sessionKey,
+        kcrypto.KEY_USAGE.AP_REQ_AUTH, authenticator) } });
+  const nonce = randomNonce();
+  const at = Date.now();
+  const body = msgs.encKdcReqBody({
+    kdcOptions: [msgs.KDC_OPTION.FORWARDABLE, msgs.KDC_OPTION.RENEWABLE],
+    cname: { type: msgs.NAME_TYPE.PRINCIPAL, name: [username] },
+    realm: realm,
+    sname: { type: msgs.NAME_TYPE.SRV_INST, name: ["krbtgt", realm] },
+    till: new Date(at + 8 * 3600 * 1000),
+    rtime: new Date(at + 24 * 3600 * 1000),
+    nonce: nonce, etypes: ETYPES });
+  const innerPadata = await inner(armorKey);
+  // KrbFastReq ::= SEQUENCE { fast-options [0], padata [1], req-body [2] }
+  const fastReq = tagged([
+    { tag: 0, value: asn1.encFlags([]) },
+    { tag: 1, value: asn1.encSequenceOf(innerPadata.map(msgs.encPaData)) },
+    { tag: 2, value: body }
+  ]);
+  const checksum = await armorProfile.checksum(armorKey.key,
+    FAST.KU_FAST_REQ_CHKSUM, body);
+  // PA-FX-FAST-REQUEST ::= [0] KrbFastArmoredReq { armor [0] KrbFastArmor
+  // { armor-type [0], armor-value [1] }, req-checksum [1], enc-fast-req [2] }
+  const armored = asn1.encContext(0, tagged([
+    { tag: 0, value: tagged([{ tag: 0, value: asn1.encInteger(1) },
+                             { tag: 1, value: asn1.encOctetString(apReq) }]) },
+    { tag: 1, value: msgs.encChecksum({ type: armorProfile.checksumType,
+                                        checksum: checksum }) },
+    { tag: 2, value: msgs.encEncryptedData({ etype: armorKey.etype,
+        cipher: await armorProfile.encrypt(armorKey.key, FAST.KU_FAST_ENC,
+                                           fastReq) }) }
+  ]));
+  const request = msgs.encKdcReq({
+    msgType: msgs.MSG_TYPE.AS_REQ,
+    padata: [{ type: FAST.PA_FX_FAST, value: armored }],
+    reqBody: { raw: body } });
+  const reply = msgs.readKdcResponse(await transport.send(request));
+  // The KrbFastResponse inside a PA-FX-FAST-REPLY, if there is one.
+  const openFast = async function (padata) {
+    log.debug("Entering openFast().");
+    const fx = (padata || []).filter(function (pa) {
+      return pa.type === FAST.PA_FX_FAST;
+    })[0];
+    if (!fx) {
+      log.debug("Leaving openFast(). None.");
+      return null;
+    }
+    const choice = asn1.readTlv(fx.value, 0);
+    const armoredRep = asn1.readChildren(choice.value)[0];
+    const encRep = msgs.readEncryptedData(
+      asn1.readTaggedSequence(armoredRep.value)[0]);
+    const plain = await armorProfile.decrypt(armorKey.key, FAST.KU_FAST_REP,
+                                             encRep.cipher);
+    const f = fieldsOf(plain);
+    log.debug("Leaving openFast().");
+    return {
+      padata: padataList(f[0]),
+      strengthenKey: f[1] ? msgs.readEncryptionKey(f[1]) : null,
+      finished: f[2] ? asn1.readTaggedSequence(f[2].value) : null,
+      nonce: asn1.decInteger(f[3])
+    };
+  };
+  if (reply.kind === "KRB-ERROR") {
+    const outer = reply.error;
+    const response = await openFast(outer.eDataPaData || []);
+    if (!response) {
+      log.debug("Leaving fastAsExchange(). An unarmored error.");
+      return { ok: false, armored: false, code: outer.errorCode,
+               eText: outer.eText || "", padata: [] };
+    }
+    const fxError = response.padata.filter(function (pa) {
+      return pa.type === FAST.PA_FX_ERROR;
+    })[0];
+    const inside = fxError ? msgs.readKrbError(fxError.value) : outer;
+    log.debug("Leaving fastAsExchange(). An armored error " +
+              inside.errorCode);
+    return { ok: false, armored: true, code: inside.errorCode,
+             outerCode: outer.errorCode, eText: inside.eText || "",
+             nonceOk: response.nonce === nonce,
+             padata: response.padata };
+  }
+  const rep = reply.rep;
+  const response = await openFast(rep.padata);
+  let finishedOk = false;
+  if (response && response.finished) {
+    const ck = msgs.readChecksum(response.finished[4]);
+    finishedOk = await armorProfile.verifyChecksum(armorKey.key,
+      FAST.KU_FAST_FINISHED, msgs.encTicket(rep.ticket), ck.checksum);
+  }
+  const base = options.replyKey ? await options.replyKey(armorKey)
+                                : armorKey;
+  const replyKey = response && response.strengthenKey
+    ? cf2({ etype: response.strengthenKey.etype,
+            key: response.strengthenKey.key }, base, "strengthenkey",
+          "replykey")
+    : base;
+  const part = msgs.readEncKdcRepPart(
+    await kcrypto.etypeById(replyKey.etype).decrypt(replyKey.key,
+      kcrypto.KEY_USAGE.AS_REP_ENCPART, rep.encPart.cipher));
+  log.debug("Leaving fastAsExchange(). A TGT.");
+  return {
+    ok: true, finishedOk: finishedOk,
+    nonceOk: !!response && response.nonce === nonce && part.nonce === nonce,
+    strengthened: !!(response && response.strengthenKey),
+    padata: response ? response.padata : [],
+    tgt: { ticket: rep.ticket, sessionKey: part.key.key,
+           etype: part.key.etype, client: rep.cname, realm: rep.crealm,
+           flagNames: msgs.ticketFlagNames(part.flags) }
+  };
+}
+
+// RFC 3961 string-to-key for a password and a salt the caller names, for the
+// long-term key a FAST factor combines with the armor key.
+async function stringToKey(password, salt, etype) {
+  log.debug("Entering stringToKey().");
+  const key = await kcrypto.etypeById(etype || 18).stringToKey(
+    String(password), prim.utf8(String(salt)), null);
+  log.debug("Leaving stringToKey().");
+  return key;
+}
+
+// The inner padata of an ENCRYPTED CHALLENGE (RFC 6113 section 5.4.6) for a
+// long-term key.
+function encryptedChallenge(longTermKey) {
+  log.debug("Entering encryptedChallenge().");
+  log.debug("Leaving encryptedChallenge().");
+  return async function (armorKey) {
+    const key = cf2(armorKey, longTermKey, "clientchallengearmor",
+                    "challengelongterm");
+    const now = new Date();
+    return [{ type: FAST.PA_ENCRYPTED_CHALLENGE,
+              value: msgs.encEncryptedData({ etype: key.etype,
+                cipher: await kcrypto.etypeById(key.etype).encrypt(key.key,
+                  FAST.KU_ENC_CHALLENGE_CLIENT,
+                  msgs.encPaEncTsEnc(now, now.getMilliseconds() * 1000)) })
+    }];
+  };
+}
+
+// RFC 6560's ASN.1 module is IMPLICIT TAGS (its Appendix A): a field's
+// context tag REPLACES the universal tag rather than wrapping it — `[0] OCTET
+// STRING` is `80 len bytes`, `[2] EncryptedData` is `a2` round
+// EncryptedData's own fields. (This client and the KDC were both first
+// written explicit, agreed with each other, and MIT's kinit refused the
+// challenge: "ASN.1 structure is missing a required field".)
+function implicitTag(n, encoded) {
+  log.debug("Entering implicitTag().");
+  const out = Buffer.from(encoded);
+  out[0] = (out[0] & 0x20) ? (0xa0 | n) : (0x80 | n);
+  log.debug("Leaving implicitTag().");
+  return new Uint8Array(out);
+}
+
+function implicitChildren(tlv) {
+  log.debug("Entering implicitChildren().");
+  const map = {};
+  asn1.readChildren(tlv.value).forEach(function (child) {
+    map[child.tag & 0x1f] = child;
+  });
+  log.debug("Leaving implicitChildren().");
+  return map;
+}
+
+// PA-OTP-CHALLENGE ::= SEQUENCE { nonce [0], otp-service [1],
+// otp-tokenInfo [2] SEQUENCE OF OTP-TOKENINFO { flags [0], ... format [4]
+// } }, implicit.
+function readOtpChallenge(bytes) {
+  log.debug("Entering readOtpChallenge().");
+  const f = implicitChildren(asn1.readTlv(bytes, 0));
+  const tokens = asn1.readChildren(f[2].value).map(function (t) {
+    const tf = implicitChildren(t);
+    // A BIT STRING's content: one octet of unused bits, then the flags.
+    return { flags: asn1.bitsFromFlags(tf[0].value.subarray(1)),
+             format: tf[4] ? tf[4].value[0] : null };
+  });
+  log.debug("Leaving readOtpChallenge().");
+  return { nonce: f[0].value,
+           service: f[1] ? Buffer.from(f[1].value).toString("utf8") : null,
+           tokenInfo: tokens };
+}
+
+// The inner padata of an OTP REQUEST (RFC 6560 section 4.2) answering
+// `challenge`, with the cookie echoed (RFC 6113 section 5.2's MUST).
+function otpRequest(challenge, cookie, pin, value) {
+  log.debug("Entering otpRequest().");
+  log.debug("Leaving otpRequest().");
+  return async function (armorKey) {
+    // PA-OTP-ENC-REQUEST ::= SEQUENCE { nonce [0] IMPLICIT OCTET STRING }
+    const encRequest = asn1.encSequence([
+      implicitTag(0, asn1.encOctetString(challenge.nonce))]);
+    const parts = [
+      implicitTag(0, asn1.encFlags([])),
+      implicitTag(2, msgs.encEncryptedData({ etype: armorKey.etype,
+        cipher: await kcrypto.etypeById(armorKey.etype).encrypt(
+          armorKey.key, FAST.KU_OTP_REQUEST, encRequest) })),
+      implicitTag(5, asn1.encOctetString(Buffer.from(String(value))))
+    ];
+    if (pin !== null) {
+      parts.push(implicitTag(6, utf8String(pin)));
+    }
+    return (cookie ? [cookie] : []).concat([{ type: FAST.PA_OTP_REQUEST,
+      value: asn1.encSequence(parts) }]);
+  };
+}
+
+// The RFC 8129 indicators in a ticket, opened with the key the SERVICE holds:
+// from every AD-CAMMAC (inside AD-IF-RELEVANT) whose svc-verifier verifies
+// under that key, at key usage 64 over the elements' own DER.
+async function ticketIndicators(ticket, serviceKey) {
+  log.debug("Entering ticketIndicators().");
+  const profile = kcrypto.etypeById(ticket.encPart.etype);
+  const part = msgs.readEncTicketPart(await profile.decrypt(serviceKey,
+    kcrypto.KEY_USAGE.KDC_REP_TICKET, ticket.encPart.cipher));
+  const found = [];
+  let cammacs = 0;
+  let verified = 0;
+  for (const entry of part.authorizationData || []) {
+    if (entry.type !== FAST.AD_IF_RELEVANT) {
+      continue;
+    }
+    for (const inner of msgs.readAuthorizationData(
+        asn1.readTlv(entry.data, 0))) {
+      if (inner.type !== FAST.AD_CAMMAC) {
+        continue;
+      }
+      cammacs += 1;
+      const f = fieldsOf(inner.data);
+      const elementsTlv = f[0];
+      const svc = f[2] ? asn1.readTaggedSequence(f[2].value) : null;
+      const mac = svc ? msgs.readChecksum(svc[3]) : null;
+      if (mac && await profile.verifyChecksum(serviceKey, FAST.KU_CAMMAC,
+                                              elementsTlv.raw,
+                                              mac.checksum)) {
+        verified += 1;
+        msgs.readAuthorizationData(elementsTlv).forEach(function (el) {
+          if (el.type === FAST.AD_AUTHENTICATION_INDICATOR) {
+            asn1.decSequenceOf(asn1.readTlv(el.data, 0)).forEach(
+              function (s) {
+                found.push(Buffer.from(s.value).toString("utf8"));
+              });
+          }
+        });
+      }
+    }
+  }
+  log.debug("Leaving ticketIndicators(). " + found.join(","));
+  return { indicators: found, cammacs: cammacs, verified: verified,
+           flagNames: msgs.ticketFlagNames(part.flags) };
+}
+
 module.exports = {
   msgs: msgs,
   spnego: spnego,
@@ -624,5 +1124,17 @@ module.exports = {
   apRequest: apRequest,
   negTokenInit: negTokenInit,
   readNegotiate: readNegotiate,
-  errorSummary: errorSummary
+  errorSummary: errorSummary,
+  // #173: FAST, OTP pre-authentication and authentication indicators.
+  FAST: FAST,
+  nfold: nfold,
+  prf: prf,
+  cf2: cf2,
+  readKeytab: readKeytab,
+  fastAsExchange: fastAsExchange,
+  stringToKey: stringToKey,
+  encryptedChallenge: encryptedChallenge,
+  readOtpChallenge: readOtpChallenge,
+  otpRequest: otpRequest,
+  ticketIndicators: ticketIndicators
 };

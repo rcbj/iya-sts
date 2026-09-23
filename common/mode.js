@@ -612,6 +612,23 @@ function acceptsPasswordAloneFromSecondFactorAccounts() {
   return !isProduct();
 }
 
+// May the KDC issue a ticket-granting ticket on a PASSWORD ALONE to a person
+// who holds, or is required to hold, a second factor (#173, 2026-09-22)? The
+// AS exchange is the sixth password door #101 found, and the one that CAN ask
+// for more: RFC 6113 FAST carries RFC 6560 OTP pre-authentication, so a
+// person proves their password AND their authenticator app's code in one AS
+// exchange. Development says yes, as it accepts every password. Product says
+// no: an AS-REQ pre-authenticated with the password alone (PA-ENC-TIMESTAMP,
+// or FAST's PA-ENCRYPTED-CHALLENGE) is refused KDC_ERR_POLICY — AFTER the
+// password verified, so a wrong one is still KDC_ERR_PREAUTH_FAILED and the
+// refusal tells nobody without the password anything. `kerberos/krb5_kdc.js`
+// asks it, through the key source (`kerberos/krb5_person_keys.ts`).
+function issuesTicketsOnPasswordAlone() {
+  log.debug("Entering issuesTicketsOnPasswordAlone().");
+  log.debug("Leaving issuesTicketsOnPasswordAlone().");
+  return !isProduct();
+}
+
 // May a federation partner's asserted NAME be matched straight onto an
 // existing local person, which is `fedSubjectPolicy: any-existing` (#109,
 // 2026-09-22)? Development says yes — it is what this service did before the
@@ -1004,6 +1021,22 @@ const REQUIREMENTS = [
              'accept the password anyway, which lowers every such person to ' +
              'one factor there.',
     where: 'common/credentials.ts, common/app_passwords.ts' },
+  { id: 'kerberos-second-factor',
+    what: 'A person who holds or must hold a second factor gets no Kerberos ' +
+          'ticket on a password alone',
+    development: 'The KDC issues a TGT to an AS-REQ pre-authenticated with ' +
+                 'the password alone (PA-ENC-TIMESTAMP, or FAST\'s ' +
+                 'PA-ENCRYPTED-CHALLENGE), as it takes every password.',
+    product: 'That AS-REQ is refused KDC_ERR_POLICY (12), STS-KRB-0135, ' +
+             'after the password verified (a wrong one is still ' +
+             'KDC_ERR_PREAUTH_FAILED), whenever the person holds an ' +
+             'authenticator app or a security key in the mfa role, or a ' +
+             'second factor is required of them. A person with an ' +
+             'authenticator app gets a ticket through RFC 6113 FAST armor ' +
+             'with RFC 6560 OTP pre-authentication — password and code in ' +
+             'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
+             'app password is never a Kerberos key.',
+    where: 'kerberos/krb5_kdc.js, kerberos/krb5_fast.ts' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -1679,6 +1712,7 @@ module.exports = {
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
+  issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
   matchesFederatedNames: matchesFederatedNames,
   acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
   acceptsLooseRequestUris: acceptsLooseRequestUris,
