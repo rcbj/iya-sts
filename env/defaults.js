@@ -704,6 +704,7 @@ var config = {
     personKeys: true,                                              // Kerberos keys for directory people
     retainedKeyVersions: 1,                                        // Previous key versions kept
     retainedKeyTtlS: 0,                                            // Previous key version lifetime (s)
+    krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
     spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
     s2kparams: "omit"                                              // Send s2kparams
   },

@@ -5011,7 +5011,17 @@ const NOT_DRIVEN_HERE = {
   "POST /keys/rotate": "sts_key_rotation.js drives it, and checks what it " +
     "did",
   "POST /keys/emergency": "sts_key_rotation.js drives it in a throwaway " +
-    "realm; an emergency ends every session of the realm it runs in"
+    "realm; an emergency ends every session of the realm it runs in",
+  // THE KRBTGT KEY (#169). Driven by `sts_kerberos_krbtgt_rotation.js`, in a
+  // throwaway realm with a KDC of its own: a rotation is checked by a TGT
+  // from before it still buying a service ticket, which a walk asking for a
+  // 2xx cannot do — and an invalidation ends every TGT of the realm it runs
+  // in, which in the default realm is every other Kerberos job's.
+  "POST /kerberos/principals/rotate-krbtgt": "sts_kerberos_krbtgt_rotation" +
+    ".js drives it in a throwaway realm, with a TGT across it",
+  "POST /kerberos/principals/rotate-krbtgt-invalidate":
+    "sts_kerberos_krbtgt_rotation.js drives it in a throwaway realm; it ends " +
+    "every TGT of the realm it runs in"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

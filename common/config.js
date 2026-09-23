@@ -8196,18 +8196,19 @@ const SETTINGS = [
     restartReason: 'every principal\'s key version is fixed at startup' +
                    REALM_BUILDS_ITS_OWN,
     description: 'The key version number every account BUILT FROM A PASSWORD ' +
-                 'IN THIS CONFIGURATION holds — krbtgt, the acceptor\'s ' +
-                 'account, and in development every fixture and on-demand ' +
+                 'IN THIS CONFIGURATION holds — the acceptor\'s account, and ' +
+                 'in development krbtgt and every fixture and on-demand ' +
                  'account — which is what KRB_AP_ERR_BADKEYVER compares. For ' +
                  'those, rotation is not modelled and changing this makes ' +
                  'every ticket issued under the old one fail that check. ' +
                  'Since 2026-09-12 it is also the STARTING kvno of the two ' +
                  'kinds of principal whose keys are stored rather than ' +
                  'configured: a directory person\'s first keys (product ' +
-                 'mode) and a service principal created at ' +
-                 '/admin/kerberos/principals. Those two DO rotate — a ' +
-                 'password change and a Rotate each add one to the stored ' +
-                 'kvno — and changing this setting later moves neither.' },
+                 'mode), a service principal created at ' +
+                 '/admin/kerberos/principals, and (#169) a realm\'s random ' +
+                 'krbtgt key. Those DO rotate — a password change and a ' +
+                 'Rotate each add one to the stored kvno — and changing this ' +
+                 'setting later moves none of them.' },
 
   { key: 'krb5.ticketLifetimeSeconds', group: 'Kerberos',
     label: 'Ticket lifetime (s)', env: 'KRB5_TICKET_LIFETIME_S', type: 'int',
@@ -8340,14 +8341,27 @@ const SETTINGS = [
                  'issued and read the PAC inside it. The CONFIGURED service ' +
                  'accounts keep their own separate passwords.' },
 
+  // DEVELOPMENT'S ONLY SINCE #169 (2026-09-23): product keys krbtgt at
+  // random and reads no password for it (`mode.derivesKrbtgtFromPassword()`),
+  // so the marker makes a value set in a product realm IGNORED where it is
+  // read (`mode.valueInForce()`) and refused where it is written.
   { key: 'krb5.krbtgtPassword', group: 'Kerberos', label: 'krbtgt password',
     env: 'KRB5_KRBTGT_PASSWORD', type: 'string', dflt: 'krbtgt-mock-password',
     runtime: false,
     realmRuntime: true,
+    onlyWhile: 'derivesKrbtgtFromPassword',
     restartReason: 'the krbtgt keys are derived from it at startup' +
                    REALM_BUILDS_ITS_OWN,
-    description: 'The key that seals every Ticket-Granting Ticket this realm ' +
-                 'issues.' },
+    description: 'DEVELOPMENT MODE ONLY: the password the krbtgt key — the ' +
+                 'key that seals every Ticket-Granting Ticket this realm ' +
+                 'issues — is derived from, published so a reader can ' +
+                 'decrypt a TGT. In product mode it is not read at all: the ' +
+                 'krbtgt key is RANDOM, made once per realm, kept sealed on ' +
+                 'the directory entry krbtgt/<REALM>@<REALM> and rotated by ' +
+                 'the krb5.krbtgt-rotate job ' +
+                 '(krb5.krbtgtRotationIntervalDays). A rotation by hand at ' +
+                 '/admin/kerberos/principals replaces the derived key with a ' +
+                 'random stored one in development too.' },
 
   { key: 'krb5.domainSid', group: 'Kerberos', label: 'Domain SID',
     env: 'KRB5_DOMAIN_SID', type: 'string',
@@ -8492,7 +8506,42 @@ const SETTINGS = [
                  'lifetime is never used again, is left out of every list, ' +
                  'and is removed from storage at the next write of that key. ' +
                  'To keep no previous version at all, set ' +
-                 'krb5.retainedKeyVersions to 0.' },
+                 'krb5.retainedKeyVersions to 0. THE KRBTGT KEY (#169) reads ' +
+                 'zero as the LONGER of krb5.ticketLifetimeSeconds and ' +
+                 'krb5.renewLifetimeSeconds, plus krb5.clockSkew — the ' +
+                 'sign-out horizon\'s bound — because every TGT is sealed ' +
+                 'under it.' },
+
+  // ---------------------------------------------------------------------------
+  // THE KRBTGT KEY'S ROTATION (#169, 2026-09-23). Read by the
+  // `krb5.krbtgt-rotate` scheduler job in `kerberos/krb5_krbtgt_rotation.ts`,
+  // which checks daily and rotates a realm whose stored krbtgt key is at least
+  // this old — and never while the version the last rotation kept is still
+  // inside its window, so the schedule can never make Active Directory's
+  // "two resets inside one TGT lifetime" by accident. 0 switches the schedule
+  // off (read directly: 0 is legal and means off). Product only
+  // (`mode.rotatesKerberosKeys()`); a rotation by hand works in both modes.
+  // ---------------------------------------------------------------------------
+  { key: 'krb5.krbtgtRotationIntervalDays', group: 'Kerberos',
+    label: 'Rotate the krbtgt key every (days)',
+    env: 'KRB5_KRBTGT_ROTATION_INTERVAL_DAYS', type: 'int', dflt: 180, min: 0,
+    max: 3650, runtime: true,
+    description: 'How long a trust realm\'s krbtgt key — the key every ' +
+                 'Ticket-Granting Ticket is sealed under — stays current ' +
+                 'before the krb5.krbtgt-rotate job replaces it with a new ' +
+                 'random key at the next kvno. The key it replaces is kept ' +
+                 '(krb5.retainedKeyVersions, for krb5.retainedKeyTtlS) so a ' +
+                 'TGT issued an instant before the rotation still works ' +
+                 'until ' +
+                 'it expires, and the job never rotates while that window is ' +
+                 'open. 180 days is the common Active Directory guidance. 0 ' +
+                 'switches scheduled rotation off; a rotation by hand ' +
+                 '(/admin/kerberos/principals, POST ' +
+                 '/admin-api/kerberos/principals/rotate-krbtgt) still works. ' +
+                 'Product mode only. With krb5.retainedKeyVersions at 0 the ' +
+                 'job stays off too, because a rotation that kept nothing ' +
+                 'would sign every Kerberos user in the realm out ' +
+                 'unannounced.' },
 
   { key: 'krb5.spnegoLoginButton', group: 'Kerberos',
     label: 'Offer Kerberos at the sign-in screen',

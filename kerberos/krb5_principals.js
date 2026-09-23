@@ -45,10 +45,18 @@
 //
 // **ALL OF THAT IS DEVELOPMENT MODE (2026-09-12).** In product mode the fixture
 // accounts, their literal passwords, the delegation rules and the second realm
-// are not created, nothing is created on demand, and the two accounts the
-// service needs — krbtgt and `krb5.servicePrincipal` — exist only where their
-// passwords are set to something other than the value this repository
-// publishes. See SEEDS_DEMO and buildDatabase().
+// are not created, nothing is created on demand, and the account
+// `krb5.servicePrincipal` names exists only where its password is set to
+// something other than the value this repository publishes. See SEEDS_DEMO
+// and buildDatabase().
+//
+// **AND SINCE #169 (2026-09-23) A PRODUCT KRBTGT IS RANDOM.** It is not
+// derived from `krb5.krbtgtPassword` at all: the key source's `krbtgtKeys()`
+// holds a random key per enctype, sealed on the directory entry
+// `krbtgt/<REALM>@<REALM>`, with the PREVIOUS versions a rotation keeps — so
+// a TGT sealed an instant before a rotation still opens. Development keeps
+// the password-derived krbtgt until somebody rotates it by hand. See THE
+// KRBTGT below and `kerberos/krb5_krbtgt_rotation.ts`.
 //
 // **AND SINCE LATER THE SAME DAY A PRODUCT KDC AUTHENTICATES THE DIRECTORY'S
 // PEOPLE.** The sentence here read *what product mode does NOT yet do is give
@@ -137,7 +145,8 @@ const cacheRegistry = require('../common/cache_registry');
 // a password printed in a public repository is an account anybody can use, and
 // a delegation rule nobody configured is a permission nobody granted, so none
 // of it is created. What is left is what the service NEEDS: this realm's
-// `krbtgt` and the account `krb5.servicePrincipal` names — each only where its
+// `krbtgt` — keyed at random from the directory since #169, never from a
+// password — and the account `krb5.servicePrincipal` names, only where its
 // password is not the published default (see `publishedDefault()` below).
 //
 // **CAPTURED WHEN THE DATABASE IS BUILT AND NOT READ PER REQUEST**, and that is
@@ -479,12 +488,22 @@ function definitionsFor(ctx) {
   log.debug("Entering definitionsFor(). realm=" + ctx.REALM);
   const REALM = ctx.REALM;
   const DOMAIN = ctx.DOMAIN;
-  const KRBTGT_DEFINITION = {
+  // PRODUCT'S KRBTGT HAS NO PASSWORD (#169): `directoryKeys` says its key is
+  // the key source's, and `register()` then leaves `password` null, so no
+  // cache miss can ever derive a krbtgt key from anything.
+  const KRBTGT_DEFINITION = ctx.KRBTGT_FROM_PASSWORD ? {
     name: ['krbtgt', REALM],
     type: 2,                                 // NT-SRV-INST
     password: ctx.KRBTGT_PASSWORD,
     salt: userSalt(REALM, 'krbtgt'),
     description: 'the ticket-granting service, whose key seals every TGT'
+  } : {
+    name: ['krbtgt', REALM],
+    type: 2,                                 // NT-SRV-INST
+    directoryKeys: true,
+    salt: userSalt(REALM, 'krbtgt'),
+    description: 'the ticket-granting service, whose key seals every TGT: ' +
+                 'a RANDOM key kept sealed on the directory and rotated'
   };
 
   const DEFINITIONS = [
@@ -1597,13 +1616,24 @@ function sameName(a, b) {
 }
 
 // ---------------------------------------------------------------------------
-// THE KRBTGT, AND THE ONE REFUSAL IT CARRIES IN PRODUCT MODE.
+// THE KRBTGT.
 //
 // Its key seals every TGT, so a krbtgt derived from the published
 // `krbtgt-mock-password` is a key anybody can forge a ticket-granting ticket
-// with — a golden ticket, handed out in the README. Product mode refuses to
-// create it; the KDC then issues nothing, which is the truthful state of a KDC
-// nobody gave a key. The reason is `ctx.krbtgtReason`.
+// with — a golden ticket, handed out in the README. Product mode refused to
+// create it until #169 (`STS-KRB-0062`, retired) and asked for a password of
+// the operator's own instead.
+//
+// **SINCE #169 (2026-09-23) PRODUCT READS NO PASSWORD FOR IT AT ALL.** The
+// krbtgt is registered with `directoryKeys` and no password, and its key is
+// the key source's `krbtgtKeys()` — a RANDOM key per enctype, made once per
+// realm and kept sealed on the directory, with the previous versions a
+// rotation keeps (`storedService()` below builds the principal from it). Until
+// a key is stored `find()` answers null for it and the KDC issues nothing,
+// saying why through `krbtgtUnavailableReason()`. Development derives it from
+// `krb5.krbtgtPassword` as before, so a reader can decrypt a TGT — until a
+// rotation BY HAND stores a random one, which then wins exactly as a stored
+// service key wins over a configured account.
 // ---------------------------------------------------------------------------
 
 // A principal built from settings and code, which a restore may not override.
@@ -1638,17 +1668,9 @@ function buildDatabase(ctx) {
   const defs = definitionsFor(ctx);
   const service = configuredServiceDefinition(ctx);
   let serviceRegistered = false;
-  if (!ctx.SEEDS_DEMO &&
-      defs.krbtgt.password === publishedDefault('krb5.krbtgtPassword')) {
-    ctx.krbtgtReason = 'product mode refuses the published default ' +
-      'krb5.krbtgtPassword (KRB5_KRBTGT_PASSWORD): a krbtgt key derived from ' +
-      'it would let anybody forge a ticket-granting ticket. ' +
-      'krbtgt/' + ctx.REALM + ' ' +
-      'was NOT created, so this KDC issues no ticket until it is set.';
-    log.warn(errorCodes.tag('STS-KRB-0062') + 'krb5: ' + ctx.krbtgtReason);
-  } else {
-    registerConfigured(defs.krbtgt);
-  }
+  // Registered in both modes (#169): from the password in development, and
+  // with no password — its key the key source's — in product.
+  registerConfigured(defs.krbtgt);
   if (ctx.SEEDS_DEMO) {
     defs.fixtures.forEach(function (def) {
       if (service && !serviceRegistered && sameName(def.name, service.name)) {
@@ -1667,9 +1689,10 @@ function buildDatabase(ctx) {
              'and their rules' +
              (ctx.isDefault ? ', and the ' + TRUSTED_REALM + ' realm and ' +
                               'trust' : '') + ') were NOT ' +
-             'created. This KDC holds krbtgt/' + ctx.REALM + ' and ' +
+             'created. This KDC holds krbtgt/' + ctx.REALM + ' (a random ' +
+             'key kept sealed on the directory) and ' +
              (ctx.serviceAccount.spn || 'no service account') + ' where ' +
-             'their passwords are configured, and nothing else.');
+             'its password is configured, and nothing else.');
   }
   if (service && !serviceRegistered) {
     registerConfigured(service);
@@ -1780,7 +1803,7 @@ function inactiveContext(id, reason) {
     REALM: name, DOMAIN: name.toLowerCase(), SEEDS_DEMO: false,
     KDC_ETYPES: [], KVNO: null, USER_PASSWORD: null,
     AUTO_SERVICE_PASSWORD: null, SERVICE_DOMAINS: [], DOMAIN_SID: '',
-    KRBTGT_PASSWORD: null,
+    KRBTGT_PASSWORD: null, KRBTGT_FROM_PASSWORD: false,
     serviceAccount: { spn: '', available: false, reason: reason },
     krbtgtReason: reason, configuredKeys: new Set(),
     signature: builtFromSignature(realms.get(id))
@@ -1794,6 +1817,9 @@ function buildContext(realm) {
     const name = isDefault ? String(config.value('krb5.realm')) :
                              nameOf(realm.id);
     const etypes = configuredEtypes(realm.id);
+    // Where the krbtgt key comes from, decided in THIS realm's mode when its
+    // database is built (#169) — the same capture SEEDS_DEMO is.
+    const fromPassword = mode.derivesKrbtgtFromPassword();
     const built = {
       id: realm.id, isDefault: isDefault, active: true, inactiveReason: '',
       REALM: name,
@@ -1807,7 +1833,11 @@ function buildContext(realm) {
       AUTO_SERVICE_PASSWORD: config.value('krb5.autoServicePassword'),
       SERVICE_DOMAINS: serviceDomainsFor(),
       DOMAIN_SID: config.value('krb5.domainSid'),
-      KRBTGT_PASSWORD: config.value('krb5.krbtgtPassword'),
+      // Development's only (the `onlyWhile` marker): product reads no
+      // password for krbtgt, so it does not ask for one.
+      KRBTGT_PASSWORD: fromPassword ?
+        mode.valueInForce('krb5.krbtgtPassword') : null,
+      KRBTGT_FROM_PASSWORD: fromPassword,
       serviceAccount: { spn: '', available: false, reason: '' },
       krbtgtReason: '',
       configuredKeys: new Set(),
@@ -2442,6 +2472,11 @@ function withKeyCache(principal) {
 // source that answered services and not people would give a product KDC a
 // keytab path and leave every person refused with nothing saying why.
 //
+// `krbtgtKeys()` (#169) is an OPTIONAL member, like #173's two: this realm's
+// random krbtgt key and its kept versions, in `serviceKeys()`'s shape. A
+// source without it — the parent project's jobs have none — leaves a
+// development krbtgt derived from its password, and a product one absent.
+//
 // **A PROCESS WITH NO SOURCE BEHAVES EXACTLY AS IT DID**, which is every
 // in-process caller that never loads the directory: development mode keys users
 // from `krb5.userPassword`, and product mode refuses a user with a sentence
@@ -2771,17 +2806,28 @@ function lookupUser(nameComponents, realm) {
 // SPN keeps that account's `okAsDelegate`, delegation rules and PAC identity
 // and replaces only its KEY — and over a plain service shape where none does.
 //
-// `krbtgt/*` is never asked: the ticket-granting key is the one key an operator
-// may not replace from a console, because every TGT in the realm is sealed
-// under it.
+// **THIS REALM'S OWN KRBTGT IS ASKED TOO, SINCE #169 (2026-09-23)**, through
+// the key source's `krbtgtKeys()` rather than `serviceKeys()`: the krbtgt key
+// is not an operator's to create or replace from the service-principal
+// controls, and has a rotation of its own (`krb5_krbtgt_rotation.ts`). A
+// stored krbtgt key is built over the CONFIGURED krbtgt record, and carries
+// its previous versions like any stored key, so `ticketKeyFor()` opens a TGT
+// sealed under a kept kvno and refuses one under a kvno neither current nor
+// kept with KRB_AP_ERR_BADKEYVER. `krbtgt/<another realm>` — the inter-realm
+// trust key — is never asked: it is a secret shared with the partner and not
+// this realm's to rotate.
 // ---------------------------------------------------------------------------
 function storedService(nameComponents, realm) {
   log.debug("Entering storedService().");
   const ctx = current();
   const REALM = ctx.REALM;
+  const krbtgt = Array.isArray(nameComponents) &&
+    String(nameComponents[0]).toLowerCase() === 'krbtgt';
   if (!keySource || !ctx.active || !Array.isArray(nameComponents) ||
       nameComponents.length < 2 ||
-      String(nameComponents[0]).toLowerCase() === 'krbtgt' ||
+      (krbtgt && (nameComponents.length !== 2 ||
+                  String(nameComponents[1]) !== REALM ||
+                  typeof keySource.krbtgtKeys !== 'function')) ||
       (realm || REALM) !== REALM) {
     log.debug("Leaving storedService().");
     return null;
@@ -2789,7 +2835,8 @@ function storedService(nameComponents, realm) {
   log.debug('Entering storedService(). spn=' + nameComponents.join('/'));
   let answer = null;
   try {
-    answer = keySource.serviceKeys(nameComponents.join('/'));
+    answer = krbtgt ? keySource.krbtgtKeys()
+                    : keySource.serviceKeys(nameComponents.join('/'));
   } catch (e) {
     // Reported and treated as no stored key: the configured account, if any,
     // still answers — which is what the service did before a key was stored.
@@ -2865,6 +2912,16 @@ function find(nameComponents, realm) {
   const held = withKeyCache(
     principals.get(nameComponents.join('/') + '@' +
                    (realm || ctx.REALM))) || null;
+  // A PRODUCT KRBTGT WITH NO STORED KEY (#169) — none made yet, or a record
+  // this process cannot open — is NO krbtgt: the record holds no password to
+  // derive from, and answering it would put a principal with no key in front
+  // of every issuance. `krbtgtUnavailableReason()` says why.
+  if (held && held.directoryKeys && held.type === 2 &&
+      String(held.name[0]) === 'krbtgt' && held.realm === ctx.REALM &&
+      String(held.name[1]) === ctx.REALM) {
+    log.debug("Leaving find(). The krbtgt has no stored key.");
+    return null;
+  }
   // A DIRECTORY PERSON IS READ AGAIN FROM THE SOURCE (2026-09-12). Their
   // record's key cache holds whatever the LAST AS lookup found, so a TGS naming
   // them — as the service a ticket is for, or the ticket being presented —
@@ -3533,11 +3590,29 @@ module.exports = {
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,
-  // Empty unless product mode refused to create krbtgt/<realm>.
+  // Empty unless this realm has no usable krbtgt: its Kerberos is off or its
+  // etypes are unusable (the context's reason), or — product, #169 — no
+  // random krbtgt key is stored for it yet, or the one stored cannot be
+  // opened.
   krbtgtUnavailableReason: function () {
     log.debug("Entering krbtgtUnavailableReason().");
-    log.debug("Leaving krbtgtUnavailableReason().");
-    return current().krbtgtReason;
+    const ctx = current();
+    if (ctx.krbtgtReason || !ctx.active || ctx.KRBTGT_FROM_PASSWORD ||
+        storedService(['krbtgt', ctx.REALM], ctx.REALM)) {
+      log.debug("Leaving krbtgtUnavailableReason().");
+      return ctx.krbtgtReason;
+    }
+    log.debug("Leaving krbtgtUnavailableReason(). No stored krbtgt key.");
+    return keySource && typeof keySource.krbtgtKeys === 'function'
+      ? 'no usable random krbtgt key is stored for ' + ctx.REALM + ' yet ' +
+        '(product mode keys krbtgt at random, on the directory entry ' +
+        'krbtgt/' + ctx.REALM + '@' + ctx.REALM + '; it is made at the ' +
+        'first start, and a record this service cannot open is replaced only ' +
+        'by "rotate and invalidate" at /admin/kerberos/principals), so this ' +
+        'KDC issues no ticket'
+      : 'product mode keys krbtgt at random on the directory, and this ' +
+        'process has no key source (the directory is not loaded), so this ' +
+        'KDC issues no ticket';
   },
   publishedDefault: publishedDefault,
   find: find,
@@ -3620,7 +3695,11 @@ module.exports = {
   ['SERVICE_DOMAINS', 'SERVICE_DOMAINS'], ['DOMAIN_SID', 'DOMAIN_SID'],
   // Whether the fixture accounts are in this realm's database — captured when
   // it was built, see SEEDS_DEMO.
-  ['seedsDemoPrincipals', 'SEEDS_DEMO']
+  ['seedsDemoPrincipals', 'SEEDS_DEMO'],
+  // Whether this realm's krbtgt is derived from krb5.krbtgtPassword
+  // (development) or is the key source's random stored key (product) —
+  // captured when it was built, #169.
+  ['krbtgtFromPassword', 'KRBTGT_FROM_PASSWORD']
 ].forEach(function (pair) {
   Object.defineProperty(module.exports, pair[0], {
     enumerable: true,

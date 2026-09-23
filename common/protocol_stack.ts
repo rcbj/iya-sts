@@ -1152,6 +1152,14 @@ class ProtocolStack {
     // signingKeyRotated() it calls (lazily, so the order is for a reader).
     this.build('common/signing_rotation', require('./signing_rotation'),
                'SigningRotation');
+    // 23b-iii. THE KRBTGT KEY'S ROTATION (#169, 2026-09-23): a library that
+    // registers its two scheduler jobs when built and no route. After
+    // `ldap/ldap_server` (21), whose directory slot the register it drives
+    // (`kerberos/krb5_person_keys.ts`) writes the krbtgt key through, and
+    // beside the signing rotation above, whose shape it follows. Everything it
+    // reaches is reached lazily, so the order is for a reader.
+    this.build('kerberos/krb5_krbtgt_rotation',
+               require('../kerberos/krb5_krbtgt_rotation'), 'KrbtgtRotation');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.

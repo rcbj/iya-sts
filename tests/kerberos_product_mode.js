@@ -137,11 +137,21 @@ function productModeHoldsNoFixtures(t) {
     log.debug("Leaving productModeHoldsNoFixtures().");
     return;
   }
-  t.equal(bare.report.all.length, 0,
-          'with the shipped krbtgt and service passwords, the database holds ' +
-          'NOTHING — both are printed in this repository');
-  t.check(/krb5\.krbtgtPassword/.test(bare.report.krbtgt),
-          'the krbtgt refusal names the setting that fixes it',
+  // #169: the krbtgt is REGISTERED with no password — its key is the key
+  // source's random stored one — and with no key source in this child
+  // (nothing loaded the directory) the KDC has no krbtgt key, and says why.
+  const krbtgtName = 'krbtgt/' + principals.REALM + '@' + principals.REALM;
+  t.check(JSON.stringify(names(bare.report)) ===
+          JSON.stringify([krbtgtName]) &&
+          bare.report.all[0].password === null,
+          'with the shipped service password, the database holds only the ' +
+          'krbtgt, and it carries NO password: product keys it at random ' +
+          '(#169)', JSON.stringify(bare.report.all));
+  t.check(/random/.test(bare.report.krbtgt) &&
+          /no key source|directory/.test(bare.report.krbtgt) &&
+          !/krb5\.krbtgtPassword/.test(bare.report.krbtgt),
+          'the krbtgt reason says it is random and that this process has no ' +
+          'key source — and names no password to set',
           bare.report.krbtgt);
   t.check(bare.report.service.available === false &&
           /krb5\.servicePassword/.test(bare.report.service.reason),
@@ -170,6 +180,10 @@ function productModeHoldsNoFixtures(t) {
           'with both set it holds krbtgt and the configured service account, ' +
           'and nothing else',
           JSON.stringify(names(configured.report)));
+  t.check((configured.report.all[0] || {}).password === null,
+          'and a KRB5_KRBTGT_PASSWORD set in product is IGNORED: the krbtgt ' +
+          'still carries no password (#169, the onlyWhile marker)',
+          JSON.stringify(configured.report.all[0]));
   const web = configured.report.all[1] || {};
   t.check(web.password === 'the-keytab-secret' &&
           web.salt === 'EXAMPLE.COMsvc-web',

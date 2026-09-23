@@ -24637,6 +24637,41 @@ class AdminConsole {
     const row = (what: string, answer: string) => {
       return '<tr><th>' + this.esc(what) + '</th><td>' + answer + '</td></tr>';
     };
+    // THE KRBTGT KEY (#169): its kvno, last rotation and next scheduled one,
+    // drawn here as well as on Principals (where its controls are) because
+    // it is the KDC's state somebody comes to this page to find. Read
+    // lazily: the view lives in `admin-core/`, loaded after this file.
+    let krbtgt: any = null;
+    try {
+      krbtgt = krb5Principals.kerberosRealmOf().enabled
+        ? require('../admin-core/admin_views').krbtgtView() : null;
+    } catch (e) {
+      log.debug("Caught in AdminConsole.kerberosPreauthStatusBlock(): " +
+                ((e && e.message) || e));
+      krbtgt = null;
+    }
+    const krbtgtHtml = !krbtgt ? '' :
+      '<h3>The krbtgt key</h3>' +
+      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+      row('Key from', this.esc(krbtgt.source === 'stored'
+        ? 'a random key stored on the directory'
+        : krbtgt.source === 'password'
+          ? 'krb5.krbtgtPassword (development)'
+          : krbtgt.source === 'unreadable'
+            ? 'a stored record this service cannot open — no TGT is issued'
+            : 'nothing yet — no TGT is issued')) +
+      row('kvno', this.esc(krbtgt.kvno == null ? '—' : String(krbtgt.kvno))) +
+      row('Last rotated', this.esc(krbtgt.lastRotatedAt || 'never')) +
+      row('Next scheduled rotation', krbtgt.scheduled
+        ? this.esc(String(krbtgt.nextDueAt || '—'))
+        : 'none — ' + this.esc(String(krbtgt.offReason || ''))) +
+      row('Previous versions kept', this.esc((krbtgt.retained || [])
+        .map(function (one: any) {
+          return 'kvno ' + one.kvno + ' until ' + one.expiresAt;
+        }).join('; ') || 'none')) +
+      '</table>' +
+      '<p><a href="/admin/kerberos/principals">Rotate it on ' +
+      'Principals</a></p>';
     const html =
       '<h3>Pre-authentication, and a second factor</h3>' +
       '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
@@ -24667,8 +24702,9 @@ class AdminConsole {
           'service tickets; <code>/authn/spnego</code> counts it as the ' +
           'second factor (<code>amr</code> pwd, otp; <code>acr</code> mfa)'
         : '—') +
-      '</table>';
-    const json = Object.assign({ passwordAloneRefused: refuses }, info);
+      '</table>' + krbtgtHtml;
+    const json = Object.assign({ passwordAloneRefused: refuses }, info,
+                               { krbtgt: krbtgt });
     log.debug("Leaving AdminConsole.kerberosPreauthStatusBlock().");
     return { html: html, json: json };
   }
@@ -36289,6 +36325,97 @@ class AdminConsole {
         : 'Development mode keys every user from krb5.userPassword, so ' +
           'nobody here holds stored keys.') + '</td></tr>';
 
+      // THE REALM'S KRBTGT (#169): its own block, because none of the
+      // service-principal controls applies to it — no keytab is ever made
+      // for it — and two controls of its own do, both of which QUEUE a run
+      // of `krb5.krbtgt-rotate-now` on the scheduler rather than rotating in
+      // this request. The invalidate form is a typed confirmation, not a
+      // script: the word goes in a text field and the action refuses
+      // without it (STS-ADMIN-0610).
+      const k = json.krbtgt;
+      const krbtgtSection = !k ? '' :
+        '<h2>The krbtgt key</h2>' +
+        self.note('Every ticket-granting ticket this realm issues is sealed ' +
+          'under this key. ' + (k.source === 'password'
+            ? 'In this development realm it is derived from the published ' +
+              '<code>krb5.krbtgtPassword</code>, so a reader can decrypt a ' +
+              'TGT; rotating it here replaces it with a random stored key.'
+            : 'It is a RANDOM key per enctype, kept sealed on the directory ' +
+              'entry <code>' + self.esc(k.principal || '') + '</code> and ' +
+              'never shown — there is no keytab for it.') +
+          ' A rotation keeps the version it replaces for ' +
+          self.esc(String(k.retainedTtlSeconds)) + ' seconds (the longest a ' +
+          'TGT under it can live, renewals included), so every TGT goes on ' +
+          'working; <strong>rotate and invalidate</strong> keeps nothing — ' +
+          'Active Directory\'s double reset in one act — and every TGT in ' +
+          'the realm is refused at its next use.') +
+        (k.source === 'unreadable'
+          ? self.warn('<strong>The stored krbtgt key cannot be opened ' +
+              'here</strong> (' + self.esc(k.why) + '), so this KDC issues ' +
+              'no ticket. Only <strong>rotate and invalidate</strong> ' +
+              'replaces it.')
+          : k.source === 'none'
+            ? self.warn('No krbtgt key is stored for this realm yet, so its ' +
+                'KDC issues no ticket. It is made at the next start, or by ' +
+                'the <code>krb5.krbtgt-rotate</code> job, or by a rotation ' +
+                'here.')
+            : '') +
+        '<table class="key">' +
+        '<tr><th>Principal</th><td><code>' + self.esc(k.principal || '—') +
+        '</code></td></tr>' +
+        '<tr><th>Key from</th><td>' + self.esc({
+          stored: 'a random key stored on the directory',
+          password: 'krb5.krbtgtPassword (development)',
+          none: 'nothing yet', unreadable: 'a record this service cannot open'
+        }[k.source] || k.source) + '</td></tr>' +
+        '<tr><th>kvno</th><td>' + self.esc(k.kvno == null ? '—'
+                                                          : String(k.kvno)) +
+        '</td></tr><tr><th>Enctypes</th><td>' + etypeList(k.etypes) +
+        '</td></tr><tr><th>Created</th><td class="sub">' +
+        self.esc(k.createdAt || '—') + '</td></tr>' +
+        '<tr><th>Last rotated</th><td class="sub">' +
+        self.esc(k.lastRotatedAt || 'never') +
+        (k.invalidatedAt ? '<br>last invalidated ' +
+          self.esc(k.invalidatedAt) : '') + '</td></tr>' +
+        '<tr><th>Next scheduled rotation</th><td class="sub">' +
+        (k.scheduled
+          ? self.esc(k.nextDueAt || '—') + ' (every ' +
+            self.esc(String(k.intervalDays)) + ' days, ' +
+            '<code>krb5.krbtgtRotationIntervalDays</code>)'
+          : 'none — ' + self.esc(k.offReason)) + '</td></tr>' +
+        '<tr><th>Previous versions</th><td>' + retainedCell(k.retained) +
+        '</td></tr></table>' +
+        (mayChange
+          ? '<form method="post" action="/admin/kerberos/principals">' +
+            '<input type="hidden" name="action" value="rotate-krbtgt">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button type="submit" title="' + self.esc('A new random ' +
+              'krbtgt key at the next kvno; the current one is kept for the ' +
+              'TGTs already sealed under it. Queued on the scheduler.') +
+            '">Rotate the krbtgt key</button></form>' +
+            ((k.retained || []).length
+              ? rowButton('drop-previous-service-keys', 'spn',
+                  String(k.principal || '').replace(/@[^@]*$/, ''),
+                  'Drop previous versions',
+                  'Stops accepting TGTs sealed under kvno ' +
+                  k.retained.map(function (one) {
+                    return one.kvno;
+                  }).join(', ') + ' now. The current key is untouched.')
+              : '') +
+            '<form method="post" action="/admin/kerberos/principals">' +
+            '<input type="hidden" name="action" ' +
+            'value="rotate-krbtgt-invalidate">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><div class="formrow"><label for="krbtgt-confirm">Type ' +
+            '<code>' + self.esc(k.confirmWord || 'invalidate') + '</code> ' +
+            'to end every TGT in the realm</label>' +
+            '<input type="text" id="krbtgt-confirm" name="confirm" size="12" ' +
+            'autocomplete="off">' +
+            '<button type="submit" class="danger">Rotate and ' +
+            'invalidate</button></div></form>'
+          : self.note('Rotating the krbtgt key needs <strong>Admin ' +
+                      'Write</strong>.'));
+
       const inner = self.messagesOf(req) +
         self.note('<strong>Who this KDC holds a stored key for.</strong> ' +
                   self.esc(json.notes.mode)) +
@@ -36324,6 +36451,7 @@ class AdminConsole {
                         'one.') +
                   ' <code>krb5.personKeys</code> is ' +
                   (json.personKeys ? 'on' : 'OFF') + '.') +
+        krbtgtSection +
         '<h2>Service principals</h2>' + servicesNav.head +
         '<table><tr><th>Principal</th><th>kvno</th><th>Enctypes</th>' +
         '<th>Created</th><th>Previous versions</th><th>At ' +
@@ -36340,8 +36468,8 @@ class AdminConsole {
                       'mode) at kvno ' +
                       self.esc(String(json.startingKvno)) + ', stored sealed ' +
                       'on its application entry, and the next page shows its ' +
-                      'keytab ONCE. <code>krbtgt</code> is refused: that key ' +
-                      'is <code>krb5.krbtgtPassword</code>.') +
+                      'keytab ONCE. <code>krbtgt</code> is refused: it has ' +
+                      'its own block above, and no keytab.') +
             '<form method="post" action="/admin/kerberos/principals">' +
             '<input type="hidden" name="action" value="create-service">' +
             '<input type="hidden" name="back" value="' + self.esc(back) + '">' +

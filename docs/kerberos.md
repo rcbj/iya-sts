@@ -263,14 +263,65 @@ kinit -T FILE:/tmp/armor alice@EXAMPLE.COM
 does in the realm. A person whose only second factor is a security key cannot
 use Kerberos yet: PKINIT is [#179](https://github.com/rcbj/iya-sts/issues/179).
 
+### The `krbtgt` key, and its rotation
+
+Every ticket-granting ticket a realm issues is sealed under its `krbtgt` key,
+so whoever holds that key can forge a TGT for anybody in the realm (a "golden
+ticket"). Since #169:
+
+* **Product mode keys `krbtgt` at random.** RFC 3961 random-to-key for every
+  enctype in `krb5.enctypes` (never rc4-hmac there), made once per realm at its
+  first start — once for a cluster, by whichever node wins a claim — and kept
+  sealed on the directory entry `krbtgt/<REALM>@<REALM>` under
+  `ou=applications`. It is never shown, never in a keytab, never in an audit row
+  or an LDAP search. `krb5.krbtgtPassword` is development's only and is ignored
+  in product.
+* **Development keeps the published password** (`krbtgt-mock-password`), so a
+  reader can decrypt a TGT — until somebody rotates it by hand, which replaces
+  it with a random stored key.
+* **It rotates.** The `krb5.krbtgt-rotate` scheduler job checks each realm every
+  hour and rotates a key at least `krb5.krbtgtRotationIntervalDays` old (180 by
+  default, Active Directory's common guidance; 0 is off; product only). A
+  rotation moves the kvno up by one and **keeps the version it replaced** for
+  the longest a TGT under it can live — the longer of the ticket and renew
+  lifetimes plus the clock skew, unless `krb5.retainedKeyTtlS` names a number —
+  so every TGT, and a FAST armor ticket or cookie made under it, goes on
+  working until it expires. **The job never rotates while that window is still
+  open**, so the schedule cannot make the "two resets inside one TGT lifetime"
+  that strands a live ticket. With `krb5.retainedKeyVersions` at 0 it stays
+  off: a rotation that keeps nothing would sign everybody out unannounced.
+* **By hand, in both modes**, on **Protocols → Kerberos → Principals** or
+  `POST /admin-api/kerberos/principals/rotate-krbtgt`: queued on the scheduler
+  and run once, on its leader. **Rotate and invalidate**
+  (`rotate-krbtgt-invalidate`, with `confirm: "invalidate"` typed) is Active
+  Directory's double reset in one act, for a key presumed compromised: nothing
+  is kept, every TGT in the realm is refused `KRB_AP_ERR_BADKEYVER` (44) at its
+  next use, everybody runs a fresh AS exchange, and the Shared Signals event
+  `urn:iya:sts:secevent:event-type:kerberos-tickets-invalidated` says so. It is
+  also the one act that replaces a stored record the service cannot open.
+  **Drop previous versions** ends a rotation's window early.
+* **A sign-out still works across a rotation** (#111): it is a stamp on the
+  person's principal checked against the TGT's `authtime`, whatever key sealed
+  the ticket.
+* **Upgrading from a release before #169** gives a product realm a new random
+  `krbtgt` key at its first start; TGTs sealed under the old password-derived
+  key stop working once, and everybody signs in again.
+* **Not rotated**: `krbtgt/<partner realm>`, the inter-realm trust key, is a
+  secret shared with the partner (development only here).
+* **Post-quantum.** No post-quantum Kerberos enctype is standardised. The
+  strongest registered ones — aes256-cts-hmac-sha384-192 (20, RFC 8009) and
+  aes256-cts-hmac-sha1-96 (18) — are symmetric, and Grover's algorithm leaves
+  AES-256 at about 128-bit strength, so rotation needs no new enctype. The
+  quantum-exposed part of Kerberos is PKINIT's public-key key agreement, which
+  this service does not implement (#179).
+
 ### Not implemented
 
 PKINIT (#179), FAST in the TGS exchange (a TGS-REQ carrying implicit armor is
 answered unarmored, which MIT's client accepts), anonymous PKINIT armor, the
 FAST hide-client-names option (refused as an unknown critical option), OTP
 PIN change and hashed OTP values, kpasswd, user-to-user, SID filtering, and
-rotation of the `krbtgt` key (a TGT under an older `krb5.krbtgtPassword` is
-refused).
+rotation of an inter-realm trust key.
 `GET /krb5/principals` carries the current list. The UDP socket cannot carry a
 PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 
@@ -281,7 +332,8 @@ PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 | User accounts | any name authenticates and **every user shares one password** (`password!`, `krb5.userPassword`), created on first sight | directory people authenticate with **keys derived from their own password**; nobody is created on demand |
 | Service accounts | a service-shaped name is created on demand for a host in `krb5.serviceDomains`, with `krb5.autoServicePassword` | nothing is created on demand; service principals are made at `/admin/kerberos/principals` |
 | Fixtures | alice, bob, misconfigured users, a computer account, delegation services with `msDS-*` rules, and the trusted second realm | none; `PARTNER.COM` is `KDC_ERR_WRONG_REALM` |
-| `krbtgt` and the acceptor's account | built from the published passwords | built only when `krb5.krbtgtPassword` / `krb5.servicePassword` are **not** the published defaults (`STS-KRB-0062`); otherwise refused, and `/krb5/service` and `/krb5/principals` say why |
+| `krbtgt` | derived from the published `krb5.krbtgtPassword`, until rotated by hand | a **random** key, stored sealed on the directory and rotated every `krb5.krbtgtRotationIntervalDays` (#169); `krb5.krbtgtPassword` is ignored |
+| The acceptor's account | built from the published password | built only when `krb5.servicePassword` is **not** the published default; otherwise refused, and `/krb5/service` and `/krb5/principals` say why |
 | Passwords on `/krb5/principals` | published, so a reader can decrypt a ticket and read its PAC | withheld |
 | The PAC | invents `passwordLastSet` and `logonCount` | the zero FILETIME and 0 |
 | Delegation | fixture rules make every refusal and success reachable | no rule until an operator writes one |
@@ -322,7 +374,8 @@ modes**, and a replay is refused in both. See
 | `krb5.unknownUsers` | `KRB5_UNKNOWN_USERS` | `nosuchuser,nobody` | yes | Names never created on demand, so `KDC_ERR_C_PRINCIPAL_UNKNOWN` stays reachable. |
 | `krb5.serviceDomains` | `KRB5_SERVICE_DOMAINS` | the realm's domain, `localhost`, `sts`, `127.0.0.1` | no | The host domains a service principal is created on demand for; empty creates none. |
 | `krb5.autoServicePassword` | `KRB5_AUTO_SERVICE_PASSWORD` | `auto-service-password` | no | The published password of every on-demand service account. |
-| `krb5.krbtgtPassword` | `KRB5_KRBTGT_PASSWORD` | `krbtgt-mock-password` | no | The key that seals every TGT; the default is refused in product mode. |
+| `krb5.krbtgtPassword` | `KRB5_KRBTGT_PASSWORD` | `krbtgt-mock-password` | no | Development only: the password the key that seals every TGT is derived from. Product keys `krbtgt` at random and ignores it (#169). |
+| `krb5.krbtgtRotationIntervalDays` | `KRB5_KRBTGT_ROTATION_INTERVAL_DAYS` | `180` | yes | How old a realm's `krbtgt` key gets before the `krb5.krbtgt-rotate` job replaces it; `0` is off. Product only; a rotation by hand works in both modes. |
 | `krb5.domainSid` | `KRB5_DOMAIN_SID` | `S-1-5-21-1004336348-1177238915-682003330` | no | The domain SID every PAC is built under. |
 | `krb5.trustedRealm` | `KRB5_TRUSTED_REALM` | `PARTNER.COM` | no | The second realm, for cross-realm referrals (development). |
 | `krb5.trustPassword` | `KRB5_TRUST_PASSWORD` | `inter-realm-trust-password` | no | The shared secret of the cross-realm trust. |
@@ -332,7 +385,7 @@ modes**, and a replay is refused in both. See
 | `krb5.spnegoLoginButton` | `KRB5_SPNEGO_LOGIN_BUTTON` | `true` | yes | Show "Sign in with Kerberos" on `/authn/login`. |
 | `krb5.personKeys` | `KRB5_PERSON_KEYS` | `true` | yes | Product mode only: derive and store people's keys from their passwords; off, the KDC refuses every person. |
 | `krb5.retainedKeyVersions` | `KRB5_RETAINED_KEY_VERSIONS` | `1` | yes | How many previous key versions a stored key keeps; `0` keeps none. |
-| `krb5.retainedKeyTtlS` | `KRB5_RETAINED_KEY_TTL_S` | `0` | yes | How long a previous version is kept; `0` means the ticket lifetime plus the clock skew. |
+| `krb5.retainedKeyTtlS` | `KRB5_RETAINED_KEY_TTL_S` | `0` | yes | How long a previous version is kept; `0` means the ticket lifetime plus the clock skew — for the `krbtgt`, the longer of the ticket and renew lifetimes plus the skew. |
 | `krb5.s2kparams` | `KRB5_S2KPARAMS` | `omit` | yes | Whether PA-ETYPE-INFO2 carries s2kparams; `omit` matches Windows Server, `send` exercises a client that reads it. |
 | `logout.kerberosSignOut` | `LOGOUT_KERBEROS_SIGN_OUT` | `true` | yes | Whether a sign-out stamps the instant after which an older TGT is refused `KDC_ERR_TGT_REVOKED`. |
 
@@ -361,9 +414,14 @@ appconfig file.
   be.** A client derives `HTTP/<url host>`, and the KDC and acceptor share one
   table, so an on-demand service is one the acceptor can decrypt; any other
   host stays unknown.
-* **The published passwords are refused in product mode.** A krbtgt from the
-  README's password is a golden ticket, a service key from it a silver one, so
-  those accounts are simply not built until a real secret is set.
+* **The published passwords are refused in product mode.** A service key from
+  the README's password is a silver ticket, so that account is not built until
+  a real secret is set. A krbtgt from it would be a golden one, and since #169
+  product does not derive the krbtgt from a password at all: it is random.
+* **The krbtgt rotates without stranding a ticket.** The version it replaces
+  is kept for the longest a TGT under it can live, the schedule never rotates
+  inside that window, and the one act that ends every TGT at once — rotate and
+  invalidate — is a separate, confirmed control.
 * **The session's `amr` and `acr` come from the ticket's flags.** It is the one
   place here where they are read off something a credential actually says; a
   ticket claiming neither flag gets an empty `amr`, not an assumed password.
@@ -403,7 +461,12 @@ appconfig file.
   KDC holds a stored key for — directory people (with kvno, enctypes, whether
   the keys still match the password, and kept versions) and service principals.
   Create, Rotate (each hands over a keytab once), Delete, clear a person's keys,
-  and Drop previous versions; the controls need Admin Write.
+  and Drop previous versions; and the realm's `krbtgt` key — its kvno, last and
+  next rotation and kept versions — with **Rotate the krbtgt key** and **Rotate
+  and invalidate**. The controls need Admin Write.
+* **Monitoring → Scheduler** (`/admin/scheduler`): the `krb5.krbtgt-rotate` and
+  `krb5.krbtgt-rotate-now` jobs; each run's result names the kvno, the last
+  rotation and when the next is due.
 * **`/admin/delegation`**: every delegation act, refusals included, and the
   published policy.
 * **Live descriptions**: `GET /krb5/principals` (the database, the sockets and
@@ -412,7 +475,8 @@ appconfig file.
   `GET /admin-api/kerberos/principals` and
   `POST /admin-api/kerberos/principals/{create-service, rotate-service,
   delete-service, clear-person-keys, drop-previous-service-keys,
-  drop-previous-person-keys, reset-person-keytab}` — see
+  drop-previous-person-keys, reset-person-keytab, rotate-krbtgt,
+  rotate-krbtgt-invalidate}` — see
   `/admin-api/openapi.json`.
 * **User portal**: `/portal/kerberos` — the signed-in person's principal, and a
   keytab made from their own password.

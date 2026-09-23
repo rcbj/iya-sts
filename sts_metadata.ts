@@ -340,10 +340,16 @@ const SPECS: Spec[] = [
               'rather than refused. THAT IS DEVELOPMENT MODE. In product ' +
               'mode the fixture accounts, the second realm and every ' +
               'delegation rule are absent, nothing is created on demand, no ' +
-              'password is published, and krbtgt and the configured service ' +
-              'account exist only where krb5.krbtgtPassword and ' +
-              'krb5.servicePassword are set to something other than their ' +
-              'published defaults. A product KDC authenticates the ' +
+              'password is published, the configured service account exists ' +
+              'only where krb5.servicePassword is set to something other ' +
+              'than its published default, and each realm\'s krbtgt key is ' +
+              'RANDOM, sealed on the directory and rotated by the ' +
+              'krb5.krbtgt-rotate job (krb5.krbtgtRotationIntervalDays), ' +
+              'the version it replaces kept for the longest a TGT under it ' +
+              'can live; "rotate and invalidate" keeps nothing. No ' +
+              'post-quantum Kerberos enctype is standardised, so the ' +
+              'rotation uses the AES enctypes. A product KDC authenticates ' +
+              'the ' +
               'directory\'s PEOPLE with keys derived from their own ' +
               'passwords (after they sign in once), and service principals ' +
               'with random keys an operator created; and a person who holds ' +
@@ -6380,15 +6386,19 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Kerberos principals',
     specs: ['rfc4120', 'rfc3961'],
     effect: 'POST creates, rotates or deletes a service principal\'s stored ' +
-            'random key, or clears a person\'s Kerberos keys, from the next ' +
-            'AS-REQ or TGS-REQ',
+            'random key, clears a person\'s Kerberos keys, or queues a ' +
+            'rotation of the krbtgt key, from the next AS-REQ or TGS-REQ',
     what: 'NON-SPEC. Who the KDC holds a STORED long-term key for: directory ' +
           'people whose keys were derived from their own password (product ' +
           'mode) with the kvno, the enctypes and whether the keys still ' +
           'match the password, and service principals created here with a ' +
           'RANDOM key. A create or a rotate answers with a page carrying an ' +
           'MIT keytab ONCE; no page and no JSON shows a key. Two lists, ' +
-          'paged separately. A KDC per trust realm since 2026-09-15, so a ' +
+          'paged separately. And the realm\'s KRBTGT key (#169): where it ' +
+          'comes from, its kvno, its last and next rotation and the ' +
+          'versions kept, with "Rotate the krbtgt key" and "Rotate and ' +
+          'invalidate" (a typed confirmation), each queued on the ' +
+          'scheduler. A KDC per trust realm since 2026-09-15, so a ' +
           'realm prefix shows THAT realm\'s principals; a realm with ' +
           'krb5.enabled off has none. Admin Write to change it. Add ' +
           '?format=json.' },
@@ -7842,12 +7852,16 @@ const ENDPOINTS: EndpointEntry[] = [
           '2026-09-15, so a realm prefix answers that realm\'s principals.' },
   { path: '/admin-api/kerberos/principals/:action', group: 'Management API',
     name: 'Create, rotate or delete a service principal, clear a person\'s ' +
-          'keys, or drop previous key versions',
+          'keys, drop previous key versions, or rotate the krbtgt key',
     specs: ['rfc4120', 'rfc3961', 'openapi'],
     what: 'create-service | rotate-service | delete-service | ' +
           'clear-person-keys | drop-previous-service-keys | ' +
-          'drop-previous-person-keys — the six controls on ' +
+          'drop-previous-person-keys | reset-person-keytab | rotate-krbtgt ' +
+          '| rotate-krbtgt-invalidate — the controls on ' +
           '/admin/kerberos/principals, through the same action function. ' +
+          'The two krbtgt actions (#169) QUEUE a run of the scheduler job ' +
+          'krb5.krbtgt-rotate-now and return no key; the invalidate form ' +
+          'keeps no previous version and needs confirm: "invalidate". ' +
           'create-service and rotate-service take `spn` and return an MIT ' +
           'keytab (format 0x502), base64, ONCE — the only replies on this ' +
           'API carrying key material, and the keytab cannot be fetched ' +

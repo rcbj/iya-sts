@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3176** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3183** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -68,18 +68,18 @@ is an ordinary outcome.
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 20
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 120
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 159
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 103
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 27
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 74
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 183
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 185
 * [Management API (`STS-API`)](#sts-api) — 73
 * [User portal (`STS-PORTAL`)](#sts-portal) — 64
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -1964,7 +1964,7 @@ Raised from: kerberos/.
 | `STS-KRB-0059` | krb5.servicePrincipal is not a service/host name, so no account was created for the Kerberos acceptor. | — |
 | `STS-KRB-0060` | krb5.servicePassword is empty, so no account was created for the Kerberos acceptor. | — |
 | `STS-KRB-0061` | Product mode refused the published default krb5.servicePassword, so no account was created for the Kerberos acceptor. | — |
-| `STS-KRB-0062` | Product mode refused the published default krb5.krbtgtPassword, so no krbtgt was created and the KDC issues no ticket. | — |
+| `STS-KRB-0062` *(retired)* | Product mode refused the published default krb5.krbtgtPassword, so no krbtgt was created and the KDC issues no ticket. RETIRED 2026-09-23 (#169): product keys krbtgt at random and reads no password for it. | — |
 | `STS-KRB-0063` | The Kerberos acceptor refused a token larger than krb5.serviceMaxTokenBytes. | KRB_ERR_GENERIC (60) |
 | `STS-KRB-0064` | The Kerberos acceptor could not decode the GSS InitialContextToken wrapper. | KRB_ERR_GENERIC (60) |
 | `STS-KRB-0065` | The Kerberos acceptor was sent a GSS token that is not an AP-REQ. | KRB_AP_ERR_MSG_TYPE (40) |
@@ -2062,6 +2062,11 @@ Raised from: kerberos/.
 | `STS-KRB-0157` | A TGS-REQ's ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
 | `STS-KRB-0158` | The acceptor refused an AP-REQ whose ticket session key or Authenticator subkey is of an encryption type product mode withholds (rc4-hmac, #182). | RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
 | `STS-KRB-0159` | A FAST armor AP-REQ's subkey or ticket session key is of an encryption type product mode withholds (rc4-hmac, #182), so no armor key was made. | RFC 6113 section 5.4.1.1, RFC 8429; KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0160` | A rotation of a trust realm's krbtgt key failed — the new key could not be sealed or written to its directory entry — so nothing changed and the current key still seals every TGT. | — |
+| `STS-KRB-0161` | A trust realm's stored krbtgt key record cannot be opened (sealed under another key-encryption key, stored in the clear in product mode, or bound to another realm). It is never rewritten: the KDC answers as though the realm had no krbtgt, and only "rotate and invalidate" replaces it. | — |
+| `STS-KRB-0162` | A node lost the race to create a trust realm's first random krbtgt key and, re-reading the directory, did not find the winner's key yet; the KDC refuses until it arrives. | — |
+| `STS-KRB-0163` | A trust realm's first random krbtgt key was not made: this node could not ask the shared store whether another node was making it. | — |
+| `STS-KRB-0164` | A FAST armor ticket was sealed under a krbtgt key version the KDC no longer holds (a rotation retired it and its window ended, or "rotate and invalidate" dropped it). | RFC 6113 section 5.4.1.1; KRB_AP_ERR_BADKEYVER (44) |
 
 ## STS-LDAP
 
@@ -2612,6 +2617,7 @@ Raised from: ssf/.
 | `STS-SSF-0109` | Product mode ignored ssf.pushSkipTlsVerification: a push verifies the receiver's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 | `STS-SSF-0110` | No reaction to a signal this service's own console or portal received could be decided: the signal-response policy is disabled, missing or does not load. The event is recorded and nothing is ended. | — |
 | `STS-SSF-0111` | A reaction the signal-response policy permitted to a received signal failed: the receiving surface's sessions for the person could not be ended. | — |
+| `STS-SSF-0112` | The kerberos-tickets-invalidated event (this service's own, #169) could not be transmitted after a krbtgt key was rotated with nothing kept; the rotation itself stands. | none — logged; nothing is sent to a receiver |
 
 ## STS-RISK
 
@@ -3204,6 +3210,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0607` | A Kerberos key could not be sealed or written, so nothing was stored and no keytab was handed out. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0608` | A clear-person-keys action named nobody, or somebody not in the default trust realm's directory. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0609` | The Kerberos key register has no directory in this process, so a principal could be neither listed nor changed. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0610` | "Rotate and invalidate" of the krbtgt key was asked for without the typed confirmation "invalidate"; nothing was queued. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0611` | A rotation of the krbtgt key could not be queued on the scheduler (the scheduler is off, or refused the run). | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0620` | Regenerating an application's client secret was refused: the application is not in the registry. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0640` | A certificate details view was asked for with a value that is not a SHA-256 certificate fingerprint (64 hexadecimal digits). | the page with a dialog saying so / HTTP 400 { ok: false, errors } |
 | `STS-ADMIN-0641` | A certificate details view named a fingerprint this service does not hold in the trust realm the request was reached in. | the page with a dialog saying so / HTTP 404 { ok: false, errors } |
