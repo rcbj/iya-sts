@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3183** of them, in **36** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **3202** of them, in **36** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 164
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 74
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 74
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 123
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 142
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 33
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 89
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 104
@@ -2365,6 +2365,25 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0121` | The Workload API was not served over TCP in a product realm: spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a wildcard address, and the declaration covers one named network (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
 | `STS-SPIFFE-0122` | A SPIFFE registration entry was refused in a product realm because it selects nothing that identifies a workload — no selector, or only transport: and endpoint: ones — at the console, /admin-api or the SPIRE Server API (#166). | gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and BatchUpdateEntry; a refused console or management API action |
 | `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; the caller may get an empty SVID list |
+| `STS-SPIFFE-0124` | The systemd workload attestor is named in spiffe.workloadAttestors and the optional D-Bus client (dbus-next) is not installed; every connection it would attest is refused, naming the package (#170). Logged once per process. | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0125` | The systemd workload attestor could not name a caller's unit: D-Bus GetUnitByPID or a unit property failed, or the process the pid named changed while systemd was asked (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0126` | A docker workload's image signature could not be verified because nothing to verify it with is configured: no cosign public key file, no verified TUF trust root and no pinned trusted_root.json, or a file that could not be read (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0127` | A docker workload's cosign signature or attestation could not be fetched: its registry is not in spiffe.dockerSigstoreAllowedRegistries, the registry refused or failed, or a blob did not match its digest (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0128` | A docker workload's image carried no cosign signature that verified: the signature under the key or certificate, the payload's manifest digest, the keyless certificate's chain to a Fulcio root, its SCT, or its signer identity (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0129` | A cosign signature's Rekor transparency-log bundle was missing or did not verify: no bundle, a signed entry timestamp no trusted Rekor key verifies, or an entry that names another signature, key or payload (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0130` | A docker workload's image had no in-toto attestation that verified, and spiffe.dockerSigstoreIgnoreAttestations is off (#170). | gRPC UNAVAILABLE on every call of the connection |
+| `STS-SPIFFE-0131` | The sigstore TUF refresh failed — a metadata file that did not verify under the trusted root's keys and threshold, a version that went backwards, expired metadata, or a target whose length or hash did not match — and the last verified trust root was kept (#170). | the scheduler job spiffe.sigstore-tuf-refresh fails; attestation goes on with the last verified set |
+| `STS-SPIFFE-0132` | A SPIFFE Broker API call did not carry the broker.spiffe.io: true metadata header (SPIFFE Broker Endpoint section 3). | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0133` | A SPIFFE Broker API caller presented no X509-SVID, or one that did not verify against this trust domain's or a federated bundle (SPIFFE Broker Endpoint section 5). | gRPC UNAUTHENTICATED |
+| `STS-SPIFFE-0134` | A SPIFFE Broker API caller's X509-SVID verified and names no broker in spiffe.brokers (SPIFFE Broker API section 4.1). | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0135` | A SPIFFE Broker API caller named a workload reference type its entry in spiffe.brokers does not allow (#170). | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0136` | A SPIFFE Broker API request carried no workload reference, a malformed one, or a reference type this service does not understand (SPIFFE Broker API sections 3.1.1, 3.1.4 and 4.8, WORKLOAD_REFERENCE_INVALID). | gRPC INVALID_ARGUMENT |
+| `STS-SPIFFE-0137` | A SPIFFE Broker API reference named a process or pod that does not exist, or one that stopped while its stream was open (SPIFFE Broker API sections 4.8 and 4.9, WORKLOAD_NOT_FOUND). | gRPC NOT_FOUND |
+| `STS-SPIFFE-0138` | A SPIFFE Broker API reference named a workload no registration entry entitles to an SVID (SPIFFE Broker API section 4.8, WORKLOAD_NOT_ENTITLED). | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0139` | A SPIFFE Broker API reference could not be attested: a workload attestor failed, or process references cannot be attested here without the native module (#170). | gRPC UNAVAILABLE |
+| `STS-SPIFFE-0140` | A realm's SPIFFE Broker API listener was not bound, because it could not be given a mutual-TLS identity or its address is another realm's; it is never bound plain (#170). | nothing listening on the port |
+| `STS-SPIFFE-0141` | An entry of spiffe.brokers was refused at the console or /admin-api: not a SPIFFE ID, or no reference type from pid, k8s and * (#170). | a refused console or management API action |
+| `STS-SPIFFE-0142` | A rootless Podman workload was not attested by the docker attestor because spiffe.dockerUseRootlessPodman is off, SPIRE's rule; logged once per process (#170). | no docker selectors for that workload |
 
 ## STS-TLS
 

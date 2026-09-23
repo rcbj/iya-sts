@@ -63,7 +63,12 @@ any of them would be a broken implementation rather than a lenient one:
 * a **disabled account** (`pwdAccountLockedTime`), refused at every door — see
   the SCIM `active: false` row;
 * a **SPIFFE node attestation**, by all nine of SPIRE's node attestors, and a
-  Workload API caller on the Unix socket, by the workload attestors (#40).
+  Workload API caller on the Unix socket, by the workload attestors (#40,
+  #170) — with a docker workload's **cosign image signature** where
+  `spiffe.dockerSigstoreEnabled` asks for one;
+* a **SPIFFE Broker API** caller's X509-SVID and its place in
+  `spiffe.brokers`, and the workload it references, which is attested here
+  (#170).
 
 ## The list
 
@@ -101,7 +106,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Encrypt an assertion it was asked to encrypt but holds no certificate for | Refused: a SAML Responder status with no assertion (`STS-SAML-0011`). It never encrypts to a certificate a request merely carried | The assertion is sent in the clear, with a warning. A provider whose metadata publishes an encryption key is encrypted to in both modes |
 | Decrypt an assertion a federation partner encrypted | Refused, naming "no assertion" (`STS-FED-0011`) | The same |
 | ~~Consume a federated sign-out~~ — reversed 2026-09-23 ([#167](https://github.com/rcbj/iya-sts/issues/167)) | A partner's sign-out ends the session it started, and only that one: a SAML 2.0 `LogoutRequest` (signed, verified against `fedSigningCertificate`, issued by `fedPeer`, addressed here, fresh and accepted once — `STS-FED-0115` to `0120`), an OpenID Connect Back-Channel Logout Token (section 2.6 whole, the `jti` once — `0127` to `0129`) or Front-Channel logout (`iss` and `sid` required — `0130`), and a WS-Federation cleanup the person confirms in their own browser (`0126`), at `/federation/slo/{id}` and the two OpenID Connect logout paths. The partner's SAML `SessionNotOnOrAfter` is the session's latest end (`0131`). A sign-out here offers the partner its own. SAML 1.1 and OAuth 2.0 define no sign-out. `fedAcceptSignout` off refuses them all (`0123`) | The same, except that a relationship may set `fedRequireSignedLogout` off and accept an unsigned SAML logout message; product refuses the setting (`STS-FED-0132`) |
-| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` and `k8s` workload attestors; without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP cannot be attested, so the Workload API is not served over TCP** (`STS-SPIFFE-0120`, #166) unless `spiffe.workloadTcpSourceAuthenticated` declares that the network authenticates source addresses, and then only on a named address (`STS-SPIFFE-0121`); an entry must select something that identifies its workload — `peer:<address>` for TCP — never only `transport:` and `endpoint:` (`STS-SPIFFE-0122`) — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors, and the TCP port is served to anybody who reaches it, where an entry on `transport:tcp` alone is issued to every caller |
+| ~~Attest a workload or a node~~ — **reversed 2026-09-21 (#40)** | All nine of SPIRE's node attestors verify or refuse. The Workload API's Unix socket attests its caller with the `unix`, `docker` (Docker and Podman), `k8s` and `systemd` workload attestors, and the docker one checks a cosign image signature where asked (#170); without the native module the socket is not served (`STS-SPIFFE-0113`), and asserted selectors are never believed. **A caller over TCP cannot be attested, so the Workload API is not served over TCP** (`STS-SPIFFE-0120`, #166) unless `spiffe.workloadTcpSourceAuthenticated` declares that the network authenticates source addresses, and then only on a named address (`STS-SPIFFE-0121`); an entry must select something that identifies its workload — `peer:<address>` for TCP — never only `transport:` and `endpoint:` (`STS-SPIFFE-0122`) — see [SPIFFE](#the-workload-api-is-the-opposite-case) | The same attestors. Without the native module the socket is served unattested, `spiffe.acceptAssertedSelectors` lets a caller assert its own selectors, and the TCP port is served to anybody who reaches it, where an entry on `transport:tcp` alone is issued to every caller |
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
 | ~~Decide who may delegate to whom, in two of the three families that can~~ — **reversed 2026-09-23 (#108)** | Kerberos polices S4U against `msDS-AllowedToDelegateTo` and `msDS-AllowedToActOnBehalfOfOtherIdentity`. WS-Trust `OnBehalfOf` / `ActAs` and RFC 8693 token exchange are decided by the same model on application entries — `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSubjectGroup`, `appTrustedToImpersonate` — with `stsNotDelegated` and the console roster protecting people, then a deny-only XACML layer (action-id `delegate`). A refusal is `wst:RequestFailed` (`STS-WSTRUST-0018`, `0019`, `0020`) or `invalid_request` / `invalid_target` (`STS-OAUTH-0618`, `0619`, `0622`); only an application may be a WS-Trust requester that delegates, and an exchange may not widen its subject_token's scope (`STS-OAUTH-0621`). An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-decided-in-all-three-families) | The KDC holds fixture delegation rules. WS-Trust and token exchange issue every delegation and record on the act what product would have refused. WS-Trust needs no requester at all. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on. In both modes a subject_token's `may_act` naming somebody else is refused (`STS-OAUTH-0620`) |
 | Verify the certificate of whoever answers an outbound request — a GNAP push finish, an SSF push, a federation back channel (and the SAML metadata, RFC 9728, Logout Token and status-list fetches that share its policy), an XACML PEP nudge, a kubelet | **Always verified, since 2026-09-23 (#171)**: every `…SkipTlsVerification` setting and `spiffe.k8sSkipKubeletVerification` is ignored (logged once with its family's code) and cannot be turned on (`STS-CORE-0103`). A private CA is trusted through the family's `…CaFile`. Plain http is refused for SSF, federation and XACML whatever `…AllowHttp` says, and allowed for a GNAP push finish to a loopback address only | `…SkipTlsVerification` turns verification off, warned on every request, and `…AllowHttp` admits plain http to any host. Both are off by default |
@@ -892,10 +897,27 @@ into SPIRE's selectors:
 * `unix`: `uid:`, `user:`, `gid:`, `group:`, the supplementary groups, and with
   `spiffe.unixDiscoverWorkloadPath` the executable's `path:` and `sha256:`;
 * `docker`: the container's `label:`, `env:`, `image_id:` and
-  `image_config_digest:`, asked of the Docker Engine;
+  `image_config_digest:`, asked of the Docker Engine — or of **Podman's**
+  API when the container's cgroup says `libpod`: the rootful socket, or a
+  rootless user's own socket only with `spiffe.dockerUseRootlessPodman` on,
+  which is off because that socket is the caller's to answer (#170). With
+  **`spiffe.dockerSigstoreEnabled`** the image must also carry a **cosign
+  signature** that verifies — under a configured key file or a keyless Fulcio
+  certificate with a verifying SCT and an allowed signer, logged in Rekor
+  (`spiffe.dockerSigstoreSkipTlog` skips the log, with a warning) — and its
+  in-toto attestations, and SPIRE's `image-signature…` selectors are added. A
+  signature that does not verify **refuses the connection**, never merely
+  withholds a selector. The keyless trust roots come from sigstore's TUF
+  repository (a scheduler job that keeps the last verified set when a refresh
+  fails) or a pinned `trusted_root.json`;
 * `k8s`: the pod's `sa:`, `ns:`, `pod-name:`, `pod-label:`, `pod-owner:`,
   `container-name:`, `container-image:` and the rest of SPIRE's list, read from
-  the kubelet.
+  the kubelet;
+* `systemd`: the unit's `id:` and `fragment_path:`, asked of systemd over
+  D-Bus (`GetUnitByPID`) — and not believed if the process that connected is
+  no longer the one holding the pid when systemd answers. It needs the optional
+  `dbus-next` package; a realm naming it without that package refuses every
+  connection, saying so (#170).
 
 A connection is attested once, when it is accepted, and **every call on it
 checks that the process is still the one attested**: a process that has exited,
@@ -929,8 +951,21 @@ What is still not attested:
 * **A Unix-socket caller where the native module is missing.** Development serves
   the socket unattested and `GET /spiffe` says so under `workloadAttestation`.
   **Product does not serve the socket at all** (`STS-SPIFFE-0113`).
-* SPIRE's `systemd` workload attestor, the docker attestor's sigstore signature
-  checks and Podman sockets, and the Kubernetes broker. Each is a follow-up on #40.
+* **In an image signature**: a signature that carries no Rekor bundle is
+  refused rather than looked up online; the new sigstore bundle format (OCI
+  1.1 referrers) and RFC 3161 timestamps are not read.
+
+**The SPIFFE Broker API** (#170, `spiffe.brokerPort`, off by default) is the
+other way a workload's SVIDs leave this service, and it is the opposite of the
+Workload API in the one respect that matters: its caller **is** authenticated —
+mutual TLS with an X509-SVID naming a broker in `spiffe.brokers` — and the
+workload it names by reference is attested here, never taken on the broker's
+word: a process id through a pidfd and the same workload attestors, a
+Kubernetes pod through this node's kubelet. A process id means something only
+on the node it was read on and the endpoint is TCP, so allow `pid` only to a
+broker on this host. What it does not do: resolve a reference to a Kubernetes
+object other than a pod (that needs the API server), or notice a stopped
+workload before the stream's next re-send.
 
 **Asserted selectors are never believed in product mode**, and
 `spiffe.acceptAssertedSelectors` cannot be turned on there (#104). In

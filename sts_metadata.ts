@@ -285,8 +285,14 @@ const SPECS: Spec[] = [
               'authentication of its clients and that TLS MUST NOT be ' +
               'required — so what is needed is ATTESTATION. A caller on the ' +
               'Unix socket is attested from the kernel\'s account of the ' +
-              'connecting process by the unix, docker and k8s workload ' +
-              'attestors (#40). A caller over TCP has no process to ask and ' +
+              'connecting process by the unix, docker, k8s and systemd ' +
+              'workload attestors (#40, #170) — the docker one asking ' +
+              'Podman as well as the Docker Engine, and, with ' +
+              'spiffe.dockerSigstoreEnabled, requiring a cosign image ' +
+              'signature that verifies with its Rekor bundle and adding ' +
+              'SPIRE\'s image-signature selectors (the online Rekor lookup ' +
+              'and the new sigstore bundle format are not done). A caller ' +
+              'over TCP has no process to ask and ' +
               'is identified by its transport, endpoint and source address ' +
               '(`transport:`, `endpoint:`, `peer:`), so section 3 allows TCP ' +
               'only where the network authenticates the source address: ' +
@@ -295,6 +301,25 @@ const SPECS: Spec[] = [
               'on a wildcard address, and refuses a registration entry that ' +
               'selects nothing but the transport and endpoint (#166). ' +
               'Development serves TCP to anybody who reaches it.' },
+  { id: 'spiffe-broker-api',
+    name: 'SPIFFE Broker API and Broker Endpoint',
+    where: 'SPIFFE (CNCF), Incubating',
+    url: 'https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Broker_API.md',
+    coverage: 'partial: all four methods of spiffe.broker.API — ' +
+              'SubscribeToX509SVID, SubscribeToX509Bundles, FetchJWTSVID, ' +
+              'SubscribeToJWTBundles — on a mutual-TLS listener of its own ' +
+              'per realm (spiffe.brokerPort, off by default), with the ' +
+              '`broker.spiffe.io: true` header required, a caller refused ' +
+              'unless its X509-SVID names a broker in spiffe.brokers and the ' +
+              'reference type is one that broker is allowed, and section ' +
+              '4.8\'s refusals carrying a google.rpc.ErrorInfo. A ' +
+              'WorkloadPIDReference is attested by the workload attestors ' +
+              'through a pidfd; a KubernetesObjectReference to a POD by the ' +
+              'k8s attestor over this node\'s kubelet. Missing: references ' +
+              'to Kubernetes objects other than pods (they need the API ' +
+              'server), SPIRE\'s cluster pod-reference scope, a Unix socket ' +
+              'endpoint, and gRPC server reflection; a stopped workload is ' +
+              'noticed at the stream\'s next re-send.' },
   { id: 'spire-server-api', name: 'SPIRE Server API',
     where: 'SPIRE (CNCF) — spire-api-sdk',
     url: 'https://github.com/spiffe/spire-api-sdk',
@@ -3973,8 +3998,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'on TCP spiffe.workloadPort (8092); the SPIRE SERVER API (Entry, ' +
           'Agent, Bundle, SVID, TrustDomain and Debug, 36 of 42 methods) is ' +
           'on TCP spiffe.serverPort (8181, because SPIRE\'s own 8081 is this ' +
-          'service\'s HTTP port) and optionally on a socket of its own. RAW ' +
-          'SOCKETS, all four: this page is built by walking the Express ' +
+          'service\'s HTTP port) and optionally on a socket of its own; the ' +
+          'SPIFFE BROKER API (spiffe.broker.API, #170) is on TCP ' +
+          'spiffe.brokerPort, mutual TLS, off by default. RAW ' +
+          'SOCKETS, every one: this page is built by walking the Express ' +
           'router and cannot see one, so their state is reported by GET ' +
           '/spiffe and on /admin/spiffe rather than here. MOST OF THAT PAGE ' +
           'IS WHAT IS AND IS NOT CHECKED — node attestation verified or ' +
@@ -4371,7 +4398,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'X.509 and JWT authorities (the active one and the retired ones ' +
           'still published in the bundle), where the bundle is and what its ' +
           'sequence is, every federated trust domain, and WHETHER EACH OF ' +
-          'THE FOUR gRPC LISTENERS ACTUALLY BOUND — which nothing else can ' +
+          'THE gRPC LISTENERS ACTUALLY BOUND — which nothing else can ' +
           'report, because this page cannot see a socket any more than this ' +
           'metadata document can. Its two forms rotate an authority and set ' +
           'or remove a federated bundle; a foreign bundle is PUSHED IN and ' +
@@ -4394,6 +4421,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'everything. THE SELECTORS RESTRICT NOTHING — they are recorded, ' +
           'reported and used by GetAuthorizedEntries, and the Workload API ' +
           'hands every caller every identity. Add ?format=json.' },
+  { path: '/admin/spiffe/brokers', group: 'Admin', name: 'SPIFFE brokers',
+    specs: ['spiffe-broker-api'],
+    what: 'Who may call the SPIFFE Broker API (#170): each broker\'s SPIFFE ' +
+          'ID, the workload references it may use, a remove per row and a ' +
+          'form that authorizes one. The list is spiffe.brokers, read on ' +
+          'every call to the endpoint.' },
   { path: '/admin/spiffe/agents', group: 'Admin', name: 'SPIFFE agents',
     specs: ['spiffe-id', 'spire-server-api'],
     what: 'Every agent that has called AttestAgent, filtered and paged, with ' +
@@ -7295,6 +7328,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'is what keeps it from being a lie; delete is forgetting rather ' +
           'than revoking, since the agent reappears the moment it attests ' +
           'again.' },
+  { path: '/admin-api/spiffe/brokers', group: 'Management API',
+    name: 'The SPIFFE Broker API\'s brokers',
+    specs: ['openapi', 'spiffe-broker-api'],
+    what: 'GET /admin/spiffe/brokers over JSON, filtered and paged: each ' +
+          'broker SPIFFE ID in spiffe.brokers, the workload references it ' +
+          'may use, and where the realm\'s Broker endpoint is bound (#170).' },
+  { path: '/admin-api/spiffe/brokers/:action', group: 'Management API',
+    name: 'Authorize or remove a SPIFFE broker',
+    specs: ['openapi', 'spiffe-broker-api'],
+    what: 'set and remove. set writes a broker and the reference types it ' +
+          'may use (pid, k8s, *) into spiffe.brokers in the realm; remove ' +
+          'takes it off, and its next call is refused PERMISSION_DENIED.' },
   { path: '/admin-api/delegation', group: 'Management API',
     name: 'Delegation',
     specs: ['ms-sfu', 'rfc4120', 'ws-trust', 'rfc8693'],
@@ -10072,15 +10117,19 @@ const PROTOCOLS: Protocol[] = [
     sockets: 'The ticket it accepts comes from the KDC on port 88.' },
   { name: 'SPIFFE', groups: ['SPIFFE'],
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
-            'spiffe-jwt-svid', 'spiffe-workload-api', 'spire-server-api'],
+            'spiffe-jwt-svid', 'spiffe-workload-api', 'spire-server-api',
+            'spiffe-broker-api'],
     what: 'A trust domain per trust realm (2026-09-12), its bundle ' +
-          'endpoint, the SPIFFE Workload API ' +
-          'and 36 of the 42 SPIRE Server API methods. The Workload API ' +
+          'endpoint, the SPIFFE Workload API, ' +
+          '36 of the 42 SPIRE Server API methods and the SPIFFE Broker API ' +
+          '(#170). The Workload API ' +
           'authenticates NOBODY — a workload has no root of trust until ' +
-          'that call gives it one — and the SPIRE Server API\'s TCP port is ' +
-          'mutual TLS with an X509-SVID.',
-    sockets: 'Both gRPC surfaces are raw sockets: a Unix socket and a TCP ' +
-             'port each. Only the bundle endpoint is on the router.' },
+          'that call gives it one — and the SPIRE Server API\'s TCP port and ' +
+          'the Broker endpoint are mutual TLS with an X509-SVID.',
+    sockets: 'The gRPC surfaces are raw sockets: a Unix socket and a TCP ' +
+             'port each for the Workload and SPIRE Server APIs, and a TCP ' +
+             'port for the Broker API. Only the bundle endpoint is on the ' +
+             'router.' },
   { name: 'PKI', groups: ['PKI'],
     specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
     what: 'A certificate authority for the SERVICE — ONE Root, an ' +

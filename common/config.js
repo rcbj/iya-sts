@@ -11608,11 +11608,15 @@ const SETTINGS = [
     label: 'Workload attestors', env: 'STS_SPIFFE_WORKLOAD_ATTESTORS',
     type: 'csv', dflt: 'unix', runtime: true,
     description: 'Which of SPIRE\'s workload attestors run for a connection ' +
-                 'to the Workload API\'s Unix socket: unix, docker, k8s, ' +
-                 'comma-separated. Each runs once per connection, at ' +
-                 'accept; every call then checks the process is still the ' +
-                 'one attested. An attestor that fails fails the ' +
-                 'connection. A TCP caller is never attested.' },
+                 'to the Workload API\'s Unix socket, and for a SPIFFE ' +
+                 'Broker API process reference: unix, docker, k8s, ' +
+                 'systemd, comma-separated. Each runs once per connection, ' +
+                 'at accept; every call then checks the process is still ' +
+                 'the one attested. An attestor that fails fails the ' +
+                 'connection. A TCP caller is never attested. systemd asks ' +
+                 'systemd over D-Bus with the optional package dbus-next, ' +
+                 'and a realm naming it without that package refuses every ' +
+                 'connection, naming the package (#170).' },
 
   { key: 'spiffe.workloadProcRoot', group: 'SPIFFE',
     label: 'Workload attestation /proc root',
@@ -11650,6 +11654,173 @@ const SETTINGS = [
     type: 'string', dflt: '', runtime: true,
     description: 'SPIRE\'s docker_version: empty asks the Engine\'s own ' +
                  'default.' },
+
+  // ----- Podman, through the docker attestor (#170, 2026-09-23) -----------
+  // SPIRE's docker plugin asks Podman's Docker-compatible API when a
+  // workload's cgroups say `libpod`, and the selectors stay `docker:`.
+  { key: 'spiffe.dockerPodmanSocketPath', group: 'SPIFFE',
+    label: 'docker: rootful Podman API socket',
+    env: 'STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH', type: 'string',
+    dflt: 'unix:///run/podman/podman.sock', runtime: true,
+    description: 'SPIRE\'s podman_socket_path: the socket asked about a ' +
+                 'container whose cgroup path names libpod and no user ' +
+                 'slice.' },
+
+  { key: 'spiffe.dockerPodmanSocketPathTemplate', group: 'SPIFFE',
+    label: 'docker: rootless Podman API socket template',
+    env: 'STS_SPIFFE_DOCKER_PODMAN_SOCKET_PATH_TEMPLATE', type: 'string',
+    dflt: 'unix:///run/user/%d/podman/podman.sock', runtime: true,
+    description: 'SPIRE\'s podman_socket_path_template: %d is the uid read ' +
+                 'from the container\'s user-<uid>.slice cgroup segment. ' +
+                 'Exactly one %d; %% is a literal percent sign. Used only ' +
+                 'with the next setting on.' },
+
+  { key: 'spiffe.dockerUseRootlessPodman', group: 'SPIFFE',
+    label: 'docker: attest rootless Podman containers',
+    env: 'STS_SPIFFE_DOCKER_USE_ROOTLESS_PODMAN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s use_rootless_podman. Off, a rootless Podman ' +
+                 'container gets no docker selectors. WARNING: the ' +
+                 'per-user socket lives in the caller\'s OWN runtime ' +
+                 'directory, which the caller controls, so a workload can ' +
+                 'answer with whatever labels, environment and image it ' +
+                 'likes; pair every entry that selects on them with unix:uid ' +
+                 'or unix:user, as SPIRE advises.' },
+
+  // ----- sigstore image signatures, through the docker attestor (#170) ----
+  // SPIRE's `sigstore` block. No key and no certificate is a setting: each
+  // is a FILE PATH, because a setting is drawn, returned by /admin-api and
+  // persisted. The keyless trust roots come from the sigstore TUF
+  // repository as a scheduler job (`spiffe.sigstore-tuf-refresh`), or from a
+  // pinned trusted_root.json.
+  { key: 'spiffe.dockerSigstoreEnabled', group: 'SPIFFE',
+    label: 'docker: require a verified sigstore image signature',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_ENABLED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s sigstore block. On, a docker workload\'s image ' +
+                 'must carry a cosign signature that verifies, with its ' +
+                 'Rekor transparency-log bundle, and the attestation adds ' +
+                 'SPIRE\'s image-signature selectors; a signature that does ' +
+                 'not verify REFUSES the connection (UNAVAILABLE), as SPIRE ' +
+                 'does — it is never merely a missing selector.' },
+
+  { key: 'spiffe.dockerSigstorePublicKeyFiles', group: 'SPIFFE',
+    label: 'docker sigstore: cosign public key files',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_PUBLIC_KEY_FILES', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'PEM public keys a signature may verify under (cosign ' +
+                 '--key), as FILE PATHS. ECDSA, RSA, Ed25519 and the ' +
+                 'post-quantum ML-DSA, SLH-DSA and composite keys are read. ' +
+                 'Empty verifies keyless signatures only, against the ' +
+                 'Fulcio roots.' },
+
+  { key: 'spiffe.dockerSigstoreTrustedRootFile', group: 'SPIFFE',
+    label: 'docker sigstore: pinned trusted_root.json file',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TRUSTED_ROOT_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'A sigstore trusted_root.json (Fulcio CAs, Rekor and CT log ' +
+                 'keys) read from this FILE PATH — the pinned alternative ' +
+                 'to TUF, used only while spiffe.dockerSigstoreTufRootFile ' +
+                 'is empty. The file is read when a signature is checked, ' +
+                 'so replacing it needs no restart.' },
+
+  { key: 'spiffe.dockerSigstoreAllowedIdentities', group: 'SPIFFE',
+    label: 'docker sigstore: allowed signer identities',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_IDENTITIES', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s allowed_identities, one issuer=subject pair per ' +
+                 'element: the OIDC issuer and the subject a keyless ' +
+                 'signing certificate must name. Either half containing one ' +
+                 'of *+?^${}[]|() is a regular expression, as in SPIRE. ' +
+                 'Empty REFUSES every keyless signature — stricter than ' +
+                 'SPIRE, whose empty list admits any signer the Fulcio ' +
+                 'roots certified.' },
+
+  { key: 'spiffe.dockerSigstoreSkippedImages', group: 'SPIFFE',
+    label: 'docker sigstore: images not verified',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_SKIPPED_IMAGES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'SPIRE\'s skipped_images: repository digests ' +
+                 '(repo@sha256:...) attested without verification and ' +
+                 'without image-signature selectors.' },
+
+  { key: 'spiffe.dockerSigstoreAllowedRegistries', group: 'SPIFFE',
+    label: 'docker sigstore: registries signatures are fetched from',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_ALLOWED_REGISTRIES', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'The registry hosts (host or host:port) this service may ' +
+                 'fetch an image\'s cosign signature and attestations from, ' +
+                 'and the token realm each names. The registry comes from ' +
+                 'the image a workload runs, which is the workload\'s ' +
+                 'choice, so a host not listed is not dialled and the ' +
+                 'attestation fails. Empty refuses every registry — ' +
+                 'stricter than SPIRE. Always https.' },
+
+  { key: 'spiffe.dockerSigstoreRegistryAuthFile', group: 'SPIFFE',
+    label: 'docker sigstore: registry credentials file',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_REGISTRY_AUTH_FILE', type: 'string',
+    dflt: '', runtime: true,
+    description: 'SPIRE\'s registry_credentials, as the FILE PATH of a ' +
+                 'Docker config.json whose auths name each registry\'s ' +
+                 'user:password. Empty is anonymous.' },
+
+  { key: 'spiffe.dockerSigstoreSkipTlog', group: 'SPIFFE',
+    label: 'docker sigstore: skip the Rekor transparency log (WARNING)',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_SKIP_TLOG', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s ignore_tlog. Off, every signature must carry a ' +
+                 'Rekor bundle whose signed entry timestamp verifies under ' +
+                 'a trusted Rekor key and whose entry names this signature, ' +
+                 'this key and this payload. WARNING: on, a signature that ' +
+                 'was never logged — one made with a stolen key, or with a ' +
+                 'keyless certificate after its ten minutes — verifies, and ' +
+                 'the image-signature-log-* selectors are not emitted.' },
+
+  { key: 'spiffe.dockerSigstoreIgnoreSct', group: 'SPIFFE',
+    label: 'docker sigstore: skip the certificate transparency SCT (WARNING)',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_SCT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'SPIRE\'s ignore_sct. Off, a keyless signing certificate ' +
+                 'must carry an embedded SCT from a trusted CT log that ' +
+                 'verifies (RFC 6962). WARNING: on, a Fulcio certificate ' +
+                 'that was never logged is accepted.' },
+
+  { key: 'spiffe.dockerSigstoreIgnoreAttestations', group: 'SPIFFE',
+    label: 'docker sigstore: do not require image attestations',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_IGNORE_ATTESTATIONS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'SPIRE\'s ignore_attestations. Off, the image\'s in-toto ' +
+                 'attestations must verify too (cosign\'s .att tag) and ' +
+                 'image-attestations:verified is added — which, as in ' +
+                 'SPIRE, refuses an image that has none.' },
+
+  { key: 'spiffe.dockerSigstoreTufUrl', group: 'SPIFFE',
+    label: 'docker sigstore: TUF repository',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TUF_URL', type: 'string',
+    dflt: 'https://tuf-repo-cdn.sigstore.dev', runtime: true,
+    perProcess: true,
+    description: 'Where the sigstore TUF repository is: the job ' +
+                 'spiffe.sigstore-tuf-refresh fetches root, timestamp, ' +
+                 'snapshot and targets metadata from it and the ' +
+                 'trusted_root.json target they sign.' },
+
+  { key: 'spiffe.dockerSigstoreTufRootFile', group: 'SPIFFE',
+    label: 'docker sigstore: TUF trusted root.json file',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TUF_ROOT_FILE', type: 'string',
+    dflt: '', runtime: true, perProcess: true,
+    description: 'The FILE PATH of the TUF root.json this service first ' +
+                 'trusts (sigstore\'s published root, or a mirror\'s). ' +
+                 'Empty turns TUF off and the pinned ' +
+                 'spiffe.dockerSigstoreTrustedRootFile is used. A refresh ' +
+                 'that fails keeps the last verified set and never widens ' +
+                 'it.' },
+
+  { key: 'spiffe.dockerSigstoreTufRefreshS', group: 'SPIFFE',
+    label: 'docker sigstore: TUF refresh interval (s)',
+    env: 'STS_SPIFFE_DOCKER_SIGSTORE_TUF_REFRESH_S', type: 'int',
+    dflt: 86400, min: 0, max: 31536000, runtime: true, perProcess: true,
+    description: 'How often the scheduler job spiffe.sigstore-tuf-refresh ' +
+                 'runs. 0 is off; Run now on /admin/scheduler still works.' },
 
   { key: 'spiffe.k8sKubeletReadOnlyPort', group: 'SPIFFE',
     label: 'k8s: kubelet read-only port',
@@ -11846,6 +12017,20 @@ const SETTINGS = [
                  'not in this trust domain or a federated one can never ' +
                  'match, because nothing else would verify its certificate.' },
 
+  { key: 'spiffe.brokers', group: 'SPIFFE',
+    label: 'SPIFFE Broker API: authorized brokers',
+    env: 'STS_SPIFFE_BROKERS', type: 'string', dflt: '', runtime: true,
+    description: 'Who may call the SPIFFE Broker API, and with which ' +
+                 'workload references: entries separated by spaces, each ' +
+                 '<SPIFFE ID>=<types>, the types comma-separated from pid ' +
+                 '(a WorkloadPIDReference), k8s (a KubernetesObjectReference ' +
+                 'to a pod) and * (both). A broker not listed is refused ' +
+                 'PERMISSION_DENIED; an entry naming no type allows nothing. ' +
+                 'Managed on /admin/spiffe/brokers and ' +
+                 '/admin-api/spiffe/brokers. WARNING: the endpoint is TCP, ' +
+                 'and a process id means something only on the node it was ' +
+                 'read on — allow pid only to a broker on this host.' },
+
   { key: 'spiffe.clockSkew', group: 'SPIFFE', label: 'Clock skew (s)',
     env: 'STS_SPIFFE_CLOCK_SKEW', type: 'int', dflt: 60, runtime: true,
     description: 'How far out a caller\'s clock may be when its X509-SVID is ' +
@@ -12041,6 +12226,25 @@ const SETTINGS = [
                    'two realms cannot share one socket',
     description: 'Where that socket lives when it is on. SPIRE\'s own ' +
                  'default path, for the same reason the Workload API\'s is.' },
+
+  // THE SPIFFE BROKER ENDPOINT (#170, 2026-09-23): the SPIFFE Broker API
+  // (spiffe/standards/SPIFFE_Broker_API.md, Incubating) on a listener of its
+  // own, mutual TLS, per realm like the other SPIFFE sockets.
+  { key: 'spiffe.brokerPort', group: 'SPIFFE',
+    label: 'SPIFFE Broker API TCP port',
+    env: 'STS_SPIFFE_BROKER_PORT', type: 'port', dflt: 0, runtime: false,
+    realmRuntime: true,
+    restartReason: 'the listener is bound when the process starts; a ' +
+                   'REALM\'s is bound when its SPIFFE is turned on, on its ' +
+                   'own address',
+    description: 'The SPIFFE Broker Endpoint: the Broker API ' +
+                 '(SubscribeToX509SVID, SubscribeToX509Bundles, ' +
+                 'FetchJWTSVID, SubscribeToJWTBundles) over gRPC with ' +
+                 'MUTUAL TLS on spiffe.grpcHost. A caller presents an ' +
+                 'X509-SVID naming a broker in spiffe.brokers and asks for ' +
+                 'the SVIDs of a workload it REFERENCES — a process id or a ' +
+                 'Kubernetes pod — which this service attests itself. 0 ' +
+                 '(the default) binds nothing.' },
 
   { key: 'spiffe.grpcHost', group: 'SPIFFE', label: 'gRPC bind address',
     env: 'STS_SPIFFE_GRPC_HOST', type: 'string', dflt: '0.0.0.0',

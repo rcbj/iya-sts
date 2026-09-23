@@ -9485,6 +9485,110 @@ const CODES = [
       'per process (#166).',
     spec: 'the entry is left out of the answer; the caller may get an empty ' +
       'SVID list' },
+  { code: 'STS-SPIFFE-0124',
+    summary: 'The systemd workload attestor is named in ' +
+      'spiffe.workloadAttestors and the optional D-Bus client ' +
+      '(dbus-next) is not installed; every connection it would attest ' +
+      'is refused, naming the package (#170). Logged once per ' +
+      'process.',
+    spec: 'gRPC UNAVAILABLE on every call of the connection' },
+  { code: 'STS-SPIFFE-0125',
+    summary: 'The systemd workload attestor could not name a caller\'s unit: ' +
+      'D-Bus GetUnitByPID or a unit property failed, or the process ' +
+      'the pid named changed while systemd was asked (#170).',
+    spec: 'gRPC UNAVAILABLE on every call of the connection' },
+  { code: 'STS-SPIFFE-0126',
+    summary: 'A docker workload\'s image signature could not be verified ' +
+      'because nothing to verify it with is configured: no cosign ' +
+      'public key file, no verified TUF trust root and no pinned ' +
+      'trusted_root.json, or a file that could not be read (#170).',
+    spec: 'gRPC UNAVAILABLE on every call of the connection' },
+  { code: 'STS-SPIFFE-0127',
+    summary: 'A docker workload\'s cosign signature or attestation could not ' +
+      'be fetched: its registry is not in ' +
+      'spiffe.dockerSigstoreAllowedRegistries, the registry refused ' +
+      'or failed, or a blob did not match its digest (#170).',
+    spec: 'gRPC UNAVAILABLE on every call of the connection' },
+  { code: 'STS-SPIFFE-0128',
+    summary: 'A docker workload\'s image carried no cosign signature that ' +
+      'verified: the signature under the key or certificate, the ' +
+      'payload\'s manifest digest, the keyless certificate\'s chain to ' +
+      'a Fulcio root, its SCT, or its signer identity (#170).',
+    spec: 'gRPC UNAVAILABLE on every call of the connection' },
+  { code: 'STS-SPIFFE-0129',
+    summary: 'A cosign signature\'s Rekor transparency-log bundle was ' +
+      'missing ' +
+      'or did not verify: no bundle, a signed entry timestamp no ' +
+      'trusted Rekor key verifies, or an entry that names another ' +
+      'signature, key or payload (#170).',
+    spec: 'gRPC UNAVAILABLE on every call of the connection' },
+  { code: 'STS-SPIFFE-0130',
+    summary: 'A docker workload\'s image had no in-toto attestation that ' +
+      'verified, and spiffe.dockerSigstoreIgnoreAttestations is off ' +
+      '(#170).',
+    spec: 'gRPC UNAVAILABLE on every call of the connection' },
+  { code: 'STS-SPIFFE-0131',
+    summary: 'The sigstore TUF refresh failed — a metadata file that did not ' +
+      'verify under the trusted root\'s keys and threshold, a version ' +
+      'that went backwards, expired metadata, or a target whose ' +
+      'length or hash did not match — and the last verified trust ' +
+      'root was kept (#170).',
+    spec: 'the scheduler job spiffe.sigstore-tuf-refresh fails; ' +
+      'attestation goes on with the last verified set' },
+  { code: 'STS-SPIFFE-0132',
+    summary: 'A SPIFFE Broker API call did not carry the broker.spiffe.io: ' +
+      'true metadata header (SPIFFE Broker Endpoint section 3).',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0133',
+    summary: 'A SPIFFE Broker API caller presented no X509-SVID, or one that ' +
+      'did not verify against this trust domain\'s or a federated ' +
+      'bundle (SPIFFE Broker Endpoint section 5).',
+    spec: 'gRPC UNAUTHENTICATED' },
+  { code: 'STS-SPIFFE-0134',
+    summary: 'A SPIFFE Broker API caller\'s X509-SVID verified and names no ' +
+      'broker in spiffe.brokers (SPIFFE Broker API section 4.1).',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0135',
+    summary: 'A SPIFFE Broker API caller named a workload reference type its ' +
+      'entry in spiffe.brokers does not allow (#170).',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0136',
+    summary: 'A SPIFFE Broker API request carried no workload reference, a ' +
+      'malformed one, or a reference type this service does not ' +
+      'understand (SPIFFE Broker API sections 3.1.1, 3.1.4 and 4.8, ' +
+      'WORKLOAD_REFERENCE_INVALID).',
+    spec: 'gRPC INVALID_ARGUMENT' },
+  { code: 'STS-SPIFFE-0137',
+    summary: 'A SPIFFE Broker API reference named a process or pod that does ' +
+      'not exist, or one that stopped while its stream was open ' +
+      '(SPIFFE Broker API sections 4.8 and 4.9, WORKLOAD_NOT_FOUND).',
+    spec: 'gRPC NOT_FOUND' },
+  { code: 'STS-SPIFFE-0138',
+    summary: 'A SPIFFE Broker API reference named a workload no registration ' +
+      'entry entitles to an SVID (SPIFFE Broker API section 4.8, ' +
+      'WORKLOAD_NOT_ENTITLED).',
+    spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0139',
+    summary: 'A SPIFFE Broker API reference could not be attested: a ' +
+      'workload attestor failed, or process references cannot be ' +
+      'attested here without the native module (#170).',
+    spec: 'gRPC UNAVAILABLE' },
+  { code: 'STS-SPIFFE-0140',
+    summary: 'A realm\'s SPIFFE Broker API listener was not bound, ' +
+      'because it ' +
+      'could not be given a mutual-TLS identity or its address is ' +
+      'another realm\'s; it is never bound plain (#170).',
+    spec: 'nothing listening on the port' },
+  { code: 'STS-SPIFFE-0141',
+    summary: 'An entry of spiffe.brokers was refused at the console or ' +
+      '/admin-api: not a SPIFFE ID, or no reference type from pid, ' +
+      'k8s and * (#170).',
+    spec: 'a refused console or management API action' },
+  { code: 'STS-SPIFFE-0142',
+    summary: 'A rootless Podman workload was not attested by the docker ' +
+      'attestor because spiffe.dockerUseRootlessPodman is off, ' +
+      'SPIRE\'s rule; logged once per process (#170).',
+    spec: 'no docker selectors for that workload' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

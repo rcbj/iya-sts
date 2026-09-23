@@ -714,6 +714,12 @@ const JOBS = [
   // declared to authenticate source addresses, and entries selecting this
   // job's own peer: address where it is.
   { file: 'sts_spiffe_grpc.js',          browser: false, local: true },
+  // THE SPIFFE BROKER API (#170, 2026-09-23): a development realm and a
+  // product realm's Broker endpoint over mutual TLS — refused without a
+  // broker SVID, the reference refusals with their google.rpc.ErrorInfo, and
+  // a process and a pod reference answered; the broker list through
+  // /admin-api. `local: true`: this repository's endpoint and API.
+  { file: 'sts_spiffe_broker.js',        browser: false, local: true },
   { file: 'sts_oid4vp_wallet.js',        browser: false, local: true },
   // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
   // foreign credential naming none refused unless its issuer is exempted by

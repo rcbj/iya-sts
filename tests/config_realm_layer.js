@@ -217,6 +217,8 @@ function checkMarker(t) {
     'spiffe.serverSocketEnabled',
     'spiffe.serverSocket',
     'spiffe.serverPort',
+    // #170: the SPIFFE Broker API's listener, bound with the realm's others.
+    'spiffe.brokerPort',
     'spiffe.grpcHost'
   ];
   const marked = config.SETTINGS.filter(function (s) {

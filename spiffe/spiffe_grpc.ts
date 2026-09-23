@@ -9,8 +9,10 @@
 // status.
 //
 // It is a LIBRARY: it registers no HTTP route, and it holds no protocol
-// knowledge — `spiffe_workload.ts` and `spiffe_api.ts` are the two callers and
-// each brings its own handlers. It requires `helpers.js`, `config.js`,
+// knowledge — `spiffe_workload.ts`, `spiffe_api.ts` and, since #170,
+// `spiffe_broker.ts` (the SPIFFE Broker API, the `broker` surface, whose
+// caller check is `prepareBrokerCall()`) are the callers and each brings its
+// own handlers. It requires `helpers.js`, `config.js`,
 // `audit.js` and `admin_stats.js`, none of which requires it back.
 //
 // ---------------------------------------------------------------------------
@@ -37,8 +39,8 @@
 // ---------------------------------------------------------------------------
 // THE `.proto` FILES ARE VENDORED AND ARE LOAD-BEARING
 //
-// `protos/workloadapi.proto` is a verbatim copy of the SPIFFE project's own,
-// and `protos/spire/**` of the `spire-api-sdk`'s. They are read AT REQUIRE
+// `protos/workloadapi.proto` and `protos/brokerapi.proto` are verbatim copies
+// of the SPIFFE project's own, and `protos/spire/**` of the `spire-api-sdk`'s. They are read AT REQUIRE
 // TIME, at module scope, and a missing one is not a degraded feature — this
 // module does not load. That is the same decision `bbs2023.js` makes about
 // `contexts/`, and for a similar reason: a service that advertised the Workload
@@ -133,6 +135,10 @@ const LOAD_OPTIONS = {
 
 const WORKLOAD_PROTO = 'workloadapi.proto';
 
+// THE SPIFFE BROKER API (#170): `spiffe/standards/brokerapi.proto`, verbatim,
+// service `spiffe.broker.API`.
+const BROKER_PROTO = 'brokerapi.proto';
+
 const SERVER_PROTOS = [
   'spire/api/server/entry/v1/entry.proto',
   'spire/api/server/agent/v1/agent.proto',
@@ -182,7 +188,7 @@ const RESTRICTED_SOCKETS = new Map<string, boolean>();
 
 // The services `SpiffeGrpc.wire()` names.
 type ServiceName = 'workload' | 'entry' | 'agent' | 'bundle' | 'svid' |
-  'trustdomain' | 'debug';
+  'trustdomain' | 'debug' | 'broker';
 
 class SpiffeGrpc {
   constructor(private readonly deps: SpiffeGrpcDeps) {
@@ -238,7 +244,8 @@ class SpiffeGrpc {
       svid: DEFINITIONS.server['spire.api.server.svid.v1.SVID'],
       trustdomain:
         DEFINITIONS.server['spire.api.server.trustdomain.v1.TrustDomain'],
-      debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug']
+      debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug'],
+      broker: DEFINITIONS.broker['spiffe.broker.API']
     };
     SERVICES = services;
     Object.keys(services).forEach(function (name) {
@@ -259,8 +266,9 @@ class SpiffeGrpc {
     log.debug('Entering SpiffeGrpc.loadDefinitions().');
     const workload = loader.loadSync(WORKLOAD_PROTO, LOAD_OPTIONS);
     const server = loader.loadSync(SERVER_PROTOS, LOAD_OPTIONS);
+    const broker = loader.loadSync(BROKER_PROTO, LOAD_OPTIONS);
     log.debug('Leaving SpiffeGrpc.loadDefinitions().');
-    return { workload: workload, server: server };
+    return { workload: workload, server: server, broker: broker };
   }
 
   // What each surface publishes, for `/spiffe` and `/admin/sts-metadata` —
@@ -302,6 +310,20 @@ class SpiffeGrpc {
     }
     log.debug("Leaving SpiffeGrpc.securityHeaderPresent().");
     return false;
+  }
+
+  // THE BROKER ENDPOINT'S HEADER (#170): SPIFFE Broker Endpoint section 3 —
+  // `broker.spiffe.io` with the value `true`, case sensitive, and SPIRE's
+  // check (`verifyBrokerSecurityHeader()`) is exactly one value, exactly
+  // that. Stricter than the Workload API's reading above, because the
+  // specification says "case sensitive" here and nothing there.
+  brokerHeaderPresent(call) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeGrpc.brokerHeaderPresent().");
+    const values = call && call.metadata
+      ? call.metadata.get(BROKER_SECURITY_HEADER) || [] : [];
+    log.debug("Leaving SpiffeGrpc.brokerHeaderPresent().");
+    return values.length === 1 && String(values[0]) === 'true';
   }
 
   // ---------------------------------------------------------------------------
@@ -387,7 +409,11 @@ class SpiffeGrpc {
     log.debug("Entering SpiffeGrpc.errorToStatus().");
     if (err && typeof err.code === 'number') {
       log.debug("Leaving SpiffeGrpc.errorToStatus().");
-      return { code: err.code, details: err.message };
+      // `metadata` carries a `grpc-status-details-bin` where a refusal has
+      // one — the Broker API's google.rpc.ErrorInfo (#170).
+      return err.metadata
+        ? { code: err.code, details: err.message, metadata: err.metadata }
+        : { code: err.code, details: err.message };
     }
     log.error(errorCodes.tag('STS-SPIFFE-0001') +
               'spiffe: ' + where + ' threw something that was not a status ' +
@@ -688,6 +714,10 @@ class SpiffeGrpc {
                          'will be issued until it is turned back on, which ' +
                          'needs no restart.') };
     }
+    if (surface === 'broker') {
+      log.debug('Leaving SpiffeGrpc.prepareCall(). The broker endpoint.');
+      return this.prepareBrokerCall(call);
+    }
     if (surface === 'workload' && this.requireSecurityHeader() &&
         !this.securityHeaderPresent(call)) {
       log.debug('Leaving SpiffeGrpc.prepareCall(). No security header.');
@@ -817,6 +847,59 @@ class SpiffeGrpc {
     return { caller: caller, refusal: null };
   }
 
+  // ---------------------------------------------------------------------------
+  // A SPIFFE BROKER API CALL (#170), in the order the specification's error
+  // table implies and SPIRE's endpoint checks: the header (INVALID_ARGUMENT,
+  // before anything is asked of the caller), then WHO — an X509-SVID over
+  // the mutual-TLS handshake, verified against this trust domain's or a
+  // federated bundle (UNAUTHENTICATED) — then whether that identity is a
+  // broker here (PERMISSION_DENIED). The broker is put on the caller as
+  // `caller.broker`, where `spiffe_broker.ts` reads which reference types it
+  // may use. An accepted broker is an authentication, recorded through the
+  // same funnel as the SPIRE Server API's callers, so it has a directory
+  // entry like every other identity.
+  //
+  // **THE HANDSHAKE ASKS FOR A CERTIFICATE AND THIS REFUSES THE CALL** rather
+  // than the handshake refusing the connection: the specification allows
+  // either (Broker Endpoint section 6 says UNAUTHENTICATED is "unlikely to be
+  // observed" because most implementations refuse at TLS), and refusing here
+  // lets a broker from a FEDERATED trust domain — which OpenSSL could not
+  // verify against this realm's anchors — be verified by `spiffe_auth.ts`
+  // like any other presented SVID, and lets a client see a status that says
+  // why.
+  // ---------------------------------------------------------------------------
+  prepareBrokerCall(call) {
+    const { log, auth, errorCodes } = this.deps;
+    log.debug('Entering SpiffeGrpc.prepareBrokerCall().');
+    if (!this.brokerHeaderPresent(call)) {
+      log.debug('Leaving SpiffeGrpc.prepareBrokerCall(). No header.');
+      return { caller: null, errorCode: 'STS-SPIFFE-0132',
+               refusal: this.invalidArgument('security header missing from ' +
+                 'request: every call to the SPIFFE Broker Endpoint must ' +
+                 'carry the metadata header "' + BROKER_SECURITY_HEADER +
+                 ': true" (SPIFFE Broker Endpoint section 3).') };
+    }
+    const caller = auth.callerOf(call, 'broker');
+    const verdict = auth.brokerOf(caller);
+    if (!verdict.broker) {
+      log.debug('Leaving SpiffeGrpc.prepareBrokerCall(). Refused.');
+      return { caller: caller, errorCode: verdict.errorCode,
+               refusal: this.fromDescriptor(verdict) };
+    }
+    caller.broker = verdict.broker;
+    try {
+      call.spiffeCaller = caller;
+    } catch (e) {
+      // See prepareCall(): a frozen call object would be a grpc-js change.
+      log.error(errorCodes.tag('STS-SPIFFE-0007') +
+                'spiffe: the broker could not be attached to the call (' +
+                e.message + ').');
+    }
+    auth.recordCaller(caller);
+    log.debug('Leaving SpiffeGrpc.prepareBrokerCall(). ' + caller.spiffeId);
+    return { caller: caller, refusal: null };
+  }
+
   // The audit and metrics row for one gRPC call. `channel: 'grpc'` is a new one
   // beside http, ldap, ldaps and internal, and it is a channel rather than a
   // protocol for the same reason those are: it says HOW the call arrived, which
@@ -849,8 +932,8 @@ class SpiffeGrpc {
       // row must not imply an identity nothing established.
       actor: (caller && caller.authenticated) ? caller.spiffeId : '',
       protocol: surface === 'workload' ? 'SPIFFE Workload API' :
-                'SPIRE Server ' +
-          'API',
+                surface === 'broker' ? 'SPIFFE Broker API' :
+                'SPIRE Server API',
       channel: 'grpc',
       target: method,
       errorCode: code,
@@ -953,7 +1036,11 @@ class SpiffeGrpc {
     const { log } = this.deps;
     log.debug("Entering SpiffeGrpc.dispatchUnary().");
     const pool = this.requestPool();
-    if (!pool || typeof pool.runOperation !== 'function') {
+    // A surface whose methods are not in the worker table stays here — the
+    // Broker API (#170), whose references are attested by the process that
+    // holds the pidfds and the attestors' connections.
+    if (!pool || typeof pool.runOperation !== 'function' ||
+        DISPATCHED_SURFACES.indexOf(surface) < 0) {
       log.debug("Leaving SpiffeGrpc.dispatchUnary().");
       return Promise.resolve({ dispatched: false });
     }
@@ -1248,6 +1335,18 @@ class SpiffeGrpc {
             call.write(message);
             log.debug("Leaving push().");
             return true;
+          }, function end(err) {
+            log.debug("Entering end().");
+            // A handler ENDING the stream with a status — the Broker API's
+            // "the workload has stopped" (#170): no later message is sent
+            // for it, and the broker is told why.
+            if (!open) {
+              log.debug("Leaving end(). Already closed.");
+              return;
+            }
+            open = false;
+            call.emit('error', self.errorToStatus(err, method));
+            log.debug("Leaving end().");
           });
         })
         .then(function (first) {
@@ -1749,8 +1848,32 @@ class SpiffeGrpc {
   // a reason nobody could see, and `GET /spiffe` says which of the two it got.
   // ---------------------------------------------------------------------------
   async serverApiCredentials() {
-    const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
+    const { log } = this.deps;
     log.debug('Entering SpiffeGrpc.serverApiCredentials().');
+    log.debug('Leaving SpiffeGrpc.serverApiCredentials().');
+    return this.svidServerCredentials('SPIRE Server API');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER ENDPOINT'S CREDENTIALS (#170): the same server SVID and
+  // the same request-but-not-require handshake as the SPIRE Server API —
+  // `spiffe://<trust domain>/spire/server`, which is the "expected SPIFFE-ID
+  // of the SPIFFE provider" a broker is told to check (Broker Endpoint
+  // section 5). A call that presented nothing is refused UNAUTHENTICATED by
+  // `prepareBrokerCall()`; see there for why the refusal is not the
+  // handshake's.
+  // ---------------------------------------------------------------------------
+  async brokerCredentials() {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeGrpc.brokerCredentials().');
+    log.debug('Leaving SpiffeGrpc.brokerCredentials().');
+    return this.svidServerCredentials('SPIFFE Broker API');
+  }
+
+  // Both listeners' credentials; `surface` names the listener in the log.
+  async svidServerCredentials(surface: string) {
+    const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
+    log.debug('Entering SpiffeGrpc.svidServerCredentials(). ' + surface);
     await ca.ready();
     const identity = spiffeId.serverId(ca.trustDomain());
     // ---------------------------------------------------------------------
@@ -1818,20 +1941,20 @@ class SpiffeGrpc {
       credentials._getConstructorOptions().rejectUnauthorized = false;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
-                'spiffe: the SPIRE Server API ' +
+                'spiffe: the ' + surface + ' ' +
                 'TLS listener could not be set to ' +
                 'request-but-not-require a client certificate (' + e.message +
-                '). It will REFUSE any client that presents none, which ' +
-                'means AttestAgent cannot be reached over TCP. This is a ' +
-                'grpc-js change rather than anything a caller did.');
+                '). It will REFUSE any client that presents none at the ' +
+                'handshake — on the SPIRE Server API that means AttestAgent ' +
+                'cannot be reached over TCP. This is a grpc-js change ' +
+                'rather than anything a caller did.');
     }
-    log.info('spiffe: the SPIRE Server API TCP listener is mutual TLS as ' +
+    log.info('spiffe: the ' + surface + ' TCP listener is mutual TLS as ' +
              identity + ' (serial ' + svid.serialHex + ', ' + roots.length +
              ' bytes of trust bundle). A client verifies it against the ' +
              'bundle at the bundle endpoint, presents its own X509-SVID, and ' +
-             'is authorized per method against SPIRE\'s own table — see GET ' +
-             '/spiffe.');
-    log.debug('Leaving SpiffeGrpc.serverApiCredentials().');
+             'is authorized — see GET /spiffe.');
+    log.debug('Leaving SpiffeGrpc.svidServerCredentials().');
     return credentials;
   }
 
@@ -1919,6 +2042,9 @@ let SERVICES: Record<ServiceName, any> | null = null;
 // The refusal is `InvalidArgument`, which is what SPIRE answers.
 // ---------------------------------------------------------------------------
 const SECURITY_HEADER = 'workload.spiffe.io';
+
+// The SPIFFE Broker Endpoint's own (#170) — see `brokerHeaderPresent()`.
+const BROKER_SECURITY_HEADER = 'broker.spiffe.io';
 
 // ---------------------------------------------------------------------------
 // THE gRPC SURFACES AS OPERATIONS: WHAT GOES TO A REQUEST WORKER (2026-09-12).
@@ -2047,6 +2173,7 @@ export = {
     return SERVICES;
   },
   SECURITY_HEADER: SECURITY_HEADER,
+  BROKER_SECURITY_HEADER: BROKER_SECURITY_HEADER,
   methodsOf: slot.forward('methodsOf'),
   statusError: slot.forward('statusError'),
   invalidArgument: slot.forward('invalidArgument'),
@@ -2064,6 +2191,8 @@ export = {
   buildServer: slot.forward('buildServer'),
   bindOne: slot.forward('bindOne'),
   serverApiCredentials: slot.forward('serverApiCredentials'),
+  brokerCredentials: slot.forward('brokerCredentials'),
+  brokerHeaderPresent: slot.forward('brokerHeaderPresent'),
   refreshServerApiCredentials: slot.forward('refreshServerApiCredentials'),
   // Exported for `tests/spire_api_access_policy.js`, which drives the two
   // decisions this function makes directly: the claim is about a DECISION and

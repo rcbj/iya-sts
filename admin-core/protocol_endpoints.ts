@@ -260,6 +260,9 @@ class ProtocolEndpoints {
                                 this.socket('spiffe-workload')],
       '/admin/spiffe/agents': [this.socket('spiffe-server'),
                                this.route('/spiffe/bundle')],
+      // The SPIFFE Broker API's own listener (#170).
+      '/admin/spiffe/brokers': [this.socket('spiffe-broker'),
+                                this.route('/spiffe/bundle')],
       '/admin/xacml': [
         '/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
         '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
@@ -425,6 +428,11 @@ class ProtocolEndpoints {
         log.debug("Entering the spiffe-server socket builder.");
         log.debug("Leaving the spiffe-server socket builder.");
         return self.spiffeRows('server');
+      },
+      'spiffe-broker': function () {
+        log.debug("Entering the spiffe-broker socket builder.");
+        log.debug("Leaving the spiffe-broker socket builder.");
+        return self.spiffeRows('broker');
       }
     };
   }
@@ -541,12 +549,14 @@ class ProtocolEndpoints {
     const here = realms.currentId() === realms.DEFAULT_ID ? '' :
                  realms.currentId();
     const now = server.bindings();
-    const list = surface === 'workload' ? now.workload : now.api;
+    const list = surface === 'workload' ? now.workload
+      : surface === 'broker' ? (now.broker || []) : now.api;
     const rows = list.filter(function (binding) {
       return String(binding.realm || '') === here;
     }).map(function (binding) {
       return {
         name: surface === 'workload' ? 'SPIFFE Workload API (gRPC)' :
+              surface === 'broker' ? 'SPIFFE Broker API (gRPC)' :
               'SPIRE Server API (gRPC)',
         methods: [],
         url: binding.address,

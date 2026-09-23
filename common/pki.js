@@ -119,6 +119,9 @@ const pqc = require('./vendored/pqc');
 // certificate whose key OpenSSL does not parse, which `certificateHoldsKey()`
 // compares against a registered post-quantum JWK.
 const pkijs = require('pkijs');
+// The DER reader pkijs is built on, for the two sigstore extensions pkijs
+// does not parse itself (#170).
+const asn1js = require('asn1js');
 // The table of what active-active mode depends on, for `pki.agreement` (at the
 // bottom of this file). A LEAF over config and bunyan.
 const capabilities = require('../cluster/cluster_capabilities');
@@ -7704,7 +7707,243 @@ async function verifyFidoMdsBlob(token, opts) {
            }) };
 }
 
+
+// ----- sigstore signing certificates and their SCTs (#170) ----------------
+//
+// What `spiffe/spiffe_sigstore.ts` asks of a Fulcio (keyless cosign)
+// signing certificate, answered here because every certificate question
+// this service asks is answered in this module. The path itself is
+// `verifyPathToAnchors()` above, at the certificate's own notBefore — cosign's
+// `TrustedCert()`, which treats the certificate as trusted forever and checks
+// instead that the SIGNATURE was made inside its window.
+
+// Fulcio's extension OIDs (sigstore/fulcio docs/oid-info.md): the OIDC
+// issuer, deprecated raw form and the DER UTF8String that replaced it.
+const OID_FULCIO_ISSUER_V1 = '1.3.6.1.4.1.57264.1.1';
+const OID_FULCIO_ISSUER_V2 = '1.3.6.1.4.1.57264.1.8';
+// RFC 6962's embedded SignedCertificateTimestampList.
+const OID_SCT_LIST = '1.3.6.1.4.1.11129.2.4.2';
+const OID_CODE_SIGNING = '1.3.6.1.5.5.7.3.3';
+
+// A signing certificate's facts: `{ subject, issuer, codeSigning, notBefore,
+// notAfter, spki }`, `subject` being the first non-empty subjectAltName in
+// the order sigstore's `GetSubjectAlternateNames()` lists them (DNS, email,
+// IP, URI, then an otherName's value) — SPIRE's `extractSubject()` — and
+// `issuer` the OIDC issuer extension, the UTF8String form first. null when
+// the bytes are not a certificate.
+function sigstoreSignerFacts(der) {
+  log.debug("Entering sigstoreSignerFacts().");
+  let cert = null;
+  let node = null;
+  try {
+    cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der || [])));
+    node = new nodeCrypto.X509Certificate(Buffer.from(der || []));
+  } catch (e) {
+    log.debug("Caught in sigstoreSignerFacts(): " + ((e && e.message) || e));
+    log.debug("Leaving sigstoreSignerFacts(). Not a certificate.");
+    return null;
+  }
+  const names = { dns: [], email: [], ip: [], uri: [], other: [] };
+  let issuerV1 = '';
+  let issuerV2 = '';
+  let codeSigning = false;
+  (cert.extensions || []).forEach(function (ext) {
+    try {
+      if (ext.extnID === '2.5.29.17') {
+        ((ext.parsedValue && ext.parsedValue.altNames) || [])
+          .forEach(function (name) {
+            if (name.type === 2) names.dns.push(String(name.value));
+            if (name.type === 1) names.email.push(String(name.value));
+            if (name.type === 6) names.uri.push(String(name.value));
+            if (name.type === 7 && name.value && name.value.valueBlock) {
+              const ip = Buffer.from(name.value.valueBlock.valueHexView);
+              names.ip.push(ip.length === 4 ? Array.from(ip).join('.')
+                                            : ip.toString('hex'));
+            }
+            if (name.type === 0 && name.value) {
+              const inner = name.value.value;
+              const block = inner && (inner.valueBlock ||
+                                      (inner[0] && inner[0].valueBlock));
+              if (block && typeof block.value === 'string') {
+                names.other.push(block.value);
+              }
+            }
+          });
+      } else if (ext.extnID === '2.5.29.37') {
+        codeSigning = ((ext.parsedValue && ext.parsedValue.keyPurposes) || [])
+          .map(String).indexOf(OID_CODE_SIGNING) >= 0;
+      } else if (ext.extnID === OID_FULCIO_ISSUER_V1) {
+        issuerV1 = Buffer.from(ext.extnValue.valueBlock.valueHexView)
+          .toString('utf8');
+      } else if (ext.extnID === OID_FULCIO_ISSUER_V2) {
+        const raw = Buffer.from(ext.extnValue.valueBlock.valueHexView);
+        // asn1js declares `result` as the union of every block kind, most of
+        // which have no string value; the check below is what narrows it.
+        const read = /** @type {any} */ (asn1js.fromBER(new Uint8Array(raw)));
+        if (read.offset !== -1 && read.result && read.result.valueBlock &&
+            typeof read.result.valueBlock.value === 'string') {
+          issuerV2 = read.result.valueBlock.value;
+        }
+      }
+    } catch (e) {
+      // An extension pkijs could not read contributes nothing, and the
+      // caller's check fails on what it needed.
+      log.debug("Caught in sigstoreSignerFacts(): " + ((e && e.message) || e));
+    }
+  });
+  const subject = names.dns.concat(names.email, names.ip, names.uri,
+                                   names.other).filter(Boolean)[0] || '';
+  let spki = null;
+  try {
+    spki = Buffer.from(cert.subjectPublicKeyInfo.toSchema().toBER(false));
+  } catch (e) {
+    log.debug("Caught in sigstoreSignerFacts(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving sigstoreSignerFacts(). " + subject);
+  return { subject: subject, issuer: issuerV2 || issuerV1,
+           codeSigning: codeSigning,
+           notBefore: Date.parse(node.validFrom),
+           notAfter: Date.parse(node.validTo), spki: spki,
+           pem: node.toString() };
+}
+
+// RFC 6962 section 3.2: the precertificate TBS an embedded SCT signs is the
+// leaf's TBS without the SCT list extension. null when it cannot be built.
+function precertificateTbs(cert) {
+  log.debug("Entering precertificateTbs().");
+  try {
+    cert.extensions = (cert.extensions || []).filter(function (ext) {
+      return ext.extnID !== OID_SCT_LIST;
+    });
+    const tbs = Buffer.from(cert.encodeTBS().toBER(false));
+    log.debug("Leaving precertificateTbs().");
+    return tbs;
+  } catch (e) {
+    log.debug("Caught in precertificateTbs(): " + ((e && e.message) || e));
+    log.debug("Leaving precertificateTbs(). Unbuildable.");
+    return null;
+  }
+}
+
+// THE EMBEDDED SCTs OF A SIGNING CERTIFICATE (cosign's `VerifyEmbeddedSCT()`,
+// sigstore-go's `VerifySignedCertificateTimestamp()` with a threshold of
+// one): every SCT in the leaf's list is parsed, and the answer is ok when at
+// least one is from a CT log in `logs` (`[{ logIdHex, spki, startMs,
+// endMs }]`), was made inside that log key's window, and verifies over the
+// precertificate entry — version 0, certificate_timestamp, the timestamp,
+// precert_entry, SHA-256 of the ISSUER's SubjectPublicKeyInfo, the TBS
+// without the list, the SCT's extensions. Resolves `{ ok, why }`.
+async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
+  log.debug("Entering verifyEmbeddedScts().");
+  let leaf = null;
+  let issuer = null;
+  try {
+    leaf = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(leafDer)));
+    issuer = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(issuerDer)));
+  } catch (e) {
+    log.debug("Caught in verifyEmbeddedScts(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyEmbeddedScts(). Unreadable.");
+    return { ok: false, why: 'the certificate or its issuer could not be ' +
+             'read' };
+  }
+  const ext = (leaf.extensions || []).filter(function (one) {
+    return one.extnID === OID_SCT_LIST;
+  })[0];
+  if (!ext) {
+    log.debug("Leaving verifyEmbeddedScts(). None.");
+    return { ok: false, why: 'certificate does not include required ' +
+             'embedded SCT' };
+  }
+  let list = null;
+  try {
+    // The same union as above; an OCTET STRING has the hex view, and any
+    // other block throws here and is refused below.
+    const read = /** @type {any} */ (asn1js.fromBER(new Uint8Array(
+      Buffer.from(ext.extnValue.valueBlock.valueHexView))));
+    list = Buffer.from(read.result.valueBlock.valueHexView);
+  } catch (e) {
+    log.debug("Caught in verifyEmbeddedScts(): " + ((e && e.message) || e));
+  }
+  if (!list || list.length < 2 || list.readUInt16BE(0) !== list.length - 2) {
+    log.debug("Leaving verifyEmbeddedScts(). A malformed list.");
+    return { ok: false, why: 'the embedded SCT list is malformed' };
+  }
+  const tbs = precertificateTbs(leaf);
+  let issuerKeyHash = null;
+  try {
+    issuerKeyHash = nodeCrypto.createHash('sha256').update(Buffer.from(
+      issuer.subjectPublicKeyInfo.toSchema().toBER(false))).digest();
+  } catch (e) {
+    log.debug("Caught in verifyEmbeddedScts(): " + ((e && e.message) || e));
+  }
+  if (!tbs || !issuerKeyHash) {
+    log.debug("Leaving verifyEmbeddedScts(). No entry to verify.");
+    return { ok: false, why: 'the precertificate entry could not be built' };
+  }
+  const tbsLength = Buffer.alloc(3);
+  tbsLength.writeUIntBE(tbs.length, 0, 3);
+  const problems = [];
+  let at = 2;
+  while (at + 2 <= list.length) {
+    const size = list.readUInt16BE(at);
+    const sct = list.subarray(at + 2, at + 2 + size);
+    at += 2 + size;
+    if (sct.length !== size || size < 47 || sct[0] !== 0) {
+      problems.push('an SCT that is not version 1');
+      continue;
+    }
+    const logId = sct.subarray(1, 33).toString('hex');
+    const timestamp = Number(sct.readBigUInt64BE(33));
+    const extLength = sct.readUInt16BE(41);
+    const extensions = sct.subarray(43, 43 + extLength);
+    let p = 43 + extLength;
+    if (p + 4 > sct.length) {
+      problems.push('a truncated SCT');
+      continue;
+    }
+    const sigLength = sct.readUInt16BE(p + 2);
+    const signature = sct.subarray(p + 4, p + 4 + sigLength);
+    p += 4 + sigLength;
+    if (p !== sct.length || signature.length !== sigLength) {
+      problems.push('a truncated SCT signature');
+      continue;
+    }
+    const trusted = (logs || []).filter(function (one) {
+      return String(one.logIdHex || '').toLowerCase() === logId;
+    })[0];
+    if (!trusted) {
+      problems.push('an SCT from a CT log not in the trust root (' + logId +
+                    ')');
+      continue;
+    }
+    if ((trusted.startMs && timestamp < trusted.startMs) ||
+        (trusted.endMs && timestamp > trusted.endMs)) {
+      problems.push('an SCT made outside its log key\'s validity');
+      continue;
+    }
+    const time = Buffer.alloc(8);
+    time.writeBigUInt64BE(BigInt(timestamp));
+    const extLen = Buffer.alloc(2);
+    extLen.writeUInt16BE(extensions.length);
+    const signed = Buffer.concat([Buffer.from([0, 0]), time,
+                                  Buffer.from([0, 1]), issuerKeyHash,
+                                  tbsLength, tbs, extLen, extensions]);
+    if (await stsCrypto.verifyWithPublicKey(trusted.spki, signed,
+                                            signature)) {
+      log.debug("Leaving verifyEmbeddedScts(). Verified by " + logId);
+      return { ok: true, why: '' };
+    }
+    problems.push('an SCT whose signature does not verify under its log');
+  }
+  log.debug("Leaving verifyEmbeddedScts(). None verified.");
+  return { ok: false, why: 'no embedded SCT verified: ' +
+           (problems.join('; ') || 'the list is empty') };
+}
+
 module.exports = {
+  // --- sigstore signing certificates (#170) ---
+  sigstoreSignerFacts: sigstoreSignerFacts,
+  verifyEmbeddedScts: verifyEmbeddedScts,
   // --- somebody else's certificates (#40) ---
   certificateFromDer: certificateFromDer,
   certificateBundle: certificateBundle,

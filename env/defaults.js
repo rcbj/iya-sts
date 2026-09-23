@@ -910,107 +910,125 @@ var config = {
 
   // --- SPIFFE ----------------------------------------------------------
   spiffe: {
-    enabled: true,                                                // Enable SPIFFE
-    trustDomain: "example.org",                                   // Trust domain; restart to apply
-    x509KeyType: "ec-p256",                                       // X.509 authority key; restart to apply
-    jwtKeyType: "ec-p256",                                        // JWT authority key; restart to apply
-    caTtl: 86400,                                                 // Authority lifetime (seconds); restart to apply
-    svidTtl: 3600,                                                // X509-SVID lifetime (seconds)
-    jwtSvidTtl: 300,                                              // JWT-SVID lifetime (seconds)
-    refreshHint: 300,                                             // Bundle refresh hint (seconds)
-    svidSubject: "C=US,O=SPIRE",                                  // SVID subject DN
-    caSubject: "CN=sts SPIFFE {kind} ({trustDomain}),O=sts",      // CA subject DN template
-    retainedAuthorities: 4,                                       // Authorities kept published after a rotation
-    agentSvidTtl: 0,                                              // Agent SVID lifetime (seconds)
-    joinTokenTtl: 600,                                            // Join token lifetime (seconds)
-    nodeAttestors: "join_token",                                  // Node attestors accepted
-    attestationChallengeTimeout: 30,                              // Attestation challenge timeout (s)
-    x509popMode: "external_pki",                                  // x509pop mode
-    x509popCaBundle: "",                                          // x509pop trust anchors (PEM)
-    x509popSpiffePrefix: "/spire-exchange/",                      // x509pop SVID path prefix
-    x509popAgentPathTemplate: "",                                 // x509pop agent path template
-    x509popMaxIntermediates: 4,                                   // x509pop intermediates allowed
-    x509popMaxRsaKeySize: 8192,                                   // x509pop largest RSA key (bits)
-    x509popVerifyClientIp: false,                                 // x509pop verifies the client address
-    x509popGroupTemplate: "",                                     // x509pop group template
-    x509popAllowedGroups: "",                                     // x509pop allowed groups
-    sshpopCertAuthorities: "",                                    // sshpop host certificate authorities
-    sshpopCanonicalDomain: "",                                    // sshpop canonical domain
-    sshpopAgentPathTemplate: "",                                  // sshpop agent path template
-    sshpopVerifyClientIp: false,                                  // sshpop verifies the client address
-    tpmDevidCaBundle: "",                                         // tpm_devid DevID trust anchors (PEM)
-    tpmEndorsementCaBundle: "",                                   // tpm_devid endorsement trust anchors (PEM)
-    k8sPsatClusters: "",                                          // k8s_psat clusters (JSON)
-    httpChallengeAllowedDnsPatterns: "",                          // http_challenge allowed host names (regular expressions)
-    httpChallengeRequiredPort: 0,                                 // http_challenge required port
-    httpChallengeAllowNonRootPorts: true,                         // http_challenge allows ports above 1023
-    httpChallengeTofu: true,                                      // http_challenge trusts on first use
-    httpChallengeVerifyClientIp: false,                           // http_challenge verifies the client address
-    awsIidPartition: "aws",                                       // aws_iid partition
-    awsIidAssumeRole: "",                                         // aws_iid role to assume in the node's account
-    awsIidSkipBlockDevice: false,                                 // aws_iid skips the block device check
-    awsIidDisableInstanceProfileSelectors: false,                 // aws_iid skips the IAM role selectors
-    awsIidLocalValidAccountIds: "",                               // aws_iid accounts trusted without the block device check
-    awsIidAgentPathTemplate: "",                                  // aws_iid agent path template
-    awsIidVerifyOrganization: "",                                 // aws_iid organization check (JSON)
-    awsIidEksClusterNames: "",                                    // aws_iid EKS clusters a node must belong to
-    awsIidEndpoint: "",                                           // aws_iid API endpoint override
-    gcpIitProjectIdAllowList: "",                                 // gcp_iit projects allowed
-    gcpIitAgentPathTemplate: "",                                  // gcp_iit agent path template
-    gcpIitUseInstanceMetadata: false,                             // gcp_iit reads the instance from Compute Engine
-    gcpIitAllowedLabelKeys: "",                                   // gcp_iit instance labels made selectors
-    gcpIitAllowedMetadataKeys: "",                                // gcp_iit instance metadata made selectors
-    gcpIitMaxMetadataValueSize: 128,                              // gcp_iit largest metadata value
-    gcpIitServiceAccountFile: "",                                 // gcp_iit service account key file
-    gcpIitCertsUrl: "https://www.googleapis.com/oauth2/v1/certs", // gcp_iit Google certificate URL
-    azureImdsTenants: "",                                         // azure_imds tenants (JSON)
-    azureImdsAgentPathTemplate: "",                               // azure_imds agent path template
-    azureImdsAllowedMetadataDomains: "metadata.azure.com",        // azure_imds signing certificate domains
-    azureImdsTrustBundle: "",                                     // azure_imds extra roots (PEM)
-    azureImdsIntermediateHost: "www.microsoft.com",               // azure_imds intermediate certificate host
-    azureImdsDiscoveryUrl: "https://login.microsoftonline.com",   // azure_imds tenant discovery base URL
-    workloadAttestors: "unix",                                    // Workload attestors
-    workloadProcRoot: "/proc",                                    // Workload attestation /proc root
-    unixDiscoverWorkloadPath: false,                              // unix: attest the executable's path and digest
-    unixWorkloadSizeLimit: 0,                                     // unix: largest executable hashed (bytes)
-    dockerSocketPath: "unix:///var/run/docker.sock",              // docker: Engine API socket
-    dockerApiVersion: "",                                         // docker: Engine API version
-    k8sKubeletReadOnlyPort: 0,                                    // k8s: kubelet read-only port
-    k8sKubeletSecurePort: 0,                                      // k8s: kubelet secure port
-    k8sNodeName: "",                                              // k8s: node name
-    k8sNodeNameEnv: "MY_NODE_NAME",                               // k8s: node name environment variable
-    k8sCertificateFile: "",                                       // k8s: kubelet client certificate file
-    k8sPrivateKeyFile: "",                                        // k8s: kubelet client key file
-    k8sUseAnonymousAuthentication: false,                         // k8s: anonymous to the kubelet
-    k8sTokenFile: "",                                             // k8s: kubelet bearer token file
-    k8sSkipKubeletVerification: false,                            // k8s: skip kubelet certificate verification (development only)
-    k8sKubeletCaFile: "",                                         // k8s: kubelet CA file
-    k8sMaxPollAttempts: 60,                                       // k8s: pod list attempts
-    k8sPollRetryIntervalMs: 500,                                  // k8s: pod list retry interval (ms)
-    k8sDisableContainerSelectors: false,                          // k8s: pod selectors only
-    k8sEnableNamespaceLabels: false,                              // k8s: namespace label selectors
-    maxJoinTokens: 256,                                           // Unspent join tokens held
-    maxPageSize: 1000,                                            // Largest page a List* returns
-    maxRecordedConnections: 512,                                  // mTLS connections remembered
-    autoCreateEntries: true,                                      // Invent a registration entry on first sight
-    requireSecurityHeader: true,                                  // Require the workload.spiffe.io header
-    trustLocalSocket: true,                                       // Trust the SPIRE Server API socket as local
-    adminIds: "",                                                 // Administrator SPIFFE IDs
-    clockSkew: 60,                                                // Clock skew (s)
-    attestWorkloads: true,                                        // Match Workload API callers on selectors (off: development only)
-    acceptAssertedSelectors: false,                               // Believe selectors a workload asserts (development only)
-    maxEntries: 500,                                              // Maximum registration entries
-    maxAgents: 200,                                               // Maximum attested agents
-    maxFederatedBundles: 32,                                      // Maximum federated bundles
-    bundlePath: "/spiffe/bundle",                                 // Bundle endpoint path; restart to apply
-    workloadSocketEnabled: true,                                  // Workload API on a Unix socket; restart to apply
-    workloadSocket: "/tmp/spire-agent/public/api.sock",           // Workload API socket path; restart to apply
-    workloadPort: 8092,                                           // Workload API TCP port; restart to apply
-    workloadTcpSourceAuthenticated: false,                        // Workload API TCP: the network authenticates source addresses; restart to apply
-    serverPort: 8181,                                             // SPIRE Server API TCP port; restart to apply
-    serverSocketEnabled: false,                                   // SPIRE Server API on a Unix socket; restart to apply
-    serverSocket: "/tmp/spire-server/private/api.sock",           // SPIRE Server API socket path; restart to apply
-    grpcHost: "0.0.0.0"                                           // gRPC bind address; restart to apply
+    enabled: true,                                                            // Enable SPIFFE
+    trustDomain: "example.org",                                               // Trust domain; restart to apply
+    x509KeyType: "ec-p256",                                                   // X.509 authority key; restart to apply
+    jwtKeyType: "ec-p256",                                                    // JWT authority key; restart to apply
+    caTtl: 86400,                                                             // Authority lifetime (seconds); restart to apply
+    svidTtl: 3600,                                                            // X509-SVID lifetime (seconds)
+    jwtSvidTtl: 300,                                                          // JWT-SVID lifetime (seconds)
+    refreshHint: 300,                                                         // Bundle refresh hint (seconds)
+    svidSubject: "C=US,O=SPIRE",                                              // SVID subject DN
+    caSubject: "CN=sts SPIFFE {kind} ({trustDomain}),O=sts",                  // CA subject DN template
+    retainedAuthorities: 4,                                                   // Authorities kept published after a rotation
+    agentSvidTtl: 0,                                                          // Agent SVID lifetime (seconds)
+    joinTokenTtl: 600,                                                        // Join token lifetime (seconds)
+    nodeAttestors: "join_token",                                              // Node attestors accepted
+    attestationChallengeTimeout: 30,                                          // Attestation challenge timeout (s)
+    x509popMode: "external_pki",                                              // x509pop mode
+    x509popCaBundle: "",                                                      // x509pop trust anchors (PEM)
+    x509popSpiffePrefix: "/spire-exchange/",                                  // x509pop SVID path prefix
+    x509popAgentPathTemplate: "",                                             // x509pop agent path template
+    x509popMaxIntermediates: 4,                                               // x509pop intermediates allowed
+    x509popMaxRsaKeySize: 8192,                                               // x509pop largest RSA key (bits)
+    x509popVerifyClientIp: false,                                             // x509pop verifies the client address
+    x509popGroupTemplate: "",                                                 // x509pop group template
+    x509popAllowedGroups: "",                                                 // x509pop allowed groups
+    sshpopCertAuthorities: "",                                                // sshpop host certificate authorities
+    sshpopCanonicalDomain: "",                                                // sshpop canonical domain
+    sshpopAgentPathTemplate: "",                                              // sshpop agent path template
+    sshpopVerifyClientIp: false,                                              // sshpop verifies the client address
+    tpmDevidCaBundle: "",                                                     // tpm_devid DevID trust anchors (PEM)
+    tpmEndorsementCaBundle: "",                                               // tpm_devid endorsement trust anchors (PEM)
+    k8sPsatClusters: "",                                                      // k8s_psat clusters (JSON)
+    httpChallengeAllowedDnsPatterns: "",                                      // http_challenge allowed host names (regular expressions)
+    httpChallengeRequiredPort: 0,                                             // http_challenge required port
+    httpChallengeAllowNonRootPorts: true,                                     // http_challenge allows ports above 1023
+    httpChallengeTofu: true,                                                  // http_challenge trusts on first use
+    httpChallengeVerifyClientIp: false,                                       // http_challenge verifies the client address
+    awsIidPartition: "aws",                                                   // aws_iid partition
+    awsIidAssumeRole: "",                                                     // aws_iid role to assume in the node's account
+    awsIidSkipBlockDevice: false,                                             // aws_iid skips the block device check
+    awsIidDisableInstanceProfileSelectors: false,                             // aws_iid skips the IAM role selectors
+    awsIidLocalValidAccountIds: "",                                           // aws_iid accounts trusted without the block device check
+    awsIidAgentPathTemplate: "",                                              // aws_iid agent path template
+    awsIidVerifyOrganization: "",                                             // aws_iid organization check (JSON)
+    awsIidEksClusterNames: "",                                                // aws_iid EKS clusters a node must belong to
+    awsIidEndpoint: "",                                                       // aws_iid API endpoint override
+    gcpIitProjectIdAllowList: "",                                             // gcp_iit projects allowed
+    gcpIitAgentPathTemplate: "",                                              // gcp_iit agent path template
+    gcpIitUseInstanceMetadata: false,                                         // gcp_iit reads the instance from Compute Engine
+    gcpIitAllowedLabelKeys: "",                                               // gcp_iit instance labels made selectors
+    gcpIitAllowedMetadataKeys: "",                                            // gcp_iit instance metadata made selectors
+    gcpIitMaxMetadataValueSize: 128,                                          // gcp_iit largest metadata value
+    gcpIitServiceAccountFile: "",                                             // gcp_iit service account key file
+    gcpIitCertsUrl: "https://www.googleapis.com/oauth2/v1/certs",             // gcp_iit Google certificate URL
+    azureImdsTenants: "",                                                     // azure_imds tenants (JSON)
+    azureImdsAgentPathTemplate: "",                                           // azure_imds agent path template
+    azureImdsAllowedMetadataDomains: "metadata.azure.com",                    // azure_imds signing certificate domains
+    azureImdsTrustBundle: "",                                                 // azure_imds extra roots (PEM)
+    azureImdsIntermediateHost: "www.microsoft.com",                           // azure_imds intermediate certificate host
+    azureImdsDiscoveryUrl: "https://login.microsoftonline.com",               // azure_imds tenant discovery base URL
+    workloadAttestors: "unix",                                                // Workload attestors
+    workloadProcRoot: "/proc",                                                // Workload attestation /proc root
+    unixDiscoverWorkloadPath: false,                                          // unix: attest the executable's path and digest
+    unixWorkloadSizeLimit: 0,                                                 // unix: largest executable hashed (bytes)
+    dockerSocketPath: "unix:///var/run/docker.sock",                          // docker: Engine API socket
+    dockerApiVersion: "",                                                     // docker: Engine API version
+    dockerPodmanSocketPath: "unix:///run/podman/podman.sock",                 // docker: rootful Podman API socket
+    dockerPodmanSocketPathTemplate: "unix:///run/user/%d/podman/podman.sock", // docker: rootless Podman API socket template
+    dockerUseRootlessPodman: false,                                           // docker: attest rootless Podman containers
+    dockerSigstoreEnabled: false,                                             // docker: require a verified sigstore image signature
+    dockerSigstorePublicKeyFiles: "",                                         // docker sigstore: cosign public key files
+    dockerSigstoreTrustedRootFile: "",                                        // docker sigstore: pinned trusted_root.json file
+    dockerSigstoreAllowedIdentities: "",                                      // docker sigstore: allowed signer identities
+    dockerSigstoreSkippedImages: "",                                          // docker sigstore: images not verified
+    dockerSigstoreAllowedRegistries: "",                                      // docker sigstore: registries signatures are fetched from
+    dockerSigstoreRegistryAuthFile: "",                                       // docker sigstore: registry credentials file
+    dockerSigstoreSkipTlog: false,                                            // docker sigstore: skip the Rekor transparency log (WARNING)
+    dockerSigstoreIgnoreSct: false,                                           // docker sigstore: skip the certificate transparency SCT (WARNING)
+    dockerSigstoreIgnoreAttestations: false,                                  // docker sigstore: do not require image attestations
+    dockerSigstoreTufUrl: "https://tuf-repo-cdn.sigstore.dev",                // docker sigstore: TUF repository
+    dockerSigstoreTufRootFile: "",                                            // docker sigstore: TUF trusted root.json file
+    dockerSigstoreTufRefreshS: 86400,                                         // docker sigstore: TUF refresh interval (s)
+    k8sKubeletReadOnlyPort: 0,                                                // k8s: kubelet read-only port
+    k8sKubeletSecurePort: 0,                                                  // k8s: kubelet secure port
+    k8sNodeName: "",                                                          // k8s: node name
+    k8sNodeNameEnv: "MY_NODE_NAME",                                           // k8s: node name environment variable
+    k8sCertificateFile: "",                                                   // k8s: kubelet client certificate file
+    k8sPrivateKeyFile: "",                                                    // k8s: kubelet client key file
+    k8sUseAnonymousAuthentication: false,                                     // k8s: anonymous to the kubelet
+    k8sTokenFile: "",                                                         // k8s: kubelet bearer token file
+    k8sSkipKubeletVerification: false,                                        // k8s: skip kubelet certificate verification (development only)
+    k8sKubeletCaFile: "",                                                     // k8s: kubelet CA file
+    k8sMaxPollAttempts: 60,                                                   // k8s: pod list attempts
+    k8sPollRetryIntervalMs: 500,                                              // k8s: pod list retry interval (ms)
+    k8sDisableContainerSelectors: false,                                      // k8s: pod selectors only
+    k8sEnableNamespaceLabels: false,                                          // k8s: namespace label selectors
+    maxJoinTokens: 256,                                                       // Unspent join tokens held
+    maxPageSize: 1000,                                                        // Largest page a List* returns
+    maxRecordedConnections: 512,                                              // mTLS connections remembered
+    autoCreateEntries: true,                                                  // Invent a registration entry on first sight
+    requireSecurityHeader: true,                                              // Require the workload.spiffe.io header
+    trustLocalSocket: true,                                                   // Trust the SPIRE Server API socket as local
+    adminIds: "",                                                             // Administrator SPIFFE IDs
+    brokers: "",                                                              // SPIFFE Broker API: authorized brokers
+    clockSkew: 60,                                                            // Clock skew (s)
+    attestWorkloads: true,                                                    // Match Workload API callers on selectors (off: development only)
+    acceptAssertedSelectors: false,                                           // Believe selectors a workload asserts (development only)
+    maxEntries: 500,                                                          // Maximum registration entries
+    maxAgents: 200,                                                           // Maximum attested agents
+    maxFederatedBundles: 32,                                                  // Maximum federated bundles
+    bundlePath: "/spiffe/bundle",                                             // Bundle endpoint path; restart to apply
+    workloadSocketEnabled: true,                                              // Workload API on a Unix socket; restart to apply
+    workloadSocket: "/tmp/spire-agent/public/api.sock",                       // Workload API socket path; restart to apply
+    workloadPort: 8092,                                                       // Workload API TCP port; restart to apply
+    workloadTcpSourceAuthenticated: false,                                    // Workload API TCP: the network authenticates source addresses; restart to apply
+    serverPort: 8181,                                                         // SPIRE Server API TCP port; restart to apply
+    serverSocketEnabled: false,                                               // SPIRE Server API on a Unix socket; restart to apply
+    serverSocket: "/tmp/spire-server/private/api.sock",                       // SPIRE Server API socket path; restart to apply
+    brokerPort: 0,                                                            // SPIFFE Broker API TCP port; restart to apply
+    grpcHost: "0.0.0.0"                                                       // gRPC bind address; restart to apply
   },
 
   // --- Persistence -----------------------------------------------------

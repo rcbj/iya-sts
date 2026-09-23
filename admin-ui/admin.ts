@@ -239,6 +239,7 @@ const spiffeListeners = adminViews.spiffeListeners;
 const spiffeJson = adminViews.spiffeJson;
 const spiffeEntriesJson = adminViews.spiffeEntriesJson;
 const spiffeAgentsJson = adminViews.spiffeAgentsJson;
+const spiffeBrokersJson = adminViews.spiffeBrokersJson;
 const spiffeSelectorText = adminViews.spiffeSelectorText;
 const newUserContainer = adminViews.newUserContainer;
 const CREDENTIAL_CHOICES = adminViews.CREDENTIAL_CHOICES;
@@ -350,6 +351,7 @@ const samlAssertionsAction = adminActions.samlAssertionsAction;
 const sessionsAction = adminActions.sessionsAction;
 const signalsAction = adminActions.signalsAction;
 const spiffeAgentsAction = adminActions.spiffeAgentsAction;
+const spiffeBrokersAction = adminActions.spiffeBrokersAction;
 const spiffeCommaList = adminActions.spiffeCommaList;
 const spiffeEntriesAction = adminActions.spiffeEntriesAction;
 const spiffeUnknownAction = adminActions.spiffeUnknownAction;
@@ -1595,6 +1597,12 @@ const SECTIONS = [
                    'configuration — this service wrote all of it when the ' +
                    'agent attested — which is why nothing on an agent is ' +
                    'editable and the ban is the only control.' },
+          { path: '/admin/spiffe/brokers', label: 'Brokers',
+            blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
+                   'and meshes that ask for a workload\'s SVIDs by ' +
+                   'referencing it — and which kinds of reference each may ' +
+                   'use. The list is <code>spiffe.brokers</code>, read on ' +
+                   'every call.' },
         ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
@@ -2670,6 +2678,7 @@ interface AdminConsoleDeps {
   spiffeJson: typeof spiffeJson;
   spiffeEntriesJson: typeof spiffeEntriesJson;
   spiffeAgentsJson: typeof spiffeAgentsJson;
+  spiffeBrokersJson: typeof spiffeBrokersJson;
   spiffeSelectorText: typeof spiffeSelectorText;
   newUserContainer: typeof newUserContainer;
   CREDENTIAL_CHOICES: typeof CREDENTIAL_CHOICES;
@@ -2733,6 +2742,7 @@ interface AdminConsoleDeps {
   sessionsAction: typeof sessionsAction;
   signalsAction: typeof signalsAction;
   spiffeAgentsAction: typeof spiffeAgentsAction;
+  spiffeBrokersAction: typeof spiffeBrokersAction;
   spiffeEntriesAction: typeof spiffeEntriesAction;
   spiffeAction: typeof spiffeAction;
   ssfAction: typeof ssfAction;
@@ -2853,6 +2863,7 @@ class AdminConsole {
       spiffeJson: spiffeJson,
       spiffeEntriesJson: spiffeEntriesJson,
       spiffeAgentsJson: spiffeAgentsJson,
+      spiffeBrokersJson: spiffeBrokersJson,
       spiffeSelectorText: spiffeSelectorText,
       newUserContainer: newUserContainer,
       CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
@@ -2916,6 +2927,7 @@ class AdminConsole {
       sessionsAction: sessionsAction,
       signalsAction: signalsAction,
       spiffeAgentsAction: spiffeAgentsAction,
+      spiffeBrokersAction: spiffeBrokersAction,
       spiffeEntriesAction: spiffeEntriesAction,
       spiffeAction: spiffeAction,
       ssfAction: ssfAction,
@@ -25225,6 +25237,8 @@ class AdminConsole {
       '<th>What a caller presents</th></tr>' +
       this.spiffeListenerRows(json.listeners.workloadApi, 'Workload API') +
       this.spiffeListenerRows(json.listeners.serverApi, 'SPIRE Server API') +
+      this.spiffeListenerRows(json.listeners.brokerApi || [],
+                              'SPIFFE Broker API') +
       '</table>' +
 
       this.spiffeWorkloadAttestation(json.workloadAttestation) +
@@ -25332,6 +25346,8 @@ class AdminConsole {
       '<li><a href="/admin/spiffe/agents">Attested agents</a> &mdash; ' +
       this.esc(json.counts.agents) + ' of at most ' +
       this.esc(json.counts.maxAgents) +
+      '</li><li><a href="/admin/spiffe/brokers">SPIFFE Broker API ' +
+      'brokers</a> &mdash; who may ask for a referenced workload\'s SVIDs' +
       '</li><li><a href="/spiffe">What this is, and what it does not ' +
       'check</a></li><li><a href="/admin/ldap/spiffe">The containers and ' +
       'their schema</a></li><li><a href="/admin-api/spiffe">The same, over ' +
@@ -25712,6 +25728,75 @@ class AdminConsole {
       '</table>';
     log.debug("Leaving AdminConsole.spiffeAgentDetailPage().");
     return { json: { agent: agent }, inner: inner };
+  }
+
+  // THE SPIFFE BROKER API'S BROKERS (#170): the list, a remove per row, and
+  // the form that adds a broker or replaces what it may reference.
+  spiffeBrokersPage(req) {
+    const { log, spiffeBrokersJson, queryWith, spiffeCa } = this.deps;
+    const self = this;
+    log.debug("Entering AdminConsole.spiffeBrokersPage().");
+    const view = spiffeBrokersJson(req);
+    const json = view.json;
+    const listView = this.listViewOf('/admin/spiffe/brokers', req.query);
+    const back = '<input type="hidden" name="back" value="' +
+                 this.esc(queryWith(listView, {})) + '">';
+    const rows = json.brokers.map(function (one) {
+      return '<tr><td><code>' + self.esc(one.id) + '</code></td><td>' +
+        (one.problem ? '<strong>refused:</strong> ' + self.esc(one.problem)
+                     : self.esc(one.referenceTypes.join(', '))) +
+        '</td><td><form method="post" action="/admin/spiffe/brokers">' +
+        '<input type="hidden" name="action" value="remove"><input ' +
+        'type="hidden" name="id" value="' + self.esc(one.id) + '">' + back +
+        '<button class="danger">Remove</button></form></td></tr>';
+    }).join('') || '<tr><td colspan="3">No broker is authorized, so every ' +
+      'call to the SPIFFE Broker API is refused PERMISSION_DENIED.</td></tr>';
+    const listening = json.listeners.filter(function (b) {
+      return b.listening;
+    }).map(function (b) {
+      return '<code>' + self.esc(b.address) + '</code>';
+    }).join(', ');
+    const inner = this.messagesOf(req) +
+      this.note('The SPIFFE Broker API (Incubating) lets a trusted ' +
+      'infrastructure component ask for the SVIDs of a workload it ' +
+      'REFERENCES — a process id, or a Kubernetes pod — which this service ' +
+      'attests itself before answering. It is served with mutual TLS on ' +
+      '<code>spiffe.grpcHost</code> and <code>spiffe.brokerPort</code> (' +
+      (listening ? 'listening on ' + listening
+                 : 'not listening in this realm: <code>spiffe.brokerPort' +
+                   '</code> is ' + this.esc(json.port)) + '). A caller ' +
+      'presents an X509-SVID, and one whose SPIFFE ID is not listed here is ' +
+      'refused.') +
+      this.note('<strong>A process id means something only on the node it ' +
+      'was read on.</strong> The endpoint is TCP, so allow ' +
+      '<code>pid</code> only to a broker running on this host; ' +
+      '<code>k8s</code> resolves a pod in this node\'s kubelet pod list.') +
+      '<form method="get" action="/admin/spiffe/brokers"><div ' +
+      'class="formrow"><label for="q">Search</label><input id="q" name="q" ' +
+      'value="' + this.esc(json.filter.q) + '" size="30" placeholder="a ' +
+      'SPIFFE ID or a reference type"><label for="per">Rows</label><select ' +
+      'id="per" name="per">' + this.perPageOptions(view.paging.perPage) +
+      '</select><button class="secondary">Filter</button></div></form>' +
+      '<table><tr><th>Broker</th><th>May reference</th><th></th></tr>' +
+      rows + '</table>' +
+      this.pageNavPair('/admin/spiffe/brokers', this.filterOnly(listView),
+                       view.paging).head +
+      '<h2>Authorize a broker</h2>' +
+      '<form method="post" action="/admin/spiffe/brokers"><div ' +
+      'class="formrow"><input type="hidden" name="action" value="set">' +
+      back + '<label for="b-id">SPIFFE ID</label><input id="b-id" name="id" ' +
+      'size="44" placeholder="spiffe://' + this.esc(spiffeCa.trustDomain()) +
+      '/ns/mesh/sa/node-proxy"></div><div class="formrow"><label><input ' +
+      'type="checkbox" name="referenceTypes" value="pid"> pid ' +
+      '(WorkloadPIDReference)</label><label><input type="checkbox" ' +
+      'name="referenceTypes" value="k8s"> k8s (a pod)</label><label><input ' +
+      'type="checkbox" name="referenceTypes" value="*"> * (both)</label>' +
+      '<button>Save</button>' +
+      this.note('A broker already listed has its reference types replaced. ' +
+      'An ID from a federated trust domain is verified against that ' +
+      'domain\'s bundle.') + '</div></form>';
+    log.debug("Leaving AdminConsole.spiffeBrokersPage().");
+    return { json: json, inner: inner, title: 'SPIFFE brokers' };
   }
 
   spiffeAgentsView(req) {
@@ -26692,6 +26777,7 @@ class AdminConsole {
             caepJson, caepAction, caepSessionsState, caepApplicationsState,
             riscJson, riscAction, riscAccountsState, riscApplicationsState,
             spiffeAction, spiffeEntriesAction, spiffeAgentsAction,
+            spiffeBrokersAction,
             federationAction, federationDiagram, federation } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.registerRoutes().");
@@ -38387,6 +38473,25 @@ class AdminConsole {
       log.debug("Leaving the admin SPIFFE agents action endpoint.");
     });
 
+    app.get('/admin/spiffe/brokers', function (req, res) {
+      log.debug("Entering the admin SPIFFE brokers page.");
+      const view = self.spiffeBrokersPage(req);
+      self.respond(req, res, view.json, view.title, '/admin/spiffe/brokers',
+                   view.inner);
+      log.debug("Leaving the admin SPIFFE brokers page.");
+    });
+
+    app.post('/admin/spiffe/brokers', function (req, res) {
+      log.debug("Entering the admin SPIFFE brokers action endpoint.");
+      const body = parseBody(req);
+      const result = spiffeBrokersAction(body);
+      const listView = self.listViewFromBack('/admin/spiffe/brokers',
+                                             body.back);
+      self.respondToAction(req, res, '/admin/spiffe/brokers' +
+                           queryWith(listView, {}), result);
+      log.debug("Leaving the admin SPIFFE brokers action endpoint.");
+    });
+
     app.get('/admin/federation', function (req, res) {
       log.debug("Entering the admin federation page.");
       const view = self.federationView(req);
@@ -39030,6 +39135,7 @@ const LIST_PARAMS = {
                             'clientsPage'],
   '/admin/spiffe/entries': ['q', 'origin', 'per', 'page'],
   '/admin/spiffe/agents': ['q', 'per', 'page'],
+  '/admin/spiffe/brokers': ['q', 'per', 'page'],
   // `personq` and `personfrom` are the grant pane's search (2026-09-13), so a
   // grant or a Revoke lands back on the results the reader was working
   // through. `person` is deliberately NOT here: it is the one they picked, and

@@ -168,6 +168,10 @@ import fedLinks = require('../federation/federation_links');
 import spiffeCa = require('../spiffe/spiffe_ca');
 import spiffeRegistry = require('../spiffe/spiffe_registry');
 import spiffeIdLib = require('../spiffe/spiffe_id');
+// The SPIFFE Broker API's broker list (#170): its parser, so the console,
+// /admin-api and the endpoint read `spiffe.brokers` one way. A library that
+// `admin_views.ts` already loaded, so the require moves nothing.
+import spiffeAuth = require('../spiffe/spiffe_auth');
 import signals = require('../ssf/ssf_receivers');
 // WHAT A CREDENTIAL CHANGE SAYS OVER CAEP AND RISC (2026-09-13). A LIBRARY that
 // requires only the logger and reads `ssf/ssf.ts` out of the require cache when
@@ -668,6 +672,7 @@ const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 
 const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
+const SPIFFE_BROKER_ACTIONS = ['set', 'remove'];
 
 // The console names a field the way the record does and the EDITABLE table
 // names it the way the DIRECTORY does. One map, here, rather than two
@@ -765,6 +770,7 @@ interface AdminActionsDeps {
   spiffeCa: typeof spiffeCa;
   spiffeRegistry: typeof spiffeRegistry;
   spiffeIdLib: typeof spiffeIdLib;
+  spiffeAuth: typeof spiffeAuth;
   signals: typeof signals;
   accountSignals: typeof accountSignals;
   accountState: typeof accountState;
@@ -822,6 +828,7 @@ class AdminActions {
       spiffeCa: spiffeCa,
       spiffeRegistry: spiffeRegistry,
       spiffeIdLib: spiffeIdLib,
+      spiffeAuth: spiffeAuth,
       signals: signals,
       accountSignals: accountSignals,
       accountState: accountState,
@@ -5670,6 +5677,69 @@ class AdminActions {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SPIFFE BROKER API'S BROKERS (#170): `/admin/spiffe/brokers` and
+  // `POST /admin-api/spiffe/brokers/:action` (rule 7). `set` adds a broker
+  // or replaces the reference types of one already listed; `remove` takes it
+  // off. Both write `spiffe.brokers` in the current realm through
+  // `config.setOverride()` — the one store, which the endpoint reads on every
+  // call — and an entry that would not parse is refused before anything is
+  // written (STS-SPIFFE-0141).
+  // ---------------------------------------------------------------------------
+  spiffeBrokersAction(body) {
+    const { log, config, spiffeAuth } = this.deps;
+    log.debug("Entering AdminActions.spiffeBrokersAction(). action=" +
+              (body.action || '(none)'));
+    const action = String(body.action || '');
+    if (SPIFFE_BROKER_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Unknown.");
+      return this.spiffeUnknownAction(action, SPIFFE_BROKER_ACTIONS);
+    }
+    const id = String(body.id || '').trim();
+    const listed = spiffeAuth.brokers().filter(function (one) {
+      return one.id !== id;
+    });
+    if (action === 'remove') {
+      const before = spiffeAuth.brokers().length;
+      const result = config.setOverride('spiffe.brokers',
+                                        spiffeAuth.serializeBrokers(listed));
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.spiffeBrokersAction(). Not written.");
+        return this.refusedBy('STS-SPIFFE-0141', result);
+      }
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). remove.");
+      return { ok: true, id: id,
+               message: listed.length < before
+                 ? id + ' is no longer a broker here: its next call to the ' +
+                   'SPIFFE Broker API is refused PERMISSION_DENIED.'
+                 : id + ' was not listed; nothing changed.' };
+    }
+    const types = (Array.isArray(body.referenceTypes)
+      ? body.referenceTypes : this.spiffeCommaList(body.referenceTypes))
+      .map(function (one) {
+        return String(one).trim().toLowerCase();
+      }).filter(Boolean);
+    const parsed = spiffeAuth.parseBrokers(id + '=' + types.join(','))[0];
+    if (!id || !parsed || parsed.problem) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Invalid.");
+      return this.refused('STS-SPIFFE-0141', { ok: false, errors: [
+        (id || 'The broker') + ' cannot be a broker: ' +
+        (parsed && parsed.problem ? parsed.problem
+                                  : 'send `id`, a SPIFFE ID') + '.'] });
+    }
+    const result = config.setOverride('spiffe.brokers',
+      spiffeAuth.serializeBrokers(listed.concat([parsed])));
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.spiffeBrokersAction(). Not written.");
+      return this.refusedBy('STS-SPIFFE-0141', result);
+    }
+    log.debug("Leaving AdminActions.spiffeBrokersAction(). set.");
+    return { ok: true, id: parsed.id, referenceTypes: parsed.types,
+             message: parsed.id + ' may call the SPIFFE Broker API with ' +
+                      parsed.types.join(', ') + ' references, from its next ' +
+                      'call.' };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ACTION FUNCTION. `/admin-api/federation/:action` calls exactly this,
   // with `action` off the URL instead of out of a hidden input — rule 7, and it
   // is what makes "every console control has an API operation" a property of
@@ -6140,6 +6210,7 @@ export = {
   SPIFFE_ENTRY_ACTIONS: SPIFFE_ENTRY_ACTIONS,
   SPIFFE_AGENT_ACTIONS: SPIFFE_AGENT_ACTIONS,
   spiffeUnknownAction: slot.forward('spiffeUnknownAction'),
+  spiffeBrokersAction: slot.forward('spiffeBrokersAction'),
   spiffeEntriesAction: slot.forward('spiffeEntriesAction'),
   SPIFFE_FIELD_ATTRIBUTES: SPIFFE_FIELD_ATTRIBUTES,
   fieldToAttribute: slot.forward('fieldToAttribute'),

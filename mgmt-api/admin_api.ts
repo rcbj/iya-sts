@@ -16527,6 +16527,106 @@ class AdminApi {
             responseDescription: 'That it is gone.' }
         ] },
 
+      // THE SPIFFE BROKER API'S BROKERS (#170): /admin/spiffe/brokers, rule 7.
+      { method: 'GET', path: BASE + '/spiffe/brokers', tag: 'SPIFFE',
+        operationId: 'getSpiffeBrokers',
+        summary: 'Who may call the SPIFFE Broker API, filtered and paged',
+        description: 'The brokers of `spiffe.brokers`: each SPIFFE ID ' +
+                     'authorized to call the SPIFFE Broker API (Incubating) ' +
+                     'on this realm\'s mutual-TLS Broker endpoint, and which ' +
+                     'workload references it may use — `pid` ' +
+                     '(WorkloadPIDReference), `k8s` (a ' +
+                     'KubernetesObjectReference to a pod) or `*`. An entry ' +
+                     'that does not parse is listed with its `problem` and ' +
+                     'authorizes nothing. `listeners` is where the endpoint ' +
+                     'is bound in this realm, and `port` its ' +
+                     '`spiffe.brokerPort`.',
+        mirrors: 'GET /admin/spiffe/brokers',
+        parameters: [
+          { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+            description: 'Substring of a broker\'s SPIFFE ID or reference ' +
+                         'types, case-insensitive.' }
+        ].concat(this.pagingParameters()),
+        responseDescription:
+          'The matching brokers with the paging that found them.',
+        responseSchema: { type: 'object',
+                          description: 'Authorized brokers and their paging.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API SPIFFE brokers endpoint.");
+          self.sendJson(res, 200, adminViews.spiffeBrokersJson(req).json);
+          log.debug("Leaving the management API SPIFFE brokers endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/spiffe/brokers/:action',
+        tag: 'SPIFFE', mirrors: 'POST /admin/spiffe/brokers',
+        handler: function (req, res) {
+          log.debug("Entering the management API SPIFFE brokers action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          const result = adminActions.spiffeBrokersAction(self.withAction(req,
+              body));
+          if (!result.ok) {
+            errorCodes.mark(res,
+                            errorCodes.codeOf(result) || 'STS-SPIFFE-0141');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API SPIFFE brokers action " +
+                    "endpoint.");
+        },
+        actions: [
+          { action: 'set', operationId: 'setSpiffeBroker',
+            summary: 'Authorize a broker, or replace what it may reference',
+            description: 'Writes the broker into `spiffe.brokers` in the ' +
+                         'realm the call is made in; it takes effect on the ' +
+                         'broker\'s next call. `referenceTypes` must name at ' +
+                         'least one of `pid`, `k8s` and `*` — SPIRE\'s ' +
+                         '`allowed_reference_types`, and the endpoint is ' +
+                         'TCP, so each allows that type over TCP. **A ' +
+                         'process id ' +
+                         'means something only on the node it was read on**: ' +
+                         'allow `pid` only to a broker on this host. A ' +
+                         'broker from a federated trust domain is verified ' +
+                         'against that domain\'s bundle.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string',
+                      description: 'The broker\'s SPIFFE ID.' },
+                referenceTypes: { type: 'array',
+                                  items: { type: 'string',
+                                           enum: ['pid', 'k8s', '*'] },
+                                  description: 'What it may reference: ' +
+                                               'one or more of pid, k8s ' +
+                                               'and *.' }
+              },
+              required: ['id', 'referenceTypes'],
+              examples: [{ id: 'spiffe://example.org/ns/mesh/sa/node-proxy',
+                           referenceTypes: ['k8s'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The broker as it now stands.' },
+
+          { action: 'remove', operationId: 'removeSpiffeBroker',
+            summary: 'Take a broker off the list',
+            description: 'Its next call to the SPIFFE Broker API is refused ' +
+                         'PERMISSION_DENIED. SVIDs it already fetched for a ' +
+                         'workload keep working until they expire — SPIFFE ' +
+                         'has no revocation.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                id: { type: 'string',
+                      description: 'The broker\'s SPIFFE ID.' }
+              },
+              required: ['id'],
+              examples: [{ id: 'spiffe://example.org/ns/mesh/sa/node-proxy' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was listed.' }
+        ] },
+
       { method: 'GET', path: BASE + '/spiffe/agents', tag: 'SPIFFE',
         operationId: 'getSpiffeAgents',
         summary: 'The agents that have attested here, filtered and paged',
