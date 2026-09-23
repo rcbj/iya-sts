@@ -1678,9 +1678,37 @@ const SPECS: Spec[] = [
               'mode, recorded in development. `act` nests (section 4.1); ' +
               '`may_act` (section 4.4) is issued from the person\'s own ' +
               'stsMayAct and honoured in every mode; product refuses an ' +
-              'exchange that widens the subject_token\'s scope. Missing: ' +
-              'requested_token_type other than access and refresh tokens ' +
-              'is answered with an access token.' },
+              'exchange that widens the subject_token\'s scope. SINCE #130 ' +
+              'THE TOKEN TYPES ARE READ (section 2.1): subject_token_type ' +
+              'is required, actor_token_type exactly when an actor_token is ' +
+              'sent, each must be access_token, refresh_token, id_token or ' +
+              'jwt, and a token this realm verified must BE its declared ' +
+              'type — each refused invalid_request; and OpenID Connect ' +
+              'Native SSO\'s device-secret actor is its own profile. ' +
+              'Missing: requested_token_type other than access and refresh ' +
+              'tokens is answered with an access token, and SAML ' +
+              'assertions are not exchanged.' },
+  { id: 'oidc-native-sso', name: 'OpenID Connect Native SSO for Mobile ' +
+                                  'Apps 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/openid-connect-native-sso-1_0.html',
+    coverage: 'full (#130, 2026-09-23): the device_sso scope, granted in ' +
+              'every mode only to a client an administrator enabled ' +
+              '(oauthNativeSso and an oauthNativeSsoGroup; by DCR only ' +
+              'through a trusted software statement); a device_secret on ' +
+              'the first app\'s authorization-code grant, with ds_hash and ' +
+              'sid in its ID Token; section 4\'s token exchange (an ID ' +
+              'Token and the device secret, audience the issuer) issuing ' +
+              'the second app tokens in the SAME sign-on session when both ' +
+              'apps share a group, the ds_hash matches and the session ' +
+              'lives; native_sso_supported in discovery; and revocation of ' +
+              'a device secret at /oauth2/revoke. Each device is an entry ' +
+              'in ou=devices, owned by the person and linked to the ' +
+              'applications that used it (the foundation of #164). The ' +
+              'secret lives as long as its sign-on session — a sign-out, an ' +
+              'expiry, a disabled account or SSF session-revoked ends it — ' +
+              'and is never rotated: a later sign-in presenting it re-binds ' +
+              'the same device.' },
   { id: 'rfc9396', name: 'RFC 9396 — Rich Authorization Requests',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9396',
     coverage: 'full: authorization_details at the authorization, token and ' +
@@ -5337,6 +5365,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'that party, and a token exchange of one by anybody else is ' +
           'refused invalid_request in every mode. The identity is the ' +
           'session\'s; the form names only the delegate.' },
+  { path: '/portal/devices', group: 'User portal',
+    name: 'Your devices — ou=devices, and Native SSO',
+    specs: ['oidc-native-sso'],
+    effect: 'lists the signed-in person\'s devices and removes one',
+    what: 'NON-SPEC page (#130). The device entries the person owns, the ' +
+          'applications that used each, and whether its Native SSO secret ' +
+          'is live; removing one takes the secret with it. The identity is ' +
+          'the session\'s; the form names only the device.' },
   { path: '/portal/self-issued', group: 'User portal',
     name: 'Your self-issued IDs — the SIOPv2 keys that sign you in',
     specs: ['siopv2'],
@@ -7316,6 +7352,13 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin-api/users/create-app-password makes one, returned once; ' +
           '/admin-api/users/revoke-app-password takes one away. Mirrors the ' +
           'App passwords block on the person\'s /admin/users page.' },
+  { path: '/admin-api/users/devices', group: 'Management API',
+    name: 'One person\'s devices', specs: ['oidc-native-sso'],
+    what: 'NON-SPEC (#130). The person\'s entries in ou=devices: id, DN, ' +
+          'label, the applications that used each, whether it holds a ' +
+          'Native SSO secret and whether that secret\'s session is live. ' +
+          'POST /admin-api/users/remove-device removes one. Mirrors the ' +
+          'Devices block on the person\'s /admin/users page.' },
   { path: '/admin-api/users/self-issued-subjects', group: 'Management API',
     name: 'One person\'s self-issued (SIOPv2) subjects', specs: ['siopv2'],
     what: 'NON-SPEC (#129). The DIDs and JWK thumbprints enrolled for a ' +
@@ -8909,7 +8952,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/.well-known/openid-configuration', group: 'OAuth 2.0 / OIDC',
     name: 'OpenID Provider Configuration',
     specs: ['oidc-discovery', 'oidc', 'oidc-logout', 'oidc-bclogout',
-            'oidc-ida', 'rfc8414',
+            'oidc-ida', 'oidc-native-sso', 'rfc8414',
                                                    'rfc9207', 'rfc9449'],
     what: 'What an OIDC client looks for first. The RFC 8414 document ' +
           'extended with what OpenID Connect Discovery adds — ' +
@@ -9361,7 +9404,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'state goes back with it. Refusals are pages, not JSON.' },
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
-            'rfc7800', 'rfc9700',
+            'rfc7800', 'rfc9700', 'oidc-native-sso',
             'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
           'token-exchange, and OID4VCI\'s pre-authorized_code with tx_code ' +
@@ -9684,7 +9727,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'endpoint afterwards, through the same function as the console.' },
   { path: '/oauth2/revoke', group: 'OAuth 2.0 / OIDC', name: 'Revocation ' +
       'endpoint',
-    specs: ['rfc7009'], what: 'Revocation that takes effect: introspection ' +
+    specs: ['rfc7009', 'oidc-native-sso'],
+    what: 'A Native SSO device secret is revoked too (#130). ' +
+          'Revocation that takes effect: introspection ' +
                               'then reports inactive. The client ' +
                               'authenticates (in development only when it ' +
                               'presents a credential), revokes only its ' +
@@ -10229,7 +10274,7 @@ SPECS.forEach(function (s) {
 const PROTOCOLS: Protocol[] = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
     specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21',
-            'oidc-session', 'oidc-ida-claims', 'oidc-ida'],
+            'oidc-session', 'oidc-ida-claims', 'oidc-ida', 'oidc-native-sso'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +

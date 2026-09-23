@@ -4309,6 +4309,19 @@ const SETTINGS = [
                  'path and a load generator must not take the feature away ' +
                  'from the names that matter.' },
 
+  // THE DEVICE REGISTER (#130): how many devices one person holds.
+  // `common/devices.ts` argues it.
+  { key: 'oauth2.maxDevicesPerPerson', group: 'OAuth 2.0 / OIDC',
+    label: 'Devices one person may hold',
+    env: 'STS_OAUTH2_MAX_DEVICES_PER_PERSON', type: 'int', dflt: 20,
+    min: 1, max: 1000, runtime: true,
+    description: 'How many device entries (ou=devices) one person holds. A ' +
+                 'Native SSO sign-in from a device not seen before makes ' +
+                 'one; ' +
+                 'at the bound it replaces the person\'s least recently used ' +
+                 'device whose sign-on session has ended — or, failing that, ' +
+                 'their least recently used one.' },
+
   { key: 'oauth2.maxRequestedClaims', group: 'OAuth 2.0 / OIDC',
     label: 'Claims one claims request may name',
     env: 'STS_OAUTH2_MAX_REQUESTED_CLAIMS', type: 'int', dflt: 64,

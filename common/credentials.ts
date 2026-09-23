@@ -4317,6 +4317,25 @@ class Credentials {
     return owner;
   }
 
+  // THE DEVICE REGISTER (#130), for `common/devices.ts`: the directory's
+  // five hooks, each answering nothing (an empty list, false, '') where no
+  // directory is loaded in this process.
+  deviceStore(operation: string, args: any[]): any {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.deviceStore(). ' + operation);
+    const empty = operation === 'listDeviceEntries' ? [] :
+      (operation === 'personDnOf' || operation === 'applicationDnOf') ? '' :
+      false;
+    if (!directory || typeof directory[operation] !== 'function') {
+      log.debug('Leaving Credentials.deviceStore(). No store.');
+      return empty;
+    }
+    const answer = directory[operation].apply(null, args);
+    log.debug('Leaving Credentials.deviceStore().');
+    return answer;
+  }
+
   static readonly APP_PASSWORDS_ATTRIBUTE = 'stsAppPassword';
   static readonly APP_PASSWORD_USE_WRITE_MS = 60 * 1000;
 
@@ -6221,6 +6240,7 @@ export = {
   readSelfIssuedSubjects: slot.forward('readSelfIssuedSubjects'),
   writeSelfIssuedSubjects: slot.forward('writeSelfIssuedSubjects'),
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
+  deviceStore: slot.forward('deviceStore'),
   installInstance: (instance: Credentials): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---

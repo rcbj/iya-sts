@@ -371,6 +371,47 @@ member). A refresh keeps it. An **`acr` marked `essential` with `value` or
 and **not enforced**: an unavailable claim is left out and logged, and a value
 that does not match is answered with the value this service holds.
 
+### Native SSO (OpenID Connect Native SSO for Mobile Apps 1.0)
+
+Apps from one vendor on one device can share a sign-in:
+
+1. **The first app** signs in with the authorization code flow and
+   `scope=openid device_sso`. The token response carries a `device_secret`,
+   and the ID Token a `ds_hash` of it and the `sid` of the session. The app
+   stores both where the vendor's other apps can read them.
+2. **The second app** calls the token endpoint with
+   `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`,
+   `subject_token` the first app's ID Token
+   (`subject_token_type=urn:ietf:params:oauth:token-type:id_token`),
+   `actor_token` the device secret
+   (`actor_token_type=urn:openid:params:token-type:device-secret`) and
+   `audience` this service's issuer, and is issued tokens of its own for the
+   same session.
+
+**Both apps must be enabled** — `oauthNativeSso` TRUE and the same
+`oauthNativeSsoGroup` on their application entries, set on the console or
+through `/admin-api` (a dynamic registration can set them only through a
+trusted software statement). Anything else is refused `invalid_scope` or
+`unauthorized_client`, in every mode.
+
+**The device secret lasts as long as the sign-on session.** Signing out, the
+session expiring, the account being disabled or a Shared Signals
+`session-revoked` all end it; `/oauth2/revoke` revokes it on its own. It is
+never rotated: a later sign-in whose code grant sends it back as
+`device_secret` keeps the same device and the same secret.
+
+**Each device is an entry in the directory** under `ou=devices`, owned by the
+person and linked to every application that used it. People see theirs on
+`/portal/devices`; administrators on the person's page and at
+`GET /admin-api/users/devices`, and either can remove one. A person holds at
+most `oauth2.maxDevicesPerPerson` (20).
+
+**Token exchange reads its token types.** Every RFC 8693 exchange must send
+`subject_token_type` (and `actor_token_type` with an `actor_token`); each
+must be `access_token`, `refresh_token`, `id_token` or `jwt`; and a token this
+service issued must be the type it is declared as. Anything else is refused
+`invalid_request`.
+
 ### Verified claims (OpenID Connect for Identity Assurance 1.0)
 
 A `claims` request may ask for **`verified_claims`** in its `id_token` or

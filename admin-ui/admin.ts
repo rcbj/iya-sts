@@ -12202,6 +12202,49 @@ class AdminConsole {
             : this.note('Recording or removing one needs <strong>Admin ' +
                         'Write</strong>.')));
 
+    // --- devices (#130, 2026-09-23) ----------------------------------------
+    // THE PERSON'S DEVICES: the entries in ou=devices they own, each linked
+    // to the applications that used it, with whether its Native SSO secret
+    // is live, and a Remove each. `GET /admin-api/users/devices` and `POST
+    // /admin-api/users/remove-device` are the same (rule 7).
+    const deviceView = adminViews.devicesJson({ user: key });
+    const deviceRow = function (one) {
+      log.debug("Entering deviceRow().");
+      log.debug("Leaving deviceRow().");
+      return '<tr><td>' + self.esc(one.label) + '<br><code>' +
+        self.esc(one.id) + '</code></td><td>' +
+        (one.applications.length
+          ? one.applications.map(function (dn) {
+              return '<code>' + self.esc(dn) + '</code>';
+            }).join('<br>') : '—') + '</td><td>' +
+        (one.nativeSso ? (one.sessionLive ? 'live' : 'session ended')
+                       : 'none') + '</td><td>' +
+        self.esc(one.lastUsed ? self.whenText(one.lastUsed) : '—') +
+        '</td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="remove-device">' +
+            '<input type="hidden" name="user" value="' + self.esc(key) +
+            '"><input type="hidden" name="id" value="' + self.esc(one.id) +
+            '"><input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + self.esc(back) +
+            '"><button class="danger" type="submit">Remove</button></form>'
+          : '') + '</td></tr>';
+    };
+    const devicesBlock = '<h3>Devices</h3>' +
+      this.note('The phones and computers this person\'s applications run ' +
+                'on, each an entry in <code>ou=devices</code> — made by an ' +
+                'OpenID Connect Native SSO sign-in — linked to the ' +
+                'applications that used it. A live Native SSO secret lets ' +
+                'those apps share one sign-in.') +
+      (deviceView.devices.length
+        ? '<table><tr><th>Device</th><th>Applications</th>' +
+          '<th>Native SSO</th><th>Last used</th><th></th></tr>' +
+          deviceView.devices.map(deviceRow).join('') + '</table>'
+        : this.note('<strong>None.</strong>')) +
+      (state.write ? '' : this.note('Removing one needs <strong>Admin ' +
+                                    'Write</strong>.'));
+
     // --- self-issued IDs (#129, 2026-09-23) --------------------------------
     // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
     // with a Remove each, and a form that enrols one BY VALUE — the
@@ -12268,7 +12311,7 @@ class AdminConsole {
       'href="/admin/webauthn">WebAuthn</a> under Protocols; this is who ' +
       'holds what.') +
       wayIn + totpBlock + keysBlock + recoveryBlock + appPasswordsBlock +
-      selfIssuedBlock + verificationsBlock;
+      devicesBlock + selfIssuedBlock + verificationsBlock;
 
     log.debug("Leaving AdminConsole.mfaSection(). totp=" + mech.totp + ", " +
               allKeys.length +

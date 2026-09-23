@@ -726,6 +726,11 @@ const JOBS = [
   // self-issued sign-in and its refusals, and the Verifier's form_post.
   // `local: true`: this repository's own door.
   { file: 'sts_siop.js',                 browser: false, local: true },
+  // OPENID CONNECT NATIVE SSO AND THE DEVICE REGISTER (#130, 2026-09-23):
+  // the device secret and its ou=devices entry, the section 4 exchange and
+  // its refusals, RFC 8693's token types, a session ending, revocation.
+  // `local: true`: this repository's authorization server and API.
+  { file: 'sts_native_sso.js',           browser: false, local: true },
   // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
   // foreign credential naming none refused unless its issuer is exempted by
   // certificate thumbprint or the rule is own-only, the ldp_vc query asking

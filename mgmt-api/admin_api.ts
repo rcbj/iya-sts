@@ -3355,6 +3355,30 @@ class AdminApi {
           log.debug("Leaving the management API app-passwords endpoint.");
         } },
 
+      // DEVICES, ONE PERSON'S (#130). The list the Devices block on
+      // /admin/users draws.
+      { method: 'GET', path: BASE + '/users/devices', tag: 'Users',
+        operationId: 'getUserDevices',
+        summary: 'One person\'s devices (ou=devices)',
+        description: 'Each device entry the person owns: its `id` and DN, ' +
+                     'what to call it, the DN of every application that has ' +
+                     'used it, whether it holds a Native SSO device secret ' +
+                     'and whether the sign-on session that secret is good ' +
+                     'for is still live, and when it was made and last ' +
+                     'used. Never the secret or its hash.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ],
+        responseDescription: 'The person\'s devices.',
+        handler: function (req, res) {
+          log.debug("Entering the management API devices endpoint.");
+          self.sendJson(res, 200, adminViews.devicesJson(req.query));
+          log.debug("Leaving the management API devices endpoint.");
+        } },
+
       // SELF-ISSUED SUBJECTS, ONE PERSON'S (#129). The list the Self-issued
       // IDs block on /admin/users draws.
       { method: 'GET', path: BASE + '/users/self-issued-subjects',
@@ -4194,6 +4218,33 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The delegate as it now stands.' },
+
+          { action: 'remove-device', operationId: 'removeUserDevice',
+            summary: 'Remove one of somebody\'s devices',
+            description: 'Deletes the device entry from ou=devices, and its ' +
+                         'Native SSO device secret with it: the apps on the ' +
+                         'device can no longer share a sign-in, and sign in ' +
+                         'again. The tokens already issued stand until the ' +
+                         'sign-on session they belong to ends.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                id: { type: 'string',
+                      description: 'The device\'s id, from GET ' +
+                                   '/admin-api/users/devices.' }
+              },
+              required: ['user', 'id'],
+              examples: [{ user: 'alice',
+                           id: '00000000-0000-4000-8000-000000000000' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was removed.' },
 
           { action: 'enrol-self-issued-subject',
             operationId: 'enrolUserSelfIssuedSubject',

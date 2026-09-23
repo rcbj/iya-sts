@@ -300,6 +300,10 @@ import consentScreen = require('./consent_screen');
 // other question: "what did the CLIENT ask for".
 import claimAttributes = require('../common/claim_attributes');
 import identityAssurance = require('../common/identity_assurance');
+// THE DEVICE REGISTER (#130): Native SSO mints and checks its device_secret
+// against `ou=devices`. A library over `credentials.ts`; it requires nothing
+// that requires this file.
+import devices = require('../common/devices');
 // THE ROLE GATE. A LEAF (rule 3): it registers nothing, requires `helpers`,
 // `config` and `error_codes` and nothing else here, and answers "allowed" in
 // any process that never loaded the XACML family — so this require cannot move
@@ -454,6 +458,7 @@ interface OAuth2ServerDeps {
   consentScreen: typeof consentScreen;
   claimAttributes: typeof claimAttributes;
   identityAssurance: typeof identityAssurance;
+  devices: typeof devices;
   gate: typeof gate;
   debuggerAccess: typeof debuggerAccess;
   scopePolicy: typeof scopePolicy;
@@ -770,6 +775,20 @@ class IssuanceRefused extends Error {
 // The two members section 5.5 defines. `userinfo` is the one this service acts
 // on at the endpoint below; `id_token` is honoured where idToken() is built.
 const CLAIMS_REQUEST_MEMBERS = ['userinfo', 'id_token'];
+
+// RFC 8693 SECTION 3's TOKEN TYPES, AS THIS SERVICE READS THEM (#130). A
+// token exchange names what it presents, and until #130 the name was checked
+// as a URI and then ignored. The four a token of this service can be, and
+// Native SSO's device secret — which is only ever an ACTOR, and only beside
+// an ID Token (Native SSO section 4.1).
+const EXCHANGE_TOKEN_TYPES = {
+  'urn:ietf:params:oauth:token-type:access_token': 'access_token',
+  'urn:ietf:params:oauth:token-type:refresh_token': 'refresh_token',
+  'urn:ietf:params:oauth:token-type:id_token': 'id_token',
+  'urn:ietf:params:oauth:token-type:jwt': 'jwt'
+};
+const DEVICE_SECRET_TYPE = 'urn:openid:params:token-type:device-secret';
+const ID_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:id_token';
 
 // A cap, for the reason every other cap in this file has one: the parsed object
 // is copied into a signed token, and a request naming ten thousand claims would
@@ -1315,6 +1334,10 @@ const TOKEN_FORM = vz.looseObject({
   actor_token_type: vt.opt(vt.uri),
   requested_token_type: vt.opt(vt.uri),
   audience: vz.string().max(validation.CAP.URI).optional(),
+  // OpenID Connect Native SSO (#130): a device_secret the first app already
+  // holds, presented with its authorization code so the same device is
+  // bound to the new session (section 3.3).
+  device_secret: vz.string().max(512).optional(),
 
   // RFC 8707, and OpenID4VCI's pre-authorized code transaction code.
   resource: vz.string().max(validation.CAP.URI).optional(),
@@ -1535,6 +1558,7 @@ class OAuth2Server {
       consentScreen: consentScreen,
       claimAttributes: claimAttributes,
       identityAssurance: identityAssurance,
+      devices: devices,
       gate: gate,
       debuggerAccess: debuggerAccess,
       scopePolicy: scopePolicy,
@@ -1726,7 +1750,9 @@ class OAuth2Server {
       // `address` and `phone` since #118: section 5.4's two scopes the
       // UserInfo endpoint answers from the directory entry.
       scopes_supported: ['openid', 'profile', 'email', 'address', 'phone',
-                         'offline_access'].concat(
+                         'offline_access',
+                         // Native SSO section 5 (#130).
+                         'device_sso'].concat(
         config.value('scim.enabled') !== false
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
@@ -2838,6 +2864,8 @@ class OAuth2Server {
     // adds the one it invents under.
     Object.assign(metadata,
                   this.deps.identityAssurance.discoveryMetadata());
+    // OPENID CONNECT NATIVE SSO section 5 (#130).
+    metadata.native_sso_supported = true;
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3899,8 +3927,16 @@ class OAuth2Server {
     // matches a Logout Token's `sid` against the one in the ID Token it holds,
     // so the claim is on while EITHER feature is — and only both settings off
     // restore the tokens issued before either existed.
-    if (opts.session_id && (frontchannel.enabled() || backchannel.enabled())) {
+    // AND NATIVE SSO (#130) NEEDS IT WHATEVER THOSE SAY: the second app's
+    // exchange checks that the ID Token's `sid` names the session the
+    // device_secret is bound to (Native SSO section 3.4).
+    if (opts.session_id && (frontchannel.enabled() || backchannel.enabled() ||
+                            opts.device_secret)) {
       payload.sid = opts.session_id;
+    }
+    // Native SSO section 3.4: `ds_hash`, hashed as at_hash is.
+    if (opts.device_secret) {
+      payload.ds_hash = self.halfHash(opts.device_secret, idAlg);
     }
     if (opts.access_token) {
       payload.at_hash = self.halfHash(opts.access_token, idAlg);
@@ -4326,6 +4362,53 @@ class OAuth2Server {
             ? opts.grantAuthorizationDetails : issuing.authorization_details
         }));
     }
+    // -----------------------------------------------------------------------
+    // OPENID CONNECT NATIVE SSO (#130): THE FIRST APP'S DEVICE_SECRET.
+    //
+    // Section 3.3: an authorization-code grant for `device_sso` and `openid`
+    // returns a device_secret, and the ID Token beside it carries its
+    // `ds_hash` and the `sid` it is good for. The device is an entry in
+    // `ou=devices` (`common/devices.ts`); a secret the app PRESENTED with the
+    // code, for the same person, re-binds that device to this session
+    // instead of making another. The scope reached here only for a client
+    // `scopePolicy` let have it. A device the directory could not store
+    // issues no secret, and the rest of the reply stands.
+    // -----------------------------------------------------------------------
+    // The second app's exchange (section 4.3) hands back the secret it was
+    // given, which is the device's and is never rotated.
+    let deviceSecret = String(opts.native_sso_device_secret || '');
+    if (deviceSecret) {
+      body.device_secret = deviceSecret;
+    }
+    if (!deviceSecret && opts.grant === 'authorization_code' &&
+        opts.session_id &&
+        hasScope(opts.scope, 'device_sso') && hasScope(opts.scope, 'openid')) {
+      const username = String((opts.user && opts.user.username) ||
+                              opts.username || '');
+      const minted = this.deps.devices.issueForSession({
+        username: username, clientId: opts.client_id,
+        sessionId: String(opts.session_id),
+        presented: opts.presented_device_secret || '',
+        label: 'first signed in through ' + String(opts.client_id || ''),
+        isLive: function (sid: string): boolean {
+          return self.sessionIsLive(sid, username);
+        } });
+      if (minted.ok) {
+        deviceSecret = minted.secret;
+        body.device_secret = minted.secret;
+        // Where the realm's session store is the directory's, the device
+        // is the record an administrator reads; the log says it happened.
+        log.info('oauth2: Native SSO — ' + (minted.reused ? 'device ' +
+                 minted.device.id + ' re-bound' : 'device ' +
+                 minted.device.id + ' made') + ' for ' + username +
+                 ' through "' + opts.client_id + '".');
+      } else {
+        log.error(this.deps.errorCodes.tag('STS-OAUTH-0625') + 'oauth2: ' +
+                  'no device_secret was issued to "' + opts.client_id +
+                  '" for ' + username + ': ' + minted.error + '. The rest ' +
+                  'of the token response stands.');
+      }
+    }
     if (hasScope(opts.scope, 'openid')) {
       // From `opts` and not from `issuing`: an ID Token carries no scope claim
       // and its audience is the CLIENT, so neither of the two things above
@@ -4333,7 +4416,8 @@ class OAuth2Server {
       // the resource server and every relying party would refuse its own ID
       // Token.
       body.id_token = await self.idToken(base,
-        Object.assign({}, opts, { access_token: access }));
+        Object.assign({}, opts, { access_token: access,
+                                  device_secret: deviceSecret || undefined }));
     }
     log.debug("Leaving OAuth2Server.tokenSet(). Issued: " +
               Object.keys(body).join(', '));
@@ -5524,6 +5608,247 @@ class OAuth2Server {
   }
 
   // null, or `{ code, error, description, scopes }` to refuse with.
+  // ---------------------------------------------------------------------------
+  // RFC 8693 SECTION 2.1's TOKEN TYPES (#130). `subject_token_type` is
+  // REQUIRED, and `actor_token_type` is required exactly when `actor_token`
+  // is present and must be absent otherwise; each must name a type this
+  // service exchanges. A device secret is Native SSO's actor and nothing
+  // else, beside an ID Token. `null`, or `{ code, description }` for an
+  // `invalid_request` — section 2.2.2's error for a request whose tokens this
+  // server will not take.
+  // ---------------------------------------------------------------------------
+  exchangeTypeProblem(body: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.exchangeTypeProblem().");
+    const subjectType = String(body.subject_token_type || '').trim();
+    const actorType = String(body.actor_token_type || '').trim();
+    const supported = Object.keys(EXCHANGE_TOKEN_TYPES).join(', ');
+    let problem: Json = null;
+    if (!subjectType) {
+      problem = { code: 'STS-OAUTH-0626', description: 'subject_token_type ' +
+                  'is required (RFC 8693 section 2.1).' };
+    } else if (body.actor_token && !actorType) {
+      problem = { code: 'STS-OAUTH-0626', description: 'actor_token_type ' +
+                  'is required when actor_token is present (RFC 8693 ' +
+                  'section 2.1).' };
+    } else if (actorType && !body.actor_token) {
+      problem = { code: 'STS-OAUTH-0626', description: 'actor_token_type ' +
+                  'must not be sent without an actor_token (RFC 8693 ' +
+                  'section 2.1).' };
+    } else if (actorType === DEVICE_SECRET_TYPE && subjectType !==
+               ID_TOKEN_TYPE) {
+      problem = { code: 'STS-OAUTH-0627', description: 'a device secret is ' +
+                  'exchanged only beside an ID Token (OpenID Connect Native ' +
+                  'SSO section 4.1): subject_token_type must be ' +
+                  ID_TOKEN_TYPE + '.' };
+    } else if (subjectType === DEVICE_SECRET_TYPE) {
+      problem = { code: 'STS-OAUTH-0627', description: 'a device secret is ' +
+                  'an actor_token, never the subject (OpenID Connect Native ' +
+                  'SSO section 4.1).' };
+    } else if (!EXCHANGE_TOKEN_TYPES[subjectType]) {
+      problem = { code: 'STS-OAUTH-0627', description: 'subject_token_type "' +
+                  subjectType + '" is not a type this service exchanges; ' +
+                  'it takes ' + supported + '.' };
+    } else if (actorType && actorType !== DEVICE_SECRET_TYPE &&
+               !EXCHANGE_TOKEN_TYPES[actorType]) {
+      problem = { code: 'STS-OAUTH-0627', description: 'actor_token_type "' +
+                  actorType + '" is not a type this service exchanges; it ' +
+                  'takes ' + supported + ', or ' + DEVICE_SECRET_TYPE +
+                  ' for Native SSO.' };
+    }
+    log.debug("Leaving OAuth2Server.exchangeTypeProblem(). " +
+              (problem ? problem.code : 'None.'));
+    return problem;
+  }
+
+  // WHAT A TOKEN THIS REALM ISSUED IS: `access_token` (RFC 9068's `at+jwt`,
+  // the `Bearer` claim), `refresh_token` (encrypted, or `Refresh` once
+  // opened), `id_token` (an OpenID Connect ID Token, which carries no `typ`
+  // claim since #118), or `jwt` for anything else signed here.
+  ownTokenKind(token: Json, claims: Json): string {
+    const { log, refreshTokenCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.ownTokenKind().");
+    const raw = String(token || '');
+    let header: Json = {};
+    try {
+      header = refreshTokenCrypto.isEncrypted(raw) ? {} :
+        JSON.parse(Buffer.from(raw.split('.')[0], 'base64url')
+          .toString('utf8'));
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.ownTokenKind(): " +
+                ((e && e.message) || e));
+      header = {};
+    }
+    const c = claims || {};
+    let kind = 'jwt';
+    if (refreshTokenCrypto.isEncrypted(raw) || c.typ === 'Refresh') {
+      kind = 'refresh_token';
+    } else if (c.typ === 'Bearer' || header.typ === 'at+jwt') {
+      kind = 'access_token';
+    } else if (!c.typ && !c.events && c.sub && c.aud &&
+               header.typ !== 'logout+jwt') {
+      kind = 'id_token';
+    }
+    log.debug("Leaving OAuth2Server.ownTokenKind(). " + kind);
+    return kind;
+  }
+
+  // Whether a token of `kind` may be exchanged as `declaredType`: '' when it
+  // may, the sentence of an `invalid_request` when not. `jwt` takes any
+  // signed token — a refresh token is an encrypted one, not a JWT.
+  kindProblem(declaredType: string, kind: string, which: string): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.kindProblem().");
+    const declared = EXCHANGE_TOKEN_TYPES[declaredType] || '';
+    const fits = declared === 'jwt' ? kind !== 'refresh_token' :
+      declared === kind;
+    log.debug("Leaving OAuth2Server.kindProblem(). " + fits);
+    return fits ? '' : which + ' was declared ' + declaredType + ' and is ' +
+      (kind === 'id_token' ? 'an ID Token' : kind === 'access_token'
+        ? 'an access token' : kind === 'refresh_token' ? 'a refresh token'
+          : 'a JWT of another kind') + ' (RFC 8693 section 2.1: the type ' +
+      'says what the token IS).';
+  }
+
+  // ---------------------------------------------------------------------------
+  // OPENID CONNECT NATIVE SSO FOR MOBILE APPS 1.0, SECTION 4 (#130): THE
+  // SECOND APP'S EXCHANGE.
+  //
+  // The second app presents the ID Token the first app was issued (as the
+  // subject) and the device's secret (as the actor), with `audience` this
+  // authorization server's issuer, and is issued tokens of its own for the
+  // SAME sign-on session. Every check is made in both modes:
+  //
+  //   1. the asking client may take part (the flag and a group);
+  //   2. `audience` is this issuer (section 4.1);
+  //   3. the ID Token is this realm's, by signature — an EXPIRED one is
+  //      accepted, because the first app may have held it for hours and what
+  //      decides is the session (4 and 6) — and it has not been revoked;
+  //   4. the secret names a device, and the ID Token's `ds_hash` is ITS hash
+  //      (section 3.4), so the two were issued together;
+  //   5. the app the ID Token was issued to is in the SAME group;
+  //   6. the device's session is the ID Token's `sid`, and it is live and
+  //      still the device owner's.
+  //
+  // The tokens are issued into that session, so a sign-out ends them with
+  // the rest; the device records that the second app used it; the secret
+  // comes back as it went in (never rotated).
+  // ---------------------------------------------------------------------------
+  async nativeSsoExchange(ctx: Json): Promise<Json> {
+    const { log, errorCodes, applications, devices, stats, authn,
+            stsCrypto } = this.deps;
+    const self = this;
+    const { res, body, client, base } = ctx;
+    log.debug("Entering OAuth2Server.nativeSsoExchange(). client=" +
+              client.client_id);
+    const refuse = function (code: string, error: string,
+                             description: string): Json {
+      log.debug("Entering refuse(). " + code);
+      log.info(errorCodes.tag(code) + 'oauth2: a Native SSO exchange by "' +
+               client.client_id + '" was refused: ' + description);
+      errorCodes.mark(res, code);
+      log.debug("Leaving refuse().");
+      // error-code: none — marked on the line above, by the caller's code.
+      return self.oauthError(res, 400, error, description);
+    };
+    const second = applications.nativeSsoOf(client.client_id);
+    if (!second.enabled) {
+      log.debug("Leaving OAuth2Server.nativeSsoExchange(). Not enabled.");
+      return refuse('STS-OAUTH-0629', 'unauthorized_client', 'this client ' +
+                    'is not enabled for Native SSO (oauthNativeSso and an ' +
+                    'oauthNativeSsoGroup on its application entry).');
+    }
+    const issuer = self.issuerOf(base);
+    if (String(body.audience || '').trim() !== issuer) {
+      log.debug("Leaving OAuth2Server.nativeSsoExchange(). audience.");
+      return refuse('STS-OAUTH-0630', 'invalid_request', 'audience must be ' +
+                    'this authorization server\'s issuer, "' + issuer +
+                    '" (Native SSO section 4.1).');
+    }
+    let idToken: Json = null;
+    try {
+      idToken = helpers.verifyOwnCompactJws(String(body.subject_token),
+        { algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS });
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.nativeSsoExchange(): " +
+                ((e && e.message) || e));
+      idToken = null;
+    }
+    const claims = (idToken && idToken.claims) || {};
+    if (!idToken || claims.iss !== issuer ||
+        self.ownTokenKind(String(body.subject_token), claims) !== 'id_token' ||
+        (claims.jti && stats.isRevoked(claims.jti))) {
+      log.debug("Leaving OAuth2Server.nativeSsoExchange(). The ID Token.");
+      return refuse('STS-OAUTH-0631', 'invalid_request', 'the subject_token ' +
+                    'is not an ID Token this authorization server issued ' +
+                    'and still stands by.');
+    }
+    const secret = String(body.actor_token);
+    const device = devices.bySecret(secret);
+    if (!device || !claims.ds_hash || claims.ds_hash !==
+        self.halfHash(secret, idToken.header.alg)) {
+      log.debug("Leaving OAuth2Server.nativeSsoExchange(). The secret.");
+      return refuse('STS-OAUTH-0632', 'invalid_request', 'the actor_token ' +
+                    'is not the device secret this ID Token was issued with ' +
+                    '(ds_hash, Native SSO section 3.4).');
+    }
+    const firstClient = String(claims.azp || (Array.isArray(claims.aud)
+      ? claims.aud[0] : claims.aud) || '');
+    const first = applications.nativeSsoOf(firstClient);
+    if (!first.enabled || first.group !== second.group) {
+      log.debug("Leaving OAuth2Server.nativeSsoExchange(). Another group.");
+      return refuse('STS-OAUTH-0629', 'unauthorized_client', 'the ID Token ' +
+                    'was issued to "' + firstClient + '", which is not in ' +
+                    'this client\'s Native SSO group.');
+    }
+    const held = device.session ? authn.sessionById(device.session) : null;
+    const owner = held && held.user ? String(held.user.username || '') : '';
+    if (!claims.sid || claims.sid !== device.session ||
+        !self.sessionIsLive(device.session) || !owner ||
+        !devices.listFor(owner).some(function (one: Json) {
+          return one.id === device.id;
+        })) {
+      log.debug("Leaving OAuth2Server.nativeSsoExchange(). The session.");
+      return refuse('STS-OAUTH-0633', 'invalid_request', 'the sign-on ' +
+                    'session this device secret was issued for has ended, ' +
+                    'or is not the ID Token\'s sid.');
+    }
+    const scope = String(body.scope || 'openid');
+    const exchanged = await ctx.issue({
+      jkt: ctx.dpopJkt, user: held.user, client_id: client.client_id,
+      scope: scope, session_id: device.session,
+      // The session's own sign-in, which is what this ID Token asserts:
+      // `authTime` is seconds, as every issuing site reads it.
+      auth_time: held.authTime || undefined, amr: held.amr, acr: held.acr,
+      grant: 'native sso exchange',
+      native_sso_device_secret: secret
+    });
+    exchanged.issued_token_type =
+      'urn:ietf:params:oauth:token-type:access_token';
+    devices.noteUse(device, client.client_id);
+    log.info('oauth2: Native SSO — "' + client.client_id + '" was issued ' +
+             'tokens for ' + owner + ' on device ' + device.id + ', from ' +
+             'the ID Token "' + firstClient + '" holds.');
+    log.debug("Leaving OAuth2Server.nativeSsoExchange(). Issued.");
+    return ctx.respond(exchanged);
+  }
+
+  // IS THIS SIGN-ON SESSION STILL LIVE, and — where `username` is given —
+  // still that person's? Native SSO's device_secret is good for exactly as
+  // long as the answer is yes (#130): a sign-out, an expiry, a disabled
+  // account or SSF session-revoked all end it with nothing else to do.
+  sessionIsLive(sid: Json, username?: Json): boolean {
+    const { log, authn } = this.deps;
+    log.debug("Entering OAuth2Server.sessionIsLive().");
+    const held = sid ? authn.sessionById(String(sid)) : null;
+    const live = !!held && !authn.sessionEnded(held) &&
+      held.authenticated !== false && !!held.user &&
+      (username === undefined || String(held.user.username || '') ===
+                                 String(username));
+    log.debug("Leaving OAuth2Server.sessionIsLive(). " + live);
+    return live;
+  }
+
   scopeRefusal(scope: Json, clientId: Json): Json {
     const { log, scopePolicy } = this.deps;
     log.debug("Entering OAuth2Server.scopeRefusal().");
@@ -11021,6 +11346,9 @@ class OAuth2Server {
         // sign-on session and only arrive at the console as belonging to one
         // because of this line.
         session_id: record.session_id || '', grant: 'authorization_code',
+        // Native SSO section 3.3 (#130): a device_secret the app already
+        // holds, so the same device is bound to this session.
+        presented_device_secret: String(body.device_secret || ''),
         // When the person granted this (#172) — see the code record.
         grant_at: record.granted_at,
         // Off the code too, and for the same reason as the line above it: the
@@ -12223,6 +12551,26 @@ class OAuth2Server {
                                'subject_token is ' +
                                                        'required.');
       }
+      // THE TOKEN TYPES ARE READ (#130, RFC 8693 section 2.1): both are
+      // required where their token is present, each must be a type this
+      // service exchanges, and — once the token is verified below — it must
+      // BE that type.
+      const typeProblem = self.exchangeTypeProblem(body);
+      if (typeProblem) {
+        errorCodes.mark(res, typeProblem.code);
+        log.debug("Leaving OAuth2Server.tokenGrant(). " + typeProblem.code);
+        // error-code: none — marked above: 0626 or 0627, by the problem.
+        return self.oauthError(res, 400, 'invalid_request',
+                               typeProblem.description);
+      }
+      // OPENID CONNECT NATIVE SSO (#130): an ID Token and a device secret.
+      if (String(body.actor_token_type || '').trim() === DEVICE_SECRET_TYPE) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). Native SSO.");
+        return await self.nativeSsoExchange({ req: req, res: res, body: body,
+                                        client: client, base: base,
+                                        issue: issue, respond: respond,
+                                        dpopJkt: dpopJkt });
+      }
       let subject: Json = {};
       // Whether this service is the one that authenticated the subject, or is
       // merely reading a name off somebody else's token. The users page has to
@@ -12291,6 +12639,20 @@ class OAuth2Server {
           subject = {};
         }
       }
+      // A VERIFIED TOKEN MUST BE THE TYPE IT WAS DECLARED AS (#130). One this
+      // realm cannot verify — development's token from anywhere — is held
+      // only to the list of types, above: its shape is somebody else's.
+      const subjectKind = subjectVerified ?
+        self.ownTokenKind(subjectToken, subject) : '';
+      const subjectMismatch = subjectKind &&
+        self.kindProblem(String(body.subject_token_type).trim(), subjectKind,
+                         'subject_token');
+      if (subjectMismatch) {
+        errorCodes.mark(res, 'STS-OAUTH-0628');
+        log.debug("Leaving OAuth2Server.tokenGrant(). The subject_token is " +
+                  "not its declared type.");
+        return self.oauthError(res, 400, 'invalid_request', subjectMismatch);
+      }
       if (subjectVerified && subject.jti && stats.isRevoked(subject.jti)) {
         log.info('oauth2: a token exchange by "' + client.client_id +
                  '" presented a subject_token this realm has revoked.');
@@ -12322,6 +12684,17 @@ class OAuth2Server {
             return self.oauthError(res, 400, 'invalid_request',
                                    'The actor_token is not a token this ' +
                                    'authorization server can verify.');
+          }
+          const actorMismatch = self.kindProblem(
+            String(body.actor_token_type || '').trim(),
+            self.ownTokenKind(String(body.actor_token), actorClaims),
+            'actor_token');
+          if (actorMismatch) {
+            errorCodes.mark(res, 'STS-OAUTH-0628');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The actor_token " +
+                      "is not its declared type.");
+            return self.oauthError(res, 400, 'invalid_request',
+                                   actorMismatch);
           }
           if (actorClaims.jti && stats.isRevoked(actorClaims.jti)) {
             errorCodes.mark(res, 'STS-OAUTH-0557');
@@ -14170,6 +14543,33 @@ class OAuth2Server {
       }
     }
 
+    // A NATIVE SSO DEVICE SECRET (#130), which is no JWT: revoked by
+    // clearing it from its device, which stays. Only a client enabled for
+    // Native SSO may (and, in development, a caller that named none): the
+    // secret is shared by that group's apps and by nobody else.
+    const device = this.deps.devices.bySecret(token);
+    if (device) {
+      if (caller.identified &&
+          !this.deps.applications.nativeSsoOf(caller.clientId).enabled) {
+        errorCodes.mark(res, 'STS-OAUTH-0634');
+        log.debug("Leaving OAuth2Server.revokeRequest(). A device secret, " +
+                  "from a client outside Native SSO.");
+        return self.oauthError(res, 400, 'invalid_grant',
+          'RFC 7009 section 2.1: this is a Native SSO device secret, and ' +
+          'this client is not enabled for Native SSO. Nothing was revoked.');
+      }
+      const done = this.deps.devices.revokeSecret(token);
+      audit.record({
+        action: 'oauth.device-secret.revoke', actor: caller.clientId || '',
+        target: device.id, protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+        outcome: done ? 'success' : 'failure',
+        detail: 'the Native SSO device secret of device ' + device.id +
+                (done ? ' was revoked' : ' could not be revoked')
+      });
+      res.status(200).end();
+      log.debug("Leaving OAuth2Server.revokeRequest(). A device secret.");
+      return undefined;
+    }
     // THE TOKEN. An encrypted refresh token is opened first; `open()` throws
     // for one this realm cannot open, which RFC 7009 answers exactly as an
     // invalid token.
@@ -15605,6 +16005,11 @@ export = {
   // ----------------------------------------------------------------------
   parseClaimsRequest: slot.forward('parseClaimsRequest'),
   requestedClaimsOf: slot.forward('requestedClaimsOf'),
+  // Native SSO (#130): whether a device secret's session still lives, for
+  // the console and the portal's device lists.
+  sessionIsLive: slot.forward('sessionIsLive'),
+  ownTokenKind: slot.forward('ownTokenKind'),
+  exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),
   CLAIMS_REQUEST_MEMBERS: CLAIMS_REQUEST_MEMBERS,
   // A GETTER, so a reader holding this module sees

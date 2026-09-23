@@ -187,6 +187,7 @@ import accountSignals = require('../ssf/account_signals');
 import accountState = require('../common/account_state');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
+import devices = require('../common/devices');
 import backchannel = require('../oauth-oidc/backchannel_logout');
 import oauth2 = require('../oauth-oidc/oauth2');
 import appPermissions = require('../common/app_permissions');
@@ -336,7 +337,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'record-verification', 'remove-verification',
                        // Self-issued subjects (#129, 2026-09-23).
                        'enrol-self-issued-subject',
-                       'remove-self-issued-subject'];
+                       'remove-self-issued-subject',
+                       // Devices (#130, 2026-09-23).
+                       'remove-device'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -396,7 +399,11 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // whose SIOPv2 ID Token then signs the person in, and
   // `remove-self-issued-subject` takes one away. `oid4vc/siop.ts` keeps
   // them; a person enrols their own by proving the key on the portal.
-  'enrol-self-issued-subject', 'remove-self-issued-subject'];
+  'enrol-self-issued-subject', 'remove-self-issued-subject',
+  // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
+  // device entries (`id`), and its Native SSO secret with it — the apps on
+  // it are asked to sign in again. `common/devices.ts` keeps them.
+  'remove-device'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -800,6 +807,7 @@ interface AdminActionsDeps {
   accountState: typeof accountState;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
+  devices: typeof devices;
   backchannel: typeof backchannel;
   oauth2: typeof oauth2;
   appPermissions: typeof appPermissions;
@@ -861,6 +869,7 @@ class AdminActions {
       accountState: accountState,
       identityAssurance: identityAssurance,
       siop: siop,
+      devices: devices,
       backchannel: backchannel,
       oauth2: oauth2,
       appPermissions: appPermissions,
@@ -2314,6 +2323,29 @@ class AdminActions {
                message: 'Identity verification ' + id + ' of ' + who +
                         ' is removed; nothing is released from it any ' +
                         'more.' };
+    }
+
+    if (action === 'remove-device') {
+      const { devices } = this.deps;
+      const id = String(body.id || '').trim();
+      const gone = devices.remove(id, who);
+      audited('admin.device.removed',
+              (gone.ok ? 'removed' : 'could not remove') + ' device ' + id +
+              ' of ' + who,
+              { id: id, errors: gone.ok ? undefined : [gone.error] },
+              gone.ok ? 'success' : 'failure');
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "remove-device was refused.");
+        return this.refusedBy('STS-ADMIN-0811',
+                              { ok: false, errors: [gone.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "remove-device.");
+      return { ok: true, username: who, removed: id,
+               message: 'Device ' + id + ' of ' + who + ' is removed, with ' +
+                        'its Native SSO secret; the apps on it sign in ' +
+                        'again.' };
     }
 
     if (action === 'enrol-self-issued-subject' ||

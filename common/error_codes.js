@@ -6531,6 +6531,58 @@ const CODES = [
       'entry is not a JSON list — or recording one after a wallet or ' +
       'certificate sign-in threw. Read as none; the sign-in stands.',
     spec: 'none — verified_claims is omitted' },
+  { code: 'STS-OAUTH-0624',
+    summary: 'device_sso (OpenID Connect Native SSO, #130) was asked for by ' +
+      'a client not enabled for it — oauthNativeSso TRUE and an ' +
+      'oauthNativeSsoGroup on its entry. In every mode.',
+    spec: 'invalid_scope (HTTP 400, or at the redirect URI)' },
+  { code: 'STS-OAUTH-0625',
+    summary: 'A Native SSO grant could not store its device in ou=devices — ' +
+      'no entry for the person, or the directory full — so no device_secret ' +
+      'was issued; the rest of the token response stood (#130).',
+    spec: 'none — the response carries no device_secret' },
+  { code: 'STS-OAUTH-0626',
+    summary: 'A token exchange named no subject_token_type, an actor_token ' +
+      'without its actor_token_type, or an actor_token_type without its ' +
+      'token (RFC 8693 section 2.1, #130).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0627',
+    summary: 'A token exchange named a token type this service does not ' +
+      'exchange (a SAML assertion, an unknown URI), or a device secret ' +
+      'anywhere but as the actor beside an ID Token (#130).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0628',
+    summary: 'A token exchange presented a token this realm verified that ' +
+      'is not the type it was declared as — an ID Token declared an access ' +
+      'token, a refresh token declared a JWT (#130).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0629',
+    summary: 'A Native SSO exchange came from a client not enabled for ' +
+      'Native SSO, or the ID Token it presented was issued to a client ' +
+      'outside its Native SSO group (#130).',
+    spec: 'unauthorized_client (HTTP 400)' },
+  { code: 'STS-OAUTH-0630',
+    summary: 'A Native SSO exchange\'s audience was not this authorization ' +
+      'server\'s issuer (Native SSO section 4.1, #130).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0631',
+    summary: 'A Native SSO exchange\'s subject_token is not an ID Token ' +
+      'this realm issued — it does not verify, names another issuer, is ' +
+      'another kind of token, or was revoked (#130).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0632',
+    summary: 'A Native SSO exchange\'s actor_token names no device, or is ' +
+      'not the device secret the ID Token\'s ds_hash was made from (#130).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0633',
+    summary: 'A Native SSO exchange\'s device secret is bound to a sign-on ' +
+      'session that has ended, that is not the ID Token\'s sid, or that is ' +
+      'no longer the device owner\'s (#130).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0634',
+    summary: 'A client not enabled for Native SSO asked the revocation ' +
+      'endpoint to revoke a device secret (#130). Nothing was revoked.',
+    spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -13574,6 +13626,10 @@ const CODES = [
     summary: 'remove-self-issued-subject named a subject not enrolled for ' +
       'the person, or the directory did not store the change (#129).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0811',
+    summary: 'remove-device named a device that is not the person\'s, or the ' +
+      'directory did not remove it (#130).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -14191,6 +14247,10 @@ const CODES = [
     summary: 'A POST to /portal/self-issued named a self-issued subject the ' +
       'signed-in person has not enrolled, or the directory did not store ' +
       'the removal (#129).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0088',
+    summary: 'A POST to /portal/devices named a device the signed-in person ' +
+      'does not own, or the directory did not remove it (#130).',
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +

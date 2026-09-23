@@ -713,6 +713,20 @@ credential at a REAL foreign service. Same decision, same reason
 (`/krb5/principals` prints the Kerberos passwords), worth restating because the
 consequence is different.
 
+## `ou=devices`: A DEVICE IS AN ENTRY (2026-09-23, #130)
+
+rcbj's direction: devices are first-class objects in this directory, linked
+to their person and to the applications that use them. Each is an RFC 4519
+`device` (with this service's `stsDevice` class), named `cn=<uuid>`, whose
+standard `owner` is the person's DN and whose `stsDeviceApplication` values
+are the DNs of the applications that used it; `stsDeviceSecretHash` (in
+SECRET_ATTRIBUTES, merged whole) and `stsDeviceSession` hold its OpenID
+Connect Native SSO secret and the sign-on session it is good for. The
+container is seeded like the others; `listDeviceEntries()`,
+`writeDeviceEntry()` and `deleteDeviceEntry()` are the store, reached through
+`credentials.deviceStore()`, and `common/devices.ts` decides what an entry
+means. #164 adds the rest of what a device is to these same entries.
+
 ## THE FIVE FEDERATION ATTRIBUTES ON A PERSON'S ENTRY
 
 `applyFederatedAttributes()` runs on an entry created because somebody signed in

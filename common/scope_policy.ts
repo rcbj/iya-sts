@@ -84,6 +84,12 @@ const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
 // `debugger/debugger_access.ts`'s PERMISSION_ID. See the header.
 const DEBUGGER_PERMISSION = 'urn:sts:debugger-api:debugger';
 
+// OPENID CONNECT NATIVE SSO's scope (#130): granted, in every mode, only to
+// a client `applications.nativeSsoOf()` enables — the flag and a group —
+// because what it buys is a device_secret another app can turn into tokens.
+const DEVICE_SSO = 'device_sso';
+const NATIVE_SSO_CODE = 'STS-OAUTH-0624';
+
 // The two codes a refusal carries: a protected scope, then any other.
 const PROTECTED_CODE = 'STS-OAUTH-0577';
 const UNDECLARED_CODE = 'STS-OAUTH-0578';
@@ -242,6 +248,7 @@ class ScopePolicy {
     const asked = ScopePolicy.split(scope);
     const out = { kept: [] as string[], protectedRefused: [] as string[],
                   undeclaredRefused: [] as string[],
+                  nativeSsoRefused: [] as string[],
                   declared: null as string[] | null };
     if (!asked.length) {
       log.debug("Leaving ScopePolicy.judge(). Nothing was asked for.");
@@ -253,6 +260,14 @@ class ScopePolicy {
     const everyScope = mode.grantsUndeclaredScopes();
     let defaults: string[] | null = null;
     asked.forEach(function (one) {
+      if (one === DEVICE_SSO) {
+        if (self.deps.applications.nativeSsoOf(clientId).enabled) {
+          out.kept.push(one);
+        } else {
+          out.nativeSsoRefused.push(one);
+        }
+        return;
+      }
       if (protectedNames.indexOf(one) >= 0) {
         if (declared && declared.indexOf(one) >= 0) {
           out.kept.push(one);
@@ -320,6 +335,15 @@ class ScopePolicy {
           client + ' does not.' + where + ' A dynamic registration cannot ' +
           'declare one; an administrator does.' };
     }
+    if (judged.nativeSsoRefused.length) {
+      log.debug("Leaving ScopePolicy.refusal(). Native SSO.");
+      return { code: NATIVE_SSO_CODE, error: 'invalid_scope',
+        scopes: judged.nativeSsoRefused,
+        description: '"device_sso" (OpenID Connect Native SSO) is issued in ' +
+          'every mode only to a client an administrator has enabled for it — ' +
+          'oauthNativeSso TRUE and an oauthNativeSsoGroup on its entry in ' +
+          'ou=applications — and ' + client + ' is not.' };
+    }
     if (judged.undeclaredRefused.length) {
       log.debug("Leaving ScopePolicy.refusal(). An undeclared scope.");
       return { code: UNDECLARED_CODE, error: 'invalid_scope',
@@ -348,7 +372,8 @@ class ScopePolicy {
     log.debug("Entering ScopePolicy.narrow().");
     const ctx = context || {};
     const judged = this.judge(scope, clientId, { defaults: ctx.defaults });
-    const removed = judged.protectedRefused.concat(judged.undeclaredRefused);
+    const removed = judged.protectedRefused.concat(judged.undeclaredRefused,
+                                                   judged.nativeSsoRefused);
     if (!removed.length) {
       log.debug("Leaving ScopePolicy.narrow(). Nothing taken off.");
       return String(scope == null ? '' : scope);

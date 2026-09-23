@@ -1270,6 +1270,16 @@ never whose it is (`STS-PORTAL-0087` when it is not theirs).
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).
 
+## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130)
+
+The entries in `ou=devices` the person owns, the applications that used
+each, and whether its Native SSO secret is live; a Remove each
+(`STS-PORTAL-0088` when the device is not theirs). Nothing is added here — a
+device is made by signing in on it. It asks `authn` about sessions directly,
+because the portal is loaded before the authorization server whose
+`sessionIsLive()` says the same. `portal_devices.ts`, drawn the way
+`portal_self_issued.ts` is.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a
