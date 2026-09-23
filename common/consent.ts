@@ -321,7 +321,9 @@ class Consent {
     const { log, config, fapi } = this.deps;
     log.debug("Entering Consent.required().");
     log.debug("Leaving Consent.required().");
-    return !!config.value('oauth2.consentRequired') || fapi.enabled();
+    // FAPI 1.0 item 12 only; FAPI 2.0 leaves consent to the ordinary rules
+    // (rcbj, #140).
+    return !!config.value('oauth2.consentRequired') || fapi.requiresConsent();
   }
 
   // ---------------------------------------------------------------------------

@@ -1015,8 +1015,14 @@ and `sts_admin_console` drive both doors over HTTP with a CA they mint and remov
 socket this process owns** — it rides in `secureContextOptions()`, so every truststore
 change re-applies it to every registered listener (the main port among them),
 `server.js` passes it when creating the main port, and
-`ldap_server.js` asks for it for LDAPS. The defaults are node's own written down, so an
-unedited service negotiates exactly what it did. **A cipher list that builds no context is
+`ldap_server.js` asks for it for LDAPS. **The cipher list is BCP 195 by default since #140
+(2026-09-22, rcbj's decision)** — the TLS 1.3 suites first, then RFC 9325 section 4.2's four
+ECDHE AES-GCM suites for TLS 1.2 — with `honorCipherOrder`, so the server's order wins and
+TLS 1.3 is what a modern client gets. It is the FAPI 2.0 Security Profile's section 5.2.2,
+made every listener's default rather than a FAPI switch, because a cipher suite belongs to
+the socket and a profile to a realm; `tests/vendored/sts_fapi2.js` proves the handshakes (TLS
+1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused). The floor is still node's
+TLSv1.2, which FAPI 2.0 allows. **A cipher list that builds no context is
 FATAL at require time**: found later it would be a TypeError from `createServer()`, or a
 listener silently keeping its old context after a `setSecureContext()` throws.
 **This module created two of those sockets until 2026-09-16 and creates none
