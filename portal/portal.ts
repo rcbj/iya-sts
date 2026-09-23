@@ -4031,6 +4031,8 @@ class Portal {
             (row.reactions || []).map(function (r) {
               return '<span class="ident signal-reaction">' +
                 (r.failed ? 'this portal could not sign you out here'
+                  : r.skipped ? 'this portal left you signed in here (' +
+                                self.esc(r.skipped) + ')'
                   : (r.observed ? 'this portal would sign you out here ' +
                                   '(development mode records it only)'
                     : (Number(r.ended) > 0
